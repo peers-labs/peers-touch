@@ -614,13 +614,29 @@ fn resolve_profile_urls(
     resources: &StationResourceHandle,
     data: &mut Value,
 ) -> Result<(), ResourceProjectionError> {
-    for field in &["avatar", "header"] {
-        if let Some(val) = data.get_mut(*field) {
-            if let Some(s) = val.as_str() {
-                if !s.is_empty() {
-                    *val = Value::String(resources.project_reference(s, None)?);
-                }
-            }
+    let Some(fields) = data.as_object_mut() else {
+        return Ok(());
+    };
+    for field in ["avatar", "header"] {
+        // Preserve the canonical Station profile value (relative Station media
+        // path, external URL, or data URI) as `<field>_identity` BEFORE the
+        // ephemeral `station-resource://local/<token>` projection replaces the
+        // render field. The renderer avatar owner keys on the canonical
+        // identity; the rotating per-process token must never become that
+        // identity or cache key (r3.1 Identity/Avatar). Direct-src consumers
+        // keep reading the projected `<field>`.
+        let identity = fields
+            .get(field)
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        fields.insert(format!("{field}_identity"), Value::String(identity.clone()));
+        if !identity.is_empty() {
+            fields.insert(
+                field.to_string(),
+                Value::String(resources.project_reference(&identity, None)?),
+            );
         }
     }
     Ok(())
@@ -1171,6 +1187,33 @@ mod tests {
             .as_str()
             .is_some_and(|value| value.starts_with("station-resource://local/")));
         assert_eq!(projected["header"], "https://cdn.example.test/header.png");
+        // The rotating projection must never replace the canonical identity.
+        assert_eq!(
+            projected["avatar_identity"],
+            "/sub-oss/file?key=avatar.png"
+        );
+        assert_eq!(
+            projected["header_identity"],
+            "https://cdn.example.test/header.png"
+        );
+        assert_ne!(projected["avatar"], projected["avatar_identity"]);
+    }
+
+    #[test]
+    fn profile_identity_fields_are_empty_when_profile_has_no_media() {
+        let resources = StationResourceHandle::new(StationClient::testing_scoped("station", 7));
+        let profile = ActorProfile {
+            avatar: String::new(),
+            header: String::new(),
+            ..ActorProfile::default()
+        };
+
+        let projected = actor_profile_to_value(&resources, &profile).unwrap();
+
+        assert_eq!(projected["avatar"], "");
+        assert_eq!(projected["header"], "");
+        assert_eq!(projected["avatar_identity"], "");
+        assert_eq!(projected["header_identity"], "");
     }
 
     #[test]
@@ -1185,6 +1228,7 @@ mod tests {
         let projected = actor_profile_to_value(&resources, &profile).unwrap();
 
         assert_eq!(projected["avatar"], avatar);
+        assert_eq!(projected["avatar_identity"], avatar);
     }
 
     #[test]

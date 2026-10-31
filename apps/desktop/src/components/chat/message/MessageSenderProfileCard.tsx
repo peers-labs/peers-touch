@@ -4,7 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { useSocialChatStore } from '../../../store/socialChat';
 import { useFederationStore } from '../../../store/federation';
 import { resolveFederationStationName } from '../../../store/federation';
-import { actorDisplayName } from '../../../store/socialProfileProjection';
+import {
+  actorDisplayName,
+  canonicalProfileAvatar,
+} from '../../../store/socialProfileProjection';
 import { PublicProfileCard, type PublicProfileModel } from '../../profile/PublicProfileCard';
 
 /**
@@ -73,7 +76,7 @@ export function MessageSenderProfileCard({
     }
     return {
       displayName,
-      avatar: peerProfile?.avatar?.trim() || fallbackAvatar || '',
+      avatar: (peerProfile ? canonicalProfileAvatar(peerProfile) : '') || fallbackAvatar || '',
       username: peerProfile?.username?.trim() || undefined,
       bio: peerProfile?.note?.trim() || undefined,
       did: peerProfile?.id?.trim() || senderPtid,

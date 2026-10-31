@@ -21,6 +21,7 @@ import {
   refreshSocialProjection,
 } from '../../services/socialRealtime';
 import { useRelationshipsStore } from '../../store/relationships';
+import { useMessagingRecoveryStore } from '../../store/messagingRecovery';
 import { useSessionStore } from '../../store/session';
 import { useSearchStore } from '../../store/search';
 import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
@@ -545,6 +546,26 @@ export function installAcceptanceHarness(): void {
       await hydrateSocialForActiveActor();
       return {
         actorPtid: activeActorPtid(),
+      };
+    },
+
+    async messagingReadiness() {
+      const recovery = useMessagingRecoveryStore.getState();
+      return {
+        readiness: recovery.readiness,
+        backupExists: recovery.exists,
+        restoring: recovery.restoring,
+        loading: recovery.loading,
+        error: recovery.error,
+      };
+    },
+
+    async refreshMessagingReadiness() {
+      await useMessagingRecoveryStore.getState().refresh();
+      const recovery = useMessagingRecoveryStore.getState();
+      return {
+        readiness: recovery.readiness,
+        backupExists: recovery.exists,
       };
     },
 

@@ -98,12 +98,16 @@ export function useAvatarAsset(input: AvatarAssetInput): {
   const refresh = useCallback(() => {
     if (!identity) return;
     avatarAssets.request(query, { force: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, identity]);
 
   if (!identity) {
+    // Identity not known yet (profile still loading). This is NOT an
+    // authoritative "actor has no avatar": painting initials here would
+    // flash a letter whenever the profile identity arrives late. Surfaces
+    // render the identity-neutral placeholder until a real identity
+    // resolves ready/absent.
     return {
-      snapshot: { phase: 'absent', src: null, degraded: false, identity: '' },
+      snapshot: { phase: 'unresolved', src: null, degraded: false, identity: '' },
       refresh,
     };
   }

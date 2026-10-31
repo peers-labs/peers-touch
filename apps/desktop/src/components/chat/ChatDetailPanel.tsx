@@ -30,7 +30,10 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
-import { actorDisplayName } from '../../store/socialProfileProjection';
+import {
+  actorDisplayName,
+  canonicalProfileAvatar,
+} from '../../store/socialProfileProjection';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import {
   CHAT_BACKGROUND_OPTIONS,
@@ -758,7 +761,7 @@ export function ChatDetailPanel() {
       if (profile && !profiles.has(did)) {
         profiles.set(did, {
           name: profile.display_name?.trim() || profile.username?.trim() || '',
-          avatar: profile.avatar || '',
+          avatar: canonicalProfileAvatar(profile),
         });
       }
     }
@@ -1485,7 +1488,11 @@ export function ChatDetailPanel() {
                     remoteUrl={groupAvatarUrl || undefined}
                     members={members.slice(0, 4).map((m) => {
                       const p = memberProfiles.get(m.ptid);
-                      return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
+                      return {
+                        ptid: m.ptid,
+                        name: p?.name || m.nickname || '',
+                        avatar: p?.avatar || '',
+                      };
                     })}
                     name={displayName}
                     size={72}

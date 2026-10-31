@@ -660,6 +660,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
         <div style={{ display: 'flex', gap: 12 }}>
           <UserSquareAvatar
             remoteUrl={me?.avatar || undefined}
+            actorPtid={me?.id || null}
             name={me?.displayName || me?.username || t('moments.author.unknown')}
             size={42}
             radius={12}

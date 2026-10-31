@@ -80,6 +80,49 @@ CREATE_GROUP_MODAL = (
 CHAT_CONTACTS_PANEL = (
     ROOT / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
 )
+AVATAR_ASSETS = ROOT / "apps/desktop/src/services/avatarAssets.ts"
+USE_AVATAR_ASSET = (
+    ROOT / "apps/desktop/src/components/common/useAvatarAsset.ts"
+)
+GROUP_COMPOSITE_AVATAR = (
+    ROOT / "apps/desktop/src/components/common/GroupCompositeAvatar.tsx"
+)
+CHAT_CONTACTS_PANEL = (
+    ROOT / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
+)
+PROFILE_APPLICATION = (
+    ROOT / "apps/desktop/src-tauri/src/application/profile/mod.rs"
+)
+DESKTOP_API = ROOT / "apps/desktop/src/services/desktop_api.ts"
+SOCIAL_PROFILE_PROJECTION = (
+    ROOT / "apps/desktop/src/store/socialProfileProjection.ts"
+)
+SOCIAL_CHAT_STORE = ROOT / "apps/desktop/src/store/socialChat.ts"
+FRIENDSHIP_PROJECTION = (
+    ROOT / "apps/desktop/src/store/friendshipProjection.ts"
+)
+MESSAGE_SENDER_CARD = (
+    ROOT
+    / "apps/desktop/src/components/chat/message/MessageSenderProfileCard.tsx"
+)
+BOTS_SETTINGS = (
+    ROOT / "apps/desktop/src/components/settings/BotsSettings.tsx"
+)
+RECOVERY_GATE = (
+    ROOT / "apps/desktop/src/components/chat/MessagingRecoveryGate.tsx"
+)
+SOCIAL_CHAT_PAGE = ROOT / "apps/desktop/src/pages/SocialChatPage.tsx"
+MESSAGING_RECOVERY_STORE = (
+    ROOT / "apps/desktop/src/store/messagingRecovery.ts"
+)
+RECOVERY_SERVICE = (
+    ROOT / "apps/desktop/src/services/messaging-recovery-service.ts"
+)
+RECOVERY_COMMAND = (
+    ROOT
+    / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs"
+)
+CHAT_HARNESS = ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
 HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
 
 
@@ -1482,6 +1525,136 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "onStartChat(friendContactSelection(selfIdentity, friendConversations))",
             contacts_panel,
         )
+
+    def test_avatar_surfaces_attribute_owner_ptid_for_flicker_free_assets(self) -> None:
+        # Regression: already-friend avatars flashed to a letter/Bot placeholder
+        # whenever the ephemeral station-resource projection token rotated.
+        # The shared avatar owner can only keep the same-actor last-good image
+        # painted when every chat surface attributes the avatar to its PTID.
+        group_composite = GROUP_COMPOSITE_AVATAR.read_text(encoding="utf-8")
+        contacts_panel = CHAT_CONTACTS_PANEL.read_text(encoding="utf-8")
+        # Both message-row avatar mounts (incoming + own bubble).
+        self.assertEqual(2, self.message_row.count("<UserSquareAvatar"))
+        self.assertEqual(2, self.message_row.count("actorPtid="))
+        # Direct conversation row.
+        self.assertIn("actorPtid={c.peerPtid || null}", self.chat_session_list)
+        # Group composite slots (the four avatar tiles).
+        self.assertIn("actorPtid={member.ptid || null}", group_composite)
+        # The fixed Saved Messages self row.
+        self.assertIn("data-chat-contact-self", contacts_panel)
+        self.assertIn("actorPtid={myDid}", contacts_panel)
+
+    def test_avatar_owner_keeps_last_good_while_a_rotated_identity_resolves(self) -> None:
+        assets = AVATAR_ASSETS.read_text(encoding="utf-8")
+        hook = USE_AVATAR_ASSET.read_text(encoding="utf-8")
+        # The request path seeds same-actor last-good before starting a flight.
+        self.assertIn("private seedLastGood(", assets)
+        self.assertIn("this.seedLastGood(key, query)", assets)
+        # Last-good seeding is owner-gated: unattributed identities never
+        # inherit another actor's image.
+        self.assertIn("if (!query.actorPtid) return null;", assets)
+        # A late/unknown identity is unresolved (neutral placeholder), not an
+        # authoritative ABSENT that paints initials before profile arrival.
+        self.assertIn("phase: 'unresolved'", hook)
+        self.assertNotIn("phase: 'absent', src: null, degraded: false, identity: ''", hook)
+
+    def test_peer_profile_edge_exposes_stable_avatar_identity(self) -> None:
+        # Regression: peer_profile_get projected the raw Station avatar into a
+        # per-process station-resource token, and that rotating token became the
+        # renderer's avatar identity/cache key. Every refetch forced a blank +
+        # re-decode of already-cached friend avatars. The edge MUST expose the
+        # canonical identity alongside the projected render URL.
+        rust = PROFILE_APPLICATION.read_text(encoding="utf-8")
+        self.assertIn('format!("{field}_identity")', rust)
+        # Identity must be captured from the raw value BEFORE the projected
+        # render field is written.
+        self.assertLess(
+            rust.index('format!("{field}_identity")'),
+            rust.index("resources.project_reference(&identity, None)"),
+        )
+        # Both media fields are covered.
+        self.assertIn('for field in ["avatar", "header"]', rust)
+
+        api = DESKTOP_API.read_text(encoding="utf-8")
+        self.assertIn("avatar_identity?: string;", api)
+        self.assertIn("header_identity?: string;", api)
+
+        projection = SOCIAL_PROFILE_PROJECTION.read_text(encoding="utf-8")
+        self.assertIn("export function canonicalProfileAvatar(", projection)
+        self.assertIn(
+            "avatarUrl: canonicalProfileAvatar(stationProfile)",
+            projection,
+        )
+
+        # The profile-landed prewarm must key the shared avatar owner on the
+        # canonical identity, not on the projected `avatar` token.
+        store = SOCIAL_CHAT_STORE.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(profile)", store)
+        # The IM Direct conversation projection feeds conversation-list
+        # avatars; it must likewise key peer avatars on canonical identity
+        # (self avatars are already raw actor_get_my_profile values).
+        self.assertIn(
+            ": (profile ? canonicalProfileAvatar(profile) : '')) || ''",
+            store,
+        )
+
+        # Every AccountProfile-backed avatar surface must consume the
+        # canonical identity instead of the rotating projected `avatar`
+        # token; bot avatars additionally attribute their owner PTID.
+        friendship = FRIENDSHIP_PROJECTION.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(profile)", friendship)
+        self.assertNotIn("avatarUrl: profile?.avatar?.trim()", friendship)
+
+        contacts = CHAT_CONTACTS_PANEL.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(cachedProfile)", contacts)
+
+        sender_card = MESSAGE_SENDER_CARD.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(peerProfile)", sender_card)
+
+        bots = BOTS_SETTINGS.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(profile)", bots)
+        self.assertIn("actorPtid={bot.botPtid}", bots)
+
+    def test_identity_continuity_rejection_projects_an_explicit_recovery_gate(self) -> None:
+        # Rust status must expose the typed readiness kind.
+        command = RECOVERY_COMMAND.read_text(encoding="utf-8")
+        self.assertIn('"readiness": readiness_kind', command)
+        self.assertIn('RecoveryRequired { .. } => "recovery_required"', command)
+
+        service = RECOVERY_SERVICE.read_text(encoding="utf-8")
+        self.assertIn("export type MessagingProfileReadiness =", service)
+        self.assertIn("| 'recovery_required'", service)
+        self.assertIn("readiness: MessagingProfileReadiness;", service)
+
+        # Store: first confirmed reading only; errors must keep readiness
+        # unknown so a failed read can never false-gate the shell.
+        store = MESSAGING_RECOVERY_STORE.read_text(encoding="utf-8")
+        self.assertIn("readiness: 'unknown'", store)
+        self.assertIn("readiness: status.readiness", store)
+        self.assertIn("readiness: 'unknown'", store.split("catch (error)")[1])
+
+        # The gate renders solely on the typed recovery_required state and
+        # offers in-place phrase restore + sign out, never relaxing the
+        # continuity check itself.
+        gate = RECOVERY_GATE.read_text(encoding="utf-8")
+        self.assertIn("readiness === 'recovery_required'", gate)
+        self.assertIn("if (!recoveryRequired) return null;", gate)
+        self.assertIn('data-chat-recovery-gate="true"', gate)
+        self.assertIn('data-chat-recovery-restore="true"', gate)
+        self.assertIn('data-chat-recovery-signout="true"', gate)
+        self.assertIn("restoreLatest(trimmed)", gate)
+        self.assertIn("identityRuntime.logout()", gate)
+
+        # The chat page owns the gate overlay and keeps it mounted for both
+        # the conversation and contacts sub-pages.
+        page = SOCIAL_CHAT_PAGE.read_text(encoding="utf-8")
+        self.assertIn("import { MessagingRecoveryGate }", page)
+        self.assertIn("<MessagingRecoveryGate />", page)
+
+        # Native harness observes the typed readiness for Journey proof.
+        harness = CHAT_HARNESS.read_text(encoding="utf-8")
+        self.assertIn("async messagingReadiness()", harness)
+        self.assertIn("readiness: recovery.readiness", harness)
 
     def test_acceptance_window_preserves_native_document_layering(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)

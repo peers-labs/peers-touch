@@ -698,6 +698,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           >
             <UserSquareAvatar
               remoteUrl={senderAvatar}
+              actorPtid={message.senderPtid}
               name={senderName}
               size={avatarSize}
             />
@@ -886,6 +887,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         >
           <UserSquareAvatar
             remoteUrl={senderAvatar}
+            actorPtid={currentUserPtid || message.senderPtid}
             name={senderName}
             size={avatarSize}
             style={{ flexShrink: 0 }}

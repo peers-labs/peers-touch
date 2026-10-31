@@ -69,6 +69,7 @@ export function GroupCompositeAvatar({ members, size = 36, gap = 1 }: GroupCompo
         >
           <UserSquareAvatar
             remoteUrl={member.avatar}
+            actorPtid={member.ptid || null}
             name={member.name}
             size={count === 1 ? size : cellSize}
             radius={count === 1 ? Math.round(size * 0.25) : Math.round(cellSize * 0.22)}

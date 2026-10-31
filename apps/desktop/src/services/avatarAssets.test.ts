@@ -148,6 +148,66 @@ describe('avatarAssets resolution', () => {
     expect(resolveLocal).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the previous image painted while a rotated same-actor identity is resolving', async () => {
+    type ResolveResult = { state: 'ready'; identity: string; local_path: string };
+    // A controllable pending resolution. Property access avoids the CFA rule
+    // that narrows an outer `let` to null when assigned only inside a
+    // callback.
+    const rotatedFlight = (() => {
+      let resolve!: (value: ResolveResult) => void;
+      const promise = new Promise<ResolveResult>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    })();
+    const resolveLocal = vi.fn<LocalResolver>(async (identity) => {
+      if (identity === 'station-resource://local/01NEWTOKEN') {
+        return rotatedFlight.promise;
+      }
+      return { state: 'ready', identity, local_path: '/cache/old.png' };
+    });
+    const store = makeStore(resolveLocal);
+
+    // Materialize the actor's current avatar so same-actor last-good exists.
+    const first = await store.prepare(baseQuery('/sub-oss/old.png'), { budgetMs: 500 });
+    expect(first.status).toBe('ready');
+
+    // A rotated identity (e.g. a new ephemeral station-resource projection
+    // token after a profile refresh) starts resolving and stays pending.
+    const rotatedQuery = baseQuery('station-resource://local/01NEWTOKEN');
+    // request() returns the paint-ready last-good snapshot immediately...
+    const seeded = store.request(rotatedQuery);
+    expect(seeded?.src).toBe('asset:///cache/old.png');
+    expect(seeded?.degraded).toBe(true);
+    // ...while the entry itself moves into resolving without blanking.
+    const liveSnapshot = store.getSnapshot(avatarAssetKey(rotatedQuery));
+    expect(liveSnapshot?.phase).toBe('resolving');
+    expect(liveSnapshot?.src).toBe('asset:///cache/old.png');
+
+    // Once the new identity materializes, the entry swaps to the fresh image.
+    rotatedFlight.resolve({
+      state: 'ready',
+      identity: 'station-resource://local/01NEWTOKEN',
+      local_path: '/cache/new.png',
+    });
+    await vi.waitFor(() => {
+      expect(store.getSnapshot(avatarAssetKey(rotatedQuery))).toMatchObject({
+        phase: 'ready',
+        src: 'asset:///cache/new.png',
+        degraded: false,
+      });
+    });
+  });
+
+  it('does not seed last-good for an unattributed identity while resolving', () => {
+    // Never resolves: the point is the synchronous request() return value.
+    const resolveLocal = vi.fn<LocalResolver>(() => new Promise(() => {}));
+    const store = makeStore(resolveLocal);
+    // No prior attributed image and no actorPtid: request starts empty.
+    const snapshot = store.request({ identity: '/sub-oss/mystery.png', epoch: 0 });
+    expect(snapshot).toBeNull();
+  });
+
   it('shows same-actor last-good as degraded when a newer identity fails', async () => {
     const resolveLocal = vi.fn(async (identity: string): Promise<{
       state: 'ready' | 'failed';
@@ -275,7 +335,6 @@ describe('avatarAssets decoded image LRU', () => {
     const store = makeStore(resolveLocal);
 
     for (let i = 0; i < MAX_DECODED_IMAGES + 10; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       await store.prepare({ identity: `/a${i}.png`, epoch: 0 }, { budgetMs: 500 });
     }
 

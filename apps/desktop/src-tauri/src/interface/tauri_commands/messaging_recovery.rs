@@ -519,6 +519,14 @@ pub fn messaging_recovery_status(
         Ok(readiness) => readiness,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
+    // Typed messaging readiness lets the renderer project an explicit
+    // recovery gate instead of entering a half-working shell when actor
+    // identity continuity rejected engine activation.
+    let readiness_kind = match &readiness {
+        MessagingProfileReadiness::Active { .. } => "active",
+        MessagingProfileReadiness::RecoveryRequired { .. } => "recovery_required",
+        MessagingProfileReadiness::Inactive => "inactive",
+    };
     let identity = match readiness {
         MessagingProfileReadiness::Active { actor_ptid } => {
             if actor_ptid != session.actor_ptid {
@@ -559,11 +567,21 @@ pub fn messaging_recovery_status(
     match latest_revision(state.station.client(), &session) {
         Ok(revision) => to_stub(
             "messaging_recovery_status",
-            json!({ "identity": identity, "exists": true, "latest": revision_json(&revision) }),
+            json!({
+                "readiness": readiness_kind,
+                "identity": identity,
+                "exists": true,
+                "latest": revision_json(&revision),
+            }),
         ),
         Err(error) if matches!(error.kind, StationClientErrorKind::HttpStatus(404)) => to_stub(
             "messaging_recovery_status",
-            json!({ "identity": identity, "exists": false, "latest": serde_json::Value::Null }),
+            json!({
+                "readiness": readiness_kind,
+                "identity": identity,
+                "exists": false,
+                "latest": serde_json::Value::Null,
+            }),
         ),
         Err(error) => error.into_app_result("failed to fetch recovery backup status"),
     }

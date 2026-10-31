@@ -2384,6 +2384,15 @@ export interface AccountProfile {
   url: string;
   avatar: string;
   header: string;
+  /**
+   * Canonical Station profile media identity (relative Station path, external
+   * URL, or data URI). `avatar`/`header` carry the per-process projected
+   * `station-resource://local/<token>` render URL; avatar surfaces key their
+   * asset cache on this identity because the projection token rotates.
+   * Optional: older runtimes and federation-resolve mappings omit it.
+   */
+  avatar_identity?: string;
+  header_identity?: string;
   locked: boolean;
   created_at: string;
   statuses_count: number;

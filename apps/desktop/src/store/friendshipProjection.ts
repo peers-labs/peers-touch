@@ -5,7 +5,11 @@ import type {
 import type { AccountProfile } from '../services/desktop_api';
 import type { DesktopIMConversationProjection } from './socialProjection';
 import type { FriendRequestData } from './socialNormalizers';
-import { actorDisplayName, remoteProfileHandle } from './socialProfileProjection';
+import {
+  actorDisplayName,
+  canonicalProfileAvatar,
+  remoteProfileHandle,
+} from './socialProfileProjection';
 import { isRawStationAuthority } from './federation';
 
 export interface MutualFriendProjection {
@@ -169,7 +173,10 @@ export function projectChatFriendContacts({
         || actorDisplayName(username)
         || actorDisplayName(conversation?.title)
         || actorPtid,
-      avatarUrl: profile?.avatar?.trim()
+      // Canonical identity only: profile.avatar is the per-process projected
+      // station-resource token and rotates; request/conversation payloads stay
+      // raw Station media paths.
+      avatarUrl: (profile ? canonicalProfileAvatar(profile) : '')
         || requestAvatar
         || conversation?.avatar
         || '',

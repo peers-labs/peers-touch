@@ -732,7 +732,12 @@ export function ChatSessionList({
                               data-chat-identity-federation-id={c.federationId || ''}
                               style={{ display: 'inline-flex', flexShrink: 0 }}
                             >
-                              <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                              <UserSquareAvatar
+                                remoteUrl={c.avatar}
+                                actorPtid={c.peerPtid || null}
+                                name={name}
+                                size={36}
+                              />
                             </span>
                           )}
 

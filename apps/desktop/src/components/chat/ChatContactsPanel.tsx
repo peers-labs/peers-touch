@@ -10,7 +10,10 @@ import {
   projectChatFriendRequestPeers,
   type ChatActorIdentityProjection,
 } from '../../store/friendshipProjection';
-import { remoteProfileHandle } from '../../store/socialProfileProjection';
+import {
+  canonicalProfileAvatar,
+  remoteProfileHandle,
+} from '../../store/socialProfileProjection';
 import type { FriendRequestData } from '../../store/socialNormalizers';
 import {
   presentError,
@@ -310,7 +313,10 @@ export function ChatContactsPanel({
           || cachedProfile?.username?.trim()
           || peerName
           || t('chat.social.sessionList.unknown');
-        const resolvedAvatar = cachedProfile?.avatar?.trim() || peerAvatar;
+        // Key on the canonical Station media identity, not the rotating
+        // projected station-resource token from the peer profile edge.
+        const resolvedAvatar = (cachedProfile ? canonicalProfileAvatar(cachedProfile) : '')
+          || peerAvatar;
         const federatedHandle = cachedProfile
           ? remoteProfileHandle(cachedProfile)
           : '';

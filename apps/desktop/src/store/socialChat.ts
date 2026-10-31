@@ -14,6 +14,7 @@ import {
   type AccountProfile,
   type ChatThreadCount,
 } from '../services/desktop_api';
+import { avatarAssets } from '../services/avatarAssets';
 import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
 import type {
   Conversation,
@@ -80,6 +81,7 @@ import { currentAuthenticatedActorPtid, useSessionStore } from './session';
 import {
   accountProfileFromFederationResolve,
   actorDisplayName,
+  canonicalProfileAvatar,
   remoteProfileHandle,
   resolveActorIdentity,
 } from './socialProfileProjection';
@@ -2075,6 +2077,21 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         peerProfiles: { ...prev.peerProfiles, [did]: profile ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
+      // Warm the shared avatar owner the moment the profile lands, before
+      // any avatar component mounts. Key on the transport-independent
+      // canonical identity so per-process projection-token rotation never
+      // invalidates the entry; the actor attribution additionally keeps
+      // last-good painted across any identity change.
+      const avatarIdentity = profile
+        ? canonicalProfileAvatar(profile)
+        : '';
+      if (avatarIdentity) {
+        avatarAssets.request({
+          identity: avatarIdentity,
+          actorPtid: did,
+          profileRevision: profile?.profile_revision ?? null,
+        });
+      }
     } catch (error) {
       if (!isCurrent()) return;
       log.warn('socialChat', 'loadPeerProfile failed', { peerPtid: did, error });
@@ -2561,7 +2578,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
             || actorDisplayName(profile?.username)
             || actorDisplayName(friendReq ? (friendReq.senderPtid === peerPtid ? friendReq.senderDisplayName : friendReq.receiverDisplayName) : '')
             || 'Friend';
-        const avatar = (isSelfDirect ? state.currentUserProfile?.avatar : profile?.avatar) || '';
+        // Self avatar is the raw actor_get_my_profile value; peer avatars must
+        // use canonical identity, never the rotating projected profile token.
+        const avatar = (isSelfDirect
+          ? state.currentUserProfile?.avatar
+          : (profile ? canonicalProfileAvatar(profile) : '')) || '';
         out.push(projectDesktopIMConversation({
           type: 'friend',
           ulid: convId,

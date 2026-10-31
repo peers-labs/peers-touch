@@ -4,12 +4,19 @@ import { EVENT, eventBus } from '../kernel/events';
 import {
   messagingRecoveryService,
   type MessagingRecoveryIdentity,
+  type MessagingProfileReadiness,
   type MessagingRecoveryRestoreResult,
   type MessagingRecoveryRevision,
   type MessagingRecoveryResult,
 } from '../services/messaging-recovery-service';
 
 interface MessagingRecoveryState {
+  /**
+   * Typed engine readiness. `unknown` means no authenticated status read has
+   * landed yet; UI must never project the recovery gate before the first
+   * confirmed reading (normal activation passes through inactive briefly).
+   */
+  readiness: MessagingProfileReadiness | 'unknown';
   identity: MessagingRecoveryIdentity | null;
   latest: MessagingRecoveryRevision | null;
   exists: boolean;
@@ -29,6 +36,7 @@ interface MessagingRecoveryActions {
 type MessagingRecoveryStore = MessagingRecoveryState & MessagingRecoveryActions;
 
 const initialState: MessagingRecoveryState = {
+  readiness: 'unknown',
   identity: null,
   latest: null,
   exists: false,
@@ -75,6 +83,7 @@ export const useMessagingRecoveryStore = createDesktopStore<MessagingRecoverySto
         const status = await messagingRecoveryService.status();
         if (!isCurrent()) return;
         set({
+          readiness: status.readiness,
           identity: status.identity,
           latest: status.latest,
           exists: status.exists,
@@ -82,7 +91,10 @@ export const useMessagingRecoveryStore = createDesktopStore<MessagingRecoverySto
         });
       } catch (error) {
         if (isCurrent()) {
+          // A status read failure must not masquerade as a continuity
+          // conflict: keep readiness unknown so the shell never false-gates.
           set({
+            readiness: 'unknown',
             identity: null,
             latest: null,
             exists: false,

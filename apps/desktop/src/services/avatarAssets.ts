@@ -301,9 +301,47 @@ export class AvatarAssetsStore {
       return this.recordTerminal(query, 'absent').snapshot;
     }
     if (!this.flights.has(key)) {
+      // Seed the new entry with the same-actor last-good image before the
+      // flight starts. Avatar identities can rotate (ephemeral
+      // station-resource projection tokens, profile refreshes); without this
+      // the new entry paints null and the surface falls back to a
+      // placeholder/initial until decode completes — the visible flicker.
+      // The previous image stays painted (degraded) until the new one is
+      // ready and replaces it atomically.
+      const seeded = this.seedLastGood(key, query);
       this.startFlight(key, query);
+      if (seeded) return seeded;
     }
     return existing?.snapshot ?? null;
+  }
+
+  /**
+   * Create a resolving entry that already paints the owner's last-good image.
+   * No-op without an attributed owner (a peer identity must never inherit
+   * another actor's image) or when no last-good exists (true first load).
+   */
+  private seedLastGood(key: string, query: AvatarAssetQuery): AvatarAssetSnapshot | null {
+    if (this.entries.has(key)) return null;
+    const fallback = this.lastGoodFallback(query);
+    if (!fallback?.src) return null;
+    const lastGood = this.lastGoodByActor.get(actorKeyFor(query));
+    this.entries.set(key, {
+      key,
+      identity: query.identity,
+      epoch: query.epoch ?? 0,
+      actorKey: actorKeyFor(query),
+      revision: query.profileRevision ?? null,
+      localPath: lastGood?.localPath ?? query.localPath?.trim() ?? null,
+      phase: 'resolving',
+      src: fallback.src,
+      image: null,
+      degraded: true,
+      failureCount: 0,
+      notBefore: 0,
+      snapshot: fallback,
+    });
+    this.enforceEntryBound();
+    return fallback;
   }
 
   /**

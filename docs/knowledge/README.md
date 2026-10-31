@@ -216,6 +216,7 @@ Pick one based on intent:
 - [`pitfalls/desktop-gui-launch-profile-pointer.md`](pitfalls/desktop-gui-launch-profile-pointer.md) — double-click launches carry no `PT_PROFILE`; they must reuse the last identity-verified profile pointer instead of a hardcoded fallback, or identity-gated chat silently empties.
 - [`pitfalls/mobile-proto-regen-import-closure.md`](pitfalls/mobile-proto-regen-import-closure.md) — shipping one regenerated mobile proto file without its import closure breaks tsc; regen to a staging dir and sync the closure, not a single file.
 - [`pitfalls/global-personalization-leaks-across-actors.md`](pitfalls/global-personalization-leaks-across-actors.md) — app-global/OS-user settings stores survived logout and rendered actor A's language/theme/personalization to actor B on the same device.
+- [`pitfalls/peer-avatar-ephemeral-projection-flicker.md`](pitfalls/peer-avatar-ephemeral-projection-flicker.md) — the rotating station-resource projection token must never become the renderer avatar cache identity; the peer profile edge exposes canonical `avatar_identity` alongside the projected render URL.
 
 ### Playbooks
 

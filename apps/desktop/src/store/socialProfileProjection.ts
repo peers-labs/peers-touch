@@ -47,6 +47,20 @@ export function actorDisplayName(
     : name;
 }
 
+/**
+ * Canonical avatar identity for a Station profile edge. The profile command
+ * returns both the projected `station-resource://local/<token>` render URL
+ * (`avatar`, rotates per process/lifecycle/LRU) and the transport-independent
+ * `avatar_identity` (raw Station path / external URL / data URI). Avatar
+ * surfaces MUST key on the identity so token rotation never forces a
+ * re-decode or a blank frame.
+ */
+export function canonicalProfileAvatar(
+  profile: Pick<AccountProfile, 'avatar'> & Partial<Pick<AccountProfile, 'avatar_identity'>>,
+): string {
+  return profile.avatar_identity?.trim() || profile.avatar?.trim() || '';
+}
+
 export function remoteProfileHandle(
   profile: Pick<AccountProfile, 'acct' | 'username'>
     & Partial<Pick<AccountProfile, 'federated_handle'>>,
@@ -185,7 +199,7 @@ export function resolveActorIdentity({
         || sessionProfile?.name
         || actorDisplayName(fallbackName)
         || canonicalPtid,
-      avatarUrl: stationProfile.avatar?.trim()
+      avatarUrl: canonicalProfileAvatar(stationProfile)
         || sessionProfile?.avatar || fallbackAvatar?.trim() || '',
       isSelf: false,
       resolution: 'station',
