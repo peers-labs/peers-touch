@@ -127,13 +127,9 @@
   flex: 1 1 auto; width: auto; opacity: 1; padding: 0 6px 0 8px;
 }
 .sk-conv-search-input::-webkit-search-cancel-button { display: none; }
-.sk-conv-search-clear {
-  flex-shrink: 0; margin-right: 7px;
-  width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%;
-  background: transparent; color: var(--sk-text-3);
-  display: grid; place-items: center; cursor: pointer;
-}
-.sk-conv-search-clear:hover { background: color-mix(in srgb, var(--sk-text) 8%, transparent); color: var(--sk-text); }
+/* Focus ring belongs to the pill anchor (:focus-within), never the input:
+   suppress the global .pt-ui :focus-visible square outline here too. */
+.sk-theme .sk-conv-search-input:focus-visible { outline: none; }
 
 /* unified search popover: contacts first, chats after; both groups always
    render while querying, with dashed text tips when a group is empty */

@@ -544,8 +544,24 @@
           }
         },
         {
+          "op": "expect",
+          "id": "new-becomes-cancel",
+          "oracle": {
+            "type": "exists",
+            "target": "[data-action-id='sk.search-cancel']"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "new-menu-hidden-while-expanded",
+          "oracle": {
+            "type": "missing",
+            "target": "[data-action-id='sk.new-menu']"
+          }
+        },
+        {
           "op": "click",
-          "target": ".sk-conv-title"
+          "target": "[data-action-id='sk.search-cancel']"
         },
         {
           "op": "wait",
@@ -559,7 +575,12 @@
           "target": ".sk-rail-header",
           "attr": "data-search-expanded",
           "equals": "false"
-        }
+        },
+        {
+          "id": "cancel-back-to-new",
+          "type": "exists",
+          "target": "[data-action-id='sk.new-menu']"
+          }
       ],
       "finalizers": []
     },

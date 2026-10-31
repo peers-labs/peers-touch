@@ -5,7 +5,7 @@
  * new-conversation menu. Body is either the session list (pin/mute state)
  * or the contacts pane.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BellOff, CheckCheck, EyeOff, MessageCircle, MoreHorizontal, Pin, Plus, Search, Trash2, UserPlus, Users, X } from 'lucide-react';
 import {
   Alert, Avatar, AvatarGroup, Button, Dialog, Empty, Menu, Popover, Segmented, Tag,
@@ -310,6 +310,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
 }) {
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const q = query.trim();
   // Expanded while focused OR while a query survives focus loss (results
   // must stay clickable); collapses once the field is empty and blurred.
@@ -337,6 +338,32 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
     setQuery('');
   };
   const searchOpen = q.length > 0;
+  // One row-end icon control with two explicit modes (desktop compact search
+  // parity): + opens the create menu while collapsed; × cancels search —
+  // clears the query, releases focus and collapses — while expanded.
+  const cancelSearch = () => {
+    setQuery('');
+    setSearchFocused(false);
+    searchInputRef.current?.blur();
+  };
+
+  // While results are open the Popover's DismissableLayer swallows Escape at
+  // the document capture phase, before React's root listener sees it. Listen
+  // on the window (capture runs window -> document) so search cancel wins.
+  useEffect(() => {
+    if (!searchExpanded) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        event.stopPropagation();
+        event.preventDefault();
+        cancelSearch();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+    // cancelSearch is a stable closure over the two setters + ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchExpanded]);
 
   return (
     <aside className="sk-conv-rail" aria-label="聊天导航">
@@ -387,33 +414,40 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
                 </div>
               </div>
             }>
-            <div className={`sk-conv-search-anchor${searchExpanded ? ' is-expanded' : ''}`}>
+            <div className={`sk-conv-search-anchor${searchExpanded ? ' is-expanded' : ''}`}
+              onMouseDown={event => {
+                // Collapsed tile: focus the (zero-width) field so a click on
+                // the magnifier expands search instead of doing nothing.
+                if (!searchExpanded) {
+                  event.preventDefault();
+                  searchInputRef.current?.focus();
+                }
+              }}>
               <Search size={15} className="sf-leading" aria-hidden="true" />
-              <input className="sk-conv-search-input" type="search"
+              <input ref={searchInputRef} className="sk-conv-search-input" type="search"
                 value={query}
                 onChange={event => setQuery(event.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setSearchFocused(false)}
                 placeholder="搜索联系人、群聊、会话" aria-label="聊天搜索" />
-              {q && (
-                <button type="button" className="sk-conv-search-clear" aria-label="清除搜索"
-                  onMouseDown={event => event.preventDefault()}
-                  onClick={() => { setQuery(''); setSearchFocused(true); }}>
-                  <X size={13} />
-                </button>
-              )}
             </div>
           </Popover>
         </div>
 
         <div className="sk-conv-new">
-          <Menu placement="bottom" actions={[
-            { id: 'sk.new-person', label: '找人', leading: <UserPlus size={14} />, onActivate: onFindPeople },
-            { id: 'sk.new-group', label: '创建群聊', leading: <Users size={14} />, onActivate: onCreateGroup },
-          ]}>
-            <Button actionId="sk.new-menu" emphasis="secondary" density="compact"
-              leading={<Plus size={16} />} aria-label="新建" label="" />
-          </Menu>
+          {searchExpanded ? (
+            <Button actionId="sk.search-cancel" emphasis="secondary" density="compact"
+              leading={<X size={16} />} aria-label="取消搜索" label=""
+              onClick={cancelSearch} />
+          ) : (
+            <Menu placement="bottom" actions={[
+              { id: 'sk.new-person', label: '找人', leading: <UserPlus size={14} />, onActivate: onFindPeople },
+              { id: 'sk.new-group', label: '创建群聊', leading: <Users size={14} />, onActivate: onCreateGroup },
+            ]}>
+              <Button actionId="sk.new-menu" emphasis="secondary" density="compact"
+                leading={<Plus size={16} />} aria-label="新建" label="" />
+            </Menu>
+          )}
         </div>
       </header>
 

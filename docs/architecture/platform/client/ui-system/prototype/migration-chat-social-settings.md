@@ -183,8 +183,8 @@ Social / Moments：
 - [x] 20 人审后回归 desktop 布局事实：会话/联系人轨移回左侧（早期北极为右轨）；
       消息/联系人/搜索/新建收为水平单行，搜索为紧凑图标钮、聚焦动画展开吃掉 tab 空间；
       结果联系人在前聊天在后、两组空态虚线 tips；消息行头像与气泡顶对齐（修 flex-end 错位）、
-      时间移到气泡外 meta 行；合同 chat-catalog.md/chat-conversation-frame.md 增补；
-      门禁 101/101 动态场景（consumer 18/18）
+      时间移到气泡外 meta 行；行尾钮全图标单钮双态（收起 ＋新建 / 展开 ✕取消搜索，Esc 同效）；
+      合同 chat-catalog.md/chat-conversation-frame.md 增补；门禁 101/101 动态场景（consumer 18/18）
 
 ### 5.4 决策（2026-10-31 已确认）
 
