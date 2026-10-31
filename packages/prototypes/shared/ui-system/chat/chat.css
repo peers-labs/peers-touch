@@ -1,0 +1,135 @@
+/* ChatFeature — chats/contacts catalog + conversation surface.
+   Reuses .sk-conv-* material classes; layout lives here. */
+
+.sk-feed.is-chat { padding: 0; overflow: hidden; }
+
+.sk-chat-feature {
+  flex: 1; min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+.sk-chat-main { min-width: 0; min-height: 0; display: flex; }
+.sk-chat-main > * { flex: 1; min-width: 0; }
+.sk-chat-placeholder {
+  display: grid; place-items: center; height: 100%;
+}
+
+/* rail sub-navigation */
+.sk-chat-subnav.pt-segmented { width: 100%; }
+.sk-subnav-label { display: inline-flex; align-items: center; gap: 5px; }
+
+/* session row extensions */
+.sk-conv-row .pt-badge,
+.sk-conv-row .sk-rail-avatars { flex-shrink: 0; }
+.sk-rail-avatars { gap: 0 !important; }
+.sk-rail-avatars .pt-avatar {
+  margin-left: -10px;
+  box-shadow: 0 0 0 2px var(--sk-card-bg);
+}
+.sk-rail-avatars .pt-avatar:first-child { margin-left: 0; }
+.sk-conv-name-line {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.sk-conv-flags { display: inline-flex; align-items: center; gap: 4px; color: var(--sk-text-3); flex-shrink: 0; }
+.sk-conv-preview {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+}
+.sk-conv-last {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1;
+}
+.sk-conv-item { position: relative; }
+.sk-conv-actions {
+  position: absolute; right: 10px; bottom: 8px; display: flex; gap: 2px;
+  background: color-mix(in srgb, var(--sk-card-bg) 88%, transparent);
+  border-radius: 8px; padding: 2px; opacity: 0; transition: opacity .12s;
+}
+.sk-conv-item:hover .sk-conv-actions,
+.sk-conv-item:focus-within .sk-conv-actions { opacity: 1; }
+.sk-conv-state {
+  border: 0; background: transparent; padding: 3px; line-height: 0; cursor: pointer;
+  color: var(--sk-text-3); border-radius: 6px; flex-shrink: 0;
+}
+.sk-conv-state:hover { color: var(--sk-primary); background: color-mix(in srgb, var(--sk-primary) 10%, transparent); }
+.sk-conv-preview time { font-size: 10.5px; color: var(--sk-text-3); flex-shrink: 0; }
+.sk-conv-item:hover .sk-conv-preview time { visibility: hidden; }
+
+/* unified search popover */
+.sk-conv-search-anchor { position: relative; }
+.sk-conv-search-input {
+  width: 100%; box-sizing: border-box; height: 38px;
+  border: 0; background: transparent; padding: 0 12px 0 34px;
+  font-family: inherit; font-size: 13px; color: var(--sk-text); outline: none;
+}
+.sk-conv-search-anchor > .sf-leading { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 1; }
+.sk-search-pop {
+  width: 288px; max-height: 340px; overflow: auto;
+  padding: 6px; display: flex; flex-direction: column; gap: 8px;
+}
+.sk-search-group { display: flex; flex-direction: column; gap: 2px; }
+.sk-search-group-title {
+  font-size: 10.5px; font-weight: 650; letter-spacing: .08em;
+  color: var(--sk-text-3); padding: 4px 8px;
+}
+.sk-search-row {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  border: 0; background: transparent; border-radius: 10px; padding: 7px 9px;
+  cursor: pointer; font-family: inherit; text-align: left;
+}
+.sk-search-row:hover { background: var(--pt-subtle, color-mix(in srgb, var(--sk-text) 6%, transparent)); }
+.sk-search-row strong { font-size: 12.5px; color: var(--sk-text); }
+.sk-search-row > span:last-child {
+  margin-left: auto; font-size: 11px; color: var(--sk-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;
+}
+
+/* contacts: requests + list */
+.sk-contacts { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.sk-request-card {
+  display: flex; gap: 10px; padding: 11px 8px; margin: 0 2px;
+  border-radius: var(--sk-radius-control);
+}
+.sk-request-card + .sk-request-card { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-request-id { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
+.sk-request-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sk-request-name strong { font-size: 13px; color: var(--sk-text); }
+.sk-request-greeting { font-size: 11.5px; color: var(--sk-text-3); line-height: 1.5; }
+.sk-request-actions { display: flex; gap: 8px; margin-top: 2px; }
+
+/* contact detail */
+.sk-contact-detail {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  justify-content: center; padding: 32px; text-align: center;
+}
+.sk-contact-detail h2 { margin: 4px 0 0; font-size: 20px; color: var(--sk-text); }
+.sk-contact-station {
+  font-size: 12px; color: var(--sk-text-3);
+  background: var(--sk-tile); border-radius: 999px; padding: 3px 12px;
+}
+.sk-contact-bio { margin: 0 0 8px; font-size: 13px; color: var(--sk-text-2); }
+
+/* create group dialog */
+.sk-group-dialog { display: flex; flex-direction: column; gap: 12px; }
+.sk-group-members {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  max-height: 240px; overflow: auto; padding: 4px;
+}
+.sk-group-member {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px; border-radius: 10px; cursor: pointer;
+  font-size: 12.5px; color: var(--sk-text);
+}
+.sk-group-member:hover { background: var(--sk-tile); }
+
+/* stream: group sender + service messages */
+.sk-msg-col { display: flex; flex-direction: column; gap: 3px; max-width: 76%; }
+.sk-msg-sender { font-size: 11px; color: var(--sk-text-3); padding-left: 4px; }
+.sk-msg-service { display: flex; justify-content: center; margin: 8px 0; }
+.sk-msg-service span {
+  font-size: 11px; color: var(--sk-text-3);
+  background: color-mix(in srgb, var(--sk-text) 6%, transparent);
+  border-radius: 999px; padding: 3px 12px;
+}
+
+@media (max-width: 1040px) {
+  .sk-chat-feature { grid-template-columns: minmax(0, 1fr); }
+}

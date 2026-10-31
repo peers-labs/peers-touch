@@ -15,12 +15,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
   Search, MessageCircle, Sparkles, Settings,
-  Upload, ImageIcon, X, UserPlus, MessagesSquare,
+  Upload, ImageIcon, X,
   type LucideIcon,
 } from 'lucide-react';
-import { Avatar, Badge, Button, Dialog, Empty, IconButton, TextArea, UIProvider } from '@peers-touch/ui';
+import { UIProvider } from '@peers-touch/ui';
 import { MomentsFeature } from './moments/MomentsFeature';
 import { SettingsFeature } from './settings/SettingsFeature';
+import { ChatFeature } from './chat/ChatFeature';
 import './design-directions.css';
 
 type Skin = { id: string; name: string; desc: string };
@@ -112,192 +113,6 @@ const SEARCHFIELD_STATES: { id: string; name: string; expect: string }[] = [
   { id: 'long', name: '长占位', expect: '超长文本省略号截断，不撑破宿主、无横向溢出' },
 ];
 
-/* Increment 1 — ConversationRail (chat/social), composed from peers-ui.
-   Real desktop source: pages/SocialChatPage.tsx. AI chat is explicitly out
-   of scope. Fixtures are local; no station/runtime wiring. */
-type Conversation = {
-  id: string; name: string; last: string; unread: number; tone: string; kind: 'person' | 'group';
-};
-const CONVERSATIONS: Conversation[] = [
-  { id: 'cv-chenyu', name: '陈屿', last: '[图片]', unread: 1, tone: '#3f6550', kind: 'person' },
-  { id: 'cv-qun', name: '小区生活群', last: '周禾：周末书架见', unread: 0, tone: '#a1824b', kind: 'group' },
-  { id: 'cv-linwan', name: '林晚', last: '诗集散会我帮你留了位置', unread: 2, tone: '#4a6170', kind: 'person' },
-  { id: 'cv-suhe', name: '苏禾', last: '薄荷分盆成功了，谢谢你', unread: 0, tone: '#5d5a44', kind: 'person' },
-  { id: 'cv-zhouhe', name: '周禾', last: '共享书架今日开放', unread: 0, tone: '#3f6550', kind: 'person' },
-  { id: 'cv-linnan', name: 'lin · 连南', last: '两跳外的连接已建立', unread: 0, tone: '#4a6170', kind: 'person' },
-  { id: 'cv-seed', name: '种子交换群', last: '本周日种子交换，记得来', unread: 0, tone: '#a1824b', kind: 'group' },
-  { id: 'cv-ops', name: '联邦运维', last: '关注站点已可互发动态', unread: 0, tone: '#6f8fa6', kind: 'group' },
-];
-
-function ConversationRail({
-  conversations, selectedId, onSelect, onNew,
-}: {
-  conversations: Conversation[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onNew: () => void;
-}) {
-  const [query, setQuery] = useState('');
-  const filtered = conversations.filter(c =>
-    `${c.name} ${c.last}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return (
-    <aside className="sk-conv-rail" aria-label="会话列表">
-      <div className="sk-conv-search">
-        <SearchField value={query} onValueChange={setQuery} placeholder="搜索联系人、站点" />
-      </div>
-      <div className="sk-conv-new">
-        <Button actionId="sk.new-conversation" emphasis="primary" fullWidth
-          leading={<UserPlus size={15} />} label="新建会话" onActivate={onNew} />
-      </div>
-      <h2 className="sk-conv-title">最近对话{query ? ` · 筛选“${query}”` : ''}</h2>
-      <ul className="sk-conv-list">
-        {filtered.map(c => (
-          <li key={c.id}>
-            <button type="button"
-              className={`sk-conv-row${selectedId === c.id ? ' is-selected' : ''}`}
-              aria-current={selectedId === c.id ? 'true' : undefined}
-              onClick={() => onSelect(c.id)}>
-              <Badge count={c.unread} label={`${c.unread} 条未读`}>
-                <Avatar name={c.name} background={c.tone} size={38}
-                  style={{ borderRadius: 'var(--sk-avatar-radius)' }}
-                  aria-label={c.kind === 'group' ? `群 ${c.name}` : c.name} />
-              </Badge>
-              <span className="sk-conv-meta">
-                <strong>{c.name}</strong>
-                <span>{c.last}</span>
-              </span>
-            </button>
-          </li>
-        ))}
-        {filtered.length === 0 && (
-          <li className="sk-conv-empty">
-            <Empty description="没有匹配的会话" />
-          </li>
-        )}
-      </ul>
-    </aside>
-  );
-}
-
-/* Increment 2 — ConversationView: message stream + composer, composed from
-   peers-ui. Calls/attachments/thread/detail panels from the legacy
-   SocialChatPage are explicitly deferred; this is human 1:1/group text only. */
-type ChatMessage = { id: string; from: 'me' | 'peer'; text: string; at: string };
-
-const SEED_MESSAGES: Record<string, ChatMessage[]> = {
-  'cv-chenyu': [
-    { id: 'm1', from: 'peer', text: '周末种子交换你要来吗？我带了上次说的番茄籽。', at: '09:21' },
-    { id: 'm2', from: 'me', text: '来，我把薄荷分一盆给你。', at: '09:24' },
-    { id: 'm3', from: 'peer', text: '[图片]', at: '09:25' },
-  ],
-  'cv-qun': [
-    { id: 'm1', from: 'peer', text: '周禾：周末书架见，记得带想交换的书。', at: '昨天' },
-  ],
-  'cv-linwan': [
-    { id: 'm1', from: 'peer', text: '诗集散会我帮你留了位置。', at: '08:40' },
-  ],
-};
-
-function ConversationView({ conversation, messages, onSend }: {
-  conversation: Conversation;
-  messages: ChatMessage[];
-  onSend: (text: string) => void;
-}) {
-  const [draft, setDraft] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, conversation.id]);
-
-  const send = () => {
-    const text = draft.trim();
-    if (!text) return;
-    onSend(text);
-    setDraft('');
-  };
-  const onEnter = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    e.preventDefault();
-    send();
-  };
-
-  return (
-    <section className="sk-conv-view" aria-label={`与 ${conversation.name} 的对话`}>
-      <div className="sk-msg-stream" ref={scrollRef}>
-        {messages.map(m => (
-          <div key={m.id} className={`sk-msg sk-msg-${m.from}`}>
-            {m.from === 'peer' && (
-              <Avatar name={conversation.name} background={conversation.tone} size={32}
-                className="sk-msg-avatar" style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
-            )}
-            <div className="sk-msg-bubble">
-              <p>{m.text}</p>
-              <time>{m.at}</time>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="sk-composer">
-        <TextArea framing="embedded" minimumRows={1} maximumRows={4}
-          className="sk-composer-input" value={draft} aria-label="输入消息"
-          data-composer-value={draft}
-          placeholder={`发消息给 ${conversation.name}`}
-          onValueChange={setDraft} onEnter={onEnter} />
-        <IconButton iconId="send" iconSize={16} label="发送消息"
-          actionId="sk.send-message" emphasis="primary"
-          availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入消息' }}
-          onActivate={send} />
-      </div>
-    </section>
-  );
-}
-
-/* Increment 3 — start conversation / contact picker (peers-ui Dialog). */
-const EXTRA_PEOPLE: Conversation[] = [
-  { id: 'cv-ayan', name: '阿砚', last: '还没聊过', unread: 0, tone: '#7a6a92', kind: 'person' },
-  { id: 'cv-laozhou', name: '老周', last: '还没聊过', unread: 0, tone: '#8a7a55', kind: 'person' },
-];
-
-function ContactPickerDialog({ open, people, existingIds, onDismiss, onPick }: {
-  open: boolean;
-  people: Conversation[];
-  existingIds: Set<string>;
-  onDismiss: () => void;
-  onPick: (person: Conversation) => void;
-}) {
-  const [query, setQuery] = useState('');
-  useEffect(() => { if (open) setQuery(''); }, [open]);
-  const filtered = people.filter(p => p.name.toLowerCase().includes(query.trim().toLowerCase()));
-
-  return (
-    <Dialog open={open} onDismiss={onDismiss} title="新建会话"
-      description="选择一位联系人开始对话（本地示例）" width={420}
-      closeLabel="关闭"
-      footer={<Button actionId="sk.picker-cancel" emphasis="quiet" label="取消" onActivate={onDismiss} />}>
-      <div className="sk-picker">
-        <SearchField value={query} onValueChange={setQuery} placeholder="搜索联系人" />
-        <ul className="sk-picker-list">
-          {filtered.map(p => (
-            <li key={p.id}>
-              <button type="button" className="sk-picker-row" onClick={() => onPick(p)}>
-                <Avatar name={p.name} background={p.tone} size={36}
-                  style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={p.name} />
-                <span className="sk-conv-meta">
-                  <strong>{p.name}</strong>
-                  <span>{existingIds.has(p.id) ? '最近对话' : '新联系人'}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-          {filtered.length === 0 && (
-            <li className="sk-conv-empty"><Empty description="没有匹配的联系人" /></li>
-          )}
-        </ul>
-      </div>
-    </Dialog>
-  );
-}
 
 export function DesignDirections() {
   const [skinId, setSkinId] = useState('glass');
@@ -305,44 +120,10 @@ export function DesignDirections() {
   const [wallName, setWallName] = useState<string>('无背景');
   const [railTab, setRailTab] = useState<RailTab>('search');
   const [liveQuery, setLiveQuery] = useState('');
-  const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS);
-  const [selectedConv, setSelectedConv] = useState<string | null>(null);
-  const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>(SEED_MESSAGES);
-  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const selectedConversation = conversations.find(c => c.id === selectedConv) ?? null;
-
-  const openConversation = (id: string) => {
-    setRailTab('chat');
-    setSelectedConv(id);
-    setConversations(list => list.map(c => (c.id === id ? { ...c, unread: 0 } : c)));
-  };
-  const newConversation = () => {
-    setRailTab('chat');
-    setSelectedConv(null);
-    setPickerOpen(true);
-  };
-  const pickPerson = (person: Conversation) => {
-    setPickerOpen(false);
-    setConversations(list => (list.some(c => c.id === person.id)
-      ? list
-      : [person, ...list]));
-    openConversation(person.id);
-  };
-  const sendMessage = (text: string) => {
-    if (!selectedConv) return;
-    const now = new Date();
-    const at = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const msg: ChatMessage = {
-      id: `local-${Date.now()}`, from: 'me', text, at,
-    };
-    setMessagesByConv(map => ({ ...map, [selectedConv]: [...(map[selectedConv] ?? []), msg] }));
-  };
   const isChat = railTab === 'chat';
 
   const skin = SKINS.find(s => s.id === skinId) ?? SKINS[0];
-  const peoplePool = [...EXTRA_PEOPLE, ...conversations];
-  const existingIds = new Set(conversations.map(c => c.id));
 
   const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -428,36 +209,24 @@ export function DesignDirections() {
           </div>
         </nav>
 
-        <main className="sk-feed">
-          <header className="sk-feed-head">
-            <div className="sk-head-title">
-              <span className="sk-eyebrow">
-                {isChat ? '消息'
-                  : railTab === 'moments' ? '社交 · 动态'
+        <main className={`sk-feed${isChat ? ' is-chat' : ''}`}>
+          {!isChat && (
+            <header className="sk-feed-head">
+              <div className="sk-head-title">
+                <span className="sk-eyebrow">
+                  {railTab === 'moments' ? '社交 · 动态'
                     : railTab === 'settings' ? '偏好与配置' : '组件训练'}
-              </span>
-              <h1>
-                {isChat
-                  ? (selectedConversation ? selectedConversation.name : '消息')
-                  : railTab === 'moments' ? '朋友圈动态'
+                </span>
+                <h1>
+                  {railTab === 'moments' ? '朋友圈动态'
                     : railTab === 'settings' ? '设置' : 'SearchField · 搜索框'}
-              </h1>
-            </div>
-          </header>
+                </h1>
+              </div>
+            </header>
+          )}
 
           {isChat ? (
-            selectedConversation ? (
-              <ConversationView
-                conversation={selectedConversation}
-                messages={messagesByConv[selectedConversation.id] ?? []}
-                onSend={sendMessage} />
-            ) : (
-              <div className="sk-conversation">
-                <Empty className="sk-conversation-empty"
-                  icon={<MessagesSquare size={28} strokeWidth={1.5} />}
-                  description="从左侧选择一个会话，或新建会话" />
-              </div>
-            )
+            <ChatFeature />
           ) : railTab === 'moments' ? (
             <MomentsFeature />
           ) : railTab === 'settings' ? (
@@ -509,14 +278,7 @@ export function DesignDirections() {
             </div>
           )}
         </main>
-
-        {isChat && (
-          <ConversationRail conversations={conversations}
-            selectedId={selectedConv} onSelect={openConversation} onNew={newConversation} />
-        )}
       </div>
-      <ContactPickerDialog open={pickerOpen} people={peoplePool} existingIds={existingIds}
-        onDismiss={() => setPickerOpen(false)} onPick={pickPerson} />
       </UIProvider>
     </div>
   );
