@@ -17,6 +17,7 @@ import { SettingsRow, SettingsSection } from './SettingsPrimitives';
 import { AccountSection } from './sections/AccountSection';
 import { SecuritySection } from './sections/SecuritySection';
 import { HelpSection } from './sections/HelpSection';
+import { DataSection } from './sections/DataSection';
 import './settings.css';
 
 export type SettingsGroup = 'general' | 'tools' | 'channels' | 'applets' | 'data' | 'help';
@@ -183,6 +184,8 @@ export function SettingsFeature() {
                     setGroup(targetGroup);
                     setSection(targetSection);
                   }} />
+                ) : activeSection.key === 'storage' || activeSection.key === 'files' || activeSection.key === 'logs' ? (
+                  <DataSection section={activeSection.key} />
                 ) : (
                   <section className="sk-settings-section sk-settings-pending" aria-label={activeSection.label}>
                     <Empty className="sk-settings-empty"

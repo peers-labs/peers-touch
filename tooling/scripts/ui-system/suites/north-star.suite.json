@@ -679,9 +679,104 @@
         { "op": "click", "target": "[data-help-target='storage']" }
       ],
       "oracles": [
-        { "id": "jumped-to-data", "type": "textContains", "target": ".sk-settings-scroll", "contains": "增量 8" },
+        { "id": "jumped-to-data", "type": "textContains", "target": ".sk-settings-scroll", "contains": "存储用量" },
         { "id": "data-group-active", "type": "count", "target": ".sk-settings-group.is-active", "equals": 1 },
         { "id": "storage-section-active", "type": "attr", "target": ".sk-settings-nav-item:nth-child(1)", "attr": "aria-current", "equals": "page" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-storage",
+      "title": "增量8 聊天存储：用量4格、留存4选、清缓存两段确认、6 会话表与搜索过滤",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(5)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(1)" }
+      ],
+      "oracles": [
+        { "id": "usage-cells", "type": "count", "target": ".sk-usage-cell", "equals": 4 },
+        { "id": "retention-options", "type": "count", "target": "[aria-label='消息留存'] .pt-button", "equals": 4 },
+        { "id": "clear-button", "type": "exists", "target": "[data-action-id='storage.clear-open']" },
+        { "id": "six-rows-plus-head", "type": "count", "target": ".sk-storage-row", "equals": 7 },
+        { "id": "craft-clean", "type": "craftBattery" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-storage-filter",
+      "title": "会话存储搜索过滤与选中批量条：选中 1 行后出现批量管理条",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(5)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(1)" },
+        { "op": "click", "target": ".sk-storage-table .sk-storage-row:nth-child(3) input[type='checkbox']" },
+        { "op": "type", "target": ".sk-storage-toolbar input", "value": "群" }
+      ],
+      "oracles": [
+        { "id": "filtered", "type": "count", "target": ".sk-storage-row:not(.is-head)", "equals": 1 },
+        { "id": "batch-bar", "type": "exists", "target": ".sk-batch-bar" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-storage-batch",
+      "title": "批量清理：全选→确认→进度条→行删除到 0；清缓存确认后释放",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(5)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(1)" },
+        { "op": "click", "target": "[data-action-id='storage.clear-open']" },
+        { "op": "click", "target": "[data-action-id='storage.clear-apply']" },
+        { "op": "click", "target": ".sk-storage-table .sk-storage-row:nth-child(3) input[type='checkbox']" },
+        { "op": "click", "target": ".sk-batch-bar input[type='checkbox']" },
+        { "op": "click", "target": "[data-action-id='storage.batch-open']" },
+        { "op": "clickGlobal", "target": "[data-action-id='storage.batch-confirm']" },
+        { "op": "wait", "ms": 2600 }
+      ],
+      "oracles": [
+        { "id": "cache-zero", "type": "attr", "target": "[data-cache-mb]", "attr": "data-cache-mb", "equals": "0" },
+        { "id": "all-deleted", "type": "count", "target": ".sk-storage-row:not(.is-head)", "equals": 0 },
+        { "id": "empty-state", "type": "textContains", "target": ".sk-settings-scroll", "contains": "没有匹配的会话" },
+        { "id": "table-gone", "type": "missing", "target": ".sk-storage-table" },
+        { "id": "batch-done", "type": "textContains", "target": ".sk-settings-scroll", "contains": "已清理 6 个会话" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-files",
+      "title": "文件：3 文件表；上传对话框提交后变 4；删除行后变 2",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(5)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(2)" },
+        { "op": "click", "target": "[data-action-id='files.upload-open']" },
+        { "op": "type", "scope": "global", "target": "input.sk-upload-name", "value": "夜跑路线.kml" },
+        { "op": "type", "scope": "global", "target": ".sk-upload-dialog [aria-label='存储桶']", "value": "notes" },
+        { "op": "clickGlobal", "target": "[data-action-id='files.upload-submit']" }
+      ],
+      "oracles": [
+        { "id": "four-files", "type": "count", "target": ".sk-storage-row:not(.is-head)", "equals": 4 },
+        { "id": "first-new-file", "type": "textContains", "target": ".sk-storage-row:nth-child(2)", "contains": "夜跑路线" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-logs",
+      "title": "日志：默认 info/warn/error 共 6 行；过滤后 1 行；打开 TRACE 后多 1 行",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(5)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(3)" },
+        { "op": "type", "target": "input.sk-log-filter-input", "value": "qrcode" },
+        { "op": "click", "target": ".sk-log-toolbar .sk-log-filter.is-trace" }
+      ],
+      "oracles": [
+        { "id": "trace-on", "type": "attr", "target": ".sk-log-toolbar .sk-log-filter.is-trace", "attr": "aria-pressed", "equals": "true" }
       ],
       "finalizers": []
     }

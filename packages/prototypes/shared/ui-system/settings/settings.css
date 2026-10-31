@@ -244,3 +244,82 @@
   .sk-settings-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .sk-settings-row-control { justify-content: flex-start; }
 }
+
+/* ── Data: storage / files / logs ───────────────────────── */
+.sk-usage-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+}
+.sk-usage-cell {
+  display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  padding: 10px 12px; border-radius: var(--sk-radius-control);
+  background: var(--sk-tile);
+}
+.sk-usage-cell span { font-size: 11.5px; color: var(--sk-text-3); }
+.sk-usage-cell strong { font-size: 17px; color: var(--sk-text); font-variant-numeric: tabular-nums; }
+.sk-usage-cell.is-total { background: color-mix(in srgb, var(--sk-primary) 9%, transparent); }
+.sk-inline-status { font-size: 12px; }
+.sk-inline-status.is-ok { color: #2f9e5e; }
+
+.sk-inline-confirm {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.sk-inline-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.sk-storage-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.sk-storage-toolbar .pt-field-frame { width: 240px; }
+.sk-batch-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; margin-bottom: 10px; border-radius: var(--sk-radius-control);
+  background: color-mix(in srgb, var(--sk-primary) 8%, transparent);
+}
+.sk-batch-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.sk-batch-progress .pt-progress { flex: 1; }
+
+.sk-storage-table { display: flex; flex-direction: column; }
+.sk-storage-row {
+  display: grid; grid-template-columns: 26px minmax(0, 1.7fr) 52px .7fr .7fr .8fr auto;
+  align-items: center; gap: 10px; padding: 9px 6px; font-size: 12.5px; color: var(--sk-text-2);
+}
+.sk-storage-row + .sk-storage-row { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-storage-row.is-head { font-size: 11px; color: var(--sk-text-3); padding-bottom: 6px; }
+.sk-storage-name {
+  font-weight: 550; color: var(--sk-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-storage-row strong { color: var(--sk-text); font-variant-numeric: tabular-nums; }
+.sk-storage-op { display: inline-flex; align-items: center; gap: 2px; justify-content: flex-end; }
+
+.sk-files-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+/* Files table has no checkbox column: name leads the grid. */
+.sk-files-toolbar + .sk-storage-table .sk-storage-row,
+.sk-files-toolbar ~ .sk-storage-table .sk-storage-row {
+  grid-template-columns: minmax(0, 2fr) 76px .7fr .9fr auto;
+}
+.sk-upload-dialog { display: flex; flex-direction: column; gap: 12px; }
+.sk-upload-pick { display: flex; gap: 10px; align-items: center; }
+.sk-upload-pick .pt-field-frame { flex: 1; }
+
+.sk-log-toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.sk-log-filter {
+  border: 1px solid var(--sk-card-border); background: var(--sk-tile);
+  border-radius: 999px; padding: 3px 11px; font-size: 11px; font-weight: 600;
+  color: var(--sk-text-3); cursor: pointer; font-family: inherit; letter-spacing: .04em;
+}
+.sk-log-filter.is-on { color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg); border-color: transparent; }
+.sk-log-filter.is-on.is-warn { background: #b9802f; }
+.sk-log-filter.is-on.is-error { background: #b0413a; }
+.sk-log-list {
+  margin-top: 10px; border-radius: var(--sk-radius-control); background: var(--sk-tile);
+  padding: 8px 12px; display: flex; flex-direction: column; gap: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.sk-log-line { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--sk-text-2); }
+.sk-log-line code { color: var(--sk-text-3); }
+.sk-log-line.is-warn { color: #9a6a1f; }
+.sk-log-line.is-error { color: #a23b35; }
+
+@media (max-width: 760px) {
+  .sk-usage-grid { grid-template-columns: repeat(2, 1fr); }
+  .sk-storage-row { grid-template-columns: 24px 1fr auto; row-gap: 4px; }
+  .sk-storage-row.is-head { display: none; }
+  .sk-storage-row > :nth-child(n+3) { font-size: 11.5px; }
+}
