@@ -321,6 +321,18 @@ capabilities:
     forbidden_aliases: []
     superseded_symbols: []
 
+  - id: agent.provider.model.verify
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/model/verify }
+    request_proto: peers_touch.model.agent.v1.VerifyProviderModelRequest
+    response_proto: peers_touch.model.agent.v1.VerifyProviderModelResponse
+    truth_stores: []
+    allowed_dependencies: [dashboard.admin_session.validate, agent.provider.access.get]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: federation.management.list
     domain_owner: station.federation
     truth_owner: federation.membership

@@ -2,11 +2,15 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -35,6 +39,7 @@ type ProviderManagementPort interface {
 	Install(context.Context, *model.InstallProviderRequest) (*model.InstallProviderResponse, error)
 	InstallStatus(context.Context, *model.ProviderInstallStatusRequest) (*model.ProviderInstallStatusResponse, error)
 	Discover(context.Context, ProviderOwner, string) (*model.DiscoverProviderModelsResponse, error)
+	VerifyModel(context.Context, *model.VerifyProviderModelRequest) (*model.VerifyProviderModelResponse, error)
 }
 
 type ProviderManagementService struct {
@@ -44,6 +49,47 @@ type ProviderManagementService struct {
 	runtimeModels *RuntimeModelCatalog
 	discovery     *ProviderModelDiscoveryService
 	installer     *managed.Manager
+	calls         *ProviderService
+}
+
+func (s *ProviderManagementService) SetProviderService(calls *ProviderService) {
+	s.calls = calls
+}
+
+func (s *ProviderManagementService) VerifyModel(ctx context.Context, req *model.VerifyProviderModelRequest) (*model.VerifyProviderModelResponse, error) {
+	if req == nil || strings.TrimSpace(req.ProviderId) == "" || strings.TrimSpace(req.ModelId) == "" || strings.TrimSpace(req.ActorPtid) == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider, model and an authorized user are required", nil)
+	}
+	provider, err := s.providers.ResolveForActor(ctx, req.ActorPtid, req.ProviderId, req.ModelId)
+	if err != nil {
+		return nil, err
+	}
+	if providerOwner(provider) != StationProviderOwner() {
+		return nil, errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "verification requires a shared provider", nil)
+	}
+	if s.calls == nil {
+		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusServiceUnavailable, "model verification is unavailable", nil)
+	}
+	verifyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	result, err := s.calls.Call(verifyCtx, &ProviderCallRequest{
+		ProviderID: provider.ID, ProviderType: provider.Name, Model: req.ModelId, UserID: req.ActorPtid,
+		Messages: []domain.Message{{Role: domain.MessageRoleUser, Content: "Reply with OK."}}, MaxOutputTokens: 256,
+	})
+	if err != nil {
+		var business *errcode.BizError
+		if errors.As(err, &business) && (business.Code == errcode.AgentSecurityViolation ||
+			business.Code == errcode.AgentProviderDisabled || business.Code == errcode.AgentInvalidRequest) {
+			return nil, err
+		}
+		// Vendor response bodies and CLI stderr are not control-plane read data.
+		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway, "model invocation failed; check the provider connection and account", nil)
+	}
+	if result == nil || strings.TrimSpace(result.Content) == "" {
+		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway, "model returned no text response", nil)
+	}
+	return &model.VerifyProviderModelResponse{ResponseReceived: true, ProviderId: req.ProviderId,
+		ModelId: req.ModelId, ObservedAt: timestamppb.Now()}, nil
 }
 
 func NewProviderManagementService(providers *ProviderConfigService, models *ModelConfigService,
@@ -391,15 +437,26 @@ func (s *ProviderManagementService) Policy(ctx context.Context) (*model.GetProvi
 	if err != nil {
 		return nil, err
 	}
-	return &model.GetProviderPolicyResponse{Policy: &model.ProviderPolicy{PersonalProvidersEnabled: policy.PersonalProvidersEnabled, Revision: policy.Revision}}, nil
+	result, err := providerPolicyProto(policy)
+	return &model.GetProviderPolicyResponse{Policy: result}, err
 }
 
 func (s *ProviderManagementService) SetPolicy(ctx context.Context, req *model.SetProviderPolicyRequest) (*model.SetProviderPolicyResponse, error) {
-	policy, err := s.providers.SetPolicy(ctx, req.GetPersonalProvidersEnabled(), req.GetRevision())
+	policy, err := s.providers.SetPolicy(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	return &model.SetProviderPolicyResponse{Policy: &model.ProviderPolicy{PersonalProvidersEnabled: policy.PersonalProvidersEnabled, Revision: policy.Revision}}, nil
+	result, err := providerPolicyProto(policy)
+	return &model.SetProviderPolicyResponse{Policy: result}, err
+}
+
+func providerPolicyProto(policy *persistence.ProviderPolicy) (*model.ProviderPolicy, error) {
+	actors := []string{}
+	if err := json.Unmarshal([]byte(policy.AIActorPTIDs), &actors); err != nil {
+		return nil, err
+	}
+	return &model.ProviderPolicy{PersonalProvidersEnabled: policy.PersonalProvidersEnabled, Revision: policy.Revision,
+		AiUserAccess: &model.AIUserAccess{AllActors: policy.AIAllActors, ActorPtids: actors}}, nil
 }
 
 func (s *ProviderManagementService) Access(ctx context.Context, providerID string) (*model.GetProviderAccessResponse, error) {

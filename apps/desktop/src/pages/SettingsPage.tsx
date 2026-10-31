@@ -173,7 +173,7 @@ function useTabGroups(): TabGroupDef[] {
         key: 'ai',
         label: t('settings.group.ai'),
         icon: Sparkles,
-        sectionKeys: ['providers', 'models', 'discover', 'memory', 'skills', 'mcp', 'voice'],
+        sectionKeys: ['models', 'discover', 'memory', 'skills', 'mcp', 'voice'],
       },
       {
         key: 'tools',
@@ -415,7 +415,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
         <div
           style={{
             flex: 1,
-            overflowY: activeSection === 'providers' ? 'hidden' : 'auto',
+            overflowY: 'auto',
             overflowX: 'hidden',
             scrollBehavior: 'smooth',
           }}

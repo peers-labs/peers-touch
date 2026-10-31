@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Button, Form, Input, InputNumber, Popconfirm, Select, Switch, Typography } from 'antd';
+import { Alert, Button, Collapse, Form, Input, InputNumber, Popconfirm, Select, Switch, Typography } from 'antd';
 import { ai, type Provider, type RuntimeConfig } from '../api/ai';
 import { useAIStore } from '../store/ai';
 import { useControlPlaneAction } from '../hooks/useControlPlaneAction';
@@ -58,14 +58,19 @@ export default function AIProviderSettings({ provider }: { provider: Provider })
                 value: model.id, label: model.display_name || model.id,
               }))} />
             </Form.Item>
-            {capabilities?.startup_args && <Form.Item name="startup_args" label={t('ai.startupArgs')} extra={t('ai.startupHint')}><Input.TextArea rows={2} /></Form.Item>}
-            {capabilities?.environment && <Form.Item name="environment" label={t('ai.environment')} extra={t('ai.environmentHint')}><Input.TextArea rows={3} /></Form.Item>}
-            {capabilities?.configurable_timeout && <Form.Item name="timeout_seconds" label={t('ai.timeout')}><InputNumber min={0} max={3600} /></Form.Item>}
+            <Collapse ghost items={[{ key: 'runtime', forceRender: true, label: t('ai.advancedConfiguration'), children: <>
+              {capabilities?.startup_args && <Form.Item name="startup_args" label={t('ai.startupArgs')} extra={t('ai.startupHint')}><Input.TextArea rows={2} /></Form.Item>}
+              {capabilities?.environment && <Form.Item name="environment" label={t('ai.environment')} extra={t('ai.environmentHint')}><Input.TextArea rows={3} /></Form.Item>}
+              {capabilities?.configurable_timeout && <Form.Item name="timeout_seconds" label={t('ai.timeout')}><InputNumber min={0} max={3600} /></Form.Item>}
+            </> }]} />
           </>
         )}
         <Button type="primary" loading={busy} onClick={() => void save()}>{t('ai.saveConfiguration')}</Button>
       </Form>
-      <div className="ai-editor-section">
+      {cli && !provider.show_api_key && !provider.api_key_url && !credential?.configured && (
+        <Alert type="warning" showIcon title={t('ai.accountConnectionUnavailable')} />
+      )}
+      {(!cli || provider.show_api_key || provider.api_key_url || credential?.configured) && <div className="ai-editor-section">
         <Typography.Title level={5}>{t('ai.credential')}</Typography.Title>
         <Typography.Paragraph type="secondary">
           {t(credential?.configured ? 'ai.credentialStored' : 'ai.noCredential')}
@@ -74,6 +79,7 @@ export default function AIProviderSettings({ provider }: { provider: Provider })
         <label htmlFor={`credential-${provider.id}`}>{t('ai.apiKey')}</label>
         <Input.Password id={`credential-${provider.id}`} value={key} onChange={(e) => setKey(e.target.value)}
           autoComplete="new-password" placeholder={t('ai.newKey')} />
+        {provider.api_key_url && <Button type="link" href={provider.api_key_url} target="_blank" rel="noopener noreferrer">{t('ai.getKey')}</Button>}
         <div className="ai-actions">
           <Button disabled={!key.trim() || busy} onClick={() => void run(async () => {
             await ai.setCredential(provider.id, key);
@@ -86,7 +92,7 @@ export default function AIProviderSettings({ provider }: { provider: Provider })
             </Popconfirm>
           )}
         </div>
-      </div>
+      </div>}
       {!provider.builtin && <Popconfirm title={t('ai.deleteConfirm')} description={t('ai.deleteHint')}
         onConfirm={() => run(() => ai.remove(provider.id, provider.version))}>
         <Button danger disabled={busy}>{t('ai.delete')}</Button>

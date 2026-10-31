@@ -74,6 +74,34 @@ def settings_section(runner: AgentNativeJourney, section: str) -> None:
     runner.click_visible('[data-pt-secondary-tab="ai"]', "AI Settings")
     runner.click_visible(f'[data-pt-section-item="{section}"]', f"{section} Settings")
 
+def consumer_model_choices(
+    runner: AgentNativeJourney,
+) -> list[dict[str, str]]:
+    """Read the ordinary user's actual model menu and reject management leakage."""
+    settings_section(runner, "models")
+    require(runner.driver.execute_script(
+        """
+        return !document.querySelector('[data-pt-section-item="providers"]')
+          && ![...document.querySelectorAll('input')].some(e =>
+            e.getClientRects().length
+            && /api.?key|base.?url/i.test([e.id,e.placeholder].join(' ')));
+        """
+    ), "ordinary Settings exposes Provider management")
+    runner.click_visible(".pt-model-service-default-select", "default model choices")
+    choices = wait_until(lambda: runner.driver.execute_script(
+        """
+        const options = [...document.querySelectorAll('.pt-model-select-option')]
+          .filter(e => e.getClientRects().length);
+        return options.length ? options.map(e => ({
+          providerId: e.dataset.ptModelProvider, modelId: e.dataset.ptModelId,
+        })) : null;
+        """
+    ), "authorized model choices")
+    runner.driver.find_element(
+        By.CSS_SELECTOR, ".pt-model-service-default-select input",
+    ).send_keys("\ue00c")
+    return choices
+
 
 def select_provider_settings(
     runner: AgentNativeJourney,

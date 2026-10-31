@@ -105,7 +105,7 @@ func TestAIControlPlaneRequiresLiveAdministratorJWT(t *testing.T) {
 		return resp.status
 	}
 	routes := h.aiHandlers()
-	if len(routes) != 18 {
+	if len(routes) != 19 {
 		t.Fatalf("control plane registration count = %d", len(routes))
 	}
 	for _, route := range routes {

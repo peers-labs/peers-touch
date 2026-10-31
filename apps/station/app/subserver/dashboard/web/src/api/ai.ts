@@ -31,6 +31,9 @@ export interface Provider {
   install_state: string;
   install_supported: boolean;
   manual_install_url: string;
+  show_api_key: boolean;
+  api_key_url: string;
+  home_url: string;
 }
 export interface ModelInfo {
   id: string;
@@ -55,7 +58,8 @@ export interface Grant {
   model_id: string;
 }
 export interface Access { provider_id: string; revision: Revision; grants: Grant[] }
-export interface Policy { personal_providers_enabled: boolean; revision: Revision }
+export interface AIUserAccess { all_actors: boolean; actor_ptids: string[] }
+export interface Policy { personal_providers_enabled: boolean; revision: Revision; ai_user_access: AIUserAccess }
 export interface Credential { configured: boolean; status: string; version: Revision }
 export interface Install {
   install_state: string;
@@ -87,6 +91,8 @@ export const ai = {
     display_name?: string; enabled?: boolean; context_window?: number; capabilities?: ModelInfo['capabilities'];
   }) => post('model/update', { provider_id, model_id, version, ...body }),
   discover: (provider_id: string) => post('model/discover', { provider_id }),
+  verify: (provider_id: string, model_id: string, actor_ptid: string) =>
+    post<{ response_received: boolean; observed_at: { seconds: string } }>('model/verify', { provider_id, model_id, actor_ptid }),
   credential: (provider_id: string) => post<{ status: Credential }>('credential/status', { provider_id }),
   setCredential: (provider_id: string, api_key: string) => post('credential/set', { provider_id, api_key }),
   deleteCredential: (provider_id: string, version: Revision) => post('credential/delete', { provider_id, version }),
@@ -101,6 +107,6 @@ export const ai = {
 export function aiError(error: unknown): string {
   const response = (error as { response?: { status?: number; data?: { message?: string; error?: string } } }).response;
   if (response?.status === 409) return t('error.conflict');
-  if (response?.status === 403) return t('error.adminRequired');
+  if (response?.status === 403) return response.data?.message || response.data?.error || t('error.adminRequired');
   return response?.data?.message || response?.data?.error || t('error.retry');
 }

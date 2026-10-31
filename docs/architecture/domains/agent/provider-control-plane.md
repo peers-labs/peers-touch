@@ -19,6 +19,26 @@ the same ID; preferences continue to use `(provider_id, model_id)`. No
 credentials, commands or installation details belong in the ordinary
 consumer projection.
 
+Dashboard presents one Provider editor. DM (Direct Model / HTTP) and CLI are
+connection methods of the same resource; CLI installation appears inside its
+selected Provider, followed by configuration, model verification and grants.
+Installation never becomes an independent product endpoint. Administrators
+retain the familiar Provider configuration fields and model editor.
+
+The Station Provider policy also owns a global AI user allow list, independent
+of per-Provider/model grants. Both must permit an actor before catalog exposure,
+default selection or dispatch. An explicit empty list denies every actor;
+revocation is checked on the next dispatch including tool continuations.
+Existing Stations retain their per-Provider grants when the new global policy
+has not been configured. Updating the personal-provider switch alone preserves
+the global user allow list. Actor policy reads omit that administrator list.
+
+The administrator's actual-call verification names an authorized actor and a
+model, then invokes the same ProviderService used by consumers with a bounded
+short request and no tools. It returns only whether a text response was
+received plus model identity and observation time. It cannot bypass grants,
+return raw vendor response bodies, or serve as a durable availability promise.
+
 Administrators configure an allow list per Provider. Each grant names a model
 or all models and a specific actor PTID or all authenticated actors. No grant
 means no use. Provider disable, model disable and grant revocation are checked
@@ -91,9 +111,10 @@ until an accepted installer is available.
 
 ## Desktop and Federation
 
-Ordinary Desktop Settings exposes authorized Providers and models as read
-only consumption data. Default model and session parameters are personal.
-Personal Provider management is available only under the Station policy.
+Ordinary Desktop Settings exposes models and the account default. Provider
+management has no ordinary Desktop navigation or settings module. Default
+model and session parameters are personal. Existing actor-owned configuration
+remains subject to Station policy through its management contract.
 Installation, shared credential editing and access management have no
 ordinary Desktop command path.
 
@@ -120,6 +141,10 @@ Desktop's app global `model-registry.json` must not remain a default selection
 source. Account switches clear stale projections and discard late responses.
 
 ## Verification obligations
+
+Apply [AC-PRODUCT-01](../../engineering/acceptance/product-acceptance-criteria.md):
+configuration and install output must be consumed by real model execution,
+grants by the client catalog and dispatch, and model results by the user.
 
 Verify only affected functionality: administrator authentication and mutation,
 consumer allow lists, actual shared Provider dispatch, UUID ownership,

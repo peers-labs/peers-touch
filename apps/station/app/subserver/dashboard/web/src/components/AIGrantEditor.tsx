@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Alert, Button, Input, Select, Typography } from 'antd';
+import { Alert, Button, Select, Typography } from 'antd';
 import { Plus, Trash2 } from 'lucide-react';
 import { ai, type Access, type Grant, type Provider } from '../api/ai';
 import { useAIStore } from '../store/ai';
 import { useControlPlaneAction } from '../hooks/useControlPlaneAction';
 import { t } from '../i18n';
+import AIActorSelect from './AIActorSelect';
 
 const EMPTY: Grant = { all_actors: true, actor_ptid: '', all_models: true, model_id: '' };
 export default function AIGrantEditor({ provider, access }: { provider: Provider; access: Access }) {
@@ -31,8 +32,8 @@ export default function AIGrantEditor({ provider, access }: { provider: Provider
           <Select aria-label={t('ai.grantUsers', { index: index + 1 })} value={grant.all_actors ? 'all' : 'actor'}
             options={[{ value: 'all', label: t('ai.allUsers') }, { value: 'actor', label: t('ai.specificUser') }]}
             onChange={(value) => update(index, { all_actors: value === 'all' })} />
-          {!grant.all_actors && <Input aria-label={t('ai.grantActor', { index: index + 1 })} placeholder={t('ai.actorPtid')} value={grant.actor_ptid}
-            onChange={(e) => update(index, { actor_ptid: e.target.value })} />}
+          {!grant.all_actors && <AIActorSelect label={t('ai.grantActor', { index: index + 1 })} value={grant.actor_ptid}
+            onChange={(value) => update(index, { actor_ptid: value as string })} />}
           <Select aria-label={t('ai.grantModels', { index: index + 1 })} value={grant.all_models ? '*' : grant.model_id || undefined}
             options={[{ value: '*', label: t('ai.allModels') }, ...provider.models.map((m) => ({ value: m.id, label: m.display_name || m.id }))]}
             onChange={(value) => update(index, { all_models: value === '*', model_id: value === '*' ? '' : value })} />

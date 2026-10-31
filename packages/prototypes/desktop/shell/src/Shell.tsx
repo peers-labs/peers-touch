@@ -49,6 +49,8 @@ import { V2ProductReview } from '../../features/modern-chat-agent/src/V2ProductR
 import { OAuthLoginPrototype } from './OAuthLoginPrototype';
 import { SearchOverlay } from './search/SearchOverlay';
 import { toast } from '../../shared/Toast';
+import { ModelServiceConsumerWireflow, ModelServiceWireflowTheme } from '../../../shared/ModelServiceWireflow';
+import { isModelWireflow } from '../../../shared/modelServiceWireflow';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -648,7 +650,9 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const requestedSurface = typeof window === 'undefined'
     ? ''
     : new URLSearchParams(window.location.search).get('surface') ?? '';
-  const defaultPage = showModernChatReview || showV2ProductReview || showAgentChatReview
+  const defaultPage = isModelWireflow()
+    ? (requestedSurface === 'agent' ? 'agent' : 'settings')
+    : showModernChatReview || showV2ProductReview || showAgentChatReview
     ? 'agent'
     : initialPage ?? (requestedSurface === 'search' ? 'search-placeholder' : 'chat');
   const [page, setPage] = useState(defaultPage === 'search-placeholder' ? 'chat' : defaultPage);
@@ -757,7 +761,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
       />
     );
   } else if (page === 'settings') {
-    body = <SettingsPage onOpenCommandPalette={() => setPaletteOpen(true)} />;
+    body = <SettingsPage onOpenCommandPalette={() => setPaletteOpen(true)} onStartModelChat={() => navigate('agent')} />;
   } else {
     body = <PagePlaceholder page={page} />;
   }
@@ -859,9 +863,11 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                 <>
                   <div
                     data-agent-surface="agent"
-                    style={{ position: 'absolute', inset: 0, display: page === 'agent' || page === 'agent-profile' ? 'block' : 'none' }}
+                    style={{ position: 'absolute', inset: 0, display: page === 'agent' || page === 'agent-profile' ? 'block' : 'none', overflow: isModelWireflow() ? 'auto' : undefined }}
                   >
-                    {showV2ProductReview ? (
+                    {isModelWireflow() ? (
+                      <ModelServiceWireflowTheme><ModelServiceConsumerWireflow chat /></ModelServiceWireflowTheme>
+                    ) : showV2ProductReview ? (
                       <V2ProductReview initialState={modernChatState} />
                     ) : showModernChatReview ? (
                       <ModernChatReview initialState={modernChatState} withTopicRail />

@@ -490,8 +490,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		service.NewRuntimeDefaultService(),
 		managedCLIManager,
 	)
-	s.providerManagement = service.NewProviderManagementService(providerConfigSvc,
+	providerManagement := service.NewProviderManagementService(providerConfigSvc,
 		modelConfigSvc, credentialConfigSvc, runtimeModelCatalog, providerModelDiscoverySvc, managedCLIManager)
+	providerManagement.SetProviderService(providerSvc)
+	s.providerManagement = providerManagement
 	runtimeEvidenceHandlers := handler.NewRuntimeEvidenceHandlers(
 		runtimeEvidenceSvc,
 	)

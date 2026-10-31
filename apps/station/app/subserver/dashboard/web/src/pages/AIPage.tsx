@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Form, Input, Modal, Select, Spin, Switch, Tag, Typography, theme } from 'antd';
+import { Alert, Button, Form, Input, Modal, Select, Spin, Segmented, Tag, Typography, theme } from 'antd';
 import { Plus, RefreshCw } from 'lucide-react';
 import { ai } from '../api/ai';
 import { useAIStore } from '../store/ai';
 import { useControlPlaneAction } from '../hooks/useControlPlaneAction';
-import AIInstallers from '../components/AIInstallers';
+import AIProviderInstall from '../components/AIProviderInstall';
+import AIUserPolicy from '../components/AIUserPolicy';
+import AIModelVerification from '../components/AIModelVerification';
 import AIProviderSettings from '../components/AIProviderSettings';
 import AIModelEditor from '../components/AIModelEditor';
 import AIGrantEditor from '../components/AIGrantEditor';
@@ -24,6 +26,7 @@ export default function AIPage() {
   const select = useAIStore((s) => s.select);
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
+  const [method, setMethod] = useState('http');
   const { busy, error: localError, setError: setLocalError, run, current } = useControlPlaneAction(refresh);
   const [form] = Form.useForm();
   useEffect(() => {
@@ -36,9 +39,10 @@ export default function AIPage() {
     }, 2000);
     return () => window.clearInterval(timer);
   }, [refresh]);
-  const changePolicy = async (enabled: boolean) => {
-    if (!policy) return;
-    await run(() => ai.setPolicy({ ...policy, personal_providers_enabled: enabled }));
+  const changeMethod = (next: string) => {
+    setMethod(next);
+    const first = providers.find((p) => (p.runtime_kind === 'cli' ? 'cli' : 'http') === next);
+    if (first) void select(first.id);
   };
   const create = async () => {
     const values = await form.validateFields().catch(() => null);
@@ -55,26 +59,23 @@ export default function AIPage() {
       <PageHeader title={t('ai.title')} subtitle={t('ai.subtitle')} />
       {(error || localError) && <Alert type="error" showIcon title={error || localError}
         action={<Button onClick={() => void refresh()}>{t('refresh')}</Button>} />}
-      <div className="ai-policy">
-        <div>
-          <Typography.Text strong>{t('ai.allowPersonal')}</Typography.Text>
-          <Typography.Paragraph type="secondary">{t('ai.personalHint')}</Typography.Paragraph>
-        </div>
-        <Switch aria-label={t('ai.allowPersonal')} checked={policy?.personal_providers_enabled || false}
-          disabled={!policy || busy} onChange={(enabled) => void changePolicy(enabled)} />
-      </div>
-      <AIInstallers />
+      {policy && <AIUserPolicy key={String(policy.revision)} policy={policy} />}
       <div className="ai-section-heading">
         <Typography.Title level={5}>{t('ai.shared')}</Typography.Title>
         <div className="ai-actions">
           <Button loading={loading} icon={<RefreshCw size={14} />} onClick={() => void refresh()}>{t('refresh')}</Button>
-          <Button icon={<Plus size={14} />} onClick={() => { setLocalError(''); setCreating(true); }}>{t('ai.addProvider')}</Button>
+          {method !== 'cli' && <Button icon={<Plus size={14} />} onClick={() => { setLocalError(''); setCreating(true); }}>{t('ai.addProvider')}</Button>}
         </div>
       </div>
       <div className="ai-workspace">
         <aside className="ai-provider-list" aria-label={t('ai.shared')}>
+          <Typography.Text strong>{t('ai.connectionMethod')}</Typography.Text>
+          <Segmented aria-label={t('ai.connectionMethod')} value={method}
+            options={[{ value: 'http', label: t('ai.dmMethod') }, { value: 'cli', label: t('ai.cliMethod') }]}
+            onChange={changeMethod} />
           <Input.Search aria-label={t('ai.search')} placeholder={t('ai.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
-          {providers.filter((p) => `${p.name} ${p.id}`.toLowerCase().includes(search.toLowerCase())).map((p) => (
+          {providers.filter((p) => (p.runtime_kind === 'cli' ? 'cli' : 'http') === method &&
+            `${p.name} ${p.id}`.toLowerCase().includes(search.toLowerCase())).map((p) => (
             <button key={p.id} className="ai-provider-option" aria-pressed={selected === p.id} onClick={() => void select(p.id)}>
               <span><strong>{p.name}</strong><small>{p.runtime_kind === 'cli' ? t('ai.cliAdapter') : p.protocol || t('ai.directModel')}</small></span>
               <Tag color={p.enabled ? 'success' : 'default'}>{t(p.enabled ? 'enabled' : 'disabled')}</Tag>
@@ -84,14 +85,18 @@ export default function AIPage() {
         </aside>
         <main className="ai-provider-editor">
           {detail ? (
-            <div key={`${detail.id}:${detail.version}`}>
+            <div key={detail.id}>
               <Typography.Title level={4}>{detail.name}</Typography.Title>
               <Typography.Paragraph type="secondary">{detail.description || detail.id}</Typography.Paragraph>
+              <Typography.Paragraph>{t('ai.lifecycle')}</Typography.Paragraph>
+              {detail.runtime_kind === 'cli' && <AIProviderInstall provider={detail} />}
               <AIProviderSettings provider={detail} />
               <AIModelEditor provider={detail} />
               {access && (Number(detail.version) > 0
                 ? <AIGrantEditor key={`${detail.id}:${access.revision}`} provider={detail} access={access} />
                 : <Typography.Paragraph type="secondary">{t('ai.configureBeforeGrant')}</Typography.Paragraph>)}
+              {Number(detail.version) > 0 && <AIModelVerification
+                key={`${detail.id}:${detail.version}:${access?.revision}:${policy?.revision}`} provider={detail} />}
             </div>
           ) : selected && !error ? <Spin /> : <Typography.Text type="secondary">{t('ai.selectProvider')}</Typography.Text>}
         </main>

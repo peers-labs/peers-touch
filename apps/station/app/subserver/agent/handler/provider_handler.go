@@ -109,6 +109,10 @@ func (h *ProviderHandlers) HandleProviderPolicy(ctx context.Context, _ *model.Ge
 		return nil, toHandlerError(err)
 	}
 	result, err := h.management.Policy(ctx)
+	if err == nil && result.GetPolicy() != nil {
+		// The administrator's user directory is not an actor projection.
+		result.Policy.AiUserAccess = nil
+	}
 	return result, toHandlerError(err)
 }
 

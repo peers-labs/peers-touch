@@ -12,32 +12,28 @@ Shared installation and private Actor invocation state have separate owners.
 
 ## Ordinary Desktop Settings
 
-Provider Settings has one authorized Provider list and a selected read-only
-`AuthorizedProviderDetail`. Shared credentials, commands, grants, installation
-paths and administration are absent.
+AI / Models is the only model Settings surface. There is no Provider
+navigation, list or Direct/CLI editor in ordinary Desktop. Shared credentials,
+commands, grants, installation and administration belong to Dashboard.
+Provider identity remains an internal part of the model's composite key and
+may be shown as its source name.
 
-The authorized list has no runtime-kind badges, health dots or credential
-filters. Model rows show a readable model name and its personal default action.
-Only chat models offer that action. A missing catalog asks the user to obtain
-access; it does not ask them to configure a shared credential.
-
-Personal Provider editing appears only under the Station policy. Its selected
-Direct schema handles write-only credentials, Base URL and model CRUD. Its CLI
-schema exposes capability-declared runtime overrides and a read-only catalog;
-arbitrary executables and mutable CLI models are invalid.
+The model selector has no runtime-kind badges, health dots or credential
+filters. A missing catalog asks the user to obtain access; it does not ask them
+to configure a shared credential. Dashboard uses one Provider configuration
+surface with DM/CLI selection, CLI installation within its Provider, model
+configuration, global AI user policy, model grants and actual-call verification.
 
 AI / Models owns the Actor's composite default through the existing Station
 runtime-default API with its observed revision. No app-global
 `model-registry.json` or service-slot registry remains.
 
-Settings preserves its alive shell and selected-only lazy schemas. The Provider
-list owns one inner vertical scroll container. Account changes discard form
-drafts and pending projection or mutation effects.
-
-The narrow Desktop window stacks the bounded Provider list above its detail.
-The list and selected detail own their respective scrolling and recovery
-surfaces. List loading, detail loading and default saving do not share a
-spinner. Failed detail reads clear the previous content and offer retry.
+Settings preserves its alive shell and selected-only model surface. Default
+loading and saving have their own lifecycle. Capability-session warmup never
+reloads model or Provider catalogs; unrelated Agent loading cannot replace an
+established empty model view. Dashboard retains drafts for the selected Provider
+across installation polls and refreshes, and discards them on selection or
+administrator-session replacement.
 
 ## Runtime
 

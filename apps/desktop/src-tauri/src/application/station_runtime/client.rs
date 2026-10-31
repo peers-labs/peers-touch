@@ -1520,12 +1520,34 @@ fn buffer_response(
         )
     })?;
     if !(200..300).contains(&response.status) {
-        return Err(build_error_for_status_with_headers(
+        let decoded = peers_failure_error(response.status, &body);
+        let message = decoded
+            .details
+            .as_ref()
+            .and_then(|details| {
+                details
+                    .get("server_message")
+                    .or_else(|| details.get("body"))
+            })
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let mut error = build_error_for_status_with_headers(
             response.status,
             path,
-            &String::from_utf8_lossy(&body),
+            message,
             Some(&headers_to_json(&response.headers)),
-        ));
+        );
+        if let (Some(details), Some(decoded_details)) = (
+            error.details.as_mut().and_then(Value::as_object_mut),
+            decoded.details.as_ref().and_then(Value::as_object),
+        ) {
+            for (field, value) in decoded_details {
+                details
+                    .entry(field.clone())
+                    .or_insert_with(|| value.clone());
+            }
+        }
+        return Err(error);
     }
     Ok(BufferedResponse {
         status: response.status,
@@ -1995,6 +2017,96 @@ pub fn probe_station(url: &str) -> (bool, Option<String>, Option<String>, Option
 mod tests {
     use super::*;
     use search_core::model::wire::{HydrationRequest, QueryIntent, SearchResponse};
+
+    #[test]
+    fn buffered_protobuf_failure_keeps_readable_message_and_error_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "content-type",
+            HeaderValue::from_static("application/x-protobuf"),
+        );
+        headers.insert(
+            "x-peers-error-code",
+            HeaderValue::from_static("user_not_found"),
+        );
+        headers.insert(
+            "x-peers-error-locale-key",
+            HeaderValue::from_static("auth.userNotFound"),
+        );
+        let error = buffer_response(
+            "/api/v1/auth/login",
+            StationResponse {
+                status: 404,
+                headers,
+                body: Box::new(Cursor::new(b"\x08\x01\x12\x0euser not found".to_vec())),
+            },
+            &ReplayPolicy::Never,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error.kind,
+            StationClientErrorKind::HttpStatus(404)
+        ));
+        assert_eq!(error.message, "station returned 404: user not found");
+        assert!(!error.message.chars().any(char::is_control));
+        let details = error.details.unwrap();
+        assert_eq!(details["body"], "user not found");
+        assert_eq!(details["server_message"], "user not found");
+        assert_eq!(details["error_code"], "user_not_found");
+        assert_eq!(details["locale_key"], "auth.userNotFound");
+    }
+
+    #[test]
+    fn buffered_protobuf_session_revocation_keeps_session_error_kind() {
+        let body = StationErrorBody {
+            code: 1,
+            message: "session_revoked".into(),
+        }
+        .encode_to_vec();
+        let error = buffer_response(
+            "/api/v1/auth/session",
+            StationResponse {
+                status: 401,
+                headers: HeaderMap::new(),
+                body: Box::new(Cursor::new(body)),
+            },
+            &ReplayPolicy::SafeRead,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error.kind, StationClientErrorKind::SessionRevoked));
+        assert!(!error.message.chars().any(char::is_control));
+    }
+
+    #[test]
+    fn buffered_text_failure_and_success_payload_keep_existing_semantics() {
+        let error = buffer_response(
+            "/api/v1/auth/login",
+            StationResponse {
+                status: 429,
+                headers: HeaderMap::new(),
+                body: Box::new(Cursor::new(b"rate limited".to_vec())),
+            },
+            &ReplayPolicy::Never,
+        )
+        .unwrap_err();
+        assert_eq!(error.message, "station returned 429: rate limited");
+        assert_eq!(error.details.unwrap()["body"], "rate limited");
+
+        let body = b"\x08\x01\x12\x0euser not found".to_vec();
+        let response = buffer_response(
+            "/api/v1/test",
+            StationResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                body: Box::new(Cursor::new(body.clone())),
+            },
+            &ReplayPolicy::SafeRead,
+        )
+        .unwrap();
+        assert_eq!(response.body, body);
+    }
 
     #[derive(Clone, Copy)]
     enum ReadWait {

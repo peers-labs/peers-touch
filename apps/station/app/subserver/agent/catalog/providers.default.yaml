@@ -241,7 +241,7 @@ providers:
     protocol: cli
     discovery: static
     home_url: https://developers.openai.com/codex
-    api_key_url: ""
+    api_key_url: https://platform.openai.com/api-keys
     default_base_url: ""
     runtime_kind: cli
     credential_env_key: CODEX_API_KEY
@@ -268,7 +268,7 @@ providers:
     protocol: cli
     discovery: static
     home_url: https://cursor.com
-    api_key_url: ""
+    api_key_url: https://cursor.com/dashboard/cloud-agents
     default_base_url: ""
     runtime_kind: cli
     credential_env_key: CURSOR_API_KEY
@@ -290,7 +290,7 @@ providers:
     protocol: cli
     discovery: static
     home_url: https://www.anthropic.com/claude-code
-    api_key_url: ""
+    api_key_url: https://platform.claude.com/settings/keys
     default_base_url: ""
     runtime_kind: cli
     credential_env_key: ANTHROPIC_API_KEY

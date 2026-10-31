@@ -106,6 +106,23 @@ func TestProviderConsumerProjectionRetainsOnlyAuthorizedModels(t *testing.T) {
 	if _, err := handlers.HandleProviderUpdate(ctx, &model.UpdateProviderRequest{ProviderId: "test-shared", Version: 2}); err == nil {
 		t.Fatal("consumer actor modified a shared Provider while personal management was disabled")
 	}
+	policy, err := management.SetPolicy(ctx, &model.SetProviderPolicyRequest{
+		AiUserAccess: &model.AIUserAccess{ActorPtids: []string{"ptid:person:other"}},
+	})
+	if err != nil || policy.GetPolicy().GetAiUserAccess().GetAllActors() {
+		t.Fatalf("global policy was not persisted: %v %v", policy, err)
+	}
+	if _, err := handlers.HandleSetRuntimeDefault(ctx, &model.SetRuntimeDefaultRequest{
+		ProviderId: "test-shared", ModelId: "allowed",
+	}); err == nil {
+		t.Fatal("globally denied actor selected a granted model as the default")
+	}
+	if list, err := handlers.HandleProviderList(ctx, &model.ListProvidersRequest{}); err != nil || len(list.GetProviders()) != 0 {
+		t.Fatalf("global denial did not remove consumer models: %v %v", list, err)
+	}
+	if public, err := handlers.HandleProviderPolicy(ctx, &model.GetProviderPolicyRequest{}); err != nil || public.GetPolicy().GetAiUserAccess() != nil {
+		t.Fatalf("actor policy projection exposed administrator user grants: %v %v", public, err)
+	}
 }
 
 func TestCatalogModelTogglePreservesCapabilityAuthority(t *testing.T) {

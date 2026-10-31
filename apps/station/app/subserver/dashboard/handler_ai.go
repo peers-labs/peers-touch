@@ -43,6 +43,10 @@ func (h *dashboardHandler) aiHandlers() []server.Handler {
 	}
 	owner := agentservice.StationProviderOwner()
 	return []server.Handler{
+		server.NewTypedHandler("dashboard-ai-model-verify", "/dashboard/api/ai/model/verify", server.POST,
+			aiEndpoint(h, func(ctx context.Context, port agentservice.ProviderManagementPort, req *model.VerifyProviderModelRequest) (*model.VerifyProviderModelResponse, error) {
+				return port.VerifyModel(ctx, req)
+			}), auth),
 		server.NewTypedHandler("dashboard-ai-provider-list", "/dashboard/api/ai/provider/list", server.POST,
 			aiEndpoint(h, func(ctx context.Context, port agentservice.ProviderManagementPort, _ *model.ListProvidersRequest) (*model.ListProvidersResponse, error) {
 				return port.List(ctx, owner)

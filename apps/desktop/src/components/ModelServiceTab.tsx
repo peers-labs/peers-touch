@@ -27,14 +27,12 @@ export function ModelServiceTab() {
   const models = useMemo(() => availableModels.filter(
     (model) => model.enabled && (!model.type || model.type === 'chat'),
   ), [availableModels]);
-  const modelsLoading = useAgentStore((state) => state.loading);
-
   const handleDefaultChange = async (ref: ModelRef) => {
     try { await setRuntimeDefault(ref.provider, ref.model); }
     catch { toast.error(t('provider.modelService.failedToSave')); }
   };
 
-  if (defaultStatus === 'idle' || defaultStatus === 'loading' || (modelsLoading && models.length === 0)) {
+  if (defaultStatus === 'idle' || defaultStatus === 'loading') {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 40 }}>
         <Text type="secondary">{t('provider.modelService.loading')}</Text>

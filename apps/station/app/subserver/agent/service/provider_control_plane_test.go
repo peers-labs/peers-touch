@@ -11,6 +11,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
 
 func TestQuickCompletionUsesActorDefaultAndCurrentSharedGrant(t *testing.T) {
@@ -96,7 +97,7 @@ func TestProviderControlPlaneSharedDispatchAndRevocation(t *testing.T) {
 	db := openAdmissionTestDB(t, "control_plane_dispatch")
 	ctx := context.Background()
 	providers := NewProviderConfigService()
-	if _, err := providers.SetPolicy(ctx, false, 0); err != nil {
+	if _, err := providers.SetPolicy(ctx, &model.SetProviderPolicyRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	var hits atomic.Int32
@@ -177,6 +178,102 @@ func TestProviderControlPlaneSharedDispatchAndRevocation(t *testing.T) {
 	}
 }
 
+func TestProviderControlPlaneGlobalAIUserPolicy(t *testing.T) {
+	defer setupTestCatalog()()
+	db := openAdmissionTestDB(t, "control_plane_global_ai_policy")
+	if err := db.AutoMigrate(&persistence.AgentRuntimeDefault{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	providers := NewProviderConfigService()
+	var hits atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer shared-verification-key" {
+			t.Error("verification lost the owner-bound credential")
+		}
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}`))
+	}))
+	defer upstream.Close()
+	record, err := providers.Create(ctx, ProviderCreateRequest{
+		Scope: ProviderScopeStation, ProviderID: "test-provider", BaseURL: upstream.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewCredentialConfigService().Set(ctx, CredentialSetRequest{
+		Scope: ProviderScopeStation, ProviderID: record.Name, APIKey: "shared-verification-key",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := providers.SetAccess(ctx, record.Name, 0,
+		[]persistence.ProviderAccessGrant{{AllActors: true, ModelID: "test-model"}}); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := providers.SetPolicy(ctx, &model.SetProviderPolicyRequest{
+		AiUserAccess: &model.AIUserAccess{ActorPtids: []string{"actor-a"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewRuntimeAdmissionResolver(providers, NewModelConfigService())
+	calls := NewProviderService(nil)
+	calls.SetAdmissionResolver(resolver)
+	management := NewProviderManagementService(providers, NewModelConfigService(),
+		NewCredentialConfigService(), NewRuntimeModelCatalog(), nil, nil)
+	management.SetProviderService(calls)
+	if models, err := resolver.ListAvailableModels(ctx, "actor-a"); err != nil || len(models) != 1 {
+		t.Fatalf("globally allowed actor lost a granted model: %v %v", models, err)
+	}
+	if models, err := resolver.ListAvailableModels(ctx, "actor-b"); err != nil || len(models) != 0 {
+		t.Fatalf("globally denied actor received models: %v %v", models, err)
+	}
+	request := &model.VerifyProviderModelRequest{ProviderId: record.Name, ModelId: "test-model", ActorPtid: "actor-b"}
+	if _, err := management.VerifyModel(ctx, request); err == nil || hits.Load() != 0 {
+		t.Fatal("administrator verification bypassed global user access")
+	}
+	request.ActorPtid = "actor-a"
+	if result, err := management.VerifyModel(ctx, request); err != nil || !result.GetResponseReceived() || hits.Load() != 1 {
+		t.Fatalf("authorized verification did not consume shared configuration: %v %v", result, err)
+	}
+	admission, err := resolver.Resolve(ctx, "actor-a", record.Name, "test-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := &ProviderCallRequest{UserID: "actor-a", ProviderID: record.ID, ProviderType: record.Name, Model: "test-model",
+		Messages:                        []domain.Message{{Role: domain.MessageRoleUser, Content: "test"}},
+		ExpectedProviderConfigVersion:   admission.ProviderConfigVersion,
+		ExpectedCapabilitySourceVersion: admission.Capabilities.GetProvenance().GetSourceVersion(),
+		BeforeDispatch: func(ctx context.Context) error {
+			var err error
+			policy, err = providers.SetPolicy(ctx, &model.SetProviderPolicyRequest{
+				Revision: policy.Revision, AiUserAccess: &model.AIUserAccess{},
+			})
+			return err
+		},
+	}
+	if _, err := calls.Call(ctx, call); err == nil || hits.Load() != 1 {
+		t.Fatal("global revocation between admission and dispatch reached upstream")
+	}
+	if policy.AIAllActors || policy.AIActorPTIDs != "[]" {
+		t.Fatal("the dispatch did not commit the empty global AI allow list")
+	}
+	if _, err := providers.SetPolicy(ctx, &model.SetProviderPolicyRequest{
+		Revision: policy.Revision - 1, AiUserAccess: &model.AIUserAccess{AllActors: true},
+	}); err == nil {
+		t.Fatal("a stale policy restored AI authority")
+	}
+	if _, err := providers.SetPolicy(ctx, &model.SetProviderPolicyRequest{
+		Revision: policy.Revision, PersonalProvidersEnabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := management.VerifyModel(ctx, request); err == nil || hits.Load() != 1 {
+		t.Fatal("personal policy update or empty global list restored AI authority")
+	}
+}
+
 func TestProviderControlPlaneSecretsFailClosedAndBindOwnership(t *testing.T) {
 	defer setupTestCatalog()()
 	db := openAdmissionTestDB(t, "control_plane_secrets")
@@ -251,7 +348,7 @@ func TestProviderControlPlaneSharedIdentityPrecedesPersonal(t *testing.T) {
 	if _, err := providers.ResolveForActor(ctx, "actor-a", "test-provider", "test-model"); err == nil {
 		t.Fatal("a personal record shadowed denied shared authority")
 	}
-	if _, err := providers.SetPolicy(ctx, false, 0); err != nil {
+	if _, err := providers.SetPolicy(ctx, &model.SetProviderPolicyRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := providers.Create(ctx, ProviderCreateRequest{ActorPTID: "actor-a", ProviderID: "private"}); err == nil {

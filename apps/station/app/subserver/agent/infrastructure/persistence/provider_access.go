@@ -19,6 +19,8 @@ func (ProviderAccessGrant) TableName() string { return "agent_provider_access_gr
 type ProviderPolicy struct {
 	ID                       string    `gorm:"primaryKey;type:varchar(16)"`
 	PersonalProvidersEnabled bool      `gorm:"not null;default:false"`
+	AIAllActors              bool      `gorm:"not null;default:true"`
+	AIActorPTIDs             string    `gorm:"column:ai_actor_ptids;not null;type:text;default:'[]'"`
 	Revision                 int64     `gorm:"not null;default:0"`
 	UpdatedAt                time.Time `gorm:"not null;autoUpdateTime"`
 }

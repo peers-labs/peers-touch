@@ -46,7 +46,8 @@ export const useAIStore = create<AIState>((set, get) => ({
   async select(id) {
     const request = ++selectionRequest;
     const auth = getAuthEpoch();
-    set({ selected: id, detail: null, models: [], access: null, credential: null, error: '' });
+    if (get().selected !== id) set({ selected: id, detail: null, models: [], access: null, credential: null, error: '' });
+    else set({ error: '' });
     try {
       const [detail, models, access, credential] = await Promise.all([
         ai.get(id), ai.models(id), ai.access(id), ai.credential(id),
@@ -54,7 +55,9 @@ export const useAIStore = create<AIState>((set, get) => ({
       if (request !== selectionRequest || auth !== getAuthEpoch()) return;
       set({ detail: detail.provider, models: models.models || [], access: access.access, credential: credential.status });
     } catch (error) {
-      if (request === selectionRequest && auth === getAuthEpoch()) set({ error: aiError(error) });
+      if (request === selectionRequest && auth === getAuthEpoch()) set({
+        detail: null, models: [], access: null, credential: null, error: aiError(error),
+      });
     }
   },
   async pollInstalls() {

@@ -69,6 +69,14 @@ message ProviderAccess {
 message ProviderPolicy {
   bool personal_providers_enabled = 1;
   int64 revision = 2;
+  // Global AI entitlement intersects with Provider/model grants. Absent on
+  // an existing Station preserves its existing per-Provider grant policy.
+  AIUserAccess ai_user_access = 3;
+}
+
+message AIUserAccess {
+  bool all_actors = 1;
+  repeated string actor_ptids = 2;
 }
 
 message GetProviderPolicyRequest {}
@@ -76,6 +84,8 @@ message GetProviderPolicyResponse { ProviderPolicy policy = 1; }
 message SetProviderPolicyRequest {
   bool personal_providers_enabled = 1;
   int64 revision = 2;
+  // Absent leaves the current global entitlement unchanged.
+  AIUserAccess ai_user_access = 3;
 }
 message SetProviderPolicyResponse { ProviderPolicy policy = 1; }
 message GetProviderAccessRequest { string provider_id = 1; }
@@ -187,6 +197,20 @@ message CheckProviderResponse {
   string program = 2;
   string error = 3;
   string install_hint = 4;
+}
+
+// Administrator verifies consumption using an explicitly selected, authorized
+// actor. This never bypasses global entitlement or model grants.
+message VerifyProviderModelRequest {
+  string provider_id = 1;
+  string model_id = 2;
+  string actor_ptid = 3;
+}
+message VerifyProviderModelResponse {
+  bool response_received = 1;
+  string provider_id = 2;
+  string model_id = 3;
+  google.protobuf.Timestamp observed_at = 4;
 }
 
 message DiscoverProviderModelsRequest { string provider_id = 1; }

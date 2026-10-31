@@ -206,7 +206,7 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
   log.info('agentCapabilityRuntime', 'loading agent capability projections', { reason });
   const [listedCapabilitySessions] = await Promise.all([
     api.listAgentCapabilitySessions(),
-    Promise.all([
+    reason === 'capability-session-warmup' ? Promise.resolve() : Promise.all([
       useProviderStore.getState().loadProviders(),
       useAgentStore.getState().loadModels(),
       useAgentStore.getState().loadAgents(),

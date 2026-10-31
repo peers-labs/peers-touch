@@ -31,9 +31,9 @@ The operational guard is
 `application/provider/mod.rs` and `station_api.rs` proxy authorized and personal
 Station views. Tauri commands do not resolve raw credentials or install tools.
 
-`store/provider.ts` separates authorized consumption from policy-enabled
-personal editing. `AuthorizedProviderDetail.tsx` renders shared data.
-`ProviderDetail.tsx` mounts the selected personal Direct or CLI schema.
+Ordinary Desktop has no Provider settings module or Direct/CLI editor.
+`store/provider.ts` retains effective-owner projections and account default
+commands; the authenticated actor management contract remains policy governed.
 `ModelServiceTab.tsx` reads and writes the Actor's Station default with its
 observed revision. Provider and Agent stores discard old Session completions.
 
@@ -44,7 +44,10 @@ One-shot completion validates the requesting Actor and current Provider grant.
 ## Dashboard and Federation
 
 Dashboard mounts only the active page. AI mounts one selected Provider editor
-and polls installation progress while visible. Authentication changes clear
+with DM/CLI selection. CLI installation belongs inside that Provider's editor.
+The same page configures global AI user access, credentials, models and grants
+and verifies a real call as an explicitly selected authorized user.
+It polls installation progress while visible. Authentication changes clear
 management stores, secret drafts and old request completions.
 
 Federation management uses the Federation domain's management port behind

@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
 
 const (
@@ -81,7 +84,7 @@ func (s *ProviderConfigService) Policy(ctx context.Context) (*persistence.Provid
 }
 
 func readProviderPolicy(db *gorm.DB) (*persistence.ProviderPolicy, error) {
-	policy := &persistence.ProviderPolicy{ID: "station"}
+	policy := &persistence.ProviderPolicy{ID: "station", AIAllActors: true, AIActorPTIDs: "[]"}
 	err := db.First(policy, "id = ?", policy.ID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return policy, nil
@@ -104,7 +107,29 @@ func (s *ProviderConfigService) RequirePersonal(ctx context.Context, actorPTID s
 	return nil
 }
 
-func (s *ProviderConfigService) SetPolicy(ctx context.Context, enabled bool, revision int64) (*persistence.ProviderPolicy, error) {
+func (s *ProviderConfigService) SetPolicy(ctx context.Context, req *model.SetProviderPolicyRequest) (*persistence.ProviderPolicy, error) {
+	if req == nil {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider policy is required", nil)
+	}
+	var actorsJSON string
+	if access := req.AiUserAccess; access != nil {
+		actors := make([]string, 0, len(access.ActorPtids))
+		seen := map[string]bool{}
+		for _, actor := range access.ActorPtids {
+			actor = strings.TrimSpace(actor)
+			if actor == "" || access.AllActors || seen[actor] {
+				return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid AI user allow list", nil)
+			}
+			seen[actor] = true
+			actors = append(actors, actor)
+		}
+		sort.Strings(actors)
+		data, err := json.Marshal(actors)
+		if err != nil {
+			return nil, err
+		}
+		actorsJSON = string(data)
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -119,19 +144,29 @@ func (s *ProviderConfigService) SetPolicy(ctx context.Context, enabled bool, rev
 		if err != nil {
 			return err
 		}
-		if policy.Revision != revision {
+		if policy.Revision != req.Revision {
 			return errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
 				"provider policy revision changed", nil)
 		}
-		if policy.PersonalProvidersEnabled != enabled {
+		updates := map[string]any{}
+		if policy.PersonalProvidersEnabled != req.PersonalProvidersEnabled {
+			updates["personal_providers_enabled"] = req.PersonalProvidersEnabled
+		}
+		if access := req.AiUserAccess; access != nil &&
+			(policy.AIAllActors != access.AllActors || policy.AIActorPTIDs != actorsJSON) {
+			updates["ai_all_actors"] = access.AllActors
+			updates["ai_actor_ptids"] = actorsJSON
+		}
+		if len(updates) > 0 {
 			nextRevision := policy.Revision + 1
-			if err := tx.Model(policy).Updates(map[string]any{
-				"personal_providers_enabled": enabled,
-				"revision":                   nextRevision,
-			}).Error; err != nil {
+			updates["revision"] = nextRevision
+			if err := tx.Model(policy).Updates(updates).Error; err != nil {
 				return err
 			}
-			policy.PersonalProvidersEnabled = enabled
+			policy.PersonalProvidersEnabled = req.PersonalProvidersEnabled
+			if access := req.AiUserAccess; access != nil {
+				policy.AIAllActors, policy.AIActorPTIDs = access.AllActors, actorsJSON
+			}
 			policy.Revision = nextRevision
 		}
 		result = policy
@@ -222,6 +257,23 @@ func (s *ProviderConfigService) ResolveForActor(ctx context.Context, actorPTID, 
 func (s *ProviderConfigService) Authorize(ctx context.Context, actorPTID string, provider *persistence.AgentProvider, modelID string) error {
 	if err := ActorProviderOwner(actorPTID).Validate(); err != nil {
 		return err
+	}
+	policy, err := s.Policy(ctx)
+	if err != nil {
+		return err
+	}
+	if !policy.AIAllActors {
+		var actors []string
+		if err := json.Unmarshal([]byte(policy.AIActorPTIDs), &actors); err != nil {
+			return errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "AI user policy is unavailable", err)
+		}
+		allowed := false
+		for _, actor := range actors {
+			allowed = allowed || actor == actorPTID
+		}
+		if !allowed {
+			return errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "AI access is not granted for this user", nil)
+		}
 	}
 	owner := providerOwner(provider)
 	if err := owner.Validate(); err != nil {

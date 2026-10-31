@@ -26,14 +26,14 @@ func TestProviderManagementCheckUsesRegisteredArgvAndManagedBinary(t *testing.T)
 		NewCredentialConfigService(), runtimeModels, nil, installer)
 	ctx, owner := context.Background(), ActorProviderOwner("actor-a")
 	t.Setenv("PATH", "")
-	policy, err := providers.SetPolicy(ctx, false, 0)
+	policy, err := providers.SetPolicy(ctx, &model.SetProviderPolicyRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := management.Check(ctx, owner, "codex-cli"); err == nil {
 		t.Fatal("CLI check bypassed the disabled personal policy")
 	}
-	if _, err := providers.SetPolicy(ctx, true, policy.Revision); err != nil {
+	if _, err := providers.SetPolicy(ctx, &model.SetProviderPolicyRequest{PersonalProvidersEnabled: true, Revision: policy.Revision}); err != nil {
 		t.Fatal(err)
 	}
 	missing, err := management.Check(ctx, owner, "codex-cli")

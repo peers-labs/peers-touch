@@ -46,6 +46,11 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | `navigationBadges` | Cross-surface unread and badge projection |
 | Page components | Rendering, selection, local interaction state only |
 
+Capability-session warmup refreshes the lease and affected capability
+projections only. It must not reload Provider, model, Agent or applet catalogs
+each second. Model Settings uses the account default's own loading lifecycle;
+unrelated Agent loading cannot replace an established empty model view.
+
 Pages may trigger a first-screen fallback load, but they must not be the primary mechanism that keeps business projections fresh.
 
 ## 3. Projection Rules
