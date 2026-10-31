@@ -105,11 +105,12 @@ Settings shell 继续由 PageHost/SectionHost 保持；Provider 详情只挂载�
 
 ## 尚未证明
 
-正式 Acceptance 缺有效 `acceptance-plan` latest pointer，gap detector 保持
+正式 Acceptance 缺匹配源码范围的有效计划和 Gate 结果，gap detector 保持
 失败关闭；Development 功能观察不能转换为正式 `PROVEN`。
 
-没有供应商密钥，真实供应商及 Applet 成功调用未验证。Cursor 安装的既有下载
-超时尚未解决。本次未重新执行安装或完整 Federation 管理流程。
+Ark 真实凭据配置、原生调用、撤权拒绝及四种 CLI 实装与配置观察见
+[真实配置与 CLI 实装验证](20261031-provider-cli-live-review.md)。Applet 已按
+用户要求排除。消费页面本身的本轮观察未执行完整 Federation 管理流程。
 中文原生渲染、深色模式、屏幕阅读器和物理键盘测试不在本次已证明范围。
 
 原生登录使用已有账号的隔离本地状态；完整设备 Engine 和 Agent 能力注册仍有
