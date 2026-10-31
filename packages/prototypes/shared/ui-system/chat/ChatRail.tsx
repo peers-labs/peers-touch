@@ -1,11 +1,12 @@
 /**
- * ChatRail — right rail for the chat surface. Hosts the chats/contacts
- * sub-navigation, unified search (people + groups + sessions grouped in a
- * popover), the new-conversation menu, and either the session list with
- * pin/mute state or the contacts pane.
+ * ChatRail — LEFT catalog rail for the chat surface (desktop SocialChatPage
+ * parity). Header is one horizontal row: 消息/联系人 tabs, a compact search
+ * tile that expands and takes over the tab space on focus/input, and the
+ * new-conversation menu. Body is either the session list (pin/mute state)
+ * or the contacts pane.
  */
 import { useMemo, useState } from 'react';
-import { BellOff, CheckCheck, EyeOff, MessageCircle, MoreHorizontal, Pin, Search, Trash2, UserPlus, Users } from 'lucide-react';
+import { BellOff, CheckCheck, EyeOff, MessageCircle, MoreHorizontal, Pin, Plus, Search, Trash2, UserPlus, Users, X } from 'lucide-react';
 import {
   Alert, Avatar, AvatarGroup, Button, Dialog, Empty, Menu, Popover, Segmented, Tag,
 } from '@peers-touch/ui';
@@ -308,105 +309,113 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   onPickSearchPerson: (person: Person) => void;
 }) {
   const [query, setQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const q = query.trim();
+  // Expanded while focused OR while a query survives focus loss (results
+  // must stay clickable); collapses once the field is empty and blurred.
+  const searchExpanded = searchFocused || q.length > 0;
 
   const filteredSessions = useMemo(() => {
     const list = [...sessions].sort((a, b) => {
       if (Number(b.pinned ?? false) !== Number(a.pinned ?? false)) return Number(b.pinned ?? false) - Number(a.pinned ?? false);
       return (b.lastTs ?? 0) - (a.lastTs ?? 0);
     });
-    const q = query.trim().toLowerCase();
-    return q ? list.filter(c => `${c.name} ${c.last}`.toLowerCase().includes(q)) : list;
-  }, [sessions, query]);
+    const needle = q.toLowerCase();
+    return needle ? list.filter(c => `${c.name} ${c.last}`.toLowerCase().includes(needle)) : list;
+  }, [sessions, q]);
 
   const peopleResults = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return q ? friends.filter(p => p.name.toLowerCase().includes(q)) : [];
-  }, [friends, query]);
-  const groupResults = filteredSessions.filter(c => c.kind === 'group');
-  const directResults = filteredSessions.filter(c => c.kind === 'person');
+    const needle = q.toLowerCase();
+    return needle ? friends.filter(p => p.name.toLowerCase().includes(needle)) : [];
+  }, [friends, q]);
 
-  const searchOpen = query.trim().length > 0 && tab === 'chats';
+  // Shared header search works in both tabs; contacts tab opens the profile
+  // pane, chats tab starts/opens the conversation (desktop SessionList parity).
+  const pickPerson = (person: Person) => {
+    if (tab === 'contacts') onSelectContact(person);
+    else onPickSearchPerson(person);
+    setQuery('');
+  };
+  const searchOpen = q.length > 0;
 
   return (
     <aside className="sk-conv-rail" aria-label="聊天导航">
-      <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="聊天子导航"
-        options={[
-          { value: 'chats', label: <span className="sk-subnav-label"><MessageCircle size={13} />消息</span> },
-          { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />联系人</span> },
-        ]}
-        value={tab} onValueChange={value => onTabChange(value ?? 'chats')} />
+      <header className="sk-rail-header" data-search-expanded={searchExpanded ? 'true' : 'false'}>
+        <div className="sk-rail-tabs">
+          <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="聊天子导航"
+            options={[
+              { value: 'chats', label: <span className="sk-subnav-label"><MessageCircle size={13} />消息</span> },
+              { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />联系人</span> },
+            ]}
+            value={tab} onValueChange={value => onTabChange(value ?? 'chats')} />
+        </div>
 
-      <div className="sk-conv-search">
-        <Popover open={searchOpen} placement="bottom"
-          content={
-            <div className="sk-search-pop" data-chat-search-dropdown>
-              {peopleResults.length > 0 && (
-                <div className="sk-search-group">
+        <div className="sk-conv-search">
+          <Popover open={searchOpen} placement="bottom"
+            content={
+              <div className="sk-search-pop" data-chat-search-dropdown>
+                <div className="sk-search-group" data-search-section="contacts">
                   <span className="sk-search-group-title">联系人</span>
-                  {peopleResults.map(person => (
+                  {peopleResults.length > 0 ? peopleResults.map(person => (
                     <button key={person.id} type="button" className="sk-search-row"
                       data-chat-search-result-kind="person"
-                      onClick={() => { onPickSearchPerson(person); setQuery(''); }}>
+                      onClick={() => pickPerson(person)}>
                       <Avatar name={person.name} background={person.tone} size={26}
                         style={{ borderRadius: 8 }} />
                       <strong>{person.name}</strong><span>{person.station}</span>
                     </button>
-                  ))}
+                  )) : <span className="sk-search-empty-tip">---无相关联系人---</span>}
                 </div>
-              )}
-              {groupResults.length > 0 && (
-                <div className="sk-search-group">
-                  <span className="sk-search-group-title">群聊</span>
-                  {groupResults.map(c => (
+                <div className="sk-search-group" data-search-section="chats">
+                  <span className="sk-search-group-title">聊天</span>
+                  {filteredSessions.length > 0 ? filteredSessions.map(c => (
                     <button key={c.id} type="button" className="sk-search-row"
-                      data-chat-search-result-kind="group"
+                      data-chat-search-result-kind={c.kind === 'group' ? 'group' : 'session'}
                       onClick={() => { onSelect(c.id); setQuery(''); }}>
-                      <AvatarGroup aria-label={c.name}>
-                        {(c.members ?? []).slice(0, 3).map(m => (
-                          <Avatar key={m.name} name={m.name} background={m.tone} size={26} style={{ borderRadius: 8 }} />
-                        ))}
-                      </AvatarGroup>
+                      {c.kind === 'group' ? (
+                        <AvatarGroup aria-label={c.name}>
+                          {(c.members ?? []).slice(0, 3).map(m => (
+                            <Avatar key={m.name} name={m.name} background={m.tone} size={26} style={{ borderRadius: 8 }} />
+                          ))}
+                        </AvatarGroup>
+                      ) : (
+                        <Avatar name={c.name} background={c.tone} size={26} style={{ borderRadius: 8 }} />
+                      )}
                       <strong>{c.name}</strong><span>{c.last}</span>
                     </button>
-                  ))}
+                  )) : <span className="sk-search-empty-tip">---无相关聊天---</span>}
                 </div>
-              )}
-              {directResults.length > 0 && (
-                <div className="sk-search-group">
-                  <span className="sk-search-group-title">会话</span>
-                  {directResults.map(c => (
-                    <button key={c.id} type="button" className="sk-search-row"
-                      data-chat-search-result-kind="session"
-                      onClick={() => { onSelect(c.id); setQuery(''); }}>
-                        <Avatar name={c.name} background={c.tone} size={26} style={{ borderRadius: 8 }} />
-                        <strong>{c.name}</strong><span>{c.last}</span>
-                      </button>
-                  ))}
-                </div>
-              )}
-              {peopleResults.length + groupResults.length + directResults.length === 0 && (
-                <Empty description="没有匹配结果" />
+              </div>
+            }>
+            <div className={`sk-conv-search-anchor${searchExpanded ? ' is-expanded' : ''}`}>
+              <Search size={15} className="sf-leading" aria-hidden="true" />
+              <input className="sk-conv-search-input" type="search"
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
+                placeholder="搜索联系人、群聊、会话" aria-label="聊天搜索" />
+              {q && (
+                <button type="button" className="sk-conv-search-clear" aria-label="清除搜索"
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => { setQuery(''); setSearchFocused(true); }}>
+                  <X size={13} />
+                </button>
               )}
             </div>
-          }>
-          <div className="sk-conv-search-anchor">
-            <Search size={15} className="sf-leading" aria-hidden="true" />
-            <input className="sf-field sk-conv-search-input" type="search"
-              value={query} onChange={event => setQuery(event.target.value)}
-              placeholder="搜索联系人、群聊、会话" aria-label="聊天搜索" />
-          </div>
-        </Popover>
-      </div>
+          </Popover>
+        </div>
 
-      <div className="sk-conv-new">
-        <Menu placement="bottom" actions={[
-          { id: 'sk.new-person', label: '找人', leading: <UserPlus size={14} />, onActivate: onFindPeople },
-          { id: 'sk.new-group', label: '创建群聊', leading: <Users size={14} />, onActivate: onCreateGroup },
-        ]}>
-          <Button actionId="sk.new-menu" emphasis="primary" fullWidth leading={<UserPlus size={15} />}
-            label="新建" />
-        </Menu>
-      </div>
+        <div className="sk-conv-new">
+          <Menu placement="bottom" actions={[
+            { id: 'sk.new-person', label: '找人', leading: <UserPlus size={14} />, onActivate: onFindPeople },
+            { id: 'sk.new-group', label: '创建群聊', leading: <Users size={14} />, onActivate: onCreateGroup },
+          ]}>
+            <Button actionId="sk.new-menu" emphasis="secondary" density="compact"
+              leading={<Plus size={16} />} aria-label="新建" label="" />
+          </Menu>
+        </div>
+      </header>
 
       {tab === 'chats' ? (
         <>

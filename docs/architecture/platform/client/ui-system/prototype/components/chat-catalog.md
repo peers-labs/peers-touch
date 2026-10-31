@@ -1,7 +1,7 @@
-# 聊天目录层（迁移增量 10，增量 17/19 增补）
+# 聊天目录层（迁移增量 10，增量 17/19/20 修订）
 
 > **Status**: draft（北极星窗框内，未晋升 peers-ui）
-> **Created**: 2026-10-31 · **Updated**: 2026-10-31（增量 17/19）
+> **Created**: 2026-10-31 · **Updated**: 2026-10-31（增量 20）
 > · **Owner**: Client Platform / UI System
 > **旧来源**：`pages/SocialChatPage.tsx`（chats/contacts 子导航）、
 > `ChatSessionList`、`ChatContactsPanel`、`ChatContactsDetailPanel`、
@@ -11,14 +11,22 @@
 ## 1. 产品边界
 
 聊天代码迁入 `ui-system/chat/` 目录（`ChatFeature` 编排，替换原 DesignDirections
-内联实现）。
+内联实现）。目录轨在**左** 300px 列、对话在右（增量 20 对齐 desktop SocialChatPage）。
 
-- **消息/联系人子导航**：轨顶 `Segmented`；消息轨 = 会话列表，联系人轨 = 好友请求 + 联系人列表。
+- **头部单行（增量 20）**：消息/联系人 `Segmented`、搜索、新建三者水平平齐在一行
+  （`.sk-rail-header`，align-items center）。搜索默认是 34px 圆形图标钮，仅放大镜；
+  聚焦或有查询时以 0.22s 动画展开为整行输入框，tab 区让位收缩到 0（opacity 同步淡出），
+  新建圆形钮始终留在行尾；失焦且查询为空时收起。有查询时显示清除 X。
+- **搜索结果弹层（增量 20 重排）**：两组固定顺序——**联系人在前、聊天在后**
+  （聊天组内含群聊与单聊，行带 kind 标记）；查询期间两组始终渲染，无命中的组显示
+  居中文案 `---无相关联系人---` / `---无相关聊天---`，不再用整面板 Empty。
+  点联系人：消息轨直接开/建会话，联系人轨打开资料卡。轨内列表同时按查询实时过滤。
+- **消息/联系人子导航**：头部 `Segmented`；消息轨 = 会话列表，联系人轨 = 好友请求 + 联系人列表。
 - **会话行**：单人方圆头像；群聊重叠头像组（AvatarGroup）；置顶/免打扰标记；
   hover 行尾操作（置顶/免打扰，与行点击为兄弟控件，杜绝 button 嵌套）；未读角标；置顶行优先排序。
-- **联合搜索**：轨内搜索弹 Popover，分「联系人 / 群聊 / 会话」三组实时结果；
-  点联系人无会话时直接新建并打开，点已有会话直接选中。
-- **新建菜单**：Menu 自带触发器——找人（复用找人 Dialog，11 人池）/ 创建群聊。
+- **联合搜索**：见上方「搜索结果弹层」（增量 20 前为联系人/群聊/会话三组，
+  现按联系人优先重排为联系人/聊天两组）。
+- **新建菜单**：头部行尾圆形 + 图标钮（Menu 自带触发器）——找人（复用找人 Dialog，11 人池）/ 创建群聊。
 - **好友请求（入站）**：接受/拒绝状态标签；接受首次失败显示行内错误 Alert，重试后变「已同意」；
   拒绝变「已拒绝」。已处理请求不消失，沉入「历史请求」分区（仅状态标签，无操作钮），
   与真身 ContactsBook 的状态点列表一致。
@@ -44,14 +52,20 @@
   改用 `AvatarGroup` 重叠圆 + 描边，与朋友圈头像组一致。
 - `Menu` 自带触发器与弹层（内部 `Children.only`），不能再外套 Popover——
   这是本次迁移踩到的真实组件合同，后续菜单一律直用。
+- 增量 20 回归 desktop 两处布局事实：会话轨在左（早期北极为右轨，是相对真身的退化）；
+  搜索为头部紧凑图标钮、聚焦展开吃掉 tab 空间；结果联系人优先、两组各自空态 tips
+  （真身 SessionList 只有单一空文案，分组 tips 是对「联系人/聊天来源可辨识」的改进）。
 
 ## 3. 门禁
 
 更新增量 1–3 全部旧探针（会话数/找人菜单/选择器），新增 8 场景：
 目录结构、联系人请求失败重试、联系人详情、发消息跳转、建群失败重试、置顶/免打扰、
-联合搜索分组（能力 62/62）。增量 19 增补 `contact-outgoing-cancel`（出站计数/撤回/
-入站与历史不受影响）、`create-group-federation-block`（联邦警示/提交禁用/改选恢复），
-并把 `contact-requests` 断言迁到入站/出站/历史三分结构（总门禁 96/96）。
+联合搜索分组（能力 62/62）。增量 19 增补 `contact-outgoing-cancel`、
+`create-group-federation-block`，并把 `contact-requests` 断言迁到入站/出站/历史三分。
+增量 20 增补 `rail-left-and-level-header`（grid 列位/水平行/收起态）、
+`rail-search-expand`（展开标记/tab 收缩为 0/失焦收起）、`rail-search-ordering`
+（联系人在前、命中时无 tips）、`rail-search-empty-tips`（双虚线 tips），
+并为 `conversation-filter` 补聚焦步骤（总门禁 101 动态场景全 OBSERVED）。
 consumer 18/18，tsc 干净，0 console error。
 
 ## 4. UNPROVEN

@@ -141,7 +141,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
               <div key={m.id} className={`sk-msg sk-msg-${m.from}`} data-message-id={m.id}>
                 {m.from === 'peer' && (
                   <Avatar name={m.senderName ?? conversation.name}
-                    background={m.senderTone ?? conversation.tone} size={28}
+                    background={m.senderTone ?? conversation.tone} size={32}
                     className="sk-msg-avatar" style={{ borderRadius: 8 }} />
                 )}
                 <div className="sk-msg-col">
@@ -157,7 +157,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
             <div key={m.id} className={`sk-msg sk-msg-${m.from}${emojiOnly ? ' is-emoji-only' : ''}`} data-message-id={m.id}>
               {m.from === 'peer' && (
                 conversation.kind === 'group' && m.senderName
-                  ? <Avatar name={m.senderName} background={m.senderTone ?? conversation.tone} size={28}
+                  ? <Avatar name={m.senderName} background={m.senderTone ?? conversation.tone} size={32}
                       className="sk-msg-avatar" style={{ borderRadius: 8 }} />
                   : <Avatar name={conversation.name} background={conversation.tone} size={32}
                       className="sk-msg-avatar" style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
@@ -196,10 +196,10 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                         )}
                       </>
                     )}
-                    <time>{m.at}</time>
                   </div>
                 )}
                 <div className="sk-msg-under">
+                  <time className="sk-msg-time">{m.at}</time>
                   <MessageReactions message={m} />
                   {m.edited && <span className="sk-msg-edited" data-msg-edited>已编辑</span>}
                   {m.pinned && (
@@ -213,7 +213,6 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                     </button>
                   ) : null}
                   <DeliveryMeta message={m} onRetry={() => onRetryMessage(conversation.id, m.id)} />
-                  {emojiOnly && <span className="sk-emoji-only-time"><time>{m.at}</time></span>}
                 </div>
               </div>
               <MessageActionBar
@@ -235,7 +234,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
         })}
         {peerTyping && (
           <div className="sk-typing-row" data-chat-typing aria-label="对方正在输入">
-            <Avatar name={conversation.name} background={conversation.tone} size={28}
+            <Avatar name={conversation.name} background={conversation.tone} size={32}
               style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
             <span className="sk-typing-bubble">
               <i /><i /><i />

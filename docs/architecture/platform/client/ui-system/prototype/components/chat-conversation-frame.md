@@ -1,8 +1,10 @@
-# 对话框架与通话入口（迁移增量 11）
+# 对话框架与通话入口（迁移增量 11，增量 19/20 修订）
 
-> **Status**: draft · **Created**: 2026-10-31 · **Owner**: Client Platform · UI System
-> **旧来源**：`ChatMessageArea`（头部操作）、`ChatDetailPanel`、`SearchMessagesModal`、
-> `ChatThreadPanel`、`CallSurface`/`GroupCallSurface`（入站在增量 14 补全）
+> **Status**: draft · **Created**: 2026-10-31 · **Updated**: 2026-10-31（增量 20）
+> · **Owner**: Client Platform · UI System
+> **旧来源**：`ChatMessageArea`（头部操作、消息行布局）、`ChatDetailPanel`、
+> `SearchMessagesModal`、`ChatThreadPanel`、
+> `CallSurface`/`GroupCallSurface`（入站在增量 14 补全，HUD 形态见 chat-calls.md）
 
 ## 1. 产品边界（全部 peers-ui，本地真实状态）
 
@@ -15,6 +17,11 @@
 - **消息搜索 Dialog**：关键词过滤本会话非服务消息，空查询给最近 5 条；结果行（发送者/摘要/时间）可点。
 - **话题侧拉页**：种子消息 + 3 条种子回复 + 回复输入框；发送后回复 +1、入口计数联动、输入清空。
 - 服务消息（入群/建群）以居中胶囊渲染。
+- **消息行对齐（增量 20 回归 desktop ChatArea）**：`.sk-msg` 为 flex 行，
+  `align-items: flex-start`——对方头像与气泡顶平齐；群聊时头像与发送者名顶平齐；
+  纯 emoji 大行例外，底对齐（desktop parity）。头像统一 32px（含撤回墓碑、typing）。
+  时间戳在气泡**外**的 meta 行（气泡下方，与已编辑/投递状态/反应同列），
+  不再画进气泡内部。
 
 ## 2. 旧设计审计
 
@@ -22,7 +29,8 @@
   不挤占对话列），关闭控件与分隔节奏一致。
 - 通话状态机保留 desktop 的阶段语义（振铃/接通/通话中），用确定性定时器模拟，
   不做假的立即接通；浮层用深色玻璃材质覆盖对话列而非整窗，符合窗框内应用边界。
-- 网格布局显式列位（main 在 1fr 列、rail 在 300px 列），修复了子元素自动放置
+- 网格布局显式列位（增量 20 起：rail 在左 300px 列、main 在右 1fr 列，
+  对齐 desktop SocialChatPage 的左轨右话序），修复了子元素自动放置
   把中栏压进 300px 轨道的缺陷；me 气泡列右对齐补全。
 
 ## 3. 门禁

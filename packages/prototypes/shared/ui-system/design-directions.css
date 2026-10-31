@@ -268,8 +268,8 @@
   backdrop-filter: blur(var(--sk-glass-blur));
   -webkit-backdrop-filter: blur(var(--sk-glass-blur));
 }
-.sk-conv-search .sf-field { width: 100%; }
-.sk-conv-new { margin: 10px 0 6px; }
+/* Rail header layout (compact expanding search + icon-only new button)
+   lives in chat.css as .sk-rail-header. */
 .sk-conv-title { margin: 8px 4px; font-size: 13px; color: var(--sk-text-2); font-weight: 600; }
 .sk-conv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .sk-conv-row {
@@ -302,7 +302,12 @@
   padding: 18px 22px 16px; gap: 12px;
 }
 .sk-msg-stream { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
-.sk-msg { display: flex; align-items: flex-end; gap: 9px; max-width: 78%; }
+/* Avatar top-aligns with the bubble (desktop ChatArea parity): the avatar
+   and the content column share flex-start, so in 1:1 chats avatar and bubble
+   begin on the same line; in groups the avatar aligns with the sender name.
+   Emoji-only rows bottom-align (large glyph, desktop parity). */
+.sk-msg { display: flex; align-items: flex-start; gap: 9px; max-width: 78%; }
+.sk-msg.is-emoji-only { align-items: flex-end; }
 .sk-msg-peer { align-self: flex-start; }
 .sk-msg-me { align-self: flex-end; flex-direction: row-reverse; }
 .sk-msg-avatar { flex-shrink: 0; }
@@ -316,11 +321,10 @@
   border-bottom-right-radius: 6px;
 }
 .sk-msg-bubble p { margin: 0; font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
-.sk-msg-bubble time {
-  display: block; margin-top: 4px; font-size: 10px;
-  color: var(--sk-text-3); text-align: right;
-}
-.sk-msg-me .sk-msg-bubble time { color: color-mix(in srgb, var(--sk-primary-ink) 65%, transparent); }
+/* Timestamp lives in the meta row BELOW the bubble (desktop MessageBubble
+   metaRow), never inside the bubble. */
+.sk-msg-time { font-size: 10.5px; color: var(--sk-text-3); font-variant-numeric: tabular-nums; }
+.sk-msg-me .sk-msg-time { color: color-mix(in srgb, var(--sk-text-2) 80%, transparent); }
 
 .sk-composer {
   flex-shrink: 0; display: flex; align-items: flex-end; gap: 10px;
