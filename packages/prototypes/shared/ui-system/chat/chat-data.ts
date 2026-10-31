@@ -4,6 +4,16 @@
  * requests, groups, messages) without any station/IM transport.
  */
 
+export type MessageAttachment = {
+  id: string;
+  kind: 'image' | 'file';
+  name: string;
+  mime: string;
+  size: number;
+  /** blob: preview for images; null for generic files */
+  previewUrl: string | null;
+};
+
 export type ChatMessage = {
   id: string;
   from: 'me' | 'peer';
@@ -14,6 +24,10 @@ export type ChatMessage = {
   kind?: 'text' | 'service' | 'image' | 'voice' | 'link';
   image?: string;
   voiceSeconds?: number;
+  /** Runtime blob URL for a locally recorded voice note; seed notes without a
+      source stay playback-disabled (remote download not modelled). */
+  voiceUrl?: string | null;
+  attachments?: MessageAttachment[];
   link?: { title: string; url: string; desc: string };
   reactions?: Partial<Record<string, string[]>>;
   replyTo?: { who: string; text: string };

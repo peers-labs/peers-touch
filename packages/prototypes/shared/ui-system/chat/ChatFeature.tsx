@@ -41,15 +41,37 @@ export function ChatFeature() {
   const toggleMute = (id: string) => setSessions(list =>
     list.map(c => c.id === id ? { ...c, muted: !c.muted } : c));
 
-  const sendMessage = (text: string, replyTo?: { who: string; text: string }) => {
+  const sendMessage = (payload: {
+    text: string;
+    attachments: ChatMessage['attachments'];
+    voice: { url: string; durationSeconds: number } | null;
+    replyTo?: { who: string; text: string };
+  }) => {
     if (!selectedId) return;
-    const msg: ChatMessage = {
-      id: `local-${Date.now()}`, from: 'me', text,
-      at: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-      replyTo,
-    };
+    const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const msg: ChatMessage = payload.voice
+      ? {
+          id: `local-${Date.now()}`, from: 'me', text: '',
+          at: now, kind: 'voice',
+          voiceUrl: payload.voice.url, voiceSeconds: payload.voice.durationSeconds,
+          replyTo: payload.replyTo,
+        }
+      : {
+          id: `local-${Date.now()}`, from: 'me', text: payload.text,
+          at: now,
+          attachments: payload.attachments,
+          kind: payload.attachments?.some(a => a.kind === 'image') ? 'image' : 'text',
+          replyTo: payload.replyTo,
+        };
     setMessagesByConv(map => ({ ...map, [selectedId]: [...(map[selectedId] ?? []), msg] }));
-    setSessions(list => list.map(c => c.id === selectedId ? { ...c, last: text } : c));
+    setSessions(list => list.map(c => {
+      if (c.id !== selectedId) return c;
+      const last = payload.voice ? '[语音]'
+        : payload.attachments && payload.attachments.length > 0
+          ? payload.text || `[${payload.attachments.some(a => a.kind === 'image') ? '图片' : '文件'}]`
+          : payload.text;
+      return { ...c, last };
+    }));
   };
 
   const openPerson = (person: Person) => {

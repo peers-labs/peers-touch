@@ -127,6 +127,22 @@ async function serviceProbe(page, base, anchor, branch) {
 
 /* ---------- operations ---------- */
 
+// 1x1 green PNG so setFiles can stage a real decodable image attachment.
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPIW1HxHwAFpAKO4RD0GQAAAABJRU5ErkJggg==',
+  'base64');
+
+function filePayload(file) {
+  if (file.kind === 'png' || file.mime?.startsWith('image/')) {
+    return { name: file.name, mimeType: file.mime ?? 'image/png', buffer: PNG_1X1 };
+  }
+  if (file.kind === 'large') {
+    return { name: file.name, mimeType: file.mime ?? 'application/octet-stream', buffer: Buffer.alloc(file.size ?? 9 * 1024 * 1024) };
+  }
+  const text = file.text ?? `${file.name}\nlocal draft`;
+  return { name: file.name, mimeType: file.mime ?? 'text/plain', buffer: Buffer.from(text) };
+}
+
 async function resolveOne(page, anchor, target, { scope } = {}) {
   const base = scope === 'global' ? page : page.locator(anchor);
   const loc = target ? base.locator(target) : base;
@@ -146,6 +162,11 @@ async function runOperation(page, anchor, op) {
     case 'hover': await target.hover(); break;
     case 'press': await page.keyboard.press(op.key); break;
     case 'type': await target.fill(op.value); break;
+    case 'setFiles': {
+      const input = scope.locator(op.target).first();
+      await input.setInputFiles((op.files ?? []).map(filePayload));
+      break;
+    }
     case 'wait': await page.waitForTimeout(op.ms ?? 150); break;
     case 'waitFor': await target.waitFor({ state: op.state ?? 'visible', timeout: op.timeout ?? 4000 }); break;
     default: throw new Error(`UNKNOWN_OPERATION: ${op.op}`);
@@ -563,12 +584,21 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
   const evidence = { kind: 'peers-ui-specimen-evaluation-run', source: sourceIdentityCached, runAt: new Date().toISOString(), reports: [] };
 
-  const browser = await chromium.launch();
+  // Fake media devices let voice-recorder scenarios drive the real
+  // getUserMedia/MediaRecorder path without a physical microphone; autoplay
+  // is relaxed so the recorded blob can play back during assertions.
+  const browser = await chromium.launch({
+    args: [
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+      '--autoplay-policy=no-user-gesture-required',
+    ],
+  });
   // One context grants clipboard so CopyButton's real success path can run;
   // every scenario still gets its own fresh page for isolation.
   const context = await browser.newContext({
     ...VIEWPORT, deviceScaleFactor: 2,
-    permissions: ['clipboard-read', 'clipboard-write'],
+    permissions: ['clipboard-read', 'clipboard-write', 'microphone'],
   });
   try {
     for (const suitePath of args.suites)

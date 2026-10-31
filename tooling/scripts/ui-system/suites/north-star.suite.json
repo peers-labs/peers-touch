@@ -572,6 +572,127 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.composer-emoji",
+      "title": "富输入：表情面板插入并随消息发送",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-composer-tool='emoji']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "clickGlobal", "target": "[data-emoji-panel] .sk-emoji-cell:first-child" },
+        { "op": "click", "target": "[data-action-id='sk.send-message']" },
+        { "op": "wait", "ms": 250 }
+      ],
+      "oracles": [
+        { "id": "emoji-bubble", "type": "textContains", "target": ".sk-msg-me:last-child .sk-msg-bubble", "contains": "😀" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.composer-attachment-file",
+      "title": "富输入：文件草稿上传就绪后发送，气泡内文件卡可开详情",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "setFiles", "target": "input[data-file-kind='file']", "files": [ { "name": "种子交换清单.pdf", "mime": "application/pdf", "text": "local draft" } ] },
+        { "op": "waitFor", "target": ".sk-draft-card[data-draft-status='ready']", "state": "visible", "timeout": 6000 },
+        { "op": "click", "target": "[data-action-id='sk.send-message']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "target": ".sk-msg-me:last-child [data-attach-file]" },
+        { "op": "wait", "ms": 200 }
+      ],
+      "oracles": [
+        { "id": "file-chip", "type": "exists", "target": ".sk-msg-me:last-child [data-attach-file]" },
+        { "id": "file-detail", "type": "exists", "scope": "global", "target": "[data-attach-detail]" }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": "[data-action-id='attach.file-close']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.composer-attachment-image",
+      "title": "富输入：截图入口选择图片，发送后气泡缩略图可开灯箱",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "setFiles", "target": "input[data-file-kind='screenshot']", "files": [ { "name": "seedling.png", "kind": "png" } ] },
+        { "op": "waitFor", "target": ".sk-draft-card[data-draft-status='ready']", "state": "visible", "timeout": 6000 },
+        { "op": "type", "target": ".sk-composer textarea", "value": "刚拍的育苗盘" },
+        { "op": "click", "target": "[data-action-id='sk.send-message']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "target": ".sk-msg-me:last-child [data-attach-image]" },
+        { "op": "wait", "ms": 200 }
+      ],
+      "oracles": [
+        { "id": "image-bubble", "type": "exists", "target": ".sk-msg-me:last-child [data-attach-image]" },
+        { "id": "image-lightbox", "type": "exists", "scope": "global", "target": "[data-attach-overlay]" }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": "[data-action-id='attach.image-close']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.composer-attachment-retry",
+      "title": "富输入：大文件首传失败可重试，失败时发送禁用；草稿可移除",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "setFiles", "target": "input[data-file-kind='file']", "files": [ { "name": "big-backup.zip", "kind": "large", "size": 9437184 } ] },
+        { "op": "waitFor", "target": ".sk-draft-card[data-draft-status='failed']", "state": "visible", "timeout": 6000 },
+        { "op": "click", "target": "[data-draft-retry]" },
+        { "op": "waitFor", "target": ".sk-draft-card[data-draft-status='ready']", "state": "visible", "timeout": 6000 },
+        { "op": "click", "target": "[data-draft-remove]" },
+        { "op": "wait", "ms": 200 }
+      ],
+      "oracles": [
+        { "id": "recovered", "type": "missing", "target": ".sk-draft-card" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.composer-voice",
+      "title": "富输入：真实 MediaRecorder 录音→完成→发送，气泡内可播放",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-composer-tool='voice']" },
+        { "op": "waitFor", "target": "[data-voice-recording]", "state": "visible", "timeout": 4000 },
+        { "op": "wait", "ms": 1500 },
+        { "op": "click", "target": "[data-voice-finish]" },
+        { "op": "waitFor", "target": "[data-voice-draft]", "state": "visible", "timeout": 4000 },
+        { "op": "click", "target": "[data-voice-send]" },
+        { "op": "wait", "ms": 400 },
+        { "op": "click", "target": ".sk-msg-me:last-child [data-voice-toggle]" },
+        { "op": "wait", "ms": 700 }
+      ],
+      "oracles": [
+        { "id": "voice-bubble", "type": "attr", "target": ".sk-msg-me:last-child [data-voice]", "attr": "data-voice-available", "equals": "true" },
+        { "id": "voice-playing", "type": "attr", "target": ".sk-msg-me:last-child [data-voice]", "attr": "data-voice-playing", "equals": "true" }
+      ],
+      "finalizers": [
+        { "op": "click", "target": ".sk-msg-me:last-child [data-voice-toggle]" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.composer-expand",
+      "title": "富输入：展开/收起输入框真实切换 aria-pressed",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-composer-expand]" }
+      ],
+      "oracles": [
+        { "id": "expanded", "type": "ariaPressed", "target": "[data-composer-expand]", "equals": true }
+      ],
+      "finalizers": []
+    },
+    {
       "id": "ui.prototype.north-star.moments-feed",
       "title": "增量4：动态子系统首页——4 范围 Segmented/发动态 CTA/3 张完整卡片（48 头像、信任行、图片、评论预览、反应条、加载更多），工艺电池全清",
       "level": "L3_DYNAMIC",

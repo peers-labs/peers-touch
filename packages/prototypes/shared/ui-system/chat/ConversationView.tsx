@@ -1,20 +1,24 @@
 /**
  * ConversationView — full conversation surface: header, message stream
- * (service/group/reactions/reply-quote/link-preview/@mention anatomy),
- * hover action bar, reply composer, thread/detail/search sheets.
+ * (service/group/reactions/reply-quote/link-preview/@mention/attachment/
+ * voice anatomy), hover action bar, and the rich composer. Thread/detail/
+ * search sheets and call overlay stay one level up in this file.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Link as LinkIcon, X } from 'lucide-react';
-import { Avatar, Empty, IconButton, TextArea } from '@peers-touch/ui';
+import { useEffect, useRef, useState } from 'react';
+import { Link as LinkIcon } from 'lucide-react';
+import { Avatar, Empty } from '@peers-touch/ui';
 import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
 import { SEED_THREADS } from './chat-data';
 import { ConversationHeader, DetailSheet, MessageSearchDialog, ThreadSheet } from './ConversationPanels';
 import {
   DeleteConfirm, ForwardDialog, MessageActionBar, MessageReactions,
 } from './MessageActions';
+import { MessageAttachments } from './MessageAttachments';
+import { VoicePlayer } from './VoiceNote';
+import { ChatComposer, type ComposerPayload } from './ChatComposer';
 import type { CallKind } from './CallOverlay';
 
-const MENTION_RE = /(@[\u4e00-\u9fa5\w·]+)/g;
+const MENTION_RE = new RegExp('(@[\\u4e00-\\u9fa5\\w·]+)', 'g');
 
 function renderRichText(text: string) {
   return text.split(MENTION_RE).map((part, index) => {
@@ -27,7 +31,7 @@ export function ConversationView({ conversation, messages, onSend, onTogglePin, 
   onReact, onDelete, onForward, onStartCall, onBack, conversations }: {
   conversation: Conversation;
   messages: ChatMessage[];
-  onSend: (text: string, replyTo?: { who: string; text: string }) => void;
+  onSend: (payload: ComposerPayload) => void;
   onTogglePin: (id: string) => void;
   onToggleMute: (id: string) => void;
   onReact: (messageId: string, kind: string) => void;
@@ -36,9 +40,7 @@ export function ConversationView({ conversation, messages, onSend, onTogglePin, 
   onStartCall: (kind: CallKind) => void;
   onBack: () => void;
   conversations: Conversation[];
-  header?: ReactNode;
 }) {
-  const [draft, setDraft] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -66,32 +68,17 @@ export function ConversationView({ conversation, messages, onSend, onTogglePin, 
     window.setTimeout(() => setToast(''), 1800);
   };
 
-  const send = () => {
-    const text = draft.trim();
-    if (!text) return;
-    onSend(text, replyTarget
-      ? { who: replyTarget.from === 'me' ? '我' : (replyTarget.senderName ?? conversation.name), text: replyTarget.text }
-      : undefined);
-    setDraft('');
+  const submit = (payload: ComposerPayload) => {
+    onSend({
+      ...payload,
+      replyTo: replyTarget
+        ? {
+            who: replyTarget.from === 'me' ? '我' : (replyTarget.senderName ?? conversation.name),
+            text: replyTarget.text,
+          }
+        : undefined,
+    });
     setReplyTarget(null);
-  };
-  const onEnter = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    e.preventDefault();
-    send();
-  };
-
-  // Mention popover only while typing a live @ token (no whitespace after @);
-  // an empty draft must not resolve to the include('') match-all set.
-  const atIndex = draft.lastIndexOf('@');
-  const mentionTail = atIndex >= 0 ? draft.slice(atIndex + 1) : '';
-  const mentionName = mentionTail.split(/\s/)[0];
-  const mentionActive = atIndex >= 0 && !mentionTail.includes(' ');
-  const mentionCandidates = mentionActive && conversation.kind === 'group'
-    ? (conversation.members ?? []).filter(m => m.name.includes(mentionName)).slice(0, 5)
-    : [];
-  const insertMention = (name: string) => {
-    const at = draft.lastIndexOf('@');
-    setDraft(`${draft.slice(0, at)}@${name} `);
   };
 
   const threadMessage = messages.find(m => m.id === threadId) ?? null;
@@ -132,23 +119,32 @@ export function ConversationView({ conversation, messages, onSend, onTogglePin, 
                 {m.from === 'peer' && conversation.kind === 'group' && m.senderName && (
                   <span className="sk-msg-sender">{m.senderName}</span>
                 )}
-                <div className="sk-msg-bubble">
+                <div className="sk-msg-bubble" data-message-kind={m.kind ?? 'text'}>
                   {m.replyTo && (
                     <div className="sk-reply-quote" data-reply-to>
                       <span>{m.replyTo.who}</span>
                       <p>{m.replyTo.text}</p>
                     </div>
                   )}
-                  <p>{renderRichText(m.text)}</p>
-                  {m.link && (
-                    <a className="sk-link-card" href={m.link.url} onClick={e => e.preventDefault()}
-                      data-link-preview>
-                      <span className="sk-link-icon"><LinkIcon size={14} /></span>
-                      <span className="sk-link-id">
-                        <strong>{m.link.title}</strong>
-                        <span>{m.link.desc}</span>
-                      </span>
-                    </a>
+                  {m.kind === 'voice' ? (
+                    <VoicePlayer url={m.voiceUrl} durationSeconds={m.voiceSeconds ?? 0} />
+                  ) : (
+                    <>
+                      {m.text && <p>{renderRichText(m.text)}</p>}
+                      {m.attachments && m.attachments.length > 0 && (
+                        <MessageAttachments attachments={m.attachments} />
+                      )}
+                      {m.link && (
+                        <a className="sk-link-card" href={m.link.url} onClick={e => e.preventDefault()}
+                          data-link-preview>
+                          <span className="sk-link-icon"><LinkIcon size={14} /></span>
+                          <span className="sk-link-id">
+                            <strong>{m.link.title}</strong>
+                            <span>{m.link.desc}</span>
+                          </span>
+                        </a>
+                      )}
+                    </>
                   )}
                   <time>{m.at}</time>
                 </div>
@@ -179,40 +175,14 @@ export function ConversationView({ conversation, messages, onSend, onTogglePin, 
         ))}
       </div>
 
-      {replyTarget && (
-        <div className="sk-reply-bar" data-reply-bar>
-          <div>
-            <span>回复 {replyTarget.from === 'me' ? '我' : (replyTarget.senderName ?? conversation.name)}</span>
-            <p>{replyTarget.text}</p>
-          </div>
-          <button type="button" className="sk-reply-cancel" aria-label="取消回复"
-            onClick={() => setReplyTarget(null)}><X size={14} /></button>
-        </div>
-      )}
-      <div className="sk-composer">
-        <div className="sk-composer-input-wrap">
-          {conversation.kind === 'group' && mentionCandidates.length > 0 && (
-            <div className="sk-mention-pop" data-mention-pop>
-              {mentionCandidates.map(member => (
-                <button key={member.name} type="button" className="sk-mention-row"
-                  data-mention-name={member.name} onClick={() => insertMention(member.name)}>
-                  @{member.name}
-                </button>
-              ))}
-            </div>
-          )}
-          <TextArea framing="embedded" minimumRows={1} maximumRows={4}
-            className="sk-composer-input" value={draft} aria-label="输入消息"
-            data-composer-value={draft}
-            onValueChange={setDraft}
-            onEnter={onEnter}
-            placeholder={`发消息给 ${conversation.name}…`} />
-        </div>
-        <IconButton iconId="send" iconSize={16} label="发送消息" actionId="sk.send-message"
-          emphasis="primary"
-          availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入消息' }}
-          onActivate={send} />
-      </div>
+      <ChatComposer key={conversation.id} groupMembers={conversation.members}
+        replyTarget={replyTarget ? {
+          who: replyTarget.from === 'me' ? '我' : (replyTarget.senderName ?? conversation.name),
+          text: replyTarget.text,
+        } : null}
+        placeholder={`发消息给 ${conversation.name}…`}
+        onCancelReply={() => setReplyTarget(null)}
+        onSend={submit} />
 
       {toast && <div className="sk-chat-toast" role="status">{toast}</div>}
 
