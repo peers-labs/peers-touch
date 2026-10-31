@@ -3261,6 +3261,12 @@ class AgentNativeJourney:
                     or self.chat_provider_fixture_ids or self.chat_provider_restore
                     or self.chat_skill_fixture_ids or self.chat_mcp_fixture_names):
                 failures.append("owned Agent or Provider fixtures remain without a command transport")
+            dashboard = getattr(self, "dashboard", None)
+            if dashboard is not None:
+                try:
+                    dashboard.stop()
+                except Exception as error:
+                    failures.append(f"Dashboard Suite cleanup: {error}")
             return failures
         if self.journey == "cli-provider" and self.cli_provider_sample_id:
             try:
@@ -3351,22 +3357,22 @@ class AgentNativeJourney:
                 failures.append(f"Chat Suite Provider cleanup: {error}")
         for provider_id in reversed(tuple(self.chat_provider_fixture_ids)):
             try:
-                self.invoke_readback_command("provider_delete", {"id": provider_id})
+                self.dashboard.delete_fixture(provider_id)
                 self.chat_provider_fixture_ids.remove(provider_id)
             except Exception as error:
                 failures.append(f"Chat Suite Provider {provider_id} cleanup: {error}")
         for provider_id, original in tuple(self.chat_provider_restore.items()):
             try:
-                current = self.invoke_readback_command(
-                    "provider_get", {"id": provider_id},
+                current = self.dashboard.api(
+                    "provider/get", {"provider_id": provider_id},
                 )["provider"]
-                self.invoke_readback_command("provider_update", {
-                    "id": provider_id, "enabled": original["enabled"],
+                self.dashboard.api("provider/update", {
+                    "provider_id": provider_id, "enabled": original["enabled"],
                     "version": int(current["version"]),
                     "runtime_config": original["runtime_config"],
                 })
-                restored = self.invoke_readback_command(
-                    "provider_get", {"id": provider_id},
+                restored = self.dashboard.api(
+                    "provider/get", {"provider_id": provider_id},
                 )["provider"]
                 require(restored["runtime_config"] == original["runtime_config"]
                         and restored["enabled"] == original["enabled"],
@@ -3374,6 +3380,12 @@ class AgentNativeJourney:
                 del self.chat_provider_restore[provider_id]
             except Exception as error:
                 failures.append(f"Chat Suite CLI {provider_id} restore: {error}")
+        dashboard = getattr(self, "dashboard", None)
+        if dashboard is not None:
+            try:
+                dashboard.stop()
+            except Exception as error:
+                failures.append(f"Dashboard Suite cleanup: {error}")
         return failures
 
     def cleanup_minimum_usable_resources(self) -> list[str]:

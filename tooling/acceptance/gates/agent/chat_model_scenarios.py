@@ -103,110 +103,6 @@ def consumer_model_choices(
     return choices
 
 
-def select_provider_settings(
-    runner: AgentNativeJourney,
-    provider_id: str,
-    description: str,
-) -> None:
-    labels = json.loads((REPO_ROOT / "packages/locales/en/provider.json").read_text())
-    runner.set_input_value(
-        f'input[placeholder="{labels["provider.menu.searchPlaceholder"]}"]',
-        provider_id,
-        f"{description} search",
-    )
-    runner.click_visible(f'[data-item-id="{provider_id}"] button[aria-pressed]', description)
-
-
-def authorized_provider_surface(
-    runner: AgentNativeJourney,
-    provider_id: str,
-    expected_model_ids: list[str],
-) -> dict[str, Any]:
-    """Inspect the consumer tree without exposing management values."""
-    settings_section(runner, "providers")
-    select_provider_settings(runner, provider_id, "authorized Provider")
-    wait_until(lambda: runner.driver.execute_script(
-        """
-        return [...document.querySelectorAll('[data-authorized-model]')]
-          .map(e => e.dataset.authorizedModel).sort();
-        """
-    ) == sorted(expected_model_ids), "current authorized model rows")
-    surface = runner.driver.execute_script(
-        """
-        const visible = e => e.getClientRects().length > 0;
-        const pane = document.querySelector('[data-authorized-provider-detail]');
-        return {
-          modelIds: [...pane.querySelectorAll('[data-authorized-model]')]
-            .map(e => e.dataset.authorizedModel),
-          credentialFields: [...document.querySelectorAll('input')]
-            .filter(visible).filter(e => /api.?key|base.?url/i.test([e.id,e.placeholder].join(' '))).length,
-          filters: [...document.querySelectorAll('[role="switch"]')].filter(visible).length,
-          runtimeTags: [...document.querySelectorAll('[data-item-id] .ant-tag')].filter(visible).length,
-          healthClaims: [...document.querySelectorAll('[data-item-id] [title]')].filter(visible)
-            .filter(e => /verified|checked|credential/i.test(e.title)).length,
-          federation: [...document.querySelectorAll('[data-pt-section-item="federation"]')].filter(visible).length,
-          providerSelectors: [...document.querySelectorAll('[data-item-id] button[aria-pressed]')]
-            .filter(visible).length,
-          overflow: pane.scrollWidth > pane.clientWidth,
-        };
-        """
-    )
-    require(surface["credentialFields"] == 0 and surface["filters"] == 0
-            and surface["runtimeTags"] == 0 and surface["federation"] == 0,
-            "consumer Settings exposes a management control")
-    require(surface["providerSelectors"] > 0 and not surface["overflow"],
-            "consumer model surface is inaccessible or clipped")
-    require(surface["healthClaims"] == 0, "authorization is presented as a health check")
-    return surface
-
-
-def authorized_model_geometry(runner: AgentNativeJourney) -> dict[str, Any]:
-    return runner.driver.execute_script(
-        """
-        const pane = document.querySelector('[data-authorized-provider-detail]');
-        if (!pane) return null;
-        const models = [...pane.querySelectorAll('[data-authorized-model]')];
-        const bounds = e => {
-          const r=e.getBoundingClientRect();
-          return {left:r.left, right:r.right, top:r.top, bottom:r.bottom, width:r.width, height:r.height};
-        };
-        const rows = models.map(row => ({
-          name: bounds(row.querySelector('[data-ui-column="model"]')),
-          action: bounds(row.querySelector('[data-ui-column="default"]')),
-          button: bounds(row.querySelector('button')),
-        }));
-        const directions = [...pane.parentElement.parentElement.children].map(bounds);
-        return {viewport:innerWidth, pane:bounds(pane), rows,
-          direction:getComputedStyle(pane.parentElement.parentElement).flexDirection,
-          list:directions[0], overflow:pane.scrollWidth>pane.clientWidth};
-        """
-    )
-
-
-def require_authorized_model_geometry(geometry: dict[str, Any]) -> None:
-    require(bool(geometry) and bool(geometry["rows"]), "authorized model geometry is absent")
-    require(not geometry["overflow"], "authorized models overflow their pane")
-    rows = geometry["rows"]
-    for row in rows:
-        require(row["name"]["width"] >= 80, "model name is compressed below a readable width")
-        require(row["button"]["width"] >= 28 and row["button"]["height"] >= 28,
-                "default action target is too small")
-        require(row["name"]["right"] <= row["action"]["left"],
-                "model name overlaps its default action")
-        require(abs(row["name"]["left"] - rows[0]["name"]["left"]) <= 1
-                and abs(row["action"]["left"] - rows[0]["action"]["left"]) <= 1
-                and abs(row["action"]["right"] - rows[0]["action"]["right"]) <= 1,
-                "model rows do not share content and action tracks")
-    if geometry["viewport"] < 992:
-        require(geometry["direction"] == "column"
-                and geometry["list"]["bottom"] <= geometry["pane"]["top"] + 1,
-                "narrow Provider list does not stack above its detail")
-    else:
-        require(geometry["direction"] == "row"
-                and geometry["list"]["right"] <= geometry["pane"]["left"] + 1,
-                "wide Provider list does not sit beside its detail")
-
-
 def settings_default(
     runner: AgentNativeJourney, agent_id: str, fixture: dict[str, str],
 ) -> dict[str, Any]:
@@ -237,8 +133,9 @@ def settings_default(
     expected = {"provider": fixture["providerId"], "model": fixture["modelId"]}
     accepted = wait_until(lambda: (
         value if (value := runner.invoke_readback_command(
-            "model_config_get", {"key": "default"},
-        )).get("ref") == expected else None
+            "provider_runtime_default_get",
+        )).get("runtimeDefault", {}).get("providerId") == expected["provider"]
+        and value["runtimeDefault"].get("modelId") == expected["model"] else None
     ), "Settings default persisted composite reference")
     runner.click_primary_navigation("agent", "Agent workspace")
     runner.select_agent_chat(agent_id)
@@ -263,31 +160,22 @@ def topic_isolation(
     """Same model IDs under different Providers must never resolve by ID alone."""
     marker = runner.runtime_manifest["runId"]
     fixture_key = runner.minimum_provider_fixture.api_key
-    original_provider = runner.invoke_readback_command(
-        "provider_get", {"id": fixture["providerId"]},
+    original_provider = runner.dashboard.api(
+        "provider/get", {"provider_id": fixture["providerId"]},
     )
     sibling_name = f"Composite sibling {marker}"
-    created = runner.invoke_readback_command("provider_create", {
-        "id": f"composite-sibling-{marker.lower()}",
-        "name": sibling_name, "description": "Suite-owned composite receiver",
-        "logo": "", "key_vaults": json.dumps({"api_key": fixture_key}),
-        "config_json": json.dumps({"base_url": original_provider["provider"]["base_url"]}),
-        "runtime_kind": "direct", "protocol": "openai",
-    })
-    sibling_id = created["provider"]["id"]
-    runner.chat_provider_fixture_ids.append(sibling_id)
+    sibling_id = f"composite-sibling-{marker.lower()}"
     sibling = {
         "providerId": sibling_id, "modelId": fixture["modelId"],
         "displayName": f"Sibling receiver {marker}",
     }
-    runner.invoke_readback_command("model_add", {
-        "provider_id": sibling_id,
-        "data": {
-            "id": sibling["modelId"], "display_name": sibling["displayName"],
+    runner.dashboard.create_fixture(
+        sibling_id, sibling_name, original_provider["provider"]["base_url"], fixture_key, {
+            "model_id": sibling["modelId"], "display_name": sibling["displayName"],
             "enabled": True, "context_window": 8192,
             "capabilities": model_capability_config({"streaming": True}),
         },
-    })
+    )
     runner.harness("reconcileChatSuiteModelProjection")
     before = runner.station_agent(agent_id)
     select_topic(runner, ids[0])
@@ -377,7 +265,6 @@ def disable_recovery(
     runner: AgentNativeJourney, agent_id: str, fixture: dict[str, str],
 ) -> dict[str, Any]:
     """Availability changes must reach Settings, composer and real turn admission."""
-    labels = json.loads((REPO_ROOT / "packages/locales/en/provider.json").read_text())
     provider_id = fixture["providerId"]
     runner.select_agent_chat(agent_id)
     runner.click_visible("[data-pt-agent-session-start]", "new availability Topic")
@@ -385,55 +272,20 @@ def disable_recovery(
     topic_id = runner.runtime_snapshot()["currentSessionKey"]
     observations = {}
 
-    def provider_settings() -> None:
-        settings_section(runner, "providers")
-        select_provider_settings(runner, provider_id, "fixture Provider")
-
     def toggle_model() -> None:
-        runner.click_visible(
-            (
-                f'[data-pt-provider-model-provider="{provider_id}"]'
-                f'[data-pt-provider-model-toggle="{fixture["modelId"]}"]'
-            ),
-            "fixture model switch",
-        )
+        current = runner.dashboard.api("provider/get", {"provider_id": provider_id})["provider"]
+        model = next(value for value in current["models"] if value["id"] == fixture["modelId"])
+        runner.dashboard.call("availability", {
+            "providerId": provider_id, "modelName": fixture["displayName"],
+            "enabled": not model["enabled"],
+        })
 
     def toggle_provider(enabled: bool) -> None:
-        runner.click_visible(
-            f'[data-pt-provider-enabled-toggle="{provider_id}"]',
-            "Provider enable switch",
-        )
-        if enabled:
-            wait_until(
-                lambda: runner.invoke_readback_command(
-                    "provider_get", {"id": provider_id},
-                )["provider"]["enabled"] is True,
-                "Provider enable decision",
-                timeout=15,
-            )
-            return
-        outcome = wait_until(
-            lambda: (
-                "confirm"
-                if runner.visible_element_state(".ant-modal-confirm")
-                is not None
-                else (
-                    "disabled"
-                    if runner.invoke_readback_command(
-                        "provider_get", {"id": provider_id},
-                    )["provider"]["enabled"] is False
-                    else None
-                )
-            ),
-            "Provider disable decision",
-            timeout=15,
-        )
-        if outcome == "confirm":
-            from tooling.acceptance.gates.agent.chat_identity_scenarios import click_text
-            click_text(runner, ".ant-modal-confirm button", labels["provider.detail.disableConfirm.ok"])
+        runner.dashboard.call("availability", {"providerId": provider_id, "enabled": enabled})
 
     def assert_removed(kind: str) -> None:
         runner.click_primary_navigation("agent", "return to Chat")
+        runner.harness("reconcileChatSuiteModelProjection")
         runner.select_agent_chat(agent_id)
         select_topic(runner, topic_id)
         wait_until(lambda: selection(runner) != {
@@ -446,24 +298,22 @@ def disable_recovery(
         runner.press_native_key(NativeKey.ESCAPE)
         observations[kind] = {
             "selection": selection(runner),
-            "enabled": runner.invoke_readback_command(
-                "provider_get", {"id": provider_id},
+            "enabled": runner.dashboard.api(
+                "provider/get", {"provider_id": provider_id},
             )["provider"]["enabled"],
         }
 
-    provider_settings()
     toggle_model()
     wait_until(lambda: next(
-        item for item in runner.invoke_readback_command(
-            "provider_get", {"id": provider_id},
+        item for item in runner.dashboard.api(
+            "provider/get", {"provider_id": provider_id},
         )["provider"]["models"] if item["id"] == fixture["modelId"]
     )["enabled"] is False, "disabled model authority")
     assert_removed("model")
-    provider_settings()
     toggle_model()
     wait_until(lambda: next(
-        item for item in runner.invoke_readback_command(
-            "provider_get", {"id": provider_id},
+        item for item in runner.dashboard.api(
+            "provider/get", {"provider_id": provider_id},
         )["provider"]["models"] if item["id"] == fixture["modelId"]
     )["enabled"] is True, "restored model authority")
     runner.harness("reconcileChatSuiteModelProjection")
@@ -471,16 +321,14 @@ def disable_recovery(
     runner.select_agent_chat(agent_id)
     select_topic(runner, topic_id)
     select_model(runner, fixture)
-    provider_settings()
     toggle_provider(False)
-    wait_until(lambda: runner.invoke_readback_command(
-        "provider_get", {"id": provider_id},
+    wait_until(lambda: runner.dashboard.api(
+        "provider/get", {"provider_id": provider_id},
     )["provider"]["enabled"] is False, "disabled Provider authority", timeout=30)
     assert_removed("provider")
-    provider_settings()
     toggle_provider(True)
-    wait_until(lambda: runner.invoke_readback_command(
-        "provider_get", {"id": provider_id},
+    wait_until(lambda: runner.dashboard.api(
+        "provider/get", {"provider_id": provider_id},
     )["provider"]["enabled"] is True, "restored Provider authority")
     runner.harness("reconcileChatSuiteModelProjection")
     runner.click_primary_navigation("agent", "restored Chat")
@@ -488,10 +336,10 @@ def disable_recovery(
     select_topic(runner, topic_id)
     select_model(runner, fixture)
     return {
-        "uiAction": "disable and restore model and Provider through Settings switches",
+        "uiAction": "disable and restore model and Provider through Dashboard; open Native Chat",
         "receiverAssertion": "disabled selections fall back and leave the picker; restored pair is selectable",
         "availability": observations,
         "operationIds": [
-            "settings.provider.enabled-projection", "settings.model.enabled-projection",
+            "dashboard.provider.availability-consumed",
         ],
     }

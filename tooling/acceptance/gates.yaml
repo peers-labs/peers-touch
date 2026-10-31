@@ -209,7 +209,7 @@
       "environment": "home-station", "provisioner": "home-station",
       "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
       "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
-      "description": "Native mixed Provider Settings, Station CLI discovery, shared availability and Topic model ownership."
+      "description": "Suite-reused authenticated Dashboard DM/CLI configuration and discovery, Native model consumption, shared availability and Topic model ownership."
     },
     "agent-chat-topics-native": {
       "requiredRuntimeCells": ["desktop-linux-native"],
