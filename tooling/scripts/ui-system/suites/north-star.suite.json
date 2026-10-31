@@ -466,7 +466,8 @@
         { "id": "group-scope", "type": "attr", "target": ".sk-call-overlay", "attr": "data-call-scope", "equals": "group" },
         { "id": "all-joined", "type": "attr", "target": ".sk-call-grid", "attr": "data-participant-count", "equals": "5" },
         { "id": "speaking-highlight", "type": "count", "target": ".sk-call-tile.is-speaking", "gte": 1 },
-        { "id": "local-muted", "type": "attr", "target": "[data-participant-local='true']", "attr": "data-mic", "equals": "off" }
+        { "id": "local-muted", "type": "attr", "target": "[data-participant-local='true']", "attr": "data-mic", "equals": "off" },
+        { "id": "craft", "type": "craftBattery" }
       ],
       "finalizers": [
         { "op": "click", "target": "[data-call-hangup]" },
@@ -547,7 +548,8 @@
         { "id": "reaction-pill", "type": "exists", "target": "[data-message-id='m1'] [data-reaction='like'][data-mine='1']" },
         { "id": "copied", "type": "attr", "target": "[data-message-id='m1'] [data-action='copy']", "attr": "data-copied", "equals": "1" },
         { "id": "link-preview", "type": "exists", "target": "[data-link-preview]" },
-        { "id": "narrow-back-entry", "type": "exists", "target": "[data-action-id='chat.back-to-list']" }
+        { "id": "narrow-back-entry", "type": "exists", "target": "[data-action-id='chat.back-to-list']" },
+        { "id": "craft", "type": "craftBattery" }
       ],
       "finalizers": []
     },
@@ -735,7 +737,8 @@
       ],
       "oracles": [
         { "id": "voice-bubble", "type": "attr", "target": ".sk-msg-me:last-child [data-voice]", "attr": "data-voice-available", "equals": "true" },
-        { "id": "voice-playing", "type": "attr", "target": ".sk-msg-me:last-child [data-voice]", "attr": "data-voice-playing", "equals": "true" }
+        { "id": "voice-playing", "type": "attr", "target": ".sk-msg-me:last-child [data-voice]", "attr": "data-voice-playing", "equals": "true" },
+        { "id": "craft", "type": "craftBattery" }
       ],
       "finalizers": [
         { "op": "click", "target": ".sk-msg-me:last-child [data-voice-toggle]" }

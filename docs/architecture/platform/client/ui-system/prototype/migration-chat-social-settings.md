@@ -1,6 +1,6 @@
 # Desktop 功能迁移图：chat · social · settings（用 peers-ui 重建）
 
-> **Status**: draft / 增量推进中
+> **Status**: 增量 1–15 全部完成（2026-10-31，门禁 78/78 + consumer 18/18）；剩余项均为明确记录的 UNPROVEN/范围外
 > **Created**: 2026-10-30 · **Owner**: Client Platform / UI System
 > **Frame**: [北极星窗框](./north-star-frame.md)，入口 `?eles=directions`
 > **方法**：每个增量 = 旧设计审计（新方法论找缺口）→ 用 peers-ui 元素组合 → 状态合同 → 探针门禁 → 人审 → token/知识沉淀。未过门前不称为完成。
@@ -20,7 +20,7 @@
 
 ## 1. 旧设计审计方法（每个增量必做）
 
-对照 [窗框语法](./north-star-frame.md) 七条与 craft C1–C13，逐项给旧实现打「保留 / 重做 / 删除」：
+对照 [窗框语法](./north-star-frame.md) 七条与 craft C1–C15，逐项给旧实现打「保留 / 重做 / 删除」：
 
 - 是否 1px 发丝描边分区（应材质化）；身份元素是否方圆；圆角是否长在绘图层。
 - 动作是否近黑胶囊、单一强调；按钮是否 UA 重置；有无死按钮。
@@ -160,7 +160,9 @@ Social / Moments：
       合同 components/chat-rich-composer.md；门禁 75/75（consumer 18/18）
 - [x] 14 通话面：来电接听/拒绝（详情面板演示入口）、群通话网格（stagger 加入/发言高亮/
       静音摄像头联动）、通话状态上提 ChatFeature；合同 components/chat-calls.md；门禁 78/78（consumer 18/18）
-- [ ] 15 跨模块设计哲学总评：样式/边界/对齐/对称全量走查 + craft battery 加固
+- [x] 15 跨模块设计哲学总评：材质/强调色/方圆/死控件/双宽不变量复核；
+      craft battery 加固至 C1–C15（浮层不透明度、图标钮可访问名称、热区与死控件扩面），
+      深态场景接线电池断言；合同 cross-module-review.md；门禁 78/78（consumer 18/18）
 
 ### 5.4 决策（2026-10-31 已确认）
 

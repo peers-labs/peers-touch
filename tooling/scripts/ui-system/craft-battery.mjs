@@ -100,7 +100,15 @@ export function craftBatterySource(rootSelector) {
     // C7 — Compact hit-target floor. WCAG 2.5.8 AA minimum is 24 CSS px;
     // coarse-pointer contexts raise it to 44 via CSS. Inline text buttons
     // (breadcrumb/link-as-action) are prose, not tap targets, and exempt.
-    root.querySelectorAll('.pt-button,.pt-switch,.pt-check-label,.pt-select-trigger,.pt-file-button,.pt-dropzone').forEach(el => {
+    const TARGET_SELECTOR = [
+      '.pt-button', '.pt-switch', '.pt-check-label', '.pt-select-trigger', '.pt-file-button', '.pt-dropzone',
+      // increment 12-14 social controls
+      '.sk-composer-tool', '.sk-msg-action', '.sk-react-emoji', '.sk-emoji-cell',
+      '.sk-draft-op', '.sk-voice-toggle', '.sk-voice-rec-cancel', '.sk-voice-rec-finish',
+      '.sk-voice-send', '.sk-voice-discard', '.sk-call-ctl', '.sk-msg-image', '.sk-file-chip',
+      '.sk-chat-back', '.sk-contact-back',
+    ].join(',');
+    root.querySelectorAll(TARGET_SELECTOR).forEach(el => {
       if (el.matches('[data-emphasis="inline"]')) return;
       const r = box(el);
       if (r.width > 0 && r.height > 0 && r.height < 24) {
@@ -176,12 +184,15 @@ export function craftBatterySource(rootSelector) {
 
     // C12 — No dead affordances in the app frame: every element styled/named
     // as interactive (rail icons, stacked avatars, conversation rows, moment
-    // actions) must be a real control (button/a/input itself or nested inside
-    // one), or expose role=button with a tabindex. A clickable-looking span
-    // silently swallows clicks, which the owner reported repeatedly.
+    // actions, increment 12-14 chat controls) must be a real control
+    // (button/a/input itself or nested inside one), or expose role=button
+    // with a tabindex. A clickable-looking span silently swallows clicks.
     const AFFORDANCE_SELECTOR = [
       '.sk-rail-icon', '.sk-stack-item', '.sk-stack-more',
       '.sk-chat', '.sk-moment-action',
+      '.sk-msg-action', '.sk-react-emoji', '.sk-emoji-cell', '.sk-composer-tool',
+      '.sk-draft-op', '.sk-voice-toggle', '.sk-call-ctl', '.sk-msg-image',
+      '.sk-file-chip', '.sk-thread-entry', '.sk-side-thumb',
     ].join(',');
     root.querySelectorAll(AFFORDANCE_SELECTOR).forEach(el => {
       const tag = el.tagName.toLowerCase();
@@ -205,6 +216,36 @@ export function craftBatterySource(rootSelector) {
       const props = (s.transitionProperty || '').split(',').map(p => p.trim());
       const shadowAnimates = props.some((p, i) => (p === 'box-shadow' || p === 'all') && (durations[i] ?? durations[0]) > 0);
       if (shadowAnimates) flag('focus-ring-transitioned', describe(el), { transitionProperty: s.transitionProperty, transitionDuration: s.transitionDuration });
+    });
+
+    // C14 — Floating overlays that sit above a busy surface must paint
+    // opaquely. The recurring defect: translucent card tokens let the stream
+    // and composer bleed through side sheets and the hover action bar.
+    const rgbaAlpha = value => {
+      const m = /rgba?\\(([^)]+)\\)/.exec(value);
+      if (!m) return 1;
+      const parts = m[1].split(',').map(p => parseFloat(p.trim()));
+      return parts.length === 4 ? parts[3] : 1;
+    };
+    ['.sk-side-sheet', '.sk-msg-actions-bar'].forEach(sel => {
+      root.querySelectorAll(sel).forEach(el => {
+        const alpha = rgbaAlpha(cs(el).backgroundColor);
+        if (alpha < 0.98) flag('translucent-overlay', describe(el), { backgroundColor: cs(el).backgroundColor });
+      });
+    });
+
+    // C15 — An icon-only button (no text content) must expose an accessible
+    // name; an unlabeled glyph is unannounced by screen readers and silently
+    // breaks keyboard understanding of the surface.
+    root.querySelectorAll('button').forEach(el => {
+      if (!visible(el) || screenReaderOnly(el)) return;
+      const hasText = (el.textContent || '').trim().length > 0;
+      if (hasText) return;
+      const named = (el.getAttribute('aria-label') || '').trim()
+        || el.hasAttribute('aria-labelledby')
+        || (el.getAttribute('title') || '').trim();
+      const hasGlyph = !!el.querySelector('svg,img,[class*="avatar"]');
+      if (hasGlyph && !named) flag('icon-button-unlabeled', describe(el));
     });
 
     return {
