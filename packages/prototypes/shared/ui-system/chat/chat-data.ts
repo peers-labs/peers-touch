@@ -83,6 +83,16 @@ export const FRIEND_REQUESTS: FriendRequest[] = [
   { id: 'fr-3', name: '老周', tone: '#8a7a55', station: '本站', greeting: '交换个联系方式', state: 'accepted' },
 ];
 
+export type ThreadReply = { id: string; from: 'me' | 'peer'; senderName?: string; text: string; at: string };
+
+export const SEED_THREADS: Record<string, ThreadReply[]> = {
+  m1: [
+    { id: 't1', from: 'peer', senderName: '苏禾', text: '我带两盆罗勒苗，可以放在架上交换。', at: '昨天 20:16' },
+    { id: 't2', from: 'me', text: '好，我给你留最上层的位置。', at: '昨天 20:22' },
+    { id: 't3', from: 'peer', senderName: '林晚', text: '那我把诗集摊也搬过去。', at: '昨天 20:30' },
+  ],
+};
+
 export const SEED_MESSAGES: Record<string, ChatMessage[]> = {
   'cv-chenyu': [
     { id: 'm1', from: 'peer', text: '周末种子交换你要来吗？我带了上次说的番茄籽。', at: '09:21' },

@@ -374,6 +374,100 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.chat-header",
+      "title": "增量11 对话头部：群身份+成员数+4 个入口（语音/视频/搜索/详情）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" }
+      ],
+      "oracles": [
+        { "id": "header", "type": "exists", "target": ".sk-chat-head" },
+        { "id": "four-actions", "type": "count", "target": ".sk-chat-head-actions .pt-icon-button", "equals": 4 },
+        { "id": "member-count", "type": "textContains", "target": ".sk-chat-head-name", "contains": "位成员" },
+        { "id": "craft-clean", "type": "craftBattery" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.call-audio",
+      "title": "语音通话：呼叫→接通计时；挂断后浮层消失",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-action-id='chat.call-audio']" },
+        { "op": "wait", "ms": 2800 }
+      ],
+      "oracles": [
+        { "id": "reached-active", "type": "attr", "target": ".sk-call-overlay", "attr": "data-call-phase", "equals": "active" },
+        { "id": "audio-no-video-ctl", "type": "count", "target": ".sk-call-ctl", "equals": 2 },
+        { "id": "timer-shown", "type": "textContains", "target": ".sk-call-phase", "contains": ":" }
+      ],
+      "finalizers": [
+        { "op": "click", "target": ".sk-call-ctl.is-hangup" },
+        { "op": "wait", "ms": 800 }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.detail-panel",
+      "title": "会话详情：成员/开关/共享媒体；面板内切免打扰联动行标记",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        { "op": "click", "target": "[data-detail-panel] .pt-switch:first-child" }
+      ],
+      "oracles": [
+        { "id": "panel-open", "type": "exists", "target": "[data-detail-panel]" },
+        { "id": "member-rows", "type": "count", "target": ".sk-member-row", "equals": 4 },
+        { "id": "two-switches", "type": "count", "target": "[data-detail-panel] .pt-switch", "equals": 2 },
+        { "id": "shared-media", "type": "count", "target": ".sk-side-thumb", "equals": 2 },
+        { "id": "muted-synced", "type": "attr", "target": ".sk-conv-list li:first-child", "attr": "data-muted", "equals": "true" }
+      ],
+      "finalizers": [
+        { "op": "click", "target": "[data-action-id='chat.info-close']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.message-search",
+      "title": "消息搜索：关键词过滤本会话消息，结果可点",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-action-id='chat.search-messages']" },
+        { "op": "type", "scope": "global", "target": "input[data-search-value]", "value": "书架" }
+      ],
+      "oracles": [
+        { "id": "dialog-open", "type": "exists", "scope": "global", "target": "[data-message-search]" },
+        { "id": "one-result", "type": "count", "scope": "global", "target": ".sk-msg-search-row", "equals": 1 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.thread-replies",
+      "title": "话题面板：3 条种子回复，发送后变 4 条且计数联动",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-thread-for='m1']" },
+        { "op": "type", "target": "[data-thread-panel] textarea", "value": "我也带一本诗集" },
+        { "op": "click", "target": "[data-action-id='thread.send']" }
+      ],
+      "oracles": [
+        { "id": "thread-open", "type": "exists", "target": "[data-thread-panel]" },
+        { "id": "four-replies", "type": "count", "target": ".sk-thread-reply", "equals": 4 },
+        { "id": "entry-count", "type": "textContains", "target": "[data-thread-for='m1']", "contains": "4 条回复" },
+        { "id": "composer-cleared", "type": "attr", "target": "[data-thread-panel] textarea", "attr": "data-thread-draft", "equals": "" }
+      ],
+      "finalizers": [
+        { "op": "click", "target": "[data-action-id='thread.close']" }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.moments-feed",
       "title": "增量4：动态子系统首页——4 范围 Segmented/发动态 CTA/3 张完整卡片（48 头像、信任行、图片、评论预览、反应条、加载更多），工艺电池全清",
       "level": "L3_DYNAMIC",

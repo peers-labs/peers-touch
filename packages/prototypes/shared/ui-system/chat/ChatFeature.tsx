@@ -10,6 +10,7 @@ import { Empty } from '@peers-touch/ui';
 import { ChatRail } from './ChatRail';
 import { ConversationView } from './ConversationView';
 import { ContactDetailPane, CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
+import { CallOverlay, type CallKind } from './CallOverlay';
 import {
   CONVERSATIONS, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES,
   type ChatMessage, type Conversation, type FriendRequest, type Person,
@@ -26,6 +27,7 @@ export function ChatFeature() {
   const [selectedContact, setSelectedContact] = useState<Person | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
+  const [call, setCall] = useState<{ kind: CallKind } | null>(null);
 
   const selectedConversation = sessions.find(c => c.id === selectedId) ?? null;
   const peoplePool = useMemo(() => [...PEOPLE, ...sessions
@@ -113,7 +115,10 @@ export function ChatFeature() {
           <ConversationView
             conversation={selectedConversation}
             messages={messagesByConv[selectedConversation.id] ?? []}
-            onSend={sendMessage} />
+            onSend={sendMessage}
+            onTogglePin={togglePin}
+            onToggleMute={toggleMute}
+            onStartCall={kind => setCall({ kind })} />
         ) : (
           <div className="sk-chat-placeholder">
             <Empty icon={<MessagesSquare size={28} strokeWidth={1.5} />}
@@ -126,6 +131,11 @@ export function ChatFeature() {
         onDismiss={() => setPickerOpen(false)} onPick={person => { setPickerOpen(false); openPerson(person); }} />
       <CreateGroupDialog open={groupOpen} people={friends} onDismiss={() => setGroupOpen(false)}
         onCreate={createGroup} />
+
+      {call && selectedConversation && (
+        <CallOverlay conversation={selectedConversation} kind={call.kind}
+          onEnd={() => setCall(null)} />
+      )}
     </div>
   );
 }
