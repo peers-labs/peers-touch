@@ -100,16 +100,16 @@
 
 对话窗（ChatMessageArea）：
 - [x] ✅ 文本消息流 + 输入区 + Enter 发送 + 空态禁发（增量 2）
-- [ ] ✗ 1:1 音视频通话（CallSurface：振铃/接听/挂断/静音/摄像头/状态）
-- [ ] ✗ 群通话（GroupCallSurface）
-- [ ] ✗ 会话详情面板（ChatDetailPanel：成员、置顶/免打扰等开关）
-- [ ] ✗ 会话内消息搜索（SearchMessagesModal）
-- [ ] ✗ Thread 话题面板（ChatThreadPanel）
-- [ ] ✗ 消息行操作：消息反应、回复/进 Thread、转发（ForwardPickerModal）、复制、
-      删除确认（ChatDeleteConfirmOverlay）、操作 overlay 几何
-- [ ] ✗ 服务/系统消息（ServiceMessageCard：入群等事件聚合）
-- [ ] ✗ 链接预览卡（LinkPreviewCard）
-- [ ] ✗ @提及（MentionPopup + MentionTag + 触发）
+- [x] ✅ 1:1 音视频通话（本地状态机：振铃/挂断/静音/摄像头/计时；增量 11，来电在 14）
+- [ ] ✗ 群通话（GroupCallSurface；增量 14）
+- [x] ✅ 会话详情面板（成员、置顶/免打扰开关、共享媒体；增量 11）
+- [x] ✅ 会话内消息搜索（增量 11）
+- [x] ✅ Thread 话题面板（种子回复 + 发送计数联动；增量 11）
+- [x] ✅ 消息行操作：消息反应、回复/进 Thread、转发、复制、
+      删除确认、悬浮操作条几何（增量 12；含窄宽单栏交换与不透明浮层 token）
+- [x] ✅ 服务/系统消息（入群/建群事件居中胶囊；增量 11）
+- [x] ✅ 链接预览卡（气泡内图标/标题/单行省略；增量 12）
+- [x] ✅ @提及（活 token 候选弹层 + 气泡内原子令牌高亮；增量 12）
 - [ ] ✗ 输入区：emoji、文件/图片附件（草稿、重试/移除、上传态）、截图捕获、
       语音消息（录制/取消/完成/试听/发送、气泡内播放与进度）、输入框展开/收起
 - [ ] ✗ 附件详情宿主（AttachmentDetailHost/AttachmentItem：图片/文件/语音）
@@ -149,7 +149,9 @@ Social / Moments：
       置顶免打扰/联合搜索；合同 components/chat-catalog.md；门禁 62/62
 - [x] 11 对话框架：头部 4 入口/详情侧拉/消息搜索/Thread 回复/服务消息/1:1 通话状态机；
       合同 components/chat-conversation-frame.md；门禁 67/67
-- [ ] 12 消息解剖：反应/回复/转发/复制/删除确认/链接预览/@提及
+- [x] 12 消息解剖：反应/回复/转发/复制/删除确认/链接预览/@提及；
+      顺带补齐窄宽（≤1040）目录↔对话单栏交换与 `--sk-overlay` 不透明浮层 token；
+      合同 components/chat-message-anatomy.md；门禁 69/69（consumer 18/18）
 - [ ] 13 富输入：emoji、附件、图片渲染、语音消息、截图、附件详情、只读分享页
 - [ ] 14 通话面：1:1 与群通话本地状态机（是否纳入见决策点）
 - [ ] 15 跨模块设计哲学总评：样式/边界/对齐/对称全量走查 + craft battery 加固

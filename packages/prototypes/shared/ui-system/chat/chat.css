@@ -132,30 +132,58 @@
   border-radius: 999px; padding: 3px 12px;
 }
 
+/* Narrow single-pane swap: the catalog rail owns the screen until a
+   conversation/contact opens; the header back control returns to it.
+   Overrides the frame-level `.sk-conv-rail { display:none }` rule. */
+.sk-chat-back { display: none; }
+
 @media (max-width: 1040px) {
   .sk-chat-feature { grid-template-columns: minmax(0, 1fr); }
+  .sk-chat-feature > .sk-conv-rail { display: flex; width: auto; }
+  .sk-chat-feature > .sk-chat-main { display: none; }
+  .sk-chat-feature.sk-narrow-open > .sk-conv-rail { display: none; }
+  .sk-chat-feature.sk-narrow-open > .sk-chat-main { display: flex; }
+  .sk-chat-back {
+    display: inline-grid; place-items: center;
+    width: 30px; height: 30px; flex-shrink: 0; padding: 0;
+    border: 0; border-radius: 50%; cursor: pointer;
+    background: transparent; color: var(--sk-text-2);
+  }
+  .sk-chat-back:hover { background: var(--sk-btn-quiet-bg-hover); color: var(--sk-text); }
+  .sk-contact-detail { position: relative; }
+  .sk-contact-back { position: absolute; top: 12px; left: 12px; }
+}
+
+/* Phone-narrow header: keep back, title, audio and search; video/info
+   already live in the detail sheet reachable on wider surfaces. */
+@media (max-width: 480px) {
+  .sk-chat-head [data-action-id='chat.call-video'],
+  .sk-chat-head [data-action-id='chat.open-info'] { display: none; }
 }
 
 /* ── Increment 11: header / sheets / search / thread / call ── */
 .sk-conv-view { position: relative; }
 .sk-chat-head {
   flex-shrink: 0; height: 60px; padding: 0 16px;
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
-.sk-chat-head-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.sk-chat-head-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sk-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sk-chat-head-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .sk-chat-head-name strong { font-size: 14px; color: var(--sk-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sk-chat-head-name span { font-size: 11.5px; color: var(--sk-text-3); }
+.sk-chat-head-name span {
+  font-size: 11.5px; color: var(--sk-text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .sk-chat-head-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-.sk-head-avatars { gap: 0 !important; }
+.sk-head-avatars { gap: 0 !important; flex-shrink: 0; }
 .sk-head-avatars .pt-avatar { margin-left: -8px; box-shadow: 0 0 0 2px var(--sk-card-bg); }
 .sk-head-avatars .pt-avatar:first-child { margin-left: 0; }
 
 /* side sheets (detail + thread) */
 .sk-side-sheet {
   position: absolute; top: 0; bottom: 0; right: 0; width: 288px; z-index: 8;
-  background: var(--sk-card-bg);
+  background: var(--sk-overlay);
   border-left: 1px solid var(--sk-card-border);
   box-shadow: -10px 0 30px -18px rgba(28, 46, 32, .35);
   display: flex; flex-direction: column;
@@ -258,3 +286,119 @@
 .sk-call-ctl.is-off { background: rgba(255,255,255,.32); color: #102018; }
 .sk-call-ctl.is-hangup { background: #b0413a; }
 .sk-call-card .pt-button { margin-top: 4px; }
+
+/* ── Increment 12: message anatomy ─────────────────────── */
+.sk-msg { position: relative; }
+.sk-msg-actions-bar {
+  position: absolute; top: -14px;
+  display: flex; gap: 1px; padding: 2px;
+  border-radius: 999px; opacity: 0; transition: opacity .12s;
+  background: var(--sk-overlay);
+  box-shadow: 0 4px 14px -6px rgba(28,46,32,.35);
+  z-index: 4;
+}
+.sk-msg-peer .sk-msg-actions-bar { right: 8px; }
+.sk-msg-me .sk-msg-actions-bar { left: 8px; }
+.sk-msg:hover .sk-msg-actions-bar,
+.sk-msg:focus-within .sk-msg-actions-bar { opacity: 1; }
+.sk-msg-action {
+  width: 26px; height: 26px; border: 0; border-radius: 50%;
+  background: transparent; color: var(--sk-text-3); cursor: pointer;
+  display: grid; place-items: center;
+}
+.sk-msg-action:hover { background: var(--sk-tile); color: var(--sk-primary); }
+.sk-msg-action.is-danger:hover { color: #b0413a; }
+
+/* quick-reaction picker (peers-ui Popover owns the panel surface) */
+.sk-react-pop { display: flex; gap: 1px; }
+.sk-react-emoji {
+  width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; font-size: 18px; line-height: 1; cursor: pointer;
+  display: grid; place-items: center; transition: transform .1s, background .1s;
+}
+.sk-react-emoji:hover { background: var(--sk-tile); transform: translateY(-1px) scale(1.12); }
+
+.sk-msg-reactions { display: flex; gap: 4px; margin-top: 3px; }
+.sk-msg-reaction {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--sk-accent) 14%, transparent);
+  color: var(--sk-accent);
+}
+.sk-reply-quote {
+  border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent);
+  padding-left: 8px; margin-bottom: 6px; text-align: left;
+}
+.sk-reply-quote span { font-size: 10.5px; font-weight: 650; opacity: .75; }
+.sk-reply-quote p { margin: 1px 0 0 !important; font-size: 11.5px !important; line-height: 1.4 !important; opacity: .8; }
+.sk-msg-me .sk-reply-quote { text-align: left; }
+
+.sk-link-card {
+  display: flex; gap: 9px; align-items: center; margin-top: 8px;
+  padding: 9px 11px; border-radius: 12px; text-decoration: none;
+  color: inherit;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  max-width: 280px;
+}
+.sk-link-icon { color: currentColor; opacity: .7; display: grid; place-items: center; }
+.sk-link-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sk-link-id strong { font-size: 12px; color: currentColor; }
+.sk-link-id span { font-size: 11px; opacity: .72; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sk-mention {
+  /* A mention is an atomic token: never break inside it. Without nowrap,
+     shrink-to-fit me-bubbles collapse the token to min-content (1 char wide)
+     under the paragraph's word-break: break-word. */
+  background: transparent; color: inherit;
+  font-weight: 650; text-decoration: underline; text-decoration-color: currentColor;
+  text-underline-offset: 2px; white-space: nowrap;
+}
+.sk-msg-me .sk-mention,
+.sk-mention-pop .sk-mention { color: inherit; }
+
+/* reply context bar above composer */
+.sk-reply-bar {
+  flex-shrink: 0; margin: 0 8px; padding: 8px 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-radius: 12px; background: var(--sk-tile);
+}
+.sk-reply-bar div { min-width: 0; }
+.sk-reply-bar span { font-size: 10.5px; font-weight: 650; color: var(--sk-primary); }
+.sk-reply-bar p {
+  margin: 2px 0 0; font-size: 12px; color: var(--sk-text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-reply-cancel {
+  border: 0; background: transparent; color: var(--sk-text-3); cursor: pointer;
+  border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; flex-shrink: 0;
+}
+.sk-reply-cancel:hover { background: color-mix(in srgb, var(--sk-text) 8%, transparent); }
+.sk-composer-input-wrap { flex: 1; min-width: 0; position: relative; }
+.sk-mention-pop {
+  position: absolute; bottom: calc(100% + 6px); left: 8px;
+  display: flex; flex-direction: column; min-width: 150px;
+  background: var(--sk-card-bg); border: 1px solid var(--sk-card-border);
+  border-radius: 12px; box-shadow: 0 8px 24px -10px rgba(28,46,32,.4);
+  padding: 5px; z-index: 6;
+}
+.sk-mention-row {
+  border: 0; background: transparent; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; color: var(--sk-text);
+  padding: 7px 10px; border-radius: 8px;
+}
+.sk-mention-row:hover { background: var(--sk-tile); }
+
+/* forward dialog */
+.sk-forward-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow: auto; }
+.sk-forward-row {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  border: 1px solid var(--sk-card-border); background: var(--sk-card-bg);
+  border-radius: 10px; padding: 9px 12px; cursor: pointer; font-family: inherit; text-align: left;
+}
+.sk-forward-row:hover { border-color: color-mix(in srgb, var(--sk-primary) 40%, transparent); }
+.sk-forward-row strong { flex: 1; font-size: 13px; color: var(--sk-text); }
+
+.sk-chat-toast {
+  position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%);
+  background: rgba(16,32,24,.86); color: #f3f8f4;
+  font-size: 12px; padding: 7px 14px; border-radius: 999px; z-index: 20;
+}

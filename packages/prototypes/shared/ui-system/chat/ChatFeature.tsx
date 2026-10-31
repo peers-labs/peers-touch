@@ -41,10 +41,12 @@ export function ChatFeature() {
   const toggleMute = (id: string) => setSessions(list =>
     list.map(c => c.id === id ? { ...c, muted: !c.muted } : c));
 
-  const sendMessage = (text: string) => {
+  const sendMessage = (text: string, replyTo?: { who: string; text: string }) => {
     if (!selectedId) return;
     const msg: ChatMessage = {
-      id: `local-${Date.now()}`, from: 'me', text, at: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+      id: `local-${Date.now()}`, from: 'me', text,
+      at: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+      replyTo,
     };
     setMessagesByConv(map => ({ ...map, [selectedId]: [...(map[selectedId] ?? []), msg] }));
     setSessions(list => list.map(c => c.id === selectedId ? { ...c, last: text } : c));
@@ -83,6 +85,33 @@ export function ChatFeature() {
   const rejectRequest = (id: string) =>
     setRequests(list => list.map(r => r.id === id ? { ...r, state: 'rejected' } : r));
 
+  const reactToMessage = (messageId: string, kind: string) => {
+    if (!selectedId) return;
+    setMessagesByConv(map => {
+      const list = map[selectedId] ?? [];
+      return { ...map, [selectedId]: list.map(message => {
+        if (message.id !== messageId) return message;
+        const reactions = { ...(message.reactions ?? {}) };
+        const current = new Set(reactions[kind] ?? []);
+        if (current.has('me')) current.delete('me'); else current.add('me');
+        reactions[kind] = [...current];
+        return { ...message, reactions };
+      }) };
+    });
+  };
+  const deleteMessage = (messageId: string) => {
+    if (!selectedId) return;
+    setMessagesByConv(map => ({ ...map, [selectedId]: (map[selectedId] ?? []).filter(m => m.id !== messageId) }));
+  };
+  const forwardMessage = (message: ChatMessage, conversationId: string) => {
+    setMessagesByConv(map => ({ ...map, [conversationId]: [...(map[conversationId] ?? []), {
+      id: `local-fwd-${Date.now()}`, from: 'me',
+      text: `转发：${message.text}`,
+      at: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+    }] }));
+    setSessions(list => list.map(c => c.id === conversationId ? { ...c, last: `转发：${message.text}` } : c));
+  };
+
   const createGroup = (group: Conversation) => {
     setSessions(list => [group, ...list]);
     setSelectedId(group.id);
@@ -93,8 +122,13 @@ export function ChatFeature() {
     setSelectedContact(null);
   };
 
+  // Narrow single-pane swap: the catalog rail owns the screen until a
+  // conversation or contact surface opens; the header back control returns.
+  const narrowOpen = !!selectedConversation || (tab === 'contacts' && !!selectedContact);
+  const backToList = () => { setSelectedId(null); setSelectedContact(null); };
+
   return (
-    <div className="sk-chat-feature">
+    <div className={`sk-chat-feature${narrowOpen ? ' sk-narrow-open' : ''}`}>
       <ChatRail
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId} onSelect={id => { setSelectedId(id); setSelectedContact(null); }}
@@ -110,14 +144,19 @@ export function ChatFeature() {
 
       <div className="sk-chat-main">
         {tab === 'contacts' && selectedContact ? (
-          <ContactDetailPane person={selectedContact} onMessage={openPerson} />
+          <ContactDetailPane person={selectedContact} onMessage={openPerson} onBack={backToList} />
         ) : selectedConversation ? (
           <ConversationView
             conversation={selectedConversation}
             messages={messagesByConv[selectedConversation.id] ?? []}
+            conversations={sessions}
+            onBack={backToList}
             onSend={sendMessage}
             onTogglePin={togglePin}
             onToggleMute={toggleMute}
+            onReact={reactToMessage}
+            onDelete={deleteMessage}
+            onForward={forwardMessage}
             onStartCall={kind => setCall({ kind })} />
         ) : (
           <div className="sk-chat-placeholder">

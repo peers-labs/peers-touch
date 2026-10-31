@@ -315,7 +315,8 @@
       ],
       "oracles": [
         { "id": "detail-open", "type": "exists", "target": ".sk-contact-detail" },
-        { "id": "detail-name", "type": "textContains", "target": ".sk-contact-detail", "contains": "陈屿" }
+        { "id": "detail-name", "type": "textContains", "target": ".sk-contact-detail", "contains": "陈屿" },
+        { "id": "narrow-back-entry", "type": "exists", "target": "[data-action-id='contact.back']" }
       ],
       "finalizers": []
     },
@@ -466,6 +467,109 @@
       "finalizers": [
         { "op": "click", "target": "[data-action-id='thread.close']" }
       ]
+    },
+    {
+      "id": "ui.prototype.north-star.msg-react-copy-link",
+      "title": "增量12：消息操作条反应/复制态，链接预览卡在气泡内",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "hover", "target": "[data-message-id='m1']" },
+        { "op": "click", "target": "[data-message-id='m1'] [data-action='react']" },
+        { "op": "clickGlobal", "target": "[data-react-kind='like']" },
+        { "op": "click", "target": "[data-message-id='m1'] [data-action='copy']" }
+      ],
+      "oracles": [
+        { "id": "reaction-pill", "type": "exists", "target": "[data-message-id='m1'] [data-reaction='like'][data-mine='1']" },
+        { "id": "copied", "type": "attr", "target": "[data-message-id='m1'] [data-action='copy']", "attr": "data-copied", "equals": "1" },
+        { "id": "link-preview", "type": "exists", "target": "[data-link-preview]" },
+        { "id": "narrow-back-entry", "type": "exists", "target": "[data-action-id='chat.back-to-list']" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.msg-delete",
+      "title": "删除本人消息：确认对话框后消息从流中移除",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "hover", "target": "[data-message-id='m2']" },
+        { "op": "click", "target": "[data-message-id='m2'] [data-action='delete']" },
+        { "op": "clickGlobal", "target": "[data-action-id='msg.delete-confirm']" }
+      ],
+      "oracles": [
+        { "id": "two-left", "type": "count", "target": ".sk-msg:not(.sk-msg-service)", "equals": 2 },
+        { "id": "m2-gone", "type": "missing", "target": "[data-message-id='m2']" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.msg-reply",
+      "title": "回复：引用条出现，发送后新气泡含引用块",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "hover", "target": "[data-message-id='m1']" },
+        { "op": "click", "target": "[data-message-id='m1'] [data-action='reply']" },
+        { "op": "type", "target": ".sk-composer textarea", "value": "我带罗勒苗" },
+        { "op": "click", "target": "[data-action-id='sk.send-message']" }
+      ],
+      "oracles": [
+        { "id": "new-quoted", "type": "exists", "target": ".sk-msg-me:last-child [data-reply-to]" },
+        { "id": "quoted-text", "type": "textContains", "target": ".sk-msg-me:last-child .sk-reply-quote", "contains": "书架" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.msg-forward",
+      "title": "转发：选目标会话后该会话出现转发消息",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "hover", "target": "[data-message-id='m1']" },
+        { "op": "click", "target": "[data-message-id='m1'] [data-action='forward']" },
+        { "op": "clickGlobal", "target": ".sk-forward-row:first-child" },
+        { "op": "click", "target": ".sk-conv-row:first-child" }
+      ],
+      "oracles": [
+        { "id": "forwarded", "type": "textContains", "target": ".sk-msg-stream", "contains": "转发" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.msg-mention-pop",
+      "title": "@提及：群内输入@弹出成员候选（空草稿不弹、不截获指针）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "type", "target": ".sk-composer textarea", "value": "@周" }
+      ],
+      "oracles": [
+        { "id": "mention-pop", "type": "exists", "target": "[data-mention-pop]" },
+        { "id": "mention-candidate", "type": "exists", "target": "[data-mention-name='周禾']" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.msg-mention-select",
+      "title": "@提及：选中候选后写入 @名字 并收尾空格，候选弹层关闭",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "type", "target": ".sk-composer textarea", "value": "@周" },
+        { "op": "click", "target": "[data-mention-name='周禾']" }
+      ],
+      "oracles": [
+        { "id": "draft-mention", "type": "attr", "target": ".sk-composer textarea", "attr": "data-composer-value", "contains": "@周禾 " },
+        { "id": "mention-pop-closed", "type": "missing", "target": "[data-mention-pop]" }
+      ],
+      "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.moments-feed",

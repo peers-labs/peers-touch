@@ -5,6 +5,7 @@
  * (increment 14 extends it with incoming and group calls).
  */
 import { useMemo, useState, type KeyboardEvent } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { Avatar, AvatarGroup, Button, Dialog, Empty, IconButton, Switch, Tag, TextArea } from '@peers-touch/ui';
 import { artwork } from '../moments/moments-data';
 import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
@@ -12,10 +13,11 @@ import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
 /* ── Header ───────────────────────────────────────────── */
 
 export function ConversationHeader({ conversation, pinned, muted,
-  onAudio, onVideo, onSearch, onInfo }: {
+  onBack, onAudio, onVideo, onSearch, onInfo }: {
   conversation: Conversation;
   pinned: boolean;
   muted: boolean;
+  onBack: () => void;
   onAudio: () => void;
   onVideo: () => void;
   onSearch: () => void;
@@ -23,6 +25,8 @@ export function ConversationHeader({ conversation, pinned, muted,
 }) {
   return (
     <header className="sk-chat-head" data-conversation-open="true">
+      <button type="button" className="sk-chat-back" aria-label="返回会话列表"
+        data-action-id="chat.back-to-list" onClick={onBack}><ChevronLeft size={18} /></button>
       <div className="sk-chat-head-id">
         {conversation.kind === 'group'
           ? <AvatarGroup className="sk-head-avatars" aria-label={conversation.name}>
