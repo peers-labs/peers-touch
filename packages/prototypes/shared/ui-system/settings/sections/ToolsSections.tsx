@@ -12,6 +12,7 @@ import {
 import {
   Alert, Button, Dialog, Empty, IconButton, Switch, Tag, TextField,
 } from '@peers-touch/ui';
+import { useT, type StringKey } from '../../prefs';
 import { SettingsRow, SettingsSection } from '../SettingsPrimitives';
 import '../settings.css';
 
@@ -21,11 +22,14 @@ interface CronJob { id: string; name: string; prompt: string; schedule: string; 
 const INITIAL_JOBS: CronJob[] = [
   { id: 'cron-1', name: '早安邻里播报', prompt: '汇总昨夜站内互助与活动', schedule: '0 8 * * *', enabled: true, lastRun: '今天 08:00 · 成功' },
   { id: 'cron-2', name: '书架流转周报', prompt: '生成本周共享书架流转清单', schedule: '0 18 * * 5', enabled: true, lastRun: '周五 18:00 · 成功' },
-  { id: 'cron-3', name: '种子库存提醒', prompt: '检查可交换种子库存', schedule: '0 9 * * 1', enabled: false, lastRun: '已暂停' },
+  // 'cron.paused' is a locale-independent sentinel rendered via t();
+  // authored success stamps stay as seed content.
+  { id: 'cron-3', name: '种子库存提醒', prompt: '检查可交换种子库存', schedule: '0 9 * * 1', enabled: false, lastRun: 'cron.paused' },
 ];
 const CRON_PATTERN = /^(\S+\s+){4}\S+$/;
 
 function CronSection() {
+  const { t } = useT();
   const [jobs, setJobs] = useState(INITIAL_JOBS);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -39,7 +43,7 @@ function CronSection() {
   const runNow = (id: string) => {
     setRunning(id);
     window.setTimeout(() => {
-      patch(id, { lastRun: '刚刚 · 成功' });
+      patch(id, { lastRun: t('cron.lastJustNow') });
       setRunning(null);
     }, 700);
   };
@@ -47,7 +51,7 @@ function CronSection() {
     if (!name.trim() || !CRON_PATTERN.test(schedule.trim())) return;
     setJobs(list => [...list, {
       id: `local-${Date.now()}`, name: name.trim(), prompt: '', schedule: schedule.trim(),
-      enabled: true, lastRun: '尚未运行',
+      enabled: true, lastRun: t('cron.lastNever'),
     }]);
     setOpen(false);
     setName('');
@@ -55,13 +59,13 @@ function CronSection() {
   };
 
   return (
-    <SettingsSection icon={Clock3} title="定时任务" subtitle="按计划自动运行的任务（本地示例）"
+    <SettingsSection icon={Clock3} title={t('cron.title')} subtitle={t('cron.subtitle')}
       extra={<div className="sk-cron-counts">
-        <Tag tone="info">运行中 {active}</Tag>
-        {paused > 0 && <Tag>已暂停 {paused}</Tag>}
-        <IconButton iconId="refresh-ccw" iconSize={14} label="刷新" actionId="cron.refresh" emphasis="quiet" density="compact" />
+        <Tag tone="info">{t('cron.active', { n: active })}</Tag>
+        {paused > 0 && <Tag>{t('cron.paused', { n: paused })}</Tag>}
+        <IconButton iconId="refresh-ccw" iconSize={14} label={t('common.refresh')} actionId="cron.refresh" emphasis="quiet" density="compact" />
         <Button actionId="cron.create-open" emphasis="primary" density="compact" leading={<Plus size={13} />}
-          label="新建任务" onActivate={() => setOpen(true)} />
+          label={t('cron.create')} onActivate={() => setOpen(true)} />
       </div>}>
       <div className="sk-cron-list">
         {jobs.map(job => (
@@ -69,39 +73,41 @@ function CronSection() {
             <div className="sk-cron-id">
               <strong>{job.name}</strong>
               <code>{job.schedule}</code>
-              <span className={job.enabled ? 'is-ok' : 'is-muted'}>{job.lastRun}</span>
+              <span className={job.enabled ? 'is-ok' : 'is-muted'}>
+                {job.lastRun === 'cron.paused' ? t('cron.pausedTag') : job.lastRun}
+              </span>
             </div>
             <div className="sk-cron-ops">
               <Button actionId={`cron.run-${job.id}`} emphasis="quiet" density="compact" leading={<Zap size={13} />}
-                label="立即运行" execution={running === job.id ? 'pending' : 'idle'}
-                availability={!job.enabled ? { kind: 'disabled', reason: '任务已暂停' } : undefined}
+                label={t('cron.runNow')} execution={running === job.id ? 'pending' : 'idle'}
+                availability={!job.enabled ? { kind: 'disabled', reason: t('cron.pausedReason') } : undefined}
                 onActivate={() => runNow(job.id)} />
-              <Switch checked={job.enabled} aria-label={`启用 ${job.name}`}
-                onCheckedChange={checked => patch(job.id, { enabled: checked, lastRun: checked ? job.lastRun : '已暂停' })} />
-              <IconButton iconId="delete" iconSize={14} label={`删除 ${job.name}`} actionId={`cron.delete-${job.id}`}
+              <Switch checked={job.enabled} aria-label={t('cron.enable', { name: job.name })}
+                onCheckedChange={checked => patch(job.id, { enabled: checked, lastRun: checked ? job.lastRun : t('cron.pausedTag') })} />
+              <IconButton iconId="delete" iconSize={14} label={t('cron.delete', { name: job.name })} actionId={`cron.delete-${job.id}`}
                 emphasis="quiet" density="compact"
                 onActivate={() => setJobs(list => list.filter(entry => entry.id !== job.id))} />
             </div>
           </div>
         ))}
-        {jobs.length === 0 && <Empty description="还没有定时任务" />}
+        {jobs.length === 0 && <Empty description={t('cron.empty')} />}
       </div>
 
-      <Dialog open={open} onDismiss={() => setOpen(false)} title="新建定时任务" width={440} closeLabel="关闭"
+      <Dialog open={open} onDismiss={() => setOpen(false)} title={t('cron.dialogTitle')} width={440} closeLabel={t('common.close')}
         footer={
           <>
-            <Button actionId="cron.create-cancel" emphasis="quiet" label="取消" onActivate={() => setOpen(false)} />
-            <Button actionId="cron.create-submit" emphasis="primary" label="创建"
+            <Button actionId="cron.create-cancel" emphasis="quiet" label={t('common.cancel')} onActivate={() => setOpen(false)} />
+            <Button actionId="cron.create-submit" emphasis="primary" label={t('common.create')}
               availability={!name.trim() || !CRON_PATTERN.test(schedule.trim())
-                ? { kind: 'disabled', reason: '需要名称与 5 段 cron 表达式' } : undefined}
+                ? { kind: 'disabled', reason: t('cron.needFields') } : undefined}
               onActivate={create} />
           </>
         }>
         <div className="sk-cron-form">
-          <TextField aria-label="任务名称" placeholder="任务名称，如：晚间天气提醒" value={name} onValueChange={setName} />
-          <TextField aria-label="cron 表达式" placeholder="cron 表达式，如：0 8 * * *" value={schedule}
+          <TextField aria-label={t('cron.nameAria')} placeholder={t('cron.namePlaceholder')} value={name} onValueChange={setName} />
+          <TextField aria-label={t('cron.exprAria')} placeholder={t('cron.exprPlaceholder')} value={schedule}
             onValueChange={setSchedule} data-cron-expr={schedule} />
-          <p className="sk-field-hint">5 段：分 时 日 月 周；例：<code>0 9 * * 1</code> 每周一 9 点</p>
+          <p className="sk-field-hint">{t('cron.hintBefore')}<code>0 9 * * 1</code>{t('cron.hintAfter')}</p>
         </div>
       </Dialog>
     </SettingsSection>
@@ -110,32 +116,38 @@ function CronSection() {
 
 /* ── Command palette ───────────────────────────────────── */
 
-const PALETTE_COMMANDS = [
-  { id: 'new-chat', title: '新建会话', detail: '打开联系人选择器' },
-  { id: 'new-moment', title: '发动态', detail: '在朋友圈发布一条动态' },
-  { id: 'open-settings', title: '打开设置', detail: '跳转到通用设置' },
-  { id: 'search-messages', title: '搜索消息', detail: '在当前会话中查找' },
-  { id: 'screenshot', title: '聊天截图', detail: '截取屏幕作为附件' },
+const PALETTE_COMMANDS: { id: string; titleKey: StringKey; detailKey: StringKey }[] = [
+  { id: 'new-chat', titleKey: 'palette.cmd.newChat.title', detailKey: 'palette.cmd.newChat.detail' },
+  { id: 'new-moment', titleKey: 'palette.cmd.newMoment.title', detailKey: 'palette.cmd.newMoment.detail' },
+  { id: 'open-settings', titleKey: 'palette.cmd.openSettings.title', detailKey: 'palette.cmd.openSettings.detail' },
+  { id: 'search-messages', titleKey: 'palette.cmd.searchMessages.title', detailKey: 'palette.cmd.searchMessages.detail' },
+  { id: 'screenshot', titleKey: 'palette.cmd.screenshot.title', detailKey: 'palette.cmd.screenshot.detail' },
 ];
 
 function CommandPaletteSection() {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const results = useMemo(() => PALETTE_COMMANDS
-    .filter(command => !query.trim() || `${command.title} ${command.detail}`.includes(query.trim())), [query]);
+  const commands = useMemo(() => PALETTE_COMMANDS
+    .map(command => ({ ...command, title: t(command.titleKey), detail: t(command.detailKey) })),
+  // t changes only with the locale; command ids are static.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [t]);
+  const results = useMemo(() => commands
+    .filter(command => !query.trim() || `${command.title} ${command.detail}`.includes(query.trim())), [commands, query]);
 
   return (
-    <SettingsSection icon={CommandIcon} title="命令面板" subtitle="⌘/Ctrl + K 随时唤起，键盘选择，Esc 关闭"
+    <SettingsSection icon={CommandIcon} title={t('palette.title')} subtitle={t('palette.subtitle')}
       extra={<Button actionId="command-palette.open" emphasis="primary" leading={<CommandIcon size={14} />}
-        label="打开命令面板" onActivate={() => { setQuery(''); setOpen(true); }} />}>
-      <p className="sk-field-hint">面板聚合所有可搜索入口，当前为内置命令示例（小程序命令在其注册后出现）。</p>
-      <Dialog open={open} onDismiss={() => setOpen(false)} title="命令面板" width={480} closeLabel="关闭">
+        label={t('palette.open')} onActivate={() => { setQuery(''); setOpen(true); }} />}>
+      <p className="sk-field-hint">{t('palette.hint')}</p>
+      <Dialog open={open} onDismiss={() => setOpen(false)} title={t('palette.dialogTitle')} width={480} closeLabel={t('common.close')}>
         <div className="sk-palette" data-command-palette>
-          <TextField className="sk-palette-input" aria-label="搜索命令" placeholder="输入命令名称…"
+          <TextField className="sk-palette-input" aria-label={t('palette.searchAria')} placeholder={t('palette.placeholder')}
             value={query} onValueChange={setQuery} leading={<Search size={14} />} data-palette-query={query} />
           <div className="sk-palette-list">
             {results.length === 0
-              ? <Empty description="没有匹配的命令" />
+              ? <Empty description={t('palette.empty')} />
               : results.map(command => (
                 <button key={command.id} type="button" className="sk-palette-item"
                   data-command-id={command.id} onClick={() => setOpen(false)}>
@@ -153,36 +165,39 @@ function CommandPaletteSection() {
 /* ── Tools approval table ──────────────────────────────── */
 
 const TOOLS = [
-  { id: 'fs-read', name: '文件读取', category: 'filesystem', approval: false },
-  { id: 'shell', name: 'Shell 执行', category: 'shell', approval: true },
-  { id: 'web-fetch', name: '网页抓取', category: 'web', approval: false },
-  { id: 'memory-write', name: '记忆写入', category: 'memory', approval: true },
-  { id: 'mcp-call', name: 'MCP 调用', category: 'mcp', approval: true },
+  { id: 'fs-read', nameKey: 'tools.tool.fsRead' as StringKey, category: 'filesystem', approval: false },
+  { id: 'shell', nameKey: 'tools.tool.shell' as StringKey, category: 'shell', approval: true },
+  { id: 'web-fetch', nameKey: 'tools.tool.web' as StringKey, category: 'web', approval: false },
+  { id: 'memory-write', nameKey: 'tools.tool.memory' as StringKey, category: 'memory', approval: true },
+  { id: 'mcp-call', nameKey: 'tools.tool.mcp' as StringKey, category: 'mcp', approval: true },
 ];
-const CATEGORY_LABEL: Record<string, string> = {
-  filesystem: '文件', shell: 'Shell', web: '网页', memory: '记忆', mcp: 'MCP', agent: 'Agent',
+const CATEGORY_KEY: Record<string, StringKey> = {
+  filesystem: 'tools.cat.filesystem', shell: 'tools.cat.shell', web: 'tools.cat.web',
+  memory: 'tools.cat.memory', mcp: 'tools.cat.mcp',
 };
 
 function ToolsTableSection() {
+  const { t } = useT();
   const [rescanning, setRescanning] = useState(false);
-  const [scannedAt, setScannedAt] = useState('2 分钟前');
+  const [scannedJustNow, setScannedJustNow] = useState(false);
   const rescan = () => {
     setRescanning(true);
-    window.setTimeout(() => { setRescanning(false); setScannedAt('刚刚'); }, 700);
+    window.setTimeout(() => { setRescanning(false); setScannedJustNow(true); }, 700);
   };
   return (
-    <SettingsSection icon={Wrench} title={`工具（${TOOLS.length}）`} subtitle={`最近扫描：${scannedAt}`}
+    <SettingsSection icon={Wrench} title={t('tools.title', { n: TOOLS.length })}
+      subtitle={t('tools.subtitle', { time: t(scannedJustNow ? 'tools.scannedJustNow' : 'tools.scanned2min') })}
       extra={<Button actionId="tools.rescan" emphasis="secondary" density="compact" leading={<RefreshCw size={13} />}
-        label="重新扫描" execution={rescanning ? 'pending' : 'idle'} onActivate={rescan} />}>
+        label={t('tools.rescan')} execution={rescanning ? 'pending' : 'idle'} onActivate={rescan} />}>
       <div className="sk-tools-table">
-        <div className="sk-tools-row is-head"><span>名称</span><span>分类</span><span>审批</span></div>
+        <div className="sk-tools-row is-head"><span>{t('tools.colName')}</span><span>{t('tools.colCategory')}</span><span>{t('tools.colApproval')}</span></div>
         {TOOLS.map(tool => (
           <div className="sk-tools-row" key={tool.id} data-tool-id={tool.id}>
-            <strong>{tool.name}</strong>
-            <Tag tone="neutral">{CATEGORY_LABEL[tool.category] ?? tool.category}</Tag>
+            <strong>{t(tool.nameKey)}</strong>
+            <Tag tone="neutral">{t(CATEGORY_KEY[tool.category])}</Tag>
             {tool.approval
-              ? <Tag tone="warning">需要审批</Tag>
-              : <Tag tone="success">自动放行</Tag>}
+              ? <Tag tone="warning">{t('tools.approvalRequired')}</Tag>
+              : <Tag tone="success">{t('tools.approvalAuto')}</Tag>}
           </div>
         ))}
       </div>
@@ -204,6 +219,7 @@ const INITIAL_CHANNELS: Channel[] = [
 ];
 
 export function ChannelsSection() {
+  const { t } = useT();
   const [channels, setChannels] = useState(INITIAL_CHANNELS);
   const [wizard, setWizard] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -221,82 +237,83 @@ export function ChannelsSection() {
       setStep(1);
       setWizard(false);
       setChannels(list => [...list, {
-        id: `local-${Date.now()}`, name: `飞书 · ${domain.split('.')[0] || '新租户'}`,
+        id: `local-${Date.now()}`,
+        name: t('channels.nameNew', { tenant: domain.split('.')[0] || t('channels.tenantFallback') }),
         domain: domain || 'new.feishu.cn', connected: true, delivery: true, inbound: false,
       }]);
     }, 1900);
   };
 
   return (
-    <SettingsSection icon={Radio} title="消息通道" subtitle="把外部消息平台接入 Peers Touch；Bots 通道按决策暂不提供">
+    <SettingsSection icon={Radio} title={t('channels.title')} subtitle={t('channels.subtitle')}>
       <div className="sk-channel-list">
         {channels.map(channel => (
           <div className="sk-channel-card" key={channel.id} data-channel-id={channel.id}>
             <div className="sk-channel-id">
               <div className="sk-channel-title">
                 <strong>{channel.name}</strong>
-                <Tag tone={channel.connected ? 'success' : 'neutral'}>{channel.connected ? '已连接' : '未连接'}</Tag>
+                <Tag tone={channel.connected ? 'success' : 'neutral'}>{channel.connected ? t('channels.connected') : t('channels.disconnected')}</Tag>
               </div>
               <span className="sk-channel-domain"><Link2 size={12} /> {channel.domain}</span>
             </div>
             <div className="sk-channel-switches">
-              <Switch checked={channel.delivery} aria-label="启用消息投递"
-                onCheckedChange={checked => patch(channel.id, { delivery: checked })} label="投递" />
-              <Switch checked={channel.inbound} aria-label="入站通知"
-                onCheckedChange={checked => patch(channel.id, { inbound: checked })} label="入站" />
+              <Switch checked={channel.delivery} aria-label={t('channels.deliveryAria')}
+                onCheckedChange={checked => patch(channel.id, { delivery: checked })} label={t('channels.delivery')} />
+              <Switch checked={channel.inbound} aria-label={t('channels.inboundAria')}
+                onCheckedChange={checked => patch(channel.id, { inbound: checked })} label={t('channels.inbound')} />
               <Button actionId={`channel.remove-${channel.id}`} emphasis="quiet" density="compact" tone="danger"
-                leading={<Trash2 size={13} />} label="移除" onActivate={() => setRemoving(channel.id)} />
+                leading={<Trash2 size={13} />} label={t('common.remove')} onActivate={() => setRemoving(channel.id)} />
             </div>
           </div>
         ))}
       </div>
       <Button actionId="channel.add-open" emphasis="primary" leading={<Plus size={14} />}
-        label="添加飞书通道" onActivate={openWizard} />
-      <Alert tone="info" title="暂不支持 Bots 通道" description="Bots 设置的产品归属仍在决策中，本原型不提供该项。" />
+        label={t('channels.add')} onActivate={openWizard} />
+      <Alert tone="info" title={t('channels.botsTitle')} description={t('channels.botsDesc')} />
 
-      <Dialog open={wizard} onDismiss={() => setWizard(false)} title="添加飞书通道" width={460} closeLabel="取消"
+      <Dialog open={wizard} onDismiss={() => setWizard(false)} title={t('channels.dialogTitle')} width={460} closeLabel={t('common.cancel')}
         footer={step === 1
           ? <Button actionId="channel.authorize" emphasis="primary" leading={<Check size={14} />}
-              label="授权并开通"
-              availability={!domain.trim() ? { kind: 'disabled', reason: '请输入企业域名' } : undefined}
+              label={t('channels.authorize')}
+              availability={!domain.trim() ? { kind: 'disabled', reason: t('channels.domainReason') } : undefined}
               onActivate={authorize} />
           : undefined}>
         <div className="sk-wizard" data-wizard-step={step}>
           {step === 1 && (
             <div className="sk-wizard-step">
-              <strong>第 1 步 · 企业域名</strong>
-              <TextField aria-label="飞书企业域名" placeholder="your-tenant.feishu.cn"
+              <strong>{t('channels.step1Title')}</strong>
+              <TextField aria-label={t('channels.domainAria')} placeholder="your-tenant.feishu.cn"
                 value={domain} onValueChange={setDomain} data-channel-domain={domain} />
-              <p className="sk-field-hint">授权只用于申请开通，不会读取你的密码。</p>
+              <p className="sk-field-hint">{t('channels.step1Hint')}</p>
             </div>
           )}
           {step === 2 && (
             <div className="sk-wizard-step is-center">
-              <strong>第 2 步 · 等待授权…</strong>
-              <p className="sk-field-hint">正在跳转到飞书授权页并校验租户。</p>
+              <strong>{t('channels.step2Title')}</strong>
+              <p className="sk-field-hint">{t('channels.step2Hint')}</p>
             </div>
           )}
           {step === 3 && (
             <div className="sk-wizard-step is-center">
-              <strong>第 3 步 · 开通中</strong>
-              <p className="sk-field-hint">正在配置 webhook 与消息路由。</p>
+              <strong>{t('channels.step3Title')}</strong>
+              <p className="sk-field-hint">{t('channels.step3Hint')}</p>
             </div>
           )}
         </div>
       </Dialog>
 
-      <Dialog open={!!removing} onDismiss={() => setRemoving(null)} title="移除通道" width={420} closeLabel="取消"
+      <Dialog open={!!removing} onDismiss={() => setRemoving(null)} title={t('channels.removeDialogTitle')} width={420} closeLabel={t('common.cancel')}
         footer={
           <>
-            <Button actionId="channel.remove-cancel" emphasis="quiet" label="取消" onActivate={() => setRemoving(null)} />
-            <Button actionId="channel.remove-confirm" emphasis="primary" tone="danger" label="确认移除"
+            <Button actionId="channel.remove-cancel" emphasis="quiet" label={t('common.cancel')} onActivate={() => setRemoving(null)} />
+            <Button actionId="channel.remove-confirm" emphasis="primary" tone="danger" label={t('channels.removeConfirm')}
               onActivate={() => {
                 setChannels(list => list.filter(channel => channel.id !== removing));
                 setRemoving(null);
               }} />
           </>
         }>
-        <p className="sk-field-hint">移除后该租户的消息投递与入站通知都会停止，可随时重新开通。</p>
+        <p className="sk-field-hint">{t('channels.removeBody')}</p>
       </Dialog>
     </SettingsSection>
   );
@@ -312,6 +329,7 @@ const APPLETS: Applet[] = [
 ];
 
 export function AppletsSection() {
+  const { t } = useT();
   const [selected, setSelected] = useState<Applet | null>(null);
   const [notify, setNotify] = useState(true);
   const [location, setLocation] = useState(true);
@@ -320,19 +338,19 @@ export function AppletsSection() {
     return (
       <SettingsSection icon={Puzzle} title={selected.name} subtitle={selected.description}
         extra={<Button actionId="applets.back" emphasis="quiet" density="compact" leading={<ArrowLeft size={14} />}
-          label="返回小程序" onActivate={() => setSelected(null)} />}>
-        <SettingsRow label="活动通知" description="有新的借阅/交换请求时通知你">
-          <Switch checked={notify} aria-label="活动通知" onCheckedChange={setNotify} />
+          label={t('applets.back')} onActivate={() => setSelected(null)} />}>
+        <SettingsRow label={t('applets.notify')} description={t('applets.notifyDesc')}>
+          <Switch checked={notify} aria-label={t('applets.notify')} onCheckedChange={setNotify} />
         </SettingsRow>
-        <SettingsRow label="位置授权" description="在场地信息中使用你的大致位置">
-          <Switch checked={location} aria-label="位置授权" onCheckedChange={setLocation} />
+        <SettingsRow label={t('applets.location')} description={t('applets.locationDesc')}>
+          <Switch checked={location} aria-label={t('applets.location')} onCheckedChange={setLocation} />
         </SettingsRow>
       </SettingsSection>
     );
   }
 
   return (
-    <SettingsSection icon={Puzzle} title="小程序" subtitle="已安装的本地小程序；带设置面板的可点入配置">
+    <SettingsSection icon={Puzzle} title={t('applets.title')} subtitle={t('applets.subtitle')}>
       <div className="sk-applet-list">
         {APPLETS.map(applet => (
           <button key={applet.id} type="button"
@@ -345,8 +363,8 @@ export function AppletsSection() {
               <span>{applet.description}</span>
             </span>
             {applet.hasSettings
-              ? <Tag tone="info">可配置</Tag>
-              : <Tag>只读</Tag>}
+              ? <Tag tone="info">{t('applets.configurable')}</Tag>
+              : <Tag>{t('applets.readonly')}</Tag>}
           </button>
         ))}
       </div>

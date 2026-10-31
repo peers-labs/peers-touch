@@ -13,6 +13,7 @@ import { Alert, IconButton, Popover, TextArea } from '@peers-touch/ui';
 import type { MessageAttachment } from './chat-data';
 import { AttachmentDraftStrip, useAttachmentDrafts } from './ComposerAttachments';
 import { formatVoiceDuration, useVoiceRecorder, VoicePlayer, type RecordedVoice } from './VoiceNote';
+import { useT } from '../prefs';
 
 const EMOJI_RECENT_KEY = 'peers-touch:prototype:recent-emojis';
 const EMOJI_GROUPS = [
@@ -49,6 +50,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
   onCancelEdit?: () => void;
   onSend: (payload: ComposerPayload) => void;
 }) {
+  const { t } = useT();
   const [draft, setDraft] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -174,21 +176,21 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
     <div className="sk-emoji-panel" data-emoji-panel>
       {recentEmojis.length > 0 && (
         <div className="sk-emoji-group" data-emoji-recent>
-          <span>最近使用</span>
+          <span>{t('composer.emojiRecent')}</span>
           <div className="sk-emoji-grid">
             {recentEmojis.map(emoji => (
               <button key={`r-${emoji}`} type="button" className="sk-emoji-cell"
-                aria-label={`插入 ${emoji}`} onClick={() => insertEmoji(emoji)}>{emoji}</button>
+                aria-label={t('composer.emojiInsert', { emoji })} onClick={() => insertEmoji(emoji)}>{emoji}</button>
             ))}
           </div>
         </div>
       )}
       <div className="sk-emoji-group">
-        <span>全部表情</span>
+        <span>{t('composer.emojiAll')}</span>
         <div className="sk-emoji-grid">
           {EMOJI_GROUPS.flat().map(emoji => (
             <button key={emoji} type="button" className="sk-emoji-cell"
-              aria-label={`插入 ${emoji}`} onClick={() => insertEmoji(emoji)}>{emoji}</button>
+              aria-label={t('composer.emojiInsert', { emoji })} onClick={() => insertEmoji(emoji)}>{emoji}</button>
           ))}
         </div>
       </div>
@@ -203,19 +205,19 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
       {editTarget ? (
         <div className="sk-reply-bar sk-edit-bar" data-edit-banner>
           <div>
-            <span>编辑消息</span>
+            <span>{t('composer.editBanner')}</span>
             <p>{editTarget.text}</p>
           </div>
-          <button type="button" className="sk-reply-cancel" aria-label="取消编辑"
+          <button type="button" className="sk-reply-cancel" aria-label={t('composer.cancelEdit')}
             onClick={() => { setDraft(''); onCancelEdit?.(); }}><X size={14} /></button>
         </div>
       ) : replyTarget && (
         <div className="sk-reply-bar" data-reply-bar>
           <div>
-            <span>回复 {replyTarget.who}</span>
+            <span>{t('composer.replyBanner', { who: replyTarget.who })}</span>
             <p>{replyTarget.text}</p>
           </div>
-          <button type="button" className="sk-reply-cancel" aria-label="取消回复"
+          <button type="button" className="sk-reply-cancel" aria-label={t('composer.cancelReply')}
             onClick={onCancelReply}><X size={14} /></button>
         </div>
       )}
@@ -224,12 +226,12 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
         <div className="sk-voice-recording" data-voice-recording
           data-voice-seconds={recorder.recordingSeconds}>
           <span className="sk-voice-dot" />
-          <span>录制中 {formatVoiceDuration(recorder.recordingSeconds)}</span>
+          <span>{t('composer.recording', { time: formatVoiceDuration(recorder.recordingSeconds) })}</span>
           <span className="sk-voice-rec-actions">
             <button type="button" className="sk-voice-rec-cancel" data-voice-cancel
-              onClick={recorder.cancel}><X size={13} />取消</button>
+              onClick={recorder.cancel}><X size={13} />{t('composer.recCancel')}</button>
             <button type="button" className="sk-voice-rec-finish" data-voice-finish
-              onClick={recorder.finish}><Square size={11} />完成</button>
+              onClick={recorder.finish}><Square size={11} />{t('composer.recFinish')}</button>
           </span>
         </div>
       )}
@@ -239,41 +241,41 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
           data-voice-duration-ms={recordedVoice.durationSeconds * 1000}>
           <VoicePlayer url={recordedVoice.url} durationSeconds={recordedVoice.durationSeconds}
             variant="preview" />
-          <button type="button" className="sk-voice-discard" aria-label="放弃语音"
+          <button type="button" className="sk-voice-discard" aria-label={t('composer.discardVoice')}
             data-voice-discard onClick={() => {
               if (recordedVoice.url.startsWith('blob:')) URL.revokeObjectURL(recordedVoice.url);
               setRecordedVoice(null);
             }}><Trash2 size={14} /></button>
           <button type="button" className="sk-voice-send" data-voice-send
-            onClick={submitVoice}>发送</button>
+            onClick={submitVoice}>{t('composer.sendShort')}</button>
         </div>
       )}
 
       <AttachmentDraftStrip drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
 
       {voiceError && (
-        <Alert tone="danger" title="无法录音"
-          description={voiceError === 'denied' ? '麦克风权限被拒绝，请在系统设置中允许。' : '当前环境不支持录音。'} />
+        <Alert tone="danger" title={t('composer.voiceErrorTitle')}
+          description={voiceError === 'denied' ? t('composer.voiceDenied') : t('composer.voiceUnsupported')} />
       )}
-      {failed && <Alert tone="danger" title="附件上传失败" description="请重试或移除失败的附件（本地示例）。" />}
+      {failed && <Alert tone="danger" title={t('composer.attachFailedTitle')} description={t('composer.attachFailedBody')} />}
 
       <div className="sk-composer" data-composer-mode={editTarget ? 'editing' : 'compose'}>
         <div className="sk-composer-tools">
           <Popover placement="top" content={emojiPanel}>
-            <button type="button" className="sk-composer-tool" aria-label="表情"
+            <button type="button" className="sk-composer-tool" aria-label={t('composer.emoji')}
               data-composer-tool="emoji" disabled={!!recordedVoice || !!editTarget}><Smile size={18} /></button>
           </Popover>
-          <button type="button" className="sk-composer-tool" aria-label="添加文件附件"
+          <button type="button" className="sk-composer-tool" aria-label={t('composer.attachFile')}
             data-composer-tool="file"
             disabled={recorder.recording || !!recordedVoice || !!editTarget}
             onClick={() => fileInputRef.current?.click()}><FolderOpen size={18} /></button>
-          <button type="button" className="sk-composer-tool" aria-label="截图（浏览器原型选择图片文件）"
-            title="桌面壳为屏幕捕获；浏览器原型选择图片文件"
+          <button type="button" className="sk-composer-tool" aria-label={t('composer.screenshot')}
+            title={t('composer.screenshotTitle')}
             data-composer-tool="screenshot"
             disabled={recorder.recording || !!recordedVoice || !!editTarget}
             onClick={() => shotInputRef.current?.click()}><Scissors size={18} /></button>
           <button type="button" className={`sk-composer-tool${recorder.recording ? ' is-recording' : ''}`}
-            aria-label={recorder.recording ? '结束录音' : '语音消息'}
+            aria-label={recorder.recording ? t('composer.voiceStop') : t('composer.voice')}
             data-composer-tool="voice" aria-pressed={recorder.recording}
             disabled={!!recordedVoice || !!editTarget}
             onClick={() => {
@@ -306,7 +308,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
           )}
           <TextArea ref={textareaRef} framing="embedded" minimumRows={1}
             maximumRows={expanded ? 10 : 4}
-            className="sk-composer-input" value={draft} aria-label="输入消息"
+            className="sk-composer-input" value={draft} aria-label={t('composer.inputAria')}
             data-composer-value={draft}
             onValueChange={setDraft}
             onEnter={(event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -315,29 +317,29 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
             }}
             onPaste={onPaste}
             disabled={recorder.recording || !!recordedVoice}
-            placeholder={editTarget ? '修改后发送…' : placeholder} />
+            placeholder={editTarget ? t('composer.editPlaceholder') : placeholder} />
         </div>
 
         {!editTarget && (
           <button type="button" className="sk-composer-tool sk-composer-expand"
-            aria-label={expanded ? '收起输入框' : '展开输入框'} aria-pressed={expanded}
+            aria-label={expanded ? t('composer.collapse') : t('composer.expand')} aria-pressed={expanded}
             data-composer-expand onClick={() => setExpanded(value => !value)}>
             {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         )}
-        <IconButton iconId="send" iconSize={16} label={editTarget ? '保存修改' : '发送消息'}
+        <IconButton iconId="send" iconSize={16} label={editTarget ? t('composer.saveEdit') : t('composer.sendLabel')}
           actionId="sk.send-message"
           emphasis="primary"
           data-edit-send={editTarget ? 'true' : undefined}
           availability={sendEnabled
             ? { kind: 'enabled' }
             : { kind: 'disabled',
-                reason: editTarget ? '内容未修改'
-                  : uploading ? '附件上传中' : failed ? '存在失败附件' : '请输入消息或添加附件' } }
+                reason: editTarget ? t('composer.reasonUnchanged')
+                  : uploading ? t('composer.reasonUploading') : failed ? t('composer.reasonFailed') : t('composer.reasonEmpty') } }
           onActivate={submitText} />
       </div>
 
-      {dragging && <div className="sk-composer-drop-hint" data-drop-hint>松开以添加附件</div>}
+      {dragging && <div className="sk-composer-drop-hint" data-drop-hint>{t('composer.dropHint')}</div>}
     </div>
   );
 }

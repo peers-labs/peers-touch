@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, File as FileIcon, Image as ImageIcon, Loader2, RotateCcw, Trash2, Video } from 'lucide-react';
 import type { MessageAttachment } from './chat-data';
+import { useT } from '../prefs';
 
 // Local-example policy: a file this large fails its first staging attempt.
 const FAIL_FIRST_ATTEMPT_BYTES = 8 * 1024 * 1024;
@@ -156,6 +157,7 @@ export function AttachmentDraftStrip({ drafts, onRemove, onRetry }: {
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
 }) {
+  const { t } = useT();
   if (drafts.length === 0) return null;
   return (
     <div className="sk-draft-strip" data-draft-count={drafts.length}>
@@ -175,19 +177,19 @@ export function AttachmentDraftStrip({ drafts, onRemove, onRetry }: {
             )}
           </div>
           <div className="sk-draft-meta">
-            <strong title={draft.name}>{draft.kind === 'image' ? '图片' : draft.name}</strong>
+            <strong title={draft.name}>{draft.kind === 'image' ? t('draft.image') : draft.name}</strong>
             <span>
-              {draft.status === 'uploading' ? `上传中 ${draft.progress}%`
-                : draft.status === 'failed' ? `上传失败 · ${formatAttachmentSize(draft.size)}`
+              {draft.status === 'uploading' ? t('draft.uploading', { n: draft.progress })
+                : draft.status === 'failed' ? t('draft.failed', { size: formatAttachmentSize(draft.size) })
                   : formatAttachmentSize(draft.size)}
             </span>
           </div>
           <div className="sk-draft-actions">
             {draft.status === 'failed' && (
-              <button type="button" className="sk-draft-op" aria-label="重试上传"
+              <button type="button" className="sk-draft-op" aria-label={t('draft.retry')}
                 data-draft-retry onClick={() => onRetry(draft.id)}><RotateCcw size={13} /></button>
             )}
-            <button type="button" className="sk-draft-op" aria-label="移除附件"
+            <button type="button" className="sk-draft-op" aria-label={t('draft.remove')}
               data-draft-remove onClick={() => onRemove(draft.id)}><Trash2 size={13} /></button>
           </div>
         </div>

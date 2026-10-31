@@ -8,6 +8,12 @@
     "implementationRefs": [
       "packages/prototypes/shared/ui-system/DesignDirections.tsx",
       "packages/prototypes/shared/ui-system/design-directions.css",
+      "packages/prototypes/shared/ui-system/prefs.ts",
+      "packages/prototypes/shared/ui-system/settings/SettingsFeature.tsx",
+      "packages/prototypes/shared/ui-system/settings/sections/AccountSection.tsx",
+      "packages/prototypes/shared/ui-system/chat/MessageActions.tsx",
+      "packages/prototypes/shared/ui-system/chat/chat.css",
+      "packages/prototypes/shared/ui-system/settings/settings.css",
       "tooling/scripts/ui-system/craft-battery.mjs"
     ]
   },
@@ -4495,10 +4501,10 @@
           "equals": 1
         },
         {
-          "id": "three-sections",
+          "id": "five-sections",
           "type": "count",
           "target": ".sk-settings-nav-item",
-          "equals": 3
+          "equals": 5
         },
         {
           "id": "account-built",
@@ -4537,7 +4543,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(3)"
+          "target": ".sk-settings-nav-item:nth-child(4)"
         }
       ],
       "oracles": [
@@ -4585,7 +4591,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(3)"
+          "target": ".sk-settings-nav-item:nth-child(4)"
         },
         {
           "op": "click",
@@ -4704,6 +4710,32 @@
           "equals": 2
         },
         {
+          "id": "copy-quiet-icon",
+          "type": "computedStyle",
+          "all": true,
+          "target": ".sk-identity-field .pt-icon-button",
+          "prop": "width",
+          "equals": "26px"
+        },
+        {
+          "id": "no-overlap-stain",
+          "type": "computedStyle",
+          "target": ".sk-identity-row",
+          "prop": "marginTop",
+          "equals": "0px"
+        },
+        {
+          "id": "device-pager-default",
+          "type": "exists",
+          "target": ".sk-device-pager"
+        },
+        {
+          "id": "device-five-rows",
+          "type": "count",
+          "target": ".sk-device-list .sk-device-row:not(.is-head)",
+          "equals": 5
+        },
+        {
           "id": "ptid",
           "type": "textContains",
           "target": ".sk-identity-fields",
@@ -4769,6 +4801,12 @@
           "target": ".sk-device-stage",
           "attr": "data-stage",
           "equals": "complete"
+        },
+        {
+          "id": "device-appended",
+          "type": "textContains",
+          "target": ".sk-device-pager",
+          "contains": "7"
         }
       ],
       "finalizers": [
@@ -4789,7 +4827,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(2)"
+          "target": ".sk-settings-nav-item:nth-child(5)"
         },
         {
           "op": "click",
@@ -4859,7 +4897,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(2)"
+          "target": ".sk-settings-nav-item:nth-child(5)"
         },
         {
           "op": "click",
@@ -5535,6 +5573,223 @@
         }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.action-bar-hugs-bubble",
+      "title": "消息工具条贴气泡近侧：他人气泡在右、自己气泡在左（飞书对齐），工具条是内容列直接子级",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "hover", "target": "[data-message-id='m1']" }
+      ],
+      "oracles": [
+        {
+          "id": "bar-in-content-column",
+          "type": "count",
+          "target": ".sk-msg-peer .sk-msg-col > .sk-msg-actions-bar",
+          "gte": 1
+        },
+        {
+          "id": "peer-bars-right-edge",
+          "type": "count",
+          "target": ".sk-msg-peer .sk-msg-actions-bar[data-bar-side='right']",
+          "gte": 1
+        },
+        {
+          "id": "peer-bars-never-left",
+          "type": "count",
+          "target": ".sk-msg-peer .sk-msg-actions-bar[data-bar-side='left']",
+          "equals": 0
+        },
+        {
+          "id": "own-bars-left-edge",
+          "type": "count",
+          "target": ".sk-msg-me .sk-msg-actions-bar[data-bar-side='left']",
+          "gte": 1
+        },
+        {
+          "id": "own-bars-never-right",
+          "type": "count",
+          "target": ".sk-msg-me .sk-msg-actions-bar[data-bar-side='right']",
+          "equals": 0
+        },
+        {
+          "id": "absolute-positioned",
+          "type": "computedStyle",
+          "all": true,
+          "target": ".sk-msg-actions-bar",
+          "prop": "position",
+          "equals": "absolute"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-messages-layout-left",
+      "title": "消息设置「统一靠左」：设置落盘后聊天根 data-message-layout=left，自己气泡左对齐且工具条换到右侧，重进设置仍在",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(2)" },
+        { "op": "click", "target": "[data-action-id='segment.left']" },
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "hover", "target": "[data-message-id='m1']" }
+      ],
+      "oracles": [
+        {
+          "id": "layout-attr-left",
+          "type": "attr",
+          "target": ".sk-chat-feature",
+          "attr": "data-message-layout",
+          "equals": "left"
+        },
+        {
+          "id": "own-bubbles-align-start",
+          "type": "computedStyle",
+          "all": true,
+          "target": ".sk-msg-me",
+          "prop": "alignSelf",
+          "equals": "flex-start"
+        },
+        {
+          "id": "own-bars-move-right",
+          "type": "count",
+          "target": ".sk-msg-me .sk-msg-actions-bar[data-bar-side='right']",
+          "gte": 1
+        },
+        {
+          "id": "own-bars-no-left",
+          "type": "count",
+          "target": ".sk-msg-me .sk-msg-actions-bar[data-bar-side='left']",
+          "equals": 0
+        }
+      ],
+      "finalizers": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(2)" },
+        { "op": "click", "target": "[data-action-id='segment.sides']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-notifications",
+      "title": "消息通知：7 个开关（5 事件 + 2 投递），关闭提及后切走再回来仍保持关闭（跨面持久化）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(3)" },
+        { "op": "click", "target": "[data-notify='mentions']" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(1)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(3)" }
+      ],
+      "oracles": [
+        {
+          "id": "seven-switches",
+          "type": "count",
+          "target": "[data-notify] .pt-switch, .pt-switch[data-notify]",
+          "equals": 7
+        },
+        {
+          "id": "mentions-off-persisted",
+          "type": "attr",
+          "target": ".pt-switch[data-notify='mentions']",
+          "attr": "aria-checked",
+          "equals": "false"
+        },
+        {
+          "id": "sound-default-off",
+          "type": "attr",
+          "target": ".pt-switch[data-notify='sound']",
+          "attr": "aria-checked",
+          "equals": "false"
+        },
+        {
+          "id": "inapp-default-on",
+          "type": "attr",
+          "target": ".pt-switch[data-notify='inApp']",
+          "attr": "aria-checked",
+          "equals": "true"
+        }
+      ],
+      "finalizers": [
+        { "op": "click", "target": ".pt-switch[data-notify='mentions']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-language-en",
+      "title": "多语言：通用分区切 English 后设置与聊天界面立即英文化（Notifications/Recent/Chats），切回中文恢复",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(4)" },
+        { "op": "click", "target": ".sk-settings-row .pt-select" },
+        { "op": "wait", "ms": 200 },
+        { "op": "clickGlobal", "target": ".pt-select-options > div:nth-child(2) [role='option']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" }
+      ],
+      "oracles": [
+        {
+          "id": "chat-locale-en",
+          "type": "attr",
+          "target": ".sk-chat-feature",
+          "attr": "data-locale",
+          "equals": "en"
+        },
+        {
+          "id": "rail-recent-english",
+          "type": "textContains",
+          "target": ".sk-conv-title",
+          "contains": "Recent"
+        },
+        {
+          "id": "tab-chats-english",
+          "type": "textContains",
+          "target": ".sk-chat-subnav",
+          "contains": "Chats"
+        }
+      ],
+      "finalizers": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(4)" },
+        { "op": "click", "target": ".sk-settings-row .pt-select" },
+        { "op": "wait", "ms": 200 },
+        { "op": "clickGlobal", "target": ".pt-select-options > div:nth-child(1) [role='option']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-device-pagination",
+      "title": "已关联设备：6 台时分页——首屏 5 行、分页器含总数，下一页 1 行，返回恢复 5 行",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": "[data-action-id='device.page-next']" }
+      ],
+      "oracles": [
+        {
+          "id": "pager-total-six",
+          "type": "textContains",
+          "target": ".sk-device-pager",
+          "contains": "6"
+        },
+        {
+          "id": "second-page-one-row",
+          "type": "count",
+          "target": ".sk-device-list .sk-device-row:not(.is-head)",
+          "equals": 1
+        },
+        {
+          "id": "next-disabled-on-last",
+          "type": "attr",
+          "target": "[data-action-id='device.page-next']",
+          "attr": "aria-disabled",
+          "equals": "true"
+        }
+      ],
+      "finalizers": [
+        { "op": "click", "target": "[data-action-id='device.page-prev']" }
+      ]
     }
   ]
 }

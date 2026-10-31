@@ -1,7 +1,7 @@
-# SettingsFeature · 设置框架（迁移增量 6）
+# SettingsFeature · 设置框架（迁移增量 6，增量 22 修订）
 
 > **Status**: draft（北极星窗框内，未晋升 peers-ui）
-> **Created**: 2026-10-31 · **Owner**: Client Platform / UI System
+> **Created**: 2026-10-31 · **Updated**: 2026-11-01（增量 22）· **Owner**: Client Platform / UI System
 > **旧来源**：`pages/SettingsPage.tsx`（分组/分区导航）、
 > `components/settings/SettingsLayout.tsx`（Container/Section/Row/ItemCard）
 > **前置**：增量 1–5、[north-star-frame](../north-star-frame.md)
@@ -39,6 +39,18 @@
 `group`（6 选 1）→ 切换时分区重置为该组首项；`section` 仅在分组分区数 >1 时显示导航；
 单分区分组（通道/小程序/帮助）导航隐藏。语言、快捷键为本地真实状态。
 
+### 3.1 增量 22：通用组扩为 5 分区 + 跨面偏好
+
+通用组分区导航由 3 项扩为 5 项：账号 / **消息** / **消息通知** / 通用 / 安全。
+
+- **消息**：消息对齐 Segmented「各在一边 / 统一靠左」，写 `prefs.messageLayout`。
+- **消息通知**：两张卡（通知我哪些事件 5 开关、投递方式 2 开关），
+  对齐 desktop `NotificationsSettingsSection`，默认 mentions/invites/friendRequests/
+  network/inApp 开、reactions/sound 关。
+- **语言真生效**：通用分区的语言 Select 不再是本地态——写 `prefs.locale` 后经
+  窗内事件广播即时重渲染设置、聊天与窗框 chrome（inc6 时仅本地态的 UNPROVEN 解除）。
+- 偏好统一存 localStorage key `north-star.prefs.v1`，跨功能面共享；设置根带 `data-ui-locale`。
+
 ## 4. 门禁
 
 `north-star.suite.json` 新增 4 场景：`settings-frame`（齿轮激活、6 药丸、
@@ -50,6 +62,8 @@
 
 ## 5. UNPROVEN
 
-账号/安全/帮助/数据/工具/通道/小程序分区内容、Bots、真实偏好持久化、
-i18n 实际切换（当前语言 Select 为本地偏好，不重渲染其他视图）、深链高亮、
+账号/安全/帮助/数据/工具/通道/小程序分区内容、Bots、真实服务端偏好持久化
+（当前为 localStorage，仅在本浏览器原型内跨面持久）、深链高亮、
 Section 卸载/缓存策略、晋升 peers-ui 后的 Section/Row API。
+i18n 仅 zh-CN/en 且只覆盖窗内 chrome（种子消息/名单/朋友圈内容不译）；
+desktop 真身 AppearanceSection 的消息密度/深色/字号未迁入。

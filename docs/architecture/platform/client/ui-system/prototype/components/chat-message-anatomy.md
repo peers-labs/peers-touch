@@ -1,6 +1,6 @@
-# 消息解剖（迁移增量 12）
+# 消息解剖（迁移增量 12，增量 16/22 修订）
 
-> **Status**: draft · **Created**: 2026-10-31 · **Owner**: Client Platform · UI System
+> **Status**: draft · **Created**: 2026-10-31 · **Updated**: 2026-11-01（增量 22）· **Owner**: Client Platform · UI System
 > **旧来源**：`MessageActionBar`/`MessageReactions`、`ChatMessageArea`（引用块/链接预览/@提及）、
 > 转发与删除确认 Dialog、`useChatMention` 候选弹层
 
@@ -8,6 +8,11 @@
 
 - **悬浮操作条**：hover/focus-within 浮现的白色胶囊，peer 气泡右上、me 气泡左上；
   反应、回复、话题、复制、转发、删除（仅本人消息可见，红色 hover）六入口全部有真实去向。
+  **增量 22（飞书对齐）**：定位锚从 78% 宽消息行改为气泡内容列 `.sk-msg-col`——
+  工具条是内容列直接子级，peer `left:calc(100%+8px)`、me `right:calc(100%+8px)`，
+  任何气泡宽度下都贴在气泡旁而非悬在列中部；DOM 带 `data-bar-side` 语义契约
+  （peer 恒 `right`；me 在「各在一边」为 `left`，「统一靠左」偏好下随气泡改为 `right`）。
+  ≤720px 窄宽浮在气泡上沿外侧，避免被裁切。
 - **快捷反应**：Popover 内 👍 ❤️ 😂 😮 四枚无边框圆形按钮；反应以琥珀色胶囊沉淀在气泡下，
   本人反应 `data-mine=1`，再点取消，计数真实联动。
 - **回复**：操作条回复 → composer 上方引用条（回复对象 + 原文 + 取消 ×）；发送后新气泡内含

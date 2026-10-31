@@ -606,20 +606,39 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
 .sk-call-tile-name { font-size: 12px; opacity: .9; }
 .sk-call-tile-muted { position: absolute; top: 8px; left: 9px; color: rgba(243,248,244,.62); }
 
+/* Unified-left preference: own messages join peers on the left (color
+   still distinguishes them). Set via [data-message-layout] on the feature. */
+.sk-chat-feature[data-message-layout='left'] .sk-msg-me { align-self: flex-start; flex-direction: row; }
+.sk-chat-feature[data-message-layout='left'] .sk-msg-me .sk-msg-col { align-items: flex-start; }
+.sk-chat-feature[data-message-layout='left'] .sk-msg-me .sk-msg-under { justify-content: flex-start; }
+.sk-chat-feature[data-message-layout='left'] .sk-msg-me .sk-reply-quote { text-align: left; }
+/* Own bubble moved left → its toolbar moves to the bubble's right. */
+.sk-chat-feature[data-message-layout='left'] .sk-msg-me .sk-msg-actions-bar {
+  right: auto; left: calc(100% + 8px);
+}
+
 /* ── Increment 12: message anatomy ─────────────────────── */
 .sk-msg { position: relative; }
+/* The toolbar is inside .sk-msg-col and hugs the bubble's near edge:
+   right of a left (peer) bubble, left of a right (own) bubble. */
+.sk-msg-col { position: relative; }
 .sk-msg-actions-bar {
-  position: absolute; top: -14px;
+  position: absolute; top: -10px;
   display: flex; gap: 1px; padding: 2px;
   border-radius: 999px; opacity: 0; transition: opacity .12s;
   background: var(--sk-overlay);
   box-shadow: 0 4px 14px -6px rgba(28,46,32,.35);
-  z-index: 4;
+  z-index: 4; white-space: nowrap;
 }
-.sk-msg-peer .sk-msg-actions-bar { right: 8px; }
-.sk-msg-me .sk-msg-actions-bar { left: 8px; }
+.sk-msg-peer .sk-msg-actions-bar { left: calc(100% + 8px); right: auto; }
+.sk-msg-me .sk-msg-actions-bar { right: calc(100% + 8px); left: auto; }
 .sk-msg:hover .sk-msg-actions-bar,
 .sk-msg:focus-within .sk-msg-actions-bar { opacity: 1; }
+@media (max-width: 720px) {
+  /* Phone width: overlay on the bubble's outer side instead of pushing. */
+  .sk-msg-peer .sk-msg-actions-bar { left: auto; right: 0; top: -30px; }
+  .sk-msg-me .sk-msg-actions-bar { right: auto; left: 0; top: -30px; }
+}
 .sk-msg-action {
   width: 26px; height: 26px; border: 0; border-radius: 50%;
   background: transparent; color: var(--sk-text-3); cursor: pointer;

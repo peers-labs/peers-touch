@@ -22,6 +22,7 @@ import { UIProvider } from '@peers-touch/ui';
 import { MomentsFeature } from './moments/MomentsFeature';
 import { SettingsFeature } from './settings/SettingsFeature';
 import { ChatFeature } from './chat/ChatFeature';
+import { makeTranslate, usePrefs } from './prefs';
 import './design-directions.css';
 
 type Skin = { id: string; name: string; desc: string };
@@ -59,10 +60,10 @@ const WALLPAPERS: { id: string; name: string; value: string }[] = [
 ];
 
 type RailTab = 'moments' | 'search' | 'chat' | 'settings';
-const RAIL_NAV: { icon: LucideIcon; key: RailTab; label: string }[] = [
-  { icon: Search, key: 'search', label: '搜索' },
-  { icon: MessageCircle, key: 'chat', label: '消息' },
-  { icon: Sparkles, key: 'moments', label: '动态' },
+const RAIL_NAV: { icon: LucideIcon; key: RailTab; labelKey: 'nav.search' | 'tab.chats' | 'nav.moments' }[] = [
+  { icon: Search, key: 'search', labelKey: 'nav.search' },
+  { icon: MessageCircle, key: 'chat', labelKey: 'tab.chats' },
+  { icon: Sparkles, key: 'moments', labelKey: 'nav.moments' },
 ];
 
 /* SearchField — the first component trained in the frame.
@@ -120,6 +121,8 @@ export function DesignDirections() {
   const [wallName, setWallName] = useState<string>('无背景');
   const [railTab, setRailTab] = useState<RailTab>('search');
   const [liveQuery, setLiveQuery] = useState('');
+  const prefs = usePrefs();
+  const t = makeTranslate(prefs.locale);
 
   const isChat = railTab === 'chat';
 
@@ -191,7 +194,7 @@ export function DesignDirections() {
               const Icon = n.icon;
               return (
                 <button key={n.key} type="button" className={`sk-rail-icon${railTab === n.key ? ' is-active' : ''}`}
-                  aria-label={n.label} aria-current={railTab === n.key ? 'page' : undefined}
+                  aria-label={t(n.labelKey)} aria-current={railTab === n.key ? 'page' : undefined}
                   onClick={() => setRailTab(n.key)}>
                   <Icon size={19} strokeWidth={1.7} />
                 </button>
@@ -202,7 +205,7 @@ export function DesignDirections() {
           <div className="sk-rail-group">
             <button type="button"
               className={`sk-rail-icon${railTab === 'settings' ? ' is-active' : ''}`}
-              aria-label="设置" aria-current={railTab === 'settings' ? 'page' : undefined}
+              aria-label={t('nav.settings')} aria-current={railTab === 'settings' ? 'page' : undefined}
               onClick={() => setRailTab('settings')}>
               <Settings size={19} strokeWidth={1.7} />
             </button>
@@ -215,11 +218,11 @@ export function DesignDirections() {
               <div className="sk-head-title">
                 <span className="sk-eyebrow">
                   {railTab === 'moments' ? '社交 · 动态'
-                    : railTab === 'settings' ? '偏好与配置' : '组件训练'}
+                    : railTab === 'settings' ? t('head.settingsEyebrow') : '组件训练'}
                 </span>
                 <h1>
                   {railTab === 'moments' ? '朋友圈动态'
-                    : railTab === 'settings' ? '设置' : 'SearchField · 搜索框'}
+                    : railTab === 'settings' ? t('head.settingsTitle') : 'SearchField · 搜索框'}
                 </h1>
               </div>
             </header>

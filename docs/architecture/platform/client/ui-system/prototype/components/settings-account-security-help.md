@@ -1,7 +1,7 @@
-# 账号 / 安全 / 帮助分区（迁移增量 7）
+# 账号 / 安全 / 帮助分区（迁移增量 7，增量 22 重设计）
 
 > **Status**: draft（北极星窗框内，未晋升 peers-ui）
-> **Created**: 2026-10-31 · **Owner**: Client Platform / UI System
+> **Created**: 2026-10-31 · **Updated**: 2026-11-01（增量 22）· **Owner**: Client Platform / UI System
 > **旧来源**：`components/settings/AccountTab.tsx`、`DeviceLinkPanel.tsx`、
 > `RecoverySettings.tsx`、`pages/SettingsPage.tsx` 的 HelpTab
 > **前置**：[settings-frame](./settings-frame.md)
@@ -9,12 +9,20 @@
 ## 1. 产品边界
 
 **账号（account）**
-- 身份卡：头图 + 80px 方圆头像（r22）负 34px 叠压、显示名/@handle/本机身份标签、
-  动态·关注·粉丝统计与加入时间；头图/头像支持本地选图即时预览（FileReader，无上传）。
-- 首选用户名与 PTID 嵌片，peers-ui `CopyButton` 一键复制。
-- 设备：关联新设备 Dialog 本地状态机：二维码（peers-ui `QrCode`）→
-  模拟扫码请求 → 设备名 + 6 位核对码 → 允许（finishing → 完成）/拒绝（过期），
-  完成态给「完成」、过期态给「刷新二维码」。
+- **分区顺序（增量 22 按好友关注点重排）**：身份 → 公开资料 → 设备。
+- 身份卡（增量 22 对齐聊天资料卡语法）：头图是独立 tile，80px 方圆头像（r22）
+  位于头图之外的干净白色卡面（去掉旧版 -34px 叠压，消除头像/渐变交界处的染色），
+  显示名/@handle/本机身份标签、动态·关注·粉丝统计与加入时间；
+  头图/头像支持本地选图即时预览（FileReader，无上传）。
+- 首选用户名与 PTID 嵌片：嵌片内复制控件降为 **26px 安静图标钮**
+  （`pt-icon-button`，三级文字色，hover 主色），身份文字承担主视觉；
+  不再出现比用户名还重的复制按钮。
+- 设备（增量 22）：「关联新设备」按钮收入设备卡标题行末端（`SettingsSection extra`）；
+  卡体是已关联设备表——型号（手机图标 + 名称 + 本机 Tag）、加入时间、最近使用、
+  移除操作；本机行不提供移除。**每页 5 行，超过 5 台才出现分页器与总数**，
+  上下页到边真实禁用。关联 Dialog 本地状态机不变：二维码（peers-ui `QrCode`）→
+  模拟扫码请求 → 设备名 + 6 位核对码 → 允许（finishing → 完成）/拒绝（过期）；
+  完成后把新设备真实追加到表首（QR 流里的设备名即新行型号）。
 - 公开资料：显示名、简介（280 字 + 计数）、地区、可搜索时区 Select、
   标签（回车添加、Tag 可删）、资料链接行（名称/URL/删除、添加），全部本地真实状态。
 
@@ -47,5 +55,7 @@
 ## 4. UNPROVEN
 
 真实头像/头图上传与持久化、远端 provider 资料同步、PTID 二维码真实配对、
-设备 claims 多选、恢复密钥真实加密与备份落盘、帮助目录对 applet/动态设置项的聚合、
-i18n 语言实际切换。
+设备 claims 多选、设备移除二次确认与本机会话保护、恢复密钥真实加密与备份落盘、
+帮助目录对 applet/动态设置项的聚合。
+i18n 语言切换在增量 22 已落地为窗内真实跨面偏好（localStorage），
+服务端同步与更多语种仍 UNPROVEN。

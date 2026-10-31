@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { CheckCircle2, KeyRound, ShieldAlert, Upload } from 'lucide-react';
 import { Alert, Button, CopyButton, Dialog, TextArea } from '@peers-touch/ui';
 import { SettingsItemCard, SettingsRow, SettingsSection } from '../SettingsPrimitives';
+import { locTag, useT } from '../../prefs';
 import '../settings.css';
 
 const WORD_POOL = [
@@ -20,6 +21,7 @@ function generatePhrase(): string[] {
 }
 
 export function SecuritySection() {
+  const { t, locale } = useT();
   const [phrase, setPhrase] = useState<string[] | null>(null);
   const [generating, setGenerating] = useState(false);
   const [backupExists, setBackupExists] = useState(false);
@@ -45,7 +47,7 @@ export function SecuritySection() {
       setCreating(false);
       setBackupExists(true);
       setRestored(false);
-      setLastBackup(new Date().toLocaleString('zh-CN', {
+      setLastBackup(new Date().toLocaleString(locTag(locale), {
         month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
       }));
     }, 600);
@@ -63,67 +65,67 @@ export function SecuritySection() {
 
   return (
     <>
-      <SettingsSection title="账户恢复" subtitle="恢复密钥是丢失设备后找回身份的唯一方式">
+      <SettingsSection title={t('security.title')} subtitle={t('security.subtitle')}>
         <SettingsItemCard>
           <div className="sk-recovery-status">
             <span className="sk-recovery-head">
               {backupExists
                 ? <CheckCircle2 size={16} className="is-ok" aria-hidden="true" />
                 : <ShieldAlert size={16} className="is-warn" aria-hidden="true" />}
-              <strong>备份状态</strong>
+              <strong>{t('security.backupStatus')}</strong>
             </span>
             {backupExists
-              ? <span className="sk-recovery-meta">最近备份：{lastBackup}</span>
-              : <Alert tone="warning" title="尚未创建备份" description="生成恢复密钥并创建一次本地备份（原型演示）。" />}
-            {restored && <Alert tone="success" title="恢复已完成" description="本地状态已模拟恢复。" />}
+              ? <span className="sk-recovery-meta">{t('security.lastBackup', { time: lastBackup })}</span>
+              : <Alert tone="warning" title={t('security.noBackupTitle')} description={t('security.noBackupDesc')} />}
+            {restored && <Alert tone="success" title={t('security.restoredTitle')} description={t('security.restoredDesc')} />}
           </div>
         </SettingsItemCard>
 
         <SettingsItemCard>
-          <SettingsRow label="恢复密钥" description="24 个词，仅显示在本机；请离线保存" vertical>
+          <SettingsRow label={t('security.keyLabel')} description={t('security.keyDesc')} vertical>
             {phrase ? (
               <div className="sk-recovery-phrase">
                 <ol data-phrase-words={phrase.length}>
                   {phrase.map((word, index) => <li key={`${word}-${index}`}><em>{index + 1}</em>{word}</li>)}
                 </ol>
                 <CopyButton actionId="security.copy-phrase" text={phrase.join(' ')}
-                  label="复制助记词" copiedLabel="已复制" />
+                  label={t('security.copyPhrase')} copiedLabel={t('account.copied')} />
               </div>
             ) : (
               <Button actionId="security.generate" emphasis="secondary" leading={<KeyRound size={14} />}
-                label="生成恢复密钥" execution={generating ? 'pending' : 'idle'} onActivate={generate} />
+                label={t('security.generate')} execution={generating ? 'pending' : 'idle'} onActivate={generate} />
             )}
           </SettingsRow>
         </SettingsItemCard>
 
         <div className="sk-recovery-actions">
           <Button actionId="security.backup-create" emphasis="primary" leading={<Upload size={14} />}
-            label="创建备份" execution={creating ? 'pending' : 'idle'}
+            label={t('security.createBackup')} execution={creating ? 'pending' : 'idle'}
             availability={!phrase || creating
-              ? { kind: 'disabled', reason: phrase ? '正在创建' : '请先生成恢复密钥' }
+              ? { kind: 'disabled', reason: phrase ? t('security.creating') : t('security.generateFirst') }
               : undefined}
             onActivate={createBackup} />
-          <Button actionId="security.restore-open" emphasis="secondary" label="从助记词恢复"
+          <Button actionId="security.restore-open" emphasis="secondary" label={t('security.restoreOpen')}
             onActivate={() => { setRestored(false); setRestoreOpen(true); }} />
         </div>
       </SettingsSection>
 
-      <Dialog open={restoreOpen} onDismiss={() => setRestoreOpen(false)} title="从助记词恢复"
-        width={460} closeLabel="关闭"
+      <Dialog open={restoreOpen} onDismiss={() => setRestoreOpen(false)} title={t('security.dialogTitle')}
+        width={460} closeLabel={t('common.close')}
         footer={
           <>
-            <Button actionId="security.restore-cancel" emphasis="quiet" label="取消"
+            <Button actionId="security.restore-cancel" emphasis="quiet" label={t('common.cancel')}
               onActivate={() => setRestoreOpen(false)} />
-            <Button actionId="security.restore-confirm" emphasis="primary" label="确认恢复"
+            <Button actionId="security.restore-confirm" emphasis="primary" label={t('security.restoreConfirm')}
               execution={restoring ? 'pending' : 'idle'}
               availability={phraseInput.trim().split(/\s+/).length < 24
-                ? { kind: 'disabled', reason: '需要 24 个词' }
+                ? { kind: 'disabled', reason: t('security.need24') }
                 : undefined}
               onActivate={confirmRestore} />
           </>
         }>
-        <TextArea framing="embedded" aria-label="输入 24 个助记词" minimumRows={5}
-          className="sk-restore-input" placeholder="按顺序输入 24 个助记词，空格分隔"
+        <TextArea framing="embedded" aria-label={t('security.inputAria')} minimumRows={5}
+          className="sk-restore-input" placeholder={t('security.inputPlaceholder')}
           value={phraseInput} onValueChange={setPhraseInput} data-restore-value={phraseInput} />
       </Dialog>
     </>

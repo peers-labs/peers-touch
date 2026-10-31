@@ -15,6 +15,7 @@ import {
   CONVERSATIONS, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES,
   type ChatMessage, type Conversation, type FriendRequest, type Person,
 } from './chat-data';
+import { usePrefs, makeTranslate, locTag } from '../prefs';
 import './chat.css';
 
 const DELIVERY_DELAY_MS = 700;
@@ -22,6 +23,8 @@ const RETRY_DELAY_MS = 900;
 const TYPING_MS = 1800;
 
 export function ChatFeature() {
+  const prefs = usePrefs();
+  const t = makeTranslate(prefs.locale);
   const [tab, setTab] = useState<'chats' | 'contacts'>('chats');
   const [sessions, setSessions] = useState<Conversation[]>(CONVERSATIONS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -48,7 +51,10 @@ export function ChatFeature() {
   const selectedConversation = sessions.find(c => c.id === selectedId) ?? null;
   const peoplePool = useMemo(() => [...PEOPLE, ...sessions
     .filter(c => c.kind === 'person')
-    .map(c => ({ id: c.id, name: c.name, tone: c.tone, station: '最近会话', bio: c.last }))], [sessions]);
+    .map(c => ({ id: c.id, name: c.name, tone: c.tone, station: t('search.recentStation'), bio: c.last }))],
+  // t is stable per locale; sessions drive the pool contents.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [sessions, prefs.locale]);
   const existingIds = useMemo(() => new Set(sessions.map(c => c.id)), [sessions]);
   const friends = PEOPLE.filter(p => p.station === '本站');
 
@@ -91,7 +97,7 @@ export function ChatFeature() {
       return;
     }
 
-    const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const now = new Date().toLocaleTimeString(locTag(prefs.locale), { hour: '2-digit', minute: '2-digit' });
     const ts = Date.now();
     const msg: ChatMessage = payload.voice
       ? {
@@ -110,9 +116,9 @@ export function ChatFeature() {
     setMessagesByConv(map => ({ ...map, [selectedId]: [...(map[selectedId] ?? []), msg] }));
     setSessions(list => list.map(c => {
       if (c.id !== selectedId) return c;
-      const last = payload.voice ? '[语音]'
+      const last = payload.voice ? t('preview.voice')
         : payload.attachments && payload.attachments.length > 0
-          ? payload.text || `[${payload.attachments.some(a => a.kind === 'image') ? '图片' : '文件'}]`
+          ? payload.text || `[${payload.attachments.some(a => a.kind === 'image') ? t('preview.imageBare') : t('preview.fileBare')}]`
           : payload.text;
       return { ...c, last, lastTs: ts };
     }));
@@ -138,7 +144,7 @@ export function ChatFeature() {
     } else {
       const id = `cv-${person.id}`;
       setSessions(list => [{
-        id, name: person.name, last: '开始对话', lastAt: '刚刚', unread: 0,
+        id, name: person.name, last: t('conv.start'), lastAt: t('time.justNow'), unread: 0,
         tone: person.tone, kind: 'person',
       }, ...list]);
       setSelectedId(id);
@@ -216,19 +222,21 @@ export function ChatFeature() {
     setMessagesByConv(map => ({ ...map, [selectedId]: (map[selectedId] ?? []).filter(m => m.id !== messageId) }));
   };
   const forwardMessage = (message: ChatMessage, conversationId: string) => {
+    const text = `${t('preview.forwardPrefix')}${message.text}`;
     setMessagesByConv(map => ({ ...map, [conversationId]: [...(map[conversationId] ?? []), {
       id: `local-fwd-${Date.now()}`, from: 'me',
-      text: `转发：${message.text}`,
-      at: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+      text,
+      at: new Date().toLocaleTimeString(locTag(prefs.locale), { hour: '2-digit', minute: '2-digit' }),
     }] }));
-    setSessions(list => list.map(c => c.id === conversationId ? { ...c, last: `转发：${message.text}` } : c));
+    setSessions(list => list.map(c => c.id === conversationId ? { ...c, last: text } : c));
   };
 
   const createGroup = (group: Conversation) => {
     setSessions(list => [group, ...list]);
     setSelectedId(group.id);
     setMessagesByConv(map => ({ ...map, [group.id]: [
-      { id: 's1', from: 'peer', kind: 'service', text: `群聊「${group.name}」已创建`, at: '刚刚' },
+      { id: 's1', from: 'peer', kind: 'service',
+        text: t('group.createdService', { name: group.name }), at: t('time.justNow') },
     ] }));
     setTab('chats');
   };
@@ -239,7 +247,8 @@ export function ChatFeature() {
   const backToList = () => { setSelectedId(null); };
 
   return (
-    <div className={`sk-chat-feature${narrowOpen ? ' sk-narrow-open' : ''}`}>
+    <div className={`sk-chat-feature${narrowOpen ? ' sk-narrow-open' : ''}`}
+      data-message-layout={prefs.messageLayout} data-locale={prefs.locale}>
       <ChatRail
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId}
@@ -284,7 +293,7 @@ export function ChatFeature() {
         ) : (
           <div className="sk-chat-placeholder">
             <Empty icon={<MessagesSquare size={28} strokeWidth={1.5} />}
-              description={tab === 'contacts' ? '选择一位联系人，直接开始聊天' : '选择一个会话，或新建对话'} />
+              description={tab === 'contacts' ? t('conv.selectContact') : t('conv.selectConversation')} />
           </div>
         )}
       </div>

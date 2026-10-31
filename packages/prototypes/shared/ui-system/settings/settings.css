@@ -128,9 +128,11 @@
 .sk-settings-empty .pt-empty { padding: 28px 24px; }
 
 /* ── Account ─────────────────────────────────────────────── */
+/* Banner is a separate tile: the avatar lives in the identity card below,
+   never overlapping the tinted gradient (no edge staining). */
 .sk-banner {
-  position: relative; height: 132px; border-radius: calc(var(--sk-r-card) - 4px);
-  overflow: hidden; margin-bottom: 0;
+  position: relative; height: 124px; border-radius: calc(var(--sk-r-card) - 4px);
+  overflow: hidden; margin-bottom: 12px;
   background: linear-gradient(120deg, color-mix(in srgb, var(--sk-primary) 26%, transparent),
     color-mix(in srgb, var(--sk-accent) 30%, transparent));
 }
@@ -139,27 +141,58 @@
 .sk-banner-action .pt-button {
   background: color-mix(in srgb, #000 38%, transparent); color: #fff; border-color: transparent;
 }
-.sk-identity-row { display: flex; gap: 18px; margin-top: -34px; padding: 0 8px; align-items: flex-end; flex-wrap: wrap; }
+.sk-identity-row { display: flex; gap: 18px; padding: 2px 2px 0; align-items: flex-start; flex-wrap: wrap; }
 .sk-identity-avatar { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.sk-identity-avatar .pt-avatar { box-shadow: 0 0 0 3px var(--sk-card-bg); }
+.sk-identity-avatar .pt-avatar { box-shadow: 0 0 0 1px var(--sk-card-border); }
 .sk-identity-avatar .pt-button { font-size: 11.5px; }
-.sk-identity-meta { flex: 1; min-width: 220px; padding-bottom: 4px; display: flex; flex-direction: column; gap: 8px; }
+.sk-identity-meta { flex: 1; min-width: 220px; padding-top: 6px; display: flex; flex-direction: column; gap: 10px; }
 .sk-identity-names { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sk-identity-names strong { font-size: 18px; color: var(--sk-text); }
 .sk-identity-stats { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--sk-text-3); }
 .sk-identity-stats strong { color: var(--sk-text); font-size: 14px; margin-right: 3px; }
 .sk-identity-joined { margin-left: auto; }
-.sk-identity-fields { display: flex; gap: 14px; flex-wrap: wrap; }
+.sk-identity-fields {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent);
+}
 .sk-identity-field {
   display: flex; align-items: center; gap: 8px; flex: 1; min-width: 240px;
-  padding: 9px 12px; border-radius: var(--sk-radius-control); background: var(--sk-tile);
+  padding: 7px 10px 7px 12px; border-radius: var(--sk-radius-control); background: var(--sk-tile);
 }
 .sk-identity-field span { font-size: 11.5px; color: var(--sk-text-3); flex-shrink: 0; }
 .sk-identity-field code {
   font-size: 12px; color: var(--sk-text); overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; min-width: 0;
 }
+/* Copy stays a quiet 26px icon button — identity content owns the weight. */
 .sk-identity-field .pt-button { margin-left: auto; flex-shrink: 0; }
+.sk-identity-field .pt-icon-button {
+  width: 26px; height: 26px; min-height: 26px; padding: 0;
+  color: var(--sk-text-3);
+}
+.sk-identity-field .pt-icon-button:hover { color: var(--sk-primary); }
+
+/* Linked devices: compact table, pager only beyond one page. */
+.sk-device-list { display: flex; flex-direction: column; }
+.sk-device-row {
+  display: grid; grid-template-columns: minmax(0, 2fr) 1fr 1.1fr 44px;
+  align-items: center; gap: 10px; padding: 9px 4px; font-size: 12.5px; color: var(--sk-text-2);
+}
+.sk-device-row + .sk-device-row { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-device-row.is-head { font-size: 11px; color: var(--sk-text-3); padding-bottom: 6px; }
+.sk-device-model { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.sk-device-model strong {
+  font-weight: 550; color: var(--sk-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-device-icon { color: var(--sk-text-3); flex-shrink: 0; }
+.sk-device-op { display: inline-flex; align-items: center; justify-content: flex-end; }
+.sk-device-pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 10px; font-size: 12px; color: var(--sk-text-3);
+}
+.sk-device-pager-controls { display: inline-flex; align-items: center; gap: 2px; }
 
 .sk-form-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px;
@@ -243,6 +276,11 @@
   .sk-settings-nav { width: 128px; padding: 6px 6px 14px; }
   .sk-settings-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .sk-settings-row-control { justify-content: flex-start; }
+  /* Device table collapses to model + op on one line, last-used below. */
+  .sk-device-row { grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; }
+  .sk-device-row > :nth-child(2) { display: none; }
+  .sk-device-row > :nth-child(3) { font-size: 11px; }
+  .sk-device-op { grid-row: 1; grid-column: 2; }
 }
 
 /* ── Data: storage / files / logs ───────────────────────── */

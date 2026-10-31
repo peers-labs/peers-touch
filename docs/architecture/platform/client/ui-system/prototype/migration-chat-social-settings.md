@@ -1,6 +1,6 @@
 # Desktop 功能迁移图：chat · social · settings（用 peers-ui 重建）
 
-> **Status**: 增量 1–15 全部完成（2026-10-31，门禁 78/78 + consumer 18/18）；剩余项均为明确记录的 UNPROVEN/范围外
+> **Status**: 增量 1–22 全部完成（2026-11-01，门禁 north-star 108/108 + consumer 17/17）；剩余项均为明确记录的 UNPROVEN/范围外
 > **Created**: 2026-10-30 · **Owner**: Client Platform / UI System
 > **Frame**: [北极星窗框](./north-star-frame.md)，入口 `?eles=directions`
 > **方法**：每个增量 = 旧设计审计（新方法论找缺口）→ 用 peers-ui 元素组合 → 状态合同 → 探针门禁 → 人审 → token/知识沉淀。未过门前不称为完成。
@@ -189,6 +189,20 @@ Social / Moments：
       点人/群即开聊（删除中间 ContactDetailPane 与「发消息」二次点击）；ⓘ 资料卡卡片化重设计
       （身份 hero/成员角色徽标/设置卡/真实附件驱动的媒体文件/查找记录入口/清空与删除两段确认）；
       合同 chat-catalog.md/chat-conversation-frame.md 增补；门禁 103/103 动态场景（consumer 18/18）
+- [x] 22 人审反馈轮（飞书对齐 + 多语言 + 账号重设计）：
+      ① 消息悬浮工具条移入气泡内容列、贴气泡近侧——他人气泡在右、自己气泡在左（`data-bar-side`
+      语义契约，1360/≤720 双宽成立）；
+      ② 新增「消息」设置分区：消息对齐「各在一边 / 统一靠左」（prefs 落 localStorage，
+      `data-message-layout` 驱动整面 CSS，跨面即时生效）；
+      ③ 恢复一级「消息通知」分区（desktop `NotificationsSettingsSection` 对齐）：5 事件 + 2 投递共 7 开关；
+      ④ 账号分区重排为 身份 → 公开资料 → 设备；头图独立为 tile，头像不再压在渐变上（消除边缘染色）；
+      复制降为 26px 安静图标钮（身份文字主视觉）；「关联新设备」收入设备卡标题行末端；
+      已关联设备表（型号/加入时间/最近使用/移除，本机标记）每页 5 行、超过才出分页与总数，
+      QR 关联完成后真实追加一行；
+      ⑤ 多语言 zh-CN/en：新增 `prefs.ts` 单一字典（窗内 chrome 全部 t() 化，种子内容不译），
+      语言/布局/通知跨面持久化与广播；合同 settings-account-security-help.md、
+      settings-frame.md、chat-conversation-frame.md、chat-message-anatomy.md 增补；
+      门禁 108/108 动态场景（consumer 17/17）
 
 ### 5.4 决策（2026-10-31 已确认）
 
@@ -202,10 +216,17 @@ Social / Moments：
 ### 5.5 收尾状态（2026-10-31）
 
 功能点审计（§5.1/§5.2）除「会话列表 blocking/stale 错误态」外全部落地；
-增量 1–21 全部独立提交、独立门禁。最终证据：north-star 103 个动态场景
-（评估报告含入口探针共 104 项）全 OBSERVED、consumer 18/18、
-1360/390 双宽溢出与 craft battery 通过、tsc 干净、0 console error。
+增量 1–22 全部独立提交、独立门禁。最终证据：north-star 108/108 动态场景、
+consumer 17/17、1360/390 双宽溢出与 craft battery 通过、tsc 干净、0 console error。
 所有状态均为窗内本地真实状态机，无 mocks；非快乐路径用显式模拟器/演示入口，不假造后端。
+
+#### 增量 22 人审反馈闭环（2026-11-01）
+
+- 偏好（语言/消息对齐/通知开关）集中到 `prefs.ts`：localStorage 持久化 + 窗内事件广播，
+  chat/settings/frame 共享同一份；种子消息、种子名单等 authored content 不进入字典。
+- 消息工具条位置以 `.sk-msg-col` 为定位锚（不再锚 78% 宽行）：peer `left:calc(100%+8px)`、
+  me `right:calc(100%+8px)`，统一靠左时 me 改挂右侧；≤720px 浮在气泡上沿外侧。
+- 账号设备列表默认 6 台种子，分页是真实状态；QR 关联完成会新增「iPhone 15」行。
 
 ### 5.6 相对真身的改进（必须是真问题，非审美重画）
 

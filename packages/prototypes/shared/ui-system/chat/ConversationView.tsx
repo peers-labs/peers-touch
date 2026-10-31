@@ -19,6 +19,7 @@ import { MessageAttachments } from './MessageAttachments';
 import { VoicePlayer } from './VoiceNote';
 import { ChatComposer, type ComposerPayload } from './ChatComposer';
 import { CallOverlay, type CallKind } from './CallOverlay';
+import { useT } from '../prefs';
 
 const MENTION_RE = new RegExp('(@[\\u4e00-\\u9fa5\\w·]+)', 'g');
 
@@ -66,6 +67,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [toast, setToast] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { t } = useT();
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -89,7 +91,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
       ...payload,
       replyTo: (replyTarget && !payload.editId)
         ? {
-            who: replyTarget.from === 'me' ? '我' : (replyTarget.senderName ?? conversation.name),
+            who: replyTarget.from === 'me' ? t('common.me') : (replyTarget.senderName ?? conversation.name),
             text: replyTarget.text,
           }
         : undefined,
@@ -101,14 +103,14 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const handleMenuAction = (message: ChatMessage, action: MessageActionTarget) => {
     switch (action) {
       case 'thread': setThreadId(message.id); break;
-      case 'pin': onPinMessage(conversation.id, message.id); flash(message.pinned ? '已取消置顶' : '消息已置顶'); break;
+      case 'pin': onPinMessage(conversation.id, message.id); flash(message.pinned ? t('msg.unpinned') : t('msg.pinDone')); break;
       case 'copy':
         void navigator.clipboard?.writeText(message.text);
         setCopiedId(message.id);
-        flash('已复制到剪贴板');
+        flash(t('msg.copied'));
         break;
       case 'edit': setReplyTarget(null); setEditTarget(message); break;
-      case 'recall': onRecallMessage(conversation.id, message.id); flash('消息已撤回'); break;
+      case 'recall': onRecallMessage(conversation.id, message.id); flash(t('msg.recalled')); break;
       case 'delete': setDeleteTarget(message); break;
     }
   };
@@ -117,12 +119,12 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const replyInThread = (text: string) => {
     if (!threadId) return;
     setThreads(map => ({ ...map, [threadId]: [...(map[threadId] ?? []), {
-      id: `local-${Date.now()}`, from: 'me', text, at: '刚刚',
+      id: `local-${Date.now()}`, from: 'me', text, at: t('time.justNow'),
     }] }));
   };
 
   return (
-    <section className="sk-conv-view" aria-label={`与 ${conversation.name} 的对话`}>
+    <section className="sk-conv-view" aria-label={t('conv.aria', { name: conversation.name })}>
       <ConversationHeader conversation={conversation}
         pinned={!!conversation.pinned} muted={!!conversation.muted}
         onBack={onBack}
@@ -133,7 +135,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
 
       <div className="sk-msg-stream" ref={scrollRef}>
         {messages.length === 0 && (
-          <Empty className="sk-conversation-empty" description="还没有消息，发个招呼吧" />
+          <Empty className="sk-conversation-empty" description={t('conv.empty')} />
         )}
         {messages.map(m => {
           if (m.kind === 'service') {
@@ -149,7 +151,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                 )}
                 <div className="sk-msg-col">
                   <span className="sk-recalled-tombstone" data-recalled>
-                    <Undo2 size={11} /> {m.from === 'me' ? '你撤回了一条消息' : '对方撤回了一条消息'}
+                    <Undo2 size={11} /> {m.from === 'me' ? t('msg.recalledMe') : t('msg.recalledPeer')}
                   </span>
                 </div>
               </div>
@@ -204,39 +206,41 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                 <div className="sk-msg-under">
                   <time className="sk-msg-time">{m.at}</time>
                   <MessageReactions message={m} />
-                  {m.edited && <span className="sk-msg-edited" data-msg-edited>已编辑</span>}
+                  {m.edited && <span className="sk-msg-edited" data-msg-edited>{t('msg.edited')}</span>}
                   {m.pinned && (
-                    <span className="sk-msg-pinned-chip" data-msg-pinned><Pin size={10} /> 置顶</span>
+                    <span className="sk-msg-pinned-chip" data-msg-pinned><Pin size={10} /> {t('msg.pinned')}</span>
                   )}
                   {m.threadCount ? (
                     <button type="button" className="sk-thread-entry"
                       data-thread-for={m.id}
                       onClick={() => setThreadId(m.id)}>
-                      {(threads[m.id]?.length ?? m.threadCount)} 条回复 · 查看话题
+                        {t('msg.threadReplies', { n: threads[m.id]?.length ?? m.threadCount })}
                     </button>
                   ) : null}
                   <DeliveryMeta message={m} onRetry={() => onRetryMessage(conversation.id, m.id)} />
                 </div>
+                {/* Toolbar hugs the content column: right of peer bubbles,
+                    left of own bubbles (Feishu parity). */}
+                <MessageActionBar
+                  message={m}
+                  canDelete={m.from === 'me'}
+                  copied={copiedId === m.id}
+                  onReact={emoji => onReact(m.id, emoji)}
+                  onReply={() => { setEditTarget(null); setReplyTarget(m); }}
+                  onThread={() => setThreadId(m.id)}
+                  onCopy={() => {
+                    void navigator.clipboard?.writeText(m.text);
+                    setCopiedId(m.id);
+                    flash(t('msg.copied'));
+                  }}
+                  onForwardOpen={() => setForwardTarget(m)}
+                  onMenuAction={action => handleMenuAction(m, action)} />
               </div>
-              <MessageActionBar
-                message={m}
-                canDelete={m.from === 'me'}
-                copied={copiedId === m.id}
-                onReact={emoji => onReact(m.id, emoji)}
-                onReply={() => { setEditTarget(null); setReplyTarget(m); }}
-                onThread={() => setThreadId(m.id)}
-                onCopy={() => {
-                  void navigator.clipboard?.writeText(m.text);
-                  setCopiedId(m.id);
-                  flash('已复制到剪贴板');
-                }}
-                onForwardOpen={() => setForwardTarget(m)}
-                onMenuAction={action => handleMenuAction(m, action)} />
             </div>
           );
         })}
         {peerTyping && (
-          <div className="sk-typing-row" data-chat-typing aria-label="对方正在输入">
+          <div className="sk-typing-row" data-chat-typing aria-label={t('conv.typingAria')}>
             <Avatar name={conversation.name} background={conversation.tone} size={32}
               style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
             <span className="sk-typing-bubble">
@@ -248,11 +252,11 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
 
       <ChatComposer key={conversation.id} groupMembers={conversation.members}
         replyTarget={replyTarget ? {
-          who: replyTarget.from === 'me' ? '我' : (replyTarget.senderName ?? conversation.name),
+          who: replyTarget.from === 'me' ? t('common.me') : (replyTarget.senderName ?? conversation.name),
           text: replyTarget.text,
         } : null}
         editTarget={editTarget ? { id: editTarget.id, text: editTarget.text } : null}
-        placeholder={`发消息给 ${conversation.name}…`}
+        placeholder={t('composer.placeholder', { name: conversation.name })}
         onCancelReply={() => setReplyTarget(null)}
         onCancelEdit={() => setEditTarget(null)}
         onSend={submit} />
@@ -270,7 +274,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
           onSimulateIncoming={conversation.kind === 'person' ? onSimulateIncoming : undefined} />
       )}
       {threadId && threadMessage && (
-        <ThreadSheet root={threadMessage}
+        <ThreadSheet root={threadMessage} peerName={conversation.name}
           initialReplies={threads[threadId] ?? []}
           onClose={() => setThreadId(null)}
           onReply={replyInThread} />
@@ -286,7 +290,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
         onForward={(conversationId, name) => {
           if (forwardTarget) {
             onForward(forwardTarget, conversationId, name);
-            flash(`已转发到「${name}」`);
+            flash(t('msg.forwarded', { name }));
           }
           setForwardTarget(null);
         }} />

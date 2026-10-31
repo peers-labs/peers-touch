@@ -7,6 +7,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, Avatar, Button, Checkbox, Dialog, Empty, TextField } from '@peers-touch/ui';
 import type { Conversation, Person } from './chat-data';
+import { useT } from '../prefs';
 
 /* ── Find people ──────────────────────────────────────── */
 
@@ -17,16 +18,17 @@ export function PickPersonDialog({ open, people, existingIds, onDismiss, onPick 
   onDismiss: () => void;
   onPick: (person: Person) => void;
 }) {
+  const { t } = useT();
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => people.filter(p =>
     `${p.name} ${p.station ?? ''} ${p.bio}`.toLowerCase().includes(query.trim().toLowerCase())), [people, query]);
 
   return (
-    <Dialog open={open} onDismiss={onDismiss} title="新建会话" width={420}
-      description="选择一位联系人，或选联邦公开对象开始单聊（本地示例）" closeLabel="关闭"
-      footer={<Button actionId="picker-cancel" emphasis="quiet" label="取消" onActivate={onDismiss} />}>
+    <Dialog open={open} onDismiss={onDismiss} title={t('picker.title')} width={420}
+      description={t('picker.desc')} closeLabel={t('common.close')}
+      footer={<Button actionId="picker-cancel" emphasis="quiet" label={t('common.cancel')} onActivate={onDismiss} />}>
       <div className="sk-picker">
-        <TextField value={query} aria-label="搜索联系人" placeholder="搜索联系人"
+        <TextField value={query} aria-label={t('picker.searchAria')} placeholder={t('picker.searchAria')}
           onValueChange={setQuery} leading={undefined} clearable onClear={() => setQuery('')} />
         <ul className="sk-picker-list">
           {filtered.map(p => (
@@ -44,11 +46,13 @@ export function PickPersonDialog({ open, people, existingIds, onDismiss, onPick 
             </li>
           ))}
           {filtered.length === 0 && (
-            <li className="sk-picker-empty"><Empty description="没有匹配的联系人" /></li>
+            <li className="sk-picker-empty"><Empty description={t('picker.empty')} /></li>
           )}
         </ul>
         <p className="sk-picker-note">
-          {existingIds.size > 0 ? `已有最近会话 ${existingIds.size} 个；选择联系人会直接打开或新建。` : '新联系人会创建一条本地会话。'}
+          {existingIds.size > 0
+            ? t('picker.existingHint', { n: existingIds.size })
+            : t('picker.newHint')}
         </p>
       </div>
     </Dialog>
@@ -63,6 +67,7 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
   onDismiss: () => void;
   onCreate: (group: Conversation) => void;
 }) {
+  const { t } = useT();
   const [name, setName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [failed, setFailed] = useState(false);
@@ -93,7 +98,7 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
     window.setTimeout(() => {
       const members = people.filter(p => selected.has(p.id)).map(p => ({ name: p.name, tone: p.tone }));
       onCreate({
-        id: `local-${Date.now()}`, name: name.trim(), last: '群聊已创建', lastAt: '刚刚',
+        id: `local-${Date.now()}`, name: name.trim(), last: t('group.createdLast'), lastAt: t('time.justNow'),
         lastTs: Date.now(), unread: 0, tone: '#7d8c4a', kind: 'group',
         members: [{ name: '林野', tone: '#22302a' }, ...members],
       });
@@ -102,17 +107,17 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
   };
 
   return (
-    <Dialog open={open} onDismiss={close} title="创建群聊" width={460} closeLabel="关闭"
-      description="选择成员并命名群聊（仅本站成员可加入加密群）"
+    <Dialog open={open} onDismiss={close} title={t('group.dialogTitle')} width={460} closeLabel={t('common.close')}
+      description={t('group.dialogDesc')}
       footer={
         <>
-          <Button actionId="group.cancel" emphasis="quiet" label="取消" onActivate={close} />
-          <Button actionId="group.submit" emphasis="primary" label={failed ? '重试创建' : '创建'}
+          <Button actionId="group.cancel" emphasis="quiet" label={t('common.cancel')} onActivate={close} />
+          <Button actionId="group.submit" emphasis="primary" label={failed ? t('group.retry') : t('common.create')}
             execution={submitting ? 'pending' : 'idle'}
             availability={!name.trim() || selected.size === 0
-              ? { kind: 'disabled', reason: '需要群名与至少 1 名成员' }
+              ? { kind: 'disabled', reason: t('group.needFields') }
               : blocked
-                ? { kind: 'disabled', reason: '联邦成员暂不能加入加密群' }
+                ? { kind: 'disabled', reason: t('group.federationReason') }
                 : undefined}
             onActivate={submit} />
         </>
@@ -120,11 +125,11 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
       <div className="sk-group-dialog" data-create-group data-create-group-error={failed ? 'true' : 'false'}
         data-federation-blocked={blocked ? 'true' : 'false'}>
         {blocked && (
-          <Alert tone="danger" title="无法加入联邦成员" data-federation-alert
-            description={`${federatedSelected.map(p => p.name).join('、')} 在其他网络，加密群聊暂不支持跨站成员（本地示例）。`} />
+          <Alert tone="danger" title={t('group.fedTitle')} data-federation-alert
+            description={t('group.fedDesc', { names: federatedSelected.map(p => p.name).join('、') })} />
         )}
-        {!blocked && failed && <Alert tone="danger" title="创建失败" description="网络异常（模拟），请重试。" />}
-        <TextField aria-label="群名称" placeholder="群名称，如：夜跑小队" value={name}
+        {!blocked && failed && <Alert tone="danger" title={t('group.failedTitle')} description={t('group.failedDesc')} />}
+        <TextField aria-label={t('group.nameAria')} placeholder={t('group.namePlaceholder')} value={name}
           onValueChange={setName} data-group-name={name} />
         <div className="sk-group-members">
           {people.map(person => {

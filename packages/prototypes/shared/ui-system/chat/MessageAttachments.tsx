@@ -17,6 +17,7 @@ import {
 import { Button, Dialog } from '@peers-touch/ui';
 import type { MessageAttachment } from './chat-data';
 import { formatAttachmentSize } from './ComposerAttachments';
+import { useT } from '../prefs';
 
 type TransferState = 'remote' | 'downloading' | 'cancelled' | 'ready';
 
@@ -37,13 +38,14 @@ function ImageDialog({ attachment, onClose }: {
   attachment: MessageAttachment;
   onClose: () => void;
 }) {
+  const { t } = useT();
   return (
-    <Dialog open onDismiss={onClose} title={attachment.name} width={560} closeLabel="关闭"
+    <Dialog open onDismiss={onClose} title={attachment.name} width={560} closeLabel={t('common.close')}
       description={formatAttachmentSize(attachment.size)}
       footer={
         <>
-          <Button emphasis="quiet" label="关闭" actionId="attach.image-close" onActivate={onClose} />
-          <Button emphasis="primary" label="保存到本地" leading={<Download size={15} />}
+          <Button emphasis="quiet" label={t('common.close')} actionId="attach.image-close" onActivate={onClose} />
+          <Button emphasis="primary" label={t('attach.saveLocal')} leading={<Download size={15} />}
             actionId="attach.image-save" onActivate={() => saveLocally(attachment)} />
         </>
       }>
@@ -86,6 +88,7 @@ function FileDetailDialog({ file, onClose }: {
   const [zoom, setZoom] = useState('width');
   const [feedback, setFeedback] = useState('');
   const timerRef = useRef<number | null>(null);
+  const { t } = useT();
 
   const isDocument = DOCUMENT_RE.test(file.name);
   const isWorkbook = WORKBOOK_RE.test(file.name);
@@ -130,46 +133,46 @@ function FileDetailDialog({ file, onClose }: {
   };
 
   const statusLabel = {
-    remote: '准备下载…',
-    downloading: '下载中…',
-    cancelled: '下载已取消',
-    ready: '已下载',
+    remote: t('dl.preparing'),
+    downloading: t('dl.downloading'),
+    cancelled: t('dl.cancelled'),
+    ready: t('dl.ready'),
   }[state];
 
   const unavailable = () => {
-    setFeedback('没有可用于打开此文件的应用（浏览器原型）');
+    setFeedback(t('dl.noApp'));
     window.setTimeout(() => setFeedback(''), 2200);
   };
 
   return (
-    <Dialog open onDismiss={onClose} title={file.name} width={760} closeLabel="关闭"
-      description={`${file.mime || '未知类型'} · ${formatAttachmentSize(file.size)} · ${statusLabel}`}
+    <Dialog open onDismiss={onClose} title={file.name} width={760} closeLabel={t('common.close')}
+      description={`${file.mime || t('attach.unknownType')} · ${formatAttachmentSize(file.size)} · ${statusLabel}`}
       footer={
         <div className="sk-file-detail-footer">
           {state === 'downloading' && (
-            <Button emphasis="quiet" label="取消下载" leading={<X size={14} />}
+            <Button emphasis="quiet" label={t('attach.cancelDownload')} leading={<X size={14} />}
               actionId="attach.download-cancel" onActivate={cancelDownload} />
           )}
           {state === 'cancelled' && (
-            <Button emphasis="quiet" label="重新下载" leading={<RotateCcw size={14} />}
+            <Button emphasis="quiet" label={t('attach.redownload')} leading={<RotateCcw size={14} />}
               actionId="attach.download-retry" onActivate={startDownload} />
           )}
-          <Button emphasis="quiet" label="系统预览" actionId="attach.system-preview"
-            availability={state === 'ready' ? undefined : { kind: 'disabled', reason: '下载完成后可用' }}
+          <Button emphasis="quiet" label={t('attach.systemPreview')} actionId="attach.system-preview"
+            availability={state === 'ready' ? undefined : { kind: 'disabled', reason: t('attach.afterDownload') }}
             onActivate={unavailable} />
-          <Button emphasis="quiet" label="用其他应用打开" actionId="attach.open-with"
-            availability={state === 'ready' ? undefined : { kind: 'disabled', reason: '下载完成后可用' }}
+          <Button emphasis="quiet" label={t('attach.openWith')} actionId="attach.open-with"
+            availability={state === 'ready' ? undefined : { kind: 'disabled', reason: t('attach.afterDownload') }}
             onActivate={unavailable} />
-          <Button emphasis="primary" label="保存副本" leading={<Download size={14} />}
+          <Button emphasis="primary" label={t('attach.saveCopy')} leading={<Download size={14} />}
             actionId="attach.save-copy"
-            availability={state === 'ready' ? undefined : { kind: 'disabled', reason: '下载完成后可用' }}
+            availability={state === 'ready' ? undefined : { kind: 'disabled', reason: t('attach.afterDownload') }}
             onActivate={() => saveLocally(file)} />
         </div>
       }>
       <div className="sk-file-detail" data-attach-detail={file.id} data-transfer-state={state}>
         {state === 'downloading' && (
           <div className="sk-file-progress" data-downloading>
-            <progress value={progress} max={100} aria-label="下载进度" />
+            <progress value={progress} max={100} aria-label={t('attach.dlProgress')} />
             <span>{progress}%</span>
           </div>
         )}
@@ -179,8 +182,8 @@ function FileDetailDialog({ file, onClose }: {
             <div className="sk-doc-toolbar">
               {isWorkbook && (
                 <label className="sk-doc-field">
-                  工作表
-                  <select aria-label="工作表" value={sheet} data-doc-sheet
+                  {t('attach.sheet')}
+                  <select aria-label={t('attach.sheet')} value={sheet} data-doc-sheet
                     onChange={event => { setSheet(event.target.value); setPage(1); }}>
                     <option>Report</option>
                     <option>Summary</option>
@@ -189,29 +192,29 @@ function FileDetailDialog({ file, onClose }: {
               )}
               {hasZoom && (
                 <label className="sk-doc-field">
-                  缩放
-                  <select aria-label="缩放" value={zoom} data-doc-zoom
+                  {t('attach.zoom')}
+                  <select aria-label={t('attach.zoom')} value={zoom} data-doc-zoom
                     onChange={event => setZoom(event.target.value)}>
-                    <option value="width">适合宽度</option>
-                    <option value="page">适合整页</option>
-                    <option value="actual">实际大小</option>
+                    <option value="width">{t('attach.zoomWidth')}</option>
+                    <option value="page">{t('attach.zoomPage')}</option>
+                    <option value="actual">{t('attach.zoomActual')}</option>
                   </select>
                 </label>
               )}
             </div>
             <div className="sk-doc-pager">
-              <Button emphasis="quiet" density="compact" label="上一页" actionId="attach.doc-prev"
-                availability={page === 1 ? { kind: 'disabled', reason: '已是第一页' } : undefined}
+              <Button emphasis="quiet" density="compact" label={t('doc.prev')} actionId="attach.doc-prev"
+                availability={page === 1 ? { kind: 'disabled', reason: t('doc.firstPage') } : undefined}
                 onActivate={() => setPage(value => Math.max(1, value - 1))} />
-              <span role="status" data-doc-page>第 {page} / {totalPages} 页</span>
-              <Button emphasis="quiet" density="compact" label="下一页" actionId="attach.doc-next"
-                availability={page === totalPages ? { kind: 'disabled', reason: '已是最后一页' } : undefined}
+              <span role="status" data-doc-page>{t('doc.pageStatus', { page, pages: totalPages })}</span>
+              <Button emphasis="quiet" density="compact" label={t('doc.next')} actionId="attach.doc-next"
+                availability={page === totalPages ? { kind: 'disabled', reason: t('doc.lastPage') } : undefined}
                 onActivate={() => setPage(value => Math.min(totalPages, value + 1))} />
             </div>
             <div className={`sk-doc-canvas sk-doc-zoom-${zoom}`} data-doc-canvas>
               {isWorkbook ? (
                 <table aria-label={sheet}>
-                  <caption>{sheet} · 单元格 {page === 1 ? 'A1:B2' : 'A101:B102'}</caption>
+                  <caption>{sheet} · {t('doc.captionCells')} {page === 1 ? 'A1:B2' : 'A101:B102'}</caption>
                   <thead><tr><th />{['A', 'B'].map(col => <th key={col} scope="col">{col}</th>)}</tr></thead>
                   <tbody>
                     {(page === 1
@@ -227,13 +230,13 @@ function FileDetailDialog({ file, onClose }: {
                   <h3>{file.name}</h3>
                   {page === 1 ? (
                     <>
-                      <p>设计评审 · 第 1 页</p>
-                      <p>本地原型仅演示文档详情的分页/缩放交互，不解析真实文件内容。</p>
+                      <p>{t('doc.page1Title')}</p>
+                      <p>{t('doc.page1Body')}</p>
                     </>
                   ) : (
                     <>
-                      <p>设计评审 · 第 2 页</p>
-                      <p>密文下载与系统应用打开随桌面壳接线（UNPROVEN）。</p>
+                      <p>{t('doc.page2Title')}</p>
+                      <p>{t('doc.page2Body')}</p>
                     </>
                   )}
                 </>
@@ -245,8 +248,8 @@ function FileDetailDialog({ file, onClose }: {
             <FileIcon size={26} />
             <p>
               {state === 'ready'
-                ? '该文件类型没有可内嵌的预览；保存副本后可用系统应用打开。'
-                : state === 'cancelled' ? '下载已取消，可重新下载。' : '准备文件…'}
+                ? t('file.noPreview')
+                : state === 'cancelled' ? t('file.cancelled') : t('file.preparing')}
             </p>
           </div>
         )}

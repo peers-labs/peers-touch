@@ -11,16 +11,17 @@ import {
   Alert, Avatar, AvatarGroup, Button, Dialog, Empty, Menu, Popover, Segmented, Tag,
 } from '@peers-touch/ui';
 import type { Conversation, Person } from './chat-data';
+import { useT, type Translate } from '../prefs';
 
 /* ── Session list ──────────────────────────────────────── */
 
-function relativeTime(ts?: number): string {
+function relativeTime(ts: number | undefined, t: Translate): string {
   if (!ts) return '';
   const diff = Date.now() - ts;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} 天前`;
+  if (diff < 60_000) return t('time.justNow');
+  if (diff < 3_600_000) return t('time.minutesAgo', { n: Math.floor(diff / 60_000) });
+  if (diff < 86_400_000) return t('time.hoursAgo', { n: Math.floor(diff / 3_600_000) });
+  if (diff < 7 * 86_400_000) return t('time.daysAgo', { n: Math.floor(diff / 86_400_000) });
   const d = new Date(ts);
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
@@ -49,19 +50,20 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
   onHide: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const { t } = useT();
   // The single open context/overflow menu: { id, point? }. Right-click sets a
   // pointer position; the ⋯ button anchors the menu to itself.
   const [openMenu, setOpenMenu] = useState<{ id: string; point?: { x: number; y: number } } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
 
   const menuFor = (c: Conversation) => [
-    { id: 'pin', label: c.pinned ? '取消置顶' : '置顶', leading: <Pin size={14} /> },
-    { id: 'mute', label: c.muted ? '取消免打扰' : '免打扰', leading: <BellOff size={14} /> },
-    { id: 'read', label: '标记已读', leading: <CheckCheck size={14} />,
-      availability: c.unread > 0 ? undefined : { kind: 'disabled' as const, reason: '没有未读消息' } },
+    { id: 'pin', label: c.pinned ? t('session.unpin') : t('session.pin'), leading: <Pin size={14} /> },
+    { id: 'mute', label: c.muted ? t('session.unmute') : t('session.mute'), leading: <BellOff size={14} /> },
+    { id: 'read', label: t('session.markRead'), leading: <CheckCheck size={14} />,
+      availability: c.unread > 0 ? undefined : { kind: 'disabled' as const, reason: t('session.noUnread') } },
     { id: 'sep-1', kind: 'separator' as const, label: '' },
-    { id: 'hide', label: '隐藏会话', leading: <EyeOff size={14} /> },
-    { id: 'delete', label: '删除会话', leading: <Trash2 size={14} /> },
+    { id: 'hide', label: t('session.hide'), leading: <EyeOff size={14} /> },
+    { id: 'delete', label: t('session.delete'), leading: <Trash2 size={14} /> },
   ];
 
   const invoke = (c: Conversation, id: string) => {
@@ -110,25 +112,25 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
                 <span className="sk-conv-name-line">
                   <strong>{c.name}</strong>
                   <span className="sk-conv-flags">
-                    {c.pinned && <Pin size={11} aria-label="已置顶" />}
-                    {c.muted && <BellOff size={11} aria-label="已免打扰" />}
+                    {c.pinned && <Pin size={11} aria-label={t('session.pinnedFlag')} />}
+                    {c.muted && <BellOff size={11} aria-label={t('session.mutedFlag')} />}
                   </span>
                 </span>
                 <span className="sk-conv-preview">
                   <span className="sk-conv-last">{c.last}</span>
-                  <time>{relativeTime(c.lastTs) || c.lastAt}</time>
+                  <time>{relativeTime(c.lastTs, t) || c.lastAt}</time>
                 </span>
               </span>
             </button>
             <span className="sk-conv-actions">
               <button type="button" className="sk-conv-state"
-                aria-label={c.muted ? '取消免打扰' : '免打扰'}
+                aria-label={c.muted ? t('session.unmute') : t('session.mute')}
                 data-row-action="mute"
                 onClick={() => onToggleMute(c.id)}>
                 <BellOff size={11} />
               </button>
               <button type="button" className="sk-conv-state"
-                aria-label={c.pinned ? '取消置顶' : '置顶'}
+                aria-label={c.pinned ? t('session.unpin') : t('session.pin')}
                 data-row-action="pin"
                 onClick={() => onTogglePin(c.id)}>
                 <Pin size={11} />
@@ -141,7 +143,7 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
                 onAction={id => invoke(c, id)}
                 actions={menuFor(c)}>
                 <button type="button" className="sk-conv-state"
-                  aria-label="更多会话操作" aria-haspopup="menu"
+                  aria-label={t('session.moreActions')} aria-haspopup="menu"
                   data-row-action="more"
                   onClick={() => setOpenMenu({ id: c.id })}>
                   <MoreHorizontal size={12} />
@@ -151,18 +153,18 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
           </li>
         ))}
         {sessions.length === 0 && (
-          <li className="sk-conv-empty"><Empty description="没有匹配的会话" /></li>
+          <li className="sk-conv-empty"><Empty description={t('session.empty')} /></li>
         )}
       </ul>
 
       <Dialog open={!!deleteTarget} onDismiss={() => setDeleteTarget(null)}
-        title={`删除会话「${deleteTarget?.name ?? ''}」？`} width={380} closeLabel="取消"
-        description="将从本机的会话列表移除（本地示例，不影响对方与 Station 记录）。"
+        title={t('session.deleteTitle', { name: deleteTarget?.name ?? '' })} width={380} closeLabel={t('common.cancel')}
+        description={t('session.deleteBody')}
         footer={
           <>
-            <Button actionId="session.delete-cancel" emphasis="quiet" label="取消"
+            <Button actionId="session.delete-cancel" emphasis="quiet" label={t('common.cancel')}
               onActivate={() => setDeleteTarget(null)} />
-            <Button actionId="session.delete-confirm" emphasis="primary" tone="danger" label="删除"
+            <Button actionId="session.delete-confirm" emphasis="primary" tone="danger" label={t('common.delete')}
               onActivate={() => { if (deleteTarget) onDelete(deleteTarget.id); setDeleteTarget(null); }} />
           </>
         }>
@@ -186,6 +188,7 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
   onCancelRequest: (id: string) => void;
   onSelectContact: (person: Person) => void;
 }) {
+  const { t } = useT();
   const incoming = requests.filter(request => request.state === 'pending' && request.direction !== 'out');
   const outgoing = requests.filter(request => request.state === 'pending' && request.direction === 'out');
   // Accepted/rejected incoming requests stay visible as history, but carry
@@ -205,22 +208,23 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
             </div>
             <span className="sk-request-greeting">{request.greeting}</span>
             {failedIds.has(request.id) && (
-              <Alert tone="danger" className="sk-request-error" title="操作失败" description="网络异常，请重试。" />
+              <Alert tone="danger" className="sk-request-error" title={t('contacts.actionFailed')}
+                description={t('contacts.networkError')} />
             )}
             {request.state === 'pending' && (
               <div className="sk-request-actions">
                 <Button actionId={`request.accept-${request.id}`} emphasis="primary" density="compact"
-                  label={failedIds.has(request.id) ? '重试接受' : '接受'}
+                  label={failedIds.has(request.id) ? t('contacts.retry') : t('contacts.accept')}
                   onActivate={() => onAccept(request.id)} />
                 <Button actionId={`request.reject-${request.id}`} emphasis="quiet" density="compact"
-                  label="拒绝" onActivate={() => onReject(request.id)} />
+                  label={t('contacts.reject')} onActivate={() => onReject(request.id)} />
               </div>
             )}
           </div>
         </div>
       ))}
       {outgoing.length > 0 && (
-        <h2 className="sk-conv-title">已发出 · {outgoing.length}</h2>
+        <h2 className="sk-conv-title">{t('contacts.outgoing', { n: outgoing.length })}</h2>
       )}
       {outgoing.map(request => (
         <div className="sk-request-card is-outgoing" key={request.id} data-request-id={request.id}
@@ -232,16 +236,16 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
               <strong>{request.name}</strong>
               <Tag tone="neutral">{request.station}</Tag>
             </div>
-            <span className="sk-request-greeting sk-request-sent">· 已发送，等待对方接受</span>
+            <span className="sk-request-greeting sk-request-sent">· {t('contacts.sent')}</span>
             <div className="sk-request-actions">
               <Button actionId={`request.cancel-${request.id}`} emphasis="quiet" density="compact"
-                label="撤回请求" onActivate={() => onCancelRequest(request.id)} />
+                label={t('contacts.withdraw')} onActivate={() => onCancelRequest(request.id)} />
             </div>
           </div>
         </div>
       ))}
       {history.length > 0 && (
-        <h2 className="sk-conv-title">历史请求 · {history.length}</h2>
+        <h2 className="sk-conv-title">{t('contacts.history', { n: history.length })}</h2>
       )}
       {history.map(request => (
         <div className="sk-request-card is-history" key={request.id} data-request-id={request.id}
@@ -252,14 +256,14 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
             <div className="sk-request-name">
               <strong>{request.name}</strong>
               <Tag tone="neutral">{request.station}</Tag>
-              {request.state === 'accepted' && <Tag tone="success">已同意</Tag>}
-              {request.state === 'rejected' && <Tag>已拒绝</Tag>}
+              {request.state === 'accepted' && <Tag tone="success">{t('contacts.accepted')}</Tag>}
+              {request.state === 'rejected' && <Tag>{t('contacts.declined')}</Tag>}
             </div>
             <span className="sk-request-greeting">{request.greeting}</span>
           </div>
         </div>
       ))}
-      <h2 className="sk-conv-title">联系人 · {friends.length}</h2>
+      <h2 className="sk-conv-title">{t('contacts.friends', { n: friends.length })}</h2>
       <ul className="sk-conv-list">
         {friends.map(person => (
           <li key={person.id}>
@@ -308,6 +312,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   onCreateGroup: () => void;
   onPickSearchPerson: (person: Person) => void;
 }) {
+  const { t } = useT();
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -365,13 +370,13 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   }, [searchExpanded]);
 
   return (
-    <aside className="sk-conv-rail" aria-label="聊天导航">
+    <aside className="sk-conv-rail" aria-label={t('rail.aria')}>
       <header className="sk-rail-header" data-search-expanded={searchExpanded ? 'true' : 'false'}>
         <div className="sk-rail-tabs">
-          <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="聊天子导航"
+          <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="chat-subnav"
             options={[
-              { value: 'chats', label: <span className="sk-subnav-label"><MessageCircle size={13} />消息</span> },
-              { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />联系人</span> },
+              { value: 'chats', label: <span className="sk-subnav-label"><MessageCircle size={13} />{t('tab.chats')}</span> },
+              { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />{t('tab.contacts')}</span> },
             ]}
             value={tab} onValueChange={value => onTabChange(value ?? 'chats')} />
         </div>
@@ -381,7 +386,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
             content={
               <div className="sk-search-pop" data-chat-search-dropdown>
                 <div className="sk-search-group" data-search-section="contacts">
-                  <span className="sk-search-group-title">联系人</span>
+                  <span className="sk-search-group-title">{t('search.contacts')}</span>
                   {peopleResults.length > 0 ? peopleResults.map(person => (
                     <button key={person.id} type="button" className="sk-search-row"
                       data-chat-search-result-kind="person"
@@ -390,10 +395,10 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
                         style={{ borderRadius: 8 }} />
                       <strong>{person.name}</strong><span>{person.station}</span>
                     </button>
-                  )) : <span className="sk-search-empty-tip">---无相关联系人---</span>}
+                  )) : <span className="sk-search-empty-tip">{t('search.empty.contacts')}</span>}
                 </div>
                 <div className="sk-search-group" data-search-section="chats">
-                  <span className="sk-search-group-title">聊天</span>
+                  <span className="sk-search-group-title">{t('search.chats')}</span>
                   {filteredSessions.length > 0 ? filteredSessions.map(c => (
                     <button key={c.id} type="button" className="sk-search-row"
                       data-chat-search-result-kind={c.kind === 'group' ? 'group' : 'session'}
@@ -409,7 +414,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
                       )}
                       <strong>{c.name}</strong><span>{c.last}</span>
                     </button>
-                  )) : <span className="sk-search-empty-tip">---无相关聊天---</span>}
+                  )) : <span className="sk-search-empty-tip">{t('search.empty.chats')}</span>}
                 </div>
               </div>
             }>
@@ -428,7 +433,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
                 onChange={event => setQuery(event.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setSearchFocused(false)}
-                placeholder="搜索联系人、群聊、会话" aria-label="聊天搜索" />
+                placeholder={t('rail.searchPlaceholder')} aria-label="chat-search" />
             </div>
           </Popover>
         </div>
@@ -436,15 +441,15 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
         <div className="sk-conv-new">
           {searchExpanded ? (
             <Button actionId="sk.search-cancel" emphasis="secondary" density="compact"
-              leading={<X size={16} />} aria-label="取消搜索" label=""
+              leading={<X size={16} />} aria-label={t('rail.cancelSearch')} label=""
               onClick={cancelSearch} />
           ) : (
             <Menu placement="bottom" actions={[
-              { id: 'sk.new-person', label: '找人', leading: <UserPlus size={14} />, onActivate: onFindPeople },
-              { id: 'sk.new-group', label: '创建群聊', leading: <Users size={14} />, onActivate: onCreateGroup },
+              { id: 'sk.new-person', label: t('rail.new.person'), leading: <UserPlus size={14} />, onActivate: onFindPeople },
+              { id: 'sk.new-group', label: t('rail.new.group'), leading: <Users size={14} />, onActivate: onCreateGroup },
             ]}>
               <Button actionId="sk.new-menu" emphasis="secondary" density="compact"
-                leading={<Plus size={16} />} aria-label="新建" label="" />
+                leading={<Plus size={16} />} aria-label={t('rail.new')} label="" />
             </Menu>
           )}
         </div>
@@ -452,7 +457,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
 
       {tab === 'chats' ? (
         <>
-          <h2 className="sk-conv-title">{query ? `搜索“${query}”` : '最近对话'}</h2>
+          <h2 className="sk-conv-title">{query ? t('rail.searching', { query }) : t('rail.recent')}</h2>
           <SessionRows sessions={filteredSessions} selectedId={selectedId} onSelect={onSelect}
             onTogglePin={onTogglePin} onToggleMute={onToggleMute}
             onMarkRead={onMarkRead} onHide={onHide} onDelete={onDelete} />

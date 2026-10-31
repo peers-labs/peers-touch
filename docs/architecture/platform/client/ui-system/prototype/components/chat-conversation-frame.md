@@ -1,6 +1,6 @@
-# 对话框架与通话入口（迁移增量 11，增量 19/20/21 修订）
+# 对话框架与通话入口（迁移增量 11，增量 19/20/21/22 修订）
 
-> **Status**: draft · **Created**: 2026-10-31 · **Updated**: 2026-11-01（增量 21）
+> **Status**: draft · **Created**: 2026-10-31 · **Updated**: 2026-11-01（增量 22）
 > · **Owner**: Client Platform · UI System
 > **旧来源**：`ChatMessageArea`（头部操作、消息行布局）、`ChatDetailPanel`、
 > `SearchMessagesModal`、`ChatThreadPanel`、
@@ -24,6 +24,12 @@
 - **消息搜索 Dialog**：关键词过滤本会话非服务消息，空查询给最近 5 条；结果行（发送者/摘要/时间）可点。
 - **话题侧拉页**：种子消息 + 3 条种子回复 + 回复输入框；发送后回复 +1、入口计数联动、输入清空。
 - 服务消息（入群/建群）以居中胶囊渲染。
+- **窗内偏好与多语言（增量 22）**：聊天根 `.sk-chat-feature` 带 `data-locale`
+  与 `data-message-layout`；界面 chrome 文案全部经 `prefs.ts` 字典 t() 化
+  （zh-CN/en），种子消息/名单保持 authored 原文不译；时间格式随 locale。
+- **消息对齐偏好（增量 22）**：「各在一边」为默认（peer 左/me 右）；
+  「统一靠左」时 me 行 `align-self:flex-start`、内容列左对齐，工具条随之改挂右侧。
+  偏好 localStorage 持久化，设置改动经事件广播即时作用到已挂载的聊天面。
 - **消息行对齐（增量 20 回归 desktop ChatArea）**：`.sk-msg` 为 flex 行，
   `align-items: flex-start`——对方头像与气泡顶平齐；群聊时头像与发送者名顶平齐；
   纯 emoji 大行例外，底对齐（desktop parity）。头像统一 32px（含撤回墓碑、typing）。

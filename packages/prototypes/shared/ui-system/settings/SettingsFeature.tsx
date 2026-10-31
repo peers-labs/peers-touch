@@ -6,13 +6,20 @@
  * scrollable section content. AI and Federation groups do not exist here.
  * Increments 7–9 fill the sections; unbuilt sections show an honest Empty
  * state naming their increment instead of fake controls.
+ *
+ * Preferences (language, message layout, notification switches) persist via
+ * the shared prefs module so the same choices drive chat and settings.
  */
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
-  Database, LifeBuoy, Puzzle, Radio, SlidersHorizontal, Wrench,
+  Bell, Database, LifeBuoy, MessagesSquare, Puzzle, Radio, SlidersHorizontal, Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { Button, Empty, Select } from '@peers-touch/ui';
+import { Button, Empty, Select, Segmented, Switch } from '@peers-touch/ui';
+import {
+  makeTranslate, setPrefs, usePrefs, useT,
+  type MessageLayout, type NotificationPrefs, type Prefs, type StringKey,
+} from '../prefs';
 import { SettingsRow, SettingsSection } from './SettingsPrimitives';
 import { AccountSection } from './sections/AccountSection';
 import { SecuritySection } from './sections/SecuritySection';
@@ -23,40 +30,42 @@ import './settings.css';
 
 export type SettingsGroup = 'general' | 'tools' | 'channels' | 'applets' | 'data' | 'help';
 export type SectionKey =
-  | 'account' | 'security' | 'general'
+  | 'account' | 'messages' | 'notifications' | 'general' | 'security'
   | 'cron' | 'command-menu' | 'tools'
   | 'channels'
   | 'applets'
   | 'storage' | 'files' | 'logs'
   | 'help';
 
-interface SectionDef { key: SectionKey; label: string; increment: number }
-interface GroupDef { key: SettingsGroup; label: string; icon: LucideIcon; sections: SectionDef[] }
+interface SectionDef { key: SectionKey; labelKey: StringKey; increment: number }
+interface GroupDef { key: SettingsGroup; labelKey: StringKey; icon: LucideIcon; sections: SectionDef[] }
 
 const GROUPS: GroupDef[] = [
-  { key: 'general', label: '通用', icon: SlidersHorizontal, sections: [
-    { key: 'account', label: '账号', increment: 7 },
-    { key: 'security', label: '安全', increment: 7 },
-    { key: 'general', label: '通用', increment: 6 },
+  { key: 'general', labelKey: 'group.general', icon: SlidersHorizontal, sections: [
+    { key: 'account', labelKey: 'sec.account', increment: 7 },
+    { key: 'messages', labelKey: 'sec.messages', increment: 22 },
+    { key: 'notifications', labelKey: 'sec.notifications', increment: 22 },
+    { key: 'general', labelKey: 'sec.general', increment: 6 },
+    { key: 'security', labelKey: 'sec.security', increment: 7 },
   ] },
-  { key: 'tools', label: '工具', icon: Wrench, sections: [
-    { key: 'cron', label: '定时任务', increment: 9 },
-    { key: 'command-menu', label: '命令面板', increment: 9 },
-    { key: 'tools', label: '工具', increment: 9 },
+  { key: 'tools', labelKey: 'group.tools', icon: Wrench, sections: [
+    { key: 'cron', labelKey: 'sec.cron', increment: 9 },
+    { key: 'command-menu', labelKey: 'sec.commandMenu', increment: 9 },
+    { key: 'tools', labelKey: 'sec.tools', increment: 9 },
   ] },
-  { key: 'channels', label: '通道', icon: Radio, sections: [
-    { key: 'channels', label: '通道', increment: 9 },
+  { key: 'channels', labelKey: 'group.channels', icon: Radio, sections: [
+    { key: 'channels', labelKey: 'sec.channels', increment: 9 },
   ] },
-  { key: 'applets', label: '小程序', icon: Puzzle, sections: [
-    { key: 'applets', label: '小程序', increment: 9 },
+  { key: 'applets', labelKey: 'group.applets', icon: Puzzle, sections: [
+    { key: 'applets', labelKey: 'sec.applets', increment: 9 },
   ] },
-  { key: 'data', label: '数据', icon: Database, sections: [
-    { key: 'storage', label: '聊天存储', increment: 8 },
-    { key: 'files', label: '文件', increment: 8 },
-    { key: 'logs', label: '日志', increment: 8 },
+  { key: 'data', labelKey: 'group.data', icon: Database, sections: [
+    { key: 'storage', labelKey: 'sec.storage', increment: 8 },
+    { key: 'files', labelKey: 'sec.files', increment: 8 },
+    { key: 'logs', labelKey: 'sec.logs', increment: 8 },
   ] },
-  { key: 'help', label: '帮助', icon: LifeBuoy, sections: [
-    { key: 'help', label: '帮助与反馈', increment: 7 },
+  { key: 'help', labelKey: 'group.help', icon: LifeBuoy, sections: [
+    { key: 'help', labelKey: 'sec.help', increment: 7 },
   ] },
 ];
 
@@ -76,6 +85,7 @@ function formatShortcut(spec: string): string {
 }
 
 function ShortcutSetting() {
+  const { t } = useT();
   const [shortcut, setShortcut] = useState(DEFAULT_SHORTCUT);
   const [recording, setRecording] = useState(false);
 
@@ -99,37 +109,109 @@ function ShortcutSetting() {
   }, [recording]);
 
   return (
-    <SettingsRow label="聊天截图快捷键" description="在会话中按下组合键直接截取屏幕并作为附件发送">
+    <SettingsRow label={t('settings.shortcutLabel')} description={t('settings.shortcutDesc')}>
       <div className="sk-shortcut-editor">
-        <input className="sk-shortcut-input" readOnly value={recording ? '请按下快捷键…' : formatShortcut(shortcut)}
+        <input className="sk-shortcut-input" readOnly value={recording ? t('settings.shortcutRecording') : formatShortcut(shortcut)}
           data-shortcut={shortcut} data-recording={recording ? 'true' : 'false'}
-          aria-label="聊天截图快捷键" onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => event.preventDefault()} />
+          aria-label={t('settings.shortcutLabel')} onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => event.preventDefault()} />
         <Button actionId="settings.shortcut.record" emphasis="secondary" density="compact"
-          label={recording ? '聆听中' : '录制'}
+          label={recording ? t('settings.shortcutListening') : t('settings.shortcutRecord')}
           onClick={event => { event.stopPropagation(); setRecording(value => !value); }} />
         <Button actionId="settings.shortcut.reset" emphasis="quiet" density="compact"
-          label="重置" availability={shortcut === DEFAULT_SHORTCUT ? { kind: 'disabled', reason: '已是默认值' } : undefined}
+          label={t('settings.shortcutReset')}
+          availability={shortcut === DEFAULT_SHORTCUT ? { kind: 'disabled', reason: t('settings.shortcutDefaultReason') } : undefined}
           onActivate={() => setShortcut(DEFAULT_SHORTCUT)} />
       </div>
     </SettingsRow>
   );
 }
 
+/* ── General: language (persisted) + screenshot shortcut ─────────────── */
+
 function GeneralSection() {
-  const [language, setLanguage] = useState<'zh-CN' | 'en'>('zh-CN');
+  const { t, prefs } = useGeneralPrefs();
   return (
-    <SettingsSection icon={SlidersHorizontal} title="通用" subtitle="界面语言与聊天操作偏好">
-      <SettingsRow label="界面语言" description="原型内为本地偏好，不影响其他视图">
-        <Select<'zh-CN' | 'en'> aria-label="界面语言"
+    <SettingsSection icon={SlidersHorizontal} title={t('sec.general')} subtitle={t('settings.generalSubtitle')}>
+      <SettingsRow label={t('settings.language')} description={t('settings.languageHint')}>
+        <Select<'zh-CN' | 'en'> aria-label={t('settings.language')}
           options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en', label: 'English' }]}
-          value={language} onValueChange={value => setLanguage((Array.isArray(value) ? value[0] : value) ?? 'zh-CN')} />
+          value={prefs.locale}
+          onValueChange={value => setPrefs({ locale: (Array.isArray(value) ? value[0] : value) ?? 'zh-CN' })} />
       </SettingsRow>
       <ShortcutSetting />
     </SettingsSection>
   );
 }
 
+/* ── Messages: bubble alignment habit ────────────────────────────────── */
+
+function MessagesSection() {
+  const { t, prefs } = useGeneralPrefs();
+  return (
+    <SettingsSection icon={MessagesSquare} title={t('sec.messages')} subtitle={t('settings.messagesSubtitle')}>
+      <SettingsRow label={t('settings.messageLayout')} description={t('settings.messageLayoutHint')}>
+        <Segmented<MessageLayout>
+          label={t('settings.messageLayout')}
+          options={[
+            { value: 'sides', label: t('settings.messageLayoutSides') },
+            { value: 'left', label: t('settings.messageLayoutLeft') },
+          ]}
+          value={prefs.messageLayout}
+          onValueChange={value => setPrefs({ messageLayout: value ?? 'sides' })} />
+      </SettingsRow>
+    </SettingsSection>
+  );
+}
+
+/* ── Notifications: five event switches + two delivery switches
+   (desktop NotificationsSettingsSection parity) ───────────────────────── */
+
+const NOTIFICATION_ROWS: { key: keyof NotificationPrefs; labelKey: StringKey; descKey: StringKey }[] = [
+  { key: 'mentions', labelKey: 'settings.n.mentions', descKey: 'settings.n.mentionsDesc' },
+  { key: 'invites', labelKey: 'settings.n.invites', descKey: 'settings.n.invitesDesc' },
+  { key: 'friendRequests', labelKey: 'settings.n.friendRequests', descKey: 'settings.n.friendRequestsDesc' },
+  { key: 'reactions', labelKey: 'settings.n.reactions', descKey: 'settings.n.reactionsDesc' },
+  { key: 'network', labelKey: 'settings.n.network', descKey: 'settings.n.networkDesc' },
+];
+
+function NotificationsSection() {
+  const { t, prefs } = useGeneralPrefs();
+  const flip = (key: keyof NotificationPrefs) => {
+    setPrefs({ notifications: { ...prefs.notifications, [key]: !prefs.notifications[key] } });
+  };
+  return (
+    <>
+      <SettingsSection icon={Bell} title={t('settings.notifyWhat')} subtitle={t('settings.notifyWhatSubtitle')}>
+        {NOTIFICATION_ROWS.map(row => (
+          <SettingsRow key={row.key} label={t(row.labelKey)} description={t(row.descKey)}>
+            <Switch checked={prefs.notifications[row.key]} aria-label={t(row.labelKey)}
+              data-notify={row.key} onCheckedChange={() => flip(row.key)} />
+          </SettingsRow>
+        ))}
+      </SettingsSection>
+      <SettingsSection icon={Bell} title={t('settings.notifyDelivery')} subtitle={t('settings.notifyDeliverySubtitle')}>
+        <SettingsRow label={t('settings.n.inApp')} description={t('settings.n.inAppDesc')}>
+          <Switch checked={prefs.notifications.inApp} aria-label={t('settings.n.inApp')}
+            data-notify="inApp" onCheckedChange={() => flip('inApp')} />
+        </SettingsRow>
+        <SettingsRow label={t('settings.n.sound')} description={t('settings.n.soundDesc')}>
+          <Switch checked={prefs.notifications.sound} aria-label={t('settings.n.sound')}
+            data-notify="sound" onCheckedChange={() => flip('sound')} />
+        </SettingsRow>
+      </SettingsSection>
+    </>
+  );
+}
+
+/* General-group sections need t() plus the whole prefs object; keep one hook
+   instead of subscribing twice. */
+function useGeneralPrefs(): { t: ReturnType<typeof useT>['t']; prefs: Prefs } {
+  const prefs = usePrefs();
+  return { t: makeTranslate(prefs.locale), prefs };
+}
+
 export function SettingsFeature() {
+  const { t, locale } = useT();
   const [group, setGroup] = useState<SettingsGroup>('general');
   const activeGroup = GROUPS.find(entry => entry.key === group) ?? GROUPS[0];
   const [section, setSection] = useState<SectionKey>('account');
@@ -144,10 +226,10 @@ export function SettingsFeature() {
   };
 
   return (
-    <div className="sk-settings">
+    <div className="sk-settings" data-ui-locale={locale}>
       <div className="sk-settings-subbar">
         {/* Group scope uses quiet pills, never the desktop underline-tab hairline. */}
-        <div className="sk-settings-groups" role="tablist" aria-label="设置分组">
+        <div className="sk-settings-groups" role="tablist" aria-label={t('settings.groupsAria')}>
           {GROUPS.map(entry => {
             const Icon = entry.icon;
             return (
@@ -155,7 +237,7 @@ export function SettingsFeature() {
                 className={`sk-settings-group${group === entry.key ? ' is-active' : ''}`}
                 onClick={() => switchGroup(entry.key)}>
                 <Icon size={14} strokeWidth={1.8} />
-                {entry.label}
+                {t(entry.labelKey)}
               </button>
             );
           })}
@@ -164,13 +246,13 @@ export function SettingsFeature() {
 
       <div className="sk-settings-body">
         {showSectionNav && (
-          <nav className="sk-settings-nav" aria-label="设置分区">
+          <nav className="sk-settings-nav" aria-label={t('settings.sectionsAria')}>
             {activeGroup.sections.map(entry => (
               <button key={entry.key} type="button"
                 className={`sk-settings-nav-item${activeSection.key === entry.key ? ' is-active' : ''}`}
                 aria-current={activeSection.key === entry.key ? 'page' : undefined}
                 onClick={() => setSection(entry.key)}>
-                {entry.label}
+                {t(entry.labelKey)}
               </button>
             ))}
           </nav>
@@ -178,27 +260,29 @@ export function SettingsFeature() {
 
         <div className="sk-settings-scroll">
           {activeSection.key === 'general' ? <GeneralSection />
-            : activeSection.key === 'account' ? <AccountSection />
-              : activeSection.key === 'security' ? <SecuritySection />
-                : activeSection.key === 'help' ? (
-                  <HelpSection onNavigate={(targetGroup, targetSection) => {
-                    setGroup(targetGroup);
-                    setSection(targetSection);
-                  }} />
-                ) : activeSection.key === 'storage' || activeSection.key === 'files' || activeSection.key === 'logs' ? (
-                  <DataSection section={activeSection.key} />
-                ) : activeSection.key === 'cron' || activeSection.key === 'command-menu' || activeSection.key === 'tools' ? (
-                  <ToolsSection section={activeSection.key} />
-                ) : activeSection.key === 'channels' ? (
-                  <ChannelsSection />
-                ) : activeSection.key === 'applets' ? (
-                  <AppletsSection />
-                ) : (
-                  <section className="sk-settings-section sk-settings-pending" aria-label={activeSection.label}>
-                    <Empty className="sk-settings-empty"
-                      description={`「${activeSection.label}」在增量 ${activeSection.increment} 迁入（peers-ui 组合，本地真实状态）`} />
-                  </section>
-                )}
+            : activeSection.key === 'messages' ? <MessagesSection />
+              : activeSection.key === 'notifications' ? <NotificationsSection />
+                : activeSection.key === 'account' ? <AccountSection />
+                  : activeSection.key === 'security' ? <SecuritySection />
+                    : activeSection.key === 'help' ? (
+                      <HelpSection onNavigate={(targetGroup, targetSection) => {
+                        setGroup(targetGroup);
+                        setSection(targetSection);
+                      }} />
+                    ) : activeSection.key === 'storage' || activeSection.key === 'files' || activeSection.key === 'logs' ? (
+                      <DataSection section={activeSection.key} />
+                    ) : activeSection.key === 'cron' || activeSection.key === 'command-menu' || activeSection.key === 'tools' ? (
+                      <ToolsSection section={activeSection.key} />
+                    ) : activeSection.key === 'channels' ? (
+                      <ChannelsSection />
+                    ) : activeSection.key === 'applets' ? (
+                      <AppletsSection />
+                    ) : (
+                      <section className="sk-settings-section sk-settings-pending" aria-label={t(activeSection.labelKey)}>
+                        <Empty className="sk-settings-empty"
+                          description={t('settings.pending', { label: t(activeSection.labelKey), n: activeSection.increment })} />
+                      </section>
+                    )}
         </div>
       </div>
     </div>

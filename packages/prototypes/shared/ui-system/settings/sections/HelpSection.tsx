@@ -6,38 +6,39 @@
 import { Search, Sparkles } from 'lucide-react';
 import { Accordion, Tag } from '@peers-touch/ui';
 import { SettingsSection } from '../SettingsPrimitives';
+import { useT, type StringKey } from '../../prefs';
 import '../settings.css';
 import type { SectionKey, SettingsGroup } from '../SettingsFeature';
 
 interface HelpEntry {
   id: string;
-  title: string;
-  detail: string;
+  titleKey: StringKey;
+  detailKey: StringKey;
   group: SettingsGroup;
   section: SectionKey;
 }
 
 const ENTRIES: HelpEntry[] = [
-  { id: 'account', title: '账号与身份', detail: '头像、资料、PTID、设备关联', group: 'general', section: 'account' },
-  { id: 'security', title: '安全与恢复', detail: '恢复密钥、备份、助记词恢复', group: 'general', section: 'security' },
-  { id: 'general', title: '通用偏好', detail: '界面语言、截图快捷键', group: 'general', section: 'general' },
-  { id: 'storage', title: '聊天存储', detail: '消息留存、清缓存、批量删除', group: 'data', section: 'storage' },
+  { id: 'account', titleKey: 'help.entry.account.title', detailKey: 'help.entry.account.detail', group: 'general', section: 'account' },
+  { id: 'security', titleKey: 'help.entry.security.title', detailKey: 'help.entry.security.detail', group: 'general', section: 'security' },
+  { id: 'general', titleKey: 'help.entry.general.title', detailKey: 'help.entry.general.detail', group: 'general', section: 'general' },
+  { id: 'storage', titleKey: 'help.entry.storage.title', detailKey: 'help.entry.storage.detail', group: 'data', section: 'storage' },
 ];
 
 export function HelpSection({ onNavigate }: { onNavigate: (group: SettingsGroup, section: SectionKey) => void }) {
+  const { t } = useT();
   return (
     <>
-      <SettingsSection icon={Sparkles} title="关于 Peers Touch"
-        subtitle="去中心化的邻里社交原型 · 北极星桌面框架"
-        extra={<Tag>draft</Tag>}>
+      <SettingsSection icon={Sparkles} title={t('help.aboutTitle')}
+        subtitle={t('help.aboutSubtitle')}
+        extra={<Tag>{t('help.aboutTag')}</Tag>}>
         <p className="sk-about-copy">
-          所有功能均为本地原型状态。命令面板：<kbd>⌘/Ctrl</kbd> + <kbd>K</kbd>，方向键选择，
-          Enter 打开，Esc 关闭。
+          {t('help.aboutCopy', { mod: '⌘/Ctrl', k: 'K' })}
         </p>
       </SettingsSection>
 
-      <SettingsSection icon={Search} title="可搜索功能"
-        subtitle="命令面板中可用的内置入口，点击直接跳转到对应分区">
+      <SettingsSection icon={Search} title={t('help.searchableTitle')}
+        subtitle={t('help.searchableSubtitle')}>
         <Accordion
           className="sk-help-accordion"
           defaultExpanded={['search']}
@@ -46,7 +47,7 @@ export function HelpSection({ onNavigate }: { onNavigate: (group: SettingsGroup,
             title: (
               <span className="sk-help-summary">
                 <Search size={15} />
-                <strong>搜索功能</strong>
+                <strong>{t('help.searchGroup')}</strong>
                 <Tag>{ENTRIES.length}</Tag>
               </span>
             ),
@@ -56,8 +57,8 @@ export function HelpSection({ onNavigate }: { onNavigate: (group: SettingsGroup,
                   <button key={entry.id} type="button" className="sk-help-item"
                     data-help-target={entry.id}
                     onClick={() => onNavigate(entry.group, entry.section)}>
-                    <strong>{entry.title}</strong>
-                    <span>{entry.detail}</span>
+                    <strong>{t(entry.titleKey)}</strong>
+                    <span>{t(entry.detailKey)}</span>
                   </button>
                 ))}
               </div>

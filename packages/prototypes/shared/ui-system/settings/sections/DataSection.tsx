@@ -14,6 +14,7 @@ import {
   Tag, TextField,
 } from '@peers-touch/ui';
 import { SettingsItemCard, SettingsRow, SettingsSection } from '../SettingsPrimitives';
+import { useT } from '../../prefs';
 import '../settings.css';
 
 type Retention = 'forever' | '365' | '90' | '30';
@@ -66,18 +67,18 @@ const LOG_FIXTURE: LogEntry[] = [
 ];
 
 const LEVELS = ['trace', 'debug', 'info', 'warn', 'error'] as const;
-const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
-  { value: 'forever', label: '永久' },
-  { value: '365', label: '1 年' },
-  { value: '90', label: '90 天' },
-  { value: '30', label: '30 天' },
-];
+const RETENTION_VALUES: Retention[] = ['forever', '365', '90', '30'];
+const RETENTION_LABEL_KEYS = {
+  forever: 'retention.forever', '365': 'retention.year', '90': 'retention.days90', '30': 'retention.days30',
+} as const;
 
 function formatMb(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
 }
 
 function StoragePanel() {
+  const { t } = useT();
+  const retentionOptions = RETENTION_VALUES.map(value => ({ value, label: t(RETENTION_LABEL_KEYS[value]) }));
   const [retention, setRetention] = useState<Retention>('forever');
   const [savedAt, setSavedAt] = useState<Retention | null>(null);
   const [confirmingCache, setConfirmingCache] = useState(false);
@@ -126,7 +127,7 @@ function StoragePanel() {
         setConversations(list => list.filter(entry => entry.id !== id));
         setProgress(current => current ? { done: index + 1, total: ids.length } : current);
         if (index === ids.length - 1) {
-          setBatchDone(`已清理 ${ids.length} 个会话`);
+          setBatchDone(t('batch.done', { n: ids.length }));
           setSelected(new Set());
           window.setTimeout(() => setProgress(null), 500);
         }
@@ -145,71 +146,71 @@ function StoragePanel() {
 
   return (
     <>
-      <SettingsSection icon={HardDrive} title="存储用量" subtitle="消息、媒体与缓存的本地占用（示例数值）">
+      <SettingsSection icon={HardDrive} title={t('storage.title')} subtitle={t('storage.subtitle')}>
         <SettingsItemCard>
           <div className="sk-usage-grid">
-            <div className="sk-usage-cell"><span>消息</span><strong>{formatMb(326)}</strong></div>
-            <div className="sk-usage-cell"><span>媒体</span><strong>{formatMb(842)}</strong></div>
-            <div className="sk-usage-cell"><span>缓存</span><strong data-cache-mb={cacheMb}>{formatMb(cacheMb)}</strong></div>
-            <div className="sk-usage-cell is-total"><span>合计</span><strong>{formatMb(totalBytes)}</strong></div>
+            <div className="sk-usage-cell"><span>{t('storage.messages')}</span><strong>{formatMb(326)}</strong></div>
+            <div className="sk-usage-cell"><span>{t('storage.media')}</span><strong>{formatMb(842)}</strong></div>
+            <div className="sk-usage-cell"><span>{t('storage.cache')}</span><strong data-cache-mb={cacheMb}>{formatMb(cacheMb)}</strong></div>
+            <div className="sk-usage-cell is-total"><span>{t('storage.total')}</span><strong>{formatMb(totalBytes)}</strong></div>
           </div>
         </SettingsItemCard>
       </SettingsSection>
 
-      <SettingsSection icon={Clock3} title="消息留存" subtitle="超过期限的本地消息会被自动清理">
-        <Segmented<Retention> options={RETENTION_OPTIONS} value={retention} onValueChange={value => changeRetention(value ?? 'forever')} />
-        {savedAt && <span className="sk-inline-status is-ok" role="status" data-retention-result="succeeded">已保存：{RETENTION_OPTIONS.find(o => o.value === savedAt)?.label}</span>}
+      <SettingsSection icon={Clock3} title={t('retention.title')} subtitle={t('retention.subtitle')}>
+        <Segmented<Retention> label={t('retention.title')} options={retentionOptions} value={retention} onValueChange={value => changeRetention(value ?? 'forever')} />
+        {savedAt && <span className="sk-inline-status is-ok" role="status" data-retention-result="succeeded">{t('retention.saved', { label: retentionOptions.find(o => o.value === savedAt)?.label ?? '' })}</span>}
       </SettingsSection>
 
-      <SettingsSection title="清理缓存" subtitle="只删除可重新下载的缓存，不影响消息记录">
+      <SettingsSection title={t('cache.title')} subtitle={t('cache.subtitle')}>
         {confirmingCache ? (
           <SettingsItemCard>
             <div className="sk-inline-confirm" data-clear-confirm>
-              <span>确认清理 {formatMb(cacheMb)} 缓存？此操作不删除消息。</span>
+              <span>{t('cache.confirm', { size: formatMb(cacheMb) })}</span>
               <div className="sk-inline-actions">
-                <Button actionId="storage.clear-cancel" emphasis="quiet" label="取消" onActivate={() => setConfirmingCache(false)} />
+                <Button actionId="storage.clear-cancel" emphasis="quiet" label={t('common.cancel')} onActivate={() => setConfirmingCache(false)} />
                 <Button actionId="storage.clear-apply" emphasis="primary" tone="danger" leading={<Trash2 size={14} />}
-                  label="确认清理" onActivate={clearCache} />
+                  label={t('cache.confirmBtn')} onActivate={clearCache} />
               </div>
             </div>
           </SettingsItemCard>
         ) : (
           <>
             <Button actionId="storage.clear-open" emphasis="secondary" leading={<Trash2 size={14} />}
-              label={`清理缓存（${formatMb(cacheMb)}）`}
-              availability={cacheMb === 0 ? { kind: 'disabled', reason: '缓存已清空' } : undefined}
+              label={t('cache.open', { size: formatMb(cacheMb) })}
+              availability={cacheMb === 0 ? { kind: 'disabled', reason: t('cache.emptyReason') } : undefined}
               onActivate={() => setConfirmingCache(true)} />
-            {releasedMb > 0 && <Alert tone="success" title={`已释放 ${formatMb(releasedMb)}`} />}
+            {releasedMb > 0 && <Alert tone="success" title={t('cache.released', { size: formatMb(releasedMb) })} />}
           </>
         )}
       </SettingsSection>
 
-      <SettingsSection title="会话存储" subtitle={`${conversations.length} 个会话 · 可多选批量清理`}>
+      <SettingsSection title={t('sec.storage')} subtitle={t('convStorage.title', { n: conversations.length })}>
         <div className="sk-storage-toolbar">
-          <TextField aria-label="搜索会话" placeholder="搜索会话" clearable onClear={() => setQuery('')}
+          <TextField aria-label={t('convStorage.search')} placeholder={t('convStorage.search')} clearable onClear={() => setQuery('')}
             value={query} onValueChange={setQuery} leading={<Search size={14} />} />
-          <Segmented aria-label="排序" density="compact"
-            options={[{ value: 'size', label: '按占用' }, { value: 'recent', label: '按最近' }]}
+          <Segmented label={t('sort.aria')} density="compact"
+            options={[{ value: 'size', label: t('sort.size') }, { value: 'recent', label: t('sort.recent') }]}
             value={sort} onValueChange={value => setSort((value === 'recent' ? 'recent' : 'size'))} />
         </div>
 
         {selected.size > 0 && !progress && !confirmingBatch && (
           <div className="sk-batch-bar" data-batch-manage>
-            <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} label={`全选本页（已选 ${selected.size}）`} />
+            <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} label={t('batch.selectAllPage', { n: selected.size })} />
             <Button actionId="storage.batch-open" emphasis="primary" tone="danger" density="compact"
-              label={`清理选中 ${selected.size} 项`} onActivate={() => setConfirmingBatch(true)} />
+              label={t('batch.clear', { n: selected.size })} onActivate={() => setConfirmingBatch(true)} />
           </div>
         )}
 
         {confirmingBatch && (
           <SettingsItemCard>
             <div className="sk-inline-confirm" data-batch-confirm>
-              <span>确认清理选中的 {selected.size} 个会话？媒体缓存会一并删除。</span>
+              <span>{t('batch.confirm', { n: selected.size })}</span>
               <div className="sk-inline-actions">
-                <Button actionId="storage.batch-cancel" emphasis="quiet" label="取消"
+                <Button actionId="storage.batch-cancel" emphasis="quiet" label={t('common.cancel')}
                   onActivate={() => setConfirmingBatch(false)} />
                 <Button actionId="storage.batch-confirm" emphasis="primary" tone="danger"
-                  label="确认清理" onActivate={runBatch} />
+                  label={t('cache.confirmBtn')} onActivate={runBatch} />
               </div>
             </div>
           </SettingsItemCard>
@@ -217,35 +218,37 @@ function StoragePanel() {
 
         {progress && (
           <div className="sk-batch-progress" data-batch-completed={progress.done} data-batch-total={progress.total}>
-            <Progress value={progress.done} maximum={progress.total} label="批量清理进度" />
-            <span>正在清理 {progress.done}/{progress.total}</span>
+            <Progress value={progress.done} maximum={progress.total} label={t('batch.progressLabel')} />
+            <span>{t('batch.progressing', { done: progress.done, total: progress.total })}</span>
           </div>
         )}
         {batchDone && <Alert tone="success" title={batchDone} />}
 
         {visible.length === 0
-          ? <Empty description="没有匹配的会话" />
+          ? <Empty description={t('storage.empty')} />
           : (
             <div className="sk-storage-table">
               <div className="sk-storage-row is-head">
-                <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} aria-label="全选" />
-                <span>会话</span><span>类型</span><span>消息</span><span>媒体</span><span>合计</span><span />
+                <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} aria-label={t('storage.selectAll')} />
+                <span>{t('storage.colConversation')}</span><span>{t('storage.colType')}</span>
+                <span>{t('storage.colMessages')}</span><span>{t('storage.colMedia')}</span>
+                <span>{t('storage.colTotal')}</span><span />
               </div>
               {visible.map(entry => (
                 <div className="sk-storage-row" key={entry.id} data-conversation-id={entry.id}>
                   <Checkbox checked={selected.has(entry.id)} onCheckedChange={() => toggleRow(entry.id)}
-                    aria-label={`选择 ${entry.name}`} />
+                    aria-label={t('storage.selectRow', { name: entry.name })} />
                   <span className="sk-storage-name">{entry.name}</span>
-                  <Tag tone="neutral">{entry.kind === 'group' ? '群' : '单聊'}</Tag>
+                  <Tag tone="neutral">{entry.kind === 'group' ? t('storage.typeGroup') : t('storage.typeDirect')}</Tag>
                   <span>{formatMb(entry.messagesMb)}</span>
                   <span>{formatMb(entry.mediaMb)}</span>
                   <strong>{formatMb(entry.totalMb)}</strong>
                   <span className="sk-storage-op">
                     {failedRow === entry.id && (
                       <Button actionId={`storage.retry-${entry.id}`} emphasis="quiet" density="compact"
-                        tone="danger" label="重试删除" onActivate={() => deleteRow(entry.id)} />
+                        tone="danger" label={t('storage.retryDelete')} onActivate={() => deleteRow(entry.id)} />
                     )}
-                    <IconButton iconId="delete" iconSize={15} label={`删除 ${entry.name}`}
+                    <IconButton iconId="delete" iconSize={15} label={t('storage.deleteRow', { name: entry.name })}
                       actionId={`storage.delete-${entry.id}`} emphasis="quiet" density="compact"
                       onActivate={() => deleteRow(entry.id)} />
                   </span>
@@ -259,6 +262,7 @@ function StoragePanel() {
 }
 
 function FilesPanel() {
+  const { t } = useT();
   const [files, setFiles] = useState(INITIAL_FILES);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pickName, setPickName] = useState('');
@@ -280,33 +284,34 @@ function FilesPanel() {
     }, ...list]);
     setUploadOpen(false);
     setPickName('');
-    flash('文件已上传（本地示例）');
+    flash(t('files.uploaded'));
   };
 
   return (
-    <SettingsSection title="我的文件" subtitle={`${files.length} 个文件 · 共 ${(totalKb / 1024).toFixed(1)} MB`}>
+    <SettingsSection title={t('sec.files')}
+      subtitle={t('files.title', { n: files.length, size: `${(totalKb / 1024).toFixed(1)} MB` })}>
       <div className="sk-files-toolbar">
         <Button actionId="files.upload-open" emphasis="primary" leading={<Upload size={14} />}
-          label="上传文件" onActivate={() => setUploadOpen(true)} />
-        <Button actionId="files.refresh" emphasis="quiet" leading={<RefreshCw size={14} />} label="刷新" />
+          label={t('files.upload')} onActivate={() => setUploadOpen(true)} />
+        <Button actionId="files.refresh" emphasis="quiet" leading={<RefreshCw size={14} />} label={t('common.refresh')} />
       </div>
       {toast && <Alert tone="success" title={toast} />}
       <div className="sk-storage-table">
-        <div className="sk-storage-row is-head"><span>文件</span><span>可见性</span><span>大小</span><span>日期</span><span /></div>
+        <div className="sk-storage-row is-head"><span>{t('files.colFile')}</span><span>{t('files.colVisibility')}</span><span>{t('files.colSize')}</span><span>{t('files.colDate')}</span><span /></div>
         {files.map(file => (
           <div className="sk-storage-row" key={file.id} data-file-id={file.id}>
             <span className="sk-storage-name" title={file.key}>{file.name}</span>
-            <Tag tone={file.visibility === 'public' ? 'info' : 'neutral'}>{file.visibility === 'public' ? '公开' : '私有'}</Tag>
+            <Tag tone={file.visibility === 'public' ? 'info' : 'neutral'}>{file.visibility === 'public' ? t('files.public') : t('files.private')}</Tag>
             <span>{file.sizeKb >= 1024 ? `${(file.sizeKb / 1024).toFixed(1)} MB` : `${file.sizeKb} KB`}</span>
             <span>{file.updatedAt}</span>
             <span className="sk-storage-op">
-              <IconButton iconId="copy" iconSize={14} label="复制文件键" actionId={`files.copy-${file.id}`}
+              <IconButton iconId="copy" iconSize={14} label={t('files.copyKey')} actionId={`files.copy-${file.id}`}
                 emphasis="quiet" density="compact"
-                onActivate={() => { void navigator.clipboard?.writeText(file.key); flash('文件键已复制'); }} />
-              <IconButton iconId="download" iconSize={14} label="下载文件" actionId={`files.download-${file.id}`}
+                onActivate={() => { void navigator.clipboard?.writeText(file.key); flash(t('files.keyCopied')); }} />
+              <IconButton iconId="download" iconSize={14} label={t('files.download')} actionId={`files.download-${file.id}`}
                 emphasis="quiet" density="compact"
-                onActivate={() => flash(`开始下载 ${file.name}（本地示例）`)} />
-              <IconButton iconId="delete" iconSize={14} label="删除文件" actionId={`files.delete-${file.id}`}
+                onActivate={() => flash(t('files.downloadStart', { name: file.name }))} />
+              <IconButton iconId="delete" iconSize={14} label={t('files.delete')} actionId={`files.delete-${file.id}`}
                 emphasis="quiet" density="compact"
                 onActivate={() => setFiles(list => list.filter(entry => entry.id !== file.id))} />
             </span>
@@ -318,25 +323,25 @@ function FilesPanel() {
         setPickName(event.target.files?.[0]?.name ?? '');
         event.target.value = '';
       }} />
-      <Dialog open={uploadOpen} onDismiss={() => setUploadOpen(false)} title="上传文件" width={440} closeLabel="关闭"
+      <Dialog open={uploadOpen} onDismiss={() => setUploadOpen(false)} title={t('files.dialogTitle')} width={440} closeLabel={t('common.close')}
         footer={
           <>
-            <Button actionId="files.upload-cancel" emphasis="quiet" label="取消" onActivate={() => setUploadOpen(false)} />
-            <Button actionId="files.upload-submit" emphasis="primary" label="上传"
-              availability={!pickName ? { kind: 'disabled', reason: '请选择文件' } : undefined}
+            <Button actionId="files.upload-cancel" emphasis="quiet" label={t('common.cancel')} onActivate={() => setUploadOpen(false)} />
+            <Button actionId="files.upload-submit" emphasis="primary" label={t('files.submit')}
+              availability={!pickName ? { kind: 'disabled', reason: t('files.needFile') } : undefined}
               onActivate={submit} />
           </>
         }>
         <div className="sk-upload-dialog">
           <div className="sk-upload-pick">
             <Button actionId="files.pick" emphasis="secondary" leading={<Upload size={14} />}
-              label="浏览…" onActivate={() => fileInputRef.current?.click()} />
-            <TextField className="sk-upload-name" aria-label="文件名" placeholder="选择文件后显示文件名，可手填"
+              label={t('files.browse')} onActivate={() => fileInputRef.current?.click()} />
+            <TextField className="sk-upload-name" aria-label={t('files.nameAria')} placeholder={t('files.namePlaceholder')}
               value={pickName} onValueChange={setPickName} />
           </div>
-          <TextField aria-label="存储桶" value={bucket} onValueChange={setBucket} />
-          <Segmented<'public' | 'private'> aria-label="可见性"
-            options={[{ value: 'private', label: '私有' }, { value: 'public', label: '公开链接' }]}
+          <TextField aria-label={t('files.bucketAria')} value={bucket} onValueChange={setBucket} />
+          <Segmented<'public' | 'private'> label={t('files.visibilityAria')}
+            options={[{ value: 'private', label: t('files.privateOption') }, { value: 'public', label: t('files.publicOption') }]}
             value={visibility} onValueChange={value => setVisibility(value ?? 'private')} />
         </div>
       </Dialog>
@@ -345,6 +350,7 @@ function FilesPanel() {
 }
 
 function LogsPanel() {
+  const { t } = useT();
   const [levels, setLevels] = useState<Record<string, boolean>>({
     trace: false, debug: false, info: true, warn: true, error: true,
   });
@@ -356,7 +362,7 @@ function LogsPanel() {
     .filter(entry => !query.trim() || `${entry.target} ${entry.text}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
-    <SettingsSection icon={HardDrive} title="日志" subtitle="本地运行日志查看器（示例流）">
+    <SettingsSection icon={HardDrive} title={t('sec.logs')} subtitle={t('logs.subtitle')}>
       <div className="sk-log-toolbar">
         {LEVELS.map(level => (
           <button key={level} type="button"
@@ -365,14 +371,14 @@ function LogsPanel() {
             {level.toUpperCase()}
           </button>
         ))}
-        <IconButton iconId="refresh-ccw" iconSize={14} label="刷新日志" actionId="logs.refresh"
+        <IconButton iconId="refresh-ccw" iconSize={14} label={t('logs.refresh')} actionId="logs.refresh"
           emphasis="quiet" density="compact" onActivate={() => setRevision(value => value + 1)} />
       </div>
-      <TextField className="sk-log-filter-input" aria-label="过滤日志" placeholder="过滤 target 或内容" clearable onClear={() => setQuery('')}
+      <TextField className="sk-log-filter-input" aria-label={t('logs.filterAria')} placeholder={t('logs.filterPlaceholder')} clearable onClear={() => setQuery('')}
         value={query} onValueChange={setQuery} leading={<Search size={14} />} />
       <div className="sk-log-list" data-revision={revision}>
         {visible.length === 0
-          ? <Empty description="没有匹配的日志" />
+          ? <Empty description={t('logs.empty')} />
           : visible.map(entry => (
             <div key={entry.id} className={`sk-log-line is-${entry.level}`}>
               <Tag tone={entry.level === 'error' ? 'danger' : entry.level === 'warn' ? 'warning' : 'neutral'}>

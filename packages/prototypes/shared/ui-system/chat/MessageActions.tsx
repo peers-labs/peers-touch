@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Button, Dialog, Empty, Menu, Popover, Tag } from '@peers-touch/ui';
 import type { ChatMessage, Conversation, DeliveryStatus } from './chat-data';
+import { usePrefs, useT } from '../prefs';
 
 // 24 reactions, same order as the desktop prototype.
 export const REACTION_EMOJIS = [
@@ -21,7 +22,6 @@ export const REACTION_EMOJIS = [
 ] as const;
 
 const MUTATION_WINDOW_MS = 4 * 60_000 + 30_000;
-const WINDOW_REASON = '仅发送后 4 分 30 秒内可用';
 
 export function withinMutationWindow(message: ChatMessage, now = Date.now()): boolean {
   return message.from === 'me' && !!message.ts && now - message.ts <= MUTATION_WINDOW_MS;
@@ -39,22 +39,23 @@ export function DeliveryMeta({ message, onRetry }: {
   message: ChatMessage;
   onRetry?: () => void;
 }) {
+  const { t } = useT();
   if (message.from !== 'me' || !message.status) return null;
   const status = message.status;
   if (status === 'failed') {
     return onRetry ? (
       <button type="button" className="sk-msg-retry" data-msg-retry
-        aria-label="发送失败，点击重试" title="发送失败，点击重试"
+        aria-label={t('status.failedAria')} title={t('status.failedAria')}
         onClick={event => { event.stopPropagation(); onRetry(); }}>
-        <RotateCcw size={11} /> 失败，点击重试
+        <RotateCcw size={11} /> {t('status.failedRetry')}
       </button>
-    ) : <span className="sk-msg-status is-failed"><RotateCcw size={11} /> 失败</span>;
+    ) : <span className="sk-msg-status is-failed"><RotateCcw size={11} /> {t('status.failed')}</span>;
   }
   const map: Record<Exclude<DeliveryStatus, 'failed'>, { node: React.ReactNode; label: string }> = {
-    sending: { node: <Loader2 size={11} className="sk-spin" />, label: '发送中' },
-    sent: { node: <Check size={11} />, label: '已发送' },
-    delivered: { node: <CheckCheck size={11} />, label: '已送达' },
-    read: { node: <CheckCheck size={11} />, label: '已读' },
+    sending: { node: <Loader2 size={11} className="sk-spin" />, label: t('status.sending') },
+    sent: { node: <Check size={11} />, label: t('status.sent') },
+    delivered: { node: <CheckCheck size={11} />, label: t('status.delivered') },
+    read: { node: <CheckCheck size={11} />, label: t('status.read') },
   };
   const item = map[status as Exclude<DeliveryStatus, 'failed'>];
   return (
@@ -67,6 +68,7 @@ export function DeliveryMeta({ message, onRetry }: {
 /* ── Reaction pill + picker ───────────────────────────── */
 
 function ReactionControl({ onReact }: { onReact: (emoji: string) => void }) {
+  const { t } = useT();
   return (
     <Popover placement="top"
       content={
@@ -74,13 +76,13 @@ function ReactionControl({ onReact }: { onReact: (emoji: string) => void }) {
           {REACTION_EMOJIS.map(emoji => (
             <button key={emoji} type="button" className="sk-react-emoji"
               data-react-emoji={emoji}
-              aria-label={`回应 ${emoji}`} onClick={() => onReact(emoji)}>
+              aria-label={t('action.reactEmoji', { emoji })} onClick={() => onReact(emoji)}>
               {emoji}
             </button>
           ))}
         </div>
       }>
-      <button type="button" className="sk-msg-action" data-action="react" aria-label="回应"><Smile size={14} /></button>
+      <button type="button" className="sk-msg-action" data-action="react" aria-label={t('action.react')}><Smile size={14} /></button>
     </Popover>
   );
 }
@@ -109,19 +111,20 @@ export function ForwardDialog({ open, message, conversations, onClose, onForward
   onClose: () => void;
   onForward: (conversationId: string, conversationName: string) => void;
 }) {
+  const { t } = useT();
   return (
-    <Dialog open={open} onDismiss={onClose} title="转发给…" width={420} closeLabel="关闭"
+    <Dialog open={open} onDismiss={onClose} title={t('forward.title')} width={420} closeLabel={t('common.close')}
       description={message ? `“${message.text.slice(0, 40)}”` : ''}
-      footer={<Button actionId="forward.cancel" emphasis="quiet" label="取消" onActivate={onClose} />}>
+      footer={<Button actionId="forward.cancel" emphasis="quiet" label={t('common.cancel')} onActivate={onClose} />}>
       <div className="sk-forward-list" data-forward-dialog>
-        {conversations.length === 0 && <Empty description="没有可转发的会话" />}
+        {conversations.length === 0 && <Empty description={t('forward.empty')} />}
         {conversations.map(c => (
           <button key={c.id} type="button" className="sk-forward-row"
             data-forward-to={c.id}
             onClick={() => onForward(c.id, c.name)}>
             <Forward size={13} />
             <strong>{c.name}</strong>
-            <Tag tone="neutral">{c.kind === 'group' ? '群' : '单聊'}</Tag>
+            <Tag tone="neutral">{c.kind === 'group' ? t('kind.group') : t('kind.direct')}</Tag>
           </button>
         ))}
       </div>
@@ -136,13 +139,14 @@ export function DeleteConfirm({ open, onCancel, onConfirm }: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useT();
   return (
-    <Dialog open={open} onDismiss={onCancel} title="删除这条消息？" width={380} closeLabel="取消"
-      description="删除后仅在你的本地视图移除（本地示例）。"
+    <Dialog open={open} onDismiss={onCancel} title={t('msg.deleteTitle')} width={380} closeLabel={t('common.cancel')}
+      description={t('msg.deleteBody')}
       footer={
         <>
-          <Button actionId="msg.delete-cancel" emphasis="quiet" label="取消" onActivate={onCancel} />
-          <Button actionId="msg.delete-confirm" emphasis="primary" tone="danger" label="删除"
+          <Button actionId="msg.delete-cancel" emphasis="quiet" label={t('common.cancel')} onActivate={onCancel} />
+          <Button actionId="msg.delete-confirm" emphasis="primary" tone="danger" label={t('common.delete')}
             onActivate={onConfirm} />
         </>
       }>
@@ -167,47 +171,54 @@ export function MessageActionBar({ message, canDelete, copied, onReact, onReply,
   onForwardOpen: () => void;
   onMenuAction: (action: MessageActionTarget) => void;
 }) {
+  const { t } = useT();
+  const { messageLayout } = usePrefs();
+  // Which bubble edge the bar hugs (the CSS owns the pixel placement):
+  // own messages sit right in "sides" and move left with the unified-left
+  // preference, taking the bar to their right edge.
+  const nearEdge: 'left' | 'right' =
+    message.from === 'me' && messageLayout !== 'left' ? 'left' : 'right';
   const inWindow = withinMutationWindow(message);
   const hasText = !!message.text.trim();
   const disabledReason = (kind: 'edit' | 'recall') =>
-    (message.from !== 'me' ? '仅可对自己发送的消息操作'
-      : !inWindow ? WINDOW_REASON
-        : kind === 'edit' && !hasText ? '仅可编辑文字消息' : null);
+    (message.from !== 'me' ? t('action.ownOnly')
+      : !inWindow ? t('action.windowReason')
+        : kind === 'edit' && !hasText ? t('action.textOnly') : null);
 
   const editReason = disabledReason('edit');
   const recallReason = disabledReason('recall');
 
   return (
-    <div className="sk-msg-actions-bar" data-message-actions>
+    <div className="sk-msg-actions-bar" data-message-actions data-bar-side={nearEdge}>
       <ReactionControl onReact={onReact} />
-      <button type="button" className="sk-msg-action" data-action="reply" aria-label="回复"
+      <button type="button" className="sk-msg-action" data-action="reply" aria-label={t('action.reply')}
         onClick={onReply}><CornerUpLeft size={14} /></button>
-      <button type="button" className="sk-msg-action" data-action="forward" aria-label="转发"
+      <button type="button" className="sk-msg-action" data-action="forward" aria-label={t('action.forward')}
         onClick={onForwardOpen}><Forward size={14} /></button>
       <Menu
         placement="top"
         onAction={id => onMenuAction(id as MessageActionTarget)}
         actions={[
-          { id: 'thread', label: '在话题中回复', leading: <MessageCircle size={14} /> },
-          { id: 'pin', label: message.pinned ? '取消置顶' : '置顶消息', leading: <Pin size={14} /> },
-          { id: 'copy', label: '复制文本', leading: <Copy size={14} />,
-            availability: hasText ? undefined : { kind: 'disabled', reason: '该消息没有文本' } },
-          { id: 'edit', label: '编辑', leading: <Pencil size={14} />,
+          { id: 'thread', label: t('action.thread'), leading: <MessageCircle size={14} /> },
+          { id: 'pin', label: message.pinned ? t('session.unpin') : t('action.pinMsg'), leading: <Pin size={14} /> },
+          { id: 'copy', label: t('action.copyText'), leading: <Copy size={14} />,
+            availability: hasText ? undefined : { kind: 'disabled', reason: t('action.noText') } },
+          { id: 'edit', label: t('action.edit'), leading: <Pencil size={14} />,
             availability: editReason ? { kind: 'disabled', reason: editReason } : undefined },
-          { id: 'recall', label: '撤回', leading: <Undo2 size={14} />,
+          { id: 'recall', label: t('action.recall'), leading: <Undo2 size={14} />,
             availability: recallReason ? { kind: 'disabled', reason: recallReason } : undefined },
           ...(canDelete ? [
             { id: 'sep-delete', kind: 'separator' as const, label: '' },
-            { id: 'delete', label: '删除', leading: <Trash2 size={14} /> },
+            { id: 'delete', label: t('action.delete'), leading: <Trash2 size={14} /> },
           ] : []),
         ]}
       >
         <button type="button" className="sk-msg-action" data-action="more"
-          aria-label="更多消息操作" aria-haspopup="menu">
+          aria-label={t('action.more')} aria-haspopup="menu">
           <MoreHorizontal size={14} />
         </button>
       </Menu>
-      {copied && <span className="sk-copy-flash" data-copied-flash>已复制</span>}
+      {copied && <span className="sk-copy-flash" data-copied-flash>{t('action.copiedFlash')}</span>}
     </div>
   );
 }
