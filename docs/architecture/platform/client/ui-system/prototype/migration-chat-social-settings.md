@@ -76,7 +76,8 @@
       components/settings-account-security-help.md；门禁 40/40）
 - [x] 8 数据/存储设置（用量/留存/清缓存/会话表批量删除进度/文件上传/日志分级；
       合同 components/settings-data.md；门禁 45/45）
-- [ ] 9 工具/通道/小程序（Select/TextField/Tag/Accordion；Bots 继续挂起）
+- [x] 9 工具/通道/小程序（cron/命令面板/工具表/飞书开通向导/小程序钻取；Bots 挂起；
+      合同 components/settings-tools-channels-applets.md；门禁 53/53）
 
 ## 5. 全功能点审计与执行计划（2026-10-31 临时计划）
 
@@ -129,11 +130,11 @@ Social / Moments：
       @username 与 PTID 可复制、资料编辑、标签、链接增删、设备关联状态机（增量 7）
 - [x] ✅ S3 安全（RecoverySettings）：24 词密钥生成/复制、创建备份门禁、
       恢复对话框 24 词门槛（增量 7）
-- [ ] ✗ S4 工具：工具表（名称/分类/需审批标签/错误 Alert）、定时任务（CronJobsSettings）、
-      命令面板设置（CommandPaletteSettings）
-- [ ] ✗ S5 通道：飞书通道管理与开通面板（LarkChannels/ChannelManagement/Provisioning）；
-      Bots 归属待人工决策
-- [ ] ✗ S6 小程序：说明 + 小程序行 + 带设置面板的二级钻取
+- [x] ✅ S4 工具：工具表（分类/审批标签）、定时任务（新建校验/启停/运行/删除）、
+      命令面板（过滤 Dialog；增量 9）
+- [x] ✅ S5 通道：飞书开通向导（域名→授权→开通→入列）、已连接卡投递/入站开关、
+      移除确认；企业路由/健康配置 UNPROVEN；Bots 显式挂起（增量 9）
+- [x] ✅ S6 小程序：列表 + 可配置项二级钻取开关面板 + 只读项不可点（增量 9）
 - [x] ✅ S7 数据：聊天留存、清缓存两段确认、会话存储表（多选/批量 Progress/单项重试）、
       文件管理（上传 Dialog/复制/下载/删除）、日志分级过滤（增量 8）
 - [x] ✅ S8 帮助：关于卡 + 内置搜索功能折叠表（4 项，点击真实跳转；增量 7）
@@ -143,7 +144,7 @@ Social / Moments：
 - [x] 6 SettingsFrame + SettingsRow 原语（S0 + 通用分区语言/快捷键；门禁 35/35）
 - [x] 7 通用/账号/安全/帮助（S1 在 6 落语言+快捷键；S2/S3/S8 在 7；门禁 40/40）
 - [x] 8 数据：存储/文件/日志（S7；门禁 45/45）
-- [ ] 9 工具/通道/小程序（S4/S5/S6；bots 继续挂起）
+- [x] 9 工具/通道/小程序（S4/S5/S6；bots 显式挂起；门禁 53/53）
 - [ ] 10 聊天目录层：子导航、联系人+好友请求+详情、建群、群会话、置顶/免打扰、
       联合搜索、错误重试
 - [ ] 11 对话框架：头部通话入口与详情/搜索、ChatDetailPanel、Thread 面板、服务消息

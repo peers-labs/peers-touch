@@ -567,7 +567,7 @@
       ],
       "oracles": [
         { "id": "applets-no-nav", "type": "missing", "target": ".sk-settings-nav" },
-        { "id": "applets-pending", "type": "textContains", "target": ".sk-settings-scroll", "contains": "增量 9" }
+        { "id": "applets-built", "type": "count", "target": ".sk-applet-row", "equals": 3 }
       ],
       "finalizers": []
     },
@@ -777,6 +777,126 @@
       ],
       "oracles": [
         { "id": "trace-on", "type": "attr", "target": ".sk-log-toolbar .sk-log-filter.is-trace", "attr": "aria-pressed", "equals": "true" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-cron",
+      "title": "增量9 定时任务：3 任务/计数标签；新建对话框 cron 校验；暂停任务的运行键禁用；删除真实移除",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(2)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(1)" },
+        { "op": "click", "target": "[data-action-id='cron.create-open']" },
+        { "op": "type", "scope": "global", "target": ".sk-cron-form input:nth-child(1)", "value": "晚间提醒" },
+        { "op": "clickGlobal", "target": "[data-action-id='cron.create-cancel']" }
+      ],
+      "oracles": [
+        { "id": "three-jobs", "type": "count", "target": ".sk-cron-row", "equals": 3 },
+        { "id": "paused-run-disabled", "type": "attr", "target": "[data-action-id='cron.run-cron-3']", "attr": "aria-disabled", "equals": "true" },
+        { "id": "craft-clean", "type": "craftBattery" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-cron-delete",
+      "title": "定时任务删除：点击删除后列表 3→2",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(2)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(1)" },
+        { "op": "click", "target": "[data-action-id='cron.delete-cron-3']" }
+      ],
+      "oracles": [
+        { "id": "two-after-delete", "type": "count", "target": ".sk-cron-row", "equals": 2 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-cron-create",
+      "title": "新建定时任务：合法 5 段表达式才能提交，提交后列表 3→4",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(2)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(1)" },
+        { "op": "click", "target": "[data-action-id='cron.create-open']" },
+        { "op": "type", "scope": "global", "target": ".sk-cron-form input:nth-child(1)", "value": "晨间天气" },
+        { "op": "type", "scope": "global", "target": "input[data-cron-expr]", "value": "30 7 * * *" },
+        { "op": "clickGlobal", "target": "[data-action-id='cron.create-submit']" }
+      ],
+      "oracles": [
+        { "id": "four-jobs", "type": "count", "target": ".sk-cron-row", "equals": 4 },
+        { "id": "new-job", "type": "textContains", "target": ".sk-cron-list", "contains": "晨间天气" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-palette",
+      "title": "命令面板：打开→过滤→选中关闭，结果随输入收敛",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(2)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(2)" },
+        { "op": "click", "target": "[data-action-id='command-palette.open']" },
+        { "op": "type", "scope": "global", "target": "input[data-palette-query]", "value": "设置" }
+      ],
+      "oracles": [
+        { "id": "filtered-one", "type": "count", "scope": "global", "target": ".sk-palette-item", "equals": 1 }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": "[data-command-id='open-settings']" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-tools",
+      "title": "工具表：5 个工具、审批/放行标签、重新扫描 pending",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(2)" },
+        { "op": "click", "target": ".sk-settings-nav-item:nth-child(3)" }
+      ],
+      "oracles": [
+        { "id": "five-tools", "type": "count", "target": ".sk-tools-row:not(.is-head)", "equals": 5 },
+        { "id": "approval-tags", "type": "textContains", "target": ".sk-tools-table", "contains": "需要审批" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-channels",
+      "title": "通道：1 个已连接通道与 Bots 挂起说明；开通向导 3 步后变 2 通道",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(3)" },
+        { "op": "click", "target": "[data-action-id='channel.add-open']" },
+        { "op": "type", "scope": "global", "target": "input[data-channel-domain]", "value": "hezuo.feishu.cn" },
+        { "op": "clickGlobal", "target": "[data-action-id='channel.authorize']" },
+        { "op": "wait", "ms": 2200 }
+      ],
+      "oracles": [
+        { "id": "bots-held", "type": "textContains", "target": ".sk-settings-scroll", "contains": "暂不支持 Bots" },
+        { "id": "two-after-wizard", "type": "count", "target": ".sk-channel-card", "equals": 2 },
+        { "id": "new-channel", "type": "textContains", "target": ".sk-channel-list", "contains": "hezuo" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.settings-applets",
+      "title": "小程序：3 个小程序，可配置项钻取到开关面板并可返回；只读项不可点",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
+        { "op": "click", "target": ".sk-settings-group:nth-child(4)" },
+        { "op": "click", "target": "[data-applet-id='ap-shelf']" }
+      ],
+      "oracles": [
+        { "id": "drilled-in", "type": "exists", "target": "[data-action-id='applets.back']" },
+        { "id": "two-switches", "type": "count", "target": ".pt-switch", "equals": 2 }
       ],
       "finalizers": []
     }
