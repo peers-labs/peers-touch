@@ -39,8 +39,14 @@ export interface SettingsNavState {
 export interface SessionUser {
   name: string;
   email: string;
-  /** Remote avatar URL. Local caching is handled by UserSquareAvatar. */
+  /** Canonical avatar identity (Station path / external URL / data URI). */
   avatar?: string;
+  /** Materialized local avatar file used as the decode fast lane. */
+  avatarLocalPath?: string;
+  /** Typed native avatar state from the latest authoritative sync. */
+  avatarState?: 'ready' | 'absent' | 'failed';
+  /** Canonical profile revision driving same-URL content swaps. */
+  profileRevision?: number;
   /** Account identity ID (e.g. "password:abc" or "github:123"). Present for restorable accounts. */
   accountId?: string;
   /** Whether this account has a PIN set. */
@@ -61,6 +67,8 @@ export interface AppLifecycle {
   dataReady: boolean;
   completeLogin: () => Promise<void>;
   loginWithPassword: (account: string, password: string) => Promise<void>;
+  /** Production login-card password edge: close through the identity runtime. */
+  freshPasswordAuthenticated: () => Promise<void>;
   loginWithOAuthBridge: () => Promise<void>;
   switchAccount: (accountId: string) => Promise<void>;
   unlockWithPin: (accountId: string, pin: string) => Promise<void>;

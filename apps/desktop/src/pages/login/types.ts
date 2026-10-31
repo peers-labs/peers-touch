@@ -8,6 +8,7 @@ export interface SessionUser {
   name: string;
   email?: string;
   avatar?: string;
+  avatarLocalPath?: string;
   accountId?: string;
   hasPin?: boolean;
   hasSession?: boolean;
@@ -19,6 +20,7 @@ export function accountIdentityToSessionUser(account: AccountIdentity): SessionU
     name: account.name || account.provider_user_id || 'User',
     email: account.email || '',
     avatar: account.avatar_url || undefined,
+    avatarLocalPath: account.avatar_local_path || undefined,
     accountId: account.id,
     hasPin: account.has_pin,
     hasSession: account.has_session,

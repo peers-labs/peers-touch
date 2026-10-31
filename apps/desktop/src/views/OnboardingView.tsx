@@ -39,6 +39,7 @@ export function OnboardingView({ lifecycle }: OnboardingViewProps) {
           <LoginPage
             onComplete={lifecycle.completeLogin}
             onLoginWithOAuthBridge={lifecycle.loginWithOAuthBridge}
+            onFreshPasswordAuthenticated={lifecycle.freshPasswordAuthenticated}
             onSwitchAccount={lifecycle.switchAccount}
             onUnlockWithPin={lifecycle.unlockWithPin}
             restoredUser={lifecycle.restoredUser}

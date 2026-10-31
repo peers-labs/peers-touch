@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -127,6 +128,17 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 
 	s.momentSvc = application.NewMomentService(rds, repos, resolver, groups, media, s.reactionSvc, momentEvents)
 	s.commentSvc = application.NewCommentService(repos, s.momentSvc, momentEvents)
+	// Public @-mention delivery re-adjudicates the parent Moment for
+	// each recipient through the owner read port at notification time.
+	commentMentionNotifier := application.NewCommentMentionNotifier(
+		func(ctx context.Context, postID uint64, viewerPTID string) bool {
+			post, readErr := s.momentSvc.GetMoment(
+				ctx, strconv.FormatUint(postID, 10), viewerPTID,
+			)
+			return readErr == nil && post != nil && !post.GetIsDeleted()
+		},
+	)
+	s.commentSvc.SetMentionNotifier(commentMentionNotifier)
 	s.circleSvc = application.NewCircleService(repos)
 	s.timelineSvc = application.NewTimelineService(repos, s.momentSvc, resolver, groups)
 	s.relationshipSvc = application.NewRelationshipService(repos.Follows, repos.Blocks, repos.Moderation)
@@ -201,6 +213,10 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize Social private content service: %w", err)
 	}
+	// Private @-mention delivery trusts the signed mention-routing
+	// facts already adjudicated against the audience snapshot at
+	// prepare time; only static resource IDs are persisted.
+	s.privateContentSvc.ConfigureMentionNotifications(commentMentionNotifier)
 	if err := s.privateContentSvc.ConfigureFederatedPrivateDelivery(
 		federationRuntime.LocalStationPeerID(),
 		privateFederationMembership,

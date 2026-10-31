@@ -135,15 +135,35 @@ return [...document.querySelectorAll('.pt-search-row')].map(row => row.dataset.r
         self.assert_condition("return_target_present", resource_id in rows)
         # Real keyboard selection also establishes a non-default list position
         # where the target requires it; no store or scroll mutation substitutes.
-        for _ in rows:
-            self.press(Keys.ARROW_UP)
-        for _ in range(rows.index(resource_id)):
-            self.press(Keys.ARROW_DOWN)
-        self.wait_js(
-            "document.querySelector('.pt-search-row[aria-selected=\"true\"]')"
-            f"?.dataset.resourceId === {json.dumps(resource_id)}",
-            "selected original resource before Open",
-        )
+        # Arrow keys must go through the semantic keyboard channel: element
+        # send_keys inserts the WebDriver PUA key codes as literal characters
+        # into the WKWebView input, corrupting the query and emptying results.
+        # ArrowUp for every row guarantees selection starts before the list
+        # (null focus); reaching index i from there needs i + 1 ArrowDowns.
+        target_index = rows.index(resource_id)
+        roving_keys = [Keys.ARROW_UP] * len(rows) + [Keys.ARROW_DOWN] * (target_index + 1)
+        self.receiver.semantic_key_sequence(self.field(), *roving_keys)
+        try:
+            self.wait_js(
+                "document.querySelector('.pt-search-row[aria-selected=\"true\"]')"
+                f"?.dataset.resourceId === {json.dumps(resource_id)}",
+                "selected original resource before Open",
+            )
+        except Exception:
+            self.report.runtime["search"]["rovingFailure"] = self.receiver.execute_script("""
+const active = document.activeElement;
+return {
+  activeTag: active?.tagName || '',
+  activeId: active?.id || '',
+  activeValue: active?.value || '',
+  inputValue: document.querySelector('.pt-search-field input')?.value || '',
+  rows: [...document.querySelectorAll('.pt-search-row')].map(row => ({
+    resourceId: row.dataset.resourceId,
+    ariaSelected: row.getAttribute('aria-selected'),
+  })),
+};
+""")
+            raise
         return self.receiver.execute_script(RETURN_CONTEXT_JS)
 
     @staticmethod
@@ -330,14 +350,17 @@ return [...document.querySelectorAll('.pt-search-row')].map(row => row.dataset.r
                 self.public_text, self.private_text,
                 self.public_comment_text, self.private_comment_text,
             )))
+        self.receiver.find_element(".pt-search-info").click()
+        self.wait_js("document.querySelector('.pt-search-popover')", "Search coverage popover")
         self.visible("social_source_coverage", lambda: all(
-            any(copy in self.receiver.find_element(".pt-search-footer").text for copy in copies)
+            any(copy in self.receiver.find_element("body").text for copy in copies)
             for copies in (
                 ("Private posts and comments acquired on this device", "本机已取得的私密动态与评论"),
                 ("Readable public posts and comments on this Station", "当前 Station 可读的公开动态与评论",
                  "Public search on this Station is incomplete; more content remains", "当前 Station 公开检索尚不完整，还有内容未检索"),
             )
         ))
+        self.receiver.find_element(".pt-search-info").click()
         self.select("messages")
         self.visible("messages_filter", lambda: self.query + " 原始正文" in self.rows()
                      and self.public_text not in self.rows() and self.private_text not in self.rows())

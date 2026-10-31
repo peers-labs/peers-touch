@@ -1,5 +1,6 @@
 // Local, typed Search transport. Scope and authorization stay in the native owner.
-import { create, toBinary } from '@bufbuild/protobuf';
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   CancelRequestSchema, CancelResponseSchema, ResolveRequestSchema,
   ResolvedResourceSchema, SearchIntent, SearchKind, SearchReadStateSchema,
@@ -8,6 +9,63 @@ import {
 } from '../gen/proto/domain/search/search_pb';
 import { invokeRustProto } from './desktop_api';
 import { useSessionStore } from '../store/session';
+
+/// Request-scoped native channel for progressive source frames of one FIND.
+export const SEARCH_FRAME_EVENT = 'search:frame';
+
+export interface SearchFrameEnvelope {
+  requestId: string;
+  frameKind: 'progressive' | 'final';
+  sourceId: string;
+  frameBytesB64: string;
+}
+
+export interface DecodedSearchFrame {
+  requestId: string;
+  sourceId: string;
+  response: SearchResponse;
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+/** Parse and validate one internal native envelope. Stale or malformed events
+ * never reach the runtime: progressive delivery is advisory. */
+export function decodeSearchFrame(payload: unknown): DecodedSearchFrame | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const envelope = payload as Partial<SearchFrameEnvelope>;
+  if (envelope.frameKind !== 'progressive'
+    || typeof envelope.requestId !== 'string' || !envelope.requestId
+    || typeof envelope.sourceId !== 'string' || !envelope.sourceId
+    || typeof envelope.frameBytesB64 !== 'string' || !envelope.frameBytesB64) {
+    return null;
+  }
+  try {
+    return {
+      requestId: envelope.requestId,
+      sourceId: envelope.sourceId,
+      response: fromBinary(SearchResponseSchema, base64ToBytes(envelope.frameBytesB64)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Subscribe to native progressive frames. The caller owns unlisten timing. */
+export async function subscribeSearchFrames(
+  handler: (frame: DecodedSearchFrame) => void,
+): Promise<UnlistenFn> {
+  return listen<SearchFrameEnvelope>(SEARCH_FRAME_EVENT, event => {
+    const frame = decodeSearchFrame(event.payload);
+    if (frame) handler(frame);
+  });
+}
 
 export const searchService = {
   suggest(query: string, requestId: string, kinds: SearchKind[] = [], attachmentNamesOnly = false) {

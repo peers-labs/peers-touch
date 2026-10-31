@@ -17,6 +17,7 @@ pub mod contributor;
 pub mod cursor;
 pub mod model;
 pub mod ports;
+pub mod progress;
 pub mod projected;
 pub mod query;
 pub mod ranking;
@@ -31,6 +32,7 @@ pub use model::{ResourceRef, ResultKind, ScoredDocument, SourceCoverage, SourceS
 pub use ports::{
     CancelToken, SearchContributor, SearchError, SearchExecutionContext, SourceFuture,
 };
+pub use progress::{ProgressFrame, ProgressObserver};
 pub use query::{build_index_text, build_match_expression, MAX_QUERY_CHARS};
 pub use ranking::reciprocal_rank_fusion;
 pub use tokenize::tokenize;

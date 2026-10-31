@@ -1,0 +1,54 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "desktop-interaction.proposed-reuse",
+  "module": "desktop-interaction-proposal",
+  "viewpoint": "reuse-topology",
+  "layout": "composition",
+  "output": "owners.svg",
+  "title": "Desktop interaction · existing owner reuse",
+  "canvas": {"width": 1400, "height": 810},
+  "edgeMeaning": "Arrows: consume existing capability",
+  "scene": {
+    "rows": [
+      {
+        "id": "renderers", "title": "PURE RENDERERS", "y": 110, "height": 150, "tone": "neutral",
+        "modules": [
+          {"id": "search-ui", "role": "module", "x": 75, "y": 165, "width": 310, "height": 70, "title": "Search overlay", "caption": "read · select · copy · navigate", "tone": "neutral"},
+          {"id": "social-ui", "role": "module", "x": 445, "y": 165, "width": 310, "height": 70, "title": "Moment / thread / composer", "caption": "media · reactions · actor mentions", "tone": "neutral"},
+          {"id": "identity-ui", "role": "module", "x": 815, "y": 165, "width": 310, "height": 70, "title": "Shell / SquareAvatar", "caption": "qualified identity presentation", "tone": "neutral"}
+        ]
+      },
+      {
+        "id": "owners", "title": "RUNTIME / PROJECTION OWNERS", "y": 330, "height": 150, "tone": "primary",
+        "modules": [
+          {"id": "search-owner", "role": "module", "x": 75, "y": 385, "width": 310, "height": 70, "title": "Search Runtime", "caption": "TanStack · native Search Core", "tone": "primary"},
+          {"id": "social-owner", "role": "module", "x": 445, "y": 385, "width": 310, "height": 70, "title": "Moments Runtime / Store", "caption": "scoped commands · stable merge", "tone": "primary"},
+          {"id": "identity-owner", "role": "module", "x": 815, "y": 385, "width": 310, "height": 70, "title": "Identity / AvatarAssets", "caption": "profile · entry · asset decode", "tone": "primary"}
+        ]
+      },
+      {
+        "id": "original", "title": "ORIGINAL NATIVE OWNERS", "y": 550, "height": 170, "tone": "state",
+        "modules": [
+          {"id": "search-original", "role": "module", "x": 75, "y": 610, "width": 310, "height": 70, "title": "Messaging / Social readers", "caption": "current read authority · FTS / PG", "tone": "state"},
+          {"id": "social-original", "role": "module", "x": 445, "y": 610, "width": 310, "height": 70, "title": "Social / OSS / Crypto", "caption": "public images · private grants", "tone": "state"},
+          {"id": "identity-original", "role": "module", "x": 815, "y": 610, "width": 310, "height": 70, "title": "Auth / Profile / Cache", "caption": "session · canonical profile · files", "tone": "state"}
+        ]
+      }
+    ],
+    "rail": {
+      "id": "contracts", "title": "MODEL", "x": 1190, "y": 110, "width": 166, "height": 610, "tone": "external",
+      "items": [
+        {"id": "proto", "role": "rail-item", "x": 1204, "y": 385, "width": 138, "height": 70, "title": "Generated", "caption": "typed contracts", "tone": "external"}
+      ]
+    },
+    "relations": [
+      {"from": "search-ui", "to": "search-owner", "fromAnchor": "bottom", "toAnchor": "top", "label": null, "style": "primary", "via": []},
+      {"from": "social-ui", "to": "social-owner", "fromAnchor": "bottom", "toAnchor": "top", "label": null, "style": "primary", "via": []},
+      {"from": "identity-ui", "to": "identity-owner", "fromAnchor": "bottom", "toAnchor": "top", "label": null, "style": "primary", "via": []},
+      {"from": "search-owner", "to": "search-original", "fromAnchor": "bottom", "toAnchor": "top", "label": null, "style": "primary", "via": []},
+      {"from": "social-owner", "to": "social-original", "fromAnchor": "bottom", "toAnchor": "top", "label": null, "style": "primary", "via": []},
+      {"from": "identity-owner", "to": "identity-original", "fromAnchor": "bottom", "toAnchor": "top", "label": null, "style": "primary", "via": []}
+    ]
+  }
+}

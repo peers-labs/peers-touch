@@ -39,6 +39,7 @@ import {
   type Audience,
 } from '../gen/proto/domain/social/post_pb';
 import {
+  CommentSchema,
   CreateCommentResponseSchema,
 } from '../gen/proto/domain/social/comment_pb';
 import {
@@ -198,13 +199,17 @@ describe('Desktop Search no-store page continuity', () => {
     });
     let pages = [['first'], ['later-a', 'later-b'], ['last']];
     let traversal = 0;
+    let readRevision = '1';
     const continuations = new Map<string, number>();
-    const source = {
-      sourceId: 'social-private', bindingId: 'private', readScope: 'alice',
-      sourceRevision: '1', policyRevision: '1', state: SourceState.READY, noStore: true,
+    const sourcesView = () => {
+      const source = {
+        sourceId: 'social-private', bindingId: 'private', readScope: 'alice',
+        sourceRevision: readRevision, policyRevision: readRevision,
+        state: SourceState.READY, noStore: true,
+      };
+      const publicSource = { ...source, sourceId: 'social-public', bindingId: 'public' };
+      return [source, publicSource];
     };
-    const publicSource = { ...source, sourceId: 'social-public', bindingId: 'public' };
-    const sources = [source, publicSource];
     const submit = vi.fn(async (input: ReturnType<typeof fromBinary<typeof SubmitRequestSchema>>) => {
       let ordinal = 0;
       if (input.cursor) {
@@ -215,25 +220,26 @@ describe('Desktop Search no-store page continuity', () => {
       } else traversal++;
       const nextCursor = ordinal + 1 < pages.length ? `${traversal}:${ordinal + 1}` : '';
       if (nextCursor) continuations.set(nextCursor, ordinal + 1);
+      const sources = sourcesView();
       return bytesOk(SearchResponseSchema, {
         partition: 'alice', sources,
         expiresAtUnixMs: BigInt(Date.now() + 60_000),
         coverage: sources.map(item => ({ sourceId: item.sourceId, state: SourceState.READY })),
         nextCursor, hasMore: !!nextCursor,
         items: (pages[ordinal] ?? []).map(id => ({
-          sourceId: id.startsWith('public-') ? publicSource.sourceId : source.sourceId, title: id,
+          sourceId: id.startsWith('public-') ? sources[1].sourceId : sources[0].sourceId, title: id,
           resource: {
             authorityNamespace: 'social-private:alice', kind: 'social-comment', id,
             contentRevision: String(traversal), anchor: { kind: 'comment', id },
           },
-          readValidity: { readScope: 'alice', policyRevision: '1' },
+          readValidity: { readScope: 'alice', policyRevision: readRevision },
         })),
       });
     });
     invokeMock.mockImplementation(async (cmd, args) => {
       if (cmd === 'frontend_log' || cmd === 'search_cancel') return undefined;
       if (cmd === 'search_read_state') {
-        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources });
+        return bytesOk(SearchReadStateSchema, { partition: 'alice', sources: sourcesView() });
       }
       if (cmd === 'search_submit') {
         return submit(fromBinary(SubmitRequestSchema, Uint8Array.from(
@@ -242,7 +248,14 @@ describe('Desktop Search no-store page continuity', () => {
       }
       throw new Error(`unexpected invoke(${cmd})`);
     });
-    return { submit, changePages: (next: string[][]) => { pages = next; } };
+    return {
+      submit,
+      changePages: (next: string[][]) => { pages = next; },
+      // Simulate an owner revision change event: read-state and subsequent
+      // FIND responses advance together, which is the new lease/revision
+      // reason for reconciliation.
+      changeReadRevision: () => { readRevision = String(Number(readRevision) + 1); },
+    };
   }
 
   const resultIds = () => useSearchStore.getState().response?.items.map(item => item.resource?.id);
@@ -255,7 +268,7 @@ describe('Desktop Search no-store page continuity', () => {
     await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('ready'));
   }
 
-  it('freshly traverses to the displayed ordinal without replaying a consumed cursor', async () => {
+  it('does not replay a fresh no-store frame when lease and revisions are current', async () => {
     const { submit } = searchFixture();
     const removals = vi.spyOn(QueryClient.prototype, 'removeQueries');
     await runSearchQuery('en');
@@ -268,8 +281,10 @@ describe('Desktop Search no-store page continuity', () => {
     await reconcileSearchQuery('en');
     await settle();
     expect(resultIds()).toEqual(['later-a', 'later-b']);
+    // Lease/revision-driven reconciliation sends no refresh and never
+    // replays the consumed continuation cursor.
     expect(submit.mock.calls.map(([input]) => [input.cursor, input.refresh]))
-      .toEqual([['', false], ['1:1', false], ['', true], ['2:1', false]]);
+      .toEqual([['', false], ['1:1', false]]);
     expect(useSearchStore.getState()).toMatchObject({
       selectedKey, scrollTop: 93,
     });
@@ -446,13 +461,15 @@ describe('Desktop Search no-store page continuity', () => {
   });
 
   it('adjusts changed snapshot rows and ResourceKey selection in one publication', async () => {
-    const { changePages } = searchFixture();
+    const { changePages, changeReadRevision } = searchFixture();
     await runSearchQuery('en');
     await settle();
     await runSearchQuery('en', false, true);
     await settle();
     const selectedKey = selectResult(1);
     changePages([['new-first'], ['later-b', 'new-later']]);
+    // An owner revision event is what now licenses a reconcile re-read.
+    changeReadRevision();
     const publications: Array<{ ids: string[]; selected: string | null; scroll: number }> = [];
     const remove = useSearchStore.subscribe(state => {
       if (state.response?.items[0]?.resource?.id === 'later-b') publications.push({
@@ -470,12 +487,13 @@ describe('Desktop Search no-store page continuity', () => {
   });
 
   it('fails a shortened traversal without publishing its first page or losing the addressed ordinal', async () => {
-    const { changePages } = searchFixture();
+    const { changePages, changeReadRevision } = searchFixture();
     await runSearchQuery('en');
     await settle();
     await runSearchQuery('en', false, true);
     await settle();
     changePages([['new-first']]);
+    changeReadRevision();
     await reconcileSearchQuery('en');
     await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('error'));
     expect(useSearchStore.getState()).toMatchObject({
@@ -484,7 +502,7 @@ describe('Desktop Search no-store page continuity', () => {
   });
 
   it('bounds a stalled fresh traversal and fences its late completion', async () => {
-    const { submit } = searchFixture();
+    const { submit, changeReadRevision } = searchFixture();
     await runSearchQuery('en');
     await settle();
     await runSearchQuery('en', false, true);
@@ -493,6 +511,8 @@ describe('Desktop Search no-store page continuity', () => {
     submit.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }) as never);
     vi.useFakeTimers();
     try {
+      // Revision change is the event that licenses the reconcile re-read.
+      changeReadRevision();
       await reconcileSearchQuery('en');
       await vi.advanceTimersByTimeAsync(5_001);
       expect(useSearchStore.getState()).toMatchObject({
@@ -513,7 +533,7 @@ describe('Desktop Search no-store page continuity', () => {
     useSearchStore.setState({
       traversal: { ...useSearchStore.getState().traversal!, ordinal: 32 },
     });
-    await reconcileSearchQuery('en');
+    await runSearchQuery('en');
     expect(submit).toHaveBeenCalledTimes(1);
     expect(useSearchStore.getState()).toMatchObject({
       status: 'error', errorKey: 'search.error.cursorExpired', traversal: { ordinal: 32 },
@@ -1521,6 +1541,83 @@ describe('moments store: createPost / deletePost', () => {
     expect(useMomentsStore.getState().userFeeds['a'].postIds).toEqual(['p3']);
     expect(useMomentsStore.getState().postsById['p2']).toBeUndefined();
     expect(useMomentsStore.getState().feedExplanations['p2']).toBeUndefined();
+  });
+
+  it('evictPost removes the entity from every window without issuing a write command', () => {
+    const makePost = (id: string) => create(PostSchema, {
+      id,
+      authorPtid: 'a',
+      type: PostType.TEXT,
+    });
+    useMomentsStore.setState({
+      postsById: {
+        tail: makePost('tail'),
+        gone: makePost('gone'),
+        keep: makePost('keep'),
+      },
+      reactions: {
+        gone: [create(ReactionSummarySchema, { kind: ReactionKind.REACTION_LIKE, count: 2n })],
+      },
+      feedExplanations: { gone: { objectId: 'gone' } as never },
+      comments: {
+        gone: [create(CommentSchema, { id: 'c1', postId: 'gone' })],
+      },
+      commentsCursor: { gone: 'cursor' },
+      commentsHasMore: { gone: true },
+      commentsLoading: {},
+      feeds: {
+        home: {
+          postIds: ['gone', 'keep', 'tail'],
+          nextCursor: '',
+          hasMore: false,
+          loading: false,
+          sort: 'recent',
+        },
+        explore: {
+          postIds: ['gone', 'keep'],
+          nextCursor: '',
+          hasMore: false,
+          loading: false,
+          sort: 'recent',
+        },
+      },
+      userFeeds: {
+        a: {
+          postIds: ['gone'],
+          nextCursor: '',
+          hasMore: false,
+          loading: false,
+        },
+      },
+      circleFeeds: {
+        c1: {
+          postIds: ['gone'],
+          nextCursor: '',
+          hasMore: false,
+          loading: false,
+        },
+      },
+    });
+    const callsBefore = invokeMock.mock.calls.length;
+
+    // Includes an already-paginated tail id that later first-window
+    // reconciles would preserve: deletion must still remove it.
+    useMomentsStore.getState().evictPost('gone');
+
+    const state = useMomentsStore.getState();
+    expect(state.postsById.gone).toBeUndefined();
+    expect(state.postsById.tail).toBeDefined();
+    expect(state.reactions.gone).toBeUndefined();
+    expect(state.feedExplanations.gone).toBeUndefined();
+    expect(state.comments.gone).toBeUndefined();
+    expect(state.commentsCursor.gone).toBeUndefined();
+    expect(state.commentsHasMore.gone).toBeUndefined();
+    expect(state.feeds.home.postIds).toEqual(['keep', 'tail']);
+    expect(state.feeds.explore.postIds).toEqual(['keep']);
+    expect(state.userFeeds.a.postIds).toEqual([]);
+    expect(state.circleFeeds.c1.postIds).toEqual([]);
+    // Pure local projection: no Station write command is issued.
+    expect(invokeMock.mock.calls.length).toBe(callsBefore);
   });
 });
 

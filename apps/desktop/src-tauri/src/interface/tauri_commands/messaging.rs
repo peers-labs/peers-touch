@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
-use tauri::{Manager, State, Window};
+use tauri::{State, Window};
 
 #[derive(Debug, Deserialize)]
 pub struct MessagingLocalAttachmentInput {
@@ -1069,12 +1069,12 @@ fn attachment_projection_json(
     })
 }
 
+// Preview grants share the exact-file asset scope helper so messaging,
+// Social, Profile, and generic OSS pickers cannot grant a parent
+// directory or sibling files.
 fn allow_attachment_preview(window: &Window, path: &Path) -> Result<(), String> {
-    let scope = window.app_handle().asset_protocol_scope();
-    scope
-        .allow_file(path)
-        .map_err(|error| format!("allow messaging attachment preview: {error}"))?;
-    Ok(())
+    super::asset_preview::allow_selected_file_preview(window, path)
+        .map_err(|error| format!("allow messaging attachment preview: {error}"))
 }
 
 #[cfg(target_os = "macos")]

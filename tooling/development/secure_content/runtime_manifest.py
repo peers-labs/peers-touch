@@ -57,11 +57,13 @@ CANONICAL_PROFILES = {
     "four": "station-four",
     "chat-native-disposable": "station-four",
     "fiveArm": "station-five-arm",
+    "corpdebug": "corpdebug-station",
 }
 CANONICAL_PRIVATE_SCHEMA_SCOPES = {
     "four": "station-four-social-private",
     "chat-native-disposable": "chat-native-disposable-social-private",
     "fiveArm": "station-five-arm-social-private",
+    "corpdebug": "corpdebug-station-social-private",
 }
 RESET_INTENTS = frozenset({"SCHEMA_ACTIVATION", "FINAL_CUT"})
 RESET_JOURNAL_STATES = (

@@ -85,8 +85,12 @@ type Comment struct {
 	IsLiked          bool                   `protobuf:"varint,12,opt,name=is_liked,json=isLiked,proto3" json:"is_liked,omitempty"`
 	ReplyToCommentId string                 `protobuf:"bytes,20,opt,name=reply_to_comment_id,json=replyToCommentId,proto3" json:"reply_to_comment_id,omitempty"`
 	RepliesCount     int64                  `protobuf:"varint,21,opt,name=replies_count,json=repliesCount,proto3" json:"replies_count,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Position-aware mentions, reusing the Post Mention contract
+	// (UTF-16 offsets into `content`). Populated on readback from the
+	// existing social_comments.mentions_json column.
+	TypedMentions []*Mention `protobuf:"bytes,22,rep,name=typed_mentions,json=typedMentions,proto3" json:"typed_mentions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Comment) Reset() {
@@ -203,13 +207,24 @@ func (x *Comment) GetRepliesCount() int64 {
 	return 0
 }
 
+func (x *Comment) GetTypedMentions() []*Mention {
+	if x != nil {
+		return x.TypedMentions
+	}
+	return nil
+}
+
 type CreateCommentRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	PostId           string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
 	Content          string                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
 	ReplyToCommentId string                 `protobuf:"bytes,3,opt,name=reply_to_comment_id,json=replyToCommentId,proto3" json:"reply_to_comment_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Position-aware mentions of human actors. Validated by the Station
+	// (UTF-16 range/display/actor/parent-post readability); mentions
+	// never widen the parent post audience.
+	TypedMentions []*Mention `protobuf:"bytes,4,rep,name=typed_mentions,json=typedMentions,proto3" json:"typed_mentions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateCommentRequest) Reset() {
@@ -261,6 +276,13 @@ func (x *CreateCommentRequest) GetReplyToCommentId() string {
 		return x.ReplyToCommentId
 	}
 	return ""
+}
+
+func (x *CreateCommentRequest) GetTypedMentions() []*Mention {
+	if x != nil {
+		return x.TypedMentions
+	}
+	return nil
 }
 
 type CreateCommentResponse struct {
@@ -623,7 +645,7 @@ var File_domain_social_comment_proto protoreflect.FileDescriptor
 
 const file_domain_social_comment_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdomain/social/comment.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/social/post.proto\"\xde\x03\n" +
+	"\x1bdomain/social/comment.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18domain/social/post.proto\"\xab\x04\n" +
 	"\aComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\apost_id\x18\x02 \x01(\tR\x06postId\x12\x1f\n" +
@@ -642,11 +664,13 @@ const file_domain_social_comment_proto_rawDesc = "" +
 	"likesCount\x12\x19\n" +
 	"\bis_liked\x18\f \x01(\bR\aisLiked\x12-\n" +
 	"\x13reply_to_comment_id\x18\x14 \x01(\tR\x10replyToCommentId\x12#\n" +
-	"\rreplies_count\x18\x15 \x01(\x03R\frepliesCountR\tauthor_id\"x\n" +
+	"\rreplies_count\x18\x15 \x01(\x03R\frepliesCount\x12K\n" +
+	"\x0etyped_mentions\x18\x16 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentionsR\tauthor_id\"\xc5\x01\n" +
 	"\x14CreateCommentRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\x12-\n" +
-	"\x13reply_to_comment_id\x18\x03 \x01(\tR\x10replyToCommentId\"W\n" +
+	"\x13reply_to_comment_id\x18\x03 \x01(\tR\x10replyToCommentId\x12K\n" +
+	"\x0etyped_mentions\x18\x04 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentions\"W\n" +
 	"\x15CreateCommentResponse\x12>\n" +
 	"\acomment\x18\x01 \x01(\v2$.peers_touch.model.social.v1.CommentR\acomment\"O\n" +
 	"\x14UpdateCommentRequest\x12\x1d\n" +
@@ -705,20 +729,23 @@ var file_domain_social_comment_proto_goTypes = []any{
 	(*GetCommentsResponse)(nil),   // 9: peers_touch.model.social.v1.GetCommentsResponse
 	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
 	(*PostAuthor)(nil),            // 11: peers_touch.model.social.v1.PostAuthor
+	(*Mention)(nil),               // 12: peers_touch.model.social.v1.Mention
 }
 var file_domain_social_comment_proto_depIdxs = []int32{
 	10, // 0: peers_touch.model.social.v1.Comment.created_at:type_name -> google.protobuf.Timestamp
 	10, // 1: peers_touch.model.social.v1.Comment.updated_at:type_name -> google.protobuf.Timestamp
 	11, // 2: peers_touch.model.social.v1.Comment.author:type_name -> peers_touch.model.social.v1.PostAuthor
-	1,  // 3: peers_touch.model.social.v1.CreateCommentResponse.comment:type_name -> peers_touch.model.social.v1.Comment
-	1,  // 4: peers_touch.model.social.v1.UpdateCommentResponse.comment:type_name -> peers_touch.model.social.v1.Comment
-	0,  // 5: peers_touch.model.social.v1.GetCommentsRequest.sort:type_name -> peers_touch.model.social.v1.CommentSort
-	1,  // 6: peers_touch.model.social.v1.GetCommentsResponse.comments:type_name -> peers_touch.model.social.v1.Comment
-	7,  // [7:7] is the sub-list for method output_type
-	7,  // [7:7] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	12, // 3: peers_touch.model.social.v1.Comment.typed_mentions:type_name -> peers_touch.model.social.v1.Mention
+	12, // 4: peers_touch.model.social.v1.CreateCommentRequest.typed_mentions:type_name -> peers_touch.model.social.v1.Mention
+	1,  // 5: peers_touch.model.social.v1.CreateCommentResponse.comment:type_name -> peers_touch.model.social.v1.Comment
+	1,  // 6: peers_touch.model.social.v1.UpdateCommentResponse.comment:type_name -> peers_touch.model.social.v1.Comment
+	0,  // 7: peers_touch.model.social.v1.GetCommentsRequest.sort:type_name -> peers_touch.model.social.v1.CommentSort
+	1,  // 8: peers_touch.model.social.v1.GetCommentsResponse.comments:type_name -> peers_touch.model.social.v1.Comment
+	9,  // [9:9] is the sub-list for method output_type
+	9,  // [9:9] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_comment_proto_init() }

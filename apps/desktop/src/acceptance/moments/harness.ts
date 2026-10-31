@@ -33,6 +33,7 @@ import {
   usePrivateCommentsStore,
 } from '../../store/privateComments';
 import { usePrivateMomentsStore } from '../../store/privateMoments';
+import { decideComposerImageAttachments } from '../../components/moments/composerMediaDecision';
 import { useSessionStore } from '../../store/session';
 import { useFederationStore } from '../../store/federation';
 import { federationRuntime } from '../../runtimes/federationRuntime';
@@ -1603,14 +1604,22 @@ export function installAcceptanceHarness(): void {
       const audience = create(AudienceSchema, { kind: Audience_Kind.PUBLIC });
       let postId: string;
       if (input.filePath) {
-        const uploaded = await api.ossUploadAttachmentSocial(input.filePath);
-        if (!uploaded?.cid) {
-          throw new Error('moments.acceptance.publicMediaUploadFailed');
+        // Drive the production composer decision rather than calling a
+        // plaintext uploader directly: if PUBLIC routing ever regresses
+        // to the encryption wrapper, this harness fails too.
+        const decision = await decideComposerImageAttachments({
+          audience,
+          files: [{ filePath: input.filePath }],
+          uploader: (filePath) => api.ossUploadAttachmentSocial(filePath),
+        });
+        if (decision.kind !== 'public-attachments') {
+          throw new Error('moments.acceptance.publicMediaDecisionInvalid');
         }
         postId = await useMomentsStore.getState().createPost({
           kind: 'image',
           text: input.text,
-          imageIds: [uploaded.cid],
+          imageIds: decision.imageIds,
+          images: decision.attachments,
           audience,
         });
       } else {
