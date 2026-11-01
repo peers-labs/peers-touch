@@ -111,6 +111,17 @@ export interface MessagingProjection {
   pinnedByPtid?: string
   pinnedAtUnixMs?: number
   readByPtids: string[]
+  /**
+   * MP-D34 sender verdict facts. Attempt metadata mirrors the local outbox;
+   * delivery counts aggregate per-device MessageReceipt projections. All
+   * values are projection-only facts; horizon judgments are derived in the
+   * renderer and never written back.
+   */
+  attemptCount: number
+  nextAttemptAtUnixMs?: number
+  lastErrorCode?: string
+  requiredDeviceCount: number
+  deliveredDeviceCount: number
 }
 
 export interface MessagingReactionProjection {
@@ -141,9 +152,16 @@ export interface MessagingLocalAttachmentIntent {
   size?: number
 }
 
-export type MessagingSendState = 'draft' | 'pending' | 'attachment_failed'
+export type MessagingSendState = 'draft' | 'pending' | 'attachment_failed' | 'failed';
 
+/**
+ * MP-D33 admission result. `admitted` means the message is durably local
+ * (including a deferred draft); there is no transport failure the caller may
+ * resend. `rejected` only exists as an IPC-level error/exception: no durable
+ * message was created.
+ */
 export interface MessagingSendOutcome {
+  admission: 'admitted';
   commandId?: string
   messageId: string
   attachmentIds: string[]
@@ -151,14 +169,17 @@ export interface MessagingSendOutcome {
   state: MessagingSendState
 }
 
+export interface MessagingSendIntentStatus {
+  admitted: boolean
+  commandId?: string
+  messageId?: string
+  attachmentIds: string[]
+  state: MessagingSendState | 'none'
+}
+
 export interface MessagingSendOutcomeRecord {
   revision: number
   outcome: MessagingSendOutcome
-}
-
-export type MessagingQueuedSendOutcome = MessagingSendOutcome & {
-  commandId: string
-  state: 'pending'
 }
 
 export interface MessagingConversationProjection {
@@ -258,12 +279,14 @@ export interface MessagingServiceContract {
     conversationId: string,
     conversationKind: 'direct' | 'group',
     plaintext: string,
-    attachments?: readonly MessagingLocalAttachmentIntent[],
-    relation?: {
+    attachments: readonly MessagingLocalAttachmentIntent[] | undefined,
+    relation: {
       replyToMessageId?: string
       threadRootMessageId?: string
+      sendIntentId: string
     },
   ): Promise<MessagingSendOutcome>
+  sendIntentStatus(sendIntentId: string): Promise<MessagingSendIntentStatus>
   listMessages(
     conversationId: string,
     options?: { beforeSequence?: number; limit?: number; anchorMessageId?: string },

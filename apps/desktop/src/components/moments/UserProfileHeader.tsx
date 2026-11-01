@@ -160,6 +160,7 @@ export function UserProfileHeader({
         >
           <UserSquareAvatar
             remoteUrl={avatar}
+            actorPtid={id || null}
             name={display}
             size={inline ? 36 : 64}
             radius={inline ? 9 : 16}
@@ -168,6 +169,7 @@ export function UserProfileHeader({
       ) : (
         <UserSquareAvatar
           remoteUrl={avatar}
+          actorPtid={id || null}
           name={display}
           size={inline ? 36 : 64}
           radius={inline ? 9 : 16}

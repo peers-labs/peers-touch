@@ -318,6 +318,11 @@ interface MessagingMessageWire {
   pinned_by_ptid?: string
   pinned_at_unix_ms?: number
   read_by_ptids: string[]
+  attempt_count?: number
+  next_attempt_at_unix_ms?: number | null
+  last_error_code?: string | null
+  required_device_count?: number
+  delivered_device_count?: number
 }
 
 interface ServiceMessageWire {
@@ -438,6 +443,11 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
     pinnedByPtid: message.pinned_by_ptid,
     pinnedAtUnixMs: message.pinned_at_unix_ms,
     readByPtids: message.read_by_ptids,
+    attemptCount: message.attempt_count ?? 0,
+    nextAttemptAtUnixMs: message.next_attempt_at_unix_ms ?? undefined,
+    lastErrorCode: message.last_error_code ?? undefined,
+    requiredDeviceCount: message.required_device_count ?? 0,
+    deliveredDeviceCount: message.delivered_device_count ?? 0,
   }
 }
 
@@ -778,7 +788,7 @@ const messagingService: MessagingServiceContract = {
     }
   },
 
-  async sendMessage(conversationId, conversationKind, plaintext, attachments = [], relation = {}) {
+  async sendMessage(conversationId, conversationKind, plaintext, attachments = [], relation) {
     const response = await cmd<
       {
         conversation_id: string
@@ -786,6 +796,7 @@ const messagingService: MessagingServiceContract = {
         plaintext: string
         reply_to_message_id: string
         thread_root_message_id: string
+        send_intent_id: string
         attachments: Array<{
           file_path: string
           filename: string
@@ -798,7 +809,8 @@ const messagingService: MessagingServiceContract = {
         command_id: string
         message_id: string
         attachment_ids: string[]
-        state: 'draft' | 'pending' | 'attachment_failed'
+        state: 'draft' | 'pending' | 'attachment_failed' | 'failed'
+        admission?: string
       }
     >('messaging_send_message', {
       conversation_id: conversationId,
@@ -806,6 +818,7 @@ const messagingService: MessagingServiceContract = {
       plaintext,
       reply_to_message_id: relation.replyToMessageId ?? '',
       thread_root_message_id: relation.threadRootMessageId ?? '',
+      send_intent_id: relation.sendIntentId,
       attachments: attachments.map(attachment => ({
         file_path: attachment.filePath,
         filename: attachment.filename,
@@ -815,10 +828,31 @@ const messagingService: MessagingServiceContract = {
       })),
     })
     return {
+      admission: 'admitted' as const,
       commandId: response.command_id || undefined,
       messageId: response.message_id,
       attachmentIds: response.attachment_ids,
       attachmentCount: response.attachment_ids.length,
+      state: response.state,
+    }
+  },
+
+  async sendIntentStatus(sendIntentId) {
+    const response = await cmd<
+      { send_intent_id: string },
+      {
+        admitted: boolean
+        message_id: string
+        command_id: string
+        attachment_ids: string[]
+        state: 'draft' | 'pending' | 'attachment_failed' | 'failed' | 'none'
+      }
+    >('messaging_send_intent_status', { send_intent_id: sendIntentId })
+    return {
+      admitted: response.admitted,
+      messageId: response.message_id || undefined,
+      commandId: response.command_id || undefined,
+      attachmentIds: response.attachment_ids,
       state: response.state,
     }
   },
@@ -1030,6 +1064,10 @@ const messagingService: MessagingServiceContract = {
       pinnedByPtid: message.pinned_by_ptid,
       pinnedAtUnixMs: message.pinned_at_unix_ms,
       readByPtids: message.read_by_ptids,
+      // Search results never carry sender verdict facts.
+      attemptCount: 0,
+      requiredDeviceCount: 0,
+      deliveredDeviceCount: 0,
     }))
   },
 

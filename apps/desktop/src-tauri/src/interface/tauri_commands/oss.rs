@@ -20,17 +20,11 @@
 //! See `application::oss` for the pure logic and
 //! `infrastructure::oss_cache` for capability/file caching.
 
-use std::io::{Read, Write};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use aes_gcm::aead::{Aead, KeyInit, Payload};
-use aes_gcm::{Aes256Gcm, Nonce};
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use rand::RngCore;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use tauri::{State, Window};
 use ulid::Ulid;
 
@@ -39,11 +33,6 @@ use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
-
-const MEDIA_CHUNK_SIZE: usize = 1024 * 1024;
-const MEDIA_GCM_TAG_SIZE: usize = 16;
-const MEDIA_CHUNKING_FIXED_V1: &str = "fixed-v1";
-const MEDIA_NONCE_STRATEGY_COUNTER32_BE: &str = "prefix-counter32-be";
 
 /// Wire shape shared by both the chat and social upload commands.
 ///
@@ -69,6 +58,16 @@ pub struct OssUploadAttachmentBytesInput {
     pub mime_type: String,
     pub bytes: Vec<u8>,
     pub conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OssUploadAttachmentSocialBytesInput {
+    pub filename: String,
+    #[serde(default)]
+    pub mime_type: String,
+    pub bytes: Vec<u8>,
+    #[serde(default)]
+    pub bucket: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -207,16 +206,6 @@ pub(crate) fn safe_temp_filename(filename: &str) -> String {
     } else {
         cleaned.to_string()
     }
-}
-
-fn media_chunk_nonce(base_nonce: &[u8; 12], chunk_index: u32) -> [u8; 12] {
-    let mut nonce = *base_nonce;
-    nonce[8..12].copy_from_slice(&chunk_index.to_be_bytes());
-    nonce
-}
-
-fn media_chunk_aad(chunk_index: u32, plaintext_size: u64, chunk_size: usize) -> Vec<u8> {
-    format!("peers-touch-media:v2:{chunk_index}:{plaintext_size}:{chunk_size}").into_bytes()
 }
 
 // ── Generic OSS and Agent consumers ────────────────────────────────
@@ -456,7 +445,6 @@ pub async fn oss_pick_image_social(
     input: OssPickImageSocialInput,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let _ = window;
     let max_count = if input.max_count == 0 {
         1
     } else {
@@ -467,7 +455,10 @@ pub async fn oss_pick_image_social(
         .set_title("Select Images")
         .add_filter(
             "Images",
-            &["jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"],
+            // HEIC/HEIF is intentionally absent: this runtime has no
+            // native transcoder and the renderer cannot decode it.
+            // The composer re-checks magic bytes and decoder support.
+            &["jpg", "jpeg", "png", "gif", "webp", "bmp"],
         );
 
     let picked = if max_count > 1 {
@@ -480,10 +471,26 @@ pub async fn oss_pick_image_social(
         Some(handles) if !handles.is_empty() => {
             // Truncate silently so the caller never has to defend against
             // the cap. Renderer trusts whatever this returns.
-            let mut paths: Vec<String> = handles
+            let picked_paths: Vec<std::path::PathBuf> = handles
                 .into_iter()
                 .take(max_count)
-                .map(|h| h.path().to_string_lossy().to_string())
+                .map(|h| h.path().to_path_buf())
+                .collect();
+            // Grant the asset protocol exactly the files the user
+            // picked. Sibling files in the same directory stay
+            // unreadable; the renderer cannot widen this scope.
+            if let Err(error) =
+                super::asset_preview::allow_selected_file_previews(&window, &picked_paths)
+            {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("grant selected social image preview: {error}"),
+                    None,
+                );
+            }
+            let mut paths: Vec<String> = picked_paths
+                .into_iter()
+                .map(|path| path.to_string_lossy().to_string())
                 .collect();
             paths.sort();
             tracing::info!(count = paths.len(), "Image picker returned");
@@ -538,234 +545,9 @@ pub fn oss_upload_attachment_social(
     )
 }
 
-fn guess_mime_for_encrypted(file_path: &str) -> String {
-    let ext = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        "bmp" => "image/bmp",
-        "mp4" => "video/mp4",
-        "webm" => "video/webm",
-        "mov" => "video/quicktime",
-        "mp3" => "audio/mpeg",
-        "wav" => "audio/wav",
-        "ogg" => "audio/ogg",
-        "m4a" => "audio/mp4",
-        "pdf" => "application/pdf",
-        _ => "application/octet-stream",
-    }
-    .to_string()
-}
-
-fn upload_encrypted_attachment(
-    resources: &crate::application::station_runtime::resource::StationResourceHandle,
-    input: OssUploadAttachmentInput,
-    token: &str,
-    consumer: &str,
-    bucket: &str,
-    visibility: &str,
-    chat_sid: Option<&str>,
-    fallback_name: &str,
-    command: &str,
-) -> AppResult<StubPayload> {
-    if input.file_path.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "file_path is required", None);
-    }
-
-    let plaintext_size = match std::fs::metadata(&input.file_path) {
-        Ok(meta) if meta.len() > 0 => meta.len(),
-        Ok(_) => return AppResult::fail(ErrorCode::InvalidArgument, "file is empty", None),
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("stat encrypted attachment: {error}"),
-                None,
-            )
-        }
-    };
-    let chunk_count_u64 = plaintext_size.div_ceil(MEDIA_CHUNK_SIZE as u64);
-    if chunk_count_u64 > u32::MAX as u64 {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "file exceeds encrypted media chunk index capacity",
-            None,
-        );
-    }
-    let chunk_count = chunk_count_u64 as u32;
-
-    let mut key = [0u8; 32];
-    let mut nonce = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut key);
-    rand::thread_rng().fill_bytes(&mut nonce);
-    nonce[8..12].fill(0);
-    let cipher = match Aes256Gcm::new_from_slice(&key) {
-        Ok(cipher) => cipher,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("initialise media cipher: {error:?}"),
-                None,
-            )
-        }
-    };
-
-    let original_name = std::path::Path::new(&input.file_path)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(fallback_name)
-        .to_string();
-    let safe_name = safe_temp_filename(&original_name);
-    let temp_path = std::env::temp_dir().join(format!(
-        "peers-{consumer}-enc-{}-{}",
-        Ulid::new(),
-        safe_name
-    ));
-
-    let mut input_file = match std::fs::File::open(&input.file_path) {
-        Ok(file) => file,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("open encrypted attachment: {error}"),
-                None,
-            )
-        }
-    };
-    let mut output_file = match std::fs::File::create(&temp_path) {
-        Ok(file) => file,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("create encrypted attachment: {error}"),
-                None,
-            )
-        }
-    };
-    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "encrypted attachment");
-
-    let mut plaintext_hasher = Sha256::new();
-    let mut ciphertext_hasher = Sha256::new();
-    let mut ciphertext_size: u64 = 0;
-    let mut buffer = vec![0u8; MEDIA_CHUNK_SIZE];
-    for chunk_index in 0..chunk_count {
-        let read = match input_file.read(&mut buffer) {
-            Ok(n) if n > 0 => n,
-            Ok(_) => break,
-            Err(error) => {
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("read encrypted attachment chunk: {error}"),
-                    None,
-                )
-            }
-        };
-        let plaintext_chunk = &buffer[..read];
-        plaintext_hasher.update(plaintext_chunk);
-        let chunk_nonce = media_chunk_nonce(&nonce, chunk_index);
-        let aad = media_chunk_aad(chunk_index, plaintext_size, MEDIA_CHUNK_SIZE);
-        let ciphertext_chunk = match cipher.encrypt(
-            Nonce::from_slice(&chunk_nonce),
-            Payload {
-                msg: plaintext_chunk,
-                aad: aad.as_slice(),
-            },
-        ) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("encrypt attachment chunk: {error:?}"),
-                    None,
-                )
-            }
-        };
-        ciphertext_hasher.update(&ciphertext_chunk);
-        ciphertext_size += ciphertext_chunk.len() as u64;
-        if let Err(error) = output_file.write_all(&ciphertext_chunk) {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("write encrypted attachment chunk: {error}"),
-                None,
-            );
-        }
-    }
-    if let Err(error) = output_file.flush() {
-        return AppResult::fail(
-            ErrorCode::InternalError,
-            format!("flush encrypted attachment: {error}"),
-            None,
-        );
-    }
-
-    let plaintext_sha = B64.encode(plaintext_hasher.finalize());
-    let ciphertext_sha = B64.encode(ciphertext_hasher.finalize());
-
-    let upload = application_oss::upload_attachment_with_mime(
-        resources,
-        temp_path.to_string_lossy().as_ref(),
-        token,
-        consumer,
-        bucket,
-        visibility,
-        chat_sid,
-        Some("application/octet-stream"),
-    );
-    cleanup.remove_now();
-    if !upload.ok {
-        return upload;
-    }
-
-    let mut payload = match upload
-        .data
-        .as_ref()
-        .and_then(|data| serde_json::from_str::<serde_json::Value>(&data.status).ok())
-    {
-        Some(serde_json::Value::Object(map)) => map,
-        _ => serde_json::Map::new(),
-    };
-    payload.insert(
-        "filename".to_string(),
-        serde_json::Value::String(original_name),
-    );
-    payload.insert(
-        "mime_type".to_string(),
-        serde_json::Value::String(guess_mime_for_encrypted(&input.file_path)),
-    );
-    payload.insert(
-        "media_encryption".to_string(),
-        serde_json::json!({
-            "encrypted": true,
-            "version": 2,
-            "suite": "AES-256-GCM-CHUNKED",
-            "key_b64": B64.encode(key),
-            "nonce_b64": B64.encode(nonce),
-            "plaintext_sha256_b64": plaintext_sha,
-            "ciphertext_sha256_b64": ciphertext_sha,
-            "plaintext_size": plaintext_size,
-            "ciphertext_size": ciphertext_size,
-            "chunking": MEDIA_CHUNKING_FIXED_V1,
-            "chunk_size": MEDIA_CHUNK_SIZE,
-            "chunk_count": chunk_count,
-            "tag_size": MEDIA_GCM_TAG_SIZE,
-            "nonce_strategy": MEDIA_NONCE_STRATEGY_COUNTER32_BE
-        }),
-    );
-    AppResult::success(StubPayload {
-        command: command.to_string(),
-        status: serde_json::Value::Object(payload).to_string(),
-    })
-}
-
 #[tauri::command]
-pub fn oss_upload_encrypted_attachment_social(
-    input: OssUploadAttachmentInput,
+pub fn oss_upload_attachment_social_bytes(
+    input: OssUploadAttachmentSocialBytesInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -773,139 +555,33 @@ pub fn oss_upload_encrypted_attachment_social(
         Ok(t) => t,
         Err(e) => return e,
     };
-    if input.file_path.trim().is_empty() {
-        return AppResult::fail(ErrorCode::InvalidArgument, "file_path is required", None);
+    if input.bytes.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "bytes is required", None);
     }
-
-    let plaintext_size = match std::fs::metadata(&input.file_path) {
-        Ok(meta) if meta.len() > 0 => meta.len(),
-        Ok(_) => return AppResult::fail(ErrorCode::InvalidArgument, "file is empty", None),
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("stat social attachment: {error}"),
-                None,
-            )
-        }
-    };
-    let chunk_count_u64 = plaintext_size.div_ceil(MEDIA_CHUNK_SIZE as u64);
-    if chunk_count_u64 > u32::MAX as u64 {
-        return AppResult::fail(
-            ErrorCode::InvalidArgument,
-            "file exceeds encrypted media chunk index capacity",
-            None,
-        );
+    let filename = safe_temp_filename(input.filename.as_str());
+    if filename.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "filename is required", None);
     }
-    let chunk_count = chunk_count_u64 as u32;
-
-    let mut key = [0u8; 32];
-    let mut nonce = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut key);
-    rand::thread_rng().fill_bytes(&mut nonce);
-    nonce[8..12].fill(0);
-    let cipher = match Aes256Gcm::new_from_slice(&key) {
-        Ok(cipher) => cipher,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("initialise social media cipher: {error:?}"),
-                None,
-            )
-        }
-    };
-    let original_name = std::path::Path::new(&input.file_path)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("moment-image.bin")
-        .to_string();
-    let safe_name = safe_temp_filename(&original_name);
+    // Downsampled images are re-encoded in the renderer; the temp file only
+    // bridges bytes into the same social upload path used for picked paths.
     let temp_path =
-        std::env::temp_dir().join(format!("peers-social-enc-{}-{}", Ulid::new(), safe_name));
-    let mut input_file = match std::fs::File::open(&input.file_path) {
-        Ok(file) => file,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("open social attachment: {error}"),
-                None,
-            )
-        }
-    };
-    let mut output_file = match std::fs::File::create(&temp_path) {
-        Ok(file) => file,
-        Err(error) => {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("create encrypted social attachment: {error}"),
-                None,
-            )
-        }
-    };
-    let cleanup =
-        application_oss::TempFileCleanup::new(temp_path.clone(), "encrypted social attachment");
-    let mut plaintext_hasher = Sha256::new();
-    let mut ciphertext_hasher = Sha256::new();
-    let mut ciphertext_size: u64 = 0;
-    let mut buffer = vec![0u8; MEDIA_CHUNK_SIZE];
-    for chunk_index in 0..chunk_count {
-        let read = match input_file.read(&mut buffer) {
-            Ok(n) if n > 0 => n,
-            Ok(_) => break,
-            Err(error) => {
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("read social attachment chunk: {error}"),
-                    None,
-                )
-            }
-        };
-        let plaintext_chunk = &buffer[..read];
-        plaintext_hasher.update(plaintext_chunk);
-        let chunk_nonce = media_chunk_nonce(&nonce, chunk_index);
-        let aad = media_chunk_aad(chunk_index, plaintext_size, MEDIA_CHUNK_SIZE);
-        let ciphertext_chunk = match cipher.encrypt(
-            Nonce::from_slice(&chunk_nonce),
-            Payload {
-                msg: plaintext_chunk,
-                aad: aad.as_slice(),
-            },
-        ) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                return AppResult::fail(
-                    ErrorCode::InternalError,
-                    format!("encrypt social attachment chunk: {error:?}"),
-                    None,
-                )
-            }
-        };
-        ciphertext_hasher.update(&ciphertext_chunk);
-        ciphertext_size += ciphertext_chunk.len() as u64;
-        if let Err(error) = output_file.write_all(&ciphertext_chunk) {
-            return AppResult::fail(
-                ErrorCode::InternalError,
-                format!("write encrypted social attachment chunk: {error}"),
-                None,
-            );
-        }
-    }
-    if let Err(error) = output_file.flush() {
+        std::env::temp_dir().join(format!("peers-social-{}-{filename}", Ulid::new()));
+    if let Err(error) = std::fs::write(&temp_path, input.bytes) {
         return AppResult::fail(
             ErrorCode::InternalError,
-            format!("flush encrypted social attachment: {error}"),
+            format!("write temp social attachment: {error}"),
             None,
         );
     }
-
-    let plaintext_sha = B64.encode(plaintext_hasher.finalize());
-    let ciphertext_sha = B64.encode(ciphertext_hasher.finalize());
+    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "social byte attachment");
 
     let bucket = if input.bucket.trim().is_empty() {
         "moments"
     } else {
         input.bucket.trim()
     };
-    let upload = application_oss::upload_attachment_with_mime(
+    let mime_override = input.mime_type.trim();
+    let result = application_oss::upload_attachment_with_mime(
         state.station.resources(),
         temp_path.to_string_lossy().as_ref(),
         &token,
@@ -913,52 +589,14 @@ pub fn oss_upload_encrypted_attachment_social(
         bucket,
         "public",
         None,
-        Some("application/octet-stream"),
+        if mime_override.is_empty() {
+            None
+        } else {
+            Some(mime_override)
+        },
     );
     cleanup.remove_now();
-    if !upload.ok {
-        return upload;
-    }
-
-    let mut payload = match upload
-        .data
-        .as_ref()
-        .and_then(|data| serde_json::from_str::<serde_json::Value>(&data.status).ok())
-    {
-        Some(serde_json::Value::Object(map)) => map,
-        _ => serde_json::Map::new(),
-    };
-    payload.insert(
-        "filename".to_string(),
-        serde_json::Value::String(original_name),
-    );
-    payload.insert(
-        "mime_type".to_string(),
-        serde_json::Value::String(guess_mime_for_encrypted(&input.file_path)),
-    );
-    payload.insert(
-        "media_encryption".to_string(),
-        serde_json::json!({
-            "encrypted": true,
-            "version": 2,
-            "suite": "AES-256-GCM-CHUNKED",
-            "key_b64": B64.encode(key),
-            "nonce_b64": B64.encode(nonce),
-            "plaintext_sha256_b64": plaintext_sha,
-            "ciphertext_sha256_b64": ciphertext_sha,
-            "plaintext_size": plaintext_size,
-            "ciphertext_size": ciphertext_size,
-            "chunking": MEDIA_CHUNKING_FIXED_V1,
-            "chunk_size": MEDIA_CHUNK_SIZE,
-            "chunk_count": chunk_count,
-            "tag_size": MEDIA_GCM_TAG_SIZE,
-            "nonce_strategy": MEDIA_NONCE_STRATEGY_COUNTER32_BE
-        }),
-    );
-    AppResult::success(StubPayload {
-        command: "oss_upload_encrypted_attachment_social".to_string(),
-        status: serde_json::Value::Object(payload).to_string(),
-    })
+    result
 }
 
 // ── Generic ────────────────────────────────────────────────────────

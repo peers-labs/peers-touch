@@ -27,7 +27,7 @@ export interface FederationActorStationCandidate {
   username: string;
 }
 
-function isRawStationAuthority(value: string): boolean {
+export function isRawStationAuthority(value: string): boolean {
   if (/^https?:\/\//i.test(value)) return true;
   if (/\s/.test(value)) return false;
   return (

@@ -445,12 +445,21 @@ func (c *PostConverter) CreateCommentRequestToDomain(
 	if req.ReplyToCommentId != "" {
 		parentCommentID = ParseID(req.ReplyToCommentId)
 	}
+	mentionsJSON := ""
+	if len(req.TypedMentions) > 0 {
+		encoded, err := json.Marshal(req.TypedMentions)
+		if err != nil {
+			return nil, fmt.Errorf("encode comment mentions: %w", err)
+		}
+		mentionsJSON = string(encoded)
+	}
 	return &Comment{
 		PostID:          parentPostID,
 		PostClass:       postClass,
 		AuthorPTID:      authorPTID,
 		ParentCommentID: parentCommentID,
 		TextBody:        req.Content,
+		MentionsJSON:    mentionsJSON,
 	}, nil
 }
 
@@ -517,7 +526,31 @@ func (c *PostConverter) CommentToProto(d *Comment) *model.Comment {
 	if d.ParentCommentID != 0 {
 		out.ReplyToCommentId = formatID(d.ParentCommentID)
 	}
+	if d.MentionsJSON != "" {
+		var mentions []*model.Mention
+		if err := json.Unmarshal([]byte(d.MentionsJSON), &mentions); err == nil {
+			out.TypedMentions = mentions
+		}
+		// The JSON column is only ever written by this owner's encode
+		// path, so a decode failure indicates corruption. The comment is
+		// still returned without mentions rather than failing the whole
+		// read; callers that need the failure use CommentMentions(d).
+	}
 	return out
+}
+
+// CommentMentions decodes the persisted typed mentions of a domain
+// comment. Returns nil for comments without mentions and an error only
+// when the persisted JSON is malformed.
+func (c *PostConverter) CommentMentions(d *Comment) ([]*model.Mention, error) {
+	if d == nil || d.MentionsJSON == "" {
+		return nil, nil
+	}
+	var mentions []*model.Mention
+	if err := json.Unmarshal([]byte(d.MentionsJSON), &mentions); err != nil {
+		return nil, fmt.Errorf("decode comment mentions: %w", err)
+	}
+	return mentions, nil
 }
 
 // ---------------------------------------------------------------------------

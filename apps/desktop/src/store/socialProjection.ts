@@ -33,6 +33,9 @@ export interface DesktopUnifiedConversationLike {
   federationId?: string;
   name: string;
   avatar?: string;
+  description?: string;
+  ownerPtid?: string;
+  canonicalName?: string;
   lastActivity: Date;
   unread: number;
   peerPtid?: string;
@@ -43,6 +46,7 @@ export interface DesktopUnifiedConversationLike {
   homeStationName?: string;
   federationName?: string;
   memberCount?: number;
+  selfDirect?: boolean;
   muted?: boolean;
   alertEnabled?: boolean;
   hidden?: boolean;
@@ -56,6 +60,13 @@ export interface ConversationLocalState {
   alertEnabled?: boolean;
   background?: ChatBackgroundId;
   backgroundImage?: string;
+  /**
+   * Local-only display alias for this conversation on this device. Never
+   * synced; when set it overrides the server-provided title in every
+   * conversation surface while `canonicalName` keeps the wire truth
+   * available for rename editors and ownership checks.
+   */
+  remark?: string;
 }
 
 export type GroupSecurityState =
@@ -114,6 +125,13 @@ export interface SocialMessage {
   readByPtids?: string[];
   deliveryState?: string;
   senderDeviceId?: string;
+  /** MP-D34 outbox attempt facts (own messages only). */
+  attemptCount?: number;
+  nextAttemptAtUnixMs?: number;
+  lastErrorCode?: string;
+  /** MP-D34 immutable x/N delivery facts (own messages only). */
+  requiredDeviceCount?: number;
+  deliveredDeviceCount?: number;
   serviceMessage?: DesktopServiceMessage;
 }
 
@@ -271,6 +289,22 @@ export type DesktopIMConversationProjection = IMConversationProjection & {
   homeStationName?: string;
   federationName?: string;
   memberCount?: number;
+  /**
+   * One-member Direct whose sole member is the current actor (Saved
+   * Messages / self-direct). The UI renders the authenticated profile and
+   * localizes the title instead of treating the self row as a friend.
+   */
+  selfDirect?: boolean;
+  /** Server-owned group description/announcement; empty for directs. */
+  description?: string;
+  /** Owner actor PTID for group conversations; drives edit permissions. */
+  ownerPtid?: string;
+  /**
+   * Server-provided conversation title without the local remark override.
+   * Rename editors seed from this so opening an alias for editing does not
+   * accidentally rename the group to the alias text.
+   */
+  canonicalName?: string;
 };
 
 export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike> & {
@@ -283,6 +317,12 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   readByPtids: string[];
   eventSequence: number;
   deliveryState: string;
+  // MP-D34 sender verdict facts (own messages).
+  attemptCount?: number;
+  nextAttemptAtUnixMs?: number;
+  lastErrorCode?: string;
+  requiredDeviceCount?: number;
+  deliveredDeviceCount?: number;
   // Common typed content for non-E2EE Station service messages.
   serviceMessage?: DesktopServiceMessage;
 };
@@ -446,7 +486,26 @@ export function projectDesktopIMConversation(conversation: DesktopUnifiedConvers
     homeStationName: conversation.homeStationName,
     federationName: conversation.federationName,
     memberCount: conversation.memberCount,
+    selfDirect: conversation.selfDirect,
+    description: conversation.description,
+    ownerPtid: conversation.ownerPtid,
+    canonicalName: conversation.canonicalName,
   };
+}
+
+/**
+ * UI-facing Direct conversation title. A self-direct resolves its name from
+ * the authenticated profile; callers MUST pass the localized "Saved
+ * Messages" label for the nameless case — never an unknown/friend heuristic.
+ */
+export function directConversationDisplayName(
+  conversation: Pick<DesktopIMConversationProjection, 'title' | 'selfDirect'>,
+  selfLabel: string,
+  unknownLabel: string,
+): string {
+  const title = conversation.title?.trim() ?? '';
+  if (title) return title;
+  return conversation.selfDirect ? selfLabel : unknownLabel;
 }
 
 export function projectDesktopIMMessage(

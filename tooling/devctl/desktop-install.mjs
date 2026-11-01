@@ -177,6 +177,13 @@ export function desktopInstallTauriConfig(settings) {
         },
       },
     },
+    bundle: {
+      // A local `--bundles app` install is never an updater feed source.
+      // The release config enables updater artifacts; leaving it on here
+      // builds the .tar.gz and hard-fails on the unavailable release
+      // signing key even though the .app itself is already complete.
+      createUpdaterArtifacts: false,
+    },
   };
 }
 

@@ -77,7 +77,74 @@ NATIVE_FILE_PICKER = (
 CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
+AVATAR_ASSETS = ROOT / "apps/desktop/src/services/avatarAssets.ts"
+USE_AVATAR_ASSET = (
+    ROOT / "apps/desktop/src/components/common/useAvatarAsset.ts"
+)
+GROUP_COMPOSITE_AVATAR = (
+    ROOT / "apps/desktop/src/components/common/GroupCompositeAvatar.tsx"
+)
+CHAT_CONTACTS_PANEL = (
+    ROOT / "apps/desktop/src/components/chat/ChatContactsPanel.tsx"
+)
+PUBLIC_PROFILE_CARD = (
+    ROOT / "apps/desktop/src/components/profile/PublicProfileCard.tsx"
+)
+PROFILE_PRIMARY_ACTION = (
+    ROOT / "apps/desktop/src/components/profile/ProfilePrimaryAction.tsx"
+)
+PROFILE_RELATIONSHIP = (
+    ROOT / "apps/desktop/src/components/profile/profileRelationship.ts"
+)
 HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+PROFILE_APPLICATION = (
+    ROOT / "apps/desktop/src-tauri/src/application/profile/mod.rs"
+)
+DESKTOP_API = ROOT / "apps/desktop/src/services/desktop_api.ts"
+SOCIAL_PROFILE_PROJECTION = (
+    ROOT / "apps/desktop/src/store/socialProfileProjection.ts"
+)
+SOCIAL_CHAT_STORE = ROOT / "apps/desktop/src/store/socialChat.ts"
+MESSAGING_ENGINE = (
+    ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
+)
+MESSAGING_SCHEMA = (
+    ROOT / "packages/messaging-core/src/store/schema.rs"
+)
+MESSAGING_COMMAND = (
+    ROOT / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+)
+CHAT_THREAD_PANEL = (
+    ROOT / "apps/desktop/src/components/chat/ChatThreadPanel.tsx"
+)
+SEND_INTENT_UTIL = (
+    ROOT / "apps/desktop/src/utils/messagingSendIntent.ts"
+)
+FRIENDSHIP_PROJECTION = (
+    ROOT / "apps/desktop/src/store/friendshipProjection.ts"
+)
+MESSAGE_SENDER_CARD = (
+    ROOT
+    / "apps/desktop/src/components/chat/message/MessageSenderProfileCard.tsx"
+)
+BOTS_SETTINGS = (
+    ROOT / "apps/desktop/src/components/settings/BotsSettings.tsx"
+)
+RECOVERY_GATE = (
+    ROOT / "apps/desktop/src/components/chat/MessagingRecoveryGate.tsx"
+)
+SOCIAL_CHAT_PAGE = ROOT / "apps/desktop/src/pages/SocialChatPage.tsx"
+MESSAGING_RECOVERY_STORE = (
+    ROOT / "apps/desktop/src/store/messagingRecovery.ts"
+)
+RECOVERY_SERVICE = (
+    ROOT / "apps/desktop/src/services/messaging-recovery-service.ts"
+)
+RECOVERY_COMMAND = (
+    ROOT
+    / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs"
+)
+CHAT_HARNESS = ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
 
 
 class NativeProductCleanupTests(unittest.TestCase):
@@ -1471,6 +1538,318 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("function HoverActions(", self.message_row)
         self.assertNotIn("msg-hover-actions", self.message_row)
 
+    def test_avatar_surfaces_attribute_owner_ptid_for_flicker_free_assets(self) -> None:
+        # Regression: already-friend avatars flashed to a letter/Bot placeholder
+        # whenever the ephemeral station-resource projection token rotated.
+        # The shared avatar owner can only keep the same-actor last-good image
+        # painted when every chat surface attributes the avatar to its PTID.
+        group_composite = GROUP_COMPOSITE_AVATAR.read_text(encoding="utf-8")
+        contacts_panel = CHAT_CONTACTS_PANEL.read_text(encoding="utf-8")
+        # Both message-row avatar mounts (incoming + own bubble).
+        self.assertEqual(2, self.message_row.count("<UserSquareAvatar"))
+        self.assertEqual(2, self.message_row.count("actorPtid="))
+        # Direct conversation row.
+        self.assertIn("actorPtid={c.peerPtid || null}", self.chat_session_list)
+        # Group composite slots (the four avatar tiles).
+        self.assertIn("actorPtid={member.ptid || null}", group_composite)
+        # The fixed Saved Messages self row.
+        self.assertIn("data-chat-contact-self", contacts_panel)
+        self.assertIn("actorPtid={myDid}", contacts_panel)
+
+    def test_avatar_owner_keeps_last_good_while_a_rotated_identity_resolves(self) -> None:
+        assets = AVATAR_ASSETS.read_text(encoding="utf-8")
+        hook = USE_AVATAR_ASSET.read_text(encoding="utf-8")
+        # The request path seeds same-actor last-good before starting a flight.
+        self.assertIn("private seedLastGood(", assets)
+        self.assertIn("this.seedLastGood(key, query)", assets)
+        # Last-good seeding is owner-gated: unattributed identities never
+        # inherit another actor's image.
+        self.assertIn("if (!query.actorPtid) return null;", assets)
+        # A late/unknown identity is unresolved (neutral placeholder), not an
+        # authoritative ABSENT that paints initials before profile arrival.
+        self.assertIn("phase: 'unresolved'", hook)
+        self.assertNotIn("phase: 'absent', src: null, degraded: false, identity: ''", hook)
+
+    def test_peer_profile_edge_exposes_stable_avatar_identity(self) -> None:
+        # Regression: peer_profile_get projected the raw Station avatar into a
+        # per-process station-resource token, and that rotating token became the
+        # renderer's avatar identity/cache key. Every refetch forced a blank +
+        # re-decode of already-cached friend avatars. The edge MUST expose the
+        # canonical identity alongside the projected render URL.
+        rust = PROFILE_APPLICATION.read_text(encoding="utf-8")
+        self.assertIn('format!("{field}_identity")', rust)
+        # Identity must be captured from the raw value BEFORE the projected
+        # render field is written.
+        self.assertLess(
+            rust.index('format!("{field}_identity")'),
+            rust.index("resources.project_reference(&identity, None)"),
+        )
+        # Both media fields are covered.
+        self.assertIn('for field in ["avatar", "header"]', rust)
+
+        api = DESKTOP_API.read_text(encoding="utf-8")
+        self.assertIn("avatar_identity?: string;", api)
+        self.assertIn("header_identity?: string;", api)
+
+        projection = SOCIAL_PROFILE_PROJECTION.read_text(encoding="utf-8")
+        self.assertIn("export function canonicalProfileAvatar(", projection)
+        self.assertIn(
+            "avatarUrl: canonicalProfileAvatar(stationProfile)",
+            projection,
+        )
+
+        # The profile-landed prewarm must key the shared avatar owner on the
+        # canonical identity, not on the projected `avatar` token.
+        store = SOCIAL_CHAT_STORE.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(profile)", store)
+        # The IM Direct conversation projection feeds conversation-list
+        # avatars; it must likewise key peer avatars on canonical identity
+        # (self avatars are already raw actor_get_my_profile values).
+        self.assertIn(
+            ": (profile ? canonicalProfileAvatar(profile) : '')) || ''",
+            store,
+        )
+
+        # Every AccountProfile-backed avatar surface must consume the
+        # canonical identity instead of the rotating projected `avatar`
+        # token; bot avatars additionally attribute their owner PTID.
+        friendship = FRIENDSHIP_PROJECTION.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(profile)", friendship)
+        self.assertNotIn("avatarUrl: profile?.avatar?.trim()", friendship)
+
+        contacts = CHAT_CONTACTS_PANEL.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(cachedProfile)", contacts)
+
+        sender_card = MESSAGE_SENDER_CARD.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(rich)", sender_card)
+
+        bots = BOTS_SETTINGS.read_text(encoding="utf-8")
+        self.assertIn("canonicalProfileAvatar(profile)", bots)
+        self.assertIn("actorPtid={bot.botPtid}", bots)
+
+    def test_send_admission_is_idempotent_per_device_intent_mp_d33(self) -> None:
+        """One user send action admits one message.
+
+        Regression gate for the 2026-10-31 split-brain: a deferred draft and
+        a post-admission wake failure were surfaced to the renderer as send
+        failure, so the user-visible toast, composer-resident content and a
+        manual resend produced duplicate messages even though the first send
+        was durable. MP-D33 keys admission on (sender device, send intent).
+        """
+        schema = MESSAGING_SCHEMA.read_text(encoding="utf-8")
+        assert "send_intent_id TEXT NOT NULL DEFAULT ''" in schema
+        assert "uidx_messaging_pending_messages_send_intent" in schema
+        # The admission ledger survives pending-row deletion on commit.
+        assert "CREATE TABLE IF NOT EXISTS messaging_send_intents" in schema
+        # Additive single-writer migration keeps frozen-baseline DBs usable.
+        assert "ADDITIVE_COLUMN_MIGRATIONS" in schema
+        assert "ADD COLUMN send_intent_id" in schema
+
+        engine = MESSAGING_ENGINE.read_text(encoding="utf-8")
+        assert "send_intent_id: &str" in engine
+        assert "find_pending_message_admission" in engine
+        # Duplicate admission must be resolved before any durable write.
+        admission_index = engine.index("find_pending_message_admission")
+        create_index = engine.index("create_message_draft")
+        assert admission_index < create_index
+        assert "find_send_intent_admission" in engine
+
+        store_rs = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        assert "messaging_send_intents" in store_rs
+        assert "INSERT OR IGNORE INTO messaging_send_intents" in store_rs
+        # Ledger fallback survives pending-row deletion on commit.
+        fallback_index = store_rs.index("FROM messaging_send_intents")
+        assert fallback_index > store_rs.index("find_pending_message_admission")
+
+        command = MESSAGING_COMMAND.read_text(encoding="utf-8")
+        assert "pub send_intent_id: String" in command
+        assert 'send_intent_id.trim().is_empty()' in command
+        assert "messaging_send_intent_status" in command
+        # Post-admission wake uncertainty must not fail the command.
+        wake_index = command.index("post-admission wake failed")
+        assert wake_index > command.index("admission")
+        wake_block = command[wake_index - 260:wake_index + 180]
+        assert "AppResult::fail" not in wake_block
+
+        store = SOCIAL_CHAT_STORE.read_text(encoding="utf-8")
+        assert "newSendIntentId()" in store
+        assert "admitMessagingSendOutcome" in store
+        assert "sendMessageWithAdmissionReconciliation" in store
+        assert "sendIntentStatus" in store
+        # The old draft-throws path must not return.
+        assert "requireQueuedMessagingSendOutcome" not in store
+        assert "not_queued" not in store
+
+        service = (
+            ROOT / "apps/desktop/src/services/im-service.ts"
+        ).read_text(encoding="utf-8")
+        assert "send_intent_id" in service
+        assert "messaging_send_intent_status" in service
+
+        for path in (CHAT_MESSAGE_AREA, CHAT_THREAD_PANEL):
+            text = path.read_text(encoding="utf-8")
+            assert "newSendIntentId()" in text, path.name
+
+    def test_sender_verdict_facts_and_horizon_judgments_mp_d34(self) -> None:
+        """Facts vs judgments never mix in the sender delivery verdict.
+
+        MP-D34 surfaces attempt metadata and per-device x/N delivery facts
+        from the local store, while 60s/24h horizons are projection-only
+        judgments that never stop outbox retry and stay upgradable by later
+        receipts.
+        """
+        schema = MESSAGING_SCHEMA.read_text(encoding="utf-8")
+        # Per-device delivered projection and immutable required denominator.
+        assert "CREATE TABLE IF NOT EXISTS messaging_message_delivery_devices" in schema
+        assert "required_device_count INTEGER NOT NULL DEFAULT 0" in schema
+        assert "ADD COLUMN required_device_count" in schema
+
+        contracts = (
+            ROOT / "packages/messaging-core/src/contracts/mod.rs"
+        ).read_text(encoding="utf-8")
+        assert "consumer_ptid: &'a str" in contracts
+        assert "consumer_device_id: &'a str" in contracts
+        assert "required_device_count: u32" in (
+            ROOT / "packages/messaging-core/src/store/repository.rs"
+        ).read_text(encoding="utf-8")
+
+        receipt_processor = (
+            ROOT / "packages/messaging-core/src/inbox/receipt.rs"
+        ).read_text(encoding="utf-8")
+        # The originator x/N denominator excludes the originator actor.
+        assert "plan_required_recipient_count" in (
+            ROOT / "packages/messaging-core/src/outbox/send.rs"
+        ).read_text(encoding="utf-8")
+        # The inbound receipt consumer identity feeds the durable projection.
+        assert "consumer_ptid: &receipt.ptid" in receipt_processor
+        assert "consumer_device_id: &receipt.device_id" in receipt_processor
+
+        store_rs = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        assert "INSERT OR IGNORE INTO messaging_message_delivery_devices" in store_rs
+        assert "load_message_delivery_facts" in store_rs
+        # The verdict page exposes attempt metadata and both counts.
+        command = MESSAGING_COMMAND.read_text(encoding="utf-8")
+        assert '"delivered_device_count": message.delivered_device_count' in command
+        assert '"required_device_count": message.required_device_count' in command
+        assert '"next_attempt_at_unix_ms": message.next_attempt_at_unix_ms' in command
+
+        verdict = (
+            ROOT / "apps/desktop/src/messaging/deliveryVerdict.ts"
+        ).read_text(encoding="utf-8")
+        # Device-local constants and the layered verdict kinds.
+        assert "SUBMIT_CONVERGENCE_HORIZON_MS = 60_000" in verdict
+        assert "DELIVERY_HORIZON_MS = 24 * 60 * 60_000" in verdict
+        assert "'submit_overdue'" in verdict
+        assert "'undeliverable_suspected'" in verdict
+        assert "'failed_terminal'" in verdict
+        # Terminal/read facts always take precedence over horizon judgments.
+        assert verdict.index("case 'failed'") < verdict.index("case 'accepted'")
+        assert verdict.index("case 'read'") < verdict.index("case 'accepted'")
+
+        meta = (
+            ROOT / "apps/desktop/src/components/chat/message/DeliveryVerdictMeta.tsx"
+        ).read_text(encoding="utf-8")
+        # Unconfirmed is a non-failure judgment, retry keeps message identity.
+        assert "'undeliverable_suspected'" in meta
+        assert "data-message-delivery-state={verdict.kind}" in meta
+        assert "data-message-retry={message.ulid}" in meta
+
+        chat_row = (
+            ROOT / "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
+        ).read_text(encoding="utf-8")
+        assert "<DeliveryVerdictMeta" in chat_row
+
+        service = (
+            ROOT / "apps/desktop/src/services/im-service.ts"
+        ).read_text(encoding="utf-8")
+        assert "delivered_device_count" in service
+        assert "required_device_count" in service
+
+        for locale in ("en", "zh-CN"):
+            chat_json = (
+                ROOT / f"packages/locales/{locale}/chat.json"
+            ).read_text(encoding="utf-8")
+            assert "stateSubmitOverdue" in chat_json, locale
+            assert "stateUndeliverable" in chat_json, locale
+            assert "stateDeliveredPartial" in chat_json, locale
+
+    def test_identity_continuity_rejection_projects_an_explicit_recovery_gate(self) -> None:
+        # Rust status must expose the typed readiness kind.
+        command = RECOVERY_COMMAND.read_text(encoding="utf-8")
+        self.assertIn('"readiness": readiness_kind', command)
+        self.assertIn('RecoveryRequired { .. } => "recovery_required"', command)
+
+        service = RECOVERY_SERVICE.read_text(encoding="utf-8")
+        self.assertIn("export type MessagingProfileReadiness =", service)
+        self.assertIn("| 'recovery_required'", service)
+        self.assertIn("readiness: MessagingProfileReadiness;", service)
+
+        # Store: first confirmed reading only; errors must keep readiness
+        # unknown so a failed read can never false-gate the shell.
+        store = MESSAGING_RECOVERY_STORE.read_text(encoding="utf-8")
+        self.assertIn("readiness: 'unknown'", store)
+        self.assertIn("readiness: status.readiness", store)
+        self.assertIn("readiness: 'unknown'", store.split("catch (error)")[1])
+
+        # The gate renders solely on the typed recovery_required state and
+        # offers in-place phrase restore + sign out, never relaxing the
+        # continuity check itself.
+        gate = RECOVERY_GATE.read_text(encoding="utf-8")
+        self.assertIn("readiness === 'recovery_required'", gate)
+        self.assertIn("if (!recoveryRequired) return null;", gate)
+        self.assertIn('data-chat-recovery-gate="true"', gate)
+        self.assertIn('data-chat-recovery-restore="true"', gate)
+        self.assertIn('data-chat-recovery-signout="true"', gate)
+        self.assertIn("restoreLatest(trimmed)", gate)
+        self.assertIn("identityRuntime.logout()", gate)
+
+        # The chat page owns the gate overlay and keeps it mounted for both
+        # the conversation and contacts sub-pages.
+        page = SOCIAL_CHAT_PAGE.read_text(encoding="utf-8")
+        self.assertIn("import { MessagingRecoveryGate }", page)
+        self.assertIn("<MessagingRecoveryGate />", page)
+
+        # Native harness observes the typed readiness for Journey proof.
+        harness = CHAT_HARNESS.read_text(encoding="utf-8")
+        self.assertIn("async messagingReadiness()", harness)
+        self.assertIn("readiness: recovery.readiness", harness)
+
+    def test_profile_card_is_declarative_and_action_owner_drives_relationship(self) -> None:
+        card = PUBLIC_PROFILE_CARD.read_text(encoding="utf-8")
+        actions = PROFILE_PRIMARY_ACTION.read_text(encoding="utf-8")
+        relationship = PROFILE_RELATIONSHIP.read_text(encoding="utf-8")
+        # The card renders only its data bag + action slot; it must never read
+        # stores or branch on self/friend/stranger.
+        self.assertNotIn("useSocialChatStore", card)
+        self.assertNotIn("useSessionStore", card)
+        self.assertNotIn("classifyProfileRelationship", card)
+        self.assertIn("actions?: ReactNode", card)
+        # One declarative action per relationship state.
+        for marker in (
+            "data-chat-profile-manage",
+            "data-chat-contact-message",
+            "data-chat-profile-add-friend",
+            "data-chat-profile-accept",
+            "data-chat-profile-requested",
+        ):
+            self.assertIn(marker, actions)
+        # Friendship truth covers self/friend/outgoing/incoming/stranger.
+        for kind in ("'self'", "'friend'", "'requested'", "'incoming-request'", "'stranger'"):
+            self.assertIn(kind, relationship)
+
+    def test_saved_messages_self_direct_is_a_single_member_direct(self) -> None:
+        contacts_panel = CHAT_CONTACTS_PANEL.read_text(encoding="utf-8")
+        # Fixed entry opens through the canonical Direct create path.
+        self.assertIn("onClick={openSelfConversation}", contacts_panel)
+        self.assertIn(
+            "onStartChat(friendContactSelection(selfIdentity, friendConversations))",
+            contacts_panel,
+        )
+
     def test_acceptance_window_preserves_native_document_layering(self) -> None:
         self.assertIn('feature = "acceptance-webdriver"', self.desktop_main)
         self.assertIn("target_os = \"macos\"", self.desktop_main)
@@ -1738,7 +2117,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn("projectDesktopIMMessages(", details)
         self.assertNotIn("getIMMessages: s.getIMMessages", details)
         self.assertIn("fn allow_attachment_preview(", messaging)
-        self.assertIn(".asset_protocol_scope()", messaging)
+        # The visible asset scope lives in the shared asset-preview module
+        # introduced by the compact preview chrome refactor.
+        asset_preview = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/asset_preview.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn(".asset_protocol_scope()", asset_preview)
+        self.assertIn("fn allow_selected_file_preview(", asset_preview)
         self.assertEqual(
             messaging.count("allow_attachment_preview(&window,"),
             3,
@@ -1751,18 +2137,24 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             'register_uri_scheme_protocol("chat-file"',
             (ROOT / "apps/desktop/src-tauri/src/main.rs").read_text(encoding="utf-8"),
         )
+        # After the compact preview chrome refactor the auditable grant
+        # lives in the shared asset-preview module; messaging only delegates.
         preview_scope = messaging[
             messaging.index("fn allow_attachment_preview("):
             messaging.index(
                 "#[tauri::command]\npub async fn messaging_pick_attachment_source",
             )
         ]
-        self.assertIn(".allow_file(path)", preview_scope)
+        self.assertIn(
+            "super::asset_preview::allow_selected_file_preview(window, path)",
+            preview_scope,
+        )
         self.assertIn("allow messaging attachment preview", preview_scope)
         self.assertNotIn("tauri::async_runtime::spawn", preview_scope)
         self.assertNotIn("reqwest::Client", preview_scope)
         self.assertNotIn("127.0.0.1", preview_scope)
         self.assertNotIn("reqwest::blocking::Client", preview_scope)
+        self.assertIn(".allow_file(path)", asset_preview)
         self.assertIn("previous_outcome_revision", self.source)
         self.assertIn("revision <= previous_outcome_revision", self.source)
         self.assertIn("data-messaging-attachment-open-state", attachment_item)
@@ -2212,7 +2604,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             message_row,
         )
         self.assertIn(
-            "data-message-thread-summary={threadReplyCount}",
+            "data-message-thread-summary={totalCount}",
             message_row,
         )
         self.assertIn("data-message-metadata-rail={message.ulid}", message_row)

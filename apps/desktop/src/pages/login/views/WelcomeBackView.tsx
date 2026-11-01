@@ -38,6 +38,7 @@ export const WelcomeBackView = memo(function WelcomeBackView({
         />
         <UserSquareAvatar
           remoteUrl={user.avatar}
+          avatarLocalPath={user.avatarLocalPath}
           name={user.name}
           size={88}
           radius={14}

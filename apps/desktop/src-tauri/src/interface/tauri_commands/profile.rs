@@ -293,19 +293,24 @@ pub async fn avatar_resolve_local(
     let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
     let token = session_resolver::token_for_window(&state, &window);
     let url = input.url.unwrap_or_default();
+    let task_url = url.clone();
     let resources = state.station.resources().clone();
     let resolved = tokio::task::spawn_blocking(move || {
-        application_profile::avatar_resolve_local(&resources, token.as_deref(), &url)
+        application_profile::avatar_resolve_local(&resources, token.as_deref(), &task_url)
     })
     .await
     .unwrap_or_else(|e| {
         tracing::error!(error = %e, "avatar_resolve_local task panicked");
-        None
+        serde_json::json!({
+            "state": "failed",
+            "identity": url,
+            "local_path": serde_json::Value::Null,
+            "avatar_url": serde_json::Value::Null,
+        })
     });
 
-    let payload = serde_json::json!({ "local_path": resolved });
     AppResult::success(StubPayload {
         command: "avatar_resolve_local".to_string(),
-        status: payload.to_string(),
+        status: resolved.to_string(),
     })
 }

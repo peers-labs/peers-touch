@@ -4,6 +4,7 @@ import type { FriendChatSession, GroupMember } from './socialProjection';
 import type { AccountProfile } from '../services/desktop_api';
 import {
   accountProfileFromFederationResolve,
+  canonicalProfileAvatar,
   projectGroupAvatarSlots,
   remoteProfileHandle,
   resolveActorIdentity,
@@ -125,6 +126,54 @@ describe('social profile projection', () => {
 
     expect(identity.avatarUrl)
       .toBe('https://station-b.example/sub-oss/file?key=avatars%2Fbob.png');
+  });
+
+  it('keys peer avatars on canonical identity, never the rotating projection token', () => {
+    // The Station profile edge carries both the per-process projected render
+    // URL (`avatar`) and the transport-independent `avatar_identity`.
+    const profile = {
+      ...bobStationProfile,
+      avatar: 'station-resource://local/01NEWEPHEMERALTOKEN',
+      avatar_identity: '/sub-oss/file?key=avatars%2Fbob.png',
+    } as AccountProfile;
+
+    expect(canonicalProfileAvatar(profile)).toBe('/sub-oss/file?key=avatars%2Fbob.png');
+    expect(resolveActorIdentity({
+      ptid: bob,
+      currentUserPtid: alice,
+      currentUserProfile: null,
+      peerProfiles: { [bob]: profile },
+      sessions: [],
+    })).toMatchObject({
+      resolution: 'station',
+      avatarUrl: '/sub-oss/file?key=avatars%2Fbob.png',
+    });
+
+    // Re-fetching the same profile rotates the token but the resolved
+    // identity — and therefore the avatar cache key — stays stable.
+    const refetched = {
+      ...profile,
+      avatar: 'station-resource://local/01ROTATEDDIFFERENTTOKEN',
+    } as AccountProfile;
+    expect(resolveActorIdentity({
+      ptid: bob,
+      currentUserPtid: alice,
+      currentUserProfile: null,
+      peerProfiles: { [bob]: refetched },
+      sessions: [],
+    }).avatarUrl).toBe('/sub-oss/file?key=avatars%2Fbob.png');
+  });
+
+  it('falls back to the projected avatar field when identity is absent', () => {
+    // Older runtimes / federation-resolve mappings omit avatar_identity.
+    expect(canonicalProfileAvatar(bobStationProfile)).toBe('https://station/bob.png');
+    expect(resolveActorIdentity({
+      ptid: bob,
+      currentUserPtid: alice,
+      currentUserProfile: null,
+      peerProfiles: { [bob]: bobStationProfile },
+      sessions: [],
+    }).avatarUrl).toBe('https://station/bob.png');
   });
 
   it('prefers Station profile over stale session metadata', () => {

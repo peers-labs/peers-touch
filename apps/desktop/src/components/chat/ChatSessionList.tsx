@@ -34,7 +34,10 @@ import {
   projectChatFriendContacts,
   type ChatActorIdentityProjection,
 } from '../../store/friendshipProjection';
-import type { DesktopIMConversationProjection } from '../../store/socialProjection';
+import {
+  directConversationDisplayName,
+  type DesktopIMConversationProjection,
+} from '../../store/socialProjection';
 import {
   useActiveChatFederationSlice,
   useActiveSocialChatSlice,
@@ -358,7 +361,11 @@ export function ChatSessionList({
         peerPtid: c.peerPtid,
         federationId: c.federationId || '',
         federationName: c.federationName || '',
-        displayName: c.title,
+        displayName: directConversationDisplayName(
+          c,
+          t('chat.social.contacts.savedMessages'),
+          t('chat.social.sessionList.unknown'),
+        ),
         avatar: c.avatar,
         username: c.username || '',
         federatedHandle: c.federatedHandle || '',
@@ -372,8 +379,10 @@ export function ChatSessionList({
     if (!searchText.trim()) return [];
     const q = searchText.toLowerCase();
 
+    const selfLabel = t('chat.social.contacts.savedMessages').toLowerCase();
     const fromConversations = visibleConversations.filter((conversation) => (
       conversation.title.toLowerCase().includes(q)
+      || (conversation.selfDirect === true && selfLabel.includes(q))
       || conversation.federatedHandle?.toLowerCase().includes(q)
       || conversation.homeStationDomain?.toLowerCase().includes(q)
       || conversation.federationName?.toLowerCase().includes(q)
@@ -415,7 +424,7 @@ export function ChatSessionList({
       }));
 
     return [...fromConversations, ...fromContacts];
-  }, [friendIdentities, searchText, visibleConversations]);
+  }, [friendIdentities, searchText, visibleConversations, t]);
 
   const plusMenuItems = [
     {
@@ -595,17 +604,19 @@ export function ChatSessionList({
           ) : (
             visibleConversations.map((c) => {
               const isActive = isRowActive(c);
-              const name = c.title || t('chat.social.sessionList.unknown');
+              const name = directConversationDisplayName(
+                c,
+                t('chat.social.contacts.savedMessages'),
+                t('chat.social.sessionList.unknown'),
+              );
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
               const unread = c.visibleUnread;
               const localState = conversationLocalState[`${c.kind}:${c.id}`];
-              const identityMetadata = c.kind === 'friend'
-                ? [
-                    c.homeStationName || c.homeStationDomain,
-                    c.federationName,
-                  ].filter(Boolean).join(' · ')
-                : '';
 
+              // The conversation row subtitle is always the latest message.
+              // Station/identity metadata never falls back here: human station
+              // names live on the contact profile, while raw endpoints (IP/domain)
+              // must never be exposed as a conversation description.
               let subtitle = '';
               if (c.preview) {
                 const p = c.preview;
@@ -640,9 +651,6 @@ export function ChatSessionList({
                 } else {
                   subtitle = text;
                 }
-              }
-              if (identityMetadata) {
-                subtitle = [identityMetadata, subtitle].filter(Boolean).join(' · ');
               }
 
               const contextMenuTarget = `context-menu:chat:${c.kind}:${c.id}`;
@@ -724,7 +732,12 @@ export function ChatSessionList({
                               data-chat-identity-federation-id={c.federationId || ''}
                               style={{ display: 'inline-flex', flexShrink: 0 }}
                             >
-                              <UserSquareAvatar remoteUrl={c.avatar} name={name} size={36} />
+                              <UserSquareAvatar
+                                remoteUrl={c.avatar}
+                                actorPtid={c.peerPtid || null}
+                                name={name}
+                                size={36}
+                              />
                             </span>
                           )}
 

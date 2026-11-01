@@ -35,6 +35,7 @@ export function MomentCommentRow({ comment, children, highlighted = false }: Mom
     >
       <UserSquareAvatar
         remoteUrl={identity.avatarUrl || undefined}
+        actorPtid={comment.authorPtid || null}
         name={authorName}
         size={26}
       />

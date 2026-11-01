@@ -25,6 +25,7 @@ import {
 } from '../../store/socialProjection';
 import { actorDisplayName } from '../../store/socialProfileProjection';
 import { log } from '../../utils/logger';
+import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
 import {
@@ -276,19 +277,29 @@ export function ChatThreadPanel() {
     getIMConversations: s.getIMConversations,
     getIMSenderProfile: s.getIMSenderProfile,
   }));
-  const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const [highlightedAnchor, setHighlightedAnchor] = useState<string | null>(null);
+  // Last thread key for which ephemeral reply/delete state was reset.
+  const [resetThreadKey, setResetThreadKey] = useState<string | null>(null);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
   const threadKey = activeUlid && openThreadRootUlid
     ? socialThreadKey(activeKind, activeUlid, openThreadRootUlid)
     : '';
+  // Reset ephemeral reply/delete targets when the thread changes. Guarded
+  // render-phase adjustment (React's documented pattern) avoids the cascading
+  // render of a synchronous setState-in-effect.
+  if (resetThreadKey !== threadKey) {
+    setResetThreadKey(threadKey);
+    setReplyTarget(null);
+    setDeleteTarget(null);
+    setDeletingMessage(false);
+  }
   const currentMessageProjection = useSocialChatStore((state) => (
     activeUlid ? state.messages[activeUlid] ?? EMPTY_SOCIAL_MESSAGES : EMPTY_SOCIAL_MESSAGES
   ));
@@ -347,20 +358,10 @@ export function ChatThreadPanel() {
     return () => window.clearTimeout(timer);
   }, [highlightedAnchor]);
 
-  useEffect(() => {
-    const handle = window.setTimeout(() => {
-      setInputValue('');
-      setReplyTarget(null);
-      setDeleteTarget(null);
-      setDeletingMessage(false);
-    }, 0);
-    return () => window.clearTimeout(handle);
-  }, [activeUlid, openThreadRootUlid]);
-
-  const handleSend = async (draft: ChatComposerDraft) => {
+  const handleSend = async (draft: ChatComposerDraft): Promise<boolean> => {
     const content = draft.text.trim();
     const hasAttachment = draft.attachments.length > 0;
-    if ((!content && !hasAttachment) || !activeUlid || !rootMessage || sending) return;
+    if ((!content && !hasAttachment) || !activeUlid || !rootMessage || sending) return false;
 
     setSending(true);
     try {
@@ -375,6 +376,7 @@ export function ChatThreadPanel() {
           replyToUlid,
           hasAttachment ? draft.attachments : undefined,
           rootMessage.ulid,
+          newSendIntentId(),
         );
       } else {
         await sendGroupMessage(
@@ -384,6 +386,7 @@ export function ChatThreadPanel() {
           replyToUlid,
           hasAttachment ? draft.attachments : undefined,
           rootMessage.ulid,
+          newSendIntentId(),
         );
       }
       await loadThreadMessages(activeUlid, rootMessage.ulid, activeKind);
@@ -393,13 +396,14 @@ export function ChatThreadPanel() {
         : rootMessage.ulid;
       await markThreadRead(activeUlid, rootMessage.ulid, lastReadUlid, activeKind);
       await refreshThreadCounts(activeUlid, [rootMessage.ulid], activeKind);
-      setInputValue('');
       setReplyTarget(null);
+      setSending(false);
+      return true;
     } catch (error) {
       log.error('socialChat', 'thread reply send failed', error);
       toast.error(t('chat.social.thread.sendFailed'));
-    } finally {
       setSending(false);
+      return false;
     }
   };
 
@@ -648,12 +652,11 @@ export function ChatThreadPanel() {
           </Flexbox>
 
           <ChatComposer
+            key={`thread-composer:${activeUlid}:${openThreadRootUlid}`}
             activeConversationId={activeUlid || ''}
             disabled={!activeUlid || !rootMessage}
             editing={false}
             surfaceBackground={token.colorBgContainer}
-            value={inputValue}
-            onChange={setInputValue}
             onBlurInput={() => {}}
             onCancelEdit={() => {}}
             onCancelReply={() => setReplyTarget(null)}

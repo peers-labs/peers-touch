@@ -265,6 +265,57 @@ describe('projectChatFriendContacts', () => {
     });
   });
 
+  it('keys contact avatars on canonical identity, never the rotating projection token', () => {
+    const base = {
+      id: 'ptid:bob',
+      username: 'bob',
+      acct: '@bob@station.example',
+      display_name: 'Bob Home',
+    };
+    const project = (avatar: string, avatarIdentity?: string) => projectChatFriendContacts({
+      conversations: [conversation('direct-bob', 'ptid:bob', 'federation-current')],
+      friendRequests: [{
+        ...acceptedRequest('ptid:self', 'ptid:bob', 'federation-current'),
+        receiverDisplayName: 'Bob request',
+      }],
+      peerProfiles: {
+        'ptid:bob': {
+          ...base,
+          avatar,
+          ...(avatarIdentity ? { avatar_identity: avatarIdentity } : {}),
+        } as AccountProfile,
+      },
+      currentUserPtid: 'ptid:self',
+      federations: [{ federationId: 'federation-current', name: 'Friends Federation' }],
+    })[0];
+
+    // The peer profile edge carries a rotating projected token plus the
+    // stable canonical identity; contacts must key on the identity.
+    expect(project(
+      'station-resource://local/01FIRSTTOKEN',
+      '/sub-oss/file?key=avatars%2Fbob.png',
+    )?.avatarUrl).toBe('/sub-oss/file?key=avatars%2Fbob.png');
+    expect(project(
+      'station-resource://local/01ROTATEDTOKEN',
+      '/sub-oss/file?key=avatars%2Fbob.png',
+    )?.avatarUrl).toBe('/sub-oss/file?key=avatars%2Fbob.png');
+
+    // Older runtimes without avatar_identity keep the legacy profile fallback.
+    expect(project('legacy-avatar')?.avatarUrl).toBe('legacy-avatar');
+    // Without any profile, the friend-request payload avatar is used.
+    expect(projectChatFriendContacts({
+      conversations: [conversation('direct-bob', 'ptid:bob', 'federation-current')],
+      friendRequests: [{
+        ...acceptedRequest('ptid:self', 'ptid:bob', 'federation-current'),
+        receiverDisplayName: 'Bob request',
+        receiverAvatar: 'request-avatar',
+      }],
+      peerProfiles: {},
+      currentUserPtid: 'ptid:self',
+      federations: [{ federationId: 'federation-current', name: 'Friends Federation' }],
+    })[0]?.avatarUrl).toBe('request-avatar');
+  });
+
   it('does not fabricate contacts from pending, rejected, or conversation state', () => {
     const pending = {
       ...acceptedRequest('ptid:self', 'ptid:pending', 'federation-current'),
@@ -289,7 +340,7 @@ describe('projectChatFriendContacts', () => {
     })).toEqual([]);
   });
 
-  it('derives the Station domain from the canonical handle when needed', () => {
+  it('keeps only the federation label when the Station has no human name', () => {
     expect(chatActorIdentityMetadataParts({
       federatedHandle: '@bob@remote.station.example',
       homeStationDomain: '',
@@ -298,8 +349,32 @@ describe('projectChatFriendContacts', () => {
       federationName: 'Friends Federation',
     })).toEqual({
       federation: 'Friends Federation',
-      station: 'remote.station.example',
+      // A raw host domain is routing data, never a user-visible station label.
+      station: '',
     });
+  });
+
+  it('exposes a human Station name but rejects raw authorities', () => {
+    expect(chatActorIdentityMetadataParts({
+      federatedHandle: '@bob@remote.station.example',
+      homeStationDomain: 'remote.station.example',
+      homeStationName: 'Aspen Station',
+      homeStationPeerId: '12D3KooW-remote',
+      federationId: 'federation-current',
+      federationName: 'Friends Federation',
+    })).toEqual({
+      federation: 'Friends Federation',
+      station: 'Aspen Station',
+    });
+
+    expect(chatActorIdentityMetadataParts({
+      federatedHandle: '@bob@10.0.0.5:18280',
+      homeStationDomain: '10.0.0.5:18280',
+      homeStationName: '10.0.0.5:18280',
+      homeStationPeerId: '12D3KooW-remote',
+      federationId: 'federation-current',
+      federationName: '',
+    })).toEqual({ federation: 'federation-current', station: '' });
   });
 });
 

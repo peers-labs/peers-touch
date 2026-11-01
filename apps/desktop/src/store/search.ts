@@ -25,6 +25,11 @@ export interface SearchState {
   status: 'idle' | 'loading' | 'ready' | 'error';
   stalled: boolean;
   response: SearchResponse | null;
+  // Progressive observation for the in-flight FIND. Never enters traversal,
+  // cache, selection or pagination; cleared when the final frame publishes.
+  progressive: SearchResponse | null;
+  progressiveRequestId: string | null;
+  progressiveSources: string[];
   traversal: SearchTraversal | null;
   errorKey: string | null;
   opening: boolean;
@@ -37,6 +42,7 @@ export interface SearchState {
 // Projection only. Search runtime owns all reads, cache and lifecycle.
 export const emptySearchState = (): SearchState => ({
   open: false, query: '', mode: 'suggest', status: 'idle', response: null,
+  progressive: null, progressiveRequestId: null, progressiveSources: [],
   traversal: null,
   displayedQuery: '', displayedMode: 'suggest', stalled: false,
   contentFilter: 'all', displayedFilter: 'all',

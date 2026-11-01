@@ -6,8 +6,16 @@ use keyring::Entry;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+
+/// Configure the canonical profile-scoped storage-key directory. Called by
+/// the composition root (which resolves the OS data dir) so this provider
+/// never depends on layout details itself. When unset, keys persist through
+/// the OS keychain, matching non-composition-root callers.
+pub fn set_storage_key_file_root(root: PathBuf) -> Result<(), KeyProviderError> {
+    PlatformKeyProvider::set_file_root(root)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlatformBackend {
@@ -40,6 +48,13 @@ impl PlatformKeyProvider {
     pub fn shared() -> &'static Self {
         static INSTANCE: OnceLock<PlatformKeyProvider> = OnceLock::new();
         INSTANCE.get_or_init(PlatformKeyProvider::default)
+    }
+
+    /// Bind the canonical `<profile>/data/secure-store` root once at startup.
+    pub fn set_file_root(root: PathBuf) -> Result<(), KeyProviderError> {
+        Self::canonical_root()
+            .set(root)
+            .map_err(|_| KeyProviderError::internal("<config>", "storage key root already set"))
     }
 
     pub fn backend() -> PlatformBackend {
@@ -118,6 +133,14 @@ impl PlatformKeyProvider {
         }
     }
 
+    /// Composition root for the canonical profile-scoped file store.
+    /// Configured by bootstrap as `<profile-data>/secure-store`; this
+    /// provider appends `storage-keys/<sha256(key_ref)>`.
+    fn canonical_root() -> &'static OnceLock<PathBuf> {
+        static ROOT: OnceLock<PathBuf> = OnceLock::new();
+        &ROOT
+    }
+
     /// Sandboxed file store used when `PEERS_STORAGE_ROOT` is set.
     fn sandbox_file_store_path(key_ref: &str) -> Option<PathBuf> {
         let root = std::env::var("PEERS_STORAGE_ROOT").ok()?;
@@ -125,15 +148,44 @@ impl PlatformKeyProvider {
         if root.is_empty() {
             return None;
         }
-        Some(
-            PathBuf::from(root)
-                .join("peers-touch")
-                .join("desktop")
-                .join("data")
-                .join("secure-store")
-                .join("storage-keys")
-                .join(Self::key_file_name(key_ref)),
+        Some(Self::file_path_under_root(PathBuf::from(root), key_ref))
+    }
+
+    /// Canonical, upgrade-portable per-profile file location. Sandbox roots
+    /// win so acceptance runs stay isolated; otherwise the bootstrap-provided
+    /// profile data directory is used.
+    fn canonical_file_store_path(key_ref: &str) -> Option<PathBuf> {
+        if let Some(path) = Self::sandbox_file_store_path(key_ref) {
+            return Some(path);
+        }
+        Self::canonical_root()
+            .get()
+            .map(|root| root.join("storage-keys").join(Self::key_file_name(key_ref)))
+    }
+
+    fn file_path_under_root(root: PathBuf, key_ref: &str) -> PathBuf {
+        root.join("peers-touch")
+            .join("desktop")
+            .join("data")
+            .join("secure-store")
+            .join("storage-keys")
+            .join(Self::key_file_name(key_ref))
+    }
+
+    /// Pre-profile debug builds persisted keys in a hardcoded default-profile
+    /// location that ignored `PT_PROFILE`. Existing installations' working
+    /// keys still live there, so it remains a read-only migration source.
+    fn legacy_debug_file_store_path(key_ref: &str) -> Option<PathBuf> {
+        storage::app_file_path(
+            "desktop",
+            storage::StorageKind::Data,
+            &[
+                "secure-store",
+                "storage-keys",
+                &Self::key_file_name(key_ref),
+            ],
         )
+        .ok()
     }
 
     fn key_file_name(key_ref: &str) -> String {
@@ -141,34 +193,6 @@ impl PlatformKeyProvider {
         hasher.update(key_ref.as_bytes());
         let digest = hasher.finalize();
         digest.iter().map(|b| format!("{b:02x}")).collect()
-    }
-
-    /// File-backed key location.
-    ///
-    /// Sandboxed runs (`PEERS_STORAGE_ROOT`) and debug/dev builds persist keys
-    /// in a 0600 file. Debug builds are recompiled constantly, and each ad-hoc
-    /// signature invalidates the macOS Keychain item's access-control list,
-    /// which otherwise forces a login-password prompt on every cold read.
-    /// Release builds return None and persist through the OS keychain.
-    fn file_store_path(key_ref: &str) -> Option<PathBuf> {
-        if let Some(path) = Self::sandbox_file_store_path(key_ref) {
-            return Some(path);
-        }
-        #[cfg(debug_assertions)]
-        {
-            storage::app_file_path(
-                "desktop",
-                storage::StorageKind::Data,
-                &[
-                    "secure-store",
-                    "storage-keys",
-                    &Self::key_file_name(key_ref),
-                ],
-            )
-            .ok()
-        }
-        #[cfg(not(debug_assertions))]
-        None
     }
 
     fn classify_keyring_error(key_ref: &str, err: &keyring::Error) -> KeyProviderError {
@@ -193,21 +217,14 @@ impl PlatformKeyProvider {
         }
     }
 
-    fn read_from_os_store(key_ref: &str) -> Result<Option<KeyMaterial>, KeyProviderError> {
-        let Some(path) = Self::file_store_path(key_ref) else {
-            return Self::read_from_keychain(key_ref);
-        };
-        match fs::read_to_string(&path) {
+    /// Read a key file, returning Ok(None) when it does not exist.
+    fn read_key_file(
+        key_ref: &str,
+        path: &Path,
+    ) -> Result<Option<KeyMaterial>, KeyProviderError> {
+        match fs::read_to_string(path) {
             Ok(payload) => Ok(Self::decode_material(payload.trim())),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // First launch on the file store: migrate the existing keychain
-                // key once (a single prompt), then keep using the file.
-                if let Some(migrated) = Self::read_from_keychain(key_ref)? {
-                    Self::write_key_file(key_ref, &path, &migrated)?;
-                    return Ok(Some(migrated));
-                }
-                Ok(None)
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(KeyProviderError::io_failure(
                 key_ref,
                 format!("file keystore read failed: {e}"),
@@ -215,8 +232,36 @@ impl PlatformKeyProvider {
         }
     }
 
+    fn read_from_os_store(key_ref: &str) -> Result<Option<KeyMaterial>, KeyProviderError> {
+        // 1. Canonical profile-scoped file store.
+        if let Some(path) = Self::canonical_file_store_path(key_ref) {
+            if let Some(item) = Self::read_key_file(key_ref, &path)? {
+                return Ok(Some(item));
+            }
+            // 2. Legacy carrier A: the pre-profile debug file store that
+            //    ignored PT_PROFILE. Migrate on first canonical miss.
+            if let Some(legacy_path) = Self::legacy_debug_file_store_path(key_ref) {
+                if legacy_path != path {
+                    if let Some(item) = Self::read_key_file(key_ref, &legacy_path)? {
+                        Self::write_key_file(key_ref, &path, &item)?;
+                        return Ok(Some(item));
+                    }
+                }
+            }
+            // 3. Legacy carrier B: the OS keychain (release builds before the
+            //    file store became canonical). Migrate on first miss.
+            if let Some(item) = Self::read_from_keychain(key_ref)? {
+                Self::write_key_file(key_ref, &path, &item)?;
+                return Ok(Some(item));
+            }
+            return Ok(None);
+        }
+        // No file root configured (non-composition-root callers): keychain.
+        Self::read_from_keychain(key_ref)
+    }
+
     fn write_to_os_store(key_ref: &str, item: &KeyMaterial) -> Result<(), KeyProviderError> {
-        match Self::file_store_path(key_ref) {
+        match Self::canonical_file_store_path(key_ref) {
             Some(path) => Self::write_key_file(key_ref, &path, item),
             None => Self::write_to_keychain(key_ref, item),
         }
@@ -360,6 +405,10 @@ impl KeyProvider for PlatformKeyProvider {
 #[cfg(test)]
 mod tests {
     use keyring::credential::CredentialPersistence;
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+    use crate::infrastructure::storage::test_storage_env_lock;
 
     #[test]
     fn production_targets_use_restart_persistent_key_storage() {
@@ -368,5 +417,141 @@ mod tests {
             matches!(persistence, CredentialPersistence::UntilDelete),
             "SQLCipher keys must survive Desktop process restarts",
         );
+    }
+
+    /// Unique scratch dir under the system temp dir; no external crate needed.
+    fn temp_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "peers-touch-keyprov-{}-{}-{label}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos(),
+        ));
+        fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    fn sandbox_secure_key_path(root: &Path, key_ref: &str) -> PathBuf {
+        let mut hasher = Sha256::new();
+        hasher.update(key_ref.as_bytes());
+        let file_name: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        root.join("peers-touch")
+            .join("desktop")
+            .join("data")
+            .join("secure-store")
+            .join("storage-keys")
+            .join(file_name)
+    }
+
+    #[test]
+    fn canonical_file_store_persists_and_round_trips_without_the_keychain() {
+        let _env = test_storage_env_lock();
+        let sandbox = temp_dir("roundtrip");
+        unsafe {
+            std::env::set_var("PEERS_STORAGE_ROOT", &sandbox);
+        }
+        let key_ref = "chat/test-sandbox/main/actor-roundtrip";
+        let expected_path = sandbox_secure_key_path(&sandbox, key_ref);
+
+        let provider = PlatformKeyProvider::new();
+        let created = provider
+            .get_or_create_key(key_ref)
+            .expect("key is created in the sandbox file store");
+        assert_eq!(created.key_bytes.len(), 32);
+        assert!(expected_path.is_file(), "key must be persisted as a 0600 file");
+
+        // A fresh provider with an empty cache restores the exact key.
+        let restored = PlatformKeyProvider::new()
+            .get_or_create_key(key_ref)
+            .expect("restored from file store");
+        assert_eq!(restored.key_bytes, created.key_bytes);
+        assert_eq!(restored.key_version, 1);
+
+        unsafe {
+            std::env::remove_var("PEERS_STORAGE_ROOT");
+        }
+        let _ = fs::remove_dir_all(&sandbox);
+    }
+
+    #[test]
+    fn per_ref_files_isolate_distinct_actors() {
+        let _env = test_storage_env_lock();
+        let sandbox = temp_dir("isolation");
+        unsafe {
+            std::env::set_var("PEERS_STORAGE_ROOT", &sandbox);
+        }
+        let provider = PlatformKeyProvider::new();
+
+        let actor_a = provider
+            .get_or_create_key("chat/corpstable/main/actor-a")
+            .expect("actor a key");
+        let actor_b = provider
+            .get_or_create_key("chat/corpstable/main/actor-b")
+            .expect("actor b key");
+
+        assert_ne!(actor_a.key_bytes, actor_b.key_bytes);
+        let path_a = sandbox_secure_key_path(&sandbox, "chat/corpstable/main/actor-a");
+        let path_b = sandbox_secure_key_path(&sandbox, "chat/corpstable/main/actor-b");
+        assert_ne!(path_a, path_b);
+        assert!(path_a.is_file() && path_b.is_file());
+
+        unsafe {
+            std::env::remove_var("PEERS_STORAGE_ROOT");
+        }
+        let _ = fs::remove_dir_all(&sandbox);
+    }
+
+    #[test]
+    fn migrates_legacy_default_profile_key_into_the_canonical_profile_store() {
+        let _env = test_storage_env_lock();
+        let fixture = temp_dir("legacy-migration");
+        let canonical_root = fixture.join("corpstable-app/data/secure-store");
+        // The process-wide root binds once; this is the only test configuring it.
+        set_storage_key_file_root(canonical_root.clone()).expect("canonical root binds once");
+        unsafe {
+            std::env::set_var("HOME", &fixture);
+            std::env::remove_var("PEERS_STORAGE_ROOT");
+        }
+
+        let key_ref = "chat/corpstable/main/actor-legacy";
+        let legacy = PlatformKeyProvider::legacy_debug_file_store_path(key_ref)
+            .expect("legacy default-profile path resolves");
+        let legacy_item = KeyMaterial {
+            key_id: key_ref.to_string(),
+            key_version: 1,
+            key_bytes: vec![0x42u8; 32],
+        };
+        if let Some(parent) = legacy.parent() {
+            std::fs::create_dir_all(parent).expect("legacy dir");
+        }
+        std::fs::write(
+            &legacy,
+            PlatformKeyProvider::encode_material(&legacy_item),
+        )
+        .expect("seed legacy key file");
+
+        let resolved = PlatformKeyProvider::new()
+            .get_or_create_key(key_ref)
+            .expect("legacy key migrates");
+        assert_eq!(resolved.key_bytes, vec![0x42u8; 32]);
+
+        let canonical = canonical_root
+            .join("storage-keys")
+            .join(PlatformKeyProvider::key_file_name(key_ref));
+        assert!(
+            canonical.is_file(),
+            "migrated key must land in the canonical profile store",
+        );
+
+        unsafe {
+            std::env::remove_var("HOME");
+        }
+        let _ = fs::remove_dir_all(&fixture);
     }
 }

@@ -33,10 +33,10 @@ describe('chat message timeline virtualization policy', () => {
 describe('loaded thread reply ids', () => {
   it('preserves the authority order from the complete message projection', () => {
     const messages = [
-      { ulid: 'root', threadRootUlid: '' },
-      { ulid: 'reply-2', threadRootUlid: 'root' },
-      { ulid: 'other-root', threadRootUlid: '' },
-      { ulid: 'reply-3', threadRootUlid: 'root' },
+      { ulid: 'root', threadRootUlid: '', sentAtMs: 10 },
+      { ulid: 'reply-2', threadRootUlid: 'root', sentAtMs: 20 },
+      { ulid: 'other-root', threadRootUlid: '', sentAtMs: 30 },
+      { ulid: 'reply-3', threadRootUlid: 'root', sentAtMs: 40 },
     ] as ChatMessage[];
 
     const stats = (projectedReplyCount?: number) => resolveChatMessageThreadStats({
@@ -45,41 +45,88 @@ describe('loaded thread reply ids', () => {
       loadedThreadMessages: [],
       projectedReplyCount,
     });
-    expect(stats()).toEqual({ replyCount: 2, replyIds: ['reply-2', 'reply-3'] });
+    expect(stats()).toEqual({
+      replyCount: 2,
+      replyIds: ['reply-2', 'reply-3'],
+      previewMessages: [messages[1], messages[3]],
+    });
     expect(stats(3).replyCount).toBe(3);
     expect(stats(1).replyCount).toBe(2);
   });
 
   it('exposes reply identities loaded by the thread owner after a cold timeline', () => {
-    const currentMessages = [{ ulid: 'root', threadRootUlid: '' }] as ChatMessage[];
+    const currentMessages = [{ ulid: 'root', threadRootUlid: '', sentAtMs: 10 }] as ChatMessage[];
     const options = { rootUlid: 'root', currentMessages, projectedReplyCount: 2 };
     expect(resolveChatMessageThreadStats({
       ...options,
       loadedThreadMessages: [],
-    })).toEqual({ replyCount: 2, replyIds: [] });
+    })).toEqual({ replyCount: 2, replyIds: [], previewMessages: [] });
+
+    const firstReply = { ulid: 'first-reply', threadRootUlid: 'root', sentAtMs: 20 } as ChatMessage;
+    const nestedReply = {
+      ulid: 'nested-reply',
+      threadRootUlid: 'root',
+      replyToUlid: 'first-reply',
+      sentAtMs: 30,
+    } as ChatMessage;
     expect(resolveChatMessageThreadStats({
       ...options,
-      loadedThreadMessages: [
-        currentMessages[0],
-        { ulid: 'first-reply', threadRootUlid: 'root' },
-        { ulid: 'nested-reply', threadRootUlid: 'root', replyToUlid: 'first-reply' },
-      ] as ChatMessage[],
-    })).toEqual({ replyCount: 2, replyIds: ['first-reply', 'nested-reply'] });
+      loadedThreadMessages: [currentMessages[0], firstReply, nestedReply],
+    })).toEqual({
+      replyCount: 2,
+      replyIds: ['first-reply', 'nested-reply'],
+      previewMessages: [firstReply, nestedReply],
+    });
   });
 
   it('uses the current thread projection when the timeline still has stale replies', () => {
+    const currentReply = { ulid: 'current-reply', threadRootUlid: 'root', sentAtMs: 30 } as ChatMessage;
     expect(resolveChatMessageThreadStats({
       rootUlid: 'root',
       currentMessages: [
-        { ulid: 'root', threadRootUlid: '' },
-        { ulid: 'stale-reply', threadRootUlid: 'root' },
+        { ulid: 'root', threadRootUlid: '', sentAtMs: 10 },
+        { ulid: 'stale-reply', threadRootUlid: 'root', sentAtMs: 20 },
       ] as ChatMessage[],
       loadedThreadMessages: [
-        { ulid: 'root', threadRootUlid: '' },
-        { ulid: 'current-reply', threadRootUlid: 'root' },
+        { ulid: 'root', threadRootUlid: '', sentAtMs: 10 },
+        currentReply,
       ] as ChatMessage[],
       projectedReplyCount: 1,
-    })).toEqual({ replyCount: 1, replyIds: ['current-reply'] });
+    })).toEqual({
+      replyCount: 1,
+      replyIds: ['current-reply'],
+      previewMessages: [currentReply],
+    });
+  });
+
+  it('orders the inline preview chronologically and keeps only the latest tail', () => {
+    const root = { ulid: 'root', threadRootUlid: '', sentAtMs: 1 } as ChatMessage;
+    const replies = Array.from({ length: 12 }, (_, index) => ({
+      ulid: `reply-${index}`,
+      threadRootUlid: 'root',
+      sentAtMs: 100 - index,
+    })) as ChatMessage[];
+
+    const { previewMessages } = resolveChatMessageThreadStats({
+      rootUlid: 'root',
+      currentMessages: [],
+      // Feed replies newest-first to prove the resolver sorts by timestamp.
+      loadedThreadMessages: [root, ...replies],
+    });
+
+    expect(previewMessages).toHaveLength(10);
+    expect(previewMessages.map(message => message.ulid)).toEqual([
+      'reply-9',
+      'reply-8',
+      'reply-7',
+      'reply-6',
+      'reply-5',
+      'reply-4',
+      'reply-3',
+      'reply-2',
+      'reply-1',
+      'reply-0',
+    ]);
   });
 });
 

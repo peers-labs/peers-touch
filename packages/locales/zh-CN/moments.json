@@ -170,6 +170,7 @@
   "moments.compose.imageRetry": "重试",
   "moments.compose.imageRemove": "移除图片",
   "moments.compose.imagePendingAlt": "待发布图片",
+  "moments.compose.privateSlot": "仅保留给安全内容，不上传明文",
 
   "moments.lightbox.close": "关闭",
   "moments.lightbox.previous": "上一张",
@@ -193,6 +194,35 @@
   "moments.comment.retryIn": "{{count}} 秒后可重试。",
   "moments.comment.readbackPending": "评论已提交，但暂时无法确认发布结果。你可以检查结果，系统不会重复发送。",
   "moments.comment.confirmResult": "确认发布结果",
+  "moments.comment.publicSubmitFailed": "评论发布失败，草稿已保留。",
+  "moments.comment.deleteFailed": "评论删除失败。",
+  "moments.comment.mentionNoMatch": "没有匹配的人",
+
+  "moments.reaction.pending": "更新中…",
+
+  "moments.compose.media.IMAGE_TYPE_UNSUPPORTED": "不支持该图片格式。请使用 JPEG、PNG、GIF、WebP 或 BMP。",
+  "moments.compose.media.IMAGE_NOT_DECODABLE": "无法解码该图片。",
+  "moments.compose.media.IMAGE_EMPTY": "所选图片为空。",
+  "moments.compose.media.IMAGE_UPLOAD_FAILED": "图片上传失败，草稿已保留，可重试。",
+
+  "moments.notification.title": "通知",
+  "moments.notification.empty": "暂无通知",
+  "moments.notification.markRead": "标为已读",
+  "moments.notification.markAllRead": "全部标为已读",
+  "moments.notification.delete": "删除",
+  "moments.notification.categorySocial": "社交",
+  "moments.notification.categoryChat": "聊天",
+  "moments.notification.categoryTask": "任务",
+  "moments.notification.categorySystem": "系统",
+  "moments.notification.commentMentionTitle": "你在一条评论中被提及",
+  "moments.notification.commentMentionBody": "打开动态查看该评论。",
+  "moments.notification.friendRequestTitle": "收到好友请求",
+  "moments.notification.friendAcceptedTitle": "好友请求已通过",
+  "moments.notification.fallbackTitle": "通知",
+  "moments.notification.timeJustNow": "刚刚",
+  "moments.notification.timeMinutesAgo": "{{count}} 分钟前",
+  "moments.notification.timeHoursAgo": "{{count}} 小时前",
+  "moments.notification.timeDaysAgo": "{{count}} 天前",
 
   "moments.author.unknown": "未知用户",
 

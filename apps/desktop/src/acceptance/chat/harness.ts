@@ -21,6 +21,7 @@ import {
   refreshSocialProjection,
 } from '../../services/socialRealtime';
 import { useRelationshipsStore } from '../../store/relationships';
+import { useMessagingRecoveryStore } from '../../store/messagingRecovery';
 import { useSessionStore } from '../../store/session';
 import { useSearchStore } from '../../store/search';
 import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
@@ -33,6 +34,7 @@ import {
 } from '../../gen/proto/domain/chat/attachment_pb';
 import { groupCallManager } from '../../modules/groupCall';
 import { callP2p } from '../../modules/p2p/callP2p';
+import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
 import { nativeAcceptanceBridge } from './nativeBridge';
@@ -548,6 +550,26 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async messagingReadiness() {
+      const recovery = useMessagingRecoveryStore.getState();
+      return {
+        readiness: recovery.readiness,
+        backupExists: recovery.exists,
+        restoring: recovery.restoring,
+        loading: recovery.loading,
+        error: recovery.error,
+      };
+    },
+
+    async refreshMessagingReadiness() {
+      await useMessagingRecoveryStore.getState().refresh();
+      const recovery = useMessagingRecoveryStore.getState();
+      return {
+        readiness: recovery.readiness,
+        backupExists: recovery.exists,
+      };
+    },
+
     async federationContext() {
       const response = await api.federationListContexts();
       return {
@@ -803,6 +825,38 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async sendIntentStatus({ sendIntentId }: { sendIntentId: string }) {
+      return imServiceV1.messaging.sendIntentStatus(sendIntentId);
+    },
+
+    async conversationList() {
+      return imServiceV1.messaging.listConversations();
+    },
+
+    // MP-D33: send with an explicit device-local send intent so journeys can
+    // repeat the same user action and prove it admits exactly one message.
+    async sendInteractionMessageWithIntent({
+      conversationId,
+      kind,
+      content,
+      sendIntentId,
+    }: {
+      conversationId: string;
+      kind: 'friend' | 'group';
+      content: string;
+      sendIntentId: string;
+    }) {
+      const outcome = await imServiceV1.messaging.sendMessage(
+        conversationId,
+        kind === 'friend' ? 'direct' : 'group',
+        content,
+        [],
+        { sendIntentId },
+      );
+      await refreshConversation(kind, conversationId);
+      return { ...outcome, projection: interactionProjection(kind, conversationId, outcome.messageId) };
+    },
+
     async sendInteractionMessage({
       conversationId,
       kind,
@@ -819,6 +873,7 @@ export function installAcceptanceHarness(): void {
         {
           replyToMessageId: replyToMessageId || undefined,
           threadRootMessageId: threadRootMessageId || undefined,
+          sendIntentId: newSendIntentId(),
         },
       );
       await refreshConversation(kind, conversationId);
@@ -848,6 +903,8 @@ export function installAcceptanceHarness(): void {
           conversationId,
           kind === 'friend' ? 'direct' : 'group',
           `${prefix}-${String(index).padStart(3, '0')}`,
+          [],
+          { sendIntentId: newSendIntentId() },
         );
         messageIds.push(outcome.messageId);
       }
@@ -1034,7 +1091,13 @@ export function installAcceptanceHarness(): void {
       const lastIndex = startIndex + count - 1;
       for (let index = startIndex; index <= lastIndex; index += 1) {
         const content = `${prefix}-${String(index).padStart(4, '0')}`;
-        await imServiceV1.messaging.sendMessage(groupUlid, 'group', content);
+        await imServiceV1.messaging.sendMessage(
+          groupUlid,
+          'group',
+          content,
+          [],
+          { sendIntentId: newSendIntentId() },
+        );
       }
       await social.loadMessages(groupUlid, 'group').catch(() => {});
       return {

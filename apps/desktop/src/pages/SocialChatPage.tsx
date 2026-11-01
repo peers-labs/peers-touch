@@ -4,6 +4,7 @@ import { Flexbox } from 'react-layout-kit';
 import { theme, Tooltip } from 'antd';
 import { MessageCircle, Contact } from 'lucide-react';
 import { ChatSessionList } from '../components/chat/ChatSessionList';
+import { MessagingRecoveryGate } from '../components/chat/MessagingRecoveryGate';
 import { ChatContactsPanel } from '../components/chat/ChatContactsPanel';
 import { ChatContactsDetailPanel } from '../components/chat/ChatContactsDetailPanel';
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
@@ -394,6 +395,12 @@ export function SocialChatPage() {
           stays visible regardless of which conversation is open. */}
       <CallSurface />
       <GroupCallSurface />
+
+      {/* Actor identity continuity gate: when the local device identity
+          does not match the Station continuity record, the messaging engine
+          stays inactive. Project an explicit recovery action instead of a
+          half-working conversation surface. */}
+      <MessagingRecoveryGate />
     </Flexbox>
   );
 }

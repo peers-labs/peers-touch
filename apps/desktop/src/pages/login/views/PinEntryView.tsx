@@ -79,6 +79,7 @@ export const PinEntryView = memo(function PinEntryView({
       <div style={{ position: 'relative', marginBottom: 16, marginTop: 8 }}>
         <UserSquareAvatar
           remoteUrl={account.avatar}
+          avatarLocalPath={account.avatarLocalPath}
           name={account.name}
           size={72}
           radius={12}

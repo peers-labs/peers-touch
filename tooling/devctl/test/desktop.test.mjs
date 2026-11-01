@@ -134,6 +134,9 @@ test('desktop install builds only the macOS app bundle with dev overrides', () =
         },
       },
     },
+    bundle: {
+      createUpdaterArtifacts: false,
+    },
   });
   assert.deepEqual(
     desktopInstallTauriArguments('/tmp/desktop-install.conf.json'),

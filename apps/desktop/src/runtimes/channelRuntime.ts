@@ -3,6 +3,7 @@ import {
   ChannelRequesterAuthorizationStatus,
 } from '../gen/proto/domain/channel/channel_pb';
 import { EVENT, eventBus } from '../kernel/events';
+import { isDocumentHidden, onDocumentForeground } from '../kernel/documentVisibility';
 import { useChannelStore } from '../store/channel';
 import { useSessionStore } from '../store/session';
 import { log } from '../utils/logger';
@@ -17,6 +18,7 @@ let authorizationReconcileTimer: ReturnType<typeof setInterval> | null = null;
 let reconcileInFlight: Promise<void> | null = null;
 let unsubscribeSession: (() => void) | null = null;
 let unsubscribers: Array<() => void> = [];
+let unsubscribeForeground: (() => void) | null = null;
 
 function authenticatedActorPtid(): string | null {
   const session = useSessionStore.getState();
@@ -87,28 +89,39 @@ function clearSubscriptions(): void {
   unsubscribers = [];
 }
 
+function pollPendingAuthorization(): void {
+  const state = useChannelStore.getState();
+  const bindingId = state.selectedBindingId;
+  if (!bindingId || state.detailLoadingByBindingId[bindingId]) return;
+  const authorization =
+    state.detailsByBindingId[bindingId]?.requesterAuthorization;
+  if (
+    authorization?.status
+    !== ChannelRequesterAuthorizationStatus.PENDING
+  ) {
+    return;
+  }
+  void state.loadBindingDetail(
+    bindingId,
+    'requester-authorization-pending',
+  );
+}
+
 function installTimer(): void {
   if (reconcileTimer !== null) return;
   reconcileTimer = setInterval(() => {
+    // Background tabs skip polling; the foreground listener catches up.
+    if (isDocumentHidden()) return;
     reconcileDetached('periodic');
   }, CHANNEL_RECONCILE_INTERVAL_MS);
   authorizationReconcileTimer = setInterval(() => {
-    const state = useChannelStore.getState();
-    const bindingId = state.selectedBindingId;
-    if (!bindingId || state.detailLoadingByBindingId[bindingId]) return;
-    const authorization =
-      state.detailsByBindingId[bindingId]?.requesterAuthorization;
-    if (
-      authorization?.status
-      !== ChannelRequesterAuthorizationStatus.PENDING
-    ) {
-      return;
-    }
-    void state.loadBindingDetail(
-      bindingId,
-      'requester-authorization-pending',
-    );
+    if (isDocumentHidden()) return;
+    pollPendingAuthorization();
   }, CHANNEL_AUTH_RECONCILE_INTERVAL_MS);
+  unsubscribeForeground = onDocumentForeground(() => {
+    reconcileDetached('foreground');
+    pollPendingAuthorization();
+  });
 }
 
 function clearTimer(): void {
@@ -116,6 +129,8 @@ function clearTimer(): void {
   if (authorizationReconcileTimer !== null) {
     clearInterval(authorizationReconcileTimer);
   }
+  unsubscribeForeground?.();
+  unsubscribeForeground = null;
   reconcileTimer = null;
   authorizationReconcileTimer = null;
 }

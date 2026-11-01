@@ -42,6 +42,7 @@ import {
   type MomentDraft,
   type TimelineSort,
 } from '../services/social_api';
+import type { StructuralMention } from '../services/social_api';
 import type {
   PrivateMomentAudience,
   PrivateMomentLocalFileIntent,
@@ -65,6 +66,56 @@ interface PublicCommentRead {
 }
 const commentReads = new Map<string, PublicCommentRead>();
 let activeCommentTarget: { postId: string; commentId?: string } | null = null;
+
+// Per-post/per-kind reaction flights. A second click on the same kind
+// while an identical intent is in flight is fenced (deduped) instead of
+// issuing another command; the operation id is logged for correlation
+// and drives per-kind pending UI in SocialActionBar.
+const reactionFlights = new Map<string, Promise<void>>();
+
+function reactionFlightKey(postId: string, kind: ReactionKind, direction: 'add' | 'remove'): string {
+  return `${direction}:${postId}:${kind}`;
+}
+
+function makeReactionOperationId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `reaction-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function runFencedReaction(
+  postId: string,
+  kind: ReactionKind | undefined,
+  direction: 'add' | 'remove',
+  operationId: string | undefined,
+  task: (operationId: string) => Promise<void>,
+): Promise<void> {
+  const effectiveKind = kind ?? ReactionKind.REACTION_UNSPECIFIED;
+  const key = reactionFlightKey(postId, effectiveKind, direction);
+  const existing = reactionFlights.get(key);
+  if (existing) {
+    log.info(TAG, 'reaction intent fenced', {
+      operationId: operationId ?? 'implicit',
+      postId,
+      kind: effectiveKind,
+      direction,
+    });
+    return existing;
+  }
+  const id = operationId ?? makeReactionOperationId();
+  log.info(TAG, 'reaction intent', {
+    operationId: id,
+    postId,
+    kind: effectiveKind,
+    direction,
+  });
+  const flight = task(id).finally(() => {
+    reactionFlights.delete(key);
+  });
+  reactionFlights.set(key, flight);
+  return flight;
+}
 
 // All proto-shaped types in this store come straight from the
 // `apps/desktop/src/gen/proto/domain/social/*` bundle, which is a
@@ -429,6 +480,14 @@ interface MomentsState {
   loadPost: (postId: string) => Promise<Post | undefined>;
   createPost: (draft: MomentDraft) => Promise<string>;
   deletePost: (postId: string) => Promise<void>;
+  /**
+   * Pure local eviction driven by an authoritative delete/revoke
+   * event. Unlike `deletePost` it issues NO write command: it just
+   * removes the entity and every reference (all feed windows,
+   * reactions, explanations, comments, read caches) so a deleted
+   * moment disappears immediately regardless of pagination tail.
+   */
+  evictPost: (postId: string) => void;
 
   loadComments: (postId: string, refresh?: boolean, anchorCommentId?: string) => Promise<void>;
   setCommentTarget: (postId?: string, commentId?: string) => void;
@@ -436,11 +495,15 @@ interface MomentsState {
     postId: string,
     content: string,
     replyToCommentId?: string,
+    mentions?: StructuralMention[],
   ) => Promise<void>;
   deleteComment: (postId: string, commentId: string) => Promise<void>;
 
-  reactToPost: (postId: string, kind: ReactionKind) => Promise<void>;
-  unreactToPost: (postId: string, kind?: ReactionKind) => Promise<void>;
+  /** Re-fetch only one post's reaction projection. Used by post-scoped
+   * realtime wakeups so a reaction event never reloads feeds/threads. */
+  refreshPostReactions: (postId: string) => Promise<void>;
+  reactToPost: (postId: string, kind: ReactionKind, operationId?: string) => Promise<void>;
+  unreactToPost: (postId: string, kind?: ReactionKind, operationId?: string) => Promise<void>;
 
   listMyCircles: () => Promise<void>;
   createCircle: (name: string, description?: string) => Promise<string>;
@@ -499,6 +562,49 @@ const initialState: Pick<
  * carries an embedded `author`, we record it for cheap re-render of
  * future timeline items — otherwise the UI falls back to "Unknown".
  */
+// Same content revision keeps the existing Post entity reference so
+// decoded media and component state stay stable across projection
+// refreshes. Content revision is the server updatedAt timestamp plus
+// the content oneof case.
+function samePostRevision(existing: Post | undefined, incoming: Post): boolean {
+  if (!existing) return false;
+  const sameTimestamp = (existing.updatedAt?.seconds ?? 0n) === (incoming.updatedAt?.seconds ?? 0n)
+    && (existing.updatedAt?.nanos ?? 0) === (incoming.updatedAt?.nanos ?? 0);
+  return sameTimestamp
+    && (existing.content?.case ?? '') === (incoming.content?.case ?? '');
+}
+
+function mergePostEntity(existing: Post | undefined, incoming: Post): Post {
+  if (existing && samePostRevision(existing, incoming)) return existing;
+  return incoming;
+}
+
+function sameReactionSummaries(
+  previous: ReactionSummary[],
+  next: ReactionSummary[],
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  return previous.every((reaction, index) => {
+    const candidate = next[index];
+    return Boolean(candidate)
+      && reaction.kind === candidate.kind
+      && reaction.count === candidate.count
+      && reaction.reactedByViewer === candidate.reactedByViewer;
+  });
+}
+
+function sameFeedExplanation(
+  previous: FeedObjectExplanation,
+  next: FeedObjectExplanation,
+): boolean {
+  if (previous === next) return true;
+  // Explanations are small, append-only protocol objects; a structural
+  // compare keeps the parent reference (and thus memo card props) stable
+  // across refreshes that carry identical content.
+  return JSON.stringify(previous) === JSON.stringify(next);
+}
+
 function ingestPosts(
   state: Pick<MomentsState, 'postsById' | 'authorsById' | 'reactions' | 'feedExplanations'>,
   posts: Post[],
@@ -512,26 +618,68 @@ function ingestPosts(
 } {
   const postsById = { ...state.postsById };
   const authorsById = { ...state.authorsById };
+  // Seed from incoming snapshots so an authoritative empty reactions
+  // array overwrites stale counts; legacy posts omitting the field
+  // simply keep the previous projection.
   const reactions = { ...state.reactions };
   const feedExplanations = { ...state.feedExplanations };
   const ids: string[] = [];
   for (const p of posts) {
     if (!p.id) continue;
-    postsById[p.id] = p;
+    postsById[p.id] = mergePostEntity(postsById[p.id], p);
     if (p.author && p.author.id) {
       authorsById[p.author.id] = p.author;
     }
-    if (p.reactions && p.reactions.length) {
-      reactions[p.id] = p.reactions;
+    if (Array.isArray(p.reactions)) {
+      const previousReactions = reactions[p.id];
+      reactions[p.id] = previousReactions
+        && sameReactionSummaries(previousReactions, p.reactions)
+        ? previousReactions
+        : p.reactions;
     }
     ids.push(p.id);
   }
   for (const explanation of explanations) {
     if (explanation.objectId) {
-      feedExplanations[explanation.objectId] = explanation;
+      const previousExplanation = feedExplanations[explanation.objectId];
+      feedExplanations[explanation.objectId] = previousExplanation
+        && sameFeedExplanation(previousExplanation, explanation)
+        ? previousExplanation
+        : explanation;
     }
   }
   return { postsById, authorsById, reactions, feedExplanations, ids };
+}
+
+// First-window reconciliation replaces ordering/content of the first
+// page but MUST NOT truncate a tail the user already paginated: window
+// ids lead in authoritative order, surviving tail ids keep their
+// previous order as long as the resource still exists. When the
+// authoritative response reports hasMore=false the window is complete
+// (bounded tail verification), so stale tail ids are dropped. Delete,
+// revoke, and membership events likewise remove ids through their
+// own paths.
+function reconcileFeedWindow(
+  previousIds: readonly string[],
+  windowIds: readonly string[],
+  readable: (id: string) => boolean,
+  windowComplete = false,
+): string[] {
+  if (windowComplete) {
+    return [...windowIds];
+  }
+  const windowSet = new Set(windowIds);
+  const tail = previousIds.filter(
+    (id) => !windowSet.has(id) && readable(id),
+  );
+  const seen = new Set<string>();
+  const next: string[] = [];
+  for (const id of [...windowIds, ...tail]) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    next.push(id);
+  }
+  return next;
 }
 
 function refreshProjectionBestEffort(store: MomentsState, reason: string): void {
@@ -611,6 +759,24 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         const mergedHome = ingestPosts(s, home?.posts ?? [], home?.explanations ?? []);
         const mergedExplore = ingestPosts(mergedHome, explore?.posts ?? [], explore?.explanations ?? []);
         const privateState = usePrivateMomentsStore.getState();
+        const stillReadable = (id: string): boolean => Boolean(
+          mergedExplore.postsById[id] ?? privateState.postsById[id],
+        );
+        // First-window reconcile keeps the authoritative window
+        // ordering but preserves already-paginated tails until a
+        // delete/revoke event removes them.
+        const reconciledHomeIds = reconcileFeedWindow(
+          s.feeds.home.postIds,
+          mergedHome.ids,
+          stillReadable,
+          home?.hasMore === false,
+        );
+        const reconciledExploreIds = reconcileFeedWindow(
+          s.feeds.explore.postIds,
+          mergedExplore.ids,
+          stillReadable,
+          explore?.hasMore === false,
+        );
         const withPrivateMoments = projectPrivateMoments(
           {
             ...s,
@@ -620,7 +786,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
             feedExplanations: mergedExplore.feedExplanations,
             feeds: {
               home: {
-                postIds: mergedHome.ids,
+                postIds: reconciledHomeIds,
                 nextCursor: home?.nextCursor ?? '',
                 hasMore: home?.hasMore ?? false,
                 loading: false,
@@ -628,7 +794,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
                 sort: 'recent',
               },
               explore: {
-                postIds: mergedExplore.ids,
+                postIds: reconciledExploreIds,
                 nextCursor: explore?.nextCursor ?? '',
                 hasMore: explore?.hasMore ?? false,
                 loading: false,
@@ -647,7 +813,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
           feedExplanations: mergedExplore.feedExplanations,
           feeds: {
             home: {
-              postIds: mergedHome.ids,
+              postIds: reconciledHomeIds,
               nextCursor: home?.nextCursor ?? '',
               hasMore: home?.hasMore ?? false,
               loading: false,
@@ -655,7 +821,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
               sort: 'recent',
             },
             explore: {
-              postIds: mergedExplore.ids,
+              postIds: reconciledExploreIds,
               nextCursor: explore?.nextCursor ?? '',
               hasMore: explore?.hasMore ?? false,
               loading: false,
@@ -854,8 +1020,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const generation = storeGeneration;
     await socialDeleteMoment(postId);
     if (generation !== storeGeneration) return;
-    commentReads.delete(postId);
-    if (activeCommentTarget?.postId === postId) activeCommentTarget = null;
     try {
       await usePrivateMomentsStore.getState().purgeMoment(postId);
     } catch (error) {
@@ -863,13 +1027,38 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         error: String(error),
       });
     }
+    // Local reference removal is shared with event-driven eviction.
+    get().evictPost(postId);
+  },
+
+  // -------------------------------------------------------------------------
+  // Comments
+  // -------------------------------------------------------------------------
+
+  evictPost: (postId) => {
+    postId = postId.trim();
+    if (!postId) return;
+    commentReads.delete(postId);
+    if (activeCommentTarget?.postId === postId) activeCommentTarget = null;
     set((s) => {
-      const { [postId]: _drop, ...rest } = s.postsById;
+      const { [postId]: _dropPost, ...postsById } = s.postsById;
+      const { [postId]: _dropReaction, ...reactions } = s.reactions;
       const { [postId]: _dropExplanation, ...feedExplanations } = s.feedExplanations;
+      const { [postId]: _dropComments, ...comments } = s.comments;
+      const { [postId]: _dropLoading, ...commentsLoadingState } = s.commentsLoading;
+      const { [postId]: _dropCursor, ...commentsCursorState } = s.commentsCursor;
+      const { [postId]: _dropHasMore, ...commentsHasMoreState } = s.commentsHasMore;
+      void _dropPost; void _dropReaction; void _dropExplanation;
+      void _dropComments; void _dropLoading; void _dropCursor; void _dropHasMore;
       const filterIds = (ids: string[]) => ids.filter((id) => id !== postId);
       return {
-        postsById: rest,
+        postsById,
+        reactions,
         feedExplanations,
+        comments,
+        commentsLoading: commentsLoadingState,
+        commentsCursor: commentsCursorState,
+        commentsHasMore: commentsHasMoreState,
         feeds: {
           home: { ...s.feeds.home, postIds: filterIds(s.feeds.home.postIds) },
           explore: { ...s.feeds.explore, postIds: filterIds(s.feeds.explore.postIds) },
@@ -889,10 +1078,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       };
     });
   },
-
-  // -------------------------------------------------------------------------
-  // Comments
-  // -------------------------------------------------------------------------
 
   setCommentTarget: (postId, commentId) => {
     const nextPostId = postId?.trim();
@@ -960,9 +1145,14 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     return completion;
   },
 
-  createComment: async (postId, content, replyToCommentId) => {
+  createComment: async (postId, content, replyToCommentId, mentions = []) => {
     const generation = storeGeneration;
-    const comment = await socialCreateComment(postId, content, replyToCommentId);
+    const comment = await socialCreateComment(
+      postId,
+      content,
+      replyToCommentId,
+      mentions,
+    );
     if (generation !== storeGeneration) return;
     if (!comment) return;
     set((s) => ({
@@ -1001,68 +1191,93 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // Reactions
   // -------------------------------------------------------------------------
 
-  reactToPost: async (postId, kind) => {
+  refreshPostReactions: async (postId) => {
     const generation = storeGeneration;
-    try {
-      const post = get().postsById[postId];
-      if (isPrivateMomentMutation(postId, post)) {
-        const result = await usePrivateMomentsStore
-          .getState()
-          .reactToPost(postId, kind);
-        if (generation !== storeGeneration) return;
-        set((state) => ({
-          reactions: {
-            ...state.reactions,
-            [postId]: result.reactions,
-          },
-        }));
-        return;
-      }
-      const resp = await socialReact(postId, kind);
-      if (generation !== storeGeneration) return;
-      // The server returns the post-wide reaction summary list; trust
-      // that as the new source of truth instead of doing a local diff.
-      set((s) => ({
-        reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
-      }));
-    } catch (err) {
-      if (generation !== storeGeneration) return;
-      log.warn(TAG, 'reactToPost failed', { kind, err: String(err) });
-      throw err;
+    // Post-scoped wakeup: only this post's reaction summary is
+    // re-fetched; feeds and comment threads stay untouched.
+    const post = get().postsById[postId];
+    if (isPrivateMomentMutation(postId, post)) {
+      await usePrivateMomentsStore.getState().readMoment(postId);
+      return;
     }
+    await get().loadPost(postId);
+    if (generation !== storeGeneration) return;
   },
 
-  unreactToPost: async (postId, kind) => {
-    const generation = storeGeneration;
-    try {
-      const post = get().postsById[postId];
-      if (isPrivateMomentMutation(postId, post)) {
-        const result = await usePrivateMomentsStore
-          .getState()
-          .unreactToPost(
-            postId,
-            kind ?? ReactionKind.REACTION_UNSPECIFIED,
-          );
+  reactToPost: (postId, kind, operationId) => runFencedReaction(
+    postId,
+    kind,
+    'add',
+    operationId,
+    async () => {
+      const generation = storeGeneration;
+      try {
+        const post = get().postsById[postId];
+        if (isPrivateMomentMutation(postId, post)) {
+          const result = await usePrivateMomentsStore
+            .getState()
+            .reactToPost(postId, kind);
+          if (generation !== storeGeneration) return;
+          set((state) => ({
+            reactions: {
+              ...state.reactions,
+              [postId]: result.reactions,
+            },
+          }));
+          return;
+        }
+        const resp = await socialReact(postId, kind);
         if (generation !== storeGeneration) return;
-        set((state) => ({
-          reactions: {
-            ...state.reactions,
-            [postId]: result.reactions,
-          },
+        // The server returns the post-wide reaction summary list; trust
+        // that as the new source of truth instead of doing a local diff.
+        set((s) => ({
+          reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
         }));
-        return;
+      } catch (err) {
+        if (generation !== storeGeneration) return;
+        log.warn(TAG, 'reactToPost failed', { kind, err: String(err) });
+        throw err;
       }
-      const resp = await socialUnreact(postId, kind);
-      if (generation !== storeGeneration) return;
-      set((s) => ({
-        reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
-      }));
-    } catch (err) {
-      if (generation !== storeGeneration) return;
-      log.warn(TAG, 'unreactToPost failed', { kind, err: String(err) });
-      throw err;
-    }
-  },
+    },
+  ),
+
+  unreactToPost: (postId, kind, operationId) => runFencedReaction(
+    postId,
+    kind,
+    'remove',
+    operationId,
+    async () => {
+      const generation = storeGeneration;
+      try {
+        const post = get().postsById[postId];
+        if (isPrivateMomentMutation(postId, post)) {
+          const result = await usePrivateMomentsStore
+            .getState()
+            .unreactToPost(
+              postId,
+              kind ?? ReactionKind.REACTION_UNSPECIFIED,
+            );
+          if (generation !== storeGeneration) return;
+          set((state) => ({
+            reactions: {
+              ...state.reactions,
+              [postId]: result.reactions,
+            },
+          }));
+          return;
+        }
+        const resp = await socialUnreact(postId, kind);
+        if (generation !== storeGeneration) return;
+        set((s) => ({
+          reactions: { ...s.reactions, [postId]: resp.reactions ?? [] },
+        }));
+      } catch (err) {
+        if (generation !== storeGeneration) return;
+        log.warn(TAG, 'unreactToPost failed', { kind, err: String(err) });
+        throw err;
+      }
+    },
+  ),
 
   // -------------------------------------------------------------------------
   // Circles

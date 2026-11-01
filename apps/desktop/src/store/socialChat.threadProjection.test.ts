@@ -18,6 +18,9 @@ function message(messageId: string, threadRootMessageId?: string): MessagingProj
     readByPtids: [],
     reactions: [],
     retracted: false,
+    attemptCount: 0,
+    requiredDeviceCount: 0,
+    deliveredDeviceCount: 0,
     threadRootMessageId,
   };
 }

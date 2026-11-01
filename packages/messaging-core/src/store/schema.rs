@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS messaging_pending_messages (
     message_id TEXT NOT NULL,
     sender_ptid TEXT NOT NULL,
     sender_device_id TEXT NOT NULL,
+    send_intent_id TEXT NOT NULL DEFAULT '',
     plaintext TEXT NOT NULL,
     reply_to_message_id TEXT NOT NULL DEFAULT '',
     thread_root_message_id TEXT NOT NULL DEFAULT '',
@@ -200,11 +201,36 @@ CREATE INDEX IF NOT EXISTS idx_messaging_pending_messages_thread
     ON messaging_pending_messages(
         conversation_id, thread_root_message_id, created_at_unix_ms, message_id
     );
+-- MP-D33: one user send action (device-scoped intent) admits exactly one
+-- message. The partial index ignores legacy/empty-intent rows. It backs the
+-- idempotent read-before-create in submit_message; the Station wire contract
+-- is intentionally unchanged.
+CREATE UNIQUE INDEX IF NOT EXISTS uidx_messaging_pending_messages_send_intent
+    ON messaging_pending_messages(sender_device_id, send_intent_id)
+    WHERE send_intent_id <> '';
+-- MP-D33 durable admission ledger. Pending message rows are deleted on
+-- commit, but the (device, send intent) -> message binding must survive so a
+-- late duplicate or ambiguous IPC answer still resolves to the one admitted
+-- message instead of creating a second one.
+CREATE TABLE IF NOT EXISTS messaging_send_intents (
+    sender_device_id TEXT NOT NULL,
+    send_intent_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    conversation_kind INTEGER NOT NULL,
+    message_id TEXT NOT NULL,
+    created_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(sender_device_id, send_intent_id)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS messaging_command_attempts (
     command_id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
     delivery_plan_sha256 BLOB NOT NULL CHECK(length(delivery_plan_sha256) = 32),
+    -- MP-D34: required recipient devices in the immutable delivery plan
+    -- (originator actor excluded; matches the authority required_recipient
+    -- set). 0 only for legacy/non-message attempts; the sender verdict uses it
+    -- as the local x/N denominator, never as a delivery fact by itself.
+    required_device_count INTEGER NOT NULL DEFAULT 0,
     state TEXT NOT NULL,
     created_at_unix_ms INTEGER NOT NULL,
     FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
@@ -269,6 +295,22 @@ CREATE TABLE IF NOT EXISTS messaging_inbox_items (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_inbox_lane
     ON messaging_inbox_items(lane_sequence);
+-- MP-D34: per-device delivered facts projected from inbound MessageReceipt
+-- inbox items. The originator consumes these for the local x/N verdict;
+-- counts are projection-only (never sent back, never a wire fact), and a
+-- missing row set means "no fact" rather than "not delivered".
+CREATE TABLE IF NOT EXISTS messaging_message_delivery_devices (
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    consumer_ptid TEXT NOT NULL,
+    consumer_device_id TEXT NOT NULL,
+    delivered_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(
+        conversation_id, message_id, consumer_ptid, consumer_device_id
+    )
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_messaging_delivery_devices_message
+    ON messaging_message_delivery_devices(conversation_id, message_id);
 CREATE TABLE IF NOT EXISTS messaging_consumption_markers (
     item_id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
@@ -526,8 +568,31 @@ VALUES (1, 20261029);
 pub trait MessagingSchemaBackend {
     fn execute_batch(&self, sql: &str) -> Result<(), String>;
     fn table_exists(&self, table: &str) -> Result<bool, String>;
+    fn column_exists(&self, table: &str, column: &str) -> Result<bool, String>;
     fn query_i64(&self, sql: &str) -> Result<i64, String>;
 }
+
+/// Additive, single-writer schema migrations for databases already on the
+/// frozen canonical baseline. Each tuple is `(table, column, ddl)`; the column
+/// check runs inside the schema transaction, so each migration applies at
+/// most once. New columns MUST be additive (`NOT NULL DEFAULT` on existing
+/// rows); destructive changes require a new baseline, never an entry here.
+const ADDITIVE_COLUMN_MIGRATIONS: &[(&str, &str, &str)] = &[
+    (
+        // MP-D33: device-local send-intent idempotency.
+        "messaging_pending_messages",
+        "send_intent_id",
+        "ALTER TABLE messaging_pending_messages \
+         ADD COLUMN send_intent_id TEXT NOT NULL DEFAULT ''",
+    ),
+    (
+        // MP-D34: immutable required-device denominator for x/N verdicts.
+        "messaging_command_attempts",
+        "required_device_count",
+        "ALTER TABLE messaging_command_attempts \
+         ADD COLUMN required_device_count INTEGER NOT NULL DEFAULT 0",
+    ),
+];
 
 pub fn ensure_messaging_schema<B: MessagingSchemaBackend>(backend: &B) -> Result<(), String> {
     let has_store = backend.table_exists("messaging_device_identity")?;
@@ -544,6 +609,14 @@ pub fn ensure_messaging_schema<B: MessagingSchemaBackend>(backend: &B) -> Result
 
     backend.execute_batch("PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;")?;
     let installation = (|| {
+        // Additive column migrations must precede the canonical batch: the
+        // batch creates new indexes that reference the added column, and on
+        // an existing database CREATE TABLE IF NOT EXISTS cannot add it.
+        for (table, column, ddl) in ADDITIVE_COLUMN_MIGRATIONS {
+            if backend.table_exists(table)? && !backend.column_exists(table, column)? {
+                backend.execute_batch(ddl)?;
+            }
+        }
         backend.execute_batch(MESSAGING_SCHEMA_SQL)?;
         validate_canonical_baseline(backend)
     })();
@@ -582,6 +655,7 @@ mod tests {
 
     struct SyntheticBackend {
         tables: RefCell<BTreeSet<String>>,
+        columns: RefCell<BTreeSet<(String, String)>>,
         baseline_rows: Cell<i64>,
         batches: RefCell<Vec<String>>,
     }
@@ -590,6 +664,7 @@ mod tests {
         fn fresh() -> Self {
             Self {
                 tables: RefCell::new(BTreeSet::new()),
+                columns: RefCell::new(BTreeSet::new()),
                 baseline_rows: Cell::new(0),
                 batches: RefCell::new(Vec::new()),
             }
@@ -608,13 +683,25 @@ mod tests {
     impl MessagingSchemaBackend for SyntheticBackend {
         fn execute_batch(&self, sql: &str) -> Result<(), String> {
             self.batches.borrow_mut().push(sql.to_string());
+            if let Some((table, column)) = parse_add_column_ddl(sql) {
+                self.columns.borrow_mut().insert((table, column));
+            }
             if sql == MESSAGING_SCHEMA_SQL {
+                let existed = self.tables.borrow().contains("messaging_pending_messages");
                 self.tables
                     .borrow_mut()
                     .insert("messaging_device_identity".to_string());
                 self.tables
                     .borrow_mut()
                     .insert("messaging_schema_baseline".to_string());
+                // CREATE TABLE IF NOT EXISTS adds the column only when the
+                // table is newly created; an existing table is untouched.
+                if !existed {
+                    self.columns.borrow_mut().insert((
+                        "messaging_pending_messages".to_string(),
+                        "send_intent_id".to_string(),
+                    ));
+                }
                 self.baseline_rows.set(1);
             }
             Ok(())
@@ -624,9 +711,31 @@ mod tests {
             Ok(self.tables.borrow().contains(table))
         }
 
+        fn column_exists(&self, table: &str, column: &str) -> Result<bool, String> {
+            Ok(self
+                .columns
+                .borrow()
+                .contains(&(table.to_string(), column.to_string())))
+        }
+
         fn query_i64(&self, _sql: &str) -> Result<i64, String> {
             Ok(self.baseline_rows.get())
         }
+    }
+
+    fn parse_add_column_ddl(sql: &str) -> Option<(String, String)> {
+        let tail = sql
+            .strip_prefix("ALTER TABLE ")
+            .filter(|_| sql.contains("ADD COLUMN"))?;
+        let mut parts = tail.split_whitespace();
+        let table = parts.next()?;
+        let add_keyword = parts.next()?;
+        let column_keyword = parts.next()?;
+        if add_keyword != "ADD" || column_keyword != "COLUMN" {
+            return None;
+        }
+        let column = parts.next()?;
+        Some((table.to_string(), column.to_string()))
     }
 
     #[test]
@@ -667,5 +776,60 @@ mod tests {
 
         assert!(error.contains("baseline identity is invalid"));
         assert!(backend.batches.borrow().is_empty());
+    }
+
+    #[test]
+    fn baseline_store_without_additive_columns_gets_migrations() {
+        // Simulate a frozen-baseline DB created before MP-D33/MP-D34: tables
+        // exist and the baseline row is valid, but the additive columns are
+        // absent.
+        let backend = SyntheticBackend::fresh();
+        backend.tables.borrow_mut().extend(
+            [
+                "messaging_device_identity",
+                "messaging_schema_baseline",
+                "messaging_pending_messages",
+                "messaging_command_attempts",
+            ]
+            .map(str::to_string),
+        );
+        backend.baseline_rows.set(1);
+
+        ensure_messaging_schema(&backend).expect("additive migration");
+
+        let batches = backend.batches.borrow();
+        assert!(
+            batches.iter().any(|sql| sql.contains(
+                "ALTER TABLE messaging_pending_messages"
+            ) && sql.contains("send_intent_id")),
+            "expected additive send_intent_id migration, got: {batches:?}"
+        );
+        assert!(backend.columns.borrow().contains(&(
+            "messaging_pending_messages".to_string(),
+            "send_intent_id".to_string()
+        )));
+        assert!(
+            batches.iter().any(|sql| sql.contains(
+                "ALTER TABLE messaging_command_attempts"
+            ) && sql.contains("required_device_count")),
+            "expected additive required_device_count migration, got: {batches:?}"
+        );
+        assert!(backend.columns.borrow().contains(&(
+            "messaging_command_attempts".to_string(),
+            "required_device_count".to_string()
+        )));
+
+        // A second run must not re-issue the ALTER.
+        drop(batches);
+        backend.batches.borrow_mut().clear();
+        ensure_messaging_schema(&backend).expect("idempotent re-run");
+        assert!(
+            !backend
+                .batches
+                .borrow()
+                .iter()
+                .any(|sql| sql.contains("ALTER TABLE")),
+            "additive migration must apply once"
+        );
     }
 }

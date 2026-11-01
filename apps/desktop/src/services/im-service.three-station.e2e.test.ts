@@ -432,6 +432,8 @@ async function sendAndObserve(
     conversationId,
     'group',
     plaintext,
+    [],
+    { sendIntentId: `intent-${conversationId}-${Date.now()}` },
   )
   expect(outcome.state).not.toBe('attachment_failed')
   const senderProjection = await waitForMessage(

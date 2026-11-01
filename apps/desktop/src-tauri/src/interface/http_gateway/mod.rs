@@ -2295,6 +2295,16 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 post_id: input.post_id.clone(),
                 content: input.content,
                 reply_to_comment_id: input.reply_to_comment_id.unwrap_or_default(),
+                typed_mentions: input
+                    .typed_mentions
+                    .into_iter()
+                    .map(|mention| model::social::Mention {
+                        actor_ptid: mention.actor_ptid,
+                        offset: mention.offset,
+                        length: mention.length,
+                        display: mention.display,
+                    })
+                    .collect(),
             };
             let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
             let resp = match state.station.client().request_proto::<
@@ -7301,6 +7311,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &reply_to_message_id,
                 &thread_root_message_id,
                 &[],
+                // Gateway callers do not participate in renderer intent
+                // idempotency; mint one per invocation.
+                &Ulid::new().to_string(),
             ) {
                 Ok(outcome) => {
                     let _ = state.messaging_engines.wake_profile(&account_id);

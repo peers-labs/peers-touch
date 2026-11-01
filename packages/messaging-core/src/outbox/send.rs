@@ -68,6 +68,26 @@ pub struct DirectFanOutResult {
     pub private_content_bytes: Vec<u8>,
 }
 
+/// MP-D34 immutable x/N denominator: required recipient endpoints in the
+/// authority delivery plan, excluding the originator actor's own devices.
+/// This mirrors the Station aggregate rule (`required_recipient` is true
+/// exactly when the endpoint actor differs from the event originator). A
+/// malformed endpoint propagates the decode error rather than silently
+/// shrinking the denominator; plan validation already rejects such plans.
+pub(crate) fn plan_required_recipient_count(
+    plan: &PrepareConversationCommandResponse,
+    originator_ptid: &str,
+) -> Result<u32, String> {
+    plan.required_endpoints
+        .iter()
+        .map(|endpoint| actor_device_ptid(endpoint).map(|ptid| (ptid != originator_ptid) as u32))
+        .try_fold(0u32, |total, required| {
+            total
+                .checked_add(required?)
+                .ok_or_else(|| "messaging delivery plan requires too many devices".to_string())
+        })
+}
+
 pub struct DirectOutboundPreparer<R> {
     store: Arc<R>,
     endpoint: ProtoCryptoEndpoint,
@@ -104,6 +124,8 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         let command_bytes = command.encode_to_vec();
         let session_advances =
             build_session_advances(previous_sessions, fan_out.advanced_sessions, session_inits)?;
+        let required_device_count =
+            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_direct_outbound_send(&DirectOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -124,6 +146,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
                     private_content: &fan_out.private_content_bytes,
                     delivery_plan_sha256: &plan.delivery_plan_sha256,
                     created_at_unix_ms: intent.client_timestamp_unix_ms,
+                    required_device_count,
                 },
             })?;
         Ok(command)
@@ -204,6 +227,8 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         let command_bytes = command.encode_to_vec();
         let session_advances =
             build_session_advances(previous_sessions, fan_out.advanced_sessions, session_inits)?;
+        let required_device_count =
+            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_direct_outbound_send(&DirectOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -224,6 +249,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
                     private_content: &fan_out.private_content_bytes,
                     delivery_plan_sha256: &plan.delivery_plan_sha256,
                     created_at_unix_ms: intent.client_timestamp_unix_ms,
+                    required_device_count,
                 },
             })?;
         Ok(command)
@@ -324,9 +350,9 @@ pub fn encrypt_direct_fan_out(
     local: &ProtoCryptoEndpoint,
     sessions: Vec<DirectSessionWithInit>,
 ) -> Result<DirectFanOutResult, String> {
-    if sessions.is_empty() {
-        return Err("messaging Direct fan-out requires at least one peer session".to_string());
-    }
+    // A self-direct on a single-device actor has no peer sessions: the only
+    // delivery is the sender's own public event (derived server-side). Empty
+    // ciphertext fan-out is valid in that case.
     let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
     let mut advanced_sessions = Vec::with_capacity(sessions.len());
     let mut session_inits = Vec::new();
@@ -436,7 +462,12 @@ fn validate_send_context(
             local_count += 1;
         }
     }
-    if local_count != 1 || plan.required_endpoints.len() < 2 {
+    // local_count == 1 also admits the singleton plan: a self-direct on a
+    // single-device actor has only the sending endpoint, so the sole delivery
+    // is the sender public event derived server-side (no peer ciphertext).
+    // Any additional required endpoint still enforces a matching Direct
+    // session in resolve_sessions.
+    if local_count != 1 {
         return Err("messaging send plan does not contain the sending endpoint".to_string());
     }
     Ok(())
@@ -823,6 +854,109 @@ mod tests {
         assert_eq!((persisted.1, persisted.2), (0, 1));
         assert_eq!(persisted.3, "message-parent");
         assert_eq!(persisted.4, "message-root");
+    }
+
+    #[test]
+    fn self_direct_single_device_sends_public_event_without_ciphertext() {
+        let local = endpoint("ptid:alice", "alice-device");
+
+        struct SelfRepository {
+            persisted: Mutex<Option<Vec<u8>>>,
+        }
+        impl DirectOutboundRepository for SelfRepository {
+            fn validate_sender_attachments_ready(
+                &self,
+                _conversation_id: &str,
+                _message_id: &str,
+                _attachments: &[AttachmentPlaintextMetadata],
+            ) -> Result<(), String> {
+                Ok(())
+            }
+            fn authority_head(&self, _conversation_id: &str) -> Result<(i64, Vec<u8>), String> {
+                Ok((0, Vec::new()))
+            }
+            fn load_direct_outbound_session(
+                &self,
+                _conversation_id: &str,
+                _peer: &CryptoEndpoint,
+            ) -> Result<Option<DirectOutboundSession>, String> {
+                Ok(None)
+            }
+            fn next_direct_session_generation(
+                &self,
+                _conversation_id: &str,
+                _peer: &CryptoEndpoint,
+            ) -> Result<u64, String> {
+                Ok(1)
+            }
+            fn persist_direct_outbound_send(
+                &self,
+                commit: &DirectOutboundSendCommit<'_>,
+            ) -> Result<(), String> {
+                if !commit.session_advances.is_empty() {
+                    return Err("self-direct must not advance peer sessions".to_string());
+                }
+                *self.persisted.lock().unwrap() =
+                    Some(commit.command_bytes.to_vec());
+                Ok(())
+            }
+            fn persist_direct_outbound_edit(
+                &self,
+                _commit: &DirectOutboundEditCommit<'_>,
+            ) -> Result<(), String> {
+                Err("unexpected edit".to_string())
+            }
+        }
+
+        let repository = Arc::new(SelfRepository {
+            persisted: Mutex::new(None),
+        });
+        let plan = PrepareConversationCommandResponse {
+            conversation_id: "self-conversation".to_string(),
+            conversation_kind: ConversationKind::Direct as i32,
+            authority_sequence: 0,
+            authority_hash: Vec::new(),
+            membership_epoch: 1,
+            mls_epoch: 0,
+            required_endpoints: vec![
+                actor_device_ref(&local.ptid, &local.device_id),
+            ],
+            delivery_plan_sha256: vec![7; 32],
+            endpoint_manifests: Vec::new(),
+            authority_station_peer_id: "station-1".to_string(),
+        };
+        let command = DirectOutboundPreparer::new(
+            repository.clone(),
+            ProtoCryptoEndpoint {
+                ptid: local.ptid,
+                device_id: local.device_id,
+            },
+        )
+        .unwrap()
+        .prepare_send(
+            &plan,
+            &DirectSendIntent {
+                command_id: "command-self",
+                message_id: "message-self",
+                conversation_id: "self-conversation",
+                plaintext: "note to self",
+                reply_to_message_id: "",
+                thread_root_message_id: "",
+                attachments: &[],
+                client_timestamp_unix_ms: 20,
+            },
+            &[],
+        )
+        .unwrap();
+
+        let send = match command.payload.as_ref().unwrap() {
+            chat_command::Payload::SendMessage(send) => send,
+            _ => panic!("unexpected command payload"),
+        };
+        // The sender's public-event delivery is derived server-side, so the
+        // command carries no ciphertext payloads on a single-device actor.
+        assert!(send.direct_payloads.is_empty());
+        assert!(repository.persisted.lock().unwrap().is_some());
     }
 
     #[test]

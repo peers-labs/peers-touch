@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { Flexbox } from 'react-layout-kit';
 import { Button, toast } from '@lobehub/ui';
-import { Modal, Select, Tag, theme, Tooltip, Typography } from 'antd';
+import { Modal, Select, Spin, Tag, theme, Tooltip, Typography } from 'antd';
 import {
   type ChatAttachmentLike,
   chatMediaKindForAttachment,
@@ -20,6 +20,7 @@ import {
   Lock,
   LogOut,
   Paperclip,
+  Pencil,
   Pin,
   Search,
   ShieldCheck,
@@ -29,16 +30,21 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
-import { actorDisplayName } from '../../store/socialProfileProjection';
+import {
+  actorDisplayName,
+  canonicalProfileAvatar,
+} from '../../store/socialProfileProjection';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import {
   CHAT_BACKGROUND_OPTIONS,
+  directConversationDisplayName,
   projectDesktopIMMessages,
   type DesktopIMMessageProjection,
   type FriendChatSession,
   type Group,
   type GroupMember,
 } from '../../store/socialProjection';
+import { formatJoinedDate } from '../profile/profileModel';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { MemberRole } from '../../gen/proto/domain/chat/conversation_pb';
@@ -46,6 +52,8 @@ import { ChatStorageOperationState } from '../../gen/proto/domain/chat/storage_p
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useAttachmentAccess } from './useAttachmentAccess';
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
+import { ProfilePrimaryAction } from '../profile/ProfilePrimaryAction';
+import { useProfileRelationship } from '../profile/useProfileRelationship';
 import { SquareAvatar } from '../common/SquareAvatar';
 import { getGroupMemberControlState } from './chatGroupPermissions';
 import { presentError } from '../../services/errorPresenter';
@@ -60,6 +68,10 @@ import {
 } from '../../messaging/runtime';
 import { setCachedOssAttachmentUrl } from '../../services/ossAttachmentUrlCache';
 import { resolveFederationStationName } from '../../store/federation';
+import {
+  resolveConversationStationChip,
+  useLocalStationConnection,
+} from '../../store/stationConnection';
 import {
   chatStorageProjectionRuntime,
   chatStorageReleasedBytes,
@@ -241,6 +253,14 @@ function MemberItem({ member, action, lockedReason }: { member: GroupMemberDispl
       ) : null}
     </Flexbox>
   );
+}
+
+function deterministicBannerHue(seed: string): number {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  return hash % 360;
 }
 
 function DetailSection({ title, children, gap = 8 }: { title?: string; children: ReactNode; gap?: number }) {
@@ -615,6 +635,7 @@ export function ChatDetailPanel() {
     loadConversationPreviews, clearConversationProjection,
     conversationLocalState, updateConversationLocalState,
     setConversationBackgroundPreview,
+    setConversationAvatarPreview,
     getIMConversations,
     messages,
     encryptionEnabled,
@@ -642,6 +663,7 @@ export function ChatDetailPanel() {
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
     setConversationBackgroundPreview: s.setConversationBackgroundPreview,
+    setConversationAvatarPreview: s.setConversationAvatarPreview,
     getIMConversations: s.getIMConversations,
     messages: s.messages,
     encryptionEnabled: s.encryptionEnabled,
@@ -667,20 +689,36 @@ export function ChatDetailPanel() {
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeTab && conversation.id === activeUlid)
     : undefined;
+  // Self-direct (Saved Messages): the authenticated profile is already in
+  // memory, so no peer fetch; presence and safety-number UI are hidden.
+  const isSelfDirect = !isGroup && activeConversation?.selfDirect === true;
   const activeFriendSession = activeTab === 'friend'
     ? sessions.find((s) => s.ulid === activeUlid)
     : undefined;
   const activeGroup: Group | undefined = isGroup
     ? groups.find((g) => g.ulid === activeUlid)
     : undefined;
-  const groupAvatarUrl = groupAvatarRemoteUrl(activeGroup)
-    || (activeConversation?.avatar || '');
+  // The active conversation projection already carries the optimistic local
+  // avatar preview while an upload is in flight, so prefer it.
+  const groupAvatarUrl = activeConversation?.avatar
+    || groupAvatarRemoteUrl(activeGroup);
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
+  const localStation = useLocalStationConnection();
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
     stationPeerId: authorityStationId,
     actorStationEntries,
   });
+  // Keep parity with the header chip: automated conversations already express
+  // Station residency through the profile card, never a second station badge.
+  const stationChip = activeConversation && !isAutomatedConversation
+    ? resolveConversationStationChip({
+      kind: isGroup ? 'group' : 'friend',
+      authorityStationId,
+      authorityStationName,
+      localStation,
+    })
+    : null;
 
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [showAllMembers, setShowAllMembers] = useState(false);
@@ -690,8 +728,14 @@ export function ChatDetailPanel() {
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
+  const [groupAvatarUploading, setGroupAvatarUploading] = useState(false);
   const [editingMyNickname, setEditingMyNickname] = useState(false);
   const [editMyNicknameValue, setEditMyNicknameValue] = useState('');
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [editDescriptionValue, setEditDescriptionValue] = useState('');
+  const [descriptionSaving, setDescriptionSaving] = useState(false);
+  const [editingRemark, setEditingRemark] = useState(false);
+  const [editRemarkValue, setEditRemarkValue] = useState('');
   const [historyActionPending, setHistoryActionPending] = useState(false);
   const [conversationActionPending, setConversationActionPending] = useState<string | null>(null);
   const [backgroundRetryPath, setBackgroundRetryPath] = useState<string | null>(null);
@@ -699,6 +743,9 @@ export function ChatDetailPanel() {
   const peerPtid = !isGroup
     ? activeConversation?.peerPtid || getFriendPeerDid(activeFriendSession, currentUserPtid)
     : '';
+  // Inside the conversation the Message action would be redundant; the card
+  // still shows Add/Accept for strangers and Manage for self-direct.
+  const profileRelationshipKind = useProfileRelationship(isGroup ? '' : peerPtid);
   const members: GroupMember[] = isGroup && activeUlid ? (groupMembers[activeUlid] || []) : [];
   const myGroupMember = currentUserPtid ? members.find((member) => member.ptid === currentUserPtid) : undefined;
   const myGroupNickname = myGroupMember?.nickname?.trim() || '';
@@ -720,7 +767,7 @@ export function ChatDetailPanel() {
       if (profile && !profiles.has(did)) {
         profiles.set(did, {
           name: profile.display_name?.trim() || profile.username?.trim() || '',
-          avatar: profile.avatar || '',
+          avatar: canonicalProfileAvatar(profile),
         });
       }
     }
@@ -791,7 +838,11 @@ export function ChatDetailPanel() {
       : t('chat.social.detail.permissionMemberBody');
   const currentName = isGroup
     ? (activeConversation?.title || activeGroup?.name || t('chat.social.sessionList.unnamedGroup'))
-    : activeConversation?.title || getFriendPeerName(activeFriendSession, currentUserPtid);
+    : directConversationDisplayName(
+      activeConversation ?? { title: '' },
+      t('chat.social.contacts.savedMessages'),
+      getFriendPeerName(activeFriendSession, currentUserPtid),
+    );
   const displayName = currentName || t('chat.social.sessionList.unknown');
   const peerAvatar = activeConversation?.avatar || getFriendPeerAvatar(activeFriendSession, currentUserPtid);
   const peerPresenceKnown = peerPtid ? peerPtid in peerOnline : false;
@@ -886,13 +937,16 @@ export function ChatDetailPanel() {
   };
 
   const handleSaveGroupName = async () => {
-    if (!activeUlid || !editNameValue.trim()) {
-      setEditingName(false);
-      return;
-    }
+    // Closing the editor on blur/Escape must never hit the wire: compare
+    // against the canonical server name (not a local remark), and cancel
+    // silently when the value is empty or unchanged.
+    const next = editNameValue.trim();
+    setEditingName(false);
+    if (!activeUlid || !next) return;
+    if (next === (activeConversation?.canonicalName || currentName).trim()) return;
     try {
       await messagingCommands.updateConversation(activeUlid, {
-        name: editNameValue.trim(),
+        name: next,
       });
       await loadSessions();
       toast.success(t('chat.social.detail.groupNameUpdated'));
@@ -900,7 +954,6 @@ export function ChatDetailPanel() {
       log.error('chat', 'update group name failed', { groupUlid: activeUlid, error });
       toast.error(t('chat.social.detail.groupNameUpdateFailed'));
     }
-    setEditingName(false);
   };
 
   const handleSaveMyNickname = async () => {
@@ -909,6 +962,9 @@ export function ChatDetailPanel() {
       return;
     }
     const nextNickname = editMyNicknameValue.trim();
+    setEditingMyNickname(false);
+    // Unchanged open-and-close is a cancel, not a member-settings write.
+    if (nextNickname === myGroupNickname) return;
     try {
       await messagingCommands.updateMemberSettings(activeUlid, {
         nickname: nextNickname,
@@ -919,28 +975,87 @@ export function ChatDetailPanel() {
       log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
       toast.error(t('chat.social.detail.myNicknameUpdateFailed'));
     }
-    setEditingMyNickname(false);
+  };
+
+  const startDescriptionEdit = () => {
+    setEditDescriptionValue(activeConversation?.description?.trim() || '');
+    setEditingDescription(true);
+  };
+
+  const handleSaveDescription = async () => {
+    const next = editDescriptionValue.trim();
+    setEditingDescription(false);
+    if (!activeUlid || !canManageGroupMembers) return;
+    if (next === (activeConversation?.description || '').trim()) return;
+    setDescriptionSaving(true);
+    try {
+      await messagingCommands.updateConversation(activeUlid, { description: next });
+      await loadSessions();
+      toast.success(t('chat.social.detail.groupDescriptionUpdated'));
+    } catch (error) {
+      log.error('chat', 'update group description failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.groupDescriptionUpdateFailed'));
+    } finally {
+      setDescriptionSaving(false);
+    }
+  };
+
+  const startRemarkEdit = () => {
+    setEditRemarkValue(activeLocalState?.remark?.trim() || '');
+    setEditingRemark(true);
+  };
+
+  const handleSaveRemark = async () => {
+    const next = editRemarkValue.trim();
+    setEditingRemark(false);
+    if (!activeUlid) return;
+    if (next === (activeLocalState?.remark || '').trim()) return;
+    try {
+      await updateConversationLocalState(activeTab, activeUlid, {
+        remark: next || undefined,
+      });
+    } catch (error) {
+      log.error('chat', 'save group remark failed', { groupUlid: activeUlid, error });
+      toast.error(t('chat.social.detail.groupRemarkUpdateFailed'));
+    }
   };
 
   const handleGroupAvatarClick = async () => {
-    if (!activeUlid) return;
+    if (!activeUlid || groupAvatarUploading) return;
     let filePath: string;
     try {
       filePath = await api.pickImageFile();
     } catch {
       return;
     }
+    // Show the picked image immediately; upload and server commit continue
+    // in the background, matching profile avatar/header behavior.
+    const previewUrl = convertFileSrc(filePath);
+    setGroupAvatarUploading(true);
+    setConversationAvatarPreview('group', activeUlid, previewUrl);
     try {
       const uploaded = await api.ossUploadAttachmentSocial(filePath);
       const avatarPath = `/sub-oss/file?key=${encodeURIComponent(uploaded.key)}`;
       await messagingCommands.updateConversation(activeUlid, {
         avatarObjectId: avatarPath,
       });
+      await loadSessions();
+      // Warm the committed remote URL before dropping the local preview so
+      // the swap does not flash to a cold download.
+      await new Promise((resolve) => {
+        const image = new Image();
+        image.onload = resolve;
+        image.onerror = resolve;
+        image.src = avatarPath;
+      });
+      setConversationAvatarPreview('group', activeUlid, null);
       toast.success(t('chat.social.detail.groupAvatarUpdated'));
-      loadSessions();
     } catch (error) {
+      setConversationAvatarPreview('group', activeUlid, null);
       log.error('chat', 'update group avatar failed', { groupUlid: activeUlid, error });
       toast.error(t('chat.social.detail.groupAvatarUpdateFailed'));
+    } finally {
+      setGroupAvatarUploading(false);
     }
   };
 
@@ -1243,13 +1358,16 @@ export function ChatDetailPanel() {
     setConversationActionPending(null);
     setBackgroundRetryPath(null);
     setEditingMyNickname(false);
+    setEditingDescription(false);
+    setDescriptionSaving(false);
+    setEditingRemark(false);
   }, [activeUlid]);
 
   useEffect(() => {
-    if (!isGroup && peerPtid) {
+    if (!isGroup && !isSelfDirect && peerPtid) {
       void loadPeerProfile(peerPtid);
     }
-  }, [isGroup, peerPtid, loadPeerProfile]);
+  }, [isGroup, isSelfDirect, peerPtid, loadPeerProfile]);
 
   const cachedPeerProfile = !isGroup && peerPtid ? peerProfiles[peerPtid] : undefined;
 
@@ -1304,36 +1422,89 @@ export function ChatDetailPanel() {
       <Flexbox style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
         {/* Identity section */}
         {isGroup ? (
-          <Flexbox align="center" gap={12} style={{ padding: '20px 16px 12px' }}>
-            {/* Avatar with edit overlay */}
-            <div
-              style={{ position: 'relative', cursor: 'pointer' }}
-              onClick={handleGroupAvatarClick}
-            >
-              <Flexbox
-                align="center"
-                justify="center"
+          <Flexbox style={{ padding: 0, minWidth: 0 }}>
+            {/* Banner: blurred group avatar over a deterministic hue, so each
+                group profile has a recognizable, non-empty cover. */}
+            {(() => {
+              const hue = deterministicBannerHue(activeUlid || displayName);
+              return (
+                <div
+                  aria-hidden="true"
+                  data-chat-group-banner
+                  style={{
+                    position: 'relative',
+                    height: 88,
+                    margin: '0 0 30px',
+                    overflow: 'hidden',
+                    background: `linear-gradient(135deg, hsl(${hue} 62% 62%), hsl(${(hue + 42) % 360} 58% 48%))`,
+                  }}
+                >
+                  {groupAvatarUrl.startsWith('http') ? (
+                    <img
+                      src={groupAvatarUrl}
+                      alt=""
+                      style={{
+                        position: 'absolute',
+                        inset: -24,
+                        width: 'calc(100% + 48px)',
+                        height: 'calc(100% + 48px)',
+                        objectFit: 'cover',
+                        filter: 'blur(18px) saturate(1.2)',
+                        transform: 'scale(1.12)',
+                      }}
+                    />
+                  ) : null}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: `linear-gradient(180deg, hsl(${hue} 55% 45% / 0.28), hsl(${hue} 60% 30% / 0.55))`,
+                    }}
+                  />
+                </div>
+              );
+            })()}
+            <Flexbox align="center" gap={8} style={{ padding: '0 16px', marginTop: -66 }}>
+              {/* Avatar with edit overlay */}
+              <div
+                data-chat-group-avatar={groupAvatarUploading ? 'uploading' : 'idle'}
                 style={{
-                  width: 72,
-                  height: 72,
+                  position: 'relative',
+                  cursor: groupAvatarUploading ? 'wait' : 'pointer',
                   borderRadius: 18,
-                  background: token.colorFillSecondary,
-                  color: token.colorTextSecondary,
-                  overflow: 'hidden',
+                  boxShadow: `0 0 0 3px ${token.colorBgContainer}, 0 4px 12px rgba(0,0,0,0.18)`,
+                }}
+                onClick={() => {
+                  if (!groupAvatarUploading) void handleGroupAvatarClick();
                 }}
               >
-                <GroupSquareAvatar
-                  remoteUrl={groupAvatarUrl || undefined}
-                  members={members.slice(0, 4).map((m) => {
-                    const p = memberProfiles.get(m.ptid);
-                    return { name: p?.name || m.nickname || '', avatar: p?.avatar || '' };
-                  })}
-                  name={displayName}
-                  size={72}
-                  radius={18}
-                />
-              </Flexbox>
-              {isGroup && (
+                <Flexbox
+                  align="center"
+                  justify="center"
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 18,
+                    background: token.colorFillSecondary,
+                    color: token.colorTextSecondary,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <GroupSquareAvatar
+                    remoteUrl={groupAvatarUrl || undefined}
+                    members={members.slice(0, 4).map((m) => {
+                      const p = memberProfiles.get(m.ptid);
+                      return {
+                        ptid: m.ptid,
+                        name: p?.name || m.nickname || '',
+                        avatar: p?.avatar || '',
+                      };
+                    })}
+                    name={displayName}
+                    size={72}
+                    radius={18}
+                  />
+                </Flexbox>
                 <Flexbox
                   align="center"
                   justify="center"
@@ -1349,13 +1520,13 @@ export function ChatDetailPanel() {
                     border: `2px solid ${token.colorBgContainer}`,
                   }}
                 >
-                  <Camera size={12} />
+                  {groupAvatarUploading ? <Spin size="small" /> : <Camera size={12} />}
                 </Flexbox>
-              )}
-            </div>
+              </div>
+            </Flexbox>
             {/* Editable group name */}
-            {editingName ? (
-              <Flexbox horizontal align="center" gap={8}>
+            <Flexbox align="center" style={{ padding: '10px 16px 2px' }}>
+              {editingName ? (
                 <input
                   autoFocus
                   value={editNameValue}
@@ -1367,31 +1538,58 @@ export function ChatDetailPanel() {
                   onBlur={() => void handleSaveGroupName()}
                   style={{
                     border: 'none',
-                    borderBottom: `2px solid ${token.colorPrimary}`,
+                    borderBottom: `1px solid ${token.colorPrimary}`,
                     background: 'transparent',
                     fontSize: 16,
                     fontWeight: 600,
                     textAlign: 'center',
                     outline: 'none',
-                    width: 180,
+                    width: 220,
+                    maxWidth: '100%',
                     padding: '2px 4px',
                     color: token.colorText,
                   }}
                 />
-              </Flexbox>
-            ) : (
+              ) : (
+                <Flexbox horizontal align="center" gap={4}>
+                  <Text strong style={{ fontSize: 16 }}>
+                    {displayName}
+                  </Text>
+                  {canManageGroupMembers ? (
+                    <Tooltip title={t('chat.social.detail.editGroupName')}>
+                      <Button
+                        data-chat-group-name-edit
+                        type="text"
+                        size="small"
+                        aria-label={t('chat.social.detail.editGroupName')}
+                        icon={<Pencil size={13} />}
+                        style={{ width: 24, height: 24 }}
+                        onClick={() => {
+                          setEditNameValue(activeConversation?.canonicalName || currentName || '');
+                          setEditingName(true);
+                        }}
+                      />
+                    </Tooltip>
+                  ) : null}
+                </Flexbox>
+              )}
+            </Flexbox>
+            {/* When a local remark is set, keep the canonical name readable. */}
+            {!editingName
+              && (activeLocalState?.remark || '').trim()
+              && (activeConversation?.canonicalName || '').trim()
+              && (activeLocalState!.remark!.trim() !== activeConversation!.canonicalName!.trim()) ? (
               <Text
-                strong
-                style={{ fontSize: 16, cursor: canManageGroupMembers ? 'pointer' : 'default' }}
-                onClick={canManageGroupMembers ? () => {
-                  setEditNameValue(activeGroup?.name || '');
-                  setEditingName(true);
-                } : undefined}
+                type="secondary"
+                ellipsis
+                style={{ display: 'block', textAlign: 'center', fontSize: 11, padding: '0 16px' }}
               >
-                {displayName}
+                {t('chat.social.detail.canonicalGroupName', {
+                  name: activeConversation!.canonicalName!,
+                })}
               </Text>
-            )}
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            ) : null}
+            <Text type="secondary" style={{ fontSize: 12, textAlign: 'center', padding: '4px 16px 2px' }}>
               {t('chat.social.detail.membersCount', { count: groupMemberCount })}
             </Text>
           </Flexbox>
@@ -1401,6 +1599,8 @@ export function ChatDetailPanel() {
               compact
               profile={buildChatDetailProfile({
                 isGroup,
+                isSelfDirect,
+                selfLabel: t('chat.social.contacts.savedMessages'),
                 displayName,
                 peerAvatar,
                 peerPtid,
@@ -1416,32 +1616,125 @@ export function ChatDetailPanel() {
                 federationId: activeConversation?.federationId || '',
                 t,
               })}
+              actions={!isGroup && profileRelationshipKind && profileRelationshipKind !== 'friend' ? (
+                <ProfilePrimaryAction actorPtid={peerPtid} />
+              ) : undefined}
             />
           </Flexbox>
         )}
 
-        {!isAutomatedConversation && (
+        {stationChip && (
         <Flexbox
-          data-chat-station="authority"
-          data-chat-station-id={authorityStationId}
-          data-chat-station-name={authorityStationName}
-          data-chat-station-state={authorityStationId ? 'available' : 'unavailable'}
+          data-chat-station={isGroup ? 'local' : 'authority'}
+          data-chat-station-id={stationChip.stationId}
+          data-chat-station-name={stationChip.label}
+          data-chat-station-state={stationChip.state}
           horizontal
           align="center"
           justify="center"
+          gap={5}
           style={{ padding: '0 16px 10px', minWidth: 0 }}
         >
+          {stationChip.state !== 'neutral' && (
+            <span
+              aria-hidden="true"
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 999,
+                flexShrink: 0,
+                background: stationChip.state === 'connected'
+                  ? token.colorSuccess
+                  : token.colorTextQuaternary,
+              }}
+            />
+          )}
           <Text
             type="secondary"
-            ellipsis={authorityStationName ? { tooltip: authorityStationName } : false}
+            ellipsis={{ tooltip: stationChip.label }}
             style={{ maxWidth: '100%', fontSize: 11 }}
           >
-            {authorityStationName
-              ? t('chat.social.detail.authorityStation', { station: authorityStationName })
-              : t('chat.social.detail.authorityStationUnavailable')}
+            {isGroup
+              ? stationChip.label
+              : t('chat.social.detail.authorityStation', { station: stationChip.label })}
           </Text>
         </Flexbox>
         )}
+
+        {isGroup ? (
+          <DetailSection gap={8}>
+            {editingDescription ? (
+              <Flexbox gap={8}>
+                <textarea
+                  autoFocus
+                  data-chat-group-description-editor
+                  value={editDescriptionValue}
+                  maxLength={300}
+                  rows={3}
+                  placeholder={t('chat.social.detail.groupDescriptionPlaceholder')}
+                  onChange={(event) => setEditDescriptionValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                      void handleSaveDescription();
+                    }
+                    if (event.key === 'Escape') setEditingDescription(false);
+                  }}
+                  onBlur={() => void handleSaveDescription()}
+                  style={{
+                    width: '100%',
+                    resize: 'none',
+                    border: `1px solid ${token.colorBorder}`,
+                    borderRadius: 8,
+                    padding: '6px 8px',
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    outline: 'none',
+                    background: token.colorBgContainer,
+                    color: token.colorText,
+                  }}
+                />
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {t('chat.social.detail.groupDescriptionHint')}
+                </Text>
+              </Flexbox>
+            ) : (
+              <Flexbox horizontal align="flex-start" justify="space-between" gap={8}>
+                <Flexbox horizontal gap={8} style={{ minWidth: 0, flex: 1 }}>
+                  <FileText size={15} style={{ color: token.colorTextSecondary, marginTop: 2, flexShrink: 0 }} />
+                  {activeConversation?.description?.trim() ? (
+                    <Text
+                      style={{ fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                    >
+                      {activeConversation.description.trim()}
+                    </Text>
+                  ) : canManageGroupMembers ? (
+                    <Text
+                      type="secondary"
+                      style={{ fontSize: 12 }}
+                      data-chat-group-description-empty
+                    >
+                      {descriptionSaving
+                        ? t('chat.social.detail.groupDescriptionSaving')
+                        : t('chat.social.detail.groupDescriptionAdd')}
+                    </Text>
+                  ) : null}
+                </Flexbox>
+                {canManageGroupMembers && !descriptionSaving ? (
+                  <Tooltip title={t('chat.social.detail.groupDescriptionEdit')}>
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label={t('chat.social.detail.groupDescriptionEdit')}
+                      icon={<Pencil size={13} />}
+                      style={{ width: 24, height: 24, flexShrink: 0 }}
+                      onClick={startDescriptionEdit}
+                    />
+                  </Tooltip>
+                ) : null}
+              </Flexbox>
+            )}
+          </DetailSection>
+        ) : null}
 
         {isGroup ? (
           <DetailSection title={t('chat.social.detail.permissionLabel')} gap={10}>
@@ -1516,6 +1809,57 @@ export function ChatDetailPanel() {
 
         {/* Settings section */}
         <DetailSection title={t('chat.social.detail.settings')}>
+          {isGroup ? (
+            <Flexbox horizontal align="center" justify="space-between" gap={10}>
+              <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
+                <Pencil size={15} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
+                <Flexbox gap={1} style={{ minWidth: 0, flex: 1 }}>
+                  <Text style={{ fontSize: 13 }}>{t('chat.social.detail.groupRemark')}</Text>
+                  {editingRemark ? (
+                    <input
+                      autoFocus
+                      data-chat-group-remark-editor
+                      value={editRemarkValue}
+                      maxLength={60}
+                      placeholder={t('chat.social.detail.groupRemarkPlaceholder')}
+                      onChange={(event) => setEditRemarkValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void handleSaveRemark();
+                        if (event.key === 'Escape') setEditingRemark(false);
+                      }}
+                      onBlur={() => void handleSaveRemark()}
+                      style={{
+                        border: 'none',
+                        borderBottom: `1px solid ${token.colorPrimary}`,
+                        background: 'transparent',
+                        color: token.colorText,
+                        fontSize: 12,
+                        outline: 'none',
+                        padding: '2px 0',
+                      }}
+                    />
+                  ) : (
+                    <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                      {(activeLocalState?.remark || '').trim()
+                        || t('chat.social.detail.groupRemarkUnset')}
+                    </Text>
+                  )}
+                  <Text type="secondary" style={{ fontSize: 10 }}>
+                    {t('chat.social.detail.groupRemarkHint')}
+                  </Text>
+                </Flexbox>
+              </Flexbox>
+              {!editingRemark ? (
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={startRemarkEdit}
+                >
+                  {t('chat.social.detail.edit')}
+                </Button>
+              ) : null}
+            </Flexbox>
+          ) : null}
           {isGroup ? (
             <Flexbox horizontal align="center" justify="space-between" gap={10}>
               <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
@@ -1639,8 +1983,9 @@ export function ChatDetailPanel() {
           />
         </DetailSection>
 
-        {/* Security section */}
-        {encryptionEnabled && !isGroup && (
+        {/* Security section: safety numbers are a peer concept; self-direct
+            carries no peer to verify. */}
+        {encryptionEnabled && !isGroup && !isSelfDirect && (
           <DetailSection title={t('chat.social.encryption.title')}>
             <Flexbox horizontal align="center" gap={6}>
               <Lock size={14} style={{ color: token.colorSuccess }} />
@@ -1823,6 +2168,8 @@ export function ChatDetailPanel() {
 
 interface BuildChatDetailProfileArgs {
   isGroup: boolean;
+  isSelfDirect: boolean;
+  selfLabel: string;
   displayName: string;
   peerAvatar: string;
   peerPtid: string;
@@ -1846,6 +2193,8 @@ interface BuildChatDetailProfileArgs {
 // the brief network round-trip.
 function buildChatDetailProfile({
   isGroup,
+  isSelfDirect,
+  selfLabel,
   displayName,
   peerAvatar,
   peerPtid,
@@ -1861,17 +2210,19 @@ function buildChatDetailProfile({
   federationId,
   t,
 }: BuildChatDetailProfileArgs): PublicProfileModel {
-  // Bots have no presence concept; show the Station-managed relation instead
-  // of an "Offline" state derived from missing presence.
+  // Bots have no presence concept and self-direct has no peer; show their
+  // stable relation label instead of an "Offline" state.
   const presenceLabel = isGroup
     ? t('chat.social.detail.membersCount', { count: groupMemberCount })
-    : isAutomatedConversation
-      ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
-      : peerPresenceKnown
-        ? peerIsOnline
-          ? t('chat.social.detail.online')
-          : t('chat.social.detail.offline')
-        : t('chat.social.detail.presenceUnavailable');
+    : isSelfDirect
+      ? selfLabel
+      : isAutomatedConversation
+        ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
+        : peerPresenceKnown
+          ? peerIsOnline
+            ? t('chat.social.detail.online')
+            : t('chat.social.detail.offline')
+          : t('chat.social.detail.presenceUnavailable');
   const encryptionBadge = {
     label: encryptionEnabled
       ? t('chat.social.detail.encrypted')
@@ -1923,14 +2274,18 @@ function buildChatDetailProfile({
     avatar: cachedPeerProfile?.avatar?.trim() || peerAvatar,
     header: cachedPeerProfile?.header?.trim() || undefined,
     username: cachedPeerProfile?.username?.trim() || undefined,
+    homeStationDomain: cachedPeerProfile?.home_station_domain?.trim() || undefined,
     bio: cachedPeerProfile?.note?.trim() || undefined,
     did: cachedPeerProfile?.id?.trim() || peerPtid,
-    createdAt: cachedPeerProfile?.created_at?.trim() || undefined,
+    joined: formatJoinedDate(
+      cachedPeerProfile?.created_at,
+      t('chat.social.profile.joined'),
+    ),
     region: cachedPeerProfile?.region?.trim() || undefined,
     tags: (cachedPeerProfile?.tags ?? []).filter(Boolean),
     links: (cachedPeerProfile?.links ?? []).filter((l) => l && (l.label || l.url)),
     relationLabel: presenceLabel,
-    relationTone: peerIsOnline ? 'success' : 'default',
+    relationTone: !isSelfDirect && peerIsOnline ? 'success' : 'default',
     identityMetadata: authorityStationName
       ? [t('chat.social.identity.station', { station: authorityStationName })]
       : undefined,

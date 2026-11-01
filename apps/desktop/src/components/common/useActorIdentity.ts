@@ -8,6 +8,7 @@ import { useSessionStore } from '../../store/session';
 import { useSocialChatStore } from '../../store/socialChat';
 import {
   actorDisplayName,
+  canonicalProfileAvatar,
   resolveActorIdentity,
 } from '../../store/socialProfileProjection';
 
@@ -70,9 +71,9 @@ export function useActorIdentity(
     );
     const canonicalAvatar = (
       identity.isSelf
-        ? currentUserProfile?.avatar
-        : peerProfile?.avatar
-    )?.trim() || '';
+        ? currentUserProfile?.avatar?.trim()
+        : (peerProfile ? canonicalProfileAvatar(peerProfile) : '')
+    ) || '';
     const homeStationPeerId = (
       identity.isSelf
         ? federationSelf?.home_station_peer_id

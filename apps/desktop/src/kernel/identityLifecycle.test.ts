@@ -181,4 +181,27 @@ describe('identity lifecycle state machine', () => {
     });
     expect(identityPhaseAllowsReady(completed)).toBe(true);
   });
+
+  it('maps typed native avatar state to presentation-only status', () => {
+    const authenticated = identityReducer(
+      { kind: 'booting', reason: 'cold_launch' },
+      {
+        type: 'LOGIN_SUCCEEDED',
+        user: { ...user, avatar: undefined, avatarState: 'absent' },
+      },
+    );
+    expect(authenticated).toMatchObject({ readiness: { avatar: 'absent' } });
+
+    const degraded = identityReducer(authenticated, {
+      type: 'AVATAR_PRESENTATION_UPDATED',
+      status: 'degraded',
+    });
+    expect(degraded).toMatchObject({ readiness: { avatar: 'degraded' } });
+
+    const recovered = identityReducer(degraded, {
+      type: 'AVATAR_PRESENTATION_UPDATED',
+      status: 'remoteKnown',
+    });
+    expect(recovered).toMatchObject({ readiness: { avatar: 'remoteKnown' } });
+  });
 });

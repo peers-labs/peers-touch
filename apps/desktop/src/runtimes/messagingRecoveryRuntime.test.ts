@@ -5,7 +5,12 @@ import { useMessagingRecoveryStore } from '../store/messagingRecovery';
 import { useSessionStore } from '../store/session';
 import { messagingRecoveryRuntime } from './messagingRecoveryRuntime';
 
-const status = { identity: null, exists: false, latest: null };
+const status = {
+  readiness: 'active' as const,
+  identity: null,
+  exists: false,
+  latest: null,
+};
 
 describe('messagingRecoveryRuntime', () => {
   beforeEach(() => {

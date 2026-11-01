@@ -443,6 +443,11 @@ describe('Messaging message projection', () => {
         pinnedByPtid: undefined,
         pinnedAtUnixMs: undefined,
         readByPtids: ['ptid:test:bob'],
+        attemptCount: 0,
+        nextAttemptAtUnixMs: undefined,
+        lastErrorCode: undefined,
+        requiredDeviceCount: 0,
+        deliveredDeviceCount: 0,
       }],
       hasMore: true,
       nextBeforeSequence: 7,
@@ -595,7 +600,9 @@ describe('Messaging send outcome', () => {
           durationMs: 0,
         },
       ],
+      { sendIntentId: '01JTESTSENDINTENT0000000001' },
     )).resolves.toEqual({
+      admission: 'admitted',
       commandId: commandId || undefined,
       messageId: 'message-1',
       attachmentIds: ['attachment-1', 'attachment-2'],
@@ -609,6 +616,7 @@ describe('Messaging send outcome', () => {
         plaintext: '',
         reply_to_message_id: '',
         thread_root_message_id: '',
+        send_intent_id: '01JTESTSENDINTENT0000000001',
         attachments: [
           {
             file_path: '/tmp/image.png',

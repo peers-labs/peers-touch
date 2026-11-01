@@ -12,7 +12,7 @@ const backup = {
 const identity = {
   ready: true, ptid: 'ptid:peer:alice', deviceId: 'device', fingerprint: 'fingerprint',
 };
-const status = { identity, exists: true, latest: backup };
+const status = { readiness: 'active' as const, identity, exists: true, latest: backup };
 const result = {
   backup, recoveryEpoch: 1, messageCount: 2, conversationCount: 1,
   attachmentCount: 0, verifiedFingerprintCount: 0,
@@ -71,8 +71,31 @@ describe('authenticated Messaging Recovery projection', () => {
   it('loads the authenticated backup status', async () => {
     await invokeAction('refresh');
     expect(useMessagingRecoveryStore.getState()).toMatchObject({
-      identity, latest: backup, exists: true, loading: false, error: null,
+      readiness: 'active', identity, latest: backup, exists: true,
+      loading: false, error: null,
     });
+  });
+
+  it('projects typed recovery_required readiness so the shell can gate messaging', async () => {
+    vi.mocked(messagingRecoveryService.status).mockResolvedValueOnce({
+      readiness: 'recovery_required',
+      identity: null,
+      exists: false,
+      latest: null,
+    });
+    await useMessagingRecoveryStore.getState().refresh();
+    expect(useMessagingRecoveryStore.getState()).toMatchObject({
+      readiness: 'recovery_required',
+      identity: null,
+      exists: false,
+      loading: false,
+    });
+  });
+
+  it('keeps readiness unknown when the status read fails (never false-gates)', async () => {
+    vi.mocked(messagingRecoveryService.status).mockRejectedValueOnce(new Error('edge down'));
+    await expect(useMessagingRecoveryStore.getState().refresh()).rejects.toThrow('edge down');
+    expect(useMessagingRecoveryStore.getState().readiness).toBe('unknown');
   });
 
   it('publishes a newly created backup', async () => {

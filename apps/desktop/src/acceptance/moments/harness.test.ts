@@ -102,6 +102,7 @@ const sessionState = {
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+  convertFileSrc: (path: string) => `asset://localhost/${path.replace(/^\//, '')}`,
 }));
 
 vi.mock('../../services/desktop_api', () => ({
@@ -111,7 +112,6 @@ vi.mock('../../services/desktop_api', () => ({
     profileGet: vi.fn(),
     ossResolveUrl: vi.fn(),
     ossUploadAttachmentSocial: vi.fn(),
-    ossUploadEncryptedAttachmentSocial: vi.fn(),
     socialFriendRequestAccept: vi.fn(),
     socialFriendRequestList: vi.fn(),
     socialFriendRequestSend: vi.fn(),
@@ -239,7 +239,6 @@ describe('Moments acceptance harness', () => {
     }));
     vi.mocked(api.ossResolveUrl).mockReset();
     vi.mocked(api.ossUploadAttachmentSocial).mockReset();
-    vi.mocked(api.ossUploadEncryptedAttachmentSocial).mockReset();
     vi.mocked(socialBlockActor).mockReset();
     vi.mocked(socialFollow).mockReset();
     vi.mocked(socialUnblockActor).mockReset();
@@ -1585,9 +1584,28 @@ describe('Moments acceptance harness', () => {
     expect(serialized).not.toContain('https://station.invalid/public-image');
   });
 
-  it('publishes public media without the private encryption wrapper', async () => {
+  it('publishes public media through the real composer decision (plaintext only)', async () => {
+    // Minimal 1x1 PNG so the composer MIME magic + decoder gate
+    // accepts the picked file before the plaintext upload.
+    const png = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        arrayBuffer: async () => png.buffer,
+      })),
+    );
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => ({ width: 1, height: 1, close: vi.fn() })),
+    );
+
     vi.mocked(api.ossUploadAttachmentSocial).mockResolvedValue({
       cid: 'oss://station/public-image',
+      mime_type: 'image/png',
+      size: png.byteLength,
     } as never);
     momentsState.createPost.mockResolvedValue('public-post');
 
@@ -1599,17 +1617,26 @@ describe('Moments acceptance harness', () => {
     expect(api.ossUploadAttachmentSocial).toHaveBeenCalledWith(
       '/tmp/public-image.png',
     );
-    expect(api.ossUploadEncryptedAttachmentSocial).not.toHaveBeenCalled();
     expect(momentsState.createPost).toHaveBeenCalledWith(
       expect.objectContaining({
         imageIds: ['oss://station/public-image'],
+        images: [
+          expect.objectContaining({ id: 'oss://station/public-image' }),
+        ],
         audience: expect.objectContaining({ kind: Audience_Kind.PUBLIC }),
       }),
     );
+    // The plaintext attachment must never carry an encryption descriptor.
+    const draft = momentsState.createPost.mock.calls[0]?.[0] as {
+      images?: Array<{ mediaEncryption?: unknown }>;
+    };
+    expect(draft.images?.[0]?.mediaEncryption).toBeUndefined();
     expect(result).toMatchObject({
       published: true,
       mediaCount: 1,
       transientPostId: 'public-post',
     });
+
+    vi.unstubAllGlobals();
   });
 });

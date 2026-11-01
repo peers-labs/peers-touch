@@ -614,13 +614,29 @@ fn resolve_profile_urls(
     resources: &StationResourceHandle,
     data: &mut Value,
 ) -> Result<(), ResourceProjectionError> {
-    for field in &["avatar", "header"] {
-        if let Some(val) = data.get_mut(*field) {
-            if let Some(s) = val.as_str() {
-                if !s.is_empty() {
-                    *val = Value::String(resources.project_reference(s, None)?);
-                }
-            }
+    let Some(fields) = data.as_object_mut() else {
+        return Ok(());
+    };
+    for field in ["avatar", "header"] {
+        // Preserve the canonical Station profile value (relative Station media
+        // path, external URL, or data URI) as `<field>_identity` BEFORE the
+        // ephemeral `station-resource://local/<token>` projection replaces the
+        // render field. The renderer avatar owner keys on the canonical
+        // identity; the rotating per-process token must never become that
+        // identity or cache key (r3.1 Identity/Avatar). Direct-src consumers
+        // keep reading the projected `<field>`.
+        let identity = fields
+            .get(field)
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        fields.insert(format!("{field}_identity"), Value::String(identity.clone()));
+        if !identity.is_empty() {
+            fields.insert(
+                field.to_string(),
+                Value::String(resources.project_reference(&identity, None)?),
+            );
         }
     }
     Ok(())
@@ -724,18 +740,18 @@ pub fn sync_user_profile(
         );
     }
 
-    let avatar_identity = profile.avatar.clone();
-    let avatar_local_path = materialize_avatar(resources, Some(token), &avatar_identity)
-        .ok()
-        .flatten();
-    let avatar_url = if avatar_identity.is_empty() {
-        String::new()
-    } else {
-        match resources.project_reference(&avatar_identity, None) {
-            Ok(value) => value,
-            Err(error) => return map_resource_error("sync_user_profile", error),
-        }
-    };
+    // Canonical avatar identity is the raw Station profile value (relative
+    // Station media path, external URL, or data: URI). The per-process
+    // `station-resource://local/<token>` projection is ephemeral and must
+    // never become the identity or cache key (r3.1 Identity/Avatar).
+    let avatar_identity = profile.avatar.trim().to_string();
+    let last_good = crate::infrastructure::auth_identity::actor_avatar_last_good(actor_ptid);
+    let avatar = project_avatar(
+        resources,
+        Some(token),
+        &avatar_identity,
+        last_good.as_ref().and_then(|(_, path)| path.as_deref()),
+    );
 
     // Pick the LocalAccount whose `provider_user_id` matches `actor_ptid`. This
     // is the only correct destination — `active_account_id` is a UI/router
@@ -757,17 +773,23 @@ pub fn sync_user_profile(
         }
     };
 
-    // Sync all profile data + download avatar to local cache.
+    // A failed materialization never clears the same-actor last-good record;
+    // an authoritative ABSENT clears identity and local path.
+    let avatar_sync = match avatar.state {
+        AvatarProjectionKind::Ready => crate::infrastructure::auth_identity::AvatarIdentitySync::Updated {
+            identity: &avatar.identity,
+            local_path: avatar.local_path.as_deref(),
+        },
+        AvatarProjectionKind::Absent => crate::infrastructure::auth_identity::AvatarIdentitySync::Cleared,
+        AvatarProjectionKind::Failed => crate::infrastructure::auth_identity::AvatarIdentitySync::Unchanged,
+    };
+
+    // Sync all profile data + the avatar projection to the local account row.
     let avatar_local = crate::infrastructure::auth_identity::sync_profile_locally(
         &account_id,
         Some(&profile.display_name),
         None, // email is not in ActorProfile
-        if avatar_identity.is_empty() {
-            None
-        } else {
-            Some(&avatar_identity)
-        },
-        avatar_local_path.as_deref(),
+        avatar_sync,
         if profile.url.is_empty() {
             None
         } else {
@@ -776,20 +798,38 @@ pub fn sync_user_profile(
     );
 
     let local_path = match avatar_local {
-        Ok(p) => p,
+        Ok(path) => path.or_else(|| match avatar.state {
+            // Persist failed: surface the previous same-actor path (if any) so
+            // the renderer keeps showing last-good instead of null-caching.
+            AvatarProjectionKind::Failed => {
+                last_good.as_ref().and_then(|(_, path)| path.clone())
+            }
+            _ => None,
+        }),
         Err(e) => {
             tracing::warn!(error = %e, "sync_user_profile: local sync partially failed");
-            None
+            match avatar.state {
+                AvatarProjectionKind::Ready => avatar.local_path.clone(),
+                AvatarProjectionKind::Failed => {
+                    last_good.as_ref().and_then(|(_, path)| path.clone())
+                }
+                AvatarProjectionKind::Absent => None,
+            }
         }
     };
 
-    // Build response including local avatar path for the frontend.
+    // The renderer keys on canonical identity; `avatar_url` remains the
+    // ephemeral display projection for existing consumers and is empty for a
+    // authoritative ABSENT (so empty string can never be read as "unknown").
     let data = json!({
         "name": profile.display_name,
         "email": "", // ActorProfile doesn't carry email
-        "avatar_url": avatar_url,
+        "avatar_url": avatar.url,
+        "avatar_identity": avatar.identity,
         "avatar_local_path": local_path,
+        "avatar_state": avatar.state.as_str(),
         "profile_url": profile.url,
+        "profile_revision": profile.profile_revision,
         "synced": true,
     });
 
@@ -797,6 +837,107 @@ pub fn sync_user_profile(
         command: "sync_user_profile".to_string(),
         status: data.to_string(),
     })
+}
+
+/// Typed avatar projection shared by every profile/avatar entry point
+/// (`sync_user_profile`, `avatar_resolve_local`, `account_sync_avatar`, and
+/// both the Tauri command and HTTP gateway front doors).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AvatarProjectionKind {
+    /// Materialized local file is available.
+    Ready,
+    /// The authoritative profile carries no avatar.
+    Absent,
+    /// Identity exists but materialization/decode failed; callers keep
+    /// last-good and may retry. This is never a permanent negative cache.
+    Failed,
+}
+
+impl AvatarProjectionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Absent => "absent",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+struct AvatarProjection {
+    state: AvatarProjectionKind,
+    identity: String,
+    local_path: Option<String>,
+    url: String,
+}
+
+fn absent_projection() -> AvatarProjection {
+    AvatarProjection {
+        state: AvatarProjectionKind::Absent,
+        identity: String::new(),
+        local_path: None,
+        url: String::new(),
+    }
+}
+
+/// Resolve a canonical avatar identity into its typed projection.
+///
+/// `last_good_path` is returned with `Failed` (never with `Ready` or `Absent`)
+/// so a transient Station/network failure cannot blank an actor that has a
+/// previously materialized image.
+fn project_avatar(
+    resources: &StationResourceHandle,
+    token: Option<&str>,
+    canonical_identity: &str,
+    last_good_path: Option<&str>,
+) -> AvatarProjection {
+    let identity = canonical_identity.trim();
+    if identity.is_empty() {
+        return absent_projection();
+    }
+
+    let reference = match resources.reference(identity, None) {
+        Ok(reference) => reference,
+        Err(error) => {
+            tracing::warn!(error = %error, identity = %identity, "avatar reference rejected");
+            return failed_projection(identity, last_good_path);
+        }
+    };
+
+    let url = match &reference {
+        ResourceReference::Station(resource) => resources
+            .project(resource.clone())
+            .map(|uri| uri.as_str().to_string())
+            .unwrap_or_else(|_| identity.to_string()),
+        ResourceReference::External(external) => external.as_str().to_string(),
+        ResourceReference::Inline(inline) => inline.as_str().to_string(),
+    };
+
+    match materialize_avatar_reference(resources, token, &reference) {
+        Ok(Some(path)) => AvatarProjection {
+            state: AvatarProjectionKind::Ready,
+            identity: identity.to_string(),
+            local_path: Some(path),
+            url,
+        },
+        Ok(None) => absent_projection(),
+        Err(error) => {
+            tracing::warn!(error = %error, identity = %identity, "avatar materialization failed");
+            failed_projection(identity, last_good_path)
+        }
+    }
+}
+
+fn failed_projection(identity: &str, last_good_path: Option<&str>) -> AvatarProjection {
+    AvatarProjection {
+        state: AvatarProjectionKind::Failed,
+        identity: identity.trim().to_string(),
+        local_path: last_good_path
+            .filter(|path| !path.trim().is_empty())
+            .map(str::to_string),
+        // No fresh display projection on failure; the renderer keeps its
+        // last-good src and retries through the shared AvatarAssets owner.
+        url: String::new(),
+    }
 }
 
 /// Sync avatar for the active account: update remote URL and warm the local cache.
@@ -824,62 +965,95 @@ pub fn sync_avatar_with_download(
     Ok(local_path)
 }
 
-/// Resolve the local cache path for any avatar URL. The single backend entry
-/// point used by the `UserSquareAvatar` component to honor the project rule
-/// "always render local images". Downloads on cache miss, returns `None` if
-/// the URL is empty or the download cannot complete.
+/// Resolve the local cache path for any canonical avatar identity. The single
+/// backend entry point used by the React-free `AvatarAssets` owner. All three
+/// states are typed (`ready` / `absent` / `failed`) so the renderer never has
+/// to infer identity from a null path.
 pub fn avatar_resolve_local(
     resources: &StationResourceHandle,
     token: Option<&str>,
     remote_url: &str,
-) -> Option<String> {
-    materialize_avatar(resources, token, remote_url)
-        .ok()
-        .flatten()
+) -> Value {
+    let projection = project_avatar(resources, token, remote_url, None);
+    json!({
+        "state": projection.state.as_str(),
+        "identity": projection.identity,
+        "local_path": projection.local_path,
+        "avatar_url": projection.url,
+    })
 }
 
 /// Download Station avatar to local cache and link it to the active auth identity.
+///
+/// Shares the exact response contract as `sync_user_profile`
+/// (`avatar_identity` / `avatar_local_path` / `avatar_state`) so the renderer
+/// has one typed fallback path instead of three ad-hoc shapes.
 pub fn account_sync_avatar(
     resources: &StationResourceHandle,
     input: &AccountSyncAvatarInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    match sync_avatar_with_download(resources, token, &input.avatar_url) {
-        Ok(local_path) => {
-            let status = match local_path {
-                Some(p) => format!("synced_local:{}", p),
-                None => "synced_remote_only".to_string(),
-            };
-            AppResult::success(StubPayload {
-                command: "account_sync_avatar".to_string(),
-                status,
-            })
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to sync avatar");
-            AppResult::fail(
+    let identity = input.avatar_url.trim();
+    if identity.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "avatar_url is required",
+            None,
+        );
+    }
+    let last_good =
+        crate::infrastructure::auth_identity::active_avatar_last_good();
+    let projection = project_avatar(
+        resources,
+        Some(token),
+        identity,
+        last_good.as_ref().and_then(|(_, path)| path.as_deref()),
+    );
+
+    if projection.state == AvatarProjectionKind::Ready {
+        if let Err(error) =
+            crate::infrastructure::auth_identity::update_active_avatar(&projection.identity)
+        {
+            tracing::error!(error = %error, "Failed to sync avatar identity");
+            return AppResult::fail(
                 ErrorCode::InternalError,
-                format!("Failed to sync avatar: {}", e),
+                format!("Failed to sync avatar: {error}"),
                 None,
-            )
+            );
+        }
+        if let Some(ref path) = projection.local_path {
+            if let Err(error) =
+                crate::infrastructure::auth_identity::update_active_avatar_local_path(path)
+            {
+                tracing::error!(error = %error, "Failed to sync avatar local path");
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("Failed to sync avatar: {error}"),
+                    None,
+                );
+            }
         }
     }
+
+    let status = json!({
+        // Same wire contract as `avatar_resolve_local`: the three profile/
+        // avatar entry points normalize to one typed TS shape.
+        "state": projection.state.as_str(),
+        "identity": projection.identity,
+        "local_path": projection.local_path,
+        "avatar_url": projection.url,
+    });
+    AppResult::success(StubPayload {
+        command: "account_sync_avatar".to_string(),
+        status: status.to_string(),
+    })
 }
 
-fn materialize_avatar(
-    resources: &StationResourceHandle,
-    token: Option<&str>,
-    value: &str,
-) -> Result<Option<String>, String> {
-    if value.trim().is_empty() {
-        return Ok(None);
-    }
-    let reference = resources
-        .reference(value, None)
-        .map_err(|error| error.to_string())?;
-    materialize_avatar_reference(resources, token, &reference)
-}
-
+/// Materialize a referenced avatar, honoring the transport-independent cache
+/// identity. Station and inline resources are served from the local file
+/// cache on identity hit, so the ephemeral `station-resource://local/<token>`
+/// projection neither doubles the cache key nor triggers a second fetch after
+/// `sync_user_profile` has already stored the bytes.
 fn materialize_avatar_reference(
     resources: &StationResourceHandle,
     token: Option<&str>,
@@ -887,19 +1061,28 @@ fn materialize_avatar_reference(
 ) -> Result<Option<String>, String> {
     let path = match reference {
         ResourceReference::Station(resource) => {
-            let (bytes, _) = resources
-                .fetch_bytes(resource, token)
-                .map_err(|error| error.to_string())?;
-            avatar_cache::store_bytes(&resource.cache_identity(), &bytes)
-                .map_err(|error| error.to_string())?
+            if let Some(path) = avatar_cache::lookup_identity(&resource.cache_identity()) {
+                path
+            } else {
+                let (bytes, _) = resources
+                    .fetch_bytes(resource, token)
+                    .map_err(|error| error.to_string())?;
+                avatar_cache::store_bytes(&resource.cache_identity(), &bytes)
+                    .map_err(|error| error.to_string())?
+            }
         }
         ResourceReference::External(url) => {
+            // `ensure_external` is already identity-based and cache-first.
             avatar_cache::ensure_external(url.as_str()).map_err(|error| error.to_string())?
         }
         ResourceReference::Inline(data) => {
-            let bytes = data.decoded_bytes().map_err(|error| error.to_string())?;
-            avatar_cache::store_bytes(&data.cache_identity(), &bytes)
-                .map_err(|error| error.to_string())?
+            if let Some(path) = avatar_cache::lookup_identity(&data.cache_identity()) {
+                path
+            } else {
+                let bytes = data.decoded_bytes().map_err(|error| error.to_string())?;
+                avatar_cache::store_bytes(&data.cache_identity(), &bytes)
+                    .map_err(|error| error.to_string())?
+            }
         }
     };
     Ok(Some(path.to_string_lossy().to_string()))
@@ -907,7 +1090,10 @@ fn materialize_avatar_reference(
 
 #[cfg(test)]
 mod tests {
-    use super::{actor_profile_to_value, canonical_profile_ptid, profile_matches_actor};
+    use super::{
+        project_avatar, actor_profile_to_value, canonical_profile_ptid, profile_matches_actor,
+        AvatarProjectionKind,
+    };
     use crate::application::station_runtime::client::StationClient;
     use crate::application::station_runtime::resource::StationResourceHandle;
     use crate::model::actor::{ActorProfile, PeersTouchInfo};
@@ -1001,6 +1187,33 @@ mod tests {
             .as_str()
             .is_some_and(|value| value.starts_with("station-resource://local/")));
         assert_eq!(projected["header"], "https://cdn.example.test/header.png");
+        // The rotating projection must never replace the canonical identity.
+        assert_eq!(
+            projected["avatar_identity"],
+            "/sub-oss/file?key=avatar.png"
+        );
+        assert_eq!(
+            projected["header_identity"],
+            "https://cdn.example.test/header.png"
+        );
+        assert_ne!(projected["avatar"], projected["avatar_identity"]);
+    }
+
+    #[test]
+    fn profile_identity_fields_are_empty_when_profile_has_no_media() {
+        let resources = StationResourceHandle::new(StationClient::testing_scoped("station", 7));
+        let profile = ActorProfile {
+            avatar: String::new(),
+            header: String::new(),
+            ..ActorProfile::default()
+        };
+
+        let projected = actor_profile_to_value(&resources, &profile).unwrap();
+
+        assert_eq!(projected["avatar"], "");
+        assert_eq!(projected["header"], "");
+        assert_eq!(projected["avatar_identity"], "");
+        assert_eq!(projected["header_identity"], "");
     }
 
     #[test]
@@ -1015,5 +1228,37 @@ mod tests {
         let projected = actor_profile_to_value(&resources, &profile).unwrap();
 
         assert_eq!(projected["avatar"], avatar);
+        assert_eq!(projected["avatar_identity"], avatar);
+    }
+
+    #[test]
+    fn avatar_projection_is_absent_for_empty_identity() {
+        let resources = StationResourceHandle::new(StationClient::testing_unavailable());
+
+        let projection = project_avatar(&resources, None, "   ", None);
+
+        assert_eq!(projection.state, AvatarProjectionKind::Absent);
+        assert!(projection.identity.is_empty());
+        assert_eq!(projection.local_path, None);
+        assert!(projection.url.is_empty());
+    }
+
+    #[test]
+    fn avatar_projection_failure_keeps_same_actor_last_good() {
+        let resources = StationResourceHandle::new(StationClient::testing_unavailable());
+
+        // No active Station scope in tests, so a relative Station identity
+        // cannot materialize; the projection must be typed failed and retain
+        // the supplied same-actor last-good path instead of nulling it.
+        let projection = project_avatar(
+            &resources,
+            None,
+            "/sub-oss/file?key=avatar.png",
+            Some("/cache/last-good.png"),
+        );
+
+        assert_eq!(projection.state, AvatarProjectionKind::Failed);
+        assert_eq!(projection.identity, "/sub-oss/file?key=avatar.png");
+        assert_eq!(projection.local_path.as_deref(), Some("/cache/last-good.png"));
     }
 }

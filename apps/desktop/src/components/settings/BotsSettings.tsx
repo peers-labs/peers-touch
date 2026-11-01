@@ -37,6 +37,7 @@ import {
   type BotCreateResponse,
 } from '../../services/desktop_api';
 import { useSocialChatStore } from '../../store/socialChat';
+import { canonicalProfileAvatar } from '../../store/socialProfileProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import {
   SettingsContainer,
@@ -68,7 +69,14 @@ function BotAvatar({ bot }: { bot: RegistryBot }) {
     void loadPeerProfile(bot.botPtid);
   }, [bot.botPtid, loadPeerProfile]);
 
-  return <UserSquareAvatar remoteUrl={profile?.avatar || undefined} name={bot.name} size={36} />;
+  return (
+    <UserSquareAvatar
+      remoteUrl={profile ? canonicalProfileAvatar(profile) || undefined : undefined}
+      actorPtid={bot.botPtid}
+      name={bot.name}
+      size={36}
+    />
+  );
 }
 
 function CredentialReveal({

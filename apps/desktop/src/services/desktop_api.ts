@@ -709,6 +709,15 @@ export interface AgentAttachmentRefInput {
 
 export type AgentUploadAttachmentBytesInput = OssUploadAttachmentBytesInput;
 
+/** Input for the Moments bytes upload command (downsampled JPEGs). */
+export interface OssSocialUploadAttachmentBytesInput {
+  filename: string;
+  mime_type: string;
+  /** Raw bytes; invoke serializes them as a number array. */
+  bytes: number[];
+  bucket?: string;
+}
+
 /**
  * Payload returned by `oss_upload_local_file` /
  * `oss_upload_attachment_social`.
@@ -736,27 +745,6 @@ export interface OssAttachmentUploaded {
   sha256?: string;
   /** Echoed or inferred OSS visibility: `public` | `chat` | `private`. */
   visibility?: string;
-}
-
-export interface SocialEncryptedMediaDescriptorWire {
-  encrypted: true;
-  version: number;
-  suite: string;
-  key_b64: string;
-  nonce_b64: string;
-  plaintext_sha256_b64: string;
-  ciphertext_sha256_b64: string;
-  plaintext_size: number;
-  ciphertext_size: number;
-  chunking?: string;
-  chunk_size?: number;
-  chunk_count?: number;
-  tag_size?: number;
-  nonce_strategy?: string;
-}
-
-export interface SocialEncryptedAttachmentUploaded extends OssAttachmentUploaded {
-  media_encryption: SocialEncryptedMediaDescriptorWire;
 }
 
 /**
@@ -2200,6 +2188,43 @@ export interface AuthSessionResponse extends TauriStubPayload {
   login_method?: string;
 }
 
+/**
+ * Typed native avatar state. Every profile/avatar entry point
+ * (`sync_user_profile`, `avatar_resolve_local`, `account_sync_avatar`) and
+ * both the Tauri command and HTTP gateway front doors return this same
+ * contract (r3.1 Identity/Avatar).
+ *
+ * - `ready`: `local_path` points at a materialized file the renderer can decode.
+ * - `absent`: the authoritative profile carries no avatar. Identity is empty.
+ * - `failed`: identity exists but materialization failed; callers keep last-good
+ *   and may retry. This is never a permanent negative cache.
+ */
+export type NativeAvatarState = 'ready' | 'absent' | 'failed';
+
+export interface AvatarResolveResult {
+  state: NativeAvatarState;
+  /** Canonical avatar identity (raw Station path / external URL / data URI). */
+  identity?: string;
+  /** Materialized local file path (ready, or same-actor last-good on failed). */
+  local_path?: string | null;
+  /** Ephemeral display projection (`station-resource://local/<token>`). */
+  avatar_url?: string | null;
+}
+
+export interface SyncUserProfileResult {
+  name: string;
+  email: string;
+  /** Ephemeral display projection; empty string for an authoritative ABSENT. */
+  avatar_url: string;
+  /** Canonical avatar identity; the renderer cache keys on this, not the token. */
+  avatar_identity?: string;
+  avatar_local_path?: string | null;
+  avatar_state?: NativeAvatarState;
+  profile_revision?: number;
+  profile_url: string;
+  synced: boolean;
+}
+
 export interface AcceptanceSessionPersistenceState {
   activeAccountPresent: boolean;
   accountHasSessionMetadata: boolean;
@@ -2368,6 +2393,15 @@ export interface AccountProfile {
   url: string;
   avatar: string;
   header: string;
+  /**
+   * Canonical Station profile media identity (relative Station path, external
+   * URL, or data URI). `avatar`/`header` carry the per-process projected
+   * `station-resource://local/<token>` render URL; avatar surfaces key their
+   * asset cache on this identity because the projection token rotates.
+   * Optional: older runtimes and federation-resolve mappings omit it.
+   */
+  avatar_identity?: string;
+  header_identity?: string;
   locked: boolean;
   created_at: string;
   statuses_count: number;
@@ -5051,10 +5085,17 @@ export const api = {
       { file_path: filePath },
     ),
 
-  ossUploadEncryptedAttachmentSocial: (filePath: string) =>
-    invokeRustDataFromStatus<{ file_path: string }, SocialEncryptedAttachmentUploaded>(
-      'oss_upload_encrypted_attachment_social',
-      { file_path: filePath },
+  /**
+   * Social/Moments consumer — upload renderer-re-encoded image bytes
+   * (client-side downsample). Rust writes a temp file and routes it
+   * through the same social upload path as `ossUploadAttachmentSocial`.
+   */
+  ossUploadAttachmentSocialBytes: (
+    input: OssSocialUploadAttachmentBytesInput,
+  ) =>
+    invokeRustDataFromStatus<OssSocialUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_social_bytes',
+      input,
     ),
 
   /**
@@ -5106,23 +5147,16 @@ export const api = {
     ),
 
   accountSyncAvatar: (avatarUrl: string) =>
-    invokeRustCommand<{ avatar_url: string }, TauriStubPayload>('account_sync_avatar', { avatar_url: avatarUrl }),
+    invokeRustDataFromStatus<{ avatar_url: string }, AvatarResolveResult>('account_sync_avatar', { avatar_url: avatarUrl }),
 
   avatarResolveLocal: (remoteUrl: string) =>
-    invokeRustDataFromStatus<{ url: string }, { local_path?: string | null }>(
+    invokeRustDataFromStatus<{ url: string }, AvatarResolveResult>(
       'avatar_resolve_local',
       { url: remoteUrl },
     ),
 
   syncUserProfile: () =>
-    invokeRustDataFromStatus<void, {
-      name: string;
-      email: string;
-      avatar_url: string;
-      avatar_local_path?: string;
-      profile_url: string;
-      synced: boolean;
-    }>('sync_user_profile'),
+    invokeRustDataFromStatus<void, SyncUserProfileResult>('sync_user_profile'),
 
   profileUpdatePrivacy: (input: ProfilePrivacyInput) =>
     invokeRustCommand<ProfilePrivacyInput, TauriStubPayload>('profile_update_privacy', input),

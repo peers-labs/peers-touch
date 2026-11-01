@@ -82,6 +82,7 @@ export const AccountPickerView = memo(function AccountPickerView({
             >
               <UserSquareAvatar
                 remoteUrl={account.avatar}
+                avatarLocalPath={account.avatarLocalPath}
                 name={account.name}
                 size={40}
                 radius={8}

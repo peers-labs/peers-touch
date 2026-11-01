@@ -30,7 +30,22 @@ export interface MessagingRecoveryRevision {
   blobSizeBytes: number;
 }
 
+/**
+ * Typed messaging profile readiness reported by the Station-bound engine
+ * registry:
+ * - active: a messaging engine owns this account (normal state);
+ * - recovery_required: actor identity continuity rejected engine activation
+ *   (new/reinstalled device); messaging surfaces must project recovery,
+ *   never a half-working shell;
+ * - inactive: no engine and no continuity rejection yet (transient startup).
+ */
+export type MessagingProfileReadiness =
+  | 'active'
+  | 'recovery_required'
+  | 'inactive';
+
 export interface MessagingRecoveryStatus {
+  readiness: MessagingProfileReadiness;
   identity: MessagingRecoveryIdentity | null;
   exists: boolean;
   latest: MessagingRecoveryRevision | null;

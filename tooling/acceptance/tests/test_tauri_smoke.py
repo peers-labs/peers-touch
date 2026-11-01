@@ -211,6 +211,20 @@ class TauriSessionSemanticActionTests(unittest.TestCase):
         self.assertEqual(result["targets"], ["row", "first", "second", "choice"])
         self.assertEqual(result["selected"], 1)
 
+    def test_semantic_key_sequence_maps_arrow_keys(self) -> None:
+        self.session.semantic_key_sequence(
+            self.element,
+            "\ue013",
+            "\ue015",
+        )
+
+        script, element, keys, _ = self.native_driver.execute_async_script.call_args.args
+        self.assertIs(element, self.element)
+        self.assertIn("key: 'ArrowUp', code: 'ArrowUp', keyCode: 38", script)
+        self.assertIn("key: 'ArrowDown', code: 'ArrowDown', keyCode: 40", script)
+        self.assertEqual(keys, ["\ue013", "\ue015"])
+        self.element.send_keys.assert_not_called()
+
     def test_invalid_key_sequences_fail_before_dispatch(self) -> None:
         for interval in (-1, float("nan"), float("inf")):
             with self.subTest(interval=interval), self.assertRaises(ValueError):
