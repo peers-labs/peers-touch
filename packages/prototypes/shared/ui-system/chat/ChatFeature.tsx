@@ -12,7 +12,7 @@ import { ConversationView } from './ConversationView';
 import { CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
 import type { CallDirection, CallKind } from './CallOverlay';
 import {
-  CONVERSATIONS, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES,
+  CONVERSATIONS, FEDERATION_DIRECTORY, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES,
   type ChatMessage, type Conversation, type FriendRequest, type Person,
 } from './chat-data';
 import { usePrefs, makeTranslate, locTag } from '../prefs';
@@ -60,7 +60,6 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
   // t is stable per locale; sessions drive the pool contents.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [sessions, prefs.locale]);
-  const existingIds = useMemo(() => new Set(sessions.map(c => c.id)), [sessions]);
   const friends = PEOPLE.filter(p => p.station === '本站' && !removedContacts.has(p.id));
 
   const togglePin = (id: string) => setSessions(list =>
@@ -338,7 +337,7 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
         )}
       </div>
 
-      <PickPersonDialog open={pickerOpen} people={peoplePool} existingIds={existingIds}
+      <PickPersonDialog open={pickerOpen} people={peoplePool} directory={FEDERATION_DIRECTORY}
         onDismiss={() => setPickerOpen(false)} onPick={person => { setPickerOpen(false); openPerson(person); }} />
       {/* Candidate pool includes federated contacts: selecting one must hit
           the encrypted-group boundary instead of silently creating a group. */}

@@ -970,7 +970,7 @@
     },
     {
       "id": "ui.prototype.north-star.picker-open",
-      "title": "增量10：新建菜单→找人打开 Dialog，列出 11 位联系人（含联邦联系人）",
+      "title": "增量35：＋→找人打开无头 Dialog：首行即搜索框，默认 11 位已知人，无标题/描述/footer/tip，无联邦结果",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -994,11 +994,56 @@
           "target": ".pt-dialog[role='dialog']"
         },
         {
+          "id": "headless-header-hidden",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-picker-dialog .pt-dialog-header",
+          "prop": "display",
+          "equals": "none"
+        },
+        {
+          "id": "no-description",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-picker-dialog .pt-dialog-description"
+        },
+        {
+          "id": "no-footer",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-picker-dialog .pt-dialog-footer"
+        },
+        {
+          "id": "no-tip-paragraph",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-picker-note"
+        },
+        {
+          "id": "query-field-first",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-picker-query]"
+        },
+        {
+          "id": "scope-switch-present",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-picker-scope"
+        },
+        {
           "id": "eleven-people",
           "type": "count",
           "scope": "global",
           "target": ".sk-picker-row",
           "equals": 11
+        },
+        {
+          "id": "no-federated-idle",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-fed-row",
+          "equals": 0
         },
         {
           "id": "picker-avatars-square",
@@ -1014,7 +1059,12 @@
           "contains": "阿砚"
         }
       ],
-      "finalizers": []
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='picker.close']"
+        }
+      ]
     },
     {
       "id": "ui.prototype.north-star.picker-create",
@@ -1111,7 +1161,7 @@
     },
     {
       "id": "ui.prototype.north-star.picker-cancel",
-      "title": "取消关闭弹窗，不改变会话列表",
+      "title": "搜索行关闭钮关闭弹窗，不改变会话列表",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -1128,7 +1178,7 @@
         },
         {
           "op": "clickGlobal",
-          "target": ".pt-dialog-footer .pt-button"
+          "target": "[data-action-id='picker.close']"
         }
       ],
       "oracles": [
@@ -1146,6 +1196,261 @@
         }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.picker-federation-discover",
+      "title": "增量35：输入联邦目录用户名出现陌生人行（已验证/站名/handle），发送请求翻为等待通过且禁用",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.new-menu']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='sk.new-person']"
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-picker-query]",
+          "value": "青衫"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "one-federated-row",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": ".sk-fed-row",
+            "equals": 1
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='picker.fedsend.fed-qingshan']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "row-available-state",
+          "type": "attr",
+          "scope": "global",
+          "target": "[data-fed-id='fed-qingshan']",
+          "attr": "data-fed-state",
+          "equals": "pending"
+        },
+        {
+          "id": "pending-disabled",
+          "type": "attr",
+          "scope": "global",
+          "target": "[data-action-id='picker.fedsend.fed-qingshan']",
+          "attr": "aria-disabled",
+          "equals": "true"
+        },
+        {
+          "id": "pending-label",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-fed-row",
+          "contains": "等待通过"
+        },
+        {
+          "id": "station-tag",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-fed-row",
+          "contains": "松绿书屋站"
+        },
+        {
+          "id": "handle-shown",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-fed-row",
+          "contains": "@qingshan@songlv.local"
+        },
+        {
+          "id": "known-filtered-out",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-picker-row",
+          "equals": 0
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='picker.close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.picker-federation-scope",
+      "title": "增量35：切到联邦 scope 隐藏全部已知人，空查询给功能性空态，输入后只出目录结果",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.new-menu']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='sk.new-person']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".sk-picker-scope .pt-button:nth-child(2)"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "scope-attr",
+          "oracle": {
+            "type": "attr",
+            "scope": "global",
+            "target": ".sk-picker",
+            "attr": "data-picker-scope",
+            "equals": "federation"
+          }
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-picker-query]",
+          "value": "晚"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "known-hidden",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-picker-row",
+          "equals": 0
+        },
+        {
+          "id": "one-fed-row",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-fed-row",
+          "equals": 1
+        },
+        {
+          "id": "wanzhou-found",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-fed-id='fed-wanzhou']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='picker.close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.picker-handle-resolve",
+      "title": "增量35：完整 @user@host 精确解析唯一直属结果，未知 handle 进入空态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.new-menu']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='sk.new-person']"
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-picker-query]",
+          "value": "@muyun@seeds.local"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "exact-one",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": ".sk-fed-row",
+            "equals": 1
+          }
+        },
+        {
+          "op": "expect",
+          "id": "known-suppressed",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": ".sk-picker-row",
+            "equals": 0
+          }
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-picker-query]",
+          "value": "@ghost@nowhere.local"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "no-fed-row",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-fed-row",
+          "equals": 0
+        },
+        {
+          "id": "empty-state",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-picker .pt-empty"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='picker.close']"
+        }
+      ]
     },
     {
       "id": "ui.prototype.north-star.contact-requests",

@@ -287,7 +287,7 @@
 .sk-composer .pt-icon-button { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; }
 
 /* Increment 3: contact picker dialog (portaled, inherits .sk-theme tokens) */
-.sk-picker { display: flex; flex-direction: column; gap: 12px; }
+/* Pick-person dialog layout lives in chat/chat.css (inc 35 headless picker). */
 .sk-picker-list {
   list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto;
   display: flex; flex-direction: column; gap: 2px;

@@ -1,59 +1,146 @@
 /**
- * Chat dialogs: find-a-person picker (increment 3) and create-group modal
- * (increment 10). Both append real local conversations and switch the rail
- * to the new session; create-group simulates one transient failure with
- * an inline retry path like the desktop modal.
+ * Chat dialogs: find-a-person picker (increment 3, headless + federated
+ * directory in increment 35) and create-group modal (increment 10).
+ * The picker is a headless modal: the first thing on screen is the search
+ * field (autofocus) and the results — no title, description, footer or tip.
+ * Known people list by default; typing additionally searches the federated
+ * catalog (or resolves an exact @user@host), and a federation-only scope
+ * hides known contacts. Federated rows send a friend request instead of
+ * opening a chat. Create-group simulates one transient failure with an
+ * inline retry path like the desktop modal.
  */
-import { useMemo, useState } from 'react';
-import { Alert, Avatar, Button, Checkbox, Dialog, Empty, TextField } from '@peers-touch/ui';
-import type { Conversation, Person } from './chat-data';
+import { useEffect, useMemo, useState } from 'react';
+import { Globe, Search, ShieldCheck } from 'lucide-react';
+import { Alert, Avatar, Button, Checkbox, Dialog, Empty, IconButton, Segmented, Tag, TextField } from '@peers-touch/ui';
+import type { Conversation, FederatedActor, Person } from './chat-data';
 import { useT } from '../prefs';
 
 /* ── Find people ──────────────────────────────────────── */
 
-export function PickPersonDialog({ open, people, existingIds, onDismiss, onPick }: {
+type PickerScope = 'all' | 'federation';
+
+// Desktop parity: an @-prefixed query with a host is an exact handle
+// resolution; anything else is a catalog/contact prefix query.
+const HANDLE_RE = /^@([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+(?::\d+)?)$/;
+
+export function PickPersonDialog({ open, people, directory, onDismiss, onPick }: {
   open: boolean;
   people: Person[];
-  existingIds: Set<string>;
+  directory: FederatedActor[];
   onDismiss: () => void;
   onPick: (person: Person) => void;
 }) {
   const { t } = useT();
   const [query, setQuery] = useState('');
-  const filtered = useMemo(() => people.filter(p =>
-    `${p.name} ${p.station ?? ''} ${p.bio}`.toLowerCase().includes(query.trim().toLowerCase())), [people, query]);
+  const [scope, setScope] = useState<PickerScope>('all');
+  const [pending, setPending] = useState<Set<string>>(new Set());
+
+  // Desktop parity: every open starts a clean search (destroyOnHidden).
+  useEffect(() => {
+    if (open) { setQuery(''); setScope('all'); setPending(new Set()); }
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const handleMatch = q.startsWith('@') ? HANDLE_RE.exec(q) : null;
+
+  const knownMatches = useMemo(() => {
+    if (scope !== 'all' || !q || handleMatch) return scope === 'all' && !q ? people : [];
+    return people.filter(p =>
+      `${p.name} ${p.station ?? ''} ${p.bio}`.toLowerCase().includes(q));
+  }, [people, q, scope, handleMatch]);
+
+  const federatedMatches = useMemo(() => {
+    if (handleMatch) {
+      const canonical = q;
+      return directory.filter(a => a.handle.toLowerCase() === canonical);
+    }
+    if (!q) return [];
+    return directory.filter(a =>
+      `${a.name} ${a.handle} ${a.station} ${a.bio}`.toLowerCase().includes(q));
+  }, [directory, q, handleMatch]);
+
+  const idleKnown = scope === 'all' && !q;
+  const visibleKnown = idleKnown ? people : knownMatches;
+  const showKnown = scope === 'all';
+  const showSections = showKnown && visibleKnown.length > 0 && federatedMatches.length > 0;
+  const total = visibleKnown.length + federatedMatches.length;
 
   return (
-    <Dialog open={open} onDismiss={onDismiss} title={t('picker.title')} width={420}
-      description={t('picker.desc')} closeLabel={t('common.close')}
-      footer={<Button actionId="picker-cancel" emphasis="quiet" label={t('common.cancel')} onActivate={onDismiss} />}>
-      <div className="sk-picker">
-        <TextField value={query} aria-label={t('picker.searchAria')} placeholder={t('picker.searchAria')}
-          onValueChange={setQuery} leading={undefined} clearable onClear={() => setQuery('')} />
-        <ul className="sk-picker-list">
-          {filtered.map(p => (
-            <li key={p.id}>
-              <button type="button" className="sk-picker-row"
-                data-contact-id={p.id}
-                onClick={() => onPick(p)}>
-                <Avatar name={p.name} background={p.tone} size={36}
-                  style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
-                <span className="sk-picker-meta">
-                  <strong>{p.name}</strong>
-                  <span>{p.station} · {p.bio}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-          {filtered.length === 0 && (
-            <li className="sk-picker-empty"><Empty description={t('picker.empty')} /></li>
+    <Dialog open={open} onDismiss={onDismiss} title="" width={420}
+      closeLabel={t('common.close')} className="sk-picker-dialog">
+      <div className="sk-picker" data-picker-scope={scope}>
+        <div className="sk-picker-search">
+          <TextField value={query} autoFocus
+            aria-label={t('picker.searchAria')} placeholder={t('picker.placeholder')}
+            leading={<Search size={14} />} data-picker-query={query}
+            onValueChange={setQuery} />
+          <IconButton actionId="picker.close" iconId="close" iconSize={15} density="compact"
+            emphasis="quiet" label={t('common.close')} onActivate={onDismiss} />
+        </div>
+        <Segmented<PickerScope> className="sk-picker-scope" density="compact"
+          aria-label="picker-scope" value={scope} onValueChange={value => setScope(value ?? 'all')}
+          options={[
+            { value: 'all', label: t('picker.scopeAll') },
+            { value: 'federation', label: <span className="sk-picker-scope-fed"><Globe size={11} />{t('picker.scopeFederation')}</span> },
+          ]} />
+        <div className="sk-picker-results">
+          {showKnown && visibleKnown.length > 0 && (
+            <>
+              {showSections && <span className="sk-picker-section">{t('picker.sectionKnown')}</span>}
+              <ul className="sk-picker-list">
+                {visibleKnown.map(p => (
+                  <li key={p.id}>
+                    <button type="button" className="sk-picker-row" data-contact-id={p.id}
+                      onClick={() => onPick(p)}>
+                      <Avatar name={p.name} background={p.tone} size={36}
+                        style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+                      <span className="sk-picker-meta">
+                        <strong>{p.name}</strong>
+                        <span>{p.station} · {p.bio}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
-        </ul>
-        <p className="sk-picker-note">
-          {existingIds.size > 0
-            ? t('picker.existingHint', { n: existingIds.size })
-            : t('picker.newHint')}
-        </p>
+          {federatedMatches.length > 0 && (
+            <>
+              {showSections && <span className="sk-picker-section">{t('picker.sectionFederation')}</span>}
+              <ul className="sk-picker-list">
+                {federatedMatches.map(a => {
+                  const isPending = pending.has(a.id);
+                  return (
+                    <li key={a.id}>
+                      <div className="sk-fed-row" data-fed-id={a.id}
+                        data-fed-state={isPending ? 'pending' : 'available'}>
+                        <Avatar name={a.name} background={a.tone} size={36}
+                          style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+                        <span className="sk-picker-meta">
+                          <span className="sk-fed-name-line">
+                            <strong>{a.name}</strong>
+                            <Tag tone="success"><ShieldCheck size={10} />{t('picker.tagVerified')}</Tag>
+                            <Tag tone="neutral">{a.station}</Tag>
+                          </span>
+                          <span className="sk-fed-handle">{a.handle}</span>
+                        </span>
+                        <Button actionId={`picker.fedsend.${a.id}`} emphasis={isPending ? 'secondary' : 'primary'}
+                          density="compact" label={isPending ? t('picker.pending') : t('picker.sendRequest')}
+                          availability={isPending ? { kind: 'disabled', reason: t('picker.pending') } : undefined}
+                          onActivate={() => setPending(prev => new Set(prev).add(a.id))} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+          {total === 0 && (
+            <div className="sk-picker-empty">
+              <Empty description={scope === 'federation' && !q ? t('picker.fedEmpty') : t('picker.empty')} />
+            </div>
+          )}
+        </div>
       </div>
     </Dialog>
   );

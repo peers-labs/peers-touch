@@ -156,6 +156,41 @@
   .sk-request-decide { opacity: 1; }
 }
 
+/* Headless find-people picker (inc 35): no title/description/footer chrome;
+   the search field is the first row and owns the dialog. */
+.sk-picker-dialog .pt-dialog-header { display: none; }
+.sk-picker-dialog .pt-dialog-body { padding: 12px; }
+.sk-picker { display: flex; flex-direction: column; gap: 10px; }
+.sk-picker-search { display: flex; align-items: center; gap: 4px; }
+.sk-picker-search .pt-field-frame { flex: 1; min-width: 0; }
+.sk-picker-scope.pt-segmented { align-self: flex-start; }
+.sk-picker-scope-fed { display: inline-flex; align-items: center; gap: 4px; }
+.sk-picker-results { display: flex; flex-direction: column; min-height: 0; }
+.sk-picker-results .sk-picker-list { max-height: 252px; }
+.sk-picker-section {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
+  color: var(--sk-text-3); padding: 6px 8px 2px;
+}
+.sk-picker-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.sk-picker-meta > span {
+  font-size: 11.5px; color: var(--sk-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Federated directory row: not a conversation starter — a friend request. */
+.sk-fed-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px; border-radius: var(--sk-radius-control);
+}
+.sk-fed-row:hover { background: var(--sk-tile); }
+.sk-fed-name-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sk-fed-name-line strong { font-size: 13px; color: var(--sk-text); }
+.sk-fed-name-line .pt-tag { font-size: 10px; padding: 0 5px; display: inline-flex; align-items: center; gap: 3px; }
+.sk-fed-handle {
+  font-size: 11px; color: var(--sk-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* create group dialog */
 .sk-group-dialog { display: flex; flex-direction: column; gap: 12px; }
 .sk-group-members {

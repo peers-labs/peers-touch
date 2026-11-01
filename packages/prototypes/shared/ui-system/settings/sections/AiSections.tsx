@@ -339,7 +339,7 @@ export function SkillsSection() {
               onValueChange={setAddr} onEnter={event => { event.preventDefault(); doImport(); }} />
             <Button actionId="skill.import-confirm" emphasis="primary" density="compact"
               label={t('common.confirm')}
-              availability={!addr.trim() ? { kind: 'disabled', reason: t('picker.desc') } : undefined}
+              availability={!addr.trim() ? { kind: 'disabled', reason: t('skill.importAddrReason') } : undefined}
               onActivate={doImport} />
           </div>
         </div>

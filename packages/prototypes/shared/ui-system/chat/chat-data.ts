@@ -103,6 +103,27 @@ export const PEOPLE: Person[] = [
   { id: 'p-laohe', name: '河埠头', tone: '#6f8fa6', station: '河埠头站', bio: '旧衣修补摊' },
 ];
 
+/**
+ * Federated directory actors (desktop FindPeopleModal parity): strangers on
+ * remote stations discoverable only through catalog prefix search or exact
+ * `@user@host` resolution, never listed by default. Picking one sends a
+ * friend request instead of opening a conversation.
+ */
+export interface FederatedActor {
+  id: string;
+  handle: string;
+  name: string;
+  tone: string;
+  station: string;
+  bio: string;
+}
+
+export const FEDERATION_DIRECTORY: FederatedActor[] = [
+  { id: 'fed-qingshan', handle: '@qingshan@songlv.local', name: '青衫', tone: '#5a7d6e', station: '松绿书屋站', bio: '植物染工坊' },
+  { id: 'fed-wanzhou', handle: '@wanzhou@hebu.local', name: '晚舟', tone: '#6f8fa6', station: '河埠头站', bio: '河灯手作' },
+  { id: 'fed-muyun', handle: '@muyun@seeds.local', name: '慕云', tone: '#8a8456', station: '种子图书馆站', bio: '自留种交换' },
+];
+
 export type FriendRequest = {
   id: string;
   name: string;

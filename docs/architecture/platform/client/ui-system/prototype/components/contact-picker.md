@@ -1,41 +1,88 @@
-# ContactPicker · 新建会话联系人选择（迁移增量 3）
+# ContactPicker · 找人/新建会话无头选择器（迁移增量 3，增量 35 重做）
 
 > **Status**: draft（北极星窗框内，未晋升 peers-ui）
-> **Created**: 2026-10-30 · **Owner**: Client Platform / UI System
+> **Created**: 2026-10-30 · **Updated**: 2026-11-01（增量 35：无头化 + 联邦目录查找）
+> · **Owner**: Client Platform / UI System
 > **旧来源**：`components/chat/FindPeopleModal.tsx`、`ChatContactsPanel.tsx`、`CreateGroupModal.tsx`
-> **前置**：增量 1/2、[SearchField](./search-field.md)
+> **真身对齐**：desktop `components/chat/FindPeopleModal.tsx`（scope chips、`@user@host` 解析、
+> 好友请求状态机）
+> **前置**：[SearchField](./search-field.md)
 
 ## 1. 产品边界
 
-- **用于**：从联系人中选择一人开启 1:1 会话；已存在会话直接打开，新联系人则在会话轨头部插入并打开。
-- **不用于（本轮延后）**：创建群（`CreateGroupModal` 多选/群名）、联邦联系人发现与好友请求流程、
-  联系人详情页、邀请/二维码。群创建在后续「群组」增量单独训练。
-- 本地 fixture；不接通讯录/联邦解析，不产生真实会话。
+- **用于**：选择一人开启 1:1 会话；已知人（联系人 + 最近会话）直接打开/新建会话；
+  联邦目录里的**陌生人**只能发好友请求，不直接开会话。
+- **不用于**：创建群（[群 Dialog](./chat-catalog.md) 多选/群名）、真实联邦解析与请求传输、
+  联系人详情页、邀请/二维码。
+- 本地 fixture；目录为确定性种子（`FEDERATION_DIRECTORY`），不产生真实请求。
 
-## 2. 旧设计审计（新方法论）
+## 2. 无头合同（增量 35）
 
-- 旧 FindPeople/Contacts 是自绘 antd Modal；新实现用 peers-ui **`Dialog`**（标题/描述/关闭/
-  footer 取消）+ 已训练 SearchField + `Avatar` + `Empty`，不自画浮层。
-- **关键架构点：令牌与焦点作用域必须覆盖 portal。** Dialog 经 `createPortal` 渲染在
-  `UIProvider` 的 `.pt-overlay-host`（`.pt-ui-content` 的兄弟），不在 `.sk-shell` 内：
-  1. 皮肤令牌上提到 `UIProvider` 根（`.sk-theme.sk-skin-*`，`--pt-*` 桥接经 `style` 传入，
-     因其在内置 tokenVariables 之后合并），窗框与弹层同源；
-  2. 内嵌搜索框的方形全局焦点框清零选择器必须写成 `.sk-theme .sf-field input:focus-visible`，
-     用 `.sk-shell …` 会漏掉弹层导致黑方角框回归（本轮已实测并加门禁）。
+信息冗余归零：打开后屏幕第一行就是搜索框，其下立即是结果。**禁止**标题、说明描述、
+footer 取消钮、解释性 tip 段落——「带找人图标的搜索框 + 结果」自身已说明功能。
 
-## 3. 状态与交互
+- `Dialog` 头被 scoped CSS 隐藏（`.sk-picker-dialog .pt-dialog-header { display:none }`），
+  关闭控件是搜索行右侧唯一 ✕（`picker.close`）；Esc 与遮罩点击仍走 modal 合同。
+- 搜索框 `autoFocus`、leading 放大镜；placeholder 是**功能性语法提示**
+  （`搜索联系人、@用户名 或 @user@host`），不是解释文案。
+- 搜索行只有一个 ✕：不再使用 TextField 的 clearable，避免「清除/关闭」双 ✕。
+- 每次打开重置 query/scope/请求状态（真身 `destroyOnHidden` 语义）。
 
-打开（「新建会话」）→ 列表（10 人：2 位新联系人标「新联系人」，8 位标「最近对话」）→
-找人/建群入口在会话轨「＋」菜单；会话与联系人的搜索统一走外轨全局搜索（⌘K），轨内不再有内联搜索框（增量 29）。
-弹窗每次打开清空搜索词；打开时底层内容 `inert`（peers-ui modal 合同）。
+## 3. 查找模型（对齐真身 FindPeopleModal）
 
-## 4. 门禁
+- **scope**：peers-ui `Segmented` 两项——全部 / 联邦（Globe 图标）。
+  全部 = 已知人 + 联邦目录；联邦 = 仅目录。`data-picker-scope` 挂在容器。
+- **空查询 · 全部**：直接列出全部已知人（11 行；本站 + 联邦已知联系人 + 最近会话），
+  这是相对真身"先看 hint"保留的优点。
+- **前缀搜索**：输入即时过滤已知人；同时在联邦目录按 名字/handle/站名/简介 前缀匹配，
+  命中时以独立「联邦」分区展示（与「联系人」分区仅在两区都有结果时出小标题）。
+- **handle 精确解析**：`@user@host` 形态只在目录里做唯一直属解析，
+  抑制已知人结果；未解析到 → 空态（真身 `federationResolve` 语义）。
+- **联邦行**：方圆头像 + 姓名 + ✓已验证 Tag + 站名 Tag + `@user@host` handle 副行 +
+  尾列动作钮。动作态：`发送请求`（primary）→ 点击后 `等待通过`（secondary + disabled，
+  `data-fed-state=pending`，真身 awaiting-approval）。行本身不可点开会话（杜绝 button 嵌 button）。
+- **空态**：唯一允许的零结果提示，联邦 scope 空查询时给功能性引导文案
+  （输入名字或 @user@host），不写成 tip 段落。
 
-`north-star.suite.json`：`picker-open`（Dialog role、10 行、头像方圆、新联系人在列）、
-`picker-create`（选新联系人后弹窗关、轨 9 行、唯一选中、标题=阿砚）、
-`picker-filter-empty`（无结果空态 + **弹层 input 无方形 outline**）、`picker-cancel`（取消不变）。
+## 4. 旧设计审计
 
-## 5. UNPROVEN
+- 增量 3 初版是带标题「新建会话」+ 描述 + 底部计数 tip + footer 取消的 Dialog，
+  解释性文字三行、主体检索被压到第二屏；增量 35 全部删除。
+- 初版只能搜本地已知人，联邦只能从种子联系人里碰到；增量 35 引入独立目录种子与
+  scope/handle 两套查找路径，对齐真身能力面（传输/轮询仍 UNPROVEN）。
+- 弹层 portal/令牌/焦点规则不变（见下，增量 3 踩坑保留）。
 
-真实通讯录/联邦数据源、好友请求权限、群创建、联系人详情、虚拟长列表、
-弹层在 390px 的布局、i18n、读屏模态语义实测、晋升 peers-ui 后的组件 API。
+### 弹层架构（增量 3 踩坑，持续有效）
+
+peers-ui Dialog 经 `createPortal` 渲染在 `UIProvider` 的 `.pt-overlay-host`
+（`.sk-shell` 外）：皮肤令牌在 `UIProvider` 根桥接（`--pt-*`），窗框与弹层同源；
+弹层内交互的探针操作必须用 `clickGlobal`/全局 oracle，`.sk-shell` 作用域选择器
+（如旧版 `.sk-picker input` 局部 type）会命不中。
+
+## 5. 状态与交互
+
+打开（会话轨「＋」→ 找人）→ 无头搜索框聚焦 + 已知人列表 → 输入即时过滤 /
+切联邦 scope / handle 解析 → 点已知人直接打开并关闭弹窗；点陌生人「发送请求」翻状态，
+弹窗保留（真身发送后停留，由 message 反馈，本地仅行内翻态）。
+
+## 6. 门禁
+
+`north-star.suite.json`：
+
+- `picker-open`：无头断言（header `display:none`、无 description/footer/tip）、
+  首行 `[data-picker-query]`、scope 存在、空态 11 个已知行、0 联邦行、头像方圆。
+- `picker-create`：点第 5 行（老周）直接创建并选中、轨 7→8、弹窗关。
+- `picker-filter-empty`：无命中出 peers-ui `Empty`，弹层 input 无方形 outline。
+- `picker-cancel`：搜索行 ✕（`picker.close`）关闭且会话数不变。
+- `picker-federation-discover`（35）：搜「青衫」→ 1 联邦行，站名/handle/已验证可见；
+  发送请求 → `data-fed-state=pending`、钮 `aria-disabled`、文案「等待通过」、已知人 0 行。
+- `picker-federation-scope`（35）：切联邦后已知人 0 行、空查询功能空态、搜「晚」只出晚舟。
+- `picker-handle-resolve`（35）：`@muyun@seeds.local` 精确 1 行且抑制已知人；
+  未知 handle → 0 行 + 空态。
+
+## 7. UNPROVEN
+
+真实通讯录/联邦目录数据源与 `@user@host` 网络解析、好友请求传输/撤回/状态同步、
+联邦 MLS 群边界之外的跨站会话、联系人详情、虚拟长列表、
+弹层在 390px 的真机读屏模态语义、i18n 完整走读、晋升 peers-ui 后的组件 API
+（候选：无头 `SearchPickerDialog`：搜索首行 + scope + 分区结果 + 行尾动作槽）。
