@@ -644,7 +644,7 @@
         {
           "id": "uses-peers-button",
           "type": "exists",
-          "target": ".sk-conv-new .pt-button"
+          "target": "[data-action-id='sk.new-menu']"
         }
       ],
       "finalizers": []
@@ -679,54 +679,8 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.conversation-filter",
-      "title": "轨内搜索实时过滤会话并弹出联合结果",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
-        },
-        {
-          "op": "focus",
-          "target": ".sk-conv-search input"
-        },
-        {
-          "op": "wait",
-          "ms": 260
-        },
-        {
-          "op": "type",
-          "target": ".sk-conv-search input",
-          "value": "群"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "filtered-rows",
-          "type": "count",
-          "target": ".sk-conv-row",
-          "equals": 2
-        },
-        {
-          "id": "dropdown-open",
-          "type": "exists",
-          "scope": "global",
-          "target": "[data-chat-search-dropdown]"
-        },
-        {
-          "id": "group-results",
-          "type": "count",
-          "scope": "global",
-          "target": "[data-chat-search-result-kind='group']",
-          "gte": 2
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.rail-left-and-level-header",
-      "title": "增量20：会话轨在左、对话在右；消息/联系人/搜索/新建水平平齐一行",
+      "id": "ui.prototype.north-star.rail-layout-left-right",
+      "title": "增量29：会话轨在左、对话在右",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -757,171 +711,73 @@
           "equals": "flex"
         },
         {
-          "id": "tabs-and-search-level",
+          "id": "header-centered",
           "type": "computedStyle",
           "target": ".sk-rail-header",
           "prop": "alignItems",
           "equals": "center"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.rail-header-slim",
+      "title": "增量29：消息/联系人分段与新建收进一行薄板；新建是方圆图标钮，轨内无内联搜索",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
         },
         {
-          "id": "compact-search-tile",
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "two-tabs",
+          "type": "count",
+          "target": ".sk-chat-subnav .pt-button",
+          "equals": 2
+        },
+        {
+          "id": "one-new-button",
+          "type": "count",
+          "target": "[data-action-id='sk.new-menu']",
+          "equals": 1
+        },
+        {
+          "id": "new-not-a-circle",
+          "type": "computedStyleNone",
+          "target": "[data-action-id='sk.new-menu']",
+          "prop": "borderRadius",
+          "equals": "50%"
+        },
+        {
+          "id": "new-glyph-centered",
           "type": "computedStyle",
-          "target": ".sk-conv-search",
-          "prop": "width",
-          "equals": "34px"
+          "target": "[data-action-id='sk.new-menu'] .pt-button-content",
+          "prop": "justifyContent",
+          "equals": "center"
         },
         {
-          "id": "initially-collapsed",
-          "type": "attr",
-          "target": ".sk-rail-header",
-          "attr": "data-search-expanded",
-          "equals": "false"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.rail-search-expand",
-      "title": "增量20：搜索聚焦后展开吃掉 tab 空间（动画终态），失焦空白后收起",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+          "id": "no-inline-rail-search",
+          "type": "missing",
+          "target": ".sk-conv-search"
         },
         {
-          "op": "focus",
-          "target": ".sk-conv-search input"
-        },
-        {
-          "op": "wait",
-          "ms": 300
-        },
-        {
-          "op": "expect",
-          "id": "expanded-flag",
-          "oracle": {
-            "type": "attr",
-            "target": ".sk-rail-header",
-            "attr": "data-search-expanded",
-            "equals": "true"
-          }
-        },
-        {
-          "op": "expect",
-          "id": "tabs-collapsed",
-          "oracle": {
-            "type": "computedStyle",
-            "target": ".sk-rail-tabs",
-            "prop": "width",
-            "equals": "0px"
-          }
-        },
-        {
-          "op": "expect",
-          "id": "search-grows",
-          "oracle": {
-            "type": "computedStyle",
-            "target": ".sk-conv-search",
-            "prop": "flexGrow",
-            "equals": "1"
-          }
-        },
-        {
-          "op": "expect",
-          "id": "new-becomes-cancel",
-          "oracle": {
-            "type": "exists",
-            "target": "[data-action-id='sk.search-cancel']"
-          }
-        },
-        {
-          "op": "expect",
-          "id": "new-menu-hidden-while-expanded",
-          "oracle": {
-            "type": "missing",
-            "target": "[data-action-id='sk.new-menu']"
-          }
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='sk.search-cancel']"
-        },
-        {
-          "op": "wait",
-          "ms": 300
-        }
-      ],
-      "oracles": [
-        {
-          "id": "collapsed-again",
-          "type": "attr",
-          "target": ".sk-rail-header",
-          "attr": "data-search-expanded",
-          "equals": "false"
-        },
-        {
-          "id": "cancel-back-to-new",
-          "type": "exists",
-          "target": "[data-action-id='sk.new-menu']"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.rail-search-ordering",
-      "title": "增量20：搜索结果联系人在前聊天在后，两组同屏；无联系人时虚线 tips",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
-        },
-        {
-          "op": "focus",
-          "target": ".sk-conv-search input"
-        },
-        {
-          "op": "type",
-          "target": ".sk-conv-search input",
-          "value": "陈"
-        },
-        {
-          "op": "wait",
-          "ms": 200
-        }
-      ],
-      "oracles": [
-        {
-          "id": "contacts-section-first",
-          "type": "exists",
-          "scope": "global",
-          "target": "[data-search-section='contacts']"
-        },
-        {
-          "id": "contact-person-row",
-          "type": "exists",
-          "scope": "global",
-          "target": "[data-search-section='contacts'] [data-chat-search-result-kind='person']"
-        },
-        {
-          "id": "chats-section",
-          "type": "exists",
-          "scope": "global",
-          "target": "[data-search-section='chats']"
-        },
-        {
-          "id": "no-empty-tips-when-match",
+          "id": "no-rail-search-popover",
           "type": "missing",
           "scope": "global",
-          "target": ".sk-search-empty-tip"
+          "target": "[data-chat-search-dropdown]"
         }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.rail-search-empty-tips",
-      "title": "增量20：无命中时联系人/聊天两组各显示虚线文字 tips",
+      "id": "ui.prototype.north-star.search-entry-unified",
+      "title": "增量29：搜索入口统一——会话头无放大镜；聊天记录只在资料面板；全局搜索仍在外轨",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -929,13 +785,8 @@
           "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
         },
         {
-          "op": "focus",
-          "target": ".sk-conv-search input"
-        },
-        {
-          "op": "type",
-          "target": ".sk-conv-search input",
-          "value": "zzzz"
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
         },
         {
           "op": "wait",
@@ -944,18 +795,20 @@
       ],
       "oracles": [
         {
-          "id": "contact-tip",
-          "type": "textContains",
-          "scope": "global",
-          "target": "[data-search-section='contacts'] .sk-search-empty-tip",
-          "contains": "---无相关联系人---"
+          "id": "header-has-no-search",
+          "type": "missing",
+          "target": "[data-action-id='chat.search-messages']"
         },
         {
-          "id": "chat-tip",
-          "type": "textContains",
-          "scope": "global",
-          "target": "[data-search-section='chats'] .sk-search-empty-tip",
-          "contains": "---无相关聊天---"
+          "id": "global-trigger-exists",
+          "type": "exists",
+          "target": "[data-global-search-trigger]"
+        },
+        {
+          "id": "header-actions-three",
+          "type": "count",
+          "target": ".sk-chat-head-actions .pt-button",
+          "equals": 3
         }
       ],
       "finalizers": []
@@ -1533,7 +1386,7 @@
         {
           "id": "group-selected",
           "type": "exists",
-          "target": ".sk-conv-row.is-selected .sk-group-avatar9"
+          "target": ".sk-conv-row.is-selected .sk-group-avatar"
         },
         {
           "id": "service-message",
@@ -1601,10 +1454,10 @@
           "target": ".sk-chat-head"
         },
         {
-          "id": "four-actions",
+          "id": "three-actions",
           "type": "count",
           "target": ".sk-chat-head-actions .pt-icon-button",
-          "equals": 4
+          "equals": 3
         },
         {
           "id": "member-count",
@@ -2483,7 +2336,7 @@
     },
     {
       "id": "ui.prototype.north-star.detail-panel",
-      "title": "增量21：聊天资料卡——身份区/成员角色/开关/媒体文件/危险区；免打扰联动行标记",
+      "title": "增量29：群资料卡——统一群像/无角色角标/群名群公告行/开关/媒体文件/危险区",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -2515,15 +2368,35 @@
           "target": "[data-profile-identity]"
         },
         {
-          "id": "member-chips",
+          "id": "member-cells",
           "type": "count",
-          "target": "[data-profile-members] .sk-member-row",
+          "target": "[data-profile-members] .sk-profile-member",
           "equals": 4
         },
         {
-          "id": "owner-badge",
+          "id": "no-role-badges",
+          "type": "missing",
+          "target": ".sk-role-badge"
+        },
+        {
+          "id": "hero-composite",
           "type": "exists",
-          "target": ".sk-role-badge.is-owner"
+          "target": "[data-profile-identity] .sk-group-avatar"
+        },
+        {
+          "id": "list-composite",
+          "type": "exists",
+          "target": ".sk-conv-row:first-child .sk-group-avatar"
+        },
+        {
+          "id": "group-name-row",
+          "type": "exists",
+          "target": "[data-profile-edit-name]"
+        },
+        {
+          "id": "group-notice-row",
+          "type": "exists",
+          "target": "[data-profile-notice]"
         },
         {
           "id": "two-switches",
@@ -2532,7 +2405,15 @@
           "equals": 2
         },
         {
-          "id": "media-from-real-messages-empty-hint",
+          "id": "switches-are-pills",
+          "type": "computedStyle",
+          "target": "[data-detail-panel] .pt-switch",
+          "prop": "borderRadius",
+          "equals": "999px",
+          "all": true
+        },
+        {
+          "id": "media-empty-hint",
           "type": "exists",
           "target": "[data-profile-media] .sk-profile-empty"
         },
@@ -2553,6 +2434,123 @@
         {
           "op": "click",
           "target": "[data-action-id='chat.info-close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.profile-group-rename",
+      "title": "增量29：资料卡可改群名，保存后头部、列表、资料卡同步更新",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-profile-edit-name]"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "input[data-group-name-input]",
+          "value": "小区生活圈（新书架）"
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-action-id='profile.name-save']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "dialog-closed",
+          "type": "missing",
+          "scope": "global",
+          "target": "input[data-group-name-input]"
+        },
+        {
+          "id": "header-updated",
+          "type": "textContains",
+          "target": ".sk-chat-head-name strong",
+          "contains": "新书架"
+        },
+        {
+          "id": "profile-row-updated",
+          "type": "textContains",
+          "target": "[data-profile-edit-name] .sk-setting-value",
+          "contains": "新书架"
+        },
+        {
+          "id": "list-row-updated",
+          "type": "textContains",
+          "target": ".sk-conv-rail .sk-conv-list li:first-child .sk-conv-name-line strong",
+          "contains": "新书架"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.profile-group-notice",
+      "title": "增量29：群公告行打开公告内容（来自种子，不发明业务文本）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-profile-notice]"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "notice-dialog",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-profile-notice-body]"
+        },
+        {
+          "id": "notice-content",
+          "type": "textContains",
+          "scope": "global",
+          "target": "[data-profile-notice-body]",
+          "contains": "书种"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='profile.notice-close']"
         }
       ]
     },
@@ -2668,7 +2666,19 @@
         },
         {
           "op": "click",
-          "target": "[data-action-id='chat.search-messages']"
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-profile-search]"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "type",
@@ -3674,7 +3684,7 @@
         {
           "id": "group-9tiles",
           "type": "exists",
-          "target": ".sk-conv-list li:nth-child(1) .sk-group-avatar9"
+          "target": ".sk-conv-list li:nth-child(1) .sk-group-avatar"
         },
         {
           "id": "relative-time",

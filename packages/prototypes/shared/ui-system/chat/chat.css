@@ -20,20 +20,18 @@
   display: grid; place-items: center; height: 100%;
 }
 
-/* Rail header: 消息/联系人 tabs, compact expanding search, new menu —
-   one horizontally level row. Focus/query expands the search tile and the
-   tabs give up their space (animated), matching the desktop compact search. */
-.sk-rail-header { display: flex; align-items: center; gap: 8px; padding: 0 2px 12px; }
-.sk-rail-tabs {
-  flex: 0 1 auto; width: 100%; min-width: 0;
-  overflow: hidden; opacity: 1;
-  transition: width .22s ease, opacity .16s ease, flex-basis .22s ease;
-}
-.sk-rail-header[data-search-expanded='true'] .sk-rail-tabs {
-  flex-basis: 0; width: 0; opacity: 0;
-}
+/* Rail header: one slim row — 消息/联系人 segmented on the left and a single
+   rounded-square new-conversation control on the right. Search is not
+   duplicated here: global search lives on the outer rail (⌘K), in-chat
+   history search lives in the conversation profile. */
+.sk-rail-header { display: flex; align-items: center; gap: 8px; padding: 2px 2px 10px; }
+.sk-rail-tabs { flex: 1 1 auto; min-width: 0; }
 .sk-chat-subnav.pt-segmented { width: 100%; white-space: nowrap; }
 .sk-subnav-label { display: inline-flex; align-items: center; gap: 5px; }
+/* Rounded-square ghost tile, never a circle; compact peers-ui sizing,
+   glyph optically centered by the button content rule. */
+.sk-rail-new { color: var(--sk-text-2); flex: 0 0 auto; }
+.sk-rail-new:hover { color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover); }
 
 /* session row extensions */
 .sk-conv-row .sk-conv-avatar { flex-shrink: 0; position: relative; }
@@ -49,17 +47,18 @@
 }
 .sk-conv-row.is-pinned-row { background: color-mix(in srgb, var(--sk-tile) 55%, transparent); }
 
-/* 3×3 group composite (up to 9 members, owner-first ordering upstream) */
-.sk-group-avatar9 {
-  width: 40px; height: 40px; flex-shrink: 0;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+/* Group composite avatar: 2×2 (2–4 members) or 3×3 (5–9), shared verbatim
+   by session list and profile hero so the two surfaces can never diverge. */
+.sk-group-avatar {
+  flex-shrink: 0;
+  display: grid; gap: 1px;
   border-radius: var(--sk-avatar-radius); overflow: hidden;
   background: var(--sk-card-border);
 }
-.sk-group-avatar9-tile {
+.sk-group-avatar-tile {
   display: grid; place-items: center;
-  color: rgba(255,255,255,.9); font-size: 9.5px; font-weight: 650;
-  min-width: 0;
+  color: rgba(255,255,255,.92); font-weight: 650;
+  min-width: 0; line-height: 1;
 }
 
 /* presence dot + unread badge on the row avatar */
@@ -95,74 +94,6 @@
 .sk-conv-state:hover { color: var(--sk-primary); background: color-mix(in srgb, var(--sk-primary) 10%, transparent); }
 .sk-conv-preview time { font-size: 10.5px; color: var(--sk-text-3); flex-shrink: 0; }
 .sk-conv-item:hover .sk-conv-preview time { visibility: hidden; }
-
-/* compact expanding search: a 34px icon tile that grows into a field */
-.sk-conv-search {
-  flex: 0 0 auto; width: 34px;
-  transition: width .22s ease, flex-basis .22s ease;
-}
-.sk-rail-header[data-search-expanded='true'] .sk-conv-search {
-  flex: 1 1 auto; width: auto;
-}
-.sk-conv-search-anchor {
-  position: relative; height: 34px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 999px; background: var(--sk-tile); cursor: text;
-  transition: box-shadow .15s ease;
-}
-.sk-conv-search-anchor.is-expanded:focus-within { box-shadow: 0 0 0 2px var(--sk-focus-ring); }
-.sk-conv-search-anchor.is-expanded { justify-content: flex-start; }
-.sk-conv-search-anchor > .sf-leading {
-  flex-shrink: 0; margin-left: 10px; color: var(--sk-text-3);
-}
-.sk-conv-search-anchor.is-expanded > .sf-leading { margin-left: 11px; }
-.sk-conv-search-input {
-  display: block; appearance: none; -webkit-appearance: none;
-  width: 0; flex: 0 1 0; opacity: 0; height: 34px; box-sizing: border-box;
-  border: 0; border-radius: 999px; background: transparent; padding: 0;
-  font-family: inherit; font-size: 12.5px; color: var(--sk-text); outline: none;
-  transition: opacity .15s ease .03s;
-}
-.sk-conv-search-anchor.is-expanded .sk-conv-search-input {
-  flex: 1 1 auto; width: auto; opacity: 1; padding: 0 6px 0 8px;
-}
-.sk-conv-search-input::-webkit-search-cancel-button { display: none; }
-/* Focus ring belongs to the pill anchor (:focus-within), never the input:
-   suppress the global .pt-ui :focus-visible square outline here too. */
-.sk-theme .sk-conv-search-input:focus-visible { outline: none; }
-
-/* unified search popover: contacts first, chats after; both groups always
-   render while querying, with dashed text tips when a group is empty */
-.sk-search-pop {
-  width: 288px; max-height: 340px; overflow: auto;
-  padding: 6px; display: flex; flex-direction: column; gap: 8px;
-}
-.sk-search-group { display: flex; flex-direction: column; gap: 2px; }
-.sk-search-group-title {
-  font-size: 10.5px; font-weight: 650; letter-spacing: .08em;
-  color: var(--sk-text-3); padding: 4px 8px;
-}
-.sk-search-empty-tip {
-  padding: 7px 9px; font-size: 11.5px; color: var(--sk-text-3);
-  text-align: center; letter-spacing: .04em;
-}
-.sk-search-row {
-  display: flex; align-items: center; gap: 9px; width: 100%;
-  border: 0; background: transparent; border-radius: 10px; padding: 7px 9px;
-  cursor: pointer; font-family: inherit; text-align: left;
-}
-.sk-search-row:hover { background: var(--pt-subtle, color-mix(in srgb, var(--sk-text) 6%, transparent)); }
-.sk-search-row strong { font-size: 12.5px; color: var(--sk-text); }
-.sk-search-row > span:last-child {
-  margin-left: auto; font-size: 11px; color: var(--sk-text-3);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;
-}
-
-/* compact icon-only new menu at the row's end */
-.sk-conv-new { margin: 0; flex: 0 0 auto; }
-.sk-conv-new .pt-button {
-  width: 34px; min-width: 34px; height: 34px; padding: 0; border-radius: 50%;
-}
 
 /* contacts: requests + list */
 .sk-contacts { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
@@ -233,7 +164,7 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
   .sk-chat-back {
     display: inline-grid; place-items: center;
     width: 30px; height: 30px; flex-shrink: 0; padding: 0;
-    border: 0; border-radius: 50%; cursor: pointer;
+    border: 0; border-radius: 9px; cursor: pointer;
     background: transparent; color: var(--sk-text-2);
   }
   .sk-chat-back:hover { background: var(--sk-btn-quiet-bg-hover); color: var(--sk-text); }
@@ -290,14 +221,9 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
 }
 .sk-profile-hero strong { font-size: 15px; font-weight: 650; color: var(--sk-text); margin-top: 2px; }
 .sk-profile-sub { font-size: 11.5px; color: var(--sk-text-3); }
-.sk-profile-group-avatar {
-  width: 64px; height: 64px; border-radius: 18px; overflow: hidden;
-  display: grid; grid-template-columns: 1fr 1fr;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sk-text) 8%, transparent);
-}
-.sk-profile-group-avatar span { display: block; }
-.sk-profile-group-avatar span:nth-child(1),
-.sk-profile-group-avatar span:nth-child(4) { background: var(--sk-tile); }
+/* Hero group avatar is the same composite as the list, only larger; no
+   surface-specific tile repainting. */
+.sk-profile-hero .sk-group-avatar { border-radius: 16px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sk-text) 8%, transparent); }
 
 .sk-profile-card {
   display: flex; flex-direction: column; gap: 8px;
@@ -313,22 +239,12 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
   display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px 4px;
 }
 .sk-profile-member { flex-direction: column; gap: 4px; }
-.sk-profile-member-avatar { position: relative; }
 .sk-profile-member-name {
   font-size: 10.5px; color: var(--sk-text-3); text-align: center;
   max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.sk-role-badge {
-  position: absolute; right: -3px; top: -3px;
-  width: 16px; height: 16px; border-radius: 50%;
-  display: grid; place-items: center;
-  color: #fff; border: 2px solid var(--sk-card-bg);
-}
-.sk-role-badge.is-owner { background: #b8860b; }
-.sk-role-badge.is-admin { background: var(--sk-primary); }
-
-/* Labeled Switch renders .pt-switch-row (track + label); give the row the
-   full card width with the label on the left, intrinsic track on the right. */
+/* Role ownership is expressed by member ordering + the name/notice rows,
+   not by stray crown/shield corner badges on the member grid. */
 .sk-profile-card .pt-switch-row {
   width: 100%; min-height: 38px;
   display: flex; flex-direction: row-reverse; align-items: center;
@@ -341,13 +257,29 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
   font-family: inherit; font-size: 13px; color: var(--sk-text);
   cursor: pointer; text-align: left; border-radius: 10px;
 }
-.sk-setting-row:hover { background: color-mix(in srgb, var(--sk-text) 5%, transparent); }
+/* New admin rows are real peers-ui buttons; override the button contour with
+   higher specificity so they read as borderless list rows. */
+.pt-button.sk-setting-row {
+  width: 100%; min-height: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 4px; border: 0; border-radius: 10px; background: transparent;
+  font-family: inherit; font-size: 13px; font-weight: 400; color: var(--sk-text);
+  cursor: pointer; text-align: left;
+}
+.pt-button.sk-setting-row:hover { background: color-mix(in srgb, var(--sk-text) 5%, transparent); border-color: transparent; }
 .sk-setting-icon {
   width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px;
   display: grid; place-items: center;
   background: var(--sk-tile); color: var(--sk-text-2);
 }
 .sk-setting-chevron { margin-left: auto; color: var(--sk-text-3); }
+.sk-setting-value {
+  flex: 1; min-width: 0; text-align: right;
+  font-size: 12px; color: var(--sk-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-left: 10px;
+}
+.sk-profile-notice-body { margin: 0; font-size: 13px; line-height: 1.7; color: var(--sk-text-2); white-space: pre-wrap; }
 .sk-setting-row.is-danger { color: #b0413a; }
 .sk-setting-row.is-danger .sk-setting-icon { background: color-mix(in srgb, #b0413a 10%, transparent); color: #b0413a; }
 .sk-profile-danger { background: transparent; padding: 0 12px; gap: 2px; }

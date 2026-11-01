@@ -33,7 +33,7 @@ function renderRichText(text: string) {
 export function ConversationView({ conversation, messages, call, peerTyping, onEndCall, onSimulateIncoming,
   onSend, onTogglePin, onToggleMute, onReact, onEditMessage, onRecallMessage, onPinMessage,
   onRetryMessage, onDelete, onForward, onStartCall, onBack, conversations,
-  onClearHistory, onDeleteConversation }: {
+  onClearHistory, onDeleteConversation, onRenameConversation }: {
   conversation: Conversation;
   messages: ChatMessage[];
   call: { conversationId: string; kind: CallKind; direction: 'in' | 'out'; multi?: boolean } | null;
@@ -55,6 +55,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   conversations: Conversation[];
   onClearHistory: (conversationId: string) => void;
   onDeleteConversation: (conversationId: string) => void;
+  onRenameConversation: (conversationId: string, name: string) => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -130,7 +131,6 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
         onBack={onBack}
         onAudio={() => onStartCall('audio')}
         onVideo={() => onStartCall('video')}
-        onSearch={() => setSearchOpen(true)}
         onInfo={() => setInfoOpen(value => !value)} />
 
       <div className="sk-msg-stream" ref={scrollRef}>
@@ -271,6 +271,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
           onSearchMessages={() => { setInfoOpen(false); setSearchOpen(true); }}
           onClearHistory={() => onClearHistory(conversation.id)}
           onDeleteConversation={() => onDeleteConversation(conversation.id)}
+          onRenameConversation={name => onRenameConversation(conversation.id, name)}
           onSimulateIncoming={conversation.kind === 'person' ? onSimulateIncoming : undefined} />
       )}
       {threadId && threadMessage && (

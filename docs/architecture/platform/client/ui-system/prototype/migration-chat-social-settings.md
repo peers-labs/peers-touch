@@ -246,6 +246,18 @@ tsc 干净、0 console error。
   选中经宿主路由回对象面（ChatFeature/SettingsFeature 的 navigation nonce 合同）。
   合同：`components/global-search-overlay.md`；新增 7 个 `global-search-*` 探针场景。
 
+#### 增量 29 聊天壳收敛（2026-11-01）
+
+- 会话轨头部收薄：消息/联系人 compact 分段 + 单个「＋」方圆图标钮；删除轨内联搜索
+  （放大镜展开框与联合结果弹层）——找人/找会话只走外轨全局搜索，会话内找消息只在资料卡。
+- 会话头去掉放大镜（语音/视频/详情 3 入口）；`MessageSearchDialog` 改由资料卡「查找聊天记录」唯一进入。
+- peers-ui `Switch` 重做为胶囊（关中性灰、开语义绿、圆点内嵌）；IconButton 内容强制居中。
+- 群头像统一为 `GroupAvatarComposite`（2–4 人 2×2，5–9 人 3×3），列表与资料卡共用；
+  删除资料卡成员网格上乱放的皇冠/盾牌角标，角色只靠排序表达。
+- 资料卡新增「群聊名称」（可改名，Dialog + TextField，头部/列表/资料卡同源状态联动）
+  与「群公告」（种子公告，只读 Dialog），对齐微信资料页。
+- 私造控件债 701 → 698；新增行直接用 peers-ui Button，探针 108 场景全 OBSERVED。
+
 ### 5.6 相对真身的改进（必须是真问题，非审美重画）
 
 - 消息操作：真身把超时项（编辑/撤回）藏起来；新面以禁用+具体原因呈现（inc16）。

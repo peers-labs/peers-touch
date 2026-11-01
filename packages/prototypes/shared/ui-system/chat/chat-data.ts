@@ -55,6 +55,7 @@ export type Conversation = {
   pinned?: boolean;
   muted?: boolean;
   members?: { name: string; tone: string; role?: 'owner' | 'admin' | 'member' }[];
+  notice?: string;
 };
 
 const NOW = Date.now();
@@ -62,7 +63,9 @@ const MIN = 60_000;
 
 export const CONVERSATIONS: Conversation[] = [
   { id: 'cv-qun', name: '小区生活群', last: '周禾：周末书架见', lastAt: '09:32', lastTs: NOW - 32 * MIN, unread: 4, tone: '#a1824b', kind: 'group',
-    pinned: true, members: [
+    pinned: true,
+    notice: '周末 16:00 在共享书架交换书种，记得带想交换的书与环保袋。',
+    members: [
       { name: '周禾', tone: '#3f6550', role: 'owner' },
       { name: '苏禾', tone: '#5d5a44', role: 'admin' },
       { name: '林晚', tone: '#c98a5a' },
@@ -72,6 +75,7 @@ export const CONVERSATIONS: Conversation[] = [
   { id: 'cv-linwan', name: '林晚', last: '诗集散会我帮你留了位置', lastAt: '08:40', lastTs: NOW - 84 * MIN, unread: 2, tone: '#4a6170', kind: 'person', online: true },
   { id: 'cv-suhe', name: '苏禾', last: '薄荷分盆成功了，谢谢你', lastAt: '昨天', lastTs: NOW - 26 * 3600_000, unread: 0, tone: '#5d5a44', kind: 'person', muted: true, online: false },
   { id: 'cv-seed', name: '种子交换群', last: '本周日种子交换，记得来', lastAt: '昨天', lastTs: NOW - 30 * 3600_000, unread: 0, tone: '#7d8c4a', kind: 'group',
+    notice: '本周日种子交换，地点在社区小花园，雨天顺延。',
     members: [
       { name: '苏禾', tone: '#5d5a44', role: 'owner' },
       { name: '老周', tone: '#8a7a55' },

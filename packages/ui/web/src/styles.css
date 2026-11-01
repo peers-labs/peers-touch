@@ -31,6 +31,7 @@
 .pt-is-hidden-visually{visibility:hidden}
 .pt-copy-transient{position:absolute;inset:0;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
 .pt-icon-button{width:var(--pt-control-normal);padding:0}
+.pt-icon-button>.pt-button-content{width:100%}
 .pt-icon-button[data-density=compact]{width:var(--pt-control-compact)}
 .pt-icon-button[data-density=comfortable]{width:var(--pt-control-comfortable)}
 .pt-link{color:var(--pt-primary);text-decoration:underline;text-underline-offset:3px}
@@ -90,15 +91,18 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-field-error{font-size:12px;color:var(--pt-danger)}
 .pt-check-label{display:inline-flex;align-items:center;gap:var(--pt-space-xs);min-height:var(--pt-control-normal);cursor:pointer}
 .pt-check-label input{accent-color:var(--pt-primary);width:16px;height:16px;flex-shrink:0}
-/* Switch is an intrinsic 42x24 control: fixed width even inside stretchy
-   flex/grid parents; the thumb travels by transform (no layout movement). */
+/* Switch is an intrinsic 44x26 pill control: fixed width even inside
+   stretchy flex/grid parents; the knob travels by transform. */
 .pt-switch-row{display:inline-flex;align-items:center;gap:var(--pt-space-xs);min-height:var(--pt-control-normal)}
 .pt-switch-label{font-size:14px;color:var(--pt-text);user-select:none}
-.pt-switch{position:relative;align-self:flex-start;flex:0 0 auto;width:42px;height:24px;padding:0;border:0;border-radius:var(--pt-radius-sm);background:var(--pt-borderStrong);cursor:pointer;transition:background var(--pt-motion-fast) var(--pt-motion-standard)}
+/* Pill switch: full-radius track, knob fully contained at rest and on.
+   Off reads as a neutral well, on uses the semantic success green (state
+   color, not brand); no square knobs or shadows that escape the track. */
+.pt-switch{position:relative;align-self:flex-start;flex:0 0 auto;width:44px;height:26px;padding:0;border:0;border-radius:999px;background:var(--pt-borderStrong);cursor:pointer;transition:background var(--pt-motion-fast) var(--pt-motion-standard)}
 .pt-switch:hover:not(:disabled){background:var(--pt-muted)}
-.pt-switch[aria-checked=true]{background:var(--pt-primary)}
-.pt-switch[aria-checked=true]:hover:not(:disabled){background:var(--pt-primaryHover)}
-.pt-switch-thumb{position:absolute;top:2px;left:2px;width:20px;height:20px;background:var(--pt-surface);border-radius:calc(var(--pt-radius-sm) - 1px);box-shadow:0 1px 2px rgba(0,0,0,.22);transition:transform var(--pt-motion-fast) var(--pt-motion-standard)}
+.pt-switch[aria-checked=true]{background:var(--pt-success)}
+.pt-switch[aria-checked=true]:hover:not(:disabled){filter:brightness(1.06)}
+.pt-switch-thumb{position:absolute;top:3px;left:3px;width:20px;height:20px;background:var(--pt-surface);border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform var(--pt-motion-fast) var(--pt-motion-standard)}
 .pt-switch[aria-checked=true] .pt-switch-thumb{transform:translateX(18px)}
 .pt-switch:focus-visible{outline:2px solid var(--pt-focus);outline-offset:2px}
 .pt-switch:disabled{opacity:.55;cursor:not-allowed}

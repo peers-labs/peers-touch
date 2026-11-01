@@ -6,14 +6,15 @@
  */
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import {
-  ChevronLeft, ChevronRight, Crown, Eraser, File as FileIcon, Image as ImageIcon,
-  Phone, Search, ShieldCheck, Smartphone, Trash2, Video,
+  ChevronLeft, ChevronRight, Eraser, File as FileIcon, Image as ImageIcon,
+  Megaphone, Pencil, Phone, Search, Smartphone, Trash2, Video,
 } from 'lucide-react';
 import {
-  Avatar, Button, Dialog, Empty, IconButton, Switch, TextArea,
+  Avatar, Button, Dialog, Empty, IconButton, Switch, TextArea, TextField,
 } from '@peers-touch/ui';
 import type { CallKind } from './CallOverlay';
 import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
+import { GroupAvatarComposite } from './GroupAvatar';
 import { useT, locTag } from '../prefs';
 
 /* ── Header — desktop ChatArea parity: name only, no avatar
@@ -21,14 +22,13 @@ import { useT, locTag } from '../prefs';
    rendered but CSS-hidden above the phone breakpoint (persistent two-pane). */
 
 export function ConversationHeader({ conversation, pinned, muted,
-  onBack, onAudio, onVideo, onSearch, onInfo }: {
+  onBack, onAudio, onVideo, onInfo }: {
   conversation: Conversation;
   pinned: boolean;
   muted: boolean;
   onBack: () => void;
   onAudio: () => void;
   onVideo: () => void;
-  onSearch: () => void;
   onInfo: () => void;
 }) {
   const { t } = useT();
@@ -52,8 +52,6 @@ export function ConversationHeader({ conversation, pinned, muted,
           emphasis="quiet" onActivate={onAudio} />
         <IconButton iconId="video" iconSize={16} label={t('conv.callVideo')} actionId="chat.call-video"
           emphasis="quiet" onActivate={onVideo} />
-        <IconButton iconId="search" iconSize={16} label={t('conv.searchMessages')} actionId="chat.search-messages"
-          emphasis="quiet" onActivate={onSearch} />
         <IconButton iconId="info" iconSize={16} label={t('conv.info')} actionId="chat.open-info"
           emphasis={pinned || muted ? 'primary' : 'quiet'} onActivate={onInfo} />
       </div>
@@ -61,24 +59,14 @@ export function ConversationHeader({ conversation, pinned, muted,
   );
 }
 
-/* ── Detail sheet (desktop DetailPanel parity, redesigned
-   card layout: identity hero, members, settings card, shared media/files,
-   local danger zone) ─────────────────────────────────── */
+/* ── Detail sheet (WeChat-style profile: identity hero, members, group
+   name/notice rows, switches, history search, media/files, danger zone).
+   Search lives here only — the chat header carries no magnifier. ──── */
 
 const ROLE_RANK = { owner: 0, admin: 1, member: 2 } as const;
 
-function GroupHeroAvatar({ members, label }: { members: NonNullable<Conversation['members']>; label: string }) {
-  const tones = [...members].sort((a, b) => ROLE_RANK[a.role ?? 'member'] - ROLE_RANK[b.role ?? 'member'])
-    .slice(0, 4).map(m => m.tone);
-  return (
-    <div className="sk-profile-group-avatar" aria-label={label}>
-      {tones.map((tone, i) => <span key={i} style={{ background: tone }} />)}
-    </div>
-  );
-}
-
 export function DetailSheet({ conversation, messages, onClose, onTogglePin, onToggleMute,
-  onSearchMessages, onClearHistory, onDeleteConversation, onSimulateIncoming }: {
+  onSearchMessages, onClearHistory, onDeleteConversation, onSimulateIncoming, onRenameConversation }: {
   conversation: Conversation;
   messages: ChatMessage[];
   onClose: () => void;
@@ -88,8 +76,12 @@ export function DetailSheet({ conversation, messages, onClose, onTogglePin, onTo
   onClearHistory: () => void;
   onDeleteConversation: () => void;
   onSimulateIncoming?: (kind: CallKind, multiDevice?: boolean) => void;
+  onRenameConversation: (name: string) => void;
 }) {
   const [confirm, setConfirm] = useState<null | 'clear' | 'delete'>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(conversation.name);
+  const [viewingNotice, setViewingNotice] = useState(false);
   const { t } = useT();
 
   const isGroup = conversation.kind === 'group';
@@ -111,6 +103,13 @@ export function DetailSheet({ conversation, messages, onClose, onTogglePin, onTo
     setConfirm(null);
   };
 
+  const openNameEditor = () => { setNameDraft(conversation.name); setEditingName(true); };
+  const saveName = () => {
+    const next = nameDraft.trim();
+    if (next && next !== conversation.name) onRenameConversation(next);
+    setEditingName(false);
+  };
+
   return (
     <aside className="sk-side-sheet sk-profile-sheet" aria-label={t('conv.info')} data-detail-panel="true">
       <div className="sk-side-head">
@@ -120,10 +119,10 @@ export function DetailSheet({ conversation, messages, onClose, onTogglePin, onTo
       </div>
 
       <div className="sk-side-body">
-        {/* Identity hero */}
+        {/* Identity hero — same composite as the session list */}
         <section className="sk-profile-hero" data-profile-identity>
           {isGroup
-            ? <GroupHeroAvatar members={members} label={t('profile.groupAvatar')} />
+            ? <GroupAvatarComposite members={members} label={t('profile.groupAvatar')} size={64} />
             : <Avatar name={conversation.name} background={conversation.tone} size={64}
                 style={{ borderRadius: 18 }} />}
           <strong>{conversation.name}</strong>
@@ -134,28 +133,43 @@ export function DetailSheet({ conversation, messages, onClose, onTogglePin, onTo
           </span>
         </section>
 
-        {/* Group members */}
+        {/* Group members — ordered owner/admin first; ownership is read from
+            order, no crown/shield stickers on the avatar grid. */}
         {isGroup && (
           <section className="sk-profile-card" data-profile-members>
             <span className="sk-profile-card-title">{t('profile.members', { n: members.length })}</span>
             <div className="sk-profile-members">
               {members.slice(0, 8).map(member => (
-                <div className="sk-member-row sk-profile-member" key={member.name}
+                <div className="sk-profile-member" key={member.name}
                   data-role={member.role ?? 'member'}>
-                  <span className="sk-profile-member-avatar">
-                    <Avatar name={member.name} background={member.tone} size={38}
-                      style={{ borderRadius: 11 }} />
-                    {member.role === 'owner' && (
-                      <span className="sk-role-badge is-owner" title={t('profile.roleOwner')}><Crown size={9} /></span>
-                    )}
-                    {member.role === 'admin' && (
-                      <span className="sk-role-badge is-admin" title={t('profile.roleAdmin')}><ShieldCheck size={9} /></span>
-                    )}
-                  </span>
+                  <Avatar name={member.name} background={member.tone} size={38}
+                    style={{ borderRadius: 11 }} />
                   <span className="sk-profile-member-name">{member.name}</span>
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* Group administration rows (WeChat profile parity) */}
+        {isGroup && (
+          <section className="sk-profile-card sk-profile-admin" data-profile-admin>
+            <Button actionId="profile.edit-name" emphasis="quiet" className="sk-setting-row"
+              onActivate={openNameEditor} data-profile-edit-name>
+              <span className="sk-setting-icon"><Pencil size={15} /></span>
+              <span>{t('profile.groupName')}</span>
+              <span className="sk-setting-value" title={conversation.name}>{conversation.name}</span>
+              <ChevronRight size={15} className="sk-setting-chevron" />
+            </Button>
+            <Button actionId="profile.view-notice" emphasis="quiet" className="sk-setting-row"
+              onActivate={() => setViewingNotice(true)} data-profile-notice>
+              <span className="sk-setting-icon"><Megaphone size={15} /></span>
+              <span>{t('profile.groupNotice')}</span>
+              <span className="sk-setting-value" title={conversation.notice ?? ''}>
+                {conversation.notice ? conversation.notice : t('profile.groupNoticeEmpty')}
+              </span>
+              <ChevronRight size={15} className="sk-setting-chevron" />
+            </Button>
           </section>
         )}
 
@@ -250,6 +264,32 @@ export function DetailSheet({ conversation, messages, onClose, onTogglePin, onTo
           </>
         }>
         <span data-profile-confirm={confirm ?? ''} />
+      </Dialog>
+
+      <Dialog open={editingName} onDismiss={() => setEditingName(false)}
+        title={t('profile.groupNameTitle')} width={400} closeLabel={t('profile.cancel')}
+        description={t('profile.groupNameHint')}
+        footer={
+          <>
+            <Button actionId="profile.name-cancel" emphasis="quiet" label={t('profile.cancel')}
+              onActivate={() => setEditingName(false)} />
+            <Button actionId="profile.name-save" emphasis="primary" label={t('profile.groupNameSave')}
+              availability={nameDraft.trim() ? undefined : { kind: 'disabled', reason: t('profile.groupNameHint') }}
+              onActivate={saveName} />
+          </>
+        }>
+        <TextField value={nameDraft} onChange={e => setNameDraft(e.target.value)}
+          aria-label={t('profile.groupName')} data-group-name-input
+          onKeyDown={e => { if (e.key === 'Enter') saveName(); }} autoFocus />
+      </Dialog>
+
+      <Dialog open={viewingNotice} onDismiss={() => setViewingNotice(false)}
+        title={t('profile.groupNotice')} width={400} closeLabel={t('profile.close')}
+        footer={<Button actionId="profile.notice-close" emphasis="primary" label={t('profile.close')}
+          onActivate={() => setViewingNotice(false)} />}>
+        <p className="sk-profile-notice-body" data-profile-notice-body>
+          {conversation.notice || t('profile.groupNoticeEmpty')}
+        </p>
       </Dialog>
     </aside>
   );

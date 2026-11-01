@@ -105,6 +105,14 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
   const clearMessages = (id: string) =>
     setMessagesByConv(map => ({ ...map, [id]: [] }));
 
+  // Group display name is local-only in the prototype; it flows to the rail
+  // row, the header and the profile from the single sessions state.
+  const renameConversation = (id: string, name: string) => {
+    const next = name.trim();
+    if (!next) return;
+    setSessions(list => list.map(c => (c.id === id ? { ...c, name: next } : c)));
+  };
+
   const sendMessage = (payload: {
     text: string;
     attachments: ChatMessage['attachments'];
@@ -285,7 +293,6 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
         onSelectContact={openPerson}
         onFindPeople={() => setPickerOpen(true)}
         onCreateGroup={() => setGroupOpen(true)}
-        onPickSearchPerson={openPerson}
       />
 
       <div className="sk-chat-main">
@@ -310,6 +317,7 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
             onDelete={deleteMessage}
             onClearHistory={clearMessages}
             onDeleteConversation={deleteConversation}
+            onRenameConversation={renameConversation}
             onForward={forwardMessage}
             onStartCall={kind => setCall({ conversationId: selectedConversation.id, kind, direction: 'out' })} />
         ) : (

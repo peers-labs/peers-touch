@@ -11,8 +11,7 @@
     "button": 1
   },
   "packages/prototypes/shared/ui-system/chat/ChatRail.tsx": {
-    "button": 7,
-    "input": 1
+    "button": 5
   },
   "packages/prototypes/shared/ui-system/chat/ComposerAttachments.tsx": {
     "button": 2
