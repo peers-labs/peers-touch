@@ -270,16 +270,17 @@ func TestProviderServiceReturnsTypedCLIBinaryMissing(t *testing.T) {
 		catalogProvider.CLIArgv = originalCommand
 	})
 	if err := db.Create(&persistence.AgentProvider{
-		ID:          "provider-row",
-		ActorPTID:   "actor-1",
-		Name:        "trae-cli",
-		DisplayName: "TRAE CLI",
-		SourceType:  "catalog",
-		RuntimeKind: "cli",
-		Protocol:    "cli",
-		CliCommand:  "peers-touch-cli-that-does-not-exist",
-		Enabled:     true,
-		Version:     1,
+		ID:           "provider-row",
+		ActorPTID:    "actor-1",
+		Name:         "trae-cli",
+		DisplayName:  "TRAE CLI",
+		SourceType:   "catalog",
+		RuntimeKind:  "cli",
+		CLIAdapterID: "trae-cli",
+		Protocol:     "cli",
+		CliCommand:   "peers-touch-cli-that-does-not-exist",
+		Enabled:      true,
+		Version:      1,
 	}).Error; err != nil {
 		t.Fatalf("seed CLI provider: %v", err)
 	}
@@ -334,16 +335,17 @@ printf '%s\n' '{"type":"done","content":"persisted"}'
 		catalogProvider.CLIArgv = originalCommand
 	})
 	if err := db.Create(&persistence.AgentProvider{
-		ID:          "provider-row",
-		ActorPTID:   "actor-1",
-		Name:        "trae-cli",
-		DisplayName: "TRAE CLI",
-		SourceType:  "catalog",
-		RuntimeKind: "cli",
-		Protocol:    "cli",
-		CliCommand:  persistedCommand + " " + persistedOutput,
-		Enabled:     true,
-		Version:     1,
+		ID:           "provider-row",
+		ActorPTID:    "actor-1",
+		Name:         "trae-cli",
+		DisplayName:  "TRAE CLI",
+		SourceType:   "catalog",
+		RuntimeKind:  "cli",
+		CLIAdapterID: "trae-cli",
+		Protocol:     "cli",
+		CliCommand:   persistedCommand + " " + persistedOutput,
+		Enabled:      true,
+		Version:      1,
 	}).Error; err != nil {
 		t.Fatalf("seed CLI provider: %v", err)
 	}

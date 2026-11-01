@@ -245,6 +245,7 @@ providers:
     default_base_url: ""
     runtime_kind: cli
     credential_env_key: CODEX_API_KEY
+    backend_protocols: [responses]
     cli_argv: [codex, exec, --json, --skip-git-repo-check, "-"]
     default_model: default
     default_timeout_seconds: 120
@@ -294,6 +295,7 @@ providers:
     default_base_url: ""
     runtime_kind: cli
     credential_env_key: ANTHROPIC_API_KEY
+    backend_protocols: [anthropic]
     cli_argv: [claude, -p]
     default_model: default
     default_timeout_seconds: 120

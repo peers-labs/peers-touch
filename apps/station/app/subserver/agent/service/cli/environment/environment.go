@@ -45,7 +45,8 @@ func ValidateConfiguration(values map[string]string) error {
 			"SSL_CERT_DIR", "SSL_CERT_FILE", "SYSTEMROOT", "COMSPEC":
 			return fmt.Errorf("CLI environment cannot override execution-owned variables")
 		}
-		for _, prefix := range []string{"XDG_", "LD_", "DYLD_", "NPM_", "NPM_CONFIG_", "GIT_CONFIG_", "PEERS_TOUCH_"} {
+		for _, prefix := range []string{"XDG_", "LD_", "DYLD_", "NPM_", "NPM_CONFIG_", "GIT_CONFIG_", "PEERS_TOUCH_",
+			"ANTHROPIC_", "OPENAI_", "CODEX_", "CLAUDE_", "CURSOR_"} {
 			if strings.HasPrefix(upper, prefix) {
 				return fmt.Errorf("CLI environment cannot override execution-owned variables")
 			}

@@ -282,6 +282,19 @@ func (s *ProviderConfigService) Authorize(ctx context.Context, actorPTID string,
 	if !provider.Enabled {
 		return errcode.New(errcode.AgentProviderDisabled, http.StatusForbidden, "provider is disabled", nil)
 	}
+	if provider.BackendProviderID != "" {
+		backend, err := s.CLIBackend(ctx, provider)
+		if err != nil {
+			return err
+		}
+		effective, err := s.ResolveForActor(ctx, actorPTID, backend.Name, modelID)
+		if err != nil {
+			return err
+		}
+		if effective.ID != backend.ID {
+			return errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "model connection is not the effective owner", nil)
+		}
+	}
 	if owner.Scope == ProviderScopeActor {
 		if owner.ActorPTID != actorPTID {
 			return errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden, "provider belongs to another actor", nil)

@@ -82,6 +82,7 @@ func AllModels() []interface{} {
 		&Review{},
 		&Credential{},
 		&AgentProvider{},
+		&CLIProfileDefault{},
 		&ProviderAccessGrant{},
 		&ProviderPolicy{},
 		&AgentTurn{},

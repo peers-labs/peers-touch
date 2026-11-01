@@ -43,7 +43,7 @@ export default function AIModelEditor({ provider }: { provider: Provider }) {
       <div className="ai-section-heading">
         <Typography.Title level={5}>{t('ai.models')}</Typography.Title>
         <div className="ai-actions">
-          {provider.adapter_capabilities?.model_discovery && <Button disabled={busy} icon={<RefreshCw size={14} />}
+          {!provider.backend_provider_id && provider.adapter_capabilities?.model_discovery && <Button disabled={busy} icon={<RefreshCw size={14} />}
             onClick={() => void run(() => ai.discover(provider.id))}>{t('ai.discoverModels')}</Button>}
           {provider.runtime_kind !== 'cli' && <Button icon={<Plus size={14} />} onClick={() => edit('new')}>{t('ai.addModel')}</Button>}
         </div>

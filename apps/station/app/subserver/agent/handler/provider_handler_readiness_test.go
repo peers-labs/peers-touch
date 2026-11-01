@@ -17,7 +17,7 @@ func newControlPlaneHandlers(t *testing.T) (*ProviderHandlers, *service.Provider
 	t.Helper()
 	db := openTurnHandlerTestDB(t, "provider_control_"+t.Name())
 	if err := db.AutoMigrate(&persistence.AgentProvider{}, &persistence.AgentModel{}, &persistence.Credential{},
-		&persistence.ProviderPolicy{}, &persistence.ProviderAccessGrant{}, &persistence.AgentRuntimeDefault{}); err != nil {
+		&persistence.ProviderPolicy{}, &persistence.ProviderAccessGrant{}, &persistence.AgentRuntimeDefault{}, &persistence.CLIProfileDefault{}); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PT_SECRET_KEK", "handler-provider-test-key-material")

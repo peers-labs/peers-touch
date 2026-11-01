@@ -1,11 +1,11 @@
-# CLI 账号连接：架构草案
+# CLI 账号连接：架构设计
 
-> **Status**: draft
+> **Status**: accepted — implementation and verification pending
 > **Version**: v1.0
 > **Created**: 2026-10-31 | **Updated**: 2026-10-31
 > **Owner**: Peers-Touch Agent Team
 
-本设计扩展既有 Provider Owner 合同，未生效。产品入口由 product-definition.md
+本设计扩展既有 Provider Owner 合同。产品入口由 product-definition.md
 决定；安装、模型授权和 API key 存储继续采用现有所有者。
 
 ## 所有权与链路

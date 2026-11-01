@@ -5,12 +5,16 @@ import { t } from '../i18n';
 export type Revision = string | number;
 export interface RuntimeConfig {
   default_model: string;
+  global_prompt?: string;
   startup_args: string[];
   environment: Record<string, string>;
   timeout_seconds: number;
 }
 export interface Provider {
   id: string;
+  record_id?: string;
+  cli_adapter_id?: string;
+  backend_provider_id?: string;
   name: string;
   description: string;
   enabled: boolean;
@@ -27,6 +31,7 @@ export interface Provider {
     startup_args: boolean;
     environment: boolean;
     configurable_timeout: boolean;
+    backend_protocols?: string[];
   };
   install_state: string;
   install_supported: boolean;
@@ -61,6 +66,7 @@ export interface Access { provider_id: string; revision: Revision; grants: Grant
 export interface AIUserAccess { all_actors: boolean; actor_ptids: string[] }
 export interface Policy { personal_providers_enabled: boolean; revision: Revision; ai_user_access: AIUserAccess }
 export interface Credential { configured: boolean; status: string; version: Revision }
+export interface CLIProfileDefault { cli_adapter_id: string; provider_id: string; revision: Revision }
 export interface Install {
   install_state: string;
   job_id?: string;
@@ -76,14 +82,16 @@ async function post<T>(path: string, body: unknown = {}): Promise<T> {
   return controlPlanePost<T>(`/ai/${path}`, body);
 }
 export const ai = {
-  list: () => post<{ providers: Provider[] }>('provider/list'),
+  list: () => post<{ providers: Provider[]; cli_profile_defaults?: CLIProfileDefault[] }>('provider/list'),
   get: (provider_id: string) => post<{ provider: Provider }>('provider/get', { provider_id }),
-  create: (body: { provider_id: string; display_name: string; base_url: string; protocol: string }) =>
+  create: (body: { provider_id: string; display_name: string; base_url: string; protocol: string; cli_adapter_id?: string }) =>
     post<{ provider: Provider }>('provider/create', body),
   update: (provider_id: string, version: Revision, body: {
-    display_name?: string; base_url?: string; enabled?: boolean; runtime_config?: RuntimeConfig;
+    display_name?: string; base_url?: string; enabled?: boolean; runtime_config?: RuntimeConfig; backend_provider_id?: string;
   }) => post<{ provider: Provider }>('provider/update', { provider_id, version, ...body }),
   remove: (provider_id: string, version: Revision) => post('provider/delete', { provider_id, version }),
+  setCLIProfileDefault: (cli_adapter_id: string, provider_id: string, expected_revision: Revision) =>
+    post<{ profile_default: CLIProfileDefault }>('cli/profile/default', { cli_adapter_id, provider_id, expected_revision }),
   models: (provider_id: string) => post<{ models: ModelRecord[] }>('model/list', { provider_id }),
   createModel: (provider_id: string, model: Omit<ModelInfo, 'id' | 'type'> & { model_id: string }) =>
     post('model/create', { provider_id, ...model }),

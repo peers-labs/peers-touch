@@ -78,6 +78,7 @@ func openAdmissionTestDB(t *testing.T, name string) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&persistence.AgentProvider{},
+		&persistence.CLIProfileDefault{},
 		&persistence.AgentModel{},
 		&persistence.Credential{},
 		&persistence.ProviderPolicy{},

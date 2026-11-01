@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Alert, Button, Checkbox, ConfigProvider, Divider, Flex, Input, Modal, Select, Space, Switch, Tag, Typography, theme } from 'antd';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Checkbox, ConfigProvider, Divider, Flex, Input, Modal, Segmented, Select, Space, Switch, Tag, Typography, theme } from 'antd';
 import {
-  addPersonalWireService, beginWireLogin, changeWireGraph, disconnectWireService,
+  addPersonalWireService, advanceWireInstallations, beginWireLogin, changeWireGraph, disconnectWireService,
   finishWireLogin, installWireRuntime, invokeWireModel, loadWireGraph,
   publishWireModels, resetWireGraph, revokeWireActor, saveWireAPI, serviceStep,
-  subscribeWireGraph, verifyWireModel, visibleModels,
+  subscribeWireGraph, verifyWireModel, visibleModels, resolveWireService,
   type WireActor, type WireGraph, type WireService,
 } from './modelServiceWireflow';
 import { createAntdTokenTheme } from './design-tokens/antd';
+import CLIProfileWireEditor from './CLIProfileWireEditor';
 
 const { Title, Text, Paragraph } = Typography;
 const actors = [{ value: 'alice', label: 'Alice' }, { value: 'bob', label: 'Bob' }];
@@ -35,7 +36,7 @@ function ReviewBar({ actor, consumer = false }: { actor: WireActor; consumer?: b
     <Button type="text" onClick={resetWireGraph}>重置演示</Button>
   </Flex>;
 }
-function ConnectionEditor({ item, graph }: { item: WireService; graph: WireGraph }) {
+function ConnectionEditor({ item, graph, onManageSource }: { item: WireService; graph: WireGraph; onManageSource?: (id: string) => void }) {
   const [authPage, setAuthPage] = useState(false);
   const [credential, setCredential] = useState('');
   const [endpoint, setEndpoint] = useState('https://api.example.com/v1');
@@ -52,7 +53,7 @@ function ConnectionEditor({ item, graph }: { item: WireService; graph: WireGraph
   const selected = item.models.find((entry) => entry.id === modelId) ?? item.models[0];
   const connected = item.connection === 'connected';
   const verified = Boolean(selected?.verifiedAt);
-  const next = step === 0 ? '安装到 Station' : step === 1 ? '连接账号'
+  const next = step === 0 ? '等待安装' : step === 1 ? '连接账号'
     : step === 2 ? '验证调用' : step === 3 ? '分配模型' : '已完成接入';
   return <section aria-label={`${item.label} 服务详情`} data-journey-step={step}>
     <Title level={4}>{item.label}</Title>
@@ -68,16 +69,17 @@ function ConnectionEditor({ item, graph }: { item: WireService; graph: WireGraph
         </Tag>
       </span>)}
     </Flex>
-    <div style={{ minHeight: 360, paddingTop: 24 }} data-wireflow-stage>
+    <div style={{ paddingTop: 16, paddingBottom: 16 }} data-wireflow-stage>
       <Text strong>下一步：{next}</Text>
       {step === 0 && <>
-        <Paragraph>{item.owner === 'station' ? '安装发生在当前 Station，完成后继续连接账号。'
+        <Paragraph>{item.owner === 'station' ? '在上方下拉框选择此 CLI 即自动安装；进度显示在选项背景中，完成后继续连接账号。'
           : '服务尚未准备好，请管理员先准备此服务，再连接你的账号。'}</Paragraph>
-        {item.owner === 'station' && <Button type="primary" onClick={() => installWireRuntime(item.vendor)} disabled={graph.offline}>
-          安装 {item.label}
-        </Button>}
       </>}
-      {step === 1 && <>
+      {item.backendId && <Paragraph>
+        已引用模型连接；账号配置由来源统一管理。
+        <Button type="link" onClick={() => onManageSource?.(item.backendId!)}>管理连接</Button>
+      </Paragraph>}
+      {step === 1 && !item.backendId && <>
         <Paragraph>
           {item.kind === 'cli' ? item.owner === 'station' ? '已安装。还需要连接供应商账号，才能验证和分配模型。'
             : '连接你的供应商账号，完成验证后即可使用。'
@@ -102,7 +104,7 @@ function ConnectionEditor({ item, graph }: { item: WireService; graph: WireGraph
             onClick={() => { beginWireLogin(item.id); setAuthPage(true); }}>登录 {item.label}</Button>}
       </>}
       {step >= 2 && <>
-        <Paragraph>账号已连接。{item.kind === 'cli' ? '使用账号默认模型，实际型号由服务商决定。' : '以下为模拟厂商目录。'}</Paragraph>
+        <Paragraph>账号已连接。{item.backendId ? '模型来自所选连接。' : item.kind === 'cli' ? '使用账号默认模型，实际型号由服务商决定。' : '以下为模拟厂商目录。'}</Paragraph>
         <label>验证的模型
           <Select virtual={false} aria-label="验证的模型" value={selected?.id} options={models} onChange={setModelId}
             style={{ width: '100%', marginTop: 8, marginBottom: 16 }} />
@@ -136,7 +138,7 @@ function ConnectionEditor({ item, graph }: { item: WireService; graph: WireGraph
     <div role={item.issue ? 'alert' : 'status'} style={{ minHeight: 64 }}>
       {item.issue && <Alert type="warning" title={item.issue} showIcon />}
     </div>
-    {connected && <Space wrap>
+    {connected && !item.backendId && <Space wrap>
       <Button onClick={() => { beginWireLogin(item.id); setAuthPage(true); }}>重新连接</Button>
       <Button danger onClick={() => Modal.confirm({
         title: `断开 ${item.label}？`, content: '后续依赖此连接的调用将不可用；已有对话保留。',
@@ -164,28 +166,50 @@ function ConnectionEditor({ item, graph }: { item: WireService; graph: WireGraph
     </Modal>
   </section>;
 }
-function SharedServiceList({ graph, onSelect, selectedId, method }: { graph: WireGraph; onSelect: (id: string) => void; selectedId: string; method: 'api' | 'cli' }) {
+function SharedServiceSelect({ graph, onSelect, selectedId, method }: { graph: WireGraph; onSelect: (id: string) => void; selectedId: string; method: 'api' | 'cli' }) {
   const { token } = theme.useToken();
-  return <nav aria-label="模型服务列表">
-    {graph.services.filter((item) => item.owner === 'station' && item.kind === method).map((item) => {
-      const step = serviceStep(graph, item);
-      return <Button key={item.id} type="text" block aria-pressed={selectedId === item.id} onClick={() => onSelect(item.id)}
-        style={{ height: 'auto', padding: token.paddingSM, textAlign: 'left', marginBottom: token.marginXS,
-          background: selectedId === item.id ? token.colorFillSecondary : undefined }}>
-        <Flex vertical align="start">
-          <Text strong>{item.label}</Text>
-          <Text type="secondary">{item.kind === 'cli' ? 'CLI' : 'DM'} · {steps[step]}</Text>
+  const [open, setOpen] = useState(false);
+  const keepOpen = useRef(false);
+  const choices = graph.services.filter((item) => item.owner === 'station' && item.kind === method && (method !== 'cli' || item.id === item.vendor));
+  const selected = graph.services.find((item) => item.id === selectedId);
+  return <Select aria-label="选择模型服务" value={method === 'cli' ? selected?.vendor : selectedId} open={open} virtual={false} showSearch
+    optionFilterProp="label" style={{ width: 320, maxWidth: '100%' }}
+    onOpenChange={(next) => { setOpen(next || keepOpen.current); keepOpen.current = false; }}
+    onSelect={(id) => {
+      const selected = choices.find((item) => item.id === id);
+      if (!selected) return;
+      onSelect(method === 'cli' ? graph.profileDefaults[id] || id : id);
+      keepOpen.current = selected.kind === 'cli' && !graph.installed.includes(selected.vendor) && !graph.offline;
+      if (keepOpen.current) installWireRuntime(selected.vendor);
+      setOpen(keepOpen.current);
+    }}
+    options={choices.map((item) => ({ value: item.id, label: item.label, item }))}
+    optionRender={(option) => {
+      const item = option.data.item;
+      const started = graph.installations[item.vendor];
+      const percent = started ? Math.min(99, Math.floor((Date.now() - started) / 60)) : 0;
+      const installed = graph.installed.includes(item.vendor);
+      return <div data-provider-id={item.id} style={{ position: 'relative', padding: token.paddingXS }}>
+        {started && <span aria-hidden style={{ position: 'absolute', inset: 0, width: `${percent}%`,
+          background: token.colorPrimaryBg, borderRadius: token.borderRadiusSM }} />}
+        <Flex justify="space-between" gap="small" style={{ position: 'relative' }}>
+          <Text>{item.label}</Text>
+          {item.kind === 'cli' && <Text type="secondary">{started ? `安装中 ${percent}%` : installed ? '已安装' : '选择即安装'}</Text>}
         </Flex>
-      </Button>;
-    })}
-  </nav>;
+      </div>;
+    }} />;
 }
 export function ModelServiceAdminWireflow() {
   const graph = useGraph();
   const [selectedId, setSelectedId] = useState('codex');
   const [method, setMethod] = useState<'api' | 'cli'>('cli');
-  const item = graph.services.find((entry) => entry.id === selectedId)!;
+  const record = graph.services.find((entry) => entry.id === selectedId);
+  const item = record && resolveWireService(graph, record);
   const { token } = theme.useToken();
+  useEffect(() => {
+    const timer = window.setInterval(advanceWireInstallations, 250);
+    return () => window.clearInterval(timer);
+  }, []);
   return <div style={{ padding: token.paddingLG }}>
     <ReviewBar actor="alice" />
     <Title level={3}>模型服务</Title>
@@ -203,19 +227,19 @@ export function ModelServiceAdminWireflow() {
     </Space>
     <Divider />
     {graph.offline && <Alert type="warning" title="Station 离线。已保存状态保留，恢复连接后继续。" />}
-    <Flex wrap gap={token.marginLG}>
-      <div style={{ flex: '0 1 180px', minWidth: 160 }}>
-        <Select aria-label="Provider 接入方式" value={method} style={{ width: '100%', marginBottom: token.margin }}
+    <Flex wrap gap="small" style={{ marginBottom: token.margin }}>
+        <Segmented<'api' | 'cli'> aria-label="Provider 接入方式" value={method}
           options={[{ value: 'api', label: 'DM · 直接模型' }, { value: 'cli', label: 'CLI' }]}
           onChange={(value) => {
             setMethod(value);
             const first = graph.services.find((entry) => entry.owner === 'station' && entry.kind === value);
             if (first) setSelectedId(first.id);
           }} />
-        <SharedServiceList graph={graph} onSelect={setSelectedId} selectedId={selectedId} method={method} />
-      </div>
-      <div style={{ flex: '1 1 400px', minWidth: 0 }}>
-        <ConnectionEditor key={item.id} item={item} graph={graph} />
+        <SharedServiceSelect key={method} graph={graph} onSelect={setSelectedId} selectedId={selectedId} method={method} />
+    </Flex>
+      {item && <div style={{ minWidth: 0 }}>
+        {item.kind === 'cli' && <CLIProfileWireEditor key={`profile:${item.id}`} item={item} graph={graph} onSelect={setSelectedId} />}
+        <ConnectionEditor key={item.id} item={item} graph={graph} onManageSource={(id) => { setMethod('api'); setSelectedId(id); }} />
         <Divider />
         <Title level={5}>已分配用户</Title>
         {actors.map(({ value, label }) => <Flex key={value} gap="small" align="center" wrap style={{ minHeight: 40 }}>
@@ -229,8 +253,7 @@ export function ModelServiceAdminWireflow() {
           <summary>节点场景控制（不属于生产界面）</summary>
           <Checkbox checked={graph.offline} onChange={(event) => changeWireGraph((current) => ({ ...current, offline: event.target.checked }))}>模拟 Station 离线</Checkbox>
         </details>
-      </div>
-    </Flex>
+      </div>}
   </div>;
 }
 export function ModelServiceConsumerWireflow({ onStartChat, chat = false }: { onStartChat?: () => void; chat?: boolean }) {
@@ -300,7 +323,7 @@ export function ModelServiceConsumerWireflow({ onStartChat, chat = false }: { on
   </div>;
 }
 export function ModelServiceWireflowTheme({ children }: { children: React.ReactNode }) {
-  return <ConfigProvider theme={{ ...createAntdTokenTheme('light'), token: {
+  return <ConfigProvider getPopupContainer={(trigger) => trigger?.parentElement || document.body} theme={{ ...createAntdTokenTheme('light'), token: {
     ...createAntdTokenTheme('light').token, controlHeight: 32,
   }, components: { Button: { controlHeight: 32 } } }}>{children}</ConfigProvider>;
 }

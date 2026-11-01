@@ -27,24 +27,27 @@ func NewProviderConfigService() *ProviderConfigService {
 }
 
 type ProviderCreateRequest struct {
-	Scope       string
-	ActorPTID   string
-	ProviderID  string
-	DisplayName string
-	BaseURL     string
-	Protocol    string
-	ConfigJSON  []byte
+	Scope             string
+	ActorPTID         string
+	ProviderID        string
+	DisplayName       string
+	BaseURL           string
+	Protocol          string
+	ConfigJSON        []byte
+	CLIAdapterID      string
+	BackendProviderID string
 }
 
 type ProviderUpdateRequest struct {
-	Scope       string
-	ActorPTID   string
-	ProviderID  string
-	Version     int64
-	DisplayName *string
-	BaseURL     *string
-	Enabled     *bool
-	ConfigJSON  []byte
+	Scope             string
+	ActorPTID         string
+	ProviderID        string
+	Version           int64
+	DisplayName       *string
+	BaseURL           *string
+	Enabled           *bool
+	ConfigJSON        []byte
+	BackendProviderID *string
 }
 
 type ProviderDeleteRequest struct {
@@ -69,6 +72,9 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 	if req.ProviderID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider_id is required", nil)
 	}
+	if cp := catalog.Find(req.ProviderID); cp != nil && req.CLIAdapterID != "" && cp.ID != req.CLIAdapterID {
+		return nil, invalidCLIProfile("a catalog provider identity cannot be assigned to a different CLI")
+	}
 	if err := validateProviderConfiguration(req.ProviderID, req.ConfigJSON); err != nil {
 		return nil, err
 	}
@@ -78,6 +84,9 @@ func (s *ProviderConfigService) Create(ctx context.Context, req ProviderCreateRe
 	}
 
 	provider := newProviderRecord(req)
+	if err := s.validateCLIProfile(ctx, provider); err != nil {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid CLI profile", err)
+	}
 	if !providerRecordSupportedByFrozenProfile(provider) {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			"provider runtime is not supported by the active Agent profile", nil)
@@ -119,6 +128,12 @@ func (s *ProviderConfigService) Materialize(ctx context.Context, req ProviderUpd
 	if req.Enabled != nil {
 		record.Enabled = *req.Enabled
 	}
+	if req.BackendProviderID != nil {
+		record.BackendProviderID = *req.BackendProviderID
+	}
+	if err := s.validateCLIProfile(ctx, record); err != nil {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid CLI profile", err)
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -129,6 +144,7 @@ func (s *ProviderConfigService) Materialize(ctx context.Context, req ProviderUpd
 		"id": record.ID, "scope": record.Scope, "actor_ptid": record.ActorPTID, "name": record.Name,
 		"display_name": record.DisplayName, "base_url": record.BaseURL, "config": record.Config,
 		"source_type": record.SourceType, "runtime_kind": record.RuntimeKind, "cli_command": record.CliCommand,
+		"cli_adapter_id": record.CLIAdapterID, "backend_provider_id": record.BackendProviderID,
 		"protocol": record.Protocol, "enabled": record.Enabled, "version": int64(1),
 		"access_revision": int64(0), "created_at": now, "updated_at": now,
 	})
@@ -175,34 +191,40 @@ func validateProviderConfiguration(providerID string, raw []byte) error {
 	if containsSecret(config) {
 		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "provider secrets belong in credential storage", nil)
 	}
-	if cp := catalog.Find(providerID); cp != nil && cp.RuntimeKind == providerRuntimeCLI {
-		record := &persistence.AgentProvider{Config: raw}
-		if err := ValidateProviderRuntimeConfig(cp, EffectiveProviderRuntimeConfig(cp, record)); err != nil {
-			return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid CLI runtime configuration", err)
-		}
-	}
 	return nil
 }
 
 func newProviderRecord(req ProviderCreateRequest) *persistence.AgentProvider {
 	provider := &persistence.AgentProvider{
-		ID:          uuid.New().String(),
-		Scope:       requestProviderOwner(req.Scope, req.ActorPTID).Scope,
-		ActorPTID:   req.ActorPTID,
-		Name:        req.ProviderID,
-		DisplayName: req.DisplayName,
-		BaseURL:     req.BaseURL,
-		Config:      req.ConfigJSON,
-		SourceType:  "custom",
-		RuntimeKind: "http",
-		Protocol:    req.Protocol,
-		Enabled:     true,
-		Version:     1,
+		ID:                uuid.New().String(),
+		Scope:             requestProviderOwner(req.Scope, req.ActorPTID).Scope,
+		ActorPTID:         req.ActorPTID,
+		Name:              req.ProviderID,
+		DisplayName:       req.DisplayName,
+		BaseURL:           req.BaseURL,
+		Config:            req.ConfigJSON,
+		SourceType:        "custom",
+		RuntimeKind:       "http",
+		Protocol:          req.Protocol,
+		Enabled:           true,
+		Version:           1,
+		CLIAdapterID:      req.CLIAdapterID,
+		BackendProviderID: req.BackendProviderID,
 	}
 
-	if cp := catalog.Find(req.ProviderID); cp != nil {
-		provider.SourceType = "catalog"
+	catalogID := req.ProviderID
+	if req.CLIAdapterID != "" {
+		catalogID = req.CLIAdapterID
+		provider.RuntimeKind, provider.Protocol = providerRuntimeCLI, providerRuntimeCLI
+	}
+	if cp := catalog.Find(catalogID); cp != nil {
+		if catalogID == req.ProviderID {
+			provider.SourceType = "catalog"
+		}
 		provider.RuntimeKind = cp.RuntimeKind
+		if cp.RuntimeKind == providerRuntimeCLI {
+			provider.CLIAdapterID = cp.ID
+		}
 		provider.CliCommand = catalog.FormatArgv(cp.CLIArgv)
 		if provider.DisplayName == "" {
 			provider.DisplayName = cp.Name
@@ -229,6 +251,9 @@ func providerUpdateIsNoop(provider *persistence.AgentProvider, req ProviderUpdat
 		return false
 	}
 	if req.Enabled != nil && *req.Enabled != provider.Enabled {
+		return false
+	}
+	if req.BackendProviderID != nil && *req.BackendProviderID != provider.BackendProviderID {
 		return false
 	}
 	if len(req.ConfigJSON) > 0 && !canonicalJSONEqual(provider.Config, req.ConfigJSON) {
@@ -296,6 +321,19 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 		return nil, errcode.New(errcode.AgentVersionConflict, http.StatusConflict,
 			fmt.Sprintf("version conflict: current=%d, submitted=%d", provider.Version, req.Version), nil)
 	}
+	proposed := provider
+	if req.BackendProviderID != nil {
+		proposed.BackendProviderID = *req.BackendProviderID
+	}
+	if req.BaseURL != nil {
+		proposed.BaseURL = *req.BaseURL
+	}
+	if req.ConfigJSON != nil {
+		proposed.Config = req.ConfigJSON
+	}
+	if err := s.validateCLIProfile(ctx, &proposed); err != nil {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid CLI profile", err)
+	}
 
 	// A configuration save that changes no effective field must remain a
 	// no-op. Provider version participates in the pinned conversation
@@ -323,6 +361,9 @@ func (s *ProviderConfigService) Update(ctx context.Context, req ProviderUpdateRe
 	}
 	if req.ConfigJSON != nil {
 		updates["config"] = req.ConfigJSON
+	}
+	if req.BackendProviderID != nil {
+		updates["backend_provider_id"] = *req.BackendProviderID
 	}
 
 	result := db.WithContext(ctx).
@@ -389,6 +430,11 @@ func (s *ProviderConfigService) Delete(ctx context.Context, req ProviderDeleteRe
 		}
 
 		if err := tx.Where("provider_record_id = ?", provider.ID).Delete(&persistence.ProviderAccessGrant{}).Error; err != nil {
+			return err
+		}
+		if err := owner.Query(tx.Model(&persistence.CLIProfileDefault{})).
+			Where("default_provider_record_id = ?", provider.ID).
+			Updates(map[string]any{"default_provider_record_id": "", "revision": gorm.Expr("revision + 1"), "updated_at": time.Now().UTC()}).Error; err != nil {
 			return err
 		}
 		if err := tx.Delete(&provider).Error; err != nil {

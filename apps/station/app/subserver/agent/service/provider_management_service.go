@@ -25,6 +25,7 @@ type ProviderManagementPort interface {
 	Get(context.Context, ProviderOwner, string) (*model.GetProviderResponse, error)
 	Create(context.Context, ProviderOwner, *model.CreateProviderRequest) (*model.CreateProviderResponse, error)
 	Update(context.Context, ProviderOwner, *model.UpdateProviderRequest) (*model.UpdateProviderResponse, error)
+	SetCLIProfileDefault(context.Context, ProviderOwner, *model.SetCLIProfileDefaultRequest) (*model.SetCLIProfileDefaultResponse, error)
 	Delete(context.Context, ProviderOwner, *model.DeleteProviderRequest) (*model.DeleteProviderResponse, error)
 	ListModels(context.Context, ProviderOwner, string) (*model.ListModelsResponse, error)
 	CreateModel(context.Context, ProviderOwner, *model.CreateModelRequest) (*model.CreateModelResponse, error)
@@ -112,6 +113,10 @@ func (s *ProviderManagementService) List(ctx context.Context, owner ProviderOwne
 		byID[records[i].Name] = &records[i]
 	}
 	result := &model.ListProvidersResponse{Providers: []*model.AgentProviderInfo{}}
+	result.CliProfileDefaults, err = s.providers.cliProfileDefaults(ctx, owner, records)
+	if err != nil {
+		return nil, err
+	}
 	for _, provider := range catalog.List() {
 		if !catalogProviderAdvertised(provider) {
 			continue
@@ -160,7 +165,7 @@ func (s *ProviderManagementService) Check(ctx context.Context, owner ProviderOwn
 	}
 	info := provider.GetProvider()
 	if info.GetRuntimeKind() == providerRuntimeCLI {
-		cp := catalog.Find(providerID)
+		cp := catalog.Find(info.GetCliAdapterId())
 		if cp == nil {
 			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "registered CLI provider not found", nil)
 		}
@@ -178,11 +183,27 @@ func (s *ProviderManagementService) Check(ctx context.Context, owner ProviderOwn
 
 func (s *ProviderManagementService) project(ctx context.Context, owner ProviderOwner, cp *catalog.CatalogProvider, record *persistence.AgentProvider) (*model.AgentProviderInfo, error) {
 	info := &model.AgentProviderInfo{Owner: providerOwnerProto(owner), CredentialStatus: "not_configured"}
+	if record != nil {
+		var err error
+		cp, err = s.providers.effectiveProviderCatalog(ctx, record, s.runtimeModels)
+		if err != nil {
+			var unavailable *errcode.BizError
+			if !errors.As(err, &unavailable) || unavailable.Code != errcode.AgentProviderDisabled {
+				return nil, err
+			}
+			cp = providerCatalog(record)
+			if cp != nil {
+				cp.Models = nil
+			}
+			info.CredentialStatus = "source_unavailable"
+		}
+	}
 	if cp != nil {
-		effective := s.runtimeModels.EffectiveProvider(record, *cp)
-		cp = &effective
 		info.Id, info.Name, info.Description = cp.ID, cp.Name, cp.Description
 		info.Builtin, info.Protocol, info.Discovery = cp.Builtin, cp.Protocol, cp.Discovery
+		if record != nil && catalog.Find(record.Name) == nil {
+			info.Builtin = false
+		}
 		info.RuntimeKind, info.BaseUrl, info.Source = cp.RuntimeKind, cp.DefaultBaseURL, "catalog"
 		info.HomeUrl, info.ApiKeyUrl, info.ShowChecker = cp.HomeURL, cp.APIKeyURL, cp.ShowChecker
 		info.ShowApiKey = cp.ShowAPIKey == nil || *cp.ShowAPIKey
@@ -195,10 +216,15 @@ func (s *ProviderManagementService) project(ctx context.Context, owner ProviderO
 			Environment:         cp.SupportsConfiguration("environment"),
 			ConfigurableTimeout: cp.SupportsConfiguration("timeout"),
 			RuntimeCapabilities: append([]string(nil), cp.Capabilities...),
+			BackendProtocols:    append([]string(nil), cp.BackendProtocols...),
+		}
+		if cp.RuntimeKind == providerRuntimeCLI {
+			info.CliAdapterId = cp.ID
 		}
 	}
 	if record != nil {
 		info.Id, info.Enabled, info.Version = record.Name, record.Enabled, record.Version
+		info.RecordId, info.CliAdapterId, info.BackendProviderId = record.ID, record.CLIAdapterID, record.BackendProviderID
 		if record.DisplayName != "" {
 			info.Name = record.DisplayName
 		}
@@ -214,10 +240,20 @@ func (s *ProviderManagementService) project(ctx context.Context, owner ProviderO
 		if ProviderCredentialConfigured(record) {
 			info.CredentialStatus = "configured"
 		}
+		if record.BackendProviderID != "" {
+			info.ShowApiKey = false
+			if backend, err := s.providers.CLIBackend(ctx, record); err == nil && ProviderCredentialConfigured(backend) {
+				info.CredentialStatus = "configured"
+				info.BaseUrl = backend.BaseURL
+			}
+		}
 	}
 	persisted, err := s.models.ListOwned(ctx, owner, info.Id)
 	if err != nil {
 		return nil, err
+	}
+	if record != nil && record.BackendProviderID != "" {
+		persisted = nil
 	}
 	if cp == nil {
 		cp = &catalog.CatalogProvider{ID: info.Id}
@@ -244,8 +280,8 @@ func (s *ProviderManagementService) project(ctx context.Context, owner ProviderO
 		}
 		info.Models = append(info.Models, projected)
 	}
-	if _, ok := managed.FindSpec(info.Id); ok && s.installer != nil {
-		snapshot := s.installer.Snapshot(info.Id, "")
+	if _, ok := managed.FindSpec(info.CliAdapterId); ok && s.installer != nil {
+		snapshot := s.installer.Snapshot(info.CliAdapterId, "")
 		info.InstallState, info.InstallSupported, info.ManualInstallUrl = string(snapshot.State), snapshot.InstallSupported, snapshot.ManualURL
 	}
 	return info, nil
@@ -260,9 +296,18 @@ func providerOwnerProto(owner ProviderOwner) *model.ProviderResourceOwner {
 }
 
 func (s *ProviderManagementService) Create(ctx context.Context, owner ProviderOwner, req *model.CreateProviderRequest) (*model.CreateProviderResponse, error) {
+	config := req.GetConfigJson()
+	if req.RuntimeConfig != nil {
+		var err error
+		config, err = json.Marshal(req.RuntimeConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
 	_, err := s.providers.Create(ctx, ProviderCreateRequest{Scope: owner.Scope, ActorPTID: owner.ActorPTID,
 		ProviderID: req.GetProviderId(), DisplayName: req.GetDisplayName(), BaseURL: req.GetBaseUrl(),
-		Protocol: req.GetProtocol(), ConfigJSON: req.GetConfigJson()})
+		Protocol: req.GetProtocol(), ConfigJSON: config,
+		CLIAdapterID: req.GetCliAdapterId(), BackendProviderID: req.GetBackendProviderId()})
 	if err != nil {
 		return nil, err
 	}
@@ -276,21 +321,15 @@ func (s *ProviderManagementService) Update(ctx context.Context, owner ProviderOw
 	}
 	config := req.GetConfigJson()
 	if req.RuntimeConfig != nil {
-		cp := catalog.Find(req.GetProviderId())
-		record, _ := s.providers.GetOwned(ctx, owner, req.GetProviderId())
-		if cp != nil {
-			effective := s.runtimeModels.EffectiveProvider(record, *cp)
-			cp = &effective
-		}
 		var err error
-		config, err = EncodeProviderRuntimeConfig(cp, req.RuntimeConfig)
+		config, err = json.Marshal(req.RuntimeConfig)
 		if err != nil {
 			return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "invalid provider runtime configuration", err)
 		}
 	}
 	update := ProviderUpdateRequest{Scope: owner.Scope, ActorPTID: owner.ActorPTID,
 		ProviderID: req.GetProviderId(), Version: req.GetVersion(), DisplayName: req.DisplayName,
-		BaseURL: req.BaseUrl, Enabled: req.Enabled, ConfigJSON: config}
+		BaseURL: req.BaseUrl, Enabled: req.Enabled, ConfigJSON: config, BackendProviderID: req.BackendProviderId}
 	var err error
 	if req.GetVersion() == 0 {
 		_, err = s.providers.Materialize(ctx, update)
@@ -334,7 +373,11 @@ func (s *ProviderManagementService) ListModels(ctx context.Context, owner Provid
 }
 
 func (s *ProviderManagementService) CreateModel(ctx context.Context, owner ProviderOwner, req *model.CreateModelRequest) (*model.CreateModelResponse, error) {
-	if cp := catalog.Find(req.GetProviderId()); cp != nil && cp.RuntimeKind == providerRuntimeCLI {
+	info, err := s.Get(ctx, owner, req.GetProviderId())
+	if err != nil {
+		return nil, err
+	}
+	if info.GetProvider().GetRuntimeKind() == providerRuntimeCLI {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "CLI model definitions are read-only; use discovery", nil)
 	}
 	record, err := s.models.Create(ctx, ModelCreateRequest{Scope: owner.Scope, ActorPTID: owner.ActorPTID,
@@ -347,7 +390,11 @@ func (s *ProviderManagementService) CreateModel(ctx context.Context, owner Provi
 }
 
 func (s *ProviderManagementService) UpdateModel(ctx context.Context, owner ProviderOwner, req *model.UpdateModelRequest) (*model.UpdateModelResponse, error) {
-	if cp := catalog.Find(req.GetProviderId()); cp != nil && cp.RuntimeKind == providerRuntimeCLI {
+	info, err := s.Get(ctx, owner, req.GetProviderId())
+	if err != nil {
+		return nil, err
+	}
+	if info.GetProvider().GetRuntimeKind() == providerRuntimeCLI {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "CLI model definitions are read-only; use discovery", nil)
 	}
 	if req.GetVersion() == 0 {
@@ -523,9 +570,13 @@ func (s *ProviderManagementService) Discover(ctx context.Context, owner Provider
 	if err != nil {
 		return nil, err
 	}
-	cp := catalog.Find(providerID)
+	cp := providerCatalog(record)
 	if cp == nil {
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "provider not found", nil)
+	}
+	if record.BackendProviderID != "" {
+		info, err := s.Get(ctx, owner, providerID)
+		return &model.DiscoverProviderModelsResponse{Models: info.GetProvider().GetModels(), ObservedAt: timestamppb.Now()}, err
 	}
 	_, observed, err := s.discovery.Discover(ctx, owner.ActorPTID, cp, record)
 	if err != nil {

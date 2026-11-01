@@ -92,6 +92,9 @@ func ValidateProviderRuntimeConfig(
 	if config == nil {
 		return fmt.Errorf("runtime configuration is required")
 	}
+	if len(config.GlobalPrompt) > 32000 || strings.ContainsRune(config.GlobalPrompt, '\x00') {
+		return fmt.Errorf("global prompt exceeds the allowed size or contains a null byte")
+	}
 	if !provider.SupportsConfiguration("default-model") &&
 		strings.TrimSpace(config.DefaultModel) != "" {
 		return fmt.Errorf("default model is not configurable for this provider")

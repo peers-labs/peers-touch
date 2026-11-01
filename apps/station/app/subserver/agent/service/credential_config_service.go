@@ -112,6 +112,9 @@ func (s *CredentialConfigService) setWithDB(
 			}
 		}
 
+		if providerRecord.BackendProviderID != "" {
+			return invalidCLIProfile("credentials are managed by the referenced model connection")
+		}
 		keyVaultsJSON, err := sealProviderCredential(&providerRecord, req.APIKey)
 		if err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,

@@ -19,6 +19,7 @@ message ProviderRuntimeConfig {
   repeated string startup_args = 2;
   map<string, string> environment = 3;
   int32 timeout_seconds = 4;
+  string global_prompt = 5;
 }
 
 message ProviderAdapterCapabilities {
@@ -27,6 +28,7 @@ message ProviderAdapterCapabilities {
   bool environment = 3;
   bool configurable_timeout = 4;
   repeated string runtime_capabilities = 5;
+  repeated string backend_protocols = 6;
 }
 
 message ProviderModelInfo {
@@ -131,6 +133,11 @@ message AgentProviderInfo {
   // unavailable or failed.
   string manual_install_url = 26;
   ProviderResourceOwner owner = 27;
+  // Installation/execution identity; independent of the named profile ID.
+  string cli_adapter_id = 28;
+  // Immutable record identity of a same-owner HTTP connection.
+  string backend_provider_id = 29;
+  string record_id = 30;
 }
 
 // InstallProviderRequest starts an administrator-authorized Station CLI install.
@@ -221,7 +228,24 @@ message DiscoverProviderModelsResponse {
 
 // Provider CRUD
 message ListProvidersRequest {}
-message ListProvidersResponse { repeated AgentProviderInfo providers = 1; }
+message ListProvidersResponse {
+  repeated AgentProviderInfo providers = 1;
+  repeated CLIProfileDefault cli_profile_defaults = 2;
+}
+
+// Management preference only. Actor model defaults and historical bindings
+// retain their explicit provider/model selection.
+message CLIProfileDefault {
+  string cli_adapter_id = 1;
+  string provider_id = 2;
+  int64 revision = 3;
+}
+message SetCLIProfileDefaultRequest {
+  string cli_adapter_id = 1;
+  string provider_id = 2;
+  int64 expected_revision = 3;
+}
+message SetCLIProfileDefaultResponse { CLIProfileDefault profile_default = 1; }
 
 message GetProviderRequest { string provider_id = 1; }
 message GetProviderResponse { AgentProviderInfo provider = 1; }
@@ -246,6 +270,9 @@ message CreateProviderRequest {
   string base_url = 3;
   string protocol = 4;
   bytes config_json = 5;
+  string cli_adapter_id = 6;
+  string backend_provider_id = 7;
+  ProviderRuntimeConfig runtime_config = 8;
 }
 message CreateProviderResponse { AgentProviderInfo provider = 1; }
 
@@ -259,6 +286,7 @@ message UpdateProviderRequest {
   reserved 7;
   reserved "key_vaults";
   ProviderRuntimeConfig runtime_config = 8;
+  optional string backend_provider_id = 9;
 }
 message UpdateProviderResponse { AgentProviderInfo provider = 1; }
 

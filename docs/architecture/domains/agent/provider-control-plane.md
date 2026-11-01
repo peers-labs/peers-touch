@@ -19,11 +19,22 @@ the same ID; preferences continue to use `(provider_id, model_id)`. No
 credentials, commands or installation details belong in the ordinary
 consumer projection.
 
-Dashboard presents one Provider editor. DM (Direct Model / HTTP) and CLI are
-connection methods of the same resource; CLI installation appears inside its
-selected Provider, followed by configuration, model verification and grants.
-Installation never becomes an independent product endpoint. Administrators
-retain the familiar Provider configuration fields and model editor.
+Dashboard uses the AgentBox executor/profile structure described in
+[the adaptation contract](provider-cli-authentication/agentbox-adaptation.md).
+DM (Direct Model / HTTP) selects a model connection. CLI selects an installed
+adapter, then a named Provider profile belonging to it. One searchable dropdown
+selects the adapter; selecting a missing automatically installable CLI starts its installation. That dropdown
+item's background carries real download/install progress, with a text percentage,
+keyboard selection and retry on failure. Installed options select their existing
+configuration without reinstalling. There is no separate installer list or
+installation card.
+
+Only the selected Provider has an editor. Connection, models, user access and
+actual-call verification are compact sections of that editor. A connection draft
+survives section changes and install polling; another Provider or administrator
+session discards it. Installation, account connection and actual model response
+remain distinct facts. Account connection follows
+[the CLI authentication contract](provider-cli-authentication/README.md).
 
 The Station Provider policy also owns a global AI user allow list, independent
 of per-Provider/model grants. Both must permit an actor before catalog exposure,
@@ -91,6 +102,27 @@ and refuses to start if that migration requires an unavailable key.
 
 ## CLI ownership
 
+`AgentProvider.cli_adapter_id` explicitly binds the registered adapter while
+the Provider ID continues to identify the named configuration, grants and
+historical turns. Existing CLI rows receive that binding during startup without
+changing their IDs or versions. Unknown bindings fail admission.
+
+A profile may reference a same-owner HTTP connection by immutable
+`backend_provider_id` (its record UUID, exposed as `record_id` in management).
+The reference never copies credentials, and a recreated same-named source is
+not automatically substituted. Source models are projected with the CLI's
+capabilities. Both profile and source must authorize the actor and model;
+source identity/version participates in the runtime capability fingerprint.
+CLI-to-CLI references and mixing a reference with inline credentials/URL are
+rejected. Source deletion leaves the profile visibly unavailable for repair.
+
+Owner + adapter defaults live in `agent_cli_profile_defaults`, with a revision
+and immutable Provider pointer. The management list projects them, and the
+default update uses CAS. Profile deletion clears its default in the same
+transaction and increments the preference revision. These defaults only
+preselect new management operations; actor defaults and historical choices
+retain their explicit identities.
+
 One Station installation owns the managed Node runtime, tool packages and
 executable wrappers. Installation is independent of actor identity and
 authorization. Only administrators start jobs. Jobs are deduplicated per
@@ -108,6 +140,16 @@ The administrator UI retains TRAE CLI, Codex, Cursor and Claude Code. Missing
 adapters expose install actions, the option background shows progress, and
 failure exposes retry plus an official installation link. TRAE remains manual
 until an accepted installer is available.
+
+Codex projects the selected connection as a named `model_provider` with
+`wire_api=responses`, an explicit base URL and an environment key reference.
+Claude projects Anthropic base URL, credentials and its primary/submodel
+names. Protocol support by the upstream is proven through actual invocation,
+not inferred from an OpenAI-compatible connection label. Profile global
+prompt, argv, environment and timeout use the existing runtime configuration;
+advanced fields cannot override adapter-owned models, connection or private
+state. Corrupt stored runtime JSON fails execution rather than silently
+switching to a default configuration.
 
 ## Desktop and Federation
 

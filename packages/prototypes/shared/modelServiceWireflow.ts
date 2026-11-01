@@ -18,10 +18,13 @@ export interface WireService {
   models: { id: string; label: string; verifiedAt: number | null }[];
   grants: Record<WireActor, string[]>;
   issue: string;
+  backendId?: string;
+  runtime?: { model: string; prompt: string; args: string; environment: string; timeout: number };
 }
 export interface WireGraph {
   services: WireService[];
   installed: string[];
+  installations: Record<string, number>;
   aiActors: WireActor[];
   personalAllowed: boolean;
   offline: boolean;
@@ -29,6 +32,7 @@ export interface WireGraph {
   drafts: Record<WireActor, string>;
   replies: Record<WireActor, string>;
   revision: number;
+  profileDefaults: Record<string, string>;
 }
 const KEY = 'peers-model-service-wireflow-draft-v2';
 const EVENT = 'peers-model-service-wireflow-changed';
@@ -49,9 +53,9 @@ export function initialWireGraph(): WireGraph {
       service('claude', 'Claude', 'claude', 'cli'),
       service('ark', 'ByteDance Ark', 'ark', 'api'),
     ],
-    installed: ['codex', 'trae', 'claude'], aiActors: ['alice', 'bob'], personalAllowed: false, offline: false,
+    installed: ['codex', 'trae', 'claude'], installations: {}, aiActors: ['alice', 'bob'], personalAllowed: false, offline: false,
     defaults: { alice: null, bob: null }, drafts: { alice: '', bob: '' },
-    replies: { alice: '', bob: '' }, revision: 0,
+    replies: { alice: '', bob: '' }, revision: 0, profileDefaults: {},
   };
 }
 export function isModelWireflow(): boolean {
@@ -61,7 +65,7 @@ export function isModelWireflow(): boolean {
 export function loadWireGraph(): WireGraph {
   try {
     const parsed = JSON.parse(localStorage.getItem(KEY) ?? 'null') as WireGraph | null;
-    if (parsed && Array.isArray(parsed.services) && parsed.defaults && parsed.drafts) return parsed;
+    if (parsed && Array.isArray(parsed.services) && parsed.defaults && parsed.drafts) return { ...parsed, installations: parsed.installations ?? {}, profileDefaults: parsed.profileDefaults ?? {} };
   } catch { /* A damaged draft is reset, never read as an available service. */ }
   return initialWireGraph();
 }
@@ -90,6 +94,7 @@ function editService(id: string, edit: (item: WireService) => WireService): void
   }));
 }
 export function serviceStep(graph: WireGraph, item: WireService): number {
+  item = resolveWireService(graph, item);
   if (item.kind === 'cli' && !graph.installed.includes(item.vendor)) return 0;
   if (!item.configured || item.connection !== 'connected') return 1;
   if (!item.models.some((entry) => entry.verifiedAt !== null)) return 2;
@@ -98,17 +103,32 @@ export function serviceStep(graph: WireGraph, item: WireService): number {
 }
 export function visibleModels(graph: WireGraph, actor: WireActor) {
   if (!graph.aiActors.includes(actor)) return [];
-  return graph.services.flatMap((item) => {
+  return graph.services.flatMap((record) => {
+    const item = resolveWireService(graph, record);
+    const source = graph.services.find((entry) => entry.id === item.backendId);
     if (item.owner !== 'station' && (item.owner !== actor || !graph.personalAllowed)) return [];
     if (item.connection !== 'connected' || (item.kind === 'cli' && !graph.installed.includes(item.vendor))) return [];
     return item.models.filter((entry) => entry.verifiedAt !== null
-      && (item.owner === actor || item.grants[actor].includes(entry.id)))
+      && (item.owner === actor || item.grants[actor].includes(entry.id))
+      && (!item.backendId || source?.grants[actor].includes(entry.id)))
       .map((entry) => ({ ...entry, key: `${item.id}:${entry.id}`, serviceId: item.id,
         serviceLabel: item.label, personal: item.owner !== 'station' }));
   });
 }
 export function installWireRuntime(vendor: string): void {
-  changeWireGraph((graph) => ({ ...graph, installed: [...new Set([...graph.installed, vendor])] }));
+  const graph = loadWireGraph();
+  if (graph.offline || graph.installed.includes(vendor) || graph.installations[vendor]) return;
+  changeWireGraph((current) => ({ ...current, installations: { ...current.installations, [vendor]: Date.now() } }));
+}
+export function advanceWireInstallations(): void {
+  const graph = loadWireGraph();
+  if (graph.offline || !Object.keys(graph.installations).length) return;
+  changeWireGraph((current) => {
+    const completed = Object.entries(current.installations)
+      .filter(([, started]) => Date.now() - started >= 6000).map(([vendor]) => vendor);
+    return { ...current, installed: [...new Set([...current.installed, ...completed])],
+      installations: Object.fromEntries(Object.entries(current.installations).filter(([vendor]) => !completed.includes(vendor))) };
+  });
 }
 export function saveWireAPI(id: string): void {
   editService(id, (item) => ({ ...item, configured: true, connection: 'stored',
@@ -137,14 +157,42 @@ export function finishWireLogin(id: string, result: 'success' | 'failed' | 'canc
 }
 export function verifyWireModel(id: string, modelId: string, succeed = true): void {
   editService(id, (item) => {
+    item = resolveWireService(loadWireGraph(), item);
     if (item.connection !== 'connected') return item;
     return { ...item, issue: succeed ? '' : '调用失败：演示额度不足。输入与连接已保留，可以重试。',
       models: item.models.map((entry) => entry.id === modelId
         ? { ...entry, verifiedAt: succeed ? Date.now() : null } : entry) };
   });
 }
+export function resolveWireService(graph: WireGraph, item: WireService): WireService {
+  if (!item.backendId) return item;
+  const source = graph.services.find((entry) => entry.id === item.backendId && entry.kind === 'api' && entry.owner === item.owner);
+  return { ...item, connection: source?.connection === 'connected' ? 'connected' : 'disconnected',
+    models: (source?.models || []).map((entry) => ({ ...entry,
+      verifiedAt: item.models.find((stored) => stored.id === entry.id)?.verifiedAt ?? null })),
+    issue: source?.connection === 'connected' ? item.issue : '模型连接不可用，请管理连接或显式选择其他来源。' };
+}
+export function addWireProfile(adapter: string, name: string): string {
+  const id = `${adapter}-${Date.now()}`;
+  changeWireGraph((graph) => ({ ...graph, services: [...graph.services, service(id, name, adapter, 'cli')] }));
+  return id;
+}
+export function saveWireProfile(id: string, label: string, backendId: string, runtime: NonNullable<WireService['runtime']>, revision: number): boolean {
+  if (loadWireGraph().services.find((item) => item.id === id)?.generation !== revision) return false;
+  editService(id, (item) => ({ ...item, label, backendId, runtime, generation: item.generation + 1,
+    models: item.backendId === backendId ? item.models : [], issue: '' }));
+  return true;
+}
+export function defaultWireProfile(adapter: string, id: string): void {
+  changeWireGraph((graph) => ({ ...graph, profileDefaults: { ...graph.profileDefaults, [adapter]: id } }));
+}
+export function removeWireProfile(id: string): void {
+  changeWireGraph((graph) => ({ ...graph, services: graph.services.filter((item) => item.id !== id),
+    profileDefaults: Object.fromEntries(Object.entries(graph.profileDefaults).filter(([, value]) => value !== id)) }));
+}
 export function publishWireModels(id: string, actors: WireActor[], ids: string[]): void {
   editService(id, (item) => {
+    item = resolveWireService(loadWireGraph(), item);
     const allowed = ids.filter((modelId) => item.models.some((entry) =>
       entry.id === modelId && entry.verifiedAt !== null));
     if (item.owner !== 'station' || item.connection !== 'connected' || !allowed.length) return item;

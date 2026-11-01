@@ -78,8 +78,16 @@ The executor refuses runtime configuration that overrides private directories,
 PATH, shell hooks, loader settings or credentials. Selected model and effort
 are passed as adapter arguments, independent of administrator startup options.
 Credential variables come only from the owner-bound encrypted envelope:
-`CODEX_API_KEY`, `CURSOR_API_KEY` or `ANTHROPIC_API_KEY`. They are not persisted
+`CODEX_API_KEY`, `CURSOR_API_KEY` or `ANTHROPIC_API_KEY` (also projected to
+`ANTHROPIC_AUTH_TOKEN` by the Claude adapter). Referenced model connections
+retain their own envelope; no key is copied into a CLI profile. They are not persisted
 in runtime configuration or exposed in consumer projections.
+
+The CLI backend projector exclusively generates Codex Responses configuration
+and Claude Anthropic endpoint/model variables. User-supplied argv/env cannot
+override these fields, private configuration paths or prompt/session identity.
+Installed adapter identity is independent of a named profile identity; state
+is isolated per actor and profile while installation deduplicates by adapter.
 
 Private directories isolate application state. They are not an operating
 system sandbox against hostile executable code.

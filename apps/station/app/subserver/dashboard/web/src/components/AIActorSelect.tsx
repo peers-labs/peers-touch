@@ -5,8 +5,8 @@ import { getAuthEpoch } from '../api/client';
 import { t } from '../i18n';
 
 /** Reuses Dashboard's actor directory; values are canonical actor PTIDs. */
-export default function AIActorSelect({ value, onChange, multiple = false, label }: {
-  value: string | string[]; onChange: (value: string | string[]) => void; multiple?: boolean; label: string;
+export default function AIActorSelect({ value, onChange, multiple = false, label, disabled = false }: {
+  value: string | string[]; onChange: (value: string | string[]) => void; multiple?: boolean; label: string; disabled?: boolean;
 }) {
   const [search, setSearch] = useState('');
   const [options, setOptions] = useState<Array<{ value: string; label: string }>>([]);
@@ -36,7 +36,7 @@ export default function AIActorSelect({ value, onChange, multiple = false, label
     <div className="ai-actor-select">
       <Select aria-label={label} placeholder={t('ai.chooseUser')} mode={multiple ? 'multiple' : undefined}
         showSearch={{ filterOption: false, onSearch: setSearch }} loading={loading}
-        options={options} value={value || undefined} onChange={onChange} style={{ width: '100%' }} />
+        options={options} value={value || undefined} onChange={onChange} disabled={disabled} style={{ width: '100%' }} />
       {failed && <Typography.Text type="danger">{t('ai.usersUnavailable')}</Typography.Text>}
     </div>
   );

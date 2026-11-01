@@ -115,6 +115,9 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err = persistence.MigrateProviderOwnerIndexes(rds); err != nil {
 		return fmt.Errorf("migrate provider owner indexes: %w", err)
 	}
+	if err = service.MigrateCLIAdapterIdentities(rds); err != nil {
+		return fmt.Errorf("migrate CLI adapter identities: %w", err)
+	}
 	if err = service.NewCredentialConfigService().MigrateSecrets(ctx); err != nil {
 		return err
 	}

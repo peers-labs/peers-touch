@@ -140,7 +140,10 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"s
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(args) != "exec\n--json\n--model\nchosen-model\n-c\nmodel_reasoning_effort=\"high\"\n-\n" {
+	if !strings.Contains(string(args), "--model\nchosen-model\n-c\nmodel_reasoning_effort=\"high\"\n") ||
+		!strings.Contains(string(args), "model_providers.station.env_key=\"CODEX_API_KEY\"") ||
+		!strings.Contains(string(args), "model_providers.station.wire_api=\"responses\"") ||
+		!strings.HasSuffix(string(args), "\n-\n") || strings.Contains(string(args), "owner-bound-test-key") {
 		t.Fatalf("selected model did not reach adapter arguments: %q", args)
 	}
 	credential, err := os.ReadFile(credentialPath)

@@ -97,6 +97,7 @@ type ExecuteRequest struct {
 	StartupArgs    []string
 	Environment    map[string]string
 	Credentials    map[string]string
+	BackendURL     string
 	Timeout        time.Duration
 	SystemPrompt   string
 	Messages       []domain.Message
@@ -179,6 +180,10 @@ func (e *Executor) Execute(
 	if err != nil {
 		return nil, &ExecutionError{Kind: FailureInvalidCommand, Cause: err}
 	}
+	backendArgs, backendEnv, err := backendLaunch(adapter, req.BackendURL, req.Model, req.Credentials)
+	if err != nil {
+		return nil, &ExecutionError{Kind: FailureInvalidCommand, Cause: err}
+	}
 
 	sessionID := e.WorkspaceManager.SessionID()
 	workDir, err := e.WorkspaceManager.Create(req.ActorPTID, sessionID)
@@ -197,6 +202,7 @@ func (e *Executor) Execute(
 	args := append([]string{}, req.Command[1:]...)
 	args = appendStartupArgs(args, req.StartupArgs, delivery)
 	args = appendStartupArgs(args, modelSelectionArgs(adapter, req.Model, req.Effort), delivery)
+	args = appendStartupArgs(args, backendArgs, delivery)
 	if delivery == PromptViaArgument {
 		args = append(args, prompt)
 	}
@@ -225,6 +231,7 @@ func (e *Executor) Execute(
 		"PEERS_TOUCH_AGENT_WORKSPACE="+workDir,
 	)
 	process.Env = append(process.Env, credentials...)
+	process.Env = append(process.Env, backendEnv...)
 	if len(req.AllowedRoots) > 0 {
 		process.Env = append(
 			process.Env,
@@ -602,7 +609,11 @@ func ValidateStartupArgs(arguments []string) error {
 		}
 		flag := strings.SplitN(argument, "=", 2)[0]
 		switch flag {
-		case "--model", "-m", "--effort", "--config", "-c", "--api-key":
+		case "--model", "-m", "--effort", "--config", "-c", "--api-key",
+			"--settings", "--setting-sources", "--mcp-config", "--append-system-prompt",
+			"--system-prompt", "--system-prompt-file", "--append-system-prompt-file",
+			"--resume", "--continue", "-r", "--session-id", "--profile", "--config-dir",
+			"--add-dir", "--directory", "--cwd", "--cd", "-C":
 			return fmt.Errorf("CLI startup arguments cannot override model selection or credentials")
 		}
 		if !strings.HasPrefix(flag, "--") && (strings.HasPrefix(flag, "-m") || strings.HasPrefix(flag, "-c")) {

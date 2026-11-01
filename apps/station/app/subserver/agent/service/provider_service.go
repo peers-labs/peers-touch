@@ -501,7 +501,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	}
 	if model == "" && providerType == providerRuntimeCLI {
 		model = EffectiveProviderRuntimeConfig(
-			catalog.Find(provider.Name),
+			providerCatalog(provider),
 			provider,
 		).GetDefaultModel()
 	}
@@ -685,7 +685,7 @@ func (s *ProviderService) callCLI(
 			"cli_executor_unavailable",
 		)
 	}
-	registered := catalog.Find(provider.Name)
+	registered := providerCatalog(provider)
 	if registered == nil ||
 		!strings.EqualFold(strings.TrimSpace(registered.RuntimeKind), providerRuntimeCLI) ||
 		!strings.EqualFold(strings.TrimSpace(registered.Protocol), providerRuntimeCLI) ||
@@ -702,10 +702,30 @@ func (s *ProviderService) callCLI(
 		)
 	}
 
-	runtimeConfig := EffectiveProviderRuntimeConfig(registered, provider)
-	apiKey, credentialErr := providerCredentialAPIKey(provider)
+	runtimeConfig, err := readProviderRuntimeConfig(registered, provider)
+	if err != nil {
+		return nil, err
+	}
+	credentialOwner := provider
+	if provider.BackendProviderID != "" {
+		// Resolve again at dispatch so source deletion, disablement and grant
+		// withdrawal cannot reuse an earlier admission decision.
+		providers := NewProviderConfigService()
+		if err := providers.Authorize(ctx, req.UserID, provider, model); err != nil {
+			return nil, err
+		}
+		credentialOwner, err = providers.CLIBackend(ctx, provider)
+		if err != nil {
+			return nil, err
+		}
+	}
+	apiKey, credentialErr := providerCredentialAPIKey(credentialOwner)
 	if credentialErr != nil {
 		return nil, errcode.NewProviderCredentialMissing(provider.Name)
+	}
+	systemPrompt := req.SystemPrompt
+	if runtimeConfig.GlobalPrompt != "" {
+		systemPrompt = runtimeConfig.GlobalPrompt + "\n\n" + systemPrompt
 	}
 	result, err := s.cliExecutor.Execute(ctx, &providercli.ExecuteRequest{
 		ActorPTID:      req.UserID,
@@ -718,10 +738,11 @@ func (s *ProviderService) callCLI(
 		StartupArgs:    runtimeConfig.GetStartupArgs(),
 		Environment:    runtimeConfig.GetEnvironment(),
 		Credentials:    cliCredentialEnvironment(registered, apiKey),
+		BackendURL:     credentialOwner.BaseURL,
 		Timeout: time.Duration(
 			runtimeConfig.GetTimeoutSeconds(),
 		) * time.Second,
-		SystemPrompt: req.SystemPrompt,
+		SystemPrompt: systemPrompt,
 		Messages:     req.Messages,
 		AllowedRoots: req.AllowedRoots,
 	}, func(deltaCtx context.Context, delta providercli.Delta) error {

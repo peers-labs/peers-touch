@@ -86,3 +86,16 @@ func TestProviderModelDiscoveryReplacesCatalogOnlyAfterSuccess(t *testing.T) {
 		t.Fatalf("successful discovery did not replace the snapshot: %+v %v", stored, storedObservedAt)
 	}
 }
+
+func TestProviderModelDiscoveryRejectsCorruptProfileBeforeLaunching(t *testing.T) {
+	discovery := NewProviderModelDiscoveryService(NewRuntimeModelCatalog())
+	discovery.discover = func(context.Context, providercli.ModelDiscoveryRequest) ([]providercli.DiscoveredModel, error) {
+		t.Fatal("corrupt configuration reached the discovery process")
+		return nil, nil
+	}
+	record := &persistence.AgentProvider{ActorPTID: "actor-a", Name: "team-cli", Config: []byte(`{"timeout_seconds":"invalid"}`)}
+	provider := &catalog.CatalogProvider{ID: record.Name, RuntimeKind: "cli", ModelCatalogArgv: []string{"cli", "models"}}
+	if _, _, err := discovery.Discover(context.Background(), "actor-a", provider, record); err == nil {
+		t.Fatal("corrupt profile was silently replaced by defaults")
+	}
+}

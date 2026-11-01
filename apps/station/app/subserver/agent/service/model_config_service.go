@@ -226,6 +226,9 @@ func (s *ModelConfigService) Create(ctx context.Context, req ModelCreateRequest)
 			First(&provider, "name = ?", req.ProviderID).Error; err != nil {
 			return err
 		}
+		if provider.BackendProviderID != "" {
+			return invalidCLIProfile("model definitions belong to the referenced connection")
+		}
 		var count int64
 		if err := owner.Query(tx.Model(&persistence.AgentModel{})).
 			Where("provider_id = ? AND model_id = ?", req.ProviderID, req.ModelID).Count(&count).Error; err != nil {
@@ -332,6 +335,9 @@ func (s *ModelConfigService) Update(ctx context.Context, req ModelUpdateRequest)
 		if err := owner.Query(tx).Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&provider, "name = ?", req.ProviderID).Error; err != nil {
 			return err
+		}
+		if provider.BackendProviderID != "" {
+			return invalidCLIProfile("model definitions belong to the referenced connection")
 		}
 		result := tx.Model(&model).Where("version = ?", req.Version).Updates(updates)
 		if result.Error != nil {

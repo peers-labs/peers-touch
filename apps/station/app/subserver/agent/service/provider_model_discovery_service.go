@@ -53,7 +53,10 @@ func (s *ProviderModelDiscoveryService) Discover(
 	if record == nil || providerOwner(record).Validate() != nil {
 		return nil, time.Time{}, fmt.Errorf("model discovery requires a configured provider owner")
 	}
-	config := EffectiveProviderRuntimeConfig(provider, record)
+	config, err := readProviderRuntimeConfig(provider, record)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	stateRoot := environment.ToolRoot(filepath.Join(providercli.WorkspaceBaseDir(), "station-control"), provider.ID)
 	if actorPTID != "" {
 		var err error

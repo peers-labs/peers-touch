@@ -15,8 +15,9 @@ export default function AIModelVerification({ provider }: { provider: Provider }
       <Typography.Title level={5}>{t('ai.verifyAndUse')}</Typography.Title>
       <Typography.Paragraph type="secondary">{t('ai.verifyHint')}</Typography.Paragraph>
       <div className="ai-actions">
-        <AIActorSelect label={t('ai.verifyUser')} value={actor} onChange={(value) => { setActor(value as string); setVerified(false); }} />
+        <AIActorSelect label={t('ai.verifyUser')} value={actor} disabled={busy} onChange={(value) => { setActor(value as string); setVerified(false); }} />
         <Select aria-label={t('ai.verifyModel')} placeholder={t('ai.chooseModel')} value={model || undefined}
+          disabled={busy}
           options={provider.models.filter((m) => m.enabled && m.type === 'chat').map((m) => ({ value: m.id, label: m.display_name || m.id }))}
           onChange={(next) => { setModel(next); setVerified(false); }} />
         <Button loading={busy} disabled={!actor || !model || !provider.enabled} onClick={() => {

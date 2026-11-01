@@ -105,6 +105,18 @@ ddd_layers:
       - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
 
 capabilities:
+  - id: agent.provider.management.cli-profile-default
+    domain_owner: station.agent
+    truth_owner: agent.provider
+    exposure: internal
+    canonical_route: { method: POST, path: /dashboard/api/ai/cli/profile/default }
+    request_proto: peers_touch.model.agent.v1.SetCLIProfileDefaultRequest
+    response_proto: peers_touch.model.agent.v1.SetCLIProfileDefaultResponse
+    truth_stores: [agent_providers, agent_cli_profile_defaults]
+    allowed_dependencies: [dashboard.admin_session.validate]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: agent.provider.management.list
     domain_owner: station.agent
     truth_owner: agent.provider
@@ -112,7 +124,7 @@ capabilities:
     canonical_route: { method: POST, path: /dashboard/api/ai/provider/list }
     request_proto: peers_touch.model.agent.v1.ListProvidersRequest
     response_proto: peers_touch.model.agent.v1.ListProvidersResponse
-    truth_stores: [agent_providers]
+    truth_stores: [agent_providers, agent_cli_profile_defaults]
     allowed_dependencies: [dashboard.admin_session.validate]
     forbidden_aliases: []
     superseded_symbols: []
@@ -160,7 +172,7 @@ capabilities:
     canonical_route: { method: POST, path: /dashboard/api/ai/provider/delete }
     request_proto: peers_touch.model.agent.v1.DeleteProviderRequest
     response_proto: peers_touch.model.agent.v1.DeleteProviderResponse
-    truth_stores: [agent_providers]
+    truth_stores: [agent_providers, agent_cli_profile_defaults]
     allowed_dependencies: [dashboard.admin_session.validate]
     forbidden_aliases: []
     superseded_symbols: []

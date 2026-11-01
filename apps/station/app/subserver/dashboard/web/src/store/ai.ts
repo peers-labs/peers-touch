@@ -1,9 +1,10 @@
 import { create } from 'zustand';
-import { ai, aiError, type Access, type Credential, type Install, type ModelRecord, type Policy, type Provider } from '../api/ai';
+import { ai, aiError, type Access, type CLIProfileDefault, type Credential, type Install, type ModelRecord, type Policy, type Provider } from '../api/ai';
 import { getAuthEpoch, onAuthChange } from '../api/client';
 
 interface AIState {
   providers: Provider[];
+  profileDefaults: CLIProfileDefault[];
   policy: Policy | null;
   selected: string;
   detail: Provider | null;
@@ -22,8 +23,9 @@ interface AIState {
 let selectionRequest = 0;
 let refreshRequest = 0;
 let pollEpoch: number | null = null;
+const installRequests = new Map<string, symbol>();
 export const useAIStore = create<AIState>((set, get) => ({
-  providers: [], policy: null, selected: '', detail: null, models: [],
+  providers: [], profileDefaults: [], policy: null, selected: '', detail: null, models: [],
   access: null, credential: null, installs: {}, loading: false, error: '',
   async refresh() {
     const request = ++refreshRequest;
@@ -33,7 +35,7 @@ export const useAIStore = create<AIState>((set, get) => ({
       const [catalog, policy] = await Promise.all([ai.list(), ai.policy()]);
       if (request !== refreshRequest || auth !== getAuthEpoch()) return;
       const providers = catalog.providers || [];
-      set({ providers, policy: policy.policy, loading: false });
+      set({ providers, profileDefaults: catalog.cli_profile_defaults || [], policy: policy.policy, loading: false });
       const id = providers.some((p) => p.id === get().selected) ? get().selected : providers[0]?.id;
       if (id) await get().select(id);
       else set({ selected: '', detail: null, models: [], access: null, credential: null });
@@ -64,13 +66,18 @@ export const useAIStore = create<AIState>((set, get) => ({
     const auth = getAuthEpoch();
     if (pollEpoch === auth) return;
     pollEpoch = auth;
+    const observed = get().installs;
     try {
-      const entries = await Promise.all(get().providers.filter((p) => p.runtime_kind === 'cli').map(async (p) =>
-        [p.id, await ai.installStatus(p.id)] as const));
+      const adapters = new Set(get().providers.filter((p) => p.runtime_kind === 'cli').map((p) => p.cli_adapter_id || p.id));
+      const entries = await Promise.all([...adapters].map(async (id) =>
+        [id, await ai.installStatus(id)] as const));
       if (auth !== getAuthEpoch()) return;
       const previous = get().installs;
-      const installs = Object.fromEntries(entries);
-      const finished = entries.some(([id, job]) => previous[id]?.install_state === 'installing' && job.install_state === 'ready');
+      // A read started before a click must not overwrite the pending install,
+      // even when its stale "missing" response arrives after the write.
+      const accepted = entries.filter(([id]) => !installRequests.has(id) && observed[id] === previous[id]);
+      const installs = { ...previous, ...Object.fromEntries(accepted) };
+      const finished = accepted.some(([id, job]) => previous[id]?.install_state === 'installing' && job.install_state === 'ready');
       set({ installs });
       if (finished) await get().refresh();
     } catch {
@@ -78,14 +85,31 @@ export const useAIStore = create<AIState>((set, get) => ({
     } finally { if (pollEpoch === auth) pollEpoch = null; }
   },
   async startInstall(id) {
+    if (installRequests.has(id) || get().installs[id]?.install_state === 'installing') return;
+    const request = Symbol(id);
+    installRequests.set(id, request);
     const auth = getAuthEpoch();
+    const previous = get().installs[id];
+    const provider = get().providers.find((p) => p.id === id);
+    set((state) => ({ installs: { ...state.installs, [id]: {
+      install_state: 'installing', phase: 'runtime', percent: 0,
+      install_supported: provider?.install_supported ?? false,
+      manual_install_url: provider?.manual_install_url || '',
+    } }, error: '' }));
     try {
       const job = await ai.install(id);
       if (auth !== getAuthEpoch()) return;
-      set((state) => ({ installs: { ...state.installs, [id]: job }, error: '' }));
+      installRequests.delete(id);
+      set((state) => ({ installs: { ...state.installs, [id]: { ...state.installs[id], ...job } }, error: '' }));
       await get().pollInstalls();
     } catch (error) {
-      if (auth === getAuthEpoch()) set({ error: aiError(error) });
+      if (auth === getAuthEpoch()) set((state) => ({ installs: { ...state.installs, [id]: {
+        ...previous, install_state: 'failed',
+        install_supported: previous?.install_supported ?? provider?.install_supported ?? false,
+        manual_install_url: previous?.manual_install_url || provider?.manual_install_url || '',
+      } }, error: aiError(error) }));
+    } finally {
+      if (installRequests.get(id) === request) installRequests.delete(id);
     }
   },
 }));
@@ -93,8 +117,9 @@ export const useAIStore = create<AIState>((set, get) => ({
 onAuthChange(() => {
   selectionRequest++;
   refreshRequest++;
+  installRequests.clear();
   useAIStore.setState({
-    providers: [], policy: null, selected: '', detail: null, models: [], access: null,
+    providers: [], profileDefaults: [], policy: null, selected: '', detail: null, models: [], access: null,
     credential: null, installs: {}, loading: false, error: '',
   });
 });
