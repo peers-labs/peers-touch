@@ -191,7 +191,16 @@ h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
   font-size: 11.5px; color: var(--sk-text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.sk-chat-head-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.sk-chat-head-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+/* Chrome icons stay quiet line glyphs; "panel open" is an ink wash, never a
+   filled black block. */
+.sk-chat-head-actions .pt-icon-button.is-active {
+  background: color-mix(in srgb, var(--sk-primary) 9%, transparent);
+  color: var(--sk-text);
+}
+.sk-chat-head-actions .pt-icon-button.is-active:hover {
+  background: color-mix(in srgb, var(--sk-primary) 13%, transparent);
+}
 @media (min-width: 721px) {
   /* Persistent two-pane: name starts flush without a back slot */
   .sk-chat-head { padding-left: 20px; }

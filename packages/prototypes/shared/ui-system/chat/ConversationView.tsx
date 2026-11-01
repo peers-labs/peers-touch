@@ -127,7 +127,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   return (
     <section className="sk-conv-view" aria-label={t('conv.aria', { name: conversation.name })}>
       <ConversationHeader conversation={conversation}
-        pinned={!!conversation.pinned} muted={!!conversation.muted}
+        infoOpen={infoOpen}
         onBack={onBack}
         onAudio={() => onStartCall('audio')}
         onVideo={() => onStartCall('video')}

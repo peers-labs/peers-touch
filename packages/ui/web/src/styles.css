@@ -56,6 +56,13 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-menu{min-width:180px;padding:var(--pt-space-xxs)}
 .pt-menu-item{width:100%;justify-content:flex-start;text-align:left}
 .pt-menu-item .pt-button-content{justify-content:flex-start}
+/* Menu rows are a flat list, even when unavailable: disabled never paints a
+   bordered chip (that reads as a nested button). Unavailability is carried by
+   muted text + aria-disabled/reason only. */
+.pt-menu .pt-menu-item[aria-disabled='true']{
+  background:transparent;border-color:transparent;color:var(--pt-muted);pointer-events:none
+}
+.pt-menu .pt-menu-item[aria-disabled='true']:hover{background:transparent;border-color:transparent}
 .pt-modal-layer{position:fixed;inset:0;background:var(--pt-scrim);display:flex;align-items:center;justify-content:center;padding:var(--pt-space-lg);z-index:1}
 .pt-dialog{position:relative;max-height:calc(100dvh - var(--pt-space-xl));max-width:100%;display:flex;flex-direction:column;border-radius:var(--pt-radius-xl)}
 .pt-dialog-header{display:flex;align-items:center;gap:var(--pt-space-xs);padding:var(--pt-space-md);flex-shrink:0;border-bottom:1px solid var(--pt-border)}

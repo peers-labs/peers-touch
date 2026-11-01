@@ -21,11 +21,10 @@ import { useT, locTag } from '../prefs';
    (the avatar already lives beside each peer bubble); the back chevron is
    rendered but CSS-hidden above the phone breakpoint (persistent two-pane). */
 
-export function ConversationHeader({ conversation, pinned, muted,
+export function ConversationHeader({ conversation, infoOpen,
   onBack, onAudio, onVideo, onInfo }: {
   conversation: Conversation;
-  pinned: boolean;
-  muted: boolean;
+  infoOpen?: boolean;
   onBack: () => void;
   onAudio: () => void;
   onVideo: () => void;
@@ -34,7 +33,7 @@ export function ConversationHeader({ conversation, pinned, muted,
   const { t } = useT();
   const subtitle = conversation.kind === 'group'
     ? t('conv.members', { n: conversation.members?.length ?? 0 })
-    : muted
+    : conversation.muted
       ? t('conv.muted')
       : conversation.online === false ? t('conv.offline') : t('conv.online');
   return (
@@ -52,8 +51,10 @@ export function ConversationHeader({ conversation, pinned, muted,
           emphasis="quiet" onActivate={onAudio} />
         <IconButton iconId="video" iconSize={16} label={t('conv.callVideo')} actionId="chat.call-video"
           emphasis="quiet" onActivate={onVideo} />
-        <IconButton iconId="info" iconSize={16} label={t('conv.info')} actionId="chat.open-info"
-          emphasis={pinned || muted ? 'primary' : 'quiet'} onActivate={onInfo} />
+        <IconButton iconId="info" iconSize={16} label={t('conv.info')}
+          actionId="chat.open-info"
+          className={infoOpen ? 'is-active' : ''}
+          emphasis="quiet" aria-expanded={infoOpen} onActivate={onInfo} />
       </div>
     </header>
   );

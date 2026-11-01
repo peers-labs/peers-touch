@@ -2555,6 +2555,154 @@
       ]
     },
     {
+      "id": "ui.prototype.north-star.message-menu-flat-disabled",
+      "title": "增量30：消息菜单是扁平行表，超时不可用项只变灰，不渲染描边小盒",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-message-id='m3'] [data-action='more']"
+        },
+        {
+          "op": "wait",
+          "ms": 180
+        }
+      ],
+      "oracles": [
+        {
+          "id": "menu-open",
+          "type": "exists",
+          "scope": "global",
+          "target": ".pt-menu [role='menuitem'][aria-disabled='true']"
+        },
+        {
+          "id": "disabled-no-border",
+          "type": "computedStyleNone",
+          "scope": "global",
+          "target": ".pt-menu",
+          "prop": "borderTopColor",
+          "banned": [
+            "rgb(203,213,206)",
+            "rgb(211,221,214)"
+          ]
+        },
+        {
+          "id": "disabled-flat-bg",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".pt-menu [role='menuitem'][aria-disabled='true']",
+          "prop": "backgroundColor",
+          "all": true,
+          "equals": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "id": "disabled-muted-text",
+          "type": "exists",
+          "scope": "global",
+          "target": ".pt-menu [role='menuitem'][aria-disabled='true']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.header-icon-no-solid-fill",
+      "title": "增量30：窗框头部图标钮全为 quiet 线条；资料卡打开时仅水墨 wash，非黑块",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "wait",
+          "ms": 250
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "three-quiet-icons",
+          "type": "count",
+          "target": ".sk-chat-head-actions .pt-icon-button",
+          "equals": 3
+        },
+        {
+          "id": "no-primary-emphasis",
+          "type": "missing",
+          "target": ".sk-chat-head-actions .pt-button[data-emphasis='primary']"
+        },
+        {
+          "id": "active-not-solid-ink",
+          "type": "computedStyleNone",
+          "target": "[data-action-id='chat.open-info']",
+          "prop": "backgroundColor",
+          "props": [
+            "backgroundColor"
+          ],
+          "banned": [
+            "rgb(13,16,13)"
+          ]
+        },
+        {
+          "id": "active-flag",
+          "type": "attr",
+          "target": "[data-action-id='chat.open-info']",
+          "attr": "aria-expanded",
+          "equals": "true"
+        },
+        {
+          "id": "square-geometry",
+          "type": "computedStyleNone",
+          "target": "[data-action-id='chat.open-info']",
+          "prop": "borderRadius",
+          "equals": "50%"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.info-close']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.profile-search-entry",
       "title": "增量21：资料卡「查找聊天记录」打开会话内搜索",
       "level": "L3_DYNAMIC",
