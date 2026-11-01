@@ -2225,6 +2225,330 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.contact-rail-search",
+      "title": "增量33：轨头搜索就地过滤联系人请求与好友，搜索态隐藏四个分区",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-chat-subnav .pt-button:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.rail-search']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "search-field-expanded",
+          "oracle": {
+            "type": "exists",
+            "target": "[data-rail-search-value]"
+          }
+        },
+        {
+          "op": "type",
+          "target": "[data-rail-search-value]",
+          "value": "阿砚"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "searching-flag",
+          "type": "attr",
+          "target": ".sk-contacts",
+          "attr": "data-searching",
+          "equals": "true"
+        },
+        {
+          "id": "matched-request",
+          "type": "exists",
+          "target": "[data-request-id='fr-1']"
+        },
+        {
+          "id": "unmatched-request-hidden",
+          "type": "missing",
+          "target": "[data-request-id='fr-2']"
+        },
+        {
+          "id": "unmatched-friend-hidden",
+          "type": "missing",
+          "target": "[data-contact-id='p-chenyu']"
+        },
+        {
+          "id": "sections-flattened",
+          "type": "missing",
+          "target": "[data-contact-section]"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.rail-search-close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.contact-rail-search-chats",
+      "title": "增量33：轨头搜索在消息 tab 就地过滤会话，关闭后恢复全量",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.rail-search']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "type",
+          "target": "[data-rail-search-value]",
+          "value": "种子交换"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "one-session-left",
+          "type": "count",
+          "target": ".sk-conv-list > .sk-conv-item",
+          "equals": 1
+        },
+        {
+          "id": "matched-name",
+          "type": "textContains",
+          "target": ".sk-conv-list > .sk-conv-item:first-child",
+          "contains": "种子交换群"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.rail-search-close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.contact-sections-collapse",
+      "title": "增量33：联系人四段可折叠，历史请求默认收起，展开后记录可见",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-chat-subnav .pt-button:nth-child(2)"
+        },
+        {
+          "op": "expect",
+          "id": "history-collapsed-default",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-contact-section='history']",
+            "attr": "data-collapsed",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "history-body-hidden",
+          "oracle": {
+            "type": "computedStyle",
+            "target": "[data-contact-section='history'] .sk-section-body",
+            "prop": "display",
+            "equals": "none"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "friends-expanded-default",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-contact-section='friends']",
+            "attr": "data-collapsed",
+            "equals": "false"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='contacts.section.history']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "history-expanded",
+          "type": "attr",
+          "target": "[data-contact-section='history']",
+          "attr": "data-collapsed",
+          "equals": "false"
+        },
+        {
+          "id": "history-body-shown",
+          "type": "computedStyle",
+          "target": "[data-contact-section='history'] .sk-section-body",
+          "prop": "display",
+          "equals": "flex"
+        },
+        {
+          "id": "aria-expanded",
+          "type": "attr",
+          "target": "[data-action-id='contacts.section.history']",
+          "attr": "aria-expanded",
+          "equals": "true"
+        },
+        {
+          "id": "record-present",
+          "type": "exists",
+          "target": "[data-request-id='fr-3']"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.contact-history-delete",
+      "title": "增量33：历史请求记录可在 name 行直接删除，删空后分区消失",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-chat-subnav .pt-button:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='contacts.section.history']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='request.delete-fr-3']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "record-gone",
+          "type": "missing",
+          "target": "[data-request-id='fr-3']"
+        },
+        {
+          "id": "history-count-zero",
+          "type": "attr",
+          "target": ".sk-contacts",
+          "attr": "data-history-count",
+          "equals": "0"
+        },
+        {
+          "id": "section-removed",
+          "type": "missing",
+          "target": "[data-contact-section='history']"
+        },
+        {
+          "id": "incoming-untouched",
+          "type": "attr",
+          "target": ".sk-contacts",
+          "attr": "data-pending-count",
+          "equals": "2"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.contact-remove-friend",
+      "title": "增量33：好友行 hover 移除图标，确认后从联系人分区移除且计数更新",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": ".sk-chat-subnav .pt-button:nth-child(2)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='contact.remove-p-laozhou']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "confirm-open",
+          "oracle": {
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-contact-remove-confirm]"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='contact.remove-ok']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "friend-gone",
+          "type": "missing",
+          "target": "[data-contact-id='p-laozhou']"
+        },
+        {
+          "id": "friends-count-three",
+          "type": "attr",
+          "target": ".sk-contacts",
+          "attr": "data-friends-count",
+          "equals": "3"
+        },
+        {
+          "id": "friends-title-count",
+          "type": "textContains",
+          "target": ".sk-contacts",
+          "contains": "联系人 · 3"
+        }
+      ],
+      "finalizers": []
+    },
+    {
       "id": "ui.prototype.north-star.create-group-federation-block",
       "title": "增量19 建群联邦阻断：选联邦成员出警示且提交禁用；改选本站成员后恢复可提交",
       "level": "L3_DYNAMIC",

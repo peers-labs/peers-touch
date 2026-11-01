@@ -20,14 +20,18 @@
   display: grid; place-items: center; height: 100%;
 }
 
-/* Rail header: one slim row — 消息/联系人 segmented on the left and a single
-   rounded-square new-conversation control on the right. Search is not
-   duplicated here: global search lives on the outer rail (⌘K), in-chat
-   history search lives in the conversation profile. */
+/* Rail header: one slim row — 消息/联系人 segmented, an in-rail search tile
+   and a single rounded-square new-conversation control. The search tile is a
+   compact icon that expands into a field and takes over the tab space; it is
+   a local list filter. Cross-surface global search lives on the outer rail
+   (⌘K), in-chat history search lives in the conversation profile. */
 .sk-rail-header { display: flex; align-items: center; gap: 8px; padding: 2px 2px 10px; }
 .sk-rail-tabs { flex: 1 1 auto; min-width: 0; }
 .sk-chat-subnav.pt-segmented { width: 100%; white-space: nowrap; }
 .sk-subnav-label { display: inline-flex; align-items: center; gap: 5px; }
+/* Expanded in-rail search: field owns the row, close tile on the right. */
+.sk-rail-search { flex: 1 1 auto; min-width: 0; display: flex; }
+.sk-rail-search .pt-field-frame { flex: 1; min-width: 0; }
 /* Rounded-square ghost tile, never a circle; compact peers-ui sizing,
    glyph optically centered by the button content rule. */
 .sk-rail-new { color: var(--sk-text-2); flex: 0 0 auto; }
@@ -95,24 +99,62 @@
 .sk-conv-preview time { font-size: 10.5px; color: var(--sk-text-3); flex-shrink: 0; }
 .sk-conv-item:hover .sk-conv-preview time { visibility: hidden; }
 
-/* contacts: requests + list */
+/* contacts: collapsible sections + request cards + list */
 .sk-contacts { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+
+.sk-contact-section { display: flex; flex-direction: column; }
+.sk-section-toggle.pt-button {
+  margin: 6px 2px 2px; justify-content: flex-start;
+  color: var(--sk-text-2);
+}
+.sk-section-toggle .pt-button-content {
+  width: 100%; justify-content: flex-start;
+  font-size: 12.5px; font-weight: 600;
+}
+.sk-section-chevron { transition: transform .12s ease; flex-shrink: 0; }
+.sk-contact-section[data-collapsed='true'] .sk-section-chevron { transform: rotate(-90deg); }
+.sk-contact-section[data-collapsed='true'] .sk-section-body { display: none; }
+.sk-section-body { display: flex; flex-direction: column; }
+
 .sk-request-card {
-  display: flex; gap: 10px; padding: 11px 8px; margin: 0 2px;
+  display: flex; gap: 10px; padding: 9px 8px; margin: 0 2px;
   border-radius: var(--sk-radius-control);
 }
-.sk-request-card + .sk-request-card { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
-.sk-request-id { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
+.sk-section-body .sk-request-card + .sk-request-card {
+  border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent);
+}
+.sk-request-id { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .sk-request-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .sk-request-name strong { font-size: 13px; color: var(--sk-text); }
 .sk-request-greeting { font-size: 11.5px; color: var(--sk-text-3); line-height: 1.5; }
-.sk-request-actions { display: flex; gap: 8px; margin-top: 2px; }
+/* Icon-only decisions hug the name row's right edge; the person, not the
+   actions, owns the card. Desktop reveals them on row hover/focus. */
+.sk-request-decide {
+  display: flex; align-items: center; gap: 2px;
+  margin-left: auto; flex-shrink: 0;
+  opacity: 0; transition: opacity .12s ease;
+}
+.sk-request-card:hover .sk-request-decide,
+.sk-request-card:focus-within .sk-request-decide { opacity: 1; }
+.sk-decide.pt-icon-button { color: var(--sk-text-3); }
+.sk-decide.is-accept:hover {
+  color: #3f9142;
+  background: color-mix(in srgb, #3f9142 12%, transparent);
+}
+.sk-decide.is-reject:hover,
+.sk-decide.is-danger:hover {
+  color: #b0413a;
+  background: color-mix(in srgb, #b0413a 10%, transparent);
+}
 .sk-request-sent { color: var(--sk-text-3); }
 .sk-request-card.is-outgoing { background: color-mix(in srgb, var(--sk-primary) 5%, transparent); }
 .sk-request-card.is-history { opacity: .72; }
 .sk-request-card.is-history:hover { opacity: 1; }
-h2.sk-conv-title + .sk-request-card.is-outgoing,
-h2.sk-conv-title + .sk-request-card.is-history { border-top: 0; }
+
+/* Touch / narrow rails have no hover: decisions stay visible. */
+@media (hover: none), (max-width: 720px) {
+  .sk-request-decide { opacity: 1; }
+}
 
 /* create group dialog */
 .sk-group-dialog { display: flex; flex-direction: column; gap: 12px; }

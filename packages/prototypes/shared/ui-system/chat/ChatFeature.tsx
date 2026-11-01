@@ -35,6 +35,7 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
   const [messagesByConv, setMessagesByConv] = useState<Record<string, ChatMessage[]>>(SEED_MESSAGES);
   const [requests, setRequests] = useState<FriendRequest[]>(FRIEND_REQUESTS);
   const [failedRequests, setFailedRequests] = useState<Set<string>>(new Set());
+  const [removedContacts, setRemovedContacts] = useState<Set<string>>(new Set());
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
@@ -60,7 +61,7 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [sessions, prefs.locale]);
   const existingIds = useMemo(() => new Set(sessions.map(c => c.id)), [sessions]);
-  const friends = PEOPLE.filter(p => p.station === '本站');
+  const friends = PEOPLE.filter(p => p.station === '本站' && !removedContacts.has(p.id));
 
   const togglePin = (id: string) => setSessions(list =>
     list.map(c => c.id === id ? { ...c, pinned: !c.pinned } : c));
@@ -202,6 +203,14 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
   const cancelRequest = (id: string) =>
     setRequests(list => list.filter(r => r.id !== id));
 
+  // Settled history records are a local log; deleting just drops the row.
+  const deleteRequestRecord = (id: string) =>
+    setRequests(list => list.filter(r => r.id !== id));
+
+  // Contact removal is local-only in the prototype; chat history is kept.
+  const removeContact = (id: string) =>
+    setRemovedContacts(prev => new Set(prev).add(id));
+
   const reactToMessage = (messageId: string, emoji: string) => {
     if (!selectedId) return;
     setMessagesByConv(map => ({ ...map, [selectedId]: (map[selectedId] ?? []).map(message => {
@@ -288,6 +297,7 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
         requests={requests} friends={friends} selectedContactId={null}
         failedRequestIds={failedRequests}
         onAccept={acceptRequest} onReject={rejectRequest} onCancelRequest={cancelRequest}
+        onDeleteRequestRecord={deleteRequestRecord} onRemoveContact={removeContact}
         // WeChat parity: tapping a person anywhere (contacts tab, search)
         // opens their conversation directly — no intermediate profile pane.
         onSelectContact={openPerson}
