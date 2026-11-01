@@ -2,8 +2,8 @@
   "schema_version": 1,
   "diagram_type": "sequence",
   "meta": {
-    "title": "一对一语音与视频通话：SSE 信令 + WebRTC 媒体",
-    "subtitle": "呼叫/接听/挂断走 SSE 密封信封，Station 只扇出、不持有密钥；媒体走端到端 DTLS-SRTP，直连优先、TURN 兜底。",
+    "title": "一对一语音与视频通话：双 Home Station 信令 + WebRTC 媒体",
+    "subtitle": "呼叫/接听/挂断作为密封信封发到各自的 Home Station：同站走本地 EventBus，跨站经联邦实时信令路由转发，Station 只做不透明转发、不持密钥。媒体端到端 DTLS-SRTP，直连优先、TURN 兜底。",
     "locale": "zh-CN",
     "output": "peers-multicenter-architecture-20261021/journey-realtime-call.zh.html",
     "visual_preset": "signal-flow",
@@ -20,7 +20,7 @@
     {
       "id": "caller",
       "type": "frontend",
-      "label": "发起端 Client",
+      "label": "呼叫方 Client",
       "sublabel": "getUserMedia 采集",
       "sources": [
         {
@@ -38,23 +38,61 @@
       ]
     },
     {
-      "id": "signaling",
-      "type": "messagebus",
-      "label": "SSE 实时信令",
-      "sublabel": "Station 扇出密封信封，不持密钥",
+      "id": "callerHome",
+      "type": "backend",
+      "label": "呼叫方 Home Station",
+      "sublabel": "POST /realtime/signal · SSE",
       "sources": [
         {
           "path": "apps/station/app/subserver/events/handler.go",
-          "label": "handler.go · CallSignal 扇出",
-          "line": 257,
-          "end_line": 340
+          "label": "handler.go · handlePostSignal / routeSignal",
+          "line": 261,
+          "end_line": 393
+        },
+        {
+          "path": "apps/station/app/subserver/events/handler.go",
+          "label": "handler.go · 联邦路由判定",
+          "line": 524,
+          "end_line": 606
+        }
+      ]
+    },
+    {
+      "id": "calleeHome",
+      "type": "backend",
+      "label": "被叫方 Home Station",
+      "sublabel": "通话解析归属 · 联邦对端",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/peer_routes.go",
+          "label": "peer_routes.go · handleRealtimeSignal",
+          "line": 509,
+          "end_line": 551
+        },
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go · PublishPeerSignal",
+          "line": 226,
+          "end_line": 296
+        },
+        {
+          "path": "apps/station/app/subserver/events/call_resolution.go",
+          "label": "call_resolution.go · open / resolve",
+          "line": 81,
+          "end_line": 267
+        },
+        {
+          "path": "apps/station/frame/core/federation/routes.go",
+          "label": "routes.go · RealtimeSignalRoute",
+          "line": 58,
+          "end_line": 60
         }
       ]
     },
     {
       "id": "callee",
       "type": "frontend",
-      "label": "接收端 Client",
+      "label": "被叫方 Client",
       "sublabel": "响铃 / 接听 / 拒绝",
       "sources": [
         {
@@ -69,7 +107,7 @@
       "id": "turn",
       "type": "backend",
       "label": "STUN / TURN",
-      "sublabel": "ICE 发现与 Relay（:3478）",
+      "sublabel": "ICE 发现与中继（:3478）",
       "sources": [
         {
           "path": "apps/station/frame/core/plugin/native/subserver/turn/turn.go",
@@ -83,12 +121,12 @@
   "segments": [
     {
       "from": 150,
-      "to": 345,
-      "label": "振铃（45s 无应答自动结束）"
+      "to": 486,
+      "label": "振铃与接听（45s 无应答自动结束）"
     },
     {
-      "from": 360,
-      "to": 690,
+      "from": 502,
+      "to": 760,
       "label": "通话中：端到端实时媒体"
     }
   ],
@@ -96,66 +134,79 @@
     {
       "id": "request",
       "from": "caller",
-      "to": "signaling",
+      "to": "callerHome",
       "y": 180,
-      "label": "密封 CALL_REQUEST（X25519 + AES-256-GCM）",
+      "label": "POST /realtime/signal：密封 CALL_REQUEST",
       "variant": "security",
-      "note": "发起前先 getUserMedia；采集失败直接 media-failed，不发呼叫"
+      "note": "先 getUserMedia；采集失败直接 media-failed，不发呼叫"
+    },
+    {
+      "id": "fwd-request",
+      "from": "callerHome",
+      "to": "calleeHome",
+      "y": 236,
+      "label": "联邦转发 /federation/realtime/signal",
+      "variant": "security",
+      "note": "同站走本地 EventBus；跨站经 claims 校验的联邦通道"
     },
     {
       "id": "ring",
-      "from": "signaling",
+      "from": "calleeHome",
       "to": "callee",
-      "y": 235,
-      "label": "SSE 扇出，接收端所有在线设备响铃",
-      "variant": "dashed"
+      "y": 292,
+      "label": "SSE 扇出：所有在线设备响铃",
+      "variant": "dashed",
+      "note": "通话解析记录在被叫方 Home Station 打开"
     },
     {
       "id": "accept",
       "from": "callee",
-      "to": "signaling",
-      "y": 290,
-      "label": "密封 CALL_ACCEPT",
+      "to": "calleeHome",
+      "y": 348,
+      "label": "赢家设备发密封 CALL_ACCEPT",
       "variant": "security",
-      "note": "他机已接听时，本机收到同 callId 信号后静默停响"
+      "note": "他端设备接听后，本机静默停响"
+    },
+    {
+      "id": "fwd-accept",
+      "from": "calleeHome",
+      "to": "callerHome",
+      "y": 404,
+      "label": "联邦转发回程，解析终态",
+      "variant": "security",
+      "note": "多设备赢家解析只存在于被叫方 Home Station"
     },
     {
       "id": "accepted",
-      "from": "signaling",
+      "from": "callerHome",
       "to": "caller",
-      "y": 340,
-      "label": "接听完成，进入 active",
+      "y": 460,
+      "label": "SSE：通话激活（winning_device_id）",
       "variant": "return"
     },
     {
       "id": "offer",
       "from": "caller",
-      "to": "signaling",
-      "y": 400,
-      "label": "媒体 OFFER + ICE 候选",
-      "variant": "dashed"
+      "to": "callerHome",
+      "y": 516,
+      "label": "密封 OFFER + ICE 候选",
+      "variant": "dashed",
+      "note": "经同一联邦/SSE 路径送达；远端描述未应用前候选先缓冲"
     },
     {
       "id": "answer",
-      "from": "signaling",
-      "to": "callee",
-      "y": 450,
-      "label": "扇出 OFFER；乱序候选先缓冲后回放",
-      "variant": "dashed"
-    },
-    {
-      "id": "answer-back",
       "from": "callee",
-      "to": "signaling",
-      "y": 500,
+      "to": "calleeHome",
+      "y": 572,
       "label": "密封 ANSWER + ICE 候选",
-      "variant": "dashed"
+      "variant": "dashed",
+      "note": "反向同路径；由指定 offerer 驱动协商"
     },
     {
       "id": "media",
       "from": "caller",
       "to": "callee",
-      "y": 560,
+      "y": 628,
       "label": "DTLS-SRTP 加密媒体直连",
       "variant": "emphasis",
       "note": "DataChannel 仅服务通话就绪，不再承载消息文本"
@@ -164,8 +215,8 @@
       "id": "relay",
       "from": "caller",
       "to": "turn",
-      "y": 610,
-      "label": "直连不通：ICE 改用 TURN 中继分配",
+      "y": 684,
+      "label": "直连不通：ICE 选用 relay 候选",
       "variant": "dashed",
       "note": "TURN-REST 凭证建连时经 /api/v1/turn/ice-servers 预配（24h）"
     },
@@ -173,19 +224,20 @@
       "id": "relay-media",
       "from": "turn",
       "to": "callee",
-      "y": 660,
-      "label": "经 TURN Relay 的 SRTP 媒体",
+      "y": 740,
+      "label": "经 TURN 中继的 SRTP 媒体",
       "variant": "dashed",
-      "note": "挂断发 CALL_END；ICE 断开有 20s 重连窗口，超时 network-failed"
+      "note": "45s 无应答发 CALL_END；ICE 断开有 20s 重连窗口"
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "信令与媒体分离",
+      "title": "信令路径与信令/媒体分离",
       "items": [
-        "呼叫、SDP 协商与挂断全部走 SSE 密封信封；Station 只做不透明扇出。",
-        "音频/视频媒体走浏览器 WebRTC：DTLS-SRTP 端到端加密，优先 P2P，失败经 TURN。"
+        "呼叫、接听、SDP 与挂断都作为密封信封（X25519 + HKDF + AES-256-GCM）发到各自的 Home Station；Station 只做不透明转发，不持密钥。",
+        "收件人归属他站时经 /federation/realtime/signal 联邦转发（对端校验 claims 后本地 EventBus 扇出）；同站则本地直接投递。",
+        "多设备响铃与赢家解析始终归被叫方 Home Station；跨站查询赢家走 /federation/realtime/call-resolution。音频/视频媒体走浏览器 WebRTC，与 Station 无关。"
       ]
     },
     {
