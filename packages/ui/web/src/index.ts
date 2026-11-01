@@ -6,6 +6,7 @@ export { geometry } from '@peers-touch/ui-tokens';
 export { foundationCandidates, foundationCandidateVariables } from '@peers-touch/ui-tokens';
 export type { FoundationCandidate } from '@peers-touch/ui-tokens';
 export { expressionCandidate, expressionCandidateVariables } from '@peers-touch/ui-tokens';
+export { northStarTheme, northStarVariables } from '@peers-touch/ui-tokens';
 export { UIProvider, useUITokens } from './provider';
 export type { UIProviderProps } from './provider';
 export { Icon, BrandMark } from './icon';

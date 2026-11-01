@@ -1,0 +1,268 @@
+{
+  "packages/prototypes/shared/ui-system/chat/CallOverlay.tsx": {
+    "button": 9,
+    "select": 2
+  },
+  "packages/prototypes/shared/ui-system/chat/ChatComposer.tsx": {
+    "button": 14,
+    "input": 2
+  },
+  "packages/prototypes/shared/ui-system/chat/ChatDialogs.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/shared/ui-system/chat/ChatRail.tsx": {
+    "button": 7,
+    "input": 1
+  },
+  "packages/prototypes/shared/ui-system/chat/ComposerAttachments.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/shared/ui-system/chat/ConversationPanels.tsx": {
+    "button": 6,
+    "input": 1
+  },
+  "packages/prototypes/shared/ui-system/chat/ConversationView.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/shared/ui-system/chat/MessageActions.tsx": {
+    "button": 7
+  },
+  "packages/prototypes/shared/ui-system/chat/MessageAttachments.tsx": {
+    "button": 2,
+    "select": 2
+  },
+  "packages/prototypes/shared/ui-system/chat/VoiceNote.tsx": {
+    "button": 1,
+    "input": 1
+  },
+  "packages/prototypes/shared/ui-system/moments/MomentCard.tsx": {
+    "button": 5
+  },
+  "packages/prototypes/shared/ui-system/moments/MomentsFeature.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/shared/ui-system/settings/SettingsFeature.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/shared/ui-system/settings/sections/AccountSection.tsx": {
+    "button": 1,
+    "input": 1
+  },
+  "packages/prototypes/shared/ui-system/settings/sections/AdvancedSections.tsx": {
+    "button": 4
+  },
+  "packages/prototypes/shared/ui-system/settings/sections/AiSections.tsx": {
+    "button": 3,
+    "input": 2
+  },
+  "packages/prototypes/shared/ui-system/settings/sections/NetworkSections.tsx": {
+    "button": 3
+  },
+  "packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx": {
+    "button": 4,
+    "input": 1
+  },
+  "packages/prototypes/desktop/applets/atelier/src/Page.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/desktop/applets/atelier/src/preview.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/desktop/features/agent/src/Page.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/desktop/features/agent/src/panels/AgentList.tsx": {
+    "button": 7,
+    "input": 1
+  },
+  "packages/prototypes/desktop/features/agent/src/panels/AgentProfile.tsx": {
+    "button": 20,
+    "input": 4,
+    "textarea": 3
+  },
+  "packages/prototypes/desktop/features/agent/src/panels/BuilderSidebar.tsx": {
+    "button": 2,
+    "textarea": 1
+  },
+  "packages/prototypes/desktop/features/agent/src/panels/ComposerBar.tsx": {
+    "button": 7,
+    "input": 1
+  },
+  "packages/prototypes/desktop/features/agent/src/panels/GlobalNav.tsx": {
+    "button": 3
+  },
+  "packages/prototypes/desktop/features/agent/src/panels/LeftRail.tsx": {
+    "button": 9
+  },
+  "packages/prototypes/desktop/features/agent/src/panels/RightPanel.tsx": {
+    "button": 3,
+    "input": 1
+  },
+  "packages/prototypes/desktop/features/applet-lifecycle/src/AppletLifecyclePrototype.tsx": {
+    "button": 9,
+    "input": 2
+  },
+  "packages/prototypes/desktop/features/applet-workspace/src/AppletWorkspacePrototype.tsx": {
+    "button": 18,
+    "input": 2
+  },
+  "packages/prototypes/desktop/features/call/src/CallPrototype.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/desktop/features/channel-studio/src/ChannelStudio.tsx": {
+    "button": 7,
+    "input": 1,
+    "select": 2
+  },
+  "packages/prototypes/desktop/features/modern-chat-agent/src/ModernChatReview.tsx": {
+    "button": 40,
+    "input": 4,
+    "textarea": 2
+  },
+  "packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx": {
+    "button": 31,
+    "input": 2,
+    "textarea": 2,
+    "select": 4
+  },
+  "packages/prototypes/desktop/features/social-chat/src/components/ContactsBook.tsx": {
+    "button": 5
+  },
+  "packages/prototypes/desktop/features/social-chat/src/components/DetailPanel.tsx": {
+    "button": 25,
+    "input": 4
+  },
+  "packages/prototypes/desktop/features/social-chat/src/components/FindPeopleModal.tsx": {
+    "button": 4,
+    "input": 1
+  },
+  "packages/prototypes/desktop/features/social-chat/src/components/RequestDecisionButtons.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/desktop/features/social-chat/src/components/SearchMessagesModal.tsx": {
+    "button": 4,
+    "input": 1
+  },
+  "packages/prototypes/desktop/features/social-chat/src/components/SessionList.tsx": {
+    "button": 7,
+    "input": 2
+  },
+  "packages/prototypes/desktop/features/social-chat/src/pages/SocialChatPage.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/desktop/shared/PanelToggleButton.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/desktop/shared/PromptComposer.tsx": {
+    "button": 1,
+    "textarea": 1
+  },
+  "packages/prototypes/desktop/shell/src/AgentChatPage.tsx": {
+    "button": 63,
+    "input": 9,
+    "textarea": 2
+  },
+  "packages/prototypes/desktop/shell/src/AgentCommandPalette.tsx": {
+    "button": 5
+  },
+  "packages/prototypes/desktop/shell/src/BotChannels.tsx": {
+    "button": 19,
+    "input": 5
+  },
+  "packages/prototypes/desktop/shell/src/LarkChannels.tsx": {
+    "button": 23,
+    "input": 5,
+    "textarea": 2,
+    "select": 6
+  },
+  "packages/prototypes/desktop/shell/src/Notifications.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/desktop/shell/src/Settings.tsx": {
+    "button": 25,
+    "input": 16,
+    "textarea": 4,
+    "select": 2
+  },
+  "packages/prototypes/desktop/shell/src/Shell.tsx": {
+    "button": 3,
+    "input": 1
+  },
+  "packages/prototypes/desktop/shell/src/TurnAttribution.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/desktop/shell/src/WelcomeLoginPrototype.tsx": {
+    "button": 10,
+    "input": 2
+  },
+  "packages/prototypes/desktop/shell/src/search/SearchOverlay.tsx": {
+    "button": 9,
+    "input": 1
+  },
+  "packages/prototypes/mobile/chat/src/MobileShell.tsx": {
+    "button": 3
+  },
+  "packages/prototypes/mobile/chat/src/components/AttachmentCard.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/mobile/chat/src/components/ContactDetailView.tsx": {
+    "button": 7
+  },
+  "packages/prototypes/mobile/chat/src/components/ExperienceRecovery.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/mobile/chat/src/components/ForwardPicker.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/mobile/chat/src/components/GroupDetailView.tsx": {
+    "button": 6
+  },
+  "packages/prototypes/mobile/chat/src/components/LanguageSwitcher.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/mobile/chat/src/components/MobileCallSurface.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/mobile/chat/src/components/MobileSurfaceState.tsx": {
+    "button": 2
+  },
+  "packages/prototypes/mobile/chat/src/components/MultiDeviceDemo.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/mobile/chat/src/components/PrototypeListWindow.tsx": {
+    "button": 3
+  },
+  "packages/prototypes/mobile/chat/src/components/SettingDetailView.tsx": {
+    "button": 3
+  },
+  "packages/prototypes/mobile/chat/src/components/StationSelector.tsx": {
+    "button": 2,
+    "input": 1
+  },
+  "packages/prototypes/mobile/chat/src/components/ThreadView.tsx": {
+    "button": 3
+  },
+  "packages/prototypes/mobile/chat/src/pages/AuthGateScreen.tsx": {
+    "button": 3
+  },
+  "packages/prototypes/mobile/chat/src/pages/ChatPage.tsx": {
+    "button": 1
+  },
+  "packages/prototypes/mobile/chat/src/pages/ChatThread.tsx": {
+    "button": 40
+  },
+  "packages/prototypes/mobile/chat/src/pages/ContactsPage.tsx": {
+    "button": 3
+  },
+  "packages/prototypes/mobile/chat/src/pages/MomentsPage.tsx": {
+    "button": 43,
+    "input": 5,
+    "textarea": 2
+  },
+  "packages/prototypes/mobile/chat/src/pages/ProfilePage.tsx": {
+    "button": 6
+  },
+  "packages/prototypes/mobile/chat/src/pages/SearchPage.tsx": {
+    "button": 5
+  }
+}

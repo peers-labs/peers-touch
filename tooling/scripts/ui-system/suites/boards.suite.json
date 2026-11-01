@@ -1,0 +1,148 @@
+{
+  "kind": "peers-ui-specimen-suite",
+  "capabilityId": "ui.prototype.eles-boards",
+  "specRef": "docs/architecture/platform/client/ui-system/prototype/self-training-methodology.md",
+  "specimen": {
+    "url": "/?site=frontend-eles&eles=elements",
+    "anchor": ".ui-view-shell",
+    "implementationRefs": [
+      "packages/prototypes/shared/ui-system/UISystemGallery.tsx",
+      "packages/prototypes/shared/ui-system/registry.ts",
+      "packages/prototypes/shared/ui-system/FoundationBoard.tsx",
+      "packages/prototypes/shared/ui-system/SpecimenBoard.tsx",
+      "packages/prototypes/shared/ui-system/KitBoard.tsx",
+      "packages/prototypes/shared/ui-system/PhilosophyView.tsx",
+      "packages/prototypes/shared/ui-system/MobileFrame.tsx",
+      "packages/prototypes/shared/ui-system/boards.css",
+      "packages/prototypes/shared/ui-system/view-bar.css",
+      "packages/ui/tokens/src/north-star-theme.ts",
+      "tooling/scripts/ui-system/craft-battery.mjs"
+    ]
+  },
+  "entryGate": {
+    "url": "/?site=frontend-eles",
+    "button": "[data-action-id='view.elements']",
+    "target": "[data-nb='elements']",
+    "urlParam": "elements"
+  },
+  "scenarios": [
+    {
+      "id": "ui.prototype.eles.view-bar-six-tabs",
+      "title": "增量25：Frontend Eles 只剩六个 tab（桌面/手机原型、基础元素、套件、样本、设计理念）",
+      "level": "L4_RUNTIME",
+      "operations": [],
+      "oracles": [
+        { "id": "six-tabs", "type": "count", "scope": "global", "target": ".ui-view-bar > .pt-button", "equals": 6 },
+        { "id": "retired-consumer-tab", "type": "missing", "scope": "global", "target": "[data-action-id='view.consumer']" },
+        { "id": "retired-catalogue-tab", "type": "missing", "scope": "global", "target": "[data-action-id='view.catalogue']" },
+        { "id": "elements-default", "type": "attr", "scope": "global", "target": "[data-action-id='view.elements']", "attr": "aria-pressed", "equals": "true" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.elements-tokens-and-registry",
+      "title": "增量26：基础元素板只渲染真实令牌与能力登记——20 已验收、6 缺口，无虚构组件演示",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.elements']" },
+        { "op": "wait", "ms": 150 }
+      ],
+      "oracles": [
+        { "id": "board-mount", "type": "exists", "scope": "global", "target": "[data-nb='elements']" },
+        { "id": "candidate-theme-named", "type": "textContains", "scope": "global", "target": "[data-nb='elements']", "contains": "north-star-pine-glass" },
+        { "id": "token-section", "type": "exists", "scope": "global", "target": ".nb-token-grid" },
+        { "id": "registry-present", "type": "exists", "scope": "global", "target": "[data-nb-registry]" },
+        { "id": "vetted-count", "type": "count", "scope": "global", "target": "[data-cap-status='vetted']", "equals": 20 },
+        { "id": "gap-count", "type": "count", "scope": "global", "target": "[data-cap-status='gap']", "equals": 6 },
+        { "id": "gap-command-surface", "type": "exists", "scope": "global", "target": "[data-cap='CommandSurface']" },
+        { "id": "no-fabricated-demo", "type": "missing", "scope": "global", "target": "[data-specimen]" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.specimens-disabled-condition",
+      "title": "增量27：样本板为 20 个已验收组件出卡，禁用条件下 TextField 真实 disabled",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.specimens']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='specimen.condition.disabled']" },
+        { "op": "wait", "ms": 120 }
+      ],
+      "oracles": [
+        { "id": "twenty-specimens", "type": "count", "scope": "global", "target": "[data-specimen]", "equals": 20 },
+        { "id": "consumers-shown", "type": "exists", "scope": "global", "target": "[data-specimen='Button'] .nb-cap-consumer" },
+        { "id": "textfield-disabled", "type": "disabled", "scope": "global", "target": "[data-specimen='TextField'] input" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.kits-six-patterns",
+      "title": "增量28：套件板六个产品任务模式，动作套件真实切换选中态，危险动作走 Dialog",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.kits']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='kit.pin']" },
+        { "op": "wait", "ms": 100 }
+      ],
+      "oracles": [
+        { "id": "six-kits", "type": "count", "scope": "global", "target": "[data-kit]", "equals": 6 },
+        { "id": "pin-pressed", "type": "attr", "scope": "global", "target": "[data-action-id='kit.pin']", "attr": "aria-pressed", "equals": "true" },
+        { "id": "kits-use-real-components", "type": "exists", "scope": "global", "target": "[data-kit='form'] form" },
+        { "id": "toast-host-mounted", "type": "exists", "scope": "global", "target": ".pt-toast-host, .pt-feedback-host" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.kit-danger-dialog",
+      "title": "增量28：移除邻居走 ConfirmAction 式 Dialog，确认后浮层关闭",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.kits']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='kit.danger']" },
+        { "op": "wait", "ms": 150 }
+      ],
+      "oracles": [
+        { "id": "dialog-open", "type": "exists", "scope": "global", "target": ".pt-modal-layer .pt-dialog" },
+        { "id": "dialog-title", "type": "textContains", "scope": "global", "target": ".pt-modal-layer .pt-dialog-header", "contains": "移除邻居" }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "target": "[data-action-id='kit.remove.cancel']" },
+        { "op": "wait", "ms": 100 }
+      ]
+    },
+    {
+      "id": "ui.prototype.eles.philosophy-constitution",
+      "title": "增量25：设计理念板承载自训练宪章五条与债务清单",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.philosophy']" },
+        { "op": "wait", "ms": 150 }
+      ],
+      "oracles": [
+        { "id": "article", "type": "exists", "scope": "global", "target": "[data-philosophy]" },
+        { "id": "five-laws", "type": "count", "scope": "global", "target": "[data-law]", "equals": 5 },
+        { "id": "debt-list", "type": "exists", "scope": "global", "target": "[data-debt-list]" },
+        { "id": "gap-first-rule", "type": "textContains", "scope": "global", "target": "[data-philosophy]", "contains": "先查库" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-frame",
+      "title": "增量25：手机原型收编进 Frontend Eles，真实 MobilePrototype 在手机框内运行",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 800 }
+      ],
+      "oracles": [
+        { "id": "phone-frame", "type": "exists", "scope": "global", "target": "[data-phone-frame]" },
+        { "id": "mobile-rendered", "type": "count", "scope": "global", "target": "[data-phone-body] [class^='ant-'], [data-phone-body] [class*=' ant-']", "gte": 8 },
+        { "id": "debt-marked", "type": "exists", "scope": "global", "target": "[data-status='gap']" }
+      ],
+      "finalizers": []
+    }
+  ]
+}

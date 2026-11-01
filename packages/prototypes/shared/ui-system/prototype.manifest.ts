@@ -10,7 +10,7 @@ export default {
   module: 'ui-system',
   path: 'packages/prototypes/shared/ui-system/',
   docs: 'docs/architecture/platform/client/ui-system/README.md',
-  description: 'Draft material study: light translucent mint canvas, floating white panels, soft amber emphasis, brightened imagery; external references are de-identified and kept out of the repository.',
+  description: 'Self-training UI/UX: desktop & mobile prototypes, real capability registry, pattern kits, vetted specimens, and design philosophy; prototypes compose peers-ui primitives, never hand-rolled controls.',
   order: 1,
   previewExport: 'UISystemGallery',
   entry: () => import('./UISystemGallery'),

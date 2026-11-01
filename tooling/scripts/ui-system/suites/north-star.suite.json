@@ -29,9 +29,9 @@
   },
   "entryGate": {
     "url": "/?site=frontend-eles",
-    "button": "[data-action-id='view.directions']",
+    "button": "[data-action-id='view.desktop']",
     "target": ".sk-shell",
-    "urlParam": "directions"
+    "urlParam": "desktop"
   },
   "scenarios": [
     {

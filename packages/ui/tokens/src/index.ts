@@ -2,6 +2,7 @@
 export { foundationCandidates, foundationCandidateVariables } from './foundation-candidates';
 export type { FoundationCandidate } from './foundation-candidates';
 export { expressionCandidate, expressionCandidateVariables } from './expression-candidate';
+export { northStarTheme, northStarVariables } from './north-star-theme';
 
 export const geometry = {
   radius: { xs: 4, sm: 6, md: 8, lg: 12, xl: 16, full: 999 },

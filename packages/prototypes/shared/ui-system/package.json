@@ -7,6 +7,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@peers-touch/prototype-mobile-chat": "workspace:*",
     "@peers-touch/ui": "workspace:*",
     "@peers-touch/ui-assets": "workspace:*",
     "lucide-react": "^0.577.0",

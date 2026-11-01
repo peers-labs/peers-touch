@@ -1139,6 +1139,9 @@ importers:
 
   packages/prototypes/shared/ui-system:
     dependencies:
+      '@peers-touch/prototype-mobile-chat':
+        specifier: workspace:*
+        version: link:../../mobile/chat
       '@peers-touch/ui':
         specifier: workspace:*
         version: link:../../../ui/web

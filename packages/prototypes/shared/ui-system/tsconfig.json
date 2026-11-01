@@ -7,7 +7,12 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "baseUrl": ".",
+    "paths": {
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
+      "lucide-react": ["./node_modules/lucide-react"]
+    }
   },
-  "include": ["UISystemGallery.tsx"]
+  "include": ["UISystemGallery.tsx", "assets.d.ts"]
 }

@@ -12,14 +12,18 @@ pass. Gates are ordered by what they can honestly decide.
   retired brand-hue residues.
 - Contrast numbers (WCAG ratios) are computed from token values before a
   color change lands; the rendered value is verified after.
-- Suite: `suites/consumer.suite.json` scenarios `action-ink-physics*`.
+- Suite: token physics are asserted through the north-star frame and the
+  `suites/boards.suite.json` element board (resolved `--pt-*` values).
 
 ## Gate ② Runtime — structure, interaction, overflow (machine)
 
 - Entry gate (visible reach from nav), card counts, real component
-  interactions (dialog/menu/select/toast/form/autocomplete/tag removal),
-  keyboard semantics, 1360 and 390 overflow, console-error gate.
-- Foundation baseline: 20 base capabilities × 标准/长文案/禁用 conditions.
+  interactions (dialog/menu/select/toast/form/tag removal), keyboard
+  semantics, 1360 and 390 overflow, console-error gate.
+- Suites: `suites/north-star.suite.json` (desktop prototype) and
+  `suites/boards.suite.json` (the six Frontend Eles tabs).
+- Specimen baseline (`--baseline-foundation`): every `[data-specimen]` vetted
+  component × 标准/长文案/禁用 conditions.
 
 ## Gate ③ Geometry craft — native leakage & composition (machine)
 
@@ -75,13 +79,19 @@ into Gate ③ battery rules so the same defect class cannot regress.
 ## Usage
 
 ```bash
-# Evidence-envelope run (all suites + 60-condition baseline)
+# Frontend Eles board gate (elements/specimens/kits/philosophy/mobile)
 node tooling/scripts/ui-system/evaluate-specimens.mjs \
-  --suite tooling/scripts/ui-system/suites/consumer.suite.json
+  --suite tooling/scripts/ui-system/suites/boards.suite.json
 
 # Desktop-prototype north-star frame gate
 node tooling/scripts/ui-system/evaluate-specimens.mjs \
   --suite tooling/scripts/ui-system/suites/north-star.suite.json
+
+# Vetted specimen overflow baseline across shared conditions
+node tooling/scripts/ui-system/evaluate-specimens.mjs --baseline-foundation
+
+# Prototype no-hand-rolled-primitives gate (debt may only shrink)
+node tooling/scripts/ui-system/prototype-import-guard.mjs
 
 # Geometry craft gate alone (CI-friendly, JSON to stdout)
 node tooling/scripts/ui-system/craft-gate.mjs

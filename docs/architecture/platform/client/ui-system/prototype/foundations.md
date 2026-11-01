@@ -1,6 +1,13 @@
 # Frontend Eles — 基础候选合同
 
-> **Status**: draft
+> **Status**: superseded（2026-11-01，增量 25）。本文记录的表达研究、三方向候选与
+> 20 项基础组件批次已退役：Gallery 旧 tab（expression / foundations / basics /
+> consumer / catalogue）删除，候选结论沉淀进
+> [self-training-methodology.md](./self-training-methodology.md) 与
+> north-star-pine-glass 候选主题；当前能力真值是基础元素 tab 的
+> `registry.ts`（已验收 / 已实现待样本 / 缺口）。下文保留为历史来源。
+
+> ~~**Status**: draft~~
 > **Created**: 2026-10-28 | **Updated**: 2026-10-29
 > **Owner**: Client Platform / UI System
 

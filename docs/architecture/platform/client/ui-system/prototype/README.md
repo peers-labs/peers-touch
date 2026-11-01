@@ -84,18 +84,29 @@ EDX独立准入没有完成，候选不晋升高保真准入、pending-review或
 
 ## 桌面原型北极星
 
-`?site=frontend-eles&eles=directions` 是唯一持续演进的桌面应用窗框原型
+`?site=frontend-eles&eles=desktop` 是唯一持续演进的桌面应用窗框原型
 （单窗框：60px 图标轨 + 滚动信息流 + 会话轨），未来收敛为 Desktop 原型，
 验证过的模式回流元素集。窗框语法（材质分区、圆角归属、焦点环、近黑胶囊/
 单琥珀/大数值）与其机器门禁见
-[北极星窗框语法](./north-star-frame.md)；组件逐个训练，合同放
-[`components/`](./components/)，首训
-[SearchField](./components/search-field.md) 已在增量 24 被
-[GlobalSearchOverlay](./components/global-search-overlay.md) 取代：
-左轨搜索与 ⌘K 唤起封闭域全局搜索浮层，搜索不再是独立页面。
+[北极星窗框语法](./north-star-frame.md)；增量合同放
+[`components/`](./components/)。
 缺陷经验见
 `docs/knowledge/pitfalls/prototype-embedded-control-chrome-leak.md`。
-旧入口 `eles=northstar` 兼容指向同一视图，不再存在平行窗框。
+旧入口 `eles=northstar` / `eles=directions` 兼容指向桌面原型，不再存在平行窗框。
+
+## Frontend Eles 六个工位（自训练 UI/UX）
+
+Frontend Eles 是「原型提需求、基础层出产物、人审决定晋升」的自训练系统，
+方法论见 [self-training-methodology.md](./self-training-methodology.md)。
+六个 tab：桌面原型（`eles=desktop`）、手机原型（`mobile`，真实
+MobilePrototype 内嵌；antd 为已登记债务）、基础元素（`elements`，
+north-star 候选令牌 + 真实能力登记册）、套件（`kits`，产品任务模式）、
+样本（`specimens`，已验收组件状态矩阵）、设计理念（`philosophy`）。
+旧研究轮次入口（consumer / basics / catalogue / expression / foundations）
+已在增量 25 退役并回退到桌面原型；其结论沉淀在方法论文档。
+组件逐个训练合同仍放 [`components/`](./components/)，首个被取代的
+[SearchField](./components/search-field.md) 已标记 superseded，全局搜索合同见
+[global-search-overlay](./components/global-search-overlay.md)。
 
 ## 外部参考材质校准
 

@@ -46,16 +46,12 @@ const COMMON_INPUTS = [
   'packages/ui/web/src/expression.css',
   'packages/ui/semantics/src/index.ts',
   'packages/ui/contracts/src/index.ts',
-  'packages/prototypes/shared/ui-system/ButtonContractSpecimen.tsx',
-  'packages/prototypes/shared/ui-system/FoundationSpecimens.tsx',
+  'packages/ui/tokens/src/north-star-theme.ts',
+  'packages/prototypes/shared/ui-system/registry.ts',
+  'packages/prototypes/shared/ui-system/SpecimenBoard.tsx',
 ];
 
 const VIEWPORT = { width: 1360, height: 1000 };
-const FOUNDATION_KEYS = [
-  'text', 'icon', 'button', 'actionicon', 'actionicongroup', 'a', 'avatar',
-  'agentavatar', 'groupavatar', 'filetypeicon', 'fluentemoji', 'badge', 'tag',
-  'hotkey', 'block', 'divider', 'flex', 'grid', 'card', 'header',
-];
 
 function parseArgs(argv) {
   const args = { suites: [], base: process.env.UI_SPECIMEN_BASE || 'http://127.0.0.1:3291', out: null, baselineFoundation: false };
@@ -524,10 +520,12 @@ async function runSuite(browser, base, suite, suiteRef, raw, outDir) {
   };
 }
 
-/* ---------- foundation baseline ---------- */
+/* ---------- specimen baseline ---------- */
 
 async function runFoundationBaseline(browser, base, outDir) {
-  const url = '/?site=frontend-eles&eles=basics';
+  // Vetted component specimens on the 样本 tab; overflow-checked in every
+  // shared condition (标准 / 长文案 / 禁用). Anchors are data-specimen cards.
+  const url = '/?site=frontend-eles&eles=specimens';
   const observations = [];
   const allErrors = new Set();
   for (const condition of ['标准', '长文案', '禁用']) {
@@ -535,9 +533,10 @@ async function runFoundationBaseline(browser, base, outDir) {
     try {
       await page.getByRole('button', { name: condition, exact: true }).first().click();
       await page.waitForTimeout(200);
-      for (const key of FOUNDATION_KEYS) {
-        const anchor = `#foundation-ui-spec-${key}`;
-        if (!(await page.locator(anchor).count())) { observations.push({ key, condition, status: 'ERROR', reason: 'anchor missing' }); continue; }
+      const anchors = await page.locator('[data-specimen]').evaluateAll(nodes =>
+        nodes.map(n => n.getAttribute('data-specimen')));
+      for (const key of anchors) {
+        const anchor = `[data-specimen="${key}"]`;
         await page.locator(anchor).scrollIntoViewIfNeeded();
         const r = await checkOracle(page, anchor, { type: 'overflow' });
         observations.push({ key, condition, status: r.pass ? 'OBSERVED' : 'VIOLATED', offenders: r.offenders });
@@ -549,9 +548,9 @@ async function runFoundationBaseline(browser, base, outDir) {
   const gateFailures = violated.map(v => ({ gate: `${v.key}.${v.condition}`, offenders: v.offenders, reason: v.reason }));
   if (allErrors.size) gateFailures.push({ gate: 'console', errors: [...allErrors].slice(0, 10) });
   return {
-    kind: 'peers-ui-foundation-baseline-evidence',
+    kind: 'peers-ui-specimen-baseline-evidence',
     runAt: new Date().toISOString(),
-    capabilities: FOUNDATION_KEYS.length,
+    capabilities: new Set(observations.map(o => o.key)).size,
     observations,
     gates: { consoleClean: allErrors.size === 0 },
     rollup: gateFailures.length ? 'VIOLATED' : 'OBSERVED',
