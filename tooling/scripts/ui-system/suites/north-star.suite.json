@@ -93,7 +93,7 @@
           "id": "rail-buttons",
           "type": "count",
           "target": ".sk-rail .sk-rail-icon",
-          "equals": 4
+          "equals": 5
         },
         {
           "id": "rail-width",
@@ -2547,6 +2547,186 @@
         }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.rail-notification-bell",
+      "title": "增量34：外轨底部通知铃在设置之上，带未读角标，面板可全部已读/单删",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "expect",
+          "id": "bell-above-settings",
+          "oracle": {
+            "type": "exists",
+            "target": ".sk-rail-group:last-of-type [data-notification-bell]"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "unread-badge-three",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-notification-bell] [data-notif-unread]",
+            "attr": "data-notif-unread",
+            "equals": "3"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='nav.notifications']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "id": "panel-five-items",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": ".sk-notif-item",
+            "equals": 5
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.read-all']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-5']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "trigger-expanded",
+          "type": "attr",
+          "target": "[data-notification-bell]",
+          "attr": "aria-expanded",
+          "equals": "true"
+        },
+        {
+          "id": "badge-cleared",
+          "type": "missing",
+          "target": "[data-notification-bell] [data-notif-unread]"
+        },
+        {
+          "id": "no-unread-rows",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-notif-item.is-unread",
+          "equals": 0
+        },
+        {
+          "id": "read-all-action-gone",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-action-id='notification.read-all']"
+        },
+        {
+          "id": "four-items-left",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-notif-item",
+          "equals": 4
+        },
+        {
+          "id": "row-gone",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-notification-id='nt-5']"
+        },
+        {
+          "id": "craft-clean",
+          "type": "craftBattery"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='nav.notifications']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.rail-notification-empty",
+      "title": "增量34：通知逐条删除后到达空态，角标消失，面板不塌",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-action-id='nav.notifications']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-1']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-2']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-3']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-4']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-5']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "empty-state",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-notif-empty"
+        },
+        {
+          "id": "no-items",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-notif-item",
+          "equals": 0
+        },
+        {
+          "id": "badge-gone",
+          "type": "missing",
+          "target": "[data-notification-bell] [data-notif-unread]"
+        },
+        {
+          "id": "panel-still-open",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-notif-panel]"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='nav.notifications']"
+        }
+      ]
     },
     {
       "id": "ui.prototype.north-star.create-group-federation-block",
@@ -5493,7 +5673,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -5564,7 +5744,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -5639,7 +5819,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -5721,7 +5901,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -5796,7 +5976,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -5895,7 +6075,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -5951,7 +6131,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6028,7 +6208,7 @@
       "finalizers": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6055,7 +6235,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6114,7 +6294,7 @@
       "finalizers": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6153,7 +6333,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6243,7 +6423,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6301,7 +6481,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6384,7 +6564,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6451,7 +6631,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6495,7 +6675,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6557,7 +6737,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6609,7 +6789,7 @@
       "finalizers": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6656,7 +6836,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6731,7 +6911,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6817,7 +6997,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6888,7 +7068,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -6970,7 +7150,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -7033,7 +7213,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -7090,7 +7270,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -7165,7 +7345,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -7224,7 +7404,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",
@@ -7302,7 +7482,7 @@
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "target": "[data-rail-target='settings']"
         },
         {
           "op": "wait",

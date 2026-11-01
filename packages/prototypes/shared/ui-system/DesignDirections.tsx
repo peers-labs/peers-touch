@@ -28,6 +28,7 @@ import { ChatFeature } from './chat/ChatFeature';
 import type { ChatNavigationRequest } from './chat/ChatFeature';
 import { GlobalSearchOverlay } from './search/GlobalSearchOverlay';
 import type { GlobalSearchTarget } from './search/GlobalSearchOverlay';
+import { NotificationBell } from './notifications/NotificationBell';
 import { makeTranslate, usePrefs } from './prefs';
 import './design-directions.css';
 
@@ -211,8 +212,10 @@ export function DesignDirections() {
           </div>
           <span className="sk-rail-spacer" />
           <div className="sk-rail-group">
+            <NotificationBell />
             <button type="button"
               className={`sk-rail-icon${railTab === 'settings' ? ' is-active' : ''}`}
+              data-rail-target="settings"
               aria-label={t('nav.settings')} aria-current={railTab === 'settings' ? 'page' : undefined}
               onClick={() => setRailTab('settings')}>
               <Settings size={19} strokeWidth={1.7} />

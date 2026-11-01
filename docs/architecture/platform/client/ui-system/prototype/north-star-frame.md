@@ -62,6 +62,21 @@
    关键数值用 400 字重、26–32px、tabular-nums、负字距；标签 9–10px、
    字距放开、三级灰。卡片内不堆 1px 描边框，用松绿填充砖或白砖 + 柔投影分层。
 
+## Rail anatomy（图标轨入口合同）
+
+对齐真身 `AppSideNav`（60px 轨、38px 命中区、方圆非圆）：
+
+- 顶部组：身份 44/r12 → 搜索（⌘K 浮层触发）→ 消息（聊天面）→ 动态（朋友圈面）。
+- 底部组：**通知铃（增量 34 补齐，真身 `NotificationBell` 解剖）→ 设置**。
+  铃是 peers-ui `IconButton`（不长裸元素债），复用 `.sk-rail-icon` 几何；
+  红点角标只允许红数胶囊（圆形状态点语法的延伸）；点击弹出向右的
+  peers-ui `Popover` 面板（未读高亮、分类 Tag、全部已读、单条已读/删除、空态），
+  浮层挂 `.pt-overlay-host`，**不落业务面、不切换 railTab**。
+- 选择器合同：底组新增第二个钮后，位置型 `.sk-rail-group:nth-child(4) .sk-rail-icon`
+  已歧义（先命中铃）；设置钮以 `data-rail-target="settings"` 为稳定钩子，
+  铃走 `[data-action-id='nav.notifications']`。轨钮结构计数 = 5。
+- ≤760px 轨道转顶栏时铃与设置同行，既有媒体查询自动覆盖。
+
 ## Gate（机器门禁）
 
 原则 3/4/5 与结构完整性由确定性套件守护，人工只判签名与品味：

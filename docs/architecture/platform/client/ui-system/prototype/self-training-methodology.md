@@ -112,3 +112,10 @@ Frontend Eles 不是组件陈列室，而是一台**自训练机器**：桌面/�
   轨内搜索恢复为**就地列表过滤**（与外轨 ⌘K 跨面导航职责切分，搜索态分区打平隐藏）；
   历史记录与好友补齐删除/移除入口。五个新门禁锁死：过滤打平、双 tab 过滤、折叠 display
   切换与 aria-expanded、删空分区消失、移除计数 4→3。
+- 34 外轨补通知铃：迁移真身 `AppSideNav` 底部组（铃→设置），原原型只迁了设置，
+  铃位留空。铃用 peers-ui `IconButton`+`Popover`（不长裸元素债），面板解剖对齐真身
+  `NotificationBell`：未读红角标、未读行高亮、分类 Tag、全部已读、单条已读/删除、空态；
+  浮层在 `.pt-overlay-host`，场景交互必须 `clickGlobal`/全局 oracle。
+  同步教训：底组从 1 钮变 2 钮，位置型选择器 `.sk-rail-group:nth-child(4) .sk-rail-icon`
+  全部歧义（27 个设置场景误点铃），设置改挂 `data-rail-target="settings"` 稳定钩子，
+  轨钮结构计数 4→5。
