@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkMessageLayout } from './message-layout.mjs';
+import { checkEmojiActionSheet } from './emoji-action-sheet.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
@@ -28,6 +29,8 @@ const browser = await chromium.launch({
 try {
   if (process.env.PROTOTYPE_MESSAGE_LAYOUT_ONLY === '1') {
     await checkMessageLayout({ browser, url, output, viewports });
+  } else if (process.env.PROTOTYPE_EMOJI_ACTION_SHEET_ONLY === '1') {
+    await checkEmojiActionSheet({ browser, url, output, viewports });
   } else {
   for (const viewport of viewports) {
     const page = await browser.newPage({ viewport, colorScheme: 'light' });

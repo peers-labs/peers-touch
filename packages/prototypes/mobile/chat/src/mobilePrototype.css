@@ -1447,17 +1447,15 @@
     border-bottom: 1px solid rgba(0,0,0,.06);
   }
   .mp-reaction-bar {
-    display: flex; gap: 6px;
-    overflow-x: auto; flex: 1;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    &::-webkit-scrollbar { display: none; }
+    display: flex; gap: 2px;
+    flex: 1 1 auto; min-width: 0;
   }
   .mp-reaction-bar-btn {
     display: flex; align-items: center; justify-content: center;
-    width: 40px; height: 40px; min-width: 40px; border: none; background: transparent;
-    font-size: 24px; cursor: pointer; border-radius: 10px; flex-shrink: 0;
+    flex: 1 1 0; min-width: 0; height: 40px; border: none; background: transparent;
+    font-size: 23px; cursor: pointer; border-radius: 10px;
     transition: transform 0.12s, background 0.12s; -webkit-tap-highlight-color: transparent;
+    padding: 0;
     &:active { transform: scale(0.85); background: var(--mp-gray-100); }
     &.active { background: var(--mp-primary-light); transform: scale(1.1); }
   }
@@ -1476,7 +1474,6 @@
   .mp-emoji-grid {
     display: grid; grid-template-columns: repeat(8, 1fr);
     gap: 4px; padding: 12px 16px;
-    max-height: 200px; overflow-y: auto;
     border-bottom: 1px solid rgba(0,0,0,.06);
     background: #fff;
   }
