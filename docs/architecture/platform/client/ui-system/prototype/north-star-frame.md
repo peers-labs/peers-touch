@@ -13,11 +13,13 @@
 全屏看板/复制窗框等于造第二套体系，已被明确拒绝。皮肤（color/material）
 是窗框内的 CSS 变量维度，结构对所有皮肤完全一致；壁纸是第二条独立维度。
 
-**窗框里只放当前训练中的组件**：与 Peers Touch 无关或尚未确认要用的业务
-拼装（站点卡、发起往来、拓扑、助手、动态、连接/会话栏等）一律不得预置；
-中栏是组件工作台，组件按「产品边界 → 六维/状态合同 → 实现 → 探针门禁 →
-人审 → token/知识沉淀」一次只训练一个（首个：SearchField，合同见
-[`components/search-field.md`](./components/search-field.md)）。
+**窗框里只放 Peers 真实产品面**：与 Peers Touch 无关或尚未确认要用的业务
+拼装（站点卡、发起往来、拓扑、助手等）一律不得预置。组件按「产品边界 →
+六维/状态合同 → 实现 → 探针门禁 → 人审 → token/知识沉淀」逐个训练
+（首训 SearchField 已被增量 24 的
+[`components/global-search-overlay.md`](./components/global-search-overlay.md)
+取代：搜索是 ⌘K/搜索钮唤起的浮层，不是页面）。当前窗内上演动态、消息、
+设置三个真实面，跨面路由由窗框宿主统一执行。
 
 ## Frame Grammar（设计原则）
 

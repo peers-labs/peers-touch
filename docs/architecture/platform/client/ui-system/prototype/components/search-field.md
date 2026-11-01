@@ -1,9 +1,14 @@
 # SearchField · 搜索框（组件训练 01）
 
-> **Status**: draft（北极星窗框内训练中，未晋升 peers-ui）
+> **Status**: superseded（2026-11-01，增量 24）——窗框首训样本 `SearchField` 与其五状态
+> 训练台已从 `DesignDirections.tsx` 移除：左轨搜索不再进入静态页面，改为唤起
+> [GlobalSearchOverlay](./global-search-overlay.md)（⌘K / 搜索钮，封闭域命令浮层）。
+> 消息轨内的局部过滤框是另一表面，其合同归 `chat-session-list.md`。本文保留为
+> 焦点环归属等工艺结论的历史来源。
+>
 > **Created**: 2026-10-30
 > **Owner**: Client Platform / UI System
-> **Specimen**: `packages/prototypes/shared/ui-system/DesignDirections.tsx` · `design-directions.css`
+> **Specimen**: ~~`packages/prototypes/shared/ui-system/DesignDirections.tsx` · `design-directions.css`~~（已移除）
 > **Gate**: `tooling/scripts/ui-system/suites/north-star.suite.json`
 
 ## 1. 产品用途与边界（先于视觉）

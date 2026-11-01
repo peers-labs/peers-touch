@@ -12,7 +12,7 @@
  * by product decision. Preferences (language/layout/notifications/privacy/
  * appearance) persist via the shared prefs module.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   type LucideIcon,
   Bell as BellIcon, Bot as BotIcon, Brain, Clock3, Command as CommandIcon, Database,
@@ -126,12 +126,27 @@ function renderSection(section: SettingsSectionKey) {
   }
 }
 
-export function SettingsFeature() {
+export type SettingsNavigationRequest = {
+  nonce: number;
+  group: SettingsGroup;
+  section: SettingsSectionKey;
+};
+
+export function SettingsFeature({ navigation }: { navigation?: SettingsNavigationRequest | null }) {
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
   const locale = prefs.locale;
   const [group, setGroup] = useState<SettingsGroup>('general');
   const [section, setSection] = useState<SettingsSectionKey>('account');
+
+  // External navigation (global search function result).
+  const lastNavNonce = useRef(0);
+  useEffect(() => {
+    if (!navigation || navigation.nonce === lastNavNonce.current) return;
+    lastNavNonce.current = navigation.nonce;
+    setGroup(navigation.group);
+    setSection(navigation.section);
+  }, [navigation]);
 
   const activeGroup = GROUPS.find(entry => entry.key === group) ?? GROUPS[0];
   const activeSection = activeGroup.sections.find(entry => entry.key === section) ?? activeGroup.sections[0];

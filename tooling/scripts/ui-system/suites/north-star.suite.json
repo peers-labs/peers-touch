@@ -1,7 +1,7 @@
 {
   "kind": "peers-ui-specimen-suite",
   "capabilityId": "ui.prototype.north-star-frame",
-  "specRef": "docs/architecture/platform/client/ui-system/prototype/components/search-field.md",
+  "specRef": "docs/architecture/platform/client/ui-system/prototype/components/global-search-overlay.md",
   "specimen": {
     "url": "/?site=frontend-eles&eles=directions",
     "anchor": ".sk-shell",
@@ -21,7 +21,10 @@
       "packages/prototypes/shared/ui-system/chat/MessageActions.tsx",
       "packages/prototypes/shared/ui-system/chat/chat.css",
       "packages/prototypes/shared/ui-system/settings/settings.css",
-      "tooling/scripts/ui-system/craft-battery.mjs"
+      "tooling/scripts/ui-system/craft-battery.mjs",
+      "packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx",
+      "packages/prototypes/shared/ui-system/search/global-search.css",
+      "packages/prototypes/shared/ui-system/chat/ChatFeature.tsx"
     ]
   },
   "entryGate": {
@@ -33,7 +36,7 @@
   "scenarios": [
     {
       "id": "ui.prototype.north-star.frame-and-contract",
-      "title": "单扇窗框与 SearchField 训练台结构完整，无业务拼装残留",
+      "title": "单扇窗框完整：默认落地动态流，搜索是 overlay 触发器而非页面",
       "level": "L4_RUNTIME",
       "operations": [],
       "oracles": [
@@ -81,9 +84,10 @@
           "target": ".sk-topo"
         },
         {
-          "id": "no-moments",
-          "type": "missing",
-          "target": ".sk-moment"
+          "id": "default-moments-feed",
+          "type": "count",
+          "target": ".sk-post",
+          "equals": 3
         },
         {
           "id": "rail-buttons",
@@ -99,21 +103,23 @@
           "equals": "60px"
         },
         {
-          "id": "contract-present",
-          "type": "exists",
-          "target": ".sk-contract"
+          "id": "search-trigger-present",
+          "type": "count",
+          "target": "[data-global-search-trigger]",
+          "equals": 1
         },
         {
-          "id": "five-state-rows",
-          "type": "count",
-          "target": ".sf-state-list > li",
-          "equals": 5
+          "id": "search-trigger-closed-state",
+          "type": "attr",
+          "target": "[data-global-search-trigger]",
+          "attr": "aria-expanded",
+          "equals": "false"
         },
         {
-          "id": "six-search-fields",
-          "type": "count",
-          "target": ".sf-field",
-          "equals": 6
+          "id": "overlay-closed-at-load",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-search-open]"
         },
         {
           "id": "identity-rounded-square",
@@ -151,178 +157,443 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.searchfield-empty",
-      "title": "空态：前导图标 + placeholder，无清除按钮，宿主无描边",
-      "level": "L3_DYNAMIC",
-      "operations": [],
-      "oracles": [
-        {
-          "id": "empty-no-clear",
-          "type": "missing",
-          "target": ".sf-state-list li:nth-child(1) .sf-clear"
-        },
-        {
-          "id": "empty-has-leading",
-          "type": "exists",
-          "target": ".sf-state-list li:nth-child(1) .sf-leading"
-        },
-        {
-          "id": "host-no-border",
-          "type": "computedStyle",
-          "target": ".sf-state-list li:nth-child(1) .sf-field",
-          "prop": "borderTopWidth",
-          "equals": "0px"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.searchfield-focus",
-      "title": "聚焦态：焦点环在圆角宿主，内嵌 input 不画方形 UA outline",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "focus",
-          "target": ".sf-state-list li:nth-child(2) .sf-field input"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "input-outline-off",
-          "type": "computedStyle",
-          "target": ".sf-state-list li:nth-child(2) .sf-field input",
-          "prop": "outlineStyle",
-          "equals": "none"
-        },
-        {
-          "id": "host-focus-ring",
-          "type": "computedStyle",
-          "target": ".sf-state-list li:nth-child(2) .sf-field",
-          "prop": "boxShadow",
-          "contains": "0px 0px 0px 2px"
-        },
-        {
-          "id": "host-radius",
-          "type": "computedStyle",
-          "target": ".sf-state-list li:nth-child(2) .sf-field",
-          "prop": "borderTopLeftRadius",
-          "contains": "px"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.searchfield-clear",
-      "title": "filled 态清除按钮：点击清空并归还焦点",
+      "id": "ui.prototype.north-star.global-search-open",
+      "title": "增量24：点左轨搜索钮唤起 overlay——输入聚焦、最近/直达两组、封闭域边界、触发器 expanded，Esc 关闭",
       "level": "L3_DYNAMIC",
       "operations": [
         {
           "op": "click",
-          "target": ".sf-state-list li:nth-child(3) .sf-clear"
+          "target": "[data-global-search-trigger]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
         }
       ],
       "oracles": [
         {
-          "id": "value-cleared",
-          "type": "attr",
-          "target": ".sf-state-list li:nth-child(3) .sf-field input",
-          "attr": "value",
-          "equals": ""
-        },
-        {
-          "id": "clear-gone",
-          "type": "missing",
-          "target": ".sf-state-list li:nth-child(3) .sf-clear"
-        },
-        {
-          "id": "focus-returned",
-          "type": "focusable",
-          "target": ".sf-state-list li:nth-child(3) .sf-field input"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.searchfield-disabled",
-      "title": "禁用态：disabled、不可聚焦、无清除按钮",
-      "level": "L3_DYNAMIC",
-      "operations": [],
-      "oracles": [
-        {
-          "id": "input-disabled",
-          "type": "disabled",
-          "target": ".sf-state-list li:nth-child(4) .sf-field input"
-        },
-        {
-          "id": "disabled-no-clear",
-          "type": "missing",
-          "target": ".sf-state-list li:nth-child(4) .sf-clear"
-        },
-        {
-          "id": "host-dimmed",
+          "id": "panel-open",
           "type": "exists",
-          "target": ".sf-field.is-disabled"
+          "scope": "global",
+          "target": "[data-search-open]"
+        },
+        {
+          "id": "input-focused",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-global-search]:focus"
+        },
+        {
+          "id": "recent-group",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-search-group='recent'] .sk-search-row",
+          "gte": 4
+        },
+        {
+          "id": "quick-group",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-search-group='quick'] .sk-search-row",
+          "gte": 3
+        },
+        {
+          "id": "boundary-hint",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-search-boundary"
+        },
+        {
+          "id": "no-results-when-empty",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-search-result]"
+        },
+        {
+          "id": "trigger-expanded",
+          "type": "attr",
+          "target": "[data-global-search-trigger]",
+          "attr": "aria-expanded",
+          "equals": "true"
+        },
+        {
+          "id": "craft-clean",
+          "type": "craftBattery",
+          "root": "body"
         }
       ],
-      "finalizers": []
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        }
+      ]
     },
     {
-      "id": "ui.prototype.north-star.searchfield-live-controlled",
-      "title": "活样本受控输入实时回显，长占位不产生横向溢出",
+      "id": "ui.prototype.north-star.global-search-cmdk",
+      "title": "增量24：⌘K 全局唤起搜索 overlay，再按 Esc 关闭",
       "level": "L3_DYNAMIC",
       "operations": [
+        {
+          "op": "press",
+          "key": "Meta+k"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "expect",
+          "id": "opened",
+          "oracle": {
+            "id": "panel-open",
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-search-open]"
+          }
+        },
+        {
+          "op": "press",
+          "key": "Escape"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        }
+      ],
+      "oracles": [
+        {
+          "id": "panel-closed",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-search-open]"
+        },
+        {
+          "id": "trigger-collapsed",
+          "type": "attr",
+          "target": "[data-global-search-trigger]",
+          "attr": "aria-expanded",
+          "equals": "false"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.global-search-query-groups",
+      "title": "增量24：输入“书架”命中邻居/会话/消息/动态多分组，无功能组，命中高亮，封闭域提示常驻",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-global-search-trigger]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
         {
           "op": "type",
-          "target": ".sf-live-bar .sf-field input",
-          "value": "林晚"
+          "scope": "global",
+          "target": "[data-global-search]",
+          "value": "书架"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         }
       ],
       "oracles": [
         {
-          "id": "echo-updates",
-          "type": "textContains",
-          "target": ".sf-live-echo",
-          "contains": "林晚"
+          "id": "person-group",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-search-group='person']"
         },
         {
-          "id": "clear-appears",
+          "id": "conversation-group",
           "type": "exists",
-          "target": ".sf-live-bar .sf-clear"
+          "scope": "global",
+          "target": "[data-search-group='conversation']"
         },
         {
-          "id": "long-row-present",
+          "id": "message-group",
           "type": "exists",
-          "target": ".sf-state-list li:nth-child(5)"
+          "scope": "global",
+          "target": "[data-search-group='message']"
+        },
+        {
+          "id": "moment-group",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-search-group='moment']"
+        },
+        {
+          "id": "no-function-group",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-search-group='function']"
+        },
+        {
+          "id": "result-rows",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-search-result]",
+          "gte": 4
+        },
+        {
+          "id": "hits-highlighted",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-search-hit",
+          "gte": 3
+        },
+        {
+          "id": "boundary-hint",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-search-boundary"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.global-search-enter-chat",
+      "title": "增量24：输入“陈屿”按 Enter——overlay 关闭、消息轨打开该会话且消息渲染、消息轨图标 current",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-global-search-trigger]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-global-search]",
+          "value": "陈屿"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "press",
+          "key": "Enter"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "overlay-closed",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-search-open]"
+        },
+        {
+          "id": "conversation-open",
+          "type": "exists",
+          "target": ".sk-conv-view"
+        },
+        {
+          "id": "messages-rendered",
+          "type": "count",
+          "target": "[data-message-id]",
+          "gte": 2
+        },
+        {
+          "id": "chat-rail-current",
+          "type": "attr",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)",
+          "attr": "aria-current",
+          "equals": "page"
         }
       ],
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.rail-nav-live",
-      "title": "左轨图标是真按钮，点击切换激活态且仅一个激活",
+      "id": "ui.prototype.north-star.global-search-click-message",
+      "title": "增量24：点消息分组结果——回到该会话（群），行选中，overlay 关闭",
       "level": "L3_DYNAMIC",
       "operations": [
         {
           "op": "click",
-          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(1)"
+          "target": "[data-global-search-trigger]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-global-search]",
+          "value": "书架"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-search-group='message'] .sk-search-row"
+        },
+        {
+          "op": "wait",
+          "ms": 200
         }
       ],
       "oracles": [
         {
-          "id": "search-current",
-          "type": "attr",
-          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(1)",
-          "attr": "aria-current",
-          "equals": "page"
+          "id": "overlay-closed",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-search-open]"
         },
         {
-          "id": "single-active",
+          "id": "conversation-open",
+          "type": "exists",
+          "target": ".sk-conv-view"
+        },
+        {
+          "id": "row-selected",
           "type": "count",
-          "target": ".sk-rail .sk-rail-icon.is-active",
+          "target": ".sk-conv-row.is-selected",
           "equals": 1
         }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.global-search-settings-jump",
+      "title": "增量24：输入“通知”点功能结果——直达设置 通用›消息通知（7 开关），overlay 关闭",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-global-search-trigger]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-global-search]",
+          "value": "通知"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-search-group='function'] .sk-search-row"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "overlay-closed",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-search-open]"
+        },
+        {
+          "id": "settings-frame",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-settings-tabbar"
+        },
+        {
+          "id": "seven-notify-switches",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-notify]",
+          "equals": 7
+        },
+        {
+          "id": "notifications-side-active",
+          "type": "attr",
+          "scope": "global",
+          "target": "[data-settings-section='notifications']",
+          "attr": "aria-current",
+          "equals": "page"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.global-search-empty",
+      "title": "增量24：无命中时空态与封闭域说明，零结果行，Esc 可关",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-global-search-trigger]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-global-search]",
+          "value": "zzqq不可能"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        }
+      ],
+      "oracles": [
+        {
+          "id": "empty-state",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-search-empty]"
+        },
+        {
+          "id": "zero-rows",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-search-result]",
+          "equals": 0
+        },
+        {
+          "id": "boundary-inline",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-search-boundary-inline"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
     },
     {
       "id": "ui.prototype.north-star.conversation-rail",

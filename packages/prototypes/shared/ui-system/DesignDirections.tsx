@@ -7,21 +7,27 @@
  * → human verdict → token/knowledge. No speculative Peers-unrelated
  * business screens live in the frame.
  *
- * Current component under training: SearchField.
+ * Rail search is the GlobalSearchOverlay invocation (inc 24): an overlay,
+ * never a page — ⌘K/⌘F or the rail search button summon a closed-domain
+ * command surface; picking a result routes back to the object.
  *
  * Skins are CSS-variable token sets (data-skin); wallpapers are a second
  * independent dimension. Draft values; nothing is promoted until accepted.
  */
-import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type KeyboardEvent } from 'react';
+import { useEffect, useState, type CSSProperties, type ChangeEvent } from 'react';
 import {
   Search, MessageCircle, Sparkles, Settings,
-  Upload, ImageIcon, X,
+  Upload, ImageIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { UIProvider } from '@peers-touch/ui';
 import { MomentsFeature } from './moments/MomentsFeature';
 import { SettingsFeature } from './settings/SettingsFeature';
+import type { SettingsNavigationRequest } from './settings/SettingsFeature';
 import { ChatFeature } from './chat/ChatFeature';
+import type { ChatNavigationRequest } from './chat/ChatFeature';
+import { GlobalSearchOverlay } from './search/GlobalSearchOverlay';
+import type { GlobalSearchTarget } from './search/GlobalSearchOverlay';
 import { makeTranslate, usePrefs } from './prefs';
 import './design-directions.css';
 
@@ -59,68 +65,20 @@ const WALLPAPERS: { id: string; name: string; value: string }[] = [
   { id: 'night', name: '夜航', value: 'radial-gradient(120% 120% at 20% 0%,#3a4a63,#1c2536 70%)' },
 ];
 
-type RailTab = 'moments' | 'search' | 'chat' | 'settings';
-const RAIL_NAV: { icon: LucideIcon; key: RailTab; labelKey: 'nav.search' | 'tab.chats' | 'nav.moments' }[] = [
-  { icon: Search, key: 'search', labelKey: 'nav.search' },
+type RailTab = 'moments' | 'chat' | 'settings';
+const RAIL_NAV: { icon: LucideIcon; key: RailTab; labelKey: 'tab.chats' | 'nav.moments' }[] = [
   { icon: MessageCircle, key: 'chat', labelKey: 'tab.chats' },
   { icon: Sparkles, key: 'moments', labelKey: 'nav.moments' },
 ];
-
-/* SearchField — the first component trained in the frame.
-   Spec: docs/.../components/search-field.md. The specimen is a plain styled
-   host (rounded-square, token-painted) wrapping a borderless native input;
-   keyboard focus is shown on the rounded host, never a square UA outline. */
-function SearchField({
-  value, defaultValue = '', placeholder, disabled = false, onValueChange,
-}: {
-  value?: string;
-  defaultValue?: string;
-  placeholder: string;
-  disabled?: boolean;
-  onValueChange?: (next: string) => void;
-}) {
-  const [internal, setInternal] = useState(defaultValue);
-  const controlled = value !== undefined;
-  const current = controlled ? value : internal;
-  const setValue = (next: string) => {
-    if (!controlled) setInternal(next);
-    onValueChange?.(next);
-  };
-  return (
-    <label className={`sf-field${disabled ? ' is-disabled' : ''}`} data-state={current ? 'filled' : 'empty'}>
-      <Search size={15} className="sf-leading" aria-hidden="true" />
-      <input
-        type="search"
-        value={current}
-        placeholder={placeholder}
-        disabled={disabled}
-        aria-label={placeholder}
-        onChange={(e: ChangeEvent<HTMLInputElement>) => setValue(e.target.value)}
-      />
-      {current && !disabled && (
-        <button type="button" className="sf-clear" aria-label="清除搜索" onClick={() => setValue('')}>
-          <X size={13} />
-        </button>
-      )}
-    </label>
-  );
-}
-
-const SEARCHFIELD_STATES: { id: string; name: string; expect: string }[] = [
-  { id: 'empty', name: '默认 · 空', expect: '前导搜索图标 + placeholder，松绿填充砖，无描边' },
-  { id: 'focus', name: '聚焦', expect: '焦点环画在圆角宿主上（2px），内嵌 input 无方形 outline' },
-  { id: 'filled', name: '输入中', expect: '右侧出现清除按钮，点击清空并把焦点还给输入框' },
-  { id: 'disabled', name: '禁用', expect: '降低不透明度，不可聚焦，不出现清除按钮' },
-  { id: 'long', name: '长占位', expect: '超长文本省略号截断，不撑破宿主、无横向溢出' },
-];
-
 
 export function DesignDirections() {
   const [skinId, setSkinId] = useState('glass');
   const [wallpaper, setWallpaper] = useState<string>('none');
   const [wallName, setWallName] = useState<string>('无背景');
-  const [railTab, setRailTab] = useState<RailTab>('search');
-  const [liveQuery, setLiveQuery] = useState('');
+  const [railTab, setRailTab] = useState<RailTab>('moments');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [chatNav, setChatNav] = useState<ChatNavigationRequest | null>(null);
+  const [settingsNav, setSettingsNav] = useState<SettingsNavigationRequest | null>(null);
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
 
@@ -137,6 +95,47 @@ export function DesignDirections() {
       setWallName(file.name.slice(0, 18));
     };
     reader.readAsDataURL(file);
+  };
+
+  // Global summon: ⌘K / ⌘F / Ctrl+K. Ignore IME composition keydown.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229) return;
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) return;
+      if (event.key === 'k' || event.key === 'K' || event.key === 'f' || event.key === 'F') {
+        event.preventDefault();
+        setSearchOpen(open => !open);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Route a search result back to its owning object surface.
+  const handleSearchNavigate = (target: GlobalSearchTarget) => {
+    const nonce = Date.now();
+    switch (target.kind) {
+      case 'conversation':
+        setChatNav({ nonce, kind: 'conversation', conversationId: target.conversationId, messageId: target.messageId });
+        setRailTab('chat');
+        break;
+      case 'person':
+        setChatNav({ nonce, kind: 'person', personId: target.personId });
+        setRailTab('chat');
+        break;
+      case 'moment':
+        setRailTab('moments');
+        break;
+      case 'settings':
+        setSettingsNav({ nonce, group: target.group, section: target.section });
+        setRailTab('settings');
+        break;
+      case 'action':
+        if (target.action === 'new-chat') setRailTab('chat');
+        else setRailTab('moments');
+        break;
+    }
   };
 
   const noWallpaper = wallpaper === 'none';
@@ -190,6 +189,15 @@ export function DesignDirections() {
         <nav className="sk-rail" aria-label="主导航">
           <div className="sk-rail-avatar">林</div>
           <div className="sk-rail-group">
+            <button type="button"
+              className={`sk-rail-icon${searchOpen ? ' is-active' : ''}`}
+              aria-label={t('nav.search')}
+              aria-haspopup="dialog"
+              aria-expanded={searchOpen}
+              data-global-search-trigger
+              onClick={() => setSearchOpen(true)}>
+              <Search size={19} strokeWidth={1.7} />
+            </button>
             {RAIL_NAV.map(n => {
               const Icon = n.icon;
               return (
@@ -217,71 +225,29 @@ export function DesignDirections() {
             <header className="sk-feed-head">
               <div className="sk-head-title">
                 <span className="sk-eyebrow">
-                  {railTab === 'moments' ? '社交 · 动态'
-                    : railTab === 'settings' ? t('head.settingsEyebrow') : '组件训练'}
+                  {railTab === 'moments' ? '社交 · 动态' : t('head.settingsEyebrow')}
                 </span>
                 <h1>
-                  {railTab === 'moments' ? '朋友圈动态'
-                    : railTab === 'settings' ? t('head.settingsTitle') : 'SearchField · 搜索框'}
+                  {railTab === 'moments' ? '朋友圈动态' : t('head.settingsTitle')}
                 </h1>
               </div>
             </header>
           )}
 
           {isChat ? (
-            <ChatFeature />
+            <ChatFeature navigation={chatNav} />
           ) : railTab === 'moments' ? (
             <MomentsFeature />
-          ) : railTab === 'settings' ? (
-            <SettingsFeature />
           ) : (
-            <div className="sk-feed-list">
-              <section className="sk-card sk-contract">
-                <span className="sk-eyebrow">产品边界</span>
-                <h2>什么时候用 / 什么时候不用</h2>
-                <p>
-                  用于在当前范围内按名称、站点或连接即时过滤；输入只改变本地视图，不发起业务写请求。
-                  不承担导航跳转、命令执行或全局设置——那些属于命令面板与设置页。空查询必须回到完整列表。
-                </p>
-                <div className="sk-contract-grid">
-                  <div><strong>几何</strong><span>方圆宿主，控件圆角取 <code>--sk-radius-control</code>；高 40，内边距 13。</span></div>
-                  <div><strong>表面</strong><span>松绿/材质填充砖（<code>--sk-tile</code>），无 1px 描边，靠材质分层。</span></div>
-                  <div><strong>色彩</strong><span>前导图标与占位用三级文字；聚焦环取 <code>--sk-focus-ring</code>。</span></div>
-                  <div><strong>状态</strong><span>empty / focus / filled(+清除) / disabled / 长文本，共 5 态。</span></div>
-                </div>
-              </section>
-
-              <section className="sk-card sk-specimens">
-                <span className="sk-eyebrow">样本 · 同一 renderer 跨皮肤</span>
-                <h2>状态矩阵</h2>
-                <ul className="sf-state-list">
-                  {SEARCHFIELD_STATES.map(s => (
-                    <li key={s.id}>
-                      <div className="sf-state-head"><strong>{s.name}</strong><span>{s.expect}</span></div>
-                      {s.id === 'empty' && <SearchField placeholder="搜索联系人、站点" />}
-                      {s.id === 'focus' && <SearchField placeholder="聚焦态：Tab 键查看焦点环" />}
-                      {s.id === 'filled' && <SearchField defaultValue="林晚" placeholder="搜索联系人、站点" />}
-                      {s.id === 'disabled' && <SearchField placeholder="当前不可搜索" disabled />}
-                      {s.id === 'long' && <SearchField placeholder="搜索联系人、站点、群组、中继节点、联邦范围内的全部可达对象与往来记录" />}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-
-              <section className="sk-card sk-live">
-                <span className="sk-eyebrow">活样本 · 真实受控状态</span>
-                <h2>在会话轨中的实际形态见「消息」轨</h2>
-                <div className="sf-live-bar">
-                  <SearchField value={liveQuery} onValueChange={setLiveQuery} placeholder="搜索联系人、站点" />
-                  <span className="sf-live-echo" aria-live="polite">
-                    {liveQuery ? `正在按“${liveQuery}”过滤（本地示例）` : '输入以查看实时值回显'}
-                  </span>
-                </div>
-              </section>
-            </div>
+            <SettingsFeature navigation={settingsNav} />
           )}
         </main>
       </div>
+
+      <GlobalSearchOverlay
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onNavigate={handleSearchNavigate} />
       </UIProvider>
     </div>
   );

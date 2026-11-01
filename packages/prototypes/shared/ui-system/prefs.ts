@@ -986,6 +986,24 @@ export const STRINGS = {
     'about.i14': '日历',
     'about.i15': '任务看板',
     'about.i16': '可扩展插件',
+
+    // global search overlay (inc 24)
+    'search.title': '全局搜索',
+    'search.placeholder': '搜索邻居、会话、消息与动态…',
+    'search.recent': '最近',
+    'search.quickFunctions': '功能直达',
+    'search.actionHint': '跳转',
+    'search.emptyTitle': '没有找到与“{q}”相关的内容',
+    'search.emptyBody': '搜索只覆盖本网络内的人与内容，换个关键词试试。',
+    'search.boundary': '封闭域 · 仅搜索 Peers 网络内容',
+    'search.navigate': '移动',
+    'search.kind.people': '邻居',
+    'search.kind.conversations': '会话',
+    'search.kind.messages': '消息',
+    'search.kind.moments': '动态',
+    'search.kind.functions': '功能',
+    'search.qf.newChat': '发起新会话',
+    'search.qf.newMoment': '发布动态',
   },
   en: {
     // shell chrome
@@ -1853,6 +1871,24 @@ export const STRINGS = {
     'about.i14': 'Calendar',
     'about.i15': 'Task boards',
     'about.i16': 'Extensible plugins',
+
+    // global search overlay (inc 24)
+    'search.title': 'Search',
+    'search.placeholder': 'Search people, chats, messages, moments…',
+    'search.recent': 'Recent',
+    'search.quickFunctions': 'Quick actions',
+    'search.actionHint': 'Open',
+    'search.emptyTitle': 'No results for “{q}”',
+    'search.emptyBody': 'Search stays inside your network. Try another keyword.',
+    'search.boundary': 'Closed domain · Peers network content only',
+    'search.navigate': 'to navigate',
+    'search.kind.people': 'People',
+    'search.kind.conversations': 'Conversations',
+    'search.kind.messages': 'Messages',
+    'search.kind.moments': 'Moments',
+    'search.kind.functions': 'Functions',
+    'search.qf.newChat': 'New conversation',
+    'search.qf.newMoment': 'New moment',
   },
 } as const;
 

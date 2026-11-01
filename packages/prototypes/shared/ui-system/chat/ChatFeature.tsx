@@ -22,7 +22,11 @@ const DELIVERY_DELAY_MS = 700;
 const RETRY_DELAY_MS = 900;
 const TYPING_MS = 1800;
 
-export function ChatFeature() {
+export type ChatNavigationRequest =
+  | { nonce: number; kind: 'conversation'; conversationId: string; messageId?: string }
+  | { nonce: number; kind: 'person'; personId: string };
+
+export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest | null }) {
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
   const [tab, setTab] = useState<'chats' | 'contacts'>('chats');
@@ -65,6 +69,24 @@ export function ChatFeature() {
 
   const markAsRead = (id: string) => setSessions(list =>
     list.map(c => c.id === id ? { ...c, unread: 0 } : c));
+
+  // External navigation (global search result): open conversation/person.
+  const lastNavNonce = useRef(0);
+  useEffect(() => {
+    if (!navigation || navigation.nonce === lastNavNonce.current) return;
+    lastNavNonce.current = navigation.nonce;
+    setTab('chats');
+    if (navigation.kind === 'conversation') {
+      if (sessions.some(c => c.id === navigation.conversationId)) {
+        setSelectedId(navigation.conversationId);
+        markAsRead(navigation.conversationId);
+      }
+    } else {
+      const person = PEOPLE.find(p => p.id === navigation.personId);
+      if (person) openPerson(person);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation]);
 
   const hideConversation = (id: string) => {
     setSessions(list => list.filter(c => c.id !== id));

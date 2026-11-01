@@ -217,8 +217,9 @@ Social / Moments：
 ### 5.5 收尾状态（2026-10-31）
 
 功能点审计（§5.1/§5.2）除「会话列表 blocking/stale 错误态」外全部落地；
-增量 1–22 全部独立提交、独立门禁。最终证据：north-star 108/108 动态场景、
-consumer 17/17、1360/390 双宽溢出与 craft battery 通过、tsc 干净、0 console error。
+增量 1–24 全部独立提交、独立门禁。增量 24 后证据：north-star 109 个动态场景
+全 OBSERVED、consumer 18/18、1360/390 双宽溢出与 craft battery 通过、
+tsc 干净、0 console error。
 所有状态均为窗内本地真实状态机，无 mocks；非快乐路径用显式模拟器/演示入口，不假造后端。
 
 #### 增量 22 人审反馈闭环（2026-11-01）
@@ -228,6 +229,22 @@ consumer 17/17、1360/390 双宽溢出与 craft battery 通过、tsc 干净、0 
 - 消息工具条位置以 `.sk-msg-col` 为定位锚（不再锚 78% 宽行）：peer `left:calc(100%+8px)`、
   me `right:calc(100%+8px)`，统一靠左时 me 改挂右侧；≤720px 浮在气泡上沿外侧。
 - 账号设备列表默认 6 台种子，分页是真实状态；QR 关联完成会新增「iPhone 15」行。
+
+#### 增量 23 设置 IA 对齐真身（2026-11-01）
+
+- 一级导航从材质药丸改为 48px 下划线文字 tab（发丝仅在 tab 栏底），二级为 190px
+  朴素侧栏；5 组 4/3/6/2/6 分区对齐 desktop `shell/src/Settings.tsx`，删除小程序分组
+  与自造工具审批表。合同：`settings-frame.md`、`settings-general.md`、
+  `settings-channels-ai-advanced.md`、`settings-data.md`。
+- 账号重构为身份卡 / 公开资料 / 关系（黑名单）；设备关联抽为 `LinkedDevices.tsx`。
+
+#### 增量 24 全局搜索浮层（2026-11-01）
+
+- 左轨搜索钮不再进入静态 SearchField 训练页（训练台与 `sf-*` 死样式一并移除，
+  首训合同标记 superseded）；改为顶置 `GlobalSearchOverlay`：⌘K/⌘F/Ctrl+K 唤起，
+  封闭域索引邻居/会话/消息/动态/21 项设置功能，分组+高亮+空态+键盘导航，
+  选中经宿主路由回对象面（ChatFeature/SettingsFeature 的 navigation nonce 合同）。
+  合同：`components/global-search-overlay.md`；新增 7 个 `global-search-*` 探针场景。
 
 ### 5.6 相对真身的改进（必须是真问题，非审美重画）
 
