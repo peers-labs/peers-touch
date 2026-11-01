@@ -5342,7 +5342,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-feed",
-      "title": "增量4：动态子系统首页——4 范围 Segmented/发动态 CTA/3 张完整卡片（48 头像、信任行、图片、评论预览、反应条、加载更多），工艺电池全清",
+      "title": "增量4/41：动态子系统首页——3 范围 Segmented/就近搜索/发动态 CTA/3 张完整卡片（48 头像、信任行、图片、评论预览、反应条、加载更多），工艺电池全清",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -5368,7 +5368,20 @@
           "id": "scope-segmented",
           "type": "count",
           "target": ".sk-moments-subbar .pt-segmented .pt-button",
-          "equals": 4
+          "equals": 3
+        },
+        {
+          "id": "scope-search-bound-to-feed",
+          "type": "attr",
+          "target": ".sk-scope-search",
+          "attr": "data-scope-search",
+          "equals": "feed"
+        },
+        {
+          "id": "no-people-surface",
+          "type": "count",
+          "target": ".sk-people",
+          "equals": 0
         },
         {
           "id": "compose-cta",
@@ -6119,8 +6132,111 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.moments-people",
-      "title": "找人：6 人、3 人已关注；关注第 4 人翻转选中；搜索实时过滤为 1 行",
+      "id": "ui.prototype.north-star.moments-search-feed",
+      "title": "增量41 信息就近：首页搜索就地过滤这条流（薄荷→1 条林晚），清空恢复分页 3 条",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "type",
+          "target": ".sk-scope-search",
+          "value": "薄荷"
+        },
+        {
+          "op": "expect",
+          "id": "one-post",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-moments-scroll > .sk-post",
+            "equals": 1
+          }
+        },
+        {
+          "op": "expect",
+          "id": "matched-author",
+          "oracle": {
+            "type": "textContains",
+            "target": ".sk-moments-scroll > .sk-post:first-of-type .sk-post-name",
+            "contains": "林晚"
+          }
+        },
+        {
+          "op": "type",
+          "target": ".sk-scope-search",
+          "value": ""
+        }
+      ],
+      "oracles": [
+        {
+          "id": "paging-restored",
+          "type": "count",
+          "target": ".sk-moments-scroll > .sk-post",
+          "equals": 3
+        },
+        {
+          "id": "load-more-back",
+          "type": "exists",
+          "target": "[data-action-id='moments.load-more']"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-search-explore",
+      "title": "增量41 信息就近：切到探索，同一搜索框过滤联邦公开动态（植物→1 条阿砚）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
+        },
+        {
+          "op": "expect",
+          "id": "search-bound-explore",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-scope-search",
+            "attr": "data-scope-search",
+            "equals": "explore"
+          }
+        },
+        {
+          "op": "type",
+          "target": ".sk-scope-search",
+          "value": "植物"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "one-federated",
+          "type": "count",
+          "target": ".sk-moments-scroll > .sk-post",
+          "equals": 1
+        },
+        {
+          "id": "matched-author",
+          "type": "textContains",
+          "target": ".sk-moments-scroll > .sk-post:first-of-type .sk-post-name",
+          "contains": "阿砚"
+        },
+        {
+          "id": "no-end-marker-while-searching",
+          "type": "missing",
+          "target": ".sk-feed-end"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-search-circles",
+      "title": "增量41 信息就近：圈友搜索过滤我的受众分组（流转→1 个流转书架，按名称/描述/成员匹配）",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -6132,34 +6248,69 @@
           "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
         },
         {
-          "op": "click",
-          "target": ".sk-people-list > li:nth-child(4) .sk-person-follow"
+          "op": "expect",
+          "id": "search-bound-circles",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-scope-search",
+            "attr": "data-scope-search",
+            "equals": "circles"
+          }
         },
         {
           "op": "type",
-          "target": ".sk-people .pt-input",
-          "value": "苏"
+          "target": ".sk-scope-search",
+          "value": "流转"
         }
       ],
       "oracles": [
         {
-          "id": "six-people",
+          "id": "one-circle",
           "type": "count",
-          "target": ".sk-person-row",
+          "target": ".sk-circle-card",
           "equals": 1
         },
         {
-          "id": "only-suhe",
+          "id": "matched-circle",
           "type": "textContains",
-          "target": ".sk-person-row .sk-post-name",
-          "contains": "苏禾"
+          "target": ".sk-circle-name",
+          "contains": "流转书架"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-search-resets-on-switch",
+      "title": "增量41：切范围即清空关键词——首页搜「林」后切圈友，搜索复位为 3 个分组，不误伤新领域",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
         },
         {
-          "id": "suhe-followed",
+          "op": "type",
+          "target": ".sk-scope-search",
+          "value": "林"
+        },
+        {
+          "op": "click",
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "all-three-circles",
+          "type": "count",
+          "target": ".sk-circle-card",
+          "equals": 3
+        },
+        {
+          "id": "search-rebound",
           "type": "attr",
-          "target": ".sk-person-row .sk-person-follow",
-          "attr": "aria-pressed",
-          "equals": "true"
+          "target": ".sk-scope-search",
+          "attr": "data-scope-search",
+          "equals": "circles"
         }
       ],
       "finalizers": []
@@ -6175,7 +6326,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
         },
         {
           "op": "expect",
@@ -6242,7 +6393,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
         },
         {
           "op": "click",
@@ -6332,7 +6483,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
         },
         {
           "op": "click",
@@ -6404,7 +6555,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
         },
         {
           "op": "click",
@@ -6467,7 +6618,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
         },
         {
           "op": "click",

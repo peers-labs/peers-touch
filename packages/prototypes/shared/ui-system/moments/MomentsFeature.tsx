@@ -17,7 +17,7 @@ import {
 } from './moments-data';
 import './moments.css';
 
-type MomentsTab = 'feed' | 'explore' | 'people' | 'circles';
+type MomentsTab = 'feed' | 'explore' | 'circles';
 
 // Feed/profile stay in one surface; cards carry their own comments inline.
 type MomentsNav =
@@ -27,15 +27,23 @@ type MomentsNav =
 const TAB_OPTIONS: { value: MomentsTab; label: string }[] = [
   { value: 'feed', label: '首页' },
   { value: 'explore', label: '探索' },
-  { value: 'people', label: '找人' },
   { value: 'circles', label: '圈友' },
 ];
 
 const TAB_HINT: Record<MomentsTab, string> = {
   feed: '关注与同圈邻居的最新动态',
   explore: '联邦内其他站点的公开动态',
-  people: '按名字找到本站与联邦内的人',
   circles: '发布动态的受众分组与成员',
+};
+
+// Information-locality rule: the single sub-bar search filters whichever
+// scope is active — home posts, federated posts, or my audience circles.
+// There is no separate people tab (person discovery is the profile reached
+// from any author, and circle membership is managed inside each circle).
+const TAB_SEARCH_PLACEHOLDER: Record<MomentsTab, string> = {
+  feed: '搜索这条流的动态（作者、正文）',
+  explore: '搜索联邦公开动态（站点、作者、正文）',
+  circles: '搜索圈子名称、描述或成员',
 };
 
 const AUDIENCE_OPTIONS: { value: AudienceKind; label: string }[] = [
@@ -152,52 +160,6 @@ function ProfileView({ name, people, postCount, onBack, onAuthor, onReact, onUnr
   );
 }
 
-function PeopleView({ people, onToggleFollow, onOpenProfile }: {
-  people: Person[];
-  onToggleFollow: (id: string) => void;
-  onOpenProfile: (name: string) => void;
-}) {
-  const [query, setQuery] = useState('');
-  const filtered = people.filter(person =>
-    `${person.name} ${person.station} ${person.bio}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return (
-    <div className="sk-people">
-      <TextField aria-label="找人" placeholder="搜索名字、站点" clearable onClear={() => setQuery('')}
-        value={query} onValueChange={setQuery} leading={<Search size={15} />} />
-      {filtered.length === 0
-        ? <Empty description="没有匹配的人" />
-        : (
-          <ul className="sk-people-list">
-            {filtered.map(person => (
-              <li key={person.id}>
-                <div className="sk-person-row sk-post">
-                  <button type="button" className="sk-post-author"
-                    onClick={() => onOpenProfile(person.name)}>
-                    <Avatar name={person.name} background={person.tone} size={44}
-                      style={{ borderRadius: 12 }} />
-                    <span className="sk-post-idcol">
-                      <strong className="sk-post-name">
-                        {person.name}
-                        {person.mutual && <span className="sk-person-mutual">互相关注</span>}
-                      </strong>
-                      <span className="sk-post-time">{person.station} · {person.bio}</span>
-                    </span>
-                  </button>
-                  <Toggle actionId={`people.follow.${person.id}`} className="sk-person-follow"
-                    emphasis={person.followed ? 'secondary' : 'primary'}
-                    selected={person.followed}
-                    leading={person.followed ? <Check size={13} /> : <UserPlus size={13} />}
-                    label={person.followed ? '已关注' : '关注'}
-                    onSelectedChange={() => onToggleFollow(person.id)} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-    </div>
-  );
-}
-
 function CircleCreateDialog({ open, onDismiss, onCreate }: {
   open: boolean;
   onDismiss: () => void;
@@ -226,14 +188,15 @@ function CircleCreateDialog({ open, onDismiss, onCreate }: {
 // owner-private PTID list — not a bidirectional group, so there is no "leave";
 // group leave/dissolve belongs to chat.Group). Each card opens its management
 // dialog: rename/describe, add/remove members, delete.
-function CirclesView({ circles, onOpenManage }: {
+function CirclesView({ circles, onOpenManage, emptyLabel }: {
   circles: Circle[];
   onOpenManage: (id: string) => void;
+  emptyLabel: string;
 }) {
   if (circles.length === 0) {
     return (
       <div className="sk-circles">
-        <Empty description="还没有受众分组，点右上角「新建圈子」创建" />
+        <Empty description={emptyLabel} />
       </div>
     );
   }
@@ -373,6 +336,10 @@ export function MomentsFeature() {
   const [circleComposerOpen, setCircleComposerOpen] = useState(false);
   const [circleManageId, setCircleManageId] = useState<string | null>(null);
   const [circleDeleteTarget, setCircleDeleteTarget] = useState<Circle | null>(null);
+  // Scope-local search: one query whose domain follows the active tab.
+  // Switching scope clears it so a term can never silently filter the wrong
+  // domain.
+  const [query, setQuery] = useState('');
 
   const homePosts = posts.filter(post => !post.federated);
   const federatedPosts = posts.filter(post => post.federated);
@@ -381,7 +348,21 @@ export function MomentsFeature() {
     setTab(next);
     setNav({ kind: 'tab' });
     setVisibleCount(PAGE_SIZE);
+    setQuery('');
   };
+
+  const q = query.trim().toLowerCase();
+  const postMatches = (post: Moment) => !q
+    || post.author.toLowerCase().includes(q)
+    || post.text.toLowerCase().includes(q)
+    || (post.station ?? '').toLowerCase().includes(q);
+  const circleMatches = (circle: Circle) => !q
+    || circle.name.toLowerCase().includes(q)
+    || circle.desc.toLowerCase().includes(q)
+    || circle.members.some(member => member.name.toLowerCase().includes(q));
+  const searchedHome = q ? homePosts.filter(postMatches) : null;
+  const searchedFederated = q ? federatedPosts.filter(postMatches) : null;
+  const searchedCircles = q ? circles.filter(circleMatches) : circles;
 
   const openProfile = (name: string) => setNav({ kind: 'profile', name, from: tab });
   const backToTab = () => {
@@ -542,6 +523,10 @@ export function MomentsFeature() {
             <Segmented<MomentsTab> label="动态范围" options={TAB_OPTIONS}
               value={tab} onValueChange={value => switchTab(value ?? 'feed')} />
             <span className="sk-moments-hint">{TAB_HINT[tab]}</span>
+            <TextField className="sk-scope-search" aria-label="搜索当前范围"
+              data-scope-search={tab} placeholder={TAB_SEARCH_PLACEHOLDER[tab]}
+              value={query} onValueChange={setQuery} clearable onClear={() => setQuery('')}
+              leading={<Search size={14} />} density="compact" />
             {tab === 'feed' && (
               <Button actionId="moments.compose" emphasis="primary" className="sk-compose-open"
                 leading={<Plus size={15} />} label="发动态" onActivate={() => setComposerOpen(true)} />
@@ -554,35 +539,39 @@ export function MomentsFeature() {
 
           {tab === 'feed' && (
             <div className="sk-moments-scroll">
-              {homePosts.slice(0, visibleCount).map(post => (
+              {(searchedHome ?? homePosts.slice(0, visibleCount)).map(post => (
                 <MomentCard key={post.id} post={post} {...sharedCardProps} />
               ))}
-              {visibleCount < homePosts.length
+              {q && searchedHome && searchedHome.length === 0 && (
+                <Empty description={`没有匹配「${query.trim()}」的动态`} />
+              )}
+              {!q && (visibleCount < homePosts.length
                 ? (
                   <Button actionId="moments.load-more" emphasis="quiet" fullWidth
                     className="sk-loadmore" label="加载更多"
                     onActivate={() => setVisibleCount(count => count + PAGE_SIZE)} />
                 )
-                : <span className="sk-feed-end">没有更多了</span>}
+                : <span className="sk-feed-end">没有更多了</span>)}
             </div>
           )}
 
           {tab === 'explore' && (
             <div className="sk-moments-scroll">
-              {federatedPosts.map(post => (
+              {(searchedFederated ?? federatedPosts).map(post => (
                 <MomentCard key={post.id} post={post} {...sharedCardProps} />
               ))}
-              <span className="sk-feed-end">联邦探索由本地示例呈现</span>
+              {q && searchedFederated && searchedFederated.length === 0 && (
+                <Empty description={`没有匹配「${query.trim()}」的联邦动态`} />
+              )}
+              {!q && <span className="sk-feed-end">联邦探索由本地示例呈现</span>}
             </div>
           )}
 
-          {tab === 'people' && (
-            <PeopleView people={people} onToggleFollow={toggleFollow}
-              onOpenProfile={openProfile} />
-          )}
-
           {tab === 'circles' && (
-            <CirclesView circles={circles} onOpenManage={setCircleManageId} />
+            <CirclesView circles={searchedCircles} onOpenManage={setCircleManageId}
+              emptyLabel={q
+                ? `没有匹配「${query.trim()}」的圈子`
+                : '还没有受众分组，点右上角「新建圈子」创建'} />
           )}
         </>
       ) : nav.kind === 'profile' ? (

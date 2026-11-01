@@ -4,14 +4,19 @@
 
 .sk-moments { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-/* Scope sub-bar: segmented scope + hint + compose CTA (one rhythm group). */
+/* Scope sub-bar: segmented scope + hint + scope-local search + primary CTA
+   (one rhythm group). Search carries the auto margin so it anchors the right
+   cluster regardless of whether the scope has a CTA. */
 .sk-moments-subbar {
   flex-shrink: 0; display: flex; align-items: center; gap: 12px;
   padding: 8px 22px 10px; flex-wrap: wrap;
 }
 .sk-moments-hint { font-size: 12px; color: var(--sk-text-3); }
+.sk-moments-subbar .pt-field-frame:has(> .sk-scope-search) {
+  margin-left: auto; width: 248px; max-width: 100%; min-width: 0;
+}
 .sk-compose-open,
-.sk-circle-open { margin-left: auto; }
+.sk-circle-open { flex-shrink: 0; }
 
 .sk-moments-scroll {
   flex: 1; min-height: 0; overflow: auto;
@@ -162,20 +167,6 @@
 .sk-profile-follow { flex-shrink: 0; }
 .sk-profile-posts { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
 
-/* People search */
-.sk-people {
-  flex: 1; min-height: 0; overflow: auto;
-  padding: 6px 22px 24px; display: flex; flex-direction: column; gap: 12px;
-}
-.sk-people-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.sk-person-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
-.sk-person-row .sk-post-author { flex: 1; }
-.sk-person-mutual {
-  font-size: 10px; font-weight: 500; color: var(--sk-text-3);
-  border: 1px solid var(--sk-card-border); border-radius: 999px; padding: 1px 7px;
-}
-.sk-person-follow { flex-shrink: 0; }
-
 /* Circles */
 .sk-circles {
   flex: 1; min-height: 0; overflow: auto;
@@ -249,7 +240,8 @@
 
 @media (max-width: 760px) {
   .sk-moments-subbar { padding: 8px 12px; gap: 8px; }
-  .sk-moments-scroll, .sk-people, .sk-circles { padding: 4px 12px 20px; }
+  .sk-moments-scroll, .sk-circles { padding: 4px 12px 20px; }
+  .sk-moments-subbar .pt-field-frame:has(> .sk-scope-search) { width: 100%; margin-left: 0; order: 3; }
   .pt-button.sk-circle-card > .pt-button-content { flex-direction: column; align-items: flex-start; gap: 10px; }
   .pt-button.sk-circle-card .sk-circle-tail { align-self: flex-end; }
   .sk-react-picker { grid-template-columns: repeat(8, 28px); }
