@@ -721,6 +721,29 @@ local composer draft --cancel--> discarded locally
 发送成功后通过留痕撤回纠错。外部产品行为只作为 disposition evidence，不反推其内部
 实现。
 
+### 6.5 Send Admission Idempotency Amendment
+
+> **Amendment status**: accepted (`MP-D33`, Owner accepted 2026-11-01)
+
+Evidence ledger：
+
+| Claim | Class | Evidence | Confidence |
+|---|---|---|---|
+| 同一发送动作可同时显示「已排队」与「消息发送失败」，手动重发产生第二条消息 | verified_fact | native incident 2026-10-31: 跨 Station 群 Station 不可用期间两条文本+一条附件均 durable 排队但 UI 报失败并回填 composer | high |
+| draft 在 prepare 之前 durable 落库，prepare 失败只调度重试，BFF 却以非 `pending` 对 UI 返回失败语义 | verified_fact | `engine.submit_message` draft-deferred 分支与 renderer `requireQueuedMessagingSendOutcome` | high |
+| admission 成功后的 `wake_profile` 失败会让整条命令返回失败 | verified_fact | `messaging_send_message` wake error mapping | high |
+| renderer 不携带发送身份，双击/失败重发每次 mint 新 `message_id` | verified_fact | `messaging_send_message` IPC 入参无 intent 字段 | high |
+| 以设备本地 `(sender_device_id, send_intent_id)` 唯一约束做 admission 去重可消除该分裂且不扩 Station 合同 | accepted_decision | `MP-D33` | accepted |
+
+完整决策文本：`decisions.md` MP-D33。边界摘要：
+
+- renderer 为每个用户发送动作生成一个 `send_intent_id`，同一动作的不确定性等待与显式重试复用它；
+- BFF admission 结果只有 `admitted`（含 `draft`/`pending` 两个 durable 态）与
+  `rejected`（确定未入队）；admission 后的 wake/dispatch 不确定性不得作为请求失败返回；
+- 重复 admission 返回同一 `message_id` 与当前状态，绝不产生第二条消息、命令或附件批次；
+- renderer 仅在 `rejected` 时回填 composer；admission 后一律先清草稿，再经状态投影与
+  MP-D31 对账收敛，禁止自发重发。
+
 ## 7. End-To-End Receive
 
 ```text
@@ -874,6 +897,44 @@ Receipt aggregate 必须按 conversation kind 使用正确的 endpoint truth：
 - `read` 是比 `delivered` 更强的单调事实。Receipt gap repair 可以由已提交 read
   cursor 推导 `delivered=true`，但不得伪造 `consumed_device_count` 或
   `fully_delivered`。
+
+### 9.1 Delivery Verdict Horizon Amendment
+
+> **Amendment status**: accepted (`MP-D34`, Owner accepted 2026-11-01)
+
+§9 定义的全部是 durable fact；分布式网络无法证明“未送达”。为了给发送者及时、诚实的
+判定，发送方 UI 状态是「事实 + 带视野的本地判断」两层投影：
+
+```text
+queued ──command convergence horizon 60s──▶ submit_overdue (本地判断)
+   │                                              仍然 retry，不代表失败
+   ▼
+submitted (Authority accepted fact)
+   │
+   ├── delivered ── fully_delivered ── read        (durable facts, §9)
+   ├── failed_terminal                             (Authority typed reject fact)
+   └── delivery horizon 24h 无正向回执
+          └──▶ undeliverable_suspected (本地判断)
+                 后台 exact-bytes 重试不停止；后到回执可将其升级为 delivered
+```
+
+规则：
+
+- 视野只改投影，不改 outbox：不取消、不 dead-letter、不停止 MP-D28 重试；视野是设备本地
+  常量，不发给 Authority，不形成新的 wire fact；
+- `retry_wait` 必须透出 attempt 表已有的 typed `last_error_code` 与
+  `next_attempt_at`，让用户看到排队原因与下一次尝试；
+- `undeliverable_suspected` 文案必须表达“尚未确认送达 + 当前原因分类”，禁止渲染成
+  失败，禁止阻止后续事实升级；用户可显式“立即重试”，复用同一 command 身份；
+- Authority terminal reject 永远覆盖任何视野判断；
+- 群 `x/N delivered` 消费 originator Device Inbox 中已有的逐设备回执投影（同站
+  enqueue / 跨站 Federation outbox），required set 仍由 immutable delivery
+  commitments / committed MLS leaves 约束；缺 leaf 仍是 integrity failure，视野不得
+  把它折算成 revoked/delivered；
+- 只有当新设备的回执流不足以重建聚合时，才允许新增一个 Conversation-owned 的
+  sender-readable aggregate 查询，读取 canonical truth，禁止借机伪造 receipt。
+
+完整决策文本：`decisions.md` MP-D34。
 
 ## 10. Failure, Retry, And Overload
 

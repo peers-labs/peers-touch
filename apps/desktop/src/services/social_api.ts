@@ -547,21 +547,48 @@ export function publicCommentFromResource(resource: CommentResource): Comment {
     likesCount: metadata.reactionsCount,
     replyToCommentId: metadata.replyToCommentId,
     repliesCount: metadata.repliesCount,
+    typedMentions: resource.body.value.mentions ?? [],
   });
+}
+
+/** Structural mention shape accepted by comment creation — callers
+ * may pass proto Mention messages or plain composer objects. */
+export interface StructuralMention {
+  actorPtid: string;
+  offset: number;
+  length: number;
+  display: string;
 }
 
 export async function socialCreateComment(
   postId: string,
   content: string,
   replyToCommentId?: string,
+  mentions?: StructuralMention[],
 ): Promise<Comment | undefined> {
   const resp = await invokeRustProto<
-    { post_id: string; content: string; reply_to_comment_id?: string },
+    {
+      post_id: string;
+      content: string;
+      reply_to_comment_id?: string;
+      typed_mentions?: Array<{
+        actor_ptid: string;
+        offset: number;
+        length: number;
+        display: string;
+      }>;
+    },
     CreateCommentResponse
   >('social_create_comment', CreateCommentResponseSchema, {
     post_id: postId,
     content,
     reply_to_comment_id: replyToCommentId,
+    typed_mentions: (mentions ?? []).map((mention) => ({
+      actor_ptid: mention.actorPtid,
+      offset: mention.offset,
+      length: mention.length,
+      display: mention.display,
+    })),
   });
   return resp.comment;
 }

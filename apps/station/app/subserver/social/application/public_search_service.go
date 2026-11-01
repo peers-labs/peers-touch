@@ -27,6 +27,11 @@ type PublicSearchService struct {
 	cursorCipher cipher.AEAD
 }
 
+// MaxPublicQueryRunes is the shared Search query boundary. The Station
+// validates Unicode scalar count (not UTF-8 byte length) and rejects overlong
+// input instead of truncating, matching the client and Search Core limits.
+const MaxPublicQueryRunes = 256
+
 func NewPublicSearchService(database *gorm.DB) (*PublicSearchService, error) {
 	cursorCipher, err := newPublicSearchCursorCipher()
 	if err != nil {
@@ -64,7 +69,8 @@ func (s *PublicSearchService) readSnapshot(
 }
 
 func validatePublicSearchQuery(request *searchpb.QueryIntent) (posts, comments bool, err error) {
-	if request == nil || !utf8.ValidString(request.Text) || len(request.Text) > 2048 ||
+	if request == nil || !utf8.ValidString(request.Text) ||
+		utf8.RuneCountInString(request.Text) > MaxPublicQueryRunes ||
 		strings.TrimSpace(request.Text) == "" || strings.ContainsRune(request.Text, 0) ||
 		request.Limit > 100 || len(request.Locale) > 64 || request.Suggestions ||
 		request.ConversationId != "" || request.AttachmentNamesOnly ||

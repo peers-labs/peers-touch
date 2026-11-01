@@ -53,6 +53,7 @@ export function ChatActorIdentityRow({
       >
         <UserSquareAvatar
           remoteUrl={identity.avatarUrl}
+          actorPtid={identity.actorPtid}
           name={identity.displayName}
           size={avatarSize}
         />

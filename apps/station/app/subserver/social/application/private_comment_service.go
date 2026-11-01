@@ -55,6 +55,10 @@ func ProjectPublicCommentResource(
 		Body: &privatecontentpb.CommentResource_PublicContent{
 			PublicContent: &privatecontentpb.PublicCommentContent{
 				Text: comment.GetContent(),
+				// Position-aware mentions round-trip from the
+				// social_comments.mentions_json column so desktop can
+				// render and re-authorize @-targets on readback.
+				Mentions: comment.GetTypedMentions(),
 			},
 		},
 	}

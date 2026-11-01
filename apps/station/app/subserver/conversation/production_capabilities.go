@@ -1922,14 +1922,24 @@ func existingDirectCanReopen(
 			activeMembers[member.Actor] = struct{}{}
 		}
 	}
-	if len(activeMembers) != 2 {
-		return false
-	}
-	_, hasActorA := activeMembers[actorA]
-	_, hasActorB := activeMembers[actorB]
-
-	if !hasActorA || !hasActorB {
-		return false
+	if actorA == actorB {
+		// Self-direct: the creator is the sole active member.
+		if len(activeMembers) != 1 {
+			return false
+		}
+		_, hasActor := activeMembers[actorA]
+		if !hasActor {
+			return false
+		}
+	} else {
+		if len(activeMembers) != 2 {
+			return false
+		}
+		_, hasActorA := activeMembers[actorA]
+		_, hasActorB := activeMembers[actorB]
+		if !hasActorA || !hasActorB {
+			return false
+		}
 	}
 	switch view.Source {
 	case query.SourceAuthority:

@@ -1,18 +1,26 @@
 /**
- * PublicProfileCard — a reusable profile card for displaying user or group
- * identity in chat detail panels, contact views, and other surfaces.
+ * PublicProfileCard — the single identity-card surface for self, peer and
+ * group profiles (popover, contact detail, chat detail panel).
  *
- * Designed to be driven entirely by the `PublicProfileModel` data bag so
- * different callers (friend chat detail, group detail, contacts panel) can
- * compose the same visual without coupling to specific store shapes.
+ * Visual parity with the self popover: banner background, overlapping
+ * avatar, name + federated handle, intro, practical metadata and one
+ * primary action row.
+ *
+ * The card is strictly declarative: it renders the data bag and whatever
+ * `actions` node the caller passes. It MUST NOT branch on self/friend/
+ * stranger or own any relationship or management logic — that decision
+ * lives in the caller (see ProfilePrimaryAction). Raw identity values stay
+ * behind an opt-in expandable disclosure (CHAT-UR09) so casual users never
+ * see developer plumbing.
  */
 
 import type { ReactNode } from 'react';
 import { Button, toast } from '@lobehub/ui';
 import { Flexbox } from 'react-layout-kit';
-import { Tooltip, theme, Typography } from 'antd';
-import { Copy } from 'lucide-react';
+import { Divider, Tooltip, theme, Typography } from 'antd';
+import { Copy, Link2 } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { FederatedHandle } from '../FederatedHandle';
 
 const { Text } = Typography;
 
@@ -21,13 +29,21 @@ const { Text } = Typography;
 export interface PublicProfileModel {
   displayName: string;
   avatar?: string;
+  /** Banner/background image URL. Empty renders the neutral gradient. */
   header?: string;
+  /** Bare username; combined with homeStationDomain into the @user@host handle. */
   username?: string;
+  /** host[:port] for the federated handle. */
+  homeStationDomain?: string;
   bio?: string;
+  /** Owner actor PTID; drives avatar asset resolution and the avatar DOM marker. */
   did?: string;
-  createdAt?: string;
+  /** Formatted join date string (caller formats for the active locale). */
+  joined?: string;
   region?: string;
+  /** Readable identity lines (e.g. Home Station display name). */
   identityMetadata?: string[];
+  /** Raw identity values, rendered only in an expandable disclosure. */
   technicalDetails?: {
     id: string;
     label: string;
@@ -48,17 +64,24 @@ export interface PublicProfileModel {
 // ─── Props ──────────────────────────────────────────────────────────────────
 
 interface PublicProfileCardProps {
-  compact?: boolean;
   profile: PublicProfileModel;
-  avatarNode?: ReactNode;
+  /**
+   * Primary action row (Add friend / Message / Manage account …). The card
+   * never derives this from the model; callers compose the node and own its
+   * behaviour.
+   */
   actions?: ReactNode;
+  /** Compact density for popovers. */
+  compact?: boolean;
+  /** Replace the avatar slot (e.g. group composite avatar). */
+  avatarNode?: ReactNode;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function getInitial(name: string): string {
-  if (!name) return '?';
-  return name.charAt(0).toUpperCase();
+  const trimmed = name.trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() : '?';
 }
 
 function toneToColor(tone: string | undefined, token: ReturnType<typeof theme.useToken>['token']): string {
@@ -111,249 +134,302 @@ async function copyText(
   }
 }
 
+function safeUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export function PublicProfileCard({ compact, profile, avatarNode, actions }: PublicProfileCardProps) {
+export function PublicProfileCard({ profile, actions, compact = true, avatarNode }: PublicProfileCardProps) {
   const { token } = theme.useToken();
-  const avatarSize = compact ? 64 : 88;
-  const avatarRadius = compact ? 16 : 20;
+  const avatarSize = compact ? 56 : 72;
+  const avatarRadius = compact ? 14 : 18;
+  const bannerHeight = compact ? 84 : 104;
+  const links = (profile.links ?? []).filter((link) => link.url && safeUrl(link.url));
 
   return (
-    <Flexbox align="center" gap={compact ? 12 : 16}>
-      {/* Avatar */}
-      {avatarNode ?? (
-        <Flexbox
-          data-chat-avatar-ptid={profile.did || ''}
-          data-chat-avatar-src={profile.avatar || ''}
-          align="center"
-          justify="center"
-          style={{ width: avatarSize, height: avatarSize, flexShrink: 0 }}
-        >
-          <UserSquareAvatar
-            remoteUrl={profile.avatar}
-            name={profile.displayName}
-            size={avatarSize}
-            radius={avatarRadius}
-            background={token.colorFillSecondary}
-            fallback={getInitial(profile.displayName)}
-            style={{
-              color: token.colorTextSecondary,
-              fontSize: compact ? 22 : 28,
-              fontWeight: 700,
-            }}
-          />
-        </Flexbox>
-      )}
-
-      {/* Display name */}
-      <Text
-        strong
+    <Flexbox
+      data-chat-profile-card
+      data-chat-avatar-ptid={profile.did || ''}
+      data-chat-avatar-src={profile.avatar || ''}
+      gap={0}
+      style={{ width: '100%', overflow: 'hidden' }}
+    >
+      {/* Banner */}
+      <div
+        data-chat-profile-banner={profile.header ? 'image' : 'gradient'}
         style={{
-          fontSize: compact ? 16 : 20,
-          textAlign: 'center',
-          maxWidth: '100%',
-          wordBreak: 'break-word',
+          width: '100%',
+          height: bannerHeight,
+          borderRadius: 12,
+          background: profile.header
+            ? `url(${profile.header}) center/cover no-repeat, ${token.colorFillQuaternary}`
+            : `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
+          flexShrink: 0,
         }}
-      >
-        {profile.displayName}
-      </Text>
+      />
 
-      {/* Username */}
-      {profile.username && (
-        <Text type="secondary" style={{ fontSize: 12, marginTop: -4 }}>
-          @{profile.username}
-        </Text>
-      )}
-
-      {profile.identityMetadata && profile.identityMetadata.length > 0 ? (
-        <Flexbox align="center" gap={2} style={{ maxWidth: 320 }}>
-          {profile.identityMetadata.filter(Boolean).map((value) => (
-            <Text
-              key={value}
-              type="secondary"
-              ellipsis={{ tooltip: value }}
+      <Flexbox gap={12} style={{ padding: '0 4px' }}>
+        {/* Avatar overlaps the banner; name/handle sit beside it on the body
+            background so a two-line name never lands on the image. */}
+        <Flexbox horizontal gap={12} align="flex-start" style={{ marginTop: -avatarSize / 2 }}>
+          {avatarNode ?? (
+            <div
               style={{
-                fontSize: 11,
-                lineHeight: 1.25,
-                maxWidth: '100%',
+                marginTop: 0,
+                borderRadius: avatarRadius + 2,
+                lineHeight: 0,
+                boxShadow: `0 0 0 2px ${token.colorBgContainer}`,
+                flexShrink: 0,
               }}
             >
-              {value}
-            </Text>
-          ))}
-        </Flexbox>
-      ) : null}
-
-      {profile.technicalDetails && profile.technicalDetails.length > 0 ? (
-        <details
-          data-chat-profile-technical-details
-          style={{
-            width: 320,
-            maxWidth: '100%',
-            color: token.colorTextSecondary,
-          }}
-        >
-          <summary
-            style={{
-              cursor: 'pointer',
-              fontSize: 12,
-              textAlign: 'center',
-              userSelect: 'none',
-            }}
-          >
-            {profile.technicalDetailsLabel}
-          </summary>
-          <Flexbox gap={6} style={{ paddingTop: 8 }}>
-            {profile.technicalDetails.map((detail) => (
-              <Flexbox
-                key={detail.id}
-                data-chat-profile-technical-detail={detail.id}
-                horizontal
-                align="center"
-                gap={8}
+              <UserSquareAvatar
+                remoteUrl={profile.avatar}
+                actorPtid={profile.did || null}
+                name={profile.displayName}
+                size={avatarSize}
+                radius={avatarRadius}
+                background={token.colorFillSecondary}
+                fallback={getInitial(profile.displayName)}
                 style={{
-                  minWidth: 0,
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  background: token.colorFillQuaternary,
+                  color: token.colorTextSecondary,
+                  fontSize: Math.round(avatarSize * 0.4),
+                  fontWeight: 700,
                 }}
+              />
+            </div>
+          )}
+
+          <Flexbox gap={2} style={{ paddingTop: avatarSize / 2 + 4, minWidth: 0, flex: 1 }}>
+            <Text
+              strong
+              ellipsis={{ tooltip: profile.displayName }}
+              style={{ fontSize: compact ? 16 : 18, lineHeight: 1.3 }}
+            >
+              {profile.displayName}
+            </Text>
+            <FederatedHandle
+              localPart={profile.username ?? ''}
+              home={profile.homeStationDomain}
+              fontSize={12}
+            />
+          </Flexbox>
+        </Flexbox>
+
+        {profile.identityMetadata && profile.identityMetadata.length > 0 ? (
+          <Flexbox gap={2} style={{ maxWidth: '100%' }}>
+            {profile.identityMetadata.filter(Boolean).map((value) => (
+              <Text
+                key={value}
+                type="secondary"
+                ellipsis={{ tooltip: value }}
+                style={{ fontSize: 11, lineHeight: 1.3, maxWidth: '100%' }}
               >
-                <Text
-                  type="secondary"
-                  style={{
-                    flexShrink: 0,
-                    fontSize: 11,
-                  }}
-                >
-                  {detail.label}
-                </Text>
-                <Text
-                  ellipsis={{ tooltip: detail.value }}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                  }}
-                >
-                  {detail.value}
-                </Text>
-                <Tooltip title={detail.copyLabel}>
-                  <Button
-                    data-chat-profile-copy={detail.id}
-                    type="text"
-                    size="small"
-                    icon={<Copy size={13} />}
-                    aria-label={detail.copyLabel}
-                    onClick={() => {
-                      void copyText(
-                        detail.value,
-                        detail.copiedLabel,
-                        detail.copyFailedLabel,
-                      );
-                    }}
-                  />
-                </Tooltip>
-              </Flexbox>
+                {value}
+              </Text>
             ))}
           </Flexbox>
-        </details>
-      ) : null}
+        ) : null}
 
-      {/* Relation label / online indicator */}
-      {profile.relationLabel && (
-        <Text
-          data-chat-profile-relation={profile.relationLabel}
-          style={{
-            fontSize: 12,
-            color: toneToColor(profile.relationTone, token),
-          }}
-        >
-          {profile.relationLabel}
-        </Text>
-      )}
+        {/* Intro */}
+        {profile.bio ? (
+          <Text
+            ellipsis={{ tooltip: profile.bio }}
+            style={{
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: token.colorText,
+              maxWidth: '100%',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {profile.bio}
+          </Text>
+        ) : null}
 
-      {/* Badges */}
-      {profile.badges && profile.badges.length > 0 && (
-        <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
-          {profile.badges.map((badge) => (
+        {/* Relation badge */}
+        {profile.relationLabel ? (
+          <Flexbox horizontal>
             <Text
-              key={badge.label}
+              data-chat-profile-relation={profile.relationLabel}
               style={{
                 fontSize: 11,
-                padding: '2px 8px',
+                padding: '2px 10px',
                 borderRadius: 999,
-                background: toneToBg(badge.tone, token),
-                color: toneToColor(badge.tone, token),
+                background: toneToBg(profile.relationTone, token),
+                color: toneToColor(profile.relationTone, token),
                 fontWeight: 500,
               }}
             >
-              {badge.label}
+              {profile.relationLabel}
             </Text>
-          ))}
-        </Flexbox>
-      )}
+          </Flexbox>
+        ) : null}
 
-      {/* Bio */}
-      {profile.bio && (
-        <Text
-          type="secondary"
-          style={{
-            fontSize: 12,
-            textAlign: 'center',
-            maxWidth: 260,
-            wordBreak: 'break-word',
-          }}
-        >
-          {profile.bio}
-        </Text>
-      )}
+        {/* Badges */}
+        {profile.badges && profile.badges.length > 0 ? (
+          <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+            {profile.badges.map((badge) => (
+              <Text
+                key={badge.label}
+                style={{
+                  fontSize: 11,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  background: toneToBg(badge.tone, token),
+                  color: toneToColor(badge.tone, token),
+                  fontWeight: 500,
+                }}
+              >
+                {badge.label}
+              </Text>
+            ))}
+          </Flexbox>
+        ) : null}
 
-      {/* Stats */}
-      {profile.stats && profile.stats.length > 0 && (
-        <Flexbox horizontal gap={16} style={{ justifyContent: 'center', marginTop: 4 }}>
-          {profile.stats.map((stat) => (
-            <Flexbox key={stat.label} align="center" gap={2}>
-              <Text strong style={{ fontSize: 15 }}>{stat.value}</Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>{stat.label}</Text>
-            </Flexbox>
-          ))}
-        </Flexbox>
-      )}
+        {/* Practical stats */}
+        {profile.stats && profile.stats.length > 0 ? (
+          <Flexbox horizontal gap={18} style={{ flexWrap: 'wrap' }}>
+            {profile.stats.map((stat) => (
+              <Flexbox key={stat.label} gap={0}>
+                <Text strong style={{ fontSize: 15, lineHeight: 1.2 }}>{stat.value}</Text>
+                <Text type="secondary" style={{ fontSize: 11 }}>{stat.label}</Text>
+              </Flexbox>
+            ))}
+          </Flexbox>
+        ) : null}
 
-      {/* Tags */}
-      {profile.tags && profile.tags.length > 0 && (
-        <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', justifyContent: 'center', marginTop: 4 }}>
-          {profile.tags.map((tag) => (
-            <Text
-              key={tag}
+        {/* Joined / region */}
+        {(profile.joined || profile.region) ? (
+          <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
+            {profile.joined ? (
+              <Text type="secondary" style={{ fontSize: 11 }}>{profile.joined}</Text>
+            ) : null}
+            {profile.region ? (
+              <Text type="secondary" style={{ fontSize: 11 }}>{profile.region}</Text>
+            ) : null}
+          </Flexbox>
+        ) : null}
+
+        {/* Tags */}
+        {profile.tags && profile.tags.length > 0 ? (
+          <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+            {profile.tags.map((tag) => (
+              <Text
+                key={tag}
+                style={{
+                  fontSize: 11,
+                  padding: '1px 8px',
+                  borderRadius: 999,
+                  background: token.colorFillTertiary,
+                  color: token.colorTextSecondary,
+                }}
+              >
+                {tag}
+              </Text>
+            ))}
+          </Flexbox>
+        ) : null}
+
+        {/* Links */}
+        {links.length > 0 ? (
+          <Flexbox gap={4}>
+            {links.map((link, index) => {
+              const href = safeUrl(link.url as string);
+              if (!href) return null;
+              return (
+                <a
+                  key={`${href}-${index}`}
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 12,
+                    color: token.colorPrimary,
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Link2 size={12} style={{ flexShrink: 0 }} />
+                  {link.label?.trim() || href}
+                </a>
+              );
+            })}
+          </Flexbox>
+        ) : null}
+
+        {actions ? (
+          <>
+            <Divider style={{ margin: '4px 0 0' }} />
+            <Flexbox style={{ width: '100%' }}>{actions}</Flexbox>
+          </>
+        ) : null}
+
+        {/* Raw identity disclosure — CHAT-UR09: expandable/copyable only. */}
+        {profile.technicalDetails && profile.technicalDetails.length > 0 ? (
+          <details data-chat-profile-technical-details style={{ color: token.colorTextSecondary }}>
+            <summary
               style={{
-                fontSize: 11,
-                padding: '1px 8px',
-                borderRadius: 999,
-                background: token.colorFillTertiary,
-                color: token.colorTextSecondary,
+                cursor: 'pointer',
+                fontSize: 12,
+                userSelect: 'none',
               }}
             >
-              {tag}
-            </Text>
-          ))}
-        </Flexbox>
-      )}
-
-      {/* Region */}
-      {profile.region && (
-        <Text type="secondary" style={{ fontSize: 11 }}>
-          {profile.region}
-        </Text>
-      )}
-
-      {/* Actions slot */}
-      {actions && (
-        <Flexbox style={{ width: '100%', marginTop: 8 }}>
-          {actions}
-        </Flexbox>
-      )}
+              {profile.technicalDetailsLabel}
+            </summary>
+            <Flexbox gap={6} style={{ paddingTop: 8 }}>
+              {profile.technicalDetails.map((detail) => (
+                <Flexbox
+                  key={detail.id}
+                  data-chat-profile-technical-detail={detail.id}
+                  horizontal
+                  align="center"
+                  gap={8}
+                  style={{
+                    minWidth: 0,
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    background: token.colorFillQuaternary,
+                  }}
+                >
+                  <Text type="secondary" style={{ flexShrink: 0, fontSize: 11 }}>
+                    {detail.label}
+                  </Text>
+                  <Text
+                    ellipsis={{ tooltip: detail.value }}
+                    style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: 11 }}
+                  >
+                    {detail.value}
+                  </Text>
+                  <Tooltip title={detail.copyLabel}>
+                    <Button
+                      data-chat-profile-copy={detail.id}
+                      type="text"
+                      size="small"
+                      icon={<Copy size={13} />}
+                      aria-label={detail.copyLabel}
+                      onClick={() => {
+                        void copyText(detail.value, detail.copiedLabel, detail.copyFailedLabel);
+                      }}
+                    />
+                  </Tooltip>
+                </Flexbox>
+              ))}
+            </Flexbox>
+          </details>
+        ) : null}
+      </Flexbox>
     </Flexbox>
   );
 }

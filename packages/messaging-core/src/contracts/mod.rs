@@ -103,6 +103,18 @@ pub struct ConversationMessageProjection {
     pub pinned_by_ptid: Option<String>,
     pub pinned_at_unix_ms: Option<i64>,
     pub read_by_ptids: Vec<String>,
+    /// MP-D34 sender verdict facts. All are projection-only: attempt metadata
+    /// mirrors the local outbox, while the delivery counts aggregate
+    /// per-device MessageReceipt projections. Zero/None means "no fact",
+    /// never a negative transport verdict.
+    pub attempt_count: i64,
+    pub next_attempt_at_unix_ms: Option<i64>,
+    pub last_error_code: Option<String>,
+    /// Required recipient devices in the immutable send plan (originator
+    /// actor excluded); 0 when unknown (legacy rows or non-message commits).
+    pub required_device_count: i64,
+    /// Distinct recipient devices with a durable delivered receipt.
+    pub delivered_device_count: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -171,6 +183,11 @@ pub struct DeliveryReceiptReceiveCommit<'a> {
     pub item_id: &'a str,
     pub message_id: &'a str,
     pub conversation_id: &'a str,
+    /// Consuming recipient endpoint from the inbound MessageReceipt. MP-D34
+    /// persists it as the per-device delivered projection for the
+    /// originator x/N verdict; never the local endpoint (validated upstream).
+    pub consumer_ptid: &'a str,
+    pub consumer_device_id: &'a str,
     pub lane_sequence: i64,
     pub consumer_epoch: u64,
     pub payload_sha256: &'a [u8],

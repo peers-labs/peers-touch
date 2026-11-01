@@ -61,6 +61,64 @@ func TestPublicSearchLiteralMatchingAndScanBound(t *testing.T) {
 	}
 }
 
+func TestPublicSearchCaseInsensitiveVariants(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(&db.SocialPublicPost{}, &db.SocialComment{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)
+	post := db.SocialPublicPost{ID: 201, AuthorID: 1, Type: "TEXT", AudienceKind: "PUBLIC",
+		TextBody: "CamElCase public post", CreatedAt: now}
+	other := db.SocialPublicPost{ID: 202, AuthorID: 1, Type: "TEXT", AudienceKind: "PUBLIC",
+		TextBody: "ordinary", CreatedAt: now.Add(-time.Hour)}
+	if err := database.Create(&post).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	comment := db.SocialComment{ID: 301, PostID: post.ID, PostClass: "public", AuthorID: 1,
+		TextBody: "UpPeR public comment", CreatedAt: now.Add(time.Second)}
+	secret := db.SocialComment{ID: 302, PostID: post.ID, PostClass: "private", AuthorID: 1,
+		TextBody: "UPPER private never matches", CreatedAt: now.Add(2 * time.Second)}
+	if err := database.Create(&comment).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&secret).Error; err != nil {
+		t.Fatal(err)
+	}
+	repository := NewPublicSearchRepository(database)
+	positions, more, err := repository.Scan(ctx, true, true, PublicSearchPosition{})
+	if err != nil || more || len(positions) != 3 {
+		t.Fatalf("scan: %+v more=%v err=%v", positions, more, err)
+	}
+	// Every case fold of the Latin tokens must resolve to the same
+	// ResourceKey set on both streams (parameterized ILIKE in production).
+	for _, query := range []string{"camelcase", "CAMELCASE", "CaMeLcAsE"} {
+		matches, err := repository.Match(ctx, positions, query)
+		if err != nil || len(matches) != 1 || !matches[PublicSearchPosition{Kind: "social-post", ID: post.ID, CreatedAt: now}] {
+			t.Fatalf("post variant %q: %+v err=%v", query, matches, err)
+		}
+	}
+	for _, query := range []string{"upper", "UPPER", "UpPeR"} {
+		matches, err := repository.Match(ctx, positions, query)
+		if err != nil || len(matches) != 1 {
+			t.Fatalf("comment variant %q: %+v err=%v", query, matches, err)
+		}
+		var matchedComment bool
+		for position := range matches {
+			matchedComment = matchedComment || position.Kind == "social-comment" && position.ID == comment.ID
+		}
+		if !matchedComment {
+			t.Fatalf("variant %q matched %+v, want public comment %d", query, matches, comment.ID)
+		}
+	}
+}
+
 func TestPublicSearchIndexesOnlyCoverOriginalPublicColumns(t *testing.T) {
 	for _, index := range publicSearchIndexes {
 		if strings.Contains(index, "private") || !strings.Contains(index, "deleted_at IS NULL") {

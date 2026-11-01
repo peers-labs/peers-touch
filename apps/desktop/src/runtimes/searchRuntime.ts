@@ -5,16 +5,15 @@ import { useSessionStore } from '../store/session';
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import { EVENT, eventBus } from '../kernel/events';
 import type { Navigation, Page } from '../types/navigation';
-import { clearSearchQueries, invalidateSearchSources, reconcileSearchQuery, runSearchQuery, searchErrorKey, stopSearchQuery } from './searchQueries';
+import { clearSearchQueries, invalidateSearchSources, progressiveFinalItem, reconcileSearchQuery, runSearchQuery, searchErrorKey, stopSearchQuery } from './searchQueries';
 import { openSearchResource } from './searchOpeners';
 import { subscribeSearchInvalidations } from './searchInvalidations';
+import { STABLE_ADMISSION_MS, clampQuery } from './searchFrames';
 import { log } from '../utils/logger';
 
-const RECONCILE_MS = 2_000;
 let requestGeneration = 0;
 let requestId: string | null = null;
 let debounce: ReturnType<typeof setTimeout> | null = null;
-let timer: ReturnType<typeof setInterval> | null = null;
 let removeSession: (() => void) | null = null;
 let removeStation: (() => void) | null = null;
 let removeEvent: (() => void) | null = null;
@@ -58,14 +57,21 @@ export const searchActions = {
       ...(response?.sources.some(source => source.noStore) ? { response: null } : {}),
     });
   },
-  query(query: string, ready = true): void {
+  query(value: string, ready = true): void {
+    const query = clampQuery(value);
     stopRequest();
-    const mode = useSearchStore.getState().mode === 'functions' ? 'functions' : 'suggest';
+    if (useSearchStore.getState().mode === 'functions') {
+      useSearchStore.setState({ query, status: 'idle', errorKey: null });
+      return;
+    }
+    // Empty draft stays a Device-only suggestion; any non-empty draft admits
+    // one Device + Station FIND after the stable-input pause.
+    const mode = query.trim() ? 'submit' as const : 'suggest' as const;
     useSearchStore.setState({
-      query, mode, status: mode !== 'functions' ? 'loading' : 'idle',
+      query, mode, status: 'loading',
       errorKey: null,
     });
-    if (ready && mode !== 'functions') debounce = setTimeout(() => { void runSearchQuery(locale); }, 120);
+    if (ready) debounce = setTimeout(() => { void runSearchQuery(locale); }, STABLE_ADMISSION_MS);
   },
   mode(mode: 'suggest' | 'functions'): void {
     stopRequest();
@@ -94,6 +100,13 @@ export const searchActions = {
   },
   more(): void { void runSearchQuery(locale, false, true); },
   async openResult(item: ResultItem, navigation: Navigation): Promise<boolean> {
+    if (!item.resource || !item.sourceId) return false;
+    // Activating a progressive row waits for the same request's final RRF
+    // frame instead of issuing a second query. The final item carries the
+    // issued resource used for authority re-check.
+    const finalized = await progressiveFinalItem(item);
+    if (!useSearchStore.getState().open) return false;
+    if (finalized) item = finalized;
     if (!item.resource || !item.sourceId) return false;
     stopRequest();
     const generation = requestGeneration;
@@ -171,7 +184,9 @@ export const searchRuntime: RuntimeDescriptor = {
       if (!installed || generation !== installationGeneration) remove();
       else removeEvent = remove;
     }).catch(() => {});
-    timer = setInterval(() => { void reconcileSearchQuery(locale); }, RECONCILE_MS);
+    // No fixed-interval replay: reconciliation runs on focus/visibility and
+    // owner revision/lease events, and only re-reads when a lease expired,
+    // a revision changed or no qualified response exists.
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
   },
@@ -181,8 +196,6 @@ export const searchRuntime: RuntimeDescriptor = {
     removeSession?.(); removeSession = null;
     removeStation?.(); removeStation = null;
     removeEvent?.(); removeEvent = null;
-    if (timer !== null) clearInterval(timer);
-    timer = null;
     window.removeEventListener('focus', onFocus);
     document.removeEventListener('visibilitychange', onFocus);
     reset();

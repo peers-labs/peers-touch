@@ -2239,11 +2239,38 @@ impl MessagingEngine {
         reply_to_message_id: &str,
         thread_root_message_id: &str,
         attachment_intents: &[LocalAttachmentIntent],
+        send_intent_id: &str,
     ) -> Result<SubmitMessageOutcome, String> {
         let _guard = self
             .send_intent_lock
             .lock()
             .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        if send_intent_id.trim().is_empty() {
+            return Err("messaging send intent is required".to_string());
+        }
+        // MP-D33: one renderer send action admits one message. Before any
+        // durable write, resolve a repeated (device, intent) pair to the
+        // existing admission; this covers double submit, ambiguous IPC
+        // answers and failure-driven retries without minting a second
+        // message_id or attachment batch.
+        if let Some(existing) = self
+            .store
+            .find_pending_message_admission(&self.endpoint.device_id, send_intent_id)?
+        {
+            if existing.conversation_id != conversation_id
+                || existing.conversation_kind != conversation_kind as i32
+            {
+                return Err(
+                    "messaging send intent is bound to a different conversation".to_string(),
+                );
+            }
+            return Ok(SubmitMessageOutcome {
+                command_id: existing.command_id,
+                message_id: existing.message_id,
+                attachment_ids: existing.attachment_ids,
+                state: existing.state,
+            });
+        }
         if conversation_id.trim().is_empty()
             || (plaintext.is_empty() && attachment_intents.is_empty())
             || conversation_kind == ConversationKind::Unspecified
@@ -2300,6 +2327,7 @@ impl MessagingEngine {
             message_id: message_id.clone(),
             sender_ptid: self.endpoint.ptid.clone(),
             sender_device_id: self.endpoint.device_id.clone(),
+            send_intent_id: send_intent_id.to_string(),
             plaintext: plaintext.to_string(),
             reply_to_message_id: reply_to_message_id.to_string(),
             thread_root_message_id: thread_root_message_id.to_string(),
@@ -2370,6 +2398,21 @@ impl MessagingEngine {
                 })
             }
         }
+    }
+
+    /// Renderer-facing MP-D33 reconciliation read: return the admission for a
+    /// send intent on this device, if any. Never creates or resends.
+    pub fn find_send_intent_admission(
+        &self,
+        _token: &str,
+        send_intent_id: &str,
+    ) -> Result<Option<crate::messaging::store::PendingMessageAdmission>, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        self.store
+            .find_pending_message_admission(&self.endpoint.device_id, send_intent_id)
     }
 
     pub fn resume_attachment_upload_once(
@@ -3032,9 +3075,13 @@ impl MessagingEngine {
         token: &str,
         peer_ptid: &str,
     ) -> Result<String, String> {
-        if peer_ptid.trim().is_empty() || peer_ptid == self.endpoint.ptid {
+        if peer_ptid.trim().is_empty() {
             return Err("messaging direct peer identity is invalid".to_string());
         }
+        // peer_ptid == self.endpoint.ptid is the self-direct (Saved Messages)
+        // conversation: a one-member Local Direct handled by the same command
+        // pipeline, with the sender's own public event as the sole delivery on
+        // a single-device actor.
         let command_id = Ulid::new().to_string();
         let result = self.try_create_direct_conversation(token, peer_ptid, &command_id);
         match result {

@@ -1,10 +1,17 @@
 package notification
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/notification/application"
 )
+
+// ErrBridgeUnregistered is returned when a producer asks the bridge to
+// deliver a notification before the notification SubServer has registered
+// its service. Producers MUST treat this as best-effort failure: log it,
+// count it, and never roll back the already-committed business write.
+var ErrBridgeUnregistered = errors.New("notification bridge service is not registered")
 
 // NotificationBridge provides a cross-SubServer notification production capability.
 // It adapts the notification.Service into a fire-and-forget interface
@@ -37,7 +44,7 @@ func (b *Bridge) Produce(recipientPTID, actorPTID string, notifType, category in
 	globalBridge.mu.RUnlock()
 
 	if svc == nil {
-		return nil
+		return ErrBridgeUnregistered
 	}
 
 	_, err := svc.Produce(recipientPTID, actorPTID, notifType, category, targetType, targetID, title, body, groupKey, metadata)

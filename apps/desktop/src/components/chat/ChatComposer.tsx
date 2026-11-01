@@ -94,12 +94,25 @@ interface ChatComposerProps {
   disabled?: boolean;
   editing: boolean;
   surfaceBackground?: string;
-  value: string;
-  onChange: (value: string) => void;
+  /**
+   * Seed text for a fresh composer mount. The component owns its text
+   * state afterwards; conversation/edit switches must remount it via
+   * React `key` so typing never re-renders the message list.
+   */
+  initialValue?: string;
+  /**
+   * Lazy seed for a fresh non-editing mount (e.g. a per-conversation draft
+   * read from a non-reactive store). Called once in the state initializer so
+   * the parent never reads mutable draft storage during render.
+   */
+  initialDraft?: () => string;
+  /** Live, mount-stable text sink (draft persistence + typing pulses). */
+  onDraftChange?: (value: string) => void;
   onBlurInput: () => void;
   onCancelEdit: () => void;
   onCancelReply: () => void;
-  onSend: (draft: ChatComposerDraft) => Promise<void>;
+  /** Return false to keep the draft text after a failed send. */
+  onSend: (draft: ChatComposerDraft) => Promise<boolean | void>;
   placeholder?: string;
   replyPreview?: string;
   replyPreviewKey?: string | null;
@@ -145,8 +158,9 @@ export function ChatComposer({
   disabled = false,
   editing,
   surfaceBackground,
-  value,
-  onChange,
+  initialValue,
+  initialDraft,
+  onDraftChange,
   onBlurInput,
   onCancelEdit,
   onCancelReply,
@@ -163,6 +177,21 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const lastCompositionEndRef = useRef(0);
+  // Text state lives inside the composer so each keystroke re-renders only
+  // this subtree. The parent remounts the composer (React key) when the
+  // conversation or edit target changes and reads drafts through
+  // onDraftChange / onSend, never through a controlled value prop.
+  const [value, setValue] = useState<string>(() => (
+    editing ? (initialValue ?? '') : (initialDraft?.() ?? initialValue ?? '')
+  ));
+  const onDraftChangeRef = useRef(onDraftChange);
+  useEffect(() => {
+    onDraftChangeRef.current = onDraftChange;
+  }, [onDraftChange]);
+  const commitValue = useCallback((next: string) => {
+    setValue(next);
+    onDraftChangeRef.current?.(next);
+  }, []);
   const [dragging, setDragging] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [inputExpanded, setInputExpanded] = useState(false);
@@ -354,7 +383,7 @@ export function ChatComposer({
     const start = el?.selectionStart ?? value.length;
     const end = el?.selectionEnd ?? value.length;
     const nextValue = value.slice(0, start) + emoji + value.slice(end);
-    onChange(nextValue);
+    commitValue(nextValue);
     const nextRecent = [emoji, ...recentEmojis.filter((item) => item !== emoji)].slice(0, 24);
     setRecentEmojis(nextRecent);
     saveRecentEmojis(nextRecent);
@@ -435,11 +464,15 @@ export function ChatComposer({
     const messageType = chatMessageTypeForAttachments(readyAttachments);
     const previousOutcomeRevision = useSocialChatStore.getState()
       .sendOutcomes[activeConversationId]?.revision ?? 0;
-    await onSend({
+    // The parent owns send/edit side effects and decides whether the
+    // draft text survives (it returns false on failure).
+    const sent = await onSend({
       text: value.trim(),
       attachments: readyAttachments,
       messageType,
     });
+    if (sent === false) return;
+    commitValue('');
     if (
       readyAttachments.length === 0
       || didQueueExpectedChatAttachments(
@@ -766,7 +799,7 @@ export function ChatComposer({
           disabled={disabled || sending || recording || voiceSending || Boolean(recordedVoice)}
           rows={3}
           onInput={handleTextInputObserved}
-          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChange(event.target.value)}
+          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => commitValue(event.target.value)}
           onCompositionStart={() => {
             composingRef.current = true;
           }}

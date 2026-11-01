@@ -76,6 +76,9 @@ export function useNavigation(router: HashRouter): Navigation {
         case 'documents':
           setPage(DEFAULT_READY_PAGE);
           break;
+        case 'moments':
+          setPage('moments');
+          break;
       }
     });
     return () => {

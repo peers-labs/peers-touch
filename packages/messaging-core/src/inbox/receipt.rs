@@ -128,6 +128,8 @@ impl<R: MessagingRepository> DeliveryReceiptProcessor<R> {
                         item_id: &item.item_id,
                         message_id: &receipt.message_id,
                         conversation_id: &receipt.conversation_id,
+                        consumer_ptid: &receipt.ptid,
+                        consumer_device_id: &receipt.device_id,
                         lane_sequence: item.lane_sequence,
                         consumer_epoch,
                         payload_sha256: &item.payload_sha256,

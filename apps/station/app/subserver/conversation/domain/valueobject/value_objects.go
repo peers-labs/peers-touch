@@ -558,6 +558,35 @@ func DirectConversationID(left PTID, right PTID) (ConversationID, error) {
 	return ConversationID("direct-" + hex.EncodeToString(sum[:16])), nil
 }
 
+// SelfDirectConversationID deterministically identifies a one-member Direct
+// Conversation (Saved Messages) owned by a single actor. The distinct prefix
+// keeps it in the direct-* id family while guaranteeing it can never collide
+// with a two-actor pair id.
+func SelfDirectConversationID(actor PTID) (ConversationID, error) {
+	if actor == "" {
+		return "", conversationdomain.NewError(
+			conversationdomain.ErrorCodeInvalidArgument,
+			"valueobject.self_direct_conversation_id",
+			"actor",
+			"a non-empty actor is required",
+		)
+	}
+	sum := sha256.Sum256(CanonicalTuple(
+		[]byte("peers-touch/self-direct-conversation"),
+		[]byte(actor),
+	))
+	return ConversationID("direct-self-" + hex.EncodeToString(sum[:16])), nil
+}
+
+// DirectConversationIDForActors dispatches Direct id creation: equal actors
+// resolve to the self-direct identity, distinct actors to the pair identity.
+func DirectConversationIDForActors(left PTID, right PTID) (ConversationID, error) {
+	if left != "" && left == right {
+		return SelfDirectConversationID(left)
+	}
+	return DirectConversationID(left, right)
+}
+
 func DeterministicEventID(conversationID ConversationID, commandID CommandID) EventID {
 	sum := sha256.Sum256(CanonicalTuple(
 		[]byte("peers-touch/conversation-event"),

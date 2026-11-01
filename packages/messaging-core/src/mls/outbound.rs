@@ -1,5 +1,6 @@
 use super::group::MlsGroupManager;
 use crate::codec::private_content::encode_message_private_content;
+use crate::outbox::send::plan_required_recipient_count;
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind, CryptoEndpoint,
@@ -92,6 +93,8 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
 
         let command = build_send_command(plan, intent, &self.endpoint, &prepared.ciphertext)?;
         let command_bytes = command.encode_to_vec();
+        let required_device_count =
+            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_mls_outbound_send(&MlsOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -114,6 +117,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
                     private_content: &private_content,
                     delivery_plan_sha256: &plan.delivery_plan_sha256,
                     created_at_unix_ms: intent.client_timestamp_unix_ms,
+                    required_device_count,
                 },
             })?;
         self.manager
@@ -201,6 +205,8 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
         }
         let command = build_forward_command(plan, intent, &self.endpoint, &prepared.ciphertext)?;
         let command_bytes = command.encode_to_vec();
+        let required_device_count =
+            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_mls_outbound_send(&MlsOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -223,6 +229,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
                     private_content: &private_content,
                     delivery_plan_sha256: &plan.delivery_plan_sha256,
                     created_at_unix_ms: intent.client_timestamp_unix_ms,
+                    required_device_count,
                 },
             })?;
         self.manager

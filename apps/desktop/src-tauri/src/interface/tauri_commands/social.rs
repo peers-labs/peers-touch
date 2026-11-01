@@ -884,6 +884,16 @@ pub fn social_create_comment(
         post_id: input.post_id.clone(),
         content: input.content,
         reply_to_comment_id: input.reply_to_comment_id.unwrap_or_default(),
+        typed_mentions: input
+            .typed_mentions
+            .into_iter()
+            .map(|mention| model::social::Mention {
+                actor_ptid: mention.actor_ptid,
+                offset: mention.offset,
+                length: mention.length,
+                display: mention.display,
+            })
+            .collect(),
     };
     let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
     let resp: model::social::CreateCommentResponse =

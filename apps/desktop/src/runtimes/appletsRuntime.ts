@@ -1,6 +1,7 @@
 import type { AppletLifecycleEvent, SurfaceTarget } from '@peers-touch/applet-contract';
 import type { MemoryPressureLevel } from '@peers-touch/applet-kernel';
 import type { RuntimeDescriptor } from '../kernel/runtime';
+import { isDocumentHidden } from '../kernel/documentVisibility';
 import { ensureLynxWebRuntime } from '../applet/lynx-web-runtime';
 import AppletManager from '../applet/AppletManager';
 import { getDesktopAppletAdapter, getDesktopAppletKernel } from '../applet/kernel/desktopKernel';
@@ -59,6 +60,9 @@ async function refreshAppletProjection(reason: string): Promise<void> {
 function scheduleReconciliation(): void {
   if (reconcileTimer != null) return;
   reconcileTimer = setInterval(() => {
+    // Background tabs skip the catalog poll; the visibilitychange handler
+    // runs an immediate 'visibility' refresh on return.
+    if (isDocumentHidden()) return;
     void refreshAppletProjection('interval');
   }, APPLET_CATALOG_RECONCILE_MS);
 }
@@ -72,6 +76,8 @@ function stopReconciliation(): void {
 function scheduleKernelSweep(): void {
   if (sweepTimer != null) return;
   sweepTimer = setInterval(() => {
+    // Applets pause in the background; defer LRU/TTL reclaim while hidden.
+    if (isDocumentHidden()) return;
     void getDesktopAppletKernel().runSweep(Date.now());
   }, KERNEL_SWEEP_MS);
 }
@@ -100,6 +106,8 @@ function sampleMemoryPressure(): MemoryPressureLevel | null {
 function scheduleMemoryMonitor(): void {
   if (memoryTimer != null) return;
   memoryTimer = setInterval(() => {
+    // Background renderer pressure is irrelevant to the foreground applet.
+    if (isDocumentHidden()) return;
     const level = sampleMemoryPressure();
     if (!level) return;
     void getDesktopAppletKernel().handleMemoryPressure(level, Date.now());

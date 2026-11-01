@@ -110,6 +110,10 @@
     "message search must not derive targets from retired legacy session/group arrays",
     "message search must not render superseded plaintext when the canonical message projection contains edited text",
     "conversation clearing must not expose undo, mutate Station authority or another device, or report incomplete compaction as success",
-    "missing stale partial API-only browser-only or dirty-Station evidence fails closed"
+    "missing stale partial API-only browser-only or dirty-Station evidence fails closed",
+    "an attributed avatar whose station-resource projection token rotates or whose peer profile refreshes must keep the same actor's previous image painted (degraded) until the new image decodes, and must never fall back to a letter or neutral placeholder",
+    "every chat avatar mount (incoming and own message rows, Direct conversation rows, group composite slots, the Saved Messages self row) must attribute the asset to its owner PTID so the shared avatar owner can resolve from the actor-scoped cache",
+    "a profile whose identity has not loaded yet renders the identity-neutral placeholder, never initials; initials are painted only for an authoritative avatar-less profile",
+    "the peer profile edge must expose the transport-independent canonical avatar identity alongside the per-process station-resource render URL, and renderer avatar cache keys must use the canonical identity so projection-token rotation never invalidates an already-cached friend avatar"
   ]
 }

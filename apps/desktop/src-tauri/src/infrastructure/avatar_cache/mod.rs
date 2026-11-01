@@ -51,8 +51,24 @@ pub fn avatars_dir() -> Result<PathBuf, AvatarCacheError> {
 /// Returns `Some(path)` only when the file exists on disk and is non-empty.
 pub fn lookup(remote_url: &str) -> Option<PathBuf> {
     let identity = canonical_remote_identity(remote_url).ok()?;
+    lookup_identity(&identity)
+}
+
+/// Look up a cached file by its exact storage identity.
+///
+/// Station media is stored under the transport-independent
+/// `StationResourceRef::cache_identity()` (station peer, lifecycle generation,
+/// path, content identity). Resolvers MUST consult this lookup before issuing a
+/// network fetch: the per-process `station-resource://local/<token>` projector
+/// rotates tokens, but the underlying file identity is stable. Looking the
+/// token URL up as a "remote URL" misses the file and forces a duplicate
+/// download.
+pub fn lookup_identity(identity: &str) -> Option<PathBuf> {
+    if identity.trim().is_empty() {
+        return None;
+    }
     let dir = avatars_dir().ok()?;
-    let path = dir.join(user_profile::avatar_local_filename(&identity));
+    let path = dir.join(user_profile::avatar_local_filename(identity));
     if path_is_present(&path) {
         Some(path)
     } else {
@@ -173,7 +189,7 @@ fn canonical_remote_identity_for_base(
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_remote_identity_for_base, store_bytes_at};
+    use super::{canonical_remote_identity_for_base, lookup_identity, store_bytes, store_bytes_at};
     use std::fs;
 
     #[test]
@@ -221,5 +237,22 @@ mod tests {
         assert_eq!(refreshed, path);
         assert_eq!(fs::read(&path).unwrap(), b"second");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn lookup_identity_serves_stored_station_bytes_without_network() {
+        // Exact storage identity (mirror of `StationResourceRef::cache_identity`),
+        // never the rotating `station-resource://local/<token>` projection.
+        let identity = "station:7:station:7:21:/sub-oss/file?key=avatar.png:";
+        let stored = store_bytes(identity, b"png-bytes").expect("store bytes");
+
+        assert_eq!(lookup_identity(identity).as_deref(), Some(stored.as_path()));
+        assert_eq!(lookup_identity(""), None);
+        assert_eq!(
+            lookup_identity("station:7:station:7:21:/sub-oss/missing.png:"),
+            None
+        );
+
+        let _ = fs::remove_file(stored);
     }
 }

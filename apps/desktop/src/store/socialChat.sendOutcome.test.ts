@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  admitMessagingSendOutcome,
   conversationLocalStateForProfile,
   MessagingSendOutcomeError,
-  requireQueuedMessagingSendOutcome,
   resolveReplyThreadRootUlid,
 } from './socialChat';
 import type { MessagingSendOutcome } from '../services/im-service-contract';
@@ -13,6 +13,7 @@ function outcome(
   attachmentIds = ['attachment-1'],
 ): MessagingSendOutcome {
   return {
+    admission: 'admitted',
     commandId: state === 'pending' ? 'command-1' : undefined,
     messageId: 'message-1',
     attachmentIds,
@@ -21,39 +22,35 @@ function outcome(
   };
 }
 
-describe('social chat send outcome boundary', () => {
-  it('accepts only a count-conserving queued outcome', () => {
-    expect(requireQueuedMessagingSendOutcome(outcome('pending'), 1)).toMatchObject({
+describe('social chat MP-D33 send admission boundary', () => {
+  it('admits a pending outcome with its command identity', () => {
+    expect(admitMessagingSendOutcome(outcome('pending'), 1)).toMatchObject({
       commandId: 'command-1',
       state: 'pending',
       attachmentCount: 1,
     });
   });
 
-  it.each(['draft', 'attachment_failed'] as const)(
-    'rejects %s before post-send success handling',
-    (state) => {
-      expect(() => requireQueuedMessagingSendOutcome(outcome(state), 1))
-        .toThrowError(MessagingSendOutcomeError);
-      try {
-        requireQueuedMessagingSendOutcome(outcome(state), 1);
-      } catch (error) {
-        expect(error).toMatchObject({ code: 'not_queued', outcome: { state } });
-      }
-    },
-  );
-
-  it('rejects pending outcomes without a command identity', () => {
-    expect(() => requireQueuedMessagingSendOutcome({
-      ...outcome('pending'),
-      commandId: undefined,
-    }, 1)).toThrowError(expect.objectContaining({ code: 'missing_command_id' }));
+  it('admits a deferred draft as a successful durable admission', () => {
+    // Regression: a deferred draft used to throw and produced a failure toast
+    // plus a composer-resident duplicate even though the message was durably
+    // queued and would be sent by the lifecycle worker.
+    expect(admitMessagingSendOutcome(outcome('draft'), 1)).toMatchObject({
+      state: 'draft',
+    });
   });
 
-  it('rejects pending outcomes that violate attachment count conservation', () => {
-    expect(() => requireQueuedMessagingSendOutcome(outcome('pending'), 2))
+  it('rejects pending outcomes without a command identity', () => {
+    expect(() => admitMessagingSendOutcome({
+      ...outcome('pending'),
+      commandId: undefined,
+    }, 1)).toThrowError(MessagingSendOutcomeError);
+  });
+
+  it('rejects outcomes that violate attachment count conservation', () => {
+    expect(() => admitMessagingSendOutcome(outcome('pending'), 2))
       .toThrowError(expect.objectContaining({ code: 'attachment_count_mismatch' }));
-    expect(() => requireQueuedMessagingSendOutcome({
+    expect(() => admitMessagingSendOutcome({
       ...outcome('pending'),
       attachmentCount: 2,
     }, 1)).toThrowError(expect.objectContaining({ code: 'attachment_count_mismatch' }));

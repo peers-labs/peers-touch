@@ -96,7 +96,7 @@ use messaging_native_filesystem::{
 use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -151,6 +151,8 @@ pub struct PendingSenderProjection<'a> {
     pub private_content: &'a [u8],
     pub delivery_plan_sha256: &'a [u8],
     pub created_at_unix_ms: i64,
+    /// MP-D34 required recipients (originator actor excluded).
+    pub required_device_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,12 +162,31 @@ pub struct PendingMessageDraft {
     pub message_id: String,
     pub sender_ptid: String,
     pub sender_device_id: String,
+    /// MP-D33 device-local send-intent identity. Empty only for legacy rows
+    /// or internal system paths; every user send action carries a ULID and
+    /// the durable `(sender_device_id, send_intent_id)` uniqueness constraint
+    /// makes repeated admission return the same message instead of creating
+    /// a duplicate.
+    pub send_intent_id: String,
     pub plaintext: String,
     pub reply_to_message_id: String,
     pub thread_root_message_id: String,
     pub attachments: Vec<AttachmentPlaintextMetadata>,
     pub attempt_count: u32,
     pub created_at_unix_ms: i64,
+}
+
+/// Existing admission returned for a repeated send intent (MP-D33). The
+/// renderer treats every variant as one already-admitted message; the state
+/// string follows the `messaging_send_message` outcome vocabulary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingMessageAdmission {
+    pub conversation_id: String,
+    pub conversation_kind: i32,
+    pub message_id: String,
+    pub command_id: Option<String>,
+    pub attachment_ids: Vec<String>,
+    pub state: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -545,6 +566,9 @@ pub struct DeliveryReceiptReceiveCommit<'a> {
     pub item_id: &'a str,
     pub message_id: &'a str,
     pub conversation_id: &'a str,
+    /// MP-D34 consuming recipient endpoint from the inbound receipt.
+    pub consumer_ptid: &'a str,
+    pub consumer_device_id: &'a str,
     pub lane_sequence: i64,
     pub consumer_epoch: u64,
     pub payload_sha256: &'a [u8],
@@ -753,6 +777,11 @@ fn map_conversation_message_projection(
         pinned_by_ptid: None,
         pinned_at_unix_ms: None,
         read_by_ptids: Vec::new(),
+        attempt_count: row.get::<_, Option<i64>>(13)?.unwrap_or(0),
+        next_attempt_at_unix_ms: row.get(14)?,
+        last_error_code: row.get::<_, Option<String>>(15)?.filter(|code| !code.is_empty()),
+        required_device_count: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
+        delivered_device_count: row.get::<_, Option<i64>>(17)?.unwrap_or(0),
     })
 }
 
@@ -821,6 +850,11 @@ fn conversation_message_projection_from_row(
         pinned_by_ptid: None,
         pinned_at_unix_ms: None,
         read_by_ptids: Vec::new(),
+        attempt_count: 0,
+        next_attempt_at_unix_ms: None,
+        last_error_code: None,
+        required_device_count: 0,
+        delivered_device_count: 0,
     })
 }
 
@@ -3198,6 +3232,8 @@ impl MessagingStore {
         if input.item_id.trim().is_empty()
             || input.message_id.trim().is_empty()
             || input.conversation_id.trim().is_empty()
+            || input.consumer_ptid.trim().is_empty()
+            || input.consumer_device_id.trim().is_empty()
             || input.lane_sequence <= 0
             || input.consumer_epoch == 0
             || input.payload_sha256.len() != 32
@@ -3345,6 +3381,25 @@ impl MessagingStore {
         if consumed != 1 {
             return Err("messaging delivery receipt inbox transition mismatch".to_string());
         }
+        // MP-D34: project the per-device delivered fact for the originator
+        // x/N verdict. The consumer endpoint comes from the validated
+        // inbound MessageReceipt and is never the local endpoint (rejected at
+        // decode time); a duplicate receipt is an idempotent no-op.
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO messaging_message_delivery_devices(
+                    conversation_id, message_id, consumer_ptid,
+                    consumer_device_id, delivered_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    input.conversation_id,
+                    input.message_id,
+                    input.consumer_ptid,
+                    input.consumer_device_id,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(ReceiveCommitResult::Committed)
     }
@@ -3826,7 +3881,8 @@ impl MessagingStore {
                         sender_ptid, sender_device_id, plaintext,
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
-                        edited_text, edited_at_unix_ms, retracted
+                        edited_text, edited_at_unix_ms, retracted,
+                        0, NULL, NULL, 0, 0
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1
                    AND event_sequence < ?2
@@ -3863,7 +3919,44 @@ impl MessagingStore {
                             pending.plaintext, pending.state, pending.created_at_unix_ms,
                             NULLIF(pending.reply_to_message_id, ''),
                             NULLIF(pending.thread_root_message_id, ''),
-                            NULL, NULL, 0
+                            NULL, NULL, 0,
+                            COALESCE((
+                                SELECT outbox.attempt_count
+                                FROM messaging_command_attempts attempt
+                                JOIN messaging_command_outbox outbox
+                                  ON outbox.command_id = attempt.command_id
+                                WHERE attempt.conversation_id = pending.conversation_id
+                                  AND attempt.message_id = pending.message_id
+                                  AND attempt.state <> 'superseded'
+                                ORDER BY attempt.created_at_unix_ms DESC,
+                                         attempt.command_id DESC
+                                LIMIT 1
+                            ), pending.attempt_count),
+                            COALESCE((
+                                SELECT NULLIF(outbox.next_attempt_at_unix_ms, 0)
+                                FROM messaging_command_attempts attempt
+                                JOIN messaging_command_outbox outbox
+                                  ON outbox.command_id = attempt.command_id
+                                WHERE attempt.conversation_id = pending.conversation_id
+                                  AND attempt.message_id = pending.message_id
+                                  AND attempt.state <> 'superseded'
+                                ORDER BY attempt.created_at_unix_ms DESC,
+                                         attempt.command_id DESC
+                                LIMIT 1
+                            ), NULLIF(pending.next_attempt_at_unix_ms, 0)),
+                            COALESCE((
+                                SELECT NULLIF(outbox.last_error_code, '')
+                                FROM messaging_command_attempts attempt
+                                JOIN messaging_command_outbox outbox
+                                  ON outbox.command_id = attempt.command_id
+                                WHERE attempt.conversation_id = pending.conversation_id
+                                  AND attempt.message_id = pending.message_id
+                                  AND attempt.state <> 'superseded'
+                                ORDER BY attempt.created_at_unix_ms DESC,
+                                         attempt.command_id DESC
+                                LIMIT 1
+                            ), NULLIF(pending.last_error_code, '')),
+                            0, 0
                      FROM messaging_pending_messages pending
                      WHERE pending.conversation_id = ?1
                        AND pending.thread_root_message_id = ''
@@ -3903,6 +3996,22 @@ impl MessagingStore {
             {
                 message.pinned_by_ptid = Some(actor_ptid.clone());
                 message.pinned_at_unix_ms = Some(*pinned_at_unix_ms);
+            }
+        }
+        let delivery = load_message_delivery_facts(
+            &connection,
+            conversation_id,
+            &messages
+                .iter()
+                .map(|message| message.message_id.as_str())
+                .collect::<Vec<_>>(),
+        )?;
+        for message in &mut messages {
+            if let Some((required_device_count, delivered_device_count)) =
+                delivery.get(&message.message_id)
+            {
+                message.required_device_count = *required_device_count;
+                message.delivered_device_count = *delivered_device_count;
             }
         }
         Ok(ConversationMessagePage {
@@ -4050,6 +4159,22 @@ impl MessagingStore {
             {
                 row.pinned_by_ptid = Some(actor_ptid.clone());
                 row.pinned_at_unix_ms = Some(*pinned_at_unix_ms);
+            }
+        }
+        let delivery = load_message_delivery_facts(
+            &connection,
+            conversation_id,
+            &rows
+                .iter()
+                .map(|row| row.message_id.as_str())
+                .collect::<Vec<_>>(),
+        )?;
+        for row in &mut rows {
+            if let Some((required_device_count, delivered_device_count)) =
+                delivery.get(&row.message_id)
+            {
+                row.required_device_count = *required_device_count;
+                row.delivered_device_count = *delivered_device_count;
             }
         }
         Ok(rows)
@@ -4682,11 +4807,11 @@ impl MessagingStore {
             .execute(
                 "INSERT INTO messaging_pending_messages(
                     conversation_id, conversation_kind, message_id,
-                    sender_ptid, sender_device_id, plaintext,
+                    sender_ptid, sender_device_id, send_intent_id, plaintext,
                     reply_to_message_id, thread_root_message_id, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
                     created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', 0, ?9, '', ?9)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -4694,6 +4819,7 @@ impl MessagingStore {
                     draft.message_id,
                     draft.sender_ptid,
                     draft.sender_device_id,
+                    draft.send_intent_id,
                     draft.plaintext,
                     draft.reply_to_message_id,
                     draft.thread_root_message_id,
@@ -4704,6 +4830,22 @@ impl MessagingStore {
         if changed != 1 {
             return Err("messaging draft identity already exists".to_string());
         }
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO messaging_send_intents(
+                    sender_device_id, send_intent_id, conversation_id,
+                    conversation_kind, message_id, created_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    draft.sender_device_id,
+                    draft.send_intent_id,
+                    draft.conversation_id,
+                    draft.conversation_kind,
+                    draft.message_id,
+                    draft.created_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         persist_sender_content(
             &transaction,
             &draft.conversation_id,
@@ -4759,11 +4901,11 @@ impl MessagingStore {
             .execute(
                 "INSERT INTO messaging_pending_messages(
                     conversation_id, conversation_kind, message_id,
-                    sender_ptid, sender_device_id, plaintext,
+                    sender_ptid, sender_device_id, send_intent_id, plaintext,
                     reply_to_message_id, thread_root_message_id, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
                     created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'draft', 0, ?9, '', ?9)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -4771,6 +4913,7 @@ impl MessagingStore {
                     draft.message_id,
                     draft.sender_ptid,
                     draft.sender_device_id,
+                    draft.send_intent_id,
                     draft.plaintext,
                     draft.reply_to_message_id,
                     draft.thread_root_message_id,
@@ -4781,6 +4924,22 @@ impl MessagingStore {
         if changed != 1 {
             return Err("messaging draft identity already exists".to_string());
         }
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO messaging_send_intents(
+                    sender_device_id, send_intent_id, conversation_id,
+                    conversation_kind, message_id, created_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    draft.sender_device_id,
+                    draft.send_intent_id,
+                    draft.conversation_id,
+                    draft.conversation_kind,
+                    draft.message_id,
+                    draft.created_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         for upload in uploads {
             let transfer = &upload.transfer;
             let generation =
@@ -5777,7 +5936,7 @@ impl MessagingStore {
         let draft = connection
             .query_row(
                 "SELECT conversation_id, conversation_kind, message_id,
-                        sender_ptid, sender_device_id, plaintext,
+                        sender_ptid, sender_device_id, send_intent_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
                         attempt_count, created_at_unix_ms
                  FROM messaging_pending_messages pending
@@ -5798,12 +5957,13 @@ impl MessagingStore {
                         message_id: row.get(2)?,
                         sender_ptid: row.get(3)?,
                         sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        reply_to_message_id: row.get(6)?,
-                        thread_root_message_id: row.get(7)?,
+                        send_intent_id: row.get(5)?,
+                        plaintext: row.get(6)?,
+                        reply_to_message_id: row.get(7)?,
+                        thread_root_message_id: row.get(8)?,
                         attachments: Vec::new(),
-                        attempt_count: row.get(8)?,
-                        created_at_unix_ms: row.get(9)?,
+                        attempt_count: row.get(9)?,
+                        created_at_unix_ms: row.get(10)?,
                     })
                 },
             )
@@ -5820,6 +5980,116 @@ impl MessagingStore {
         Ok(Some(draft))
     }
 
+    /// MP-D33 idempotent admission lookup. Returns the already-admitted
+    /// message for a repeated `(sender_device_id, send_intent_id)` action,
+    /// with its current durable state and the latest command attempt. The
+    /// unique partial index makes a racing second admission impossible; this
+    /// read is the normal duplicate path under the engine send lock.
+    pub fn find_pending_message_admission(
+        &self,
+        sender_device_id: &str,
+        send_intent_id: &str,
+    ) -> Result<Option<PendingMessageAdmission>, String> {
+        if sender_device_id.trim().is_empty() || send_intent_id.trim().is_empty() {
+            return Err("messaging send intent is incomplete".to_string());
+        }
+        let connection = self.connection()?;
+        // Live draft path: current pending row drives state/attachments.
+        let live_row = connection
+            .query_row(
+                "SELECT conversation_id, conversation_kind, message_id, state
+                 FROM messaging_pending_messages
+                 WHERE sender_device_id = ?1 AND send_intent_id = ?2
+                 LIMIT 1",
+                params![sender_device_id, send_intent_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i32>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        // Committed path: the pending row is deleted on commit, but the
+        // durable admission ledger keeps the intent -> message binding.
+        let row = live_row.or_else(|| {
+            connection
+                .query_row(
+                    "SELECT conversation_id, conversation_kind, message_id, 'committed'
+                     FROM messaging_send_intents
+                     WHERE sender_device_id = ?1 AND send_intent_id = ?2
+                     LIMIT 1",
+                    params![sender_device_id, send_intent_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, i32>(1)?,
+                            row.get::<_, String>(2)?,
+                            String::from("committed"),
+                        ))
+                    },
+                )
+                .optional()
+                .ok()
+                .flatten()
+        });
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let (conversation_id, conversation_kind, message_id, stored_state) = row;
+        let command_id = connection
+            .query_row(
+                "SELECT command_id FROM messaging_command_attempts
+                 WHERE message_id = ?1
+                 ORDER BY created_at_unix_ms DESC, command_id DESC
+                 LIMIT 1",
+                params![message_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let mut attachment_ids = connection
+            .prepare(
+                "SELECT attachment_id FROM messaging_attachment_drafts
+                 WHERE message_id = ?1
+                 ORDER BY attachment_id ASC",
+            )
+            .map_err(|error| error.to_string())?
+            .query_map(params![message_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        if attachment_ids.is_empty() {
+            attachment_ids = connection
+                .prepare(
+                    "SELECT attachment_id FROM messaging_attachment_transfers
+                     WHERE message_id = ?1 AND direction = 1
+                     ORDER BY attachment_id ASC",
+                )
+                .map_err(|error| error.to_string())?
+                .query_map(params![message_id], |row| row.get::<_, String>(0))
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+        }
+        let state = match stored_state.as_str() {
+            "submitted" | "retry_wait" | "committed" if command_id.is_some() => "pending",
+            "failed" => "failed",
+            _ => "draft",
+        };
+        Ok(Some(PendingMessageAdmission {
+            conversation_id,
+            conversation_kind,
+            message_id,
+            command_id,
+            attachment_ids,
+            state,
+        }))
+    }
+
     pub fn message_draft(&self, message_id: &str) -> Result<Option<PendingMessageDraft>, String> {
         if message_id.trim().is_empty() {
             return Err("messaging draft message ID is required".to_string());
@@ -5828,7 +6098,7 @@ impl MessagingStore {
         let draft = connection
             .query_row(
                 "SELECT conversation_id, conversation_kind, message_id,
-                        sender_ptid, sender_device_id, plaintext,
+                        sender_ptid, sender_device_id, send_intent_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
                         attempt_count, created_at_unix_ms
                  FROM messaging_pending_messages pending
@@ -5847,12 +6117,13 @@ impl MessagingStore {
                         message_id: row.get(2)?,
                         sender_ptid: row.get(3)?,
                         sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        reply_to_message_id: row.get(6)?,
-                        thread_root_message_id: row.get(7)?,
+                        send_intent_id: row.get(5)?,
+                        plaintext: row.get(6)?,
+                        reply_to_message_id: row.get(7)?,
+                        thread_root_message_id: row.get(8)?,
                         attachments: Vec::new(),
-                        attempt_count: row.get(8)?,
-                        created_at_unix_ms: row.get(9)?,
+                        attempt_count: row.get(9)?,
+                        created_at_unix_ms: row.get(10)?,
                     })
                 },
             )
@@ -6369,6 +6640,7 @@ impl MessagingStore {
                  DELETE FROM messaging_interaction_intents;
                  DELETE FROM messaging_command_attempts;
                  DELETE FROM messaging_pending_messages;
+                 DELETE FROM messaging_send_intents;
                  DELETE FROM messaging_local_commands;
                  DELETE FROM messaging_one_time_prekeys;
                  DELETE FROM messaging_prekey_bundle;
@@ -6391,6 +6663,7 @@ impl MessagingStore {
                  DELETE FROM messaging_trust;
                  DELETE FROM messaging_conversation_members;
                  DELETE FROM messaging_conversations;
+                 DELETE FROM messaging_message_delivery_devices;
                  DELETE FROM messaging_message_projections;",
             )
             .map_err(|error| error.to_string())?;
@@ -11011,6 +11284,8 @@ impl MessagingRepository for MessagingStore {
                 item_id: commit.item_id,
                 message_id: commit.message_id,
                 conversation_id: commit.conversation_id,
+                consumer_ptid: commit.consumer_ptid,
+                consumer_device_id: commit.consumer_device_id,
                 lane_sequence: commit.lane_sequence,
                 consumer_epoch: commit.consumer_epoch,
                 payload_sha256: commit.payload_sha256,
@@ -11714,6 +11989,7 @@ impl MlsOutboundRepository for MessagingStore {
                     private_content: commit.projection.private_content,
                     delivery_plan_sha256: commit.projection.delivery_plan_sha256,
                     created_at_unix_ms: commit.projection.created_at_unix_ms,
+                    required_device_count: commit.projection.required_device_count,
                 },
             },
         )
@@ -12163,6 +12439,68 @@ fn load_readers_for_message(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
     Ok(readers)
+}
+
+/// MP-D34 sender verdict facts for a message page: the immutable required
+/// recipient count from the committed delivery plan and the count of durable
+/// per-device delivered receipts. Both are local projection facts only;
+/// absent rows mean "no fact" (zero), never "not deliverable".
+fn load_message_delivery_facts(
+    connection: &Connection,
+    conversation_id: &str,
+    message_ids: &[&str],
+) -> Result<HashMap<String, (i64, i64)>, String> {
+    let mut facts: HashMap<String, (i64, i64)> = HashMap::new();
+    if message_ids.is_empty() {
+        return Ok(facts);
+    }
+    let placeholders = (0..message_ids.len())
+        .map(|index| format!("?{}", index + 2))
+        .collect::<Vec<_>>()
+        .join(",");
+    let params = std::iter::once(conversation_id)
+        .chain(message_ids.iter().copied())
+        .collect::<Vec<_>>();
+    let required_sql = format!(
+        "SELECT message_id, MAX(required_device_count)
+         FROM messaging_command_attempts
+         WHERE conversation_id = ?1
+           AND state = 'committed'
+           AND message_id IN ({placeholders})
+         GROUP BY message_id"
+    );
+    let mut required_statement = connection
+        .prepare(&required_sql)
+        .map_err(|error| error.to_string())?;
+    let required_rows = required_statement
+        .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+    for row in required_rows {
+        let (message_id, required_device_count) = row.map_err(|error| error.to_string())?;
+        facts.entry(message_id).or_insert((0, 0)).0 = required_device_count;
+    }
+    let delivered_sql = format!(
+        "SELECT message_id, COUNT(*)
+         FROM messaging_message_delivery_devices
+         WHERE conversation_id = ?1
+           AND message_id IN ({placeholders})
+         GROUP BY message_id"
+    );
+    let mut delivered_statement = connection
+        .prepare(&delivered_sql)
+        .map_err(|error| error.to_string())?;
+    let delivered_rows = delivered_statement
+        .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+    for row in delivered_rows {
+        let (message_id, delivered_device_count) = row.map_err(|error| error.to_string())?;
+        facts.entry(message_id).or_insert((0, 0)).1 = delivered_device_count;
+    }
+    Ok(facts)
 }
 
 fn load_pins_for_conversation(
@@ -13478,13 +13816,15 @@ fn persist_prepared_command(
         .execute(
             "INSERT INTO messaging_command_attempts(
                 command_id, conversation_id, message_id,
-                delivery_plan_sha256, state, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, 'prepared', ?5)",
+                delivery_plan_sha256, required_device_count, state,
+                created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 'prepared', ?6)",
             params![
                 projection.command_id,
                 projection.conversation_id,
                 projection.message_id,
                 projection.delivery_plan_sha256,
+                i64::from(projection.required_device_count),
                 projection.created_at_unix_ms
             ],
         )
@@ -13840,6 +14180,7 @@ fn desktop_pending_projection<'a>(
         private_content: projection.private_content,
         delivery_plan_sha256: projection.delivery_plan_sha256,
         created_at_unix_ms: projection.created_at_unix_ms,
+        required_device_count: projection.required_device_count,
     }
 }
 
@@ -15238,6 +15579,13 @@ impl ConversationClearRepository for MessagingStore {
                     "chat conversation clear projection delete was not exact: {message_id}"
                 ));
             }
+            transaction
+                .execute(
+                    "DELETE FROM messaging_message_delivery_devices
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![plan.conversation_id, message_id],
+                )
+                .map_err(|error| error.to_string())?;
         }
         if existing_sequence < plan.pruned_through_sequence {
             transaction
@@ -15758,6 +16106,13 @@ impl RetentionRepository for MessagingStore {
                         "chat retention projection delete was not exact: {message_id}"
                     ));
                 }
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_message_delivery_devices
+                         WHERE conversation_id = ?1 AND message_id = ?2",
+                        params![boundary.conversation_id, message_id],
+                    )
+                    .map_err(|error| error.to_string())?;
                 pruned_projection_count = pruned_projection_count.saturating_add(1);
             }
             transaction
@@ -16068,6 +16423,20 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
                 |row| row.get(0),
             )
             .map_err(|error| error.to_string())
+    }
+
+    fn column_exists(&self, table: &str, column: &str) -> Result<bool, String> {
+        self.0
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .map_err(|error| error.to_string())?
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .find_map(|result| match result {
+                Ok(name) if name == column => Some(Ok(true)),
+                Ok(_) => None,
+                Err(error) => Some(Err(error.to_string())),
+            })
+            .unwrap_or(Ok(false))
     }
 
     fn query_i64(&self, sql: &str) -> Result<i64, String> {
@@ -17612,6 +17981,7 @@ mod tests {
                 private_content: &private_content,
                 delivery_plan_sha256: &[1; 32],
                 created_at_unix_ms,
+                required_device_count: 0,
             },
         })
     }
@@ -17835,6 +18205,261 @@ mod tests {
             summary.latest_message.unwrap().message_id,
             "message-pending"
         );
+    }
+
+    #[test]
+    fn delivery_device_receipts_project_required_and_delivered_counts() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        // Committed own message; authority accepted, no receipt yet.
+        connection
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext, delivery_state,
+                    committed_at_unix_ms, retracted
+                 ) VALUES ('conversation-1', 'event-1', 1, 'message-1',
+                           'ptid:alice', 'alice-device', 'body', 'accepted',
+                           500, 0)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_local_commands(
+                    command_id, conversation_id, command_bytes, state, created_at_unix_ms
+                 ) VALUES ('command-1', 'conversation-1', X'01', 'committed', 100)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_command_attempts(
+                    command_id, conversation_id, message_id, delivery_plan_sha256,
+                    required_device_count, state, created_at_unix_ms
+                 ) VALUES ('command-1', 'conversation-1', 'message-1',
+                           X'0000000000000000000000000000000000000000000000000000000000000000',
+                           2, 'committed', 100)",
+                [],
+            )
+            .unwrap();
+        // A legacy committed message without an attempt row keeps unknown
+        // denominator instead of fabricating zero recipients.
+        connection
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext, delivery_state,
+                    committed_at_unix_ms, retracted
+                 ) VALUES ('conversation-1', 'event-2', 2, 'message-legacy',
+                           'ptid:alice', 'alice-device', 'body two', 'delivered',
+                           400, 0)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let first = store
+            .conversation_message_page("conversation-1", None, 50)
+            .unwrap();
+        let fresh = first
+            .messages
+            .iter()
+            .find(|message| message.message_id == "message-1")
+            .unwrap();
+        assert_eq!(fresh.state, "accepted");
+        assert_eq!(fresh.required_device_count, 2);
+        assert_eq!(fresh.delivered_device_count, 0);
+        let legacy = first
+            .messages
+            .iter()
+            .find(|message| message.message_id == "message-legacy")
+            .unwrap();
+        assert_eq!(legacy.required_device_count, 0);
+        assert_eq!(legacy.delivered_device_count, 0);
+
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_message_delivery_devices(
+                    conversation_id, message_id, consumer_ptid,
+                    consumer_device_id, delivered_at_unix_ms
+                 ) VALUES ('conversation-1', 'message-1', 'ptid:bob', 'bob-phone', 600)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let partial = store
+            .conversation_message_page("conversation-1", None, 50)
+            .unwrap();
+        let partial_row = partial
+            .messages
+            .iter()
+            .find(|message| message.message_id == "message-1")
+            .unwrap();
+        assert_eq!(partial_row.delivered_device_count, 1);
+        assert_eq!(partial_row.required_device_count, 2);
+
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_message_delivery_devices(
+                    conversation_id, message_id, consumer_ptid,
+                    consumer_device_id, delivered_at_unix_ms
+                 ) VALUES ('conversation-1', 'message-1', 'ptid:carol', 'carol-tablet', 700)",
+                [],
+            )
+            .unwrap();
+        // Duplicate receipts stay idempotent.
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO messaging_message_delivery_devices(
+                    conversation_id, message_id, consumer_ptid,
+                    consumer_device_id, delivered_at_unix_ms
+                 ) VALUES ('conversation-1', 'message-1', 'ptid:bob', 'bob-phone', 601)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let full = store
+            .conversation_message_page("conversation-1", None, 50)
+            .unwrap();
+        let full_row = full
+            .messages
+            .iter()
+            .find(|message| message.message_id == "message-1")
+            .unwrap();
+        assert_eq!(full_row.delivered_device_count, 2);
+        assert_eq!(full_row.required_device_count, 2);
+    }
+
+    #[test]
+    fn pending_page_exposes_live_outbox_attempt_metadata() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id, sender_ptid,
+                    sender_device_id, plaintext, state, attempt_count,
+                    next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
+                 ) VALUES ('conversation-1', 1, 'message-pending', 'ptid:alice',
+                           'alice-device', 'body', 'retry_wait', 0, 0, '', 100)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_local_commands(
+                    command_id, conversation_id, command_bytes, state, created_at_unix_ms
+                 ) VALUES ('command-active', 'conversation-1', X'02', 'submitted', 100),
+                        ('command-stale', 'conversation-1', X'03', 'superseded', 200)",
+                [],
+            )
+            .unwrap();
+        // A newer superseded attempt must not shadow the active one.
+        connection
+            .execute(
+                "INSERT INTO messaging_command_attempts(
+                    command_id, conversation_id, message_id, delivery_plan_sha256,
+                    required_device_count, state, created_at_unix_ms
+                 ) VALUES ('command-stale', 'conversation-1', 'message-pending',
+                           X'0303030303030303030303030303030303030303030303030303030303030303',
+                           9, 'superseded', 200),
+                        ('command-active', 'conversation-1', 'message-pending',
+                           X'0202020202020202020202020202020202020202020202020202020202020202',
+                           2, 'retry_wait', 100)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_command_outbox(
+                    command_id, conversation_id, command_bytes, state, attempt_count,
+                    next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
+                 ) VALUES ('command-stale', 'conversation-1', X'03', 'superseded', 9,
+                           999, 'stale_delivery_plan', 200),
+                        ('command-active', 'conversation-1', X'02', 'retry_wait', 3,
+                           800, 'network', 100)",
+                [],
+            )
+            .unwrap();
+        // A deferred draft has no command attempt yet: its own scheduled
+        // retry metadata remains the source of truth.
+        connection
+            .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id, sender_ptid,
+                    sender_device_id, plaintext, state, attempt_count,
+                    next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
+                 ) VALUES ('conversation-1', 1, 'message-draft', 'ptid:alice',
+                           'alice-device', 'draft body', 'draft', 2, 700,
+                           'prepare_failed', 200)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let page = store
+            .conversation_message_page("conversation-1", None, 50)
+            .unwrap();
+        let row = page
+            .messages
+            .iter()
+            .find(|message| message.message_id == "message-pending")
+            .unwrap();
+        assert_eq!(row.state, "retry_wait");
+        assert_eq!(row.attempt_count, 3);
+        assert_eq!(row.next_attempt_at_unix_ms, Some(800));
+        assert_eq!(row.last_error_code.as_deref(), Some("network"));
+        assert_eq!(row.required_device_count, 0);
+        assert_eq!(row.delivered_device_count, 0);
+
+        let draft = page
+            .messages
+            .iter()
+            .find(|message| message.message_id == "message-draft")
+            .unwrap();
+        assert_eq!(draft.state, "draft");
+        assert_eq!(draft.attempt_count, 2);
+        assert_eq!(draft.next_attempt_at_unix_ms, Some(700));
+        assert_eq!(draft.last_error_code.as_deref(), Some("prepare_failed"));
+    }
+
+    #[test]
+    fn additive_schema_migration_real_sqlite_adds_required_device_count() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        connection
+            .execute_batch(
+                "ALTER TABLE messaging_command_attempts DROP COLUMN required_device_count;",
+            )
+            .unwrap();
+
+        migrate(&connection).unwrap();
+
+        let has_column = connection
+            .prepare("PRAGMA table_info(messaging_command_attempts)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .any(|name| name.as_deref() == Ok("required_device_count"));
+        assert!(has_column);
+
+        let delivery_table: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table'
+                   AND name = 'messaging_message_delivery_devices'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(delivery_table, 1);
+
+        migrate(&connection).unwrap();
     }
 
     #[test]
@@ -19446,6 +20071,7 @@ mod tests {
             message_id: transfer.message_id.clone(),
             sender_ptid: "ptid:alice".to_string(),
             sender_device_id: "alice-device".to_string(),
+            send_intent_id: String::new(),
             plaintext: String::new(),
             reply_to_message_id: String::new(),
             thread_root_message_id: String::new(),
@@ -19639,6 +20265,7 @@ mod tests {
                 private_content: &private_content,
                 delivery_plan_sha256: &[1; 32],
                 created_at_unix_ms: 10,
+                required_device_count: 0,
             },
         });
         assert!(result.is_err());
@@ -19686,6 +20313,7 @@ mod tests {
                     private_content: &private_content,
                     delivery_plan_sha256: &[1; 32],
                     created_at_unix_ms: 10,
+                    required_device_count: 0,
                 },
             })
             .unwrap();
@@ -19718,6 +20346,7 @@ mod tests {
             message_id: "message-draft".to_string(),
             sender_ptid: "ptid:alice".to_string(),
             sender_device_id: "alice-device".to_string(),
+            send_intent_id: String::new(),
             plaintext: "survives prepare failure".to_string(),
             reply_to_message_id: String::new(),
             thread_root_message_id: String::new(),
@@ -19743,6 +20372,118 @@ mod tests {
         let retried = store.next_due_message_draft(1_100).unwrap().unwrap();
         assert_eq!(retried.attempt_count, 1);
         assert_eq!(retried.message_id, draft.message_id);
+    }
+
+    #[test]
+    fn send_intent_admission_is_idempotent_per_device() {
+        let store = MessagingStore::in_memory().unwrap();
+        let draft = PendingMessageDraft {
+            conversation_id: "group-1".to_string(),
+            conversation_kind: ConversationKind::Group as i32,
+            message_id: "message-intent".to_string(),
+            sender_ptid: "ptid:alice".to_string(),
+            sender_device_id: "alice-device".to_string(),
+            send_intent_id: "01JINTENT000000000000000001".to_string(),
+            plaintext: "one action, one admission".to_string(),
+            reply_to_message_id: String::new(),
+            thread_root_message_id: String::new(),
+            attachments: Vec::new(),
+            attempt_count: 0,
+            created_at_unix_ms: 100,
+        };
+        store.create_message_draft(&draft).unwrap();
+
+        let admission = store
+            .find_pending_message_admission("alice-device", &draft.send_intent_id)
+            .unwrap()
+            .expect("admission exists");
+        assert_eq!(admission.message_id, "message-intent");
+        assert_eq!(admission.state, "draft");
+        assert!(admission.command_id.is_none());
+
+        // Another device with the same intent value has no admission.
+        assert!(store
+            .find_pending_message_admission("other-device", &draft.send_intent_id)
+            .unwrap()
+            .is_none());
+
+        // The durable uniqueness constraint blocks a second row for the
+        // same (device, intent): the engine lock is not the only defence.
+        let duplicate = PendingMessageDraft {
+            message_id: "message-intent-duplicate".to_string(),
+            ..draft.clone()
+        };
+        let error = store.create_message_draft(&duplicate).unwrap_err();
+        assert!(
+            error.contains("UNIQUE") || error.to_lowercase().contains("unique"),
+            "expected unique constraint violation, got: {error}"
+        );
+
+        // Legacy/empty-intent rows remain allowed and never collide.
+        let legacy = PendingMessageDraft {
+            message_id: "legacy-message".to_string(),
+            send_intent_id: String::new(),
+            ..draft.clone()
+        };
+        store.create_message_draft(&legacy).unwrap();
+
+        // The admission survives pending-row deletion (commit cleanup):
+        // a late duplicate and the intent status query still resolve to the
+        // same message instead of admitting a second one.
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "DELETE FROM messaging_pending_messages
+                 WHERE sender_device_id = ?1 AND send_intent_id = ?2",
+                params!["alice-device", &draft.send_intent_id],
+            )
+            .unwrap();
+        let after_commit = store
+            .find_pending_message_admission("alice-device", &draft.send_intent_id)
+            .unwrap()
+            .expect("admission survives pending row deletion");
+        assert_eq!(after_commit.message_id, "message-intent");
+    }
+
+    #[test]
+    fn additive_schema_migration_real_sqlite_adds_send_intent_before_indexes() {
+        // Regression for the startup failure "no such column:
+        // send_intent_id" on a frozen-baseline database: the canonical
+        // batch creates the partial unique index, so the additive column
+        // migration must run first inside the same schema ensure.
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        connection
+            .execute_batch(
+                "DROP INDEX uidx_messaging_pending_messages_send_intent;
+                 ALTER TABLE messaging_pending_messages DROP COLUMN send_intent_id;",
+            )
+            .unwrap();
+
+        migrate(&connection).unwrap();
+
+        let has_column: bool = connection
+            .prepare("PRAGMA table_info(messaging_pending_messages)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .any(|name| name.as_deref() == Ok("send_intent_id"));
+        assert!(has_column);
+
+        let index_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index'
+                   AND name = 'uidx_messaging_pending_messages_send_intent'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(index_count, 1);
+
+        // Idempotent on a second ensure.
+        migrate(&connection).unwrap();
     }
 
     #[test]

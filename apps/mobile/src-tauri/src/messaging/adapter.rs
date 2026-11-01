@@ -101,6 +101,22 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
             .map_err(|error| error.to_string())
     }
 
+    fn column_exists(&self, table: &str, column: &str) -> Result<bool, String> {
+        let mut statement = self
+            .0
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .map_err(|error| error.to_string())?;
+        let names = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?;
+        for name in names {
+            if name.map_err(|error| error.to_string())? == column {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn query_i64(&self, sql: &str) -> Result<i64, String> {
         self.0
             .query_row(sql, [], |row| row.get(0))
@@ -770,6 +786,13 @@ impl ConversationClearRepository for MobileMessagingStore {
                     "mobile chat conversation clear projection delete was not exact: {message_id}"
                 ));
             }
+            transaction
+                .execute(
+                    "DELETE FROM messaging_message_delivery_devices
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![plan.conversation_id, message_id],
+                )
+                .map_err(|error| error.to_string())?;
         }
         if existing_sequence < plan.pruned_through_sequence {
             transaction
@@ -1305,6 +1328,13 @@ impl RetentionRepository for MobileMessagingStore {
                         "mobile chat retention projection delete was not exact: {message_id}"
                     ));
                 }
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_message_delivery_devices
+                         WHERE conversation_id = ?1 AND message_id = ?2",
+                        params![boundary.conversation_id, message_id],
+                    )
+                    .map_err(|error| error.to_string())?;
                 pruned_projection_count = pruned_projection_count.saturating_add(1);
             }
             transaction
@@ -6820,6 +6850,11 @@ impl MessagingRepository for MobileMessagingStore {
             "read" => 2,
             _ => return Err("mobile messaging delivery state is invalid".to_string()),
         };
+        if commit.consumer_ptid.trim().is_empty()
+            || commit.consumer_device_id.trim().is_empty()
+        {
+            return Err("mobile messaging delivery receipt consumer identity is incomplete".to_string());
+        }
         self.with_transaction(|transaction| {
             let result = Self::commit_claimed_item(
                 transaction,
@@ -6867,6 +6902,24 @@ impl MessagingRepository for MobileMessagingStore {
                     return Err("mobile messaging receipt references unknown message".to_string());
                 }
             }
+            // MP-D34 schema follow: persist the per-device delivered fact so
+            // an originator verdict projection can reconstruct x/N; Mobile
+            // itself renders no verdict UI in this scope.
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO messaging_message_delivery_devices(
+                        conversation_id, message_id, consumer_ptid,
+                        consumer_device_id, delivered_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        commit.conversation_id,
+                        commit.message_id,
+                        commit.consumer_ptid,
+                        commit.consumer_device_id,
+                        commit.consumed_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
             Ok(())
         })
     }
@@ -10615,6 +10668,14 @@ fn conversation_message_from_row(
         pinned_by_ptid: None,
         pinned_at_unix_ms: None,
         read_by_ptids: Vec::new(),
+        // MP-D34: Mobile follows the shared schema/protocol but renders no
+        // sender verdict in this scope; the per-device receipt facts it
+        // persists become available to any projection on later devices.
+        attempt_count: 0,
+        next_attempt_at_unix_ms: None,
+        last_error_code: None,
+        required_device_count: 0,
+        delivered_device_count: 0,
     })
 }
 
@@ -11983,6 +12044,7 @@ mod tests {
                         private_content: &private_content,
                         delivery_plan_sha256: &[8; 32],
                         created_at_unix_ms: 20,
+                        required_device_count: 0,
                     },
                 )
             })
@@ -13020,6 +13082,11 @@ mod tests {
                 pinned_by_ptid: pin.map(|(actor, _)| actor.to_string()),
                 pinned_at_unix_ms: pin.map(|(_, timestamp)| timestamp),
                 read_by_ptids: Vec::new(),
+                attempt_count: 0,
+                next_attempt_at_unix_ms: None,
+                last_error_code: None,
+                required_device_count: 0,
+                delivered_device_count: 0,
             });
         }
         connection
@@ -13084,6 +13151,11 @@ mod tests {
             pinned_by_ptid: Some("ptid:dave".to_string()),
             pinned_at_unix_ms: Some(400),
             read_by_ptids: Vec::new(),
+            attempt_count: 0,
+            next_attempt_at_unix_ms: None,
+            last_error_code: None,
+            required_device_count: 0,
+            delivered_device_count: 0,
         });
         drop(connection);
         (store, expected)
@@ -13843,6 +13915,7 @@ mod tests {
             private_content: &private_content,
             delivery_plan_sha256: &[20; 32],
             created_at_unix_ms: 29,
+            required_device_count: 0,
         };
         assert!(MlsOutboundRepository::persist_mls_outbound_send(
             &store,
@@ -13874,6 +13947,7 @@ mod tests {
             private_content: &private_content,
             delivery_plan_sha256: &[21; 32],
             created_at_unix_ms: 30,
+            required_device_count: 0,
         };
         MlsOutboundRepository::persist_mls_outbound_send(
             &store,
@@ -14520,6 +14594,7 @@ mod tests {
             private_content: &private_content,
             delivery_plan_sha256: &[61; 32],
             created_at_unix_ms: 30,
+            required_device_count: 0,
         };
         DirectOutboundRepository::persist_direct_outbound_send(
             &store,
@@ -14551,6 +14626,7 @@ mod tests {
             private_content: &private_content,
             delivery_plan_sha256: &[62; 32],
             created_at_unix_ms: 31,
+            required_device_count: 0,
         };
         let error = DirectOutboundRepository::persist_direct_outbound_send(
             &store,
@@ -14962,6 +15038,7 @@ mod tests {
                         private_content: &private_content,
                         delivery_plan_sha256: &[9; 32],
                         created_at_unix_ms: ready.created_at_unix_ms,
+                        required_device_count: 0,
                     },
                 )
             })

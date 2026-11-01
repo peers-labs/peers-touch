@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography } from 'antd';
@@ -12,6 +20,12 @@ import {
   type ChatSurfaceKind,
 } from './chatMessageModel';
 import {
+  buildChatRowDecoration,
+  EMPTY_THREAD_STATS,
+  type ChatRowDecoration,
+  type ThreadCountSummary,
+} from './chatMessageRowDecoration';
+import {
   ChatMessageActionOverlay,
   type MessageActionTarget,
 } from './ChatMessageActionOverlay';
@@ -20,7 +34,11 @@ import {
   aggregateServiceEvents,
   serviceAggregationKey,
 } from './serviceEventAggregation';
-import { blocksMessageActionOverlay } from './messageReactionState';
+import {
+  blocksMessageActionOverlay,
+  type MessageReaction,
+  type MessageReactionMutation,
+} from './messageReactionState';
 import {
   chatMessageTimelineContainerStyle,
   shouldAdjustChatMessageScrollPosition,
@@ -28,12 +46,6 @@ import {
 } from './chatMessageTimelinePolicy';
 
 const { Text } = Typography;
-
-interface ChatThreadStats {
-  replyCount: number;
-  replyIds: string[];
-  unreadCount: number;
-}
 
 interface ChatMessageTimelineProps {
   actionOverlayHostRef: React.RefObject<HTMLDivElement | null>;
@@ -48,7 +60,12 @@ interface ChatMessageTimelineProps {
   highlightedMessageUlid: string | null;
   scrollToMessageUlid?: string | null;
   onAnchorReached?: () => void;
-  isPinned: (message: ChatMessage) => boolean;
+  /**
+   * All projected messages of the active conversation, including thread
+   * replies. Thread stats use it to surface inline replies before the thread
+   * panel loads. `messages` carries surface roots only.
+   */
+  conversationMessages: ChatMessage[];
   messages: ChatMessage[];
   onTimelineMeasured: () => void;
   onDelete: (message: ChatMessage) => void;
@@ -61,12 +78,12 @@ interface ChatMessageTimelineProps {
   onReply: (messageUlid: string) => void;
   onRetryMessage: (message: ChatMessage) => void;
   onRetryReaction: (message: ChatMessage) => void;
-  reactionMutationFor: (message: ChatMessage) => {
-    emoji: string;
-    phase: 'pending' | 'awaiting-projection' | 'error';
-  } | undefined;
-  resolveReactions: (message: ChatMessage) => { actorPtid: string; emoji: string }[];
-  resolveThreadStats: (message: ChatMessage) => ChatThreadStats;
+  pinnedMessageUlids: ReadonlySet<string>;
+  /** Projects the loaded thread slice for one root through the store memo. */
+  projectThreadMessages: (rootUlid: string) => ChatMessage[];
+  reactions: Record<string, MessageReaction[]>;
+  reactionMutations: Record<string, MessageReactionMutation>;
+  threadCounts: Record<string, ThreadCountSummary>;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -115,7 +132,7 @@ function DateSeparator({ date }: { date: Date }) {
 
 const ESTIMATED_ROW_HEIGHT = 72;
 
-export function ChatMessageTimeline({
+function ChatMessageTimelineImpl({
   actionOverlayHostRef,
   activeConversationId,
   activeKind,
@@ -124,7 +141,7 @@ export function ChatMessageTimeline({
   highlightedMessageUlid,
   scrollToMessageUlid,
   onAnchorReached,
-  isPinned,
+  conversationMessages,
   messages,
   onTimelineMeasured,
   onDelete,
@@ -137,9 +154,11 @@ export function ChatMessageTimeline({
   onReply,
   onRetryMessage,
   onRetryReaction,
-  reactionMutationFor,
-  resolveReactions,
-  resolveThreadStats,
+  pinnedMessageUlids,
+  projectThreadMessages,
+  reactions,
+  reactionMutations,
+  threadCounts,
   scrollContainerRef,
 }: ChatMessageTimelineProps) {
   const [expandedServiceGroups, setExpandedServiceGroups] = useState<Set<string>>(new Set());
@@ -184,6 +203,40 @@ export function ChatMessageTimeline({
     resolveTimestampMs: messageTimestampMs,
   }), [surfaceMessages]);
 
+  // Per-row decorations resolve once into identity-stable maps instead of
+  // allocating fresh arrays/objects for every visible row on every parent
+  // render. Rows whose slice of reactions / thread data is unchanged reuse
+  // their previous references so React.memo on ChatMessageRow skips commit
+  // work when an unrelated row mutates (e.g. keystroke-driven store fan-out).
+  const previousRowDecorationRef = useRef<ChatRowDecoration | null>(null);
+
+  const rowDecoration = useMemo(() => {
+    const decoration = buildChatRowDecoration({
+      messages,
+      conversationMessages,
+      previous: previousRowDecorationRef.current,
+      reactions,
+      reactionMutations,
+      currentUserPtid,
+      activeKind,
+      activeConversationId,
+      threadCounts,
+      projectThreadMessages,
+    });
+    previousRowDecorationRef.current = decoration;
+    return decoration;
+  }, [
+    activeConversationId,
+    activeKind,
+    conversationMessages,
+    currentUserPtid,
+    messages,
+    projectThreadMessages,
+    reactionMutations,
+    reactions,
+    threadCounts,
+  ]);
+
   const measureRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const closeActionsTimerRef = useRef<number | null>(null);
   const [actionTarget, setActionTarget] = useState<MessageActionTarget | null>(null);
@@ -201,7 +254,7 @@ export function ChatMessageTimeline({
   }, [cancelActionClose]);
 
   const activeReactionMutationPhase = actionTarget
-    ? reactionMutationFor(actionTarget.message)?.phase
+    ? rowDecoration.reactionMutationsByUlid.get(actionTarget.message.ulid)?.phase
     : undefined;
 
   useEffect(() => {
@@ -338,8 +391,8 @@ export function ChatMessageTimeline({
           const item = surfaceItems[virtualItem.index];
           const message = item.message;
           const messageDate = item.timestampMs > 0 ? new Date(item.timestampMs) : null;
-          const threadStats = resolveThreadStats(message);
-          const reactionMutation = reactionMutationFor(message);
+          const threadStats = rowDecoration.threadStatsByUlid.get(message.ulid) ?? EMPTY_THREAD_STATS;
+          const reactionMutation = rowDecoration.reactionMutationsByUlid.get(message.ulid);
 
           return (
             <div
@@ -376,12 +429,13 @@ export function ChatMessageTimeline({
                 onReact={onReact}
                 onRetryMessage={onRetryMessage}
                 onRetryReaction={onRetryReaction}
-                pinned={isPinned(message)}
+                pinned={pinnedMessageUlids.has(message.ulid)}
                 reactionMutationEmoji={reactionMutation?.emoji}
                 reactionMutationPhase={reactionMutation?.phase}
-                reactions={resolveReactions(message)}
+                reactions={rowDecoration.reactionsByUlid.get(message.ulid)}
                 threadReplyCount={threadStats.replyCount}
                 threadReplyIds={threadStats.replyIds}
+                threadPreviewMessages={threadStats.previewMessages}
                 threadUnreadCount={threadStats.unreadCount}
                 timelineGap={item.timelineGap}
               />
@@ -392,3 +446,6 @@ export function ChatMessageTimeline({
     </>
   );
 }
+
+export const ChatMessageTimeline = memo(ChatMessageTimelineImpl);
+ChatMessageTimeline.displayName = 'ChatMessageTimeline';

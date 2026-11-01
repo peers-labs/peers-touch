@@ -84,20 +84,113 @@ describe('message action geometry', () => {
     });
   });
 
-  it('moves along the requested side to avoid adjacent message content', () => {
+  it('places an own-message toolbar below the bubble with its left edge on the bubble left edge', () => {
+    const result = placeMessageActionSurface(request({
+      preferredPlacements: ['below', 'above'],
+      anchorEdge: 'left',
+    }));
+
+    expect(result?.placement).toBe('below');
+    expect(result?.rect).toEqual({
+      left: 300,
+      top: 458,
+      right: 460,
+      bottom: 498,
+    });
+  });
+
+  it('places an incoming-message toolbar below the bubble with its right edge on the bubble right edge', () => {
+    const result = placeMessageActionSurface(request({
+      preferredPlacements: ['below', 'above'],
+      anchorEdge: 'right',
+    }));
+
+    expect(result?.placement).toBe('below');
+    expect(result?.rect).toEqual({
+      left: 340,
+      top: 458,
+      right: 500,
+      bottom: 498,
+    });
+  });
+
+  it('switches to the above inner-edge hug when below can only be reached by detaching', () => {
+    // The obstacle below exactly occupies the attached-below band; the only
+    // collision-free below positions would detach from the bubble.
+    const adjacentBelow = { left: 300, top: 452, right: 460, bottom: 500 };
+    const result = placeMessageActionSurface(request({
+      preferredPlacements: ['below', 'above'],
+      anchorEdge: 'left',
+      adjacentContentRects: [adjacentBelow],
+    }));
+
+    expect(result?.placement).toBe('above');
+    expect(result?.rect).toEqual({
+      left: 300,
+      top: 302,
+      right: 460,
+      bottom: 342,
+    });
+  });
+
+  it('moves to the bubble side instead of flying into the pane gutter when stacked', () => {
+    // Own (right-aligned) bubble, exactly like a short stacked group message:
+    // the next own bubble blocks the whole below attachment band, and the
+    // own meta row blocks the above band. The toolbar must hug the bubble's
+    // outer-left edge, never teleport to the pane minimum.
+    const selectedContentRect = { left: 720, top: 200, right: 850, bottom: 250 };
+    const result = placeMessageActionSurface(request({
+      paneRect: { left: 120, top: 0, right: 1000, bottom: 800 },
+      viewportRect: { left: 0, top: 0, right: 1000, bottom: 800 },
+      selectedContentRect,
+      surfaceSize: { width: 275, height: 40 },
+      boundaryPadding: 8,
+      preferredPlacements: ['below', 'above', 'right', 'left'],
+      anchorEdge: 'left',
+      adjacentContentRects: [
+        // Own timestamp/read meta row directly above the bubble.
+        { left: 770, top: 178, right: 850, bottom: 196 },
+        // Next stacked own bubble directly below.
+        { left: 600, top: 258, right: 850, bottom: 308 },
+      ],
+    }));
+
+    expect(result?.placement).toBe('left');
+    expect(result?.rect).toEqual({
+      left: 437,
+      top: 205,
+      right: 712,
+      bottom: 245,
+    });
+    // Never ends up on the pane's far-left gutter when attached to a
+    // right-side bubble.
+    expect(result!.rect.left).toBeGreaterThan(selectedContentRect.left - 275 - 8 - 1);
+  });
+
+  it('keeps inner-edge hug above the bubble when below is unavailable', () => {
+    const adjacentBelow = { left: 112, top: 452, right: 688, bottom: 620 };
+    const result = placeMessageActionSurface(request({
+      preferredPlacements: ['below', 'above'],
+      anchorEdge: 'left',
+      adjacentContentRects: [adjacentBelow],
+    }));
+
+    expect(result?.placement).toBe('above');
+    expect(result?.rect.left).toBe(300);
+  });
+
+  it('detaches only as a last resort when the requested side is fully blocked', () => {
     const adjacentContentRect = { left: 300, top: 280, right: 500, bottom: 344 };
     const result = placeMessageActionSurface(request({
       adjacentContentRects: [adjacentContentRect],
       preferredPlacements: ['above'],
     }));
 
-    expect(result?.placement).toBe('above');
-    expect(result?.rect).toEqual({
-      left: 140,
-      top: 302,
-      right: 300,
-      bottom: 342,
-    });
+    // No attached position keeps half the toolbar over the bubble, so the
+    // explicit detached fallback is used rather than an attached-looking
+    // position slid into the gutter.
+    expect(result?.placement).toBe('detached');
+    expect(overlaps(result!.rect, request().selectedContentRect)).toBe(false);
     expect(overlaps(result!.rect, adjacentContentRect)).toBe(false);
   });
 

@@ -1,3 +1,4 @@
+pub mod active_profile;
 pub mod key_provider;
 
 use crate::domain::storage::database::{DatabaseOpenSpec, EncryptionLevel};
@@ -539,7 +540,7 @@ pub fn application_data_root() -> Result<PathBuf, StorageError> {
     Ok(resolve_storage_root()?.0)
 }
 
-fn resolve_storage_root() -> Result<(PathBuf, String), StorageError> {
+pub(super) fn resolve_storage_root() -> Result<(PathBuf, String), StorageError> {
     if let Ok(path) = std::env::var("PEERS_STORAGE_ROOT") {
         let trimmed = path.trim();
         if !trimmed.is_empty() {

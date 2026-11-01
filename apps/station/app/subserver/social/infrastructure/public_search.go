@@ -108,15 +108,23 @@ func (r *PublicSearchRepository) Match(
 	pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(text) + "%"
 	out := make(map[PublicSearchPosition]bool)
 	matches := make(map[string]map[uint64]bool)
+	// Production runs PostgreSQL, where case-insensitive matching is ILIKE.
+	// The parameter binding and ESCAPE guard are unchanged. The SQLite test
+	// dialect has no ILIKE; its ASCII-folded LIKE matches the same Latin case
+	// variants without claiming Unicode case folding.
+	likeOperator := "ILIKE"
+	if r.db.Dialector.Name() != "postgres" {
+		likeOperator = "LIKE"
+	}
 	for _, stream := range []struct {
 		kind, query string
 		ids         []uint64
 	}{
 		{"social-post", `SELECT id FROM social_public_posts WHERE audience_kind = 'PUBLIC'
-AND deleted_at IS NULL AND id IN ? AND text_body LIKE ? ESCAPE '!'`, postIDs},
+AND deleted_at IS NULL AND id IN ? AND text_body ` + likeOperator + ` ? ESCAPE '!'`, postIDs},
 		{"social-comment", `SELECT c.id FROM social_comments c JOIN social_public_posts p ON p.id = c.post_id
 WHERE c.post_class = 'public' AND c.deleted_at IS NULL AND p.audience_kind = 'PUBLIC'
-AND p.deleted_at IS NULL AND c.id IN ? AND c.text_body LIKE ? ESCAPE '!'`, commentIDs},
+AND p.deleted_at IS NULL AND c.id IN ? AND c.text_body ` + likeOperator + ` ? ESCAPE '!'`, commentIDs},
 	} {
 		matches[stream.kind] = make(map[uint64]bool)
 		if len(stream.ids) == 0 {

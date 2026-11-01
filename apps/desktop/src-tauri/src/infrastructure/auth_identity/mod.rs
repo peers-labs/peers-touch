@@ -718,13 +718,35 @@ pub fn update_active_avatar_local_path(local_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Authoritative avatar state carried by a profile/avatar sync.
+///
+/// The local account row mirrors identity owned by the Station; it is never
+/// itself an identity source. A failed materialization must therefore leave
+/// the previous identity and local path intact, while an authoritative empty
+/// avatar must clear both.
+pub enum AvatarIdentitySync<'a> {
+    /// Station authoritatively reports no avatar for this actor.
+    Cleared,
+    /// Canonical identity and the separately materialized local file path
+    /// (the path is `None` when materialization failed and last-good must be
+    /// preserved by the caller through [`AvatarIdentitySync::Unchanged`]).
+    Updated {
+        identity: &'a str,
+        local_path: Option<&'a str>,
+    },
+    /// The sync could not reach a terminal avatar state; keep last-good.
+    Unchanged,
+}
+
 /// Sync user profile metadata and a separately materialized avatar path.
+///
+/// Returns the avatar local path persisted after the update (or the untouched
+/// last-good path when the avatar state is `Unchanged`).
 pub fn sync_profile_locally(
     account_id: &str,
     name: Option<&str>,
     email: Option<&str>,
-    avatar_url: Option<&str>,
-    avatar_local_path: Option<&str>,
+    avatar: AvatarIdentitySync<'_>,
     profile_url: Option<&str>,
 ) -> Result<Option<String>, String> {
     let mut state = read_state()?;
@@ -744,14 +766,59 @@ pub fn sync_profile_locally(
         account.profile_url = p.to_string();
     }
 
-    if let Some(url) = avatar_url.filter(|v| !v.is_empty()) {
-        account.avatar_url = url.to_string();
-        account.avatar_local_path = avatar_local_path.map(str::to_string);
+    match avatar {
+        AvatarIdentitySync::Cleared => {
+            account.avatar_url = String::new();
+            account.avatar_local_path = None;
+        }
+        AvatarIdentitySync::Updated { identity, local_path } => {
+            if !identity.trim().is_empty() {
+                account.avatar_url = identity.to_string();
+                account.avatar_local_path = local_path.map(str::to_string);
+            }
+        }
+        AvatarIdentitySync::Unchanged => {}
     }
 
     let local_path = account.avatar_local_path.clone();
     write_state(&state)?;
     Ok(local_path)
+}
+
+/// Return the persisted avatar identity and local path for an account, if the
+/// identity is non-empty. Used to preserve the same-actor last-good avatar
+/// across a failed Station sync or materialization.
+pub fn account_avatar_last_good(account_id: &str) -> Option<(String, Option<String>)> {
+    let state = read_state().ok()?;
+    let account = state.accounts.iter().find(|a| a.id == account_id)?;
+    if account.avatar_url.trim().is_empty() {
+        return None;
+    }
+    Some((
+        account.avatar_url.clone(),
+        account
+            .avatar_local_path
+            .as_ref()
+            .filter(|path| {
+                let path = PathBuf::from(path);
+                path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false)
+            })
+            .cloned(),
+    ))
+}
+
+/// Read the persisted avatar last-good record keyed by canonical actor PTID.
+pub fn actor_avatar_last_good(actor_ptid: &str) -> Option<(String, Option<String>)> {
+    let account_id = find_account_id_by_actor_ptid(actor_ptid)?;
+    account_avatar_last_good(&account_id)
+}
+
+/// Read the persisted avatar last-good record for the currently active local
+/// account. Used by fallback avatar entry points that carry no actor PTID.
+pub fn active_avatar_last_good() -> Option<(String, Option<String>)> {
+    let state = read_state().ok()?;
+    let account_id = state.active_account_id?;
+    account_avatar_last_good(&account_id)
 }
 
 /// Look up the cached avatar path for a given account. Returns `None` when

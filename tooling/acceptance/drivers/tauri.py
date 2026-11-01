@@ -1039,6 +1039,8 @@ class TauriSession(DomDriver):
               '\uE004': { key: 'Tab', code: 'Tab', keyCode: 9 },
               '\uE007': { key: 'Enter', code: 'Enter', keyCode: 13 },
               '\uE00C': { key: 'Escape', code: 'Escape', keyCode: 27 },
+              '\uE013': { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
+              '\uE015': { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
             };
             const focusables = () => [...document.querySelectorAll([
               'a[href]',

@@ -155,7 +155,29 @@ pub(crate) fn activate_messaging_profile(
     token: &str,
 ) -> Result<(), String> {
     prepare_messaging_profile(state, account_id, actor_ptid, token)?;
-    activate_messaging_profile_worker(state, account_id, token)
+    activate_messaging_profile_worker(state, account_id, token)?;
+    remember_verified_launch_profile(actor_ptid);
+    Ok(())
+}
+
+/// Persist the current profile as the last identity-verified launch target.
+///
+/// Only a profile whose local identity seed matched the Station continuity
+/// record (i.e. `prepare_messaging_profile` succeeded) reaches this point, so
+/// a failed/foreign profile can never hijack Finder/Dock launches. The
+/// resolved launch profile is published into `PT_PROFILE` once at bootstrap.
+fn remember_verified_launch_profile(actor_ptid: &str) {
+    let Ok(profile) = std::env::var("PT_PROFILE") else {
+        return;
+    };
+    let profile = profile.trim();
+    if profile.is_empty() {
+        return;
+    }
+    if crate::infrastructure::storage::active_profile::remember_active_profile(profile, actor_ptid)
+    {
+        tracing::info!(profile = %profile, %actor_ptid, "verified launch profile recorded");
+    }
 }
 
 pub(crate) fn prepare_messaging_profile(

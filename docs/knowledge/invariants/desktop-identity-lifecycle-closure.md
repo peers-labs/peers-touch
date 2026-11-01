@@ -14,6 +14,13 @@ owns:
   - apps/desktop/src/components/UserProfilePopover.tsx
   - apps/desktop/src/components/AppSideNav.tsx
   - apps/desktop/src/components/messages/UserMessage.tsx
+  - apps/desktop/src/services/avatarAssets.ts
+  - apps/desktop/src/components/common/SquareAvatar.tsx
+  - apps/desktop/src/components/common/UserSquareAvatar.tsx
+  - apps/desktop/src/components/common/useAvatarAsset.ts
+  - apps/desktop/src-tauri/src/application/profile/mod.rs
+  - apps/desktop/src-tauri/src/infrastructure/avatar_cache/mod.rs
+  - apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs
   - docs/client/desktop/identity-lifecycle.md
 referenced-by:
   - docs/client/desktop/identity-lifecycle.md

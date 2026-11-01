@@ -12,6 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"google.golang.org/protobuf/proto"
 )
 
 // CommentService handles comments on Moments. v1 supports at most one
@@ -28,6 +29,7 @@ type CommentService struct {
 	moments   *MomentService
 	conv      *domain.PostConverter
 	publisher *MomentEventPublisher
+	mentions  *CommentMentionNotifier
 }
 
 func NewCommentService(repos *infrastructure.Repos, moments *MomentService, publishers ...*MomentEventPublisher) *CommentService {
@@ -36,6 +38,13 @@ func NewCommentService(repos *infrastructure.Repos, moments *MomentService, publ
 		publisher = publishers[0]
 	}
 	return &CommentService{repos: repos, moments: moments, conv: domain.NewPostConverter(), publisher: publisher}
+}
+
+// SetMentionNotifier attaches the best-effort @-mention notification
+// fan-out. Wired by the SubServer composition root so the application
+// service stays constructable in tests without the notification owner.
+func (s *CommentService) SetMentionNotifier(notifier *CommentMentionNotifier) {
+	s.mentions = notifier
 }
 
 // CreateComment validates the parent post exists + is readable + is
@@ -100,7 +109,30 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 		}
 	}
 
-	d, err := s.conv.CreateCommentRequestToDomain(req, authorPTID, parentPostID, postClass)
+	// Mentions annotate the already-authorized parent post: validate
+	// UTF-16 ranges/display here, then confirm every referenced actor
+	// resolves locally. Mentions never widen the post audience; the
+	// notification fan-out re-adjudicates readability per recipient.
+	mentions, err := domain.ValidateTypedMentions(req.Content, req.GetTypedMentions())
+	if err != nil {
+		return nil, fmt.Errorf("invalid comment mentions: %w", err)
+	}
+	for _, actorPtid := range domain.MentionActorPTIDs(mentions) {
+		record, lookupErr := actor.GetActorByPTID(ctx, actorPtid)
+		if lookupErr != nil {
+			return nil, fmt.Errorf("resolve mentioned actor %q: %w", actorPtid, lookupErr)
+		}
+		if record == nil {
+			return nil, fmt.Errorf("mentioned actor %q not found", actorPtid)
+		}
+	}
+	createReq := req
+	if len(mentions) > 0 {
+		createReq = proto.Clone(req).(*model.CreateCommentRequest)
+		createReq.TypedMentions = mentions
+	}
+
+	d, err := s.conv.CreateCommentRequestToDomain(createReq, authorPTID, parentPostID, postClass)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +159,13 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 	logger.Info(ctx, "comment.created")
 	if s.publisher != nil {
 		s.publisher.PublishCommented(ctx, parentPostID, parent.GetAuthorPtid(), d.ID, authorPTID)
+	}
+	if s.mentions != nil && len(mentions) > 0 {
+		// Best-effort delivery after commit: unregistered bridge or
+		// produce failures are logged and counted, never rolled back.
+		s.mentions.NotifyPublicCommentMentions(
+			ctx, parentPostID, d.ID, authorPTID, mentions,
+		)
 	}
 	return out, nil
 }
@@ -173,7 +212,24 @@ func (s *CommentService) GetByPost(
 		comment.PostID != parentPostID {
 		return nil, nil
 	}
+	s.warnMalformedMentions(ctx, comment)
 	return s.commentToProtoWith(comment, batch.Authors[comment.AuthorPTID]), nil
+}
+
+// warnMalformedMentions surfaces persisted mention JSON corruption
+// without failing the read: the comment stays readable with mentions
+// dropped, and the data defect is logged for repair.
+func (s *CommentService) warnMalformedMentions(ctx context.Context, comment *domain.Comment) {
+	if comment == nil || comment.MentionsJSON == "" {
+		return
+	}
+	if _, err := s.conv.CommentMentions(comment); err != nil {
+		logger.Warn(ctx, "comment.read: malformed mentions_json, mentions omitted",
+			"post_id", comment.PostID,
+			"comment_id", comment.ID,
+			"error", err,
+		)
+	}
 }
 
 // ListByPost returns one page of comments for a parent post. Parent post
@@ -226,6 +282,7 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, vi
 	for index, row := range rows {
 		lastScanned = row
 		if batch.Comments[row.ID] != nil {
+			s.warnMalformedMentions(ctx, row)
 			comments = append(comments, s.commentToProtoWith(row, batch.Authors[row.AuthorPTID]))
 			if len(comments) == limit {
 				hasMore = hasMore || index+1 < len(rows)

@@ -19,6 +19,7 @@ use crate::contributor::{
 use crate::cursor::authenticated::AuthenticatedCursorCodec;
 use crate::model::wire::*;
 use crate::model::SessionCacheFrame;
+use crate::progress::{NoopObserver, ProgressFrame, ProgressObserver, SharedObserver};
 use crate::runtime::{
     now_ms, ReadAuthority, SearchBinding, SearchExecutor, SearchRuntime, READ_BUDGET,
 };
@@ -322,6 +323,52 @@ fn failed(source: &mut SourceSnapshot, error: &SearchError) {
     .into();
 }
 
+/// Build and fence one progressive source frame. The frame is emitted only
+/// under that source's original-owner publication guard and only while the
+/// shared operation is alive and within deadline: cancellation, timeout or an
+/// identity/source transition all suppress (and abort) the observation rather
+/// than letting a stale source snapshot reach the host.
+fn publish_progress<B: SearchBinding>(
+    bindings: &[B],
+    draft: &Session,
+    source_id: &str,
+    items: Vec<ResultItem>,
+    operation: &Operation,
+    observer: &dyn ProgressObserver,
+) -> Result<(), SearchError> {
+    let binding = bindings
+        .iter()
+        .find(|binding| binding.source_id() == source_id)
+        .ok_or(SearchError::Protocol)?;
+    // The partial response deliberately carries no cursor and no fusion:
+    // ordering, pagination and issuance remain owned by the final RRF frame.
+    let frame = ProgressFrame::new(
+        source_id.into(),
+        SearchResponse {
+            items,
+            next_cursor: String::new(),
+            has_more: false,
+            coverage: draft
+                .sources
+                .iter()
+                .map(|source| source.coverage.clone())
+                .collect(),
+            sources: draft
+                .sources
+                .iter()
+                .map(|source| source.state.clone())
+                .collect(),
+            partition: draft.partition.clone(),
+            expires_at_unix_ms: draft.expiry as i64,
+        },
+    );
+    binding.publish(|| {
+        operation.check()?;
+        observer.observe(frame);
+        Ok(())
+    })
+}
+
 impl<E: SearchExecutor> SearchRuntime<E> {
     /// Project original-owner states without discovering adapters or reading content.
     pub fn read_states<B: SearchBinding>(
@@ -363,6 +410,24 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         bindings: &[B],
         input: QueryIntent,
         cancel: &CancelToken,
+    ) -> Result<SearchResponse, SearchError> {
+        // The legacy single-frame contract simply discards the side channel.
+        self.query_all_with_progress(bindings, input, cancel, Arc::new(NoopObserver))
+    }
+
+    /// Same fused read as [`Self::query_all`], on one pipeline and one set of
+    /// per-source operations. After each source completes query plus bounded
+    /// hydration on a first-page FIND, `observer` receives that source's
+    /// authorized items under the source's identity publication guard. The
+    /// observer never causes a second read and never replaces the final RRF
+    /// frame, which is still the committed session response. Continuation
+    /// pages (non-empty cursor) emit nothing.
+    pub fn query_all_with_progress<B: SearchBinding>(
+        &self,
+        bindings: &[B],
+        input: QueryIntent,
+        cancel: &CancelToken,
+        observer: SharedObserver,
     ) -> Result<SearchResponse, SearchError> {
         let deadline = Instant::now() + READ_BUDGET;
         cancel.check()?;
@@ -485,9 +550,10 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                 let input = input.clone();
                 let snapshots = snapshots.clone();
                 let identity = identity.clone();
+                let observer = observer.clone();
                 self.executor.spawn(Box::new(move || {
                     if let Err(error) =
-                        runtime.advance(&bindings, input, snapshots, identity, &operation)
+                        runtime.advance(&bindings, input, snapshots, identity, &operation, observer)
                     {
                         operation.fail(error);
                     }
@@ -528,6 +594,7 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         snapshots: Vec<SourceSnapshot>,
         identity: String,
         operation: &Operation,
+        observer: SharedObserver,
     ) -> Result<(), SearchError> {
         operation.check()?;
         let now = now_ms()?;
@@ -598,7 +665,16 @@ impl<E: SearchExecutor> SearchRuntime<E> {
             }
         };
         draft.prune_issued();
-        let hydrated = self.read_sources(bindings, &mut draft, input.refresh, operation)?;
+        // Progressive publication belongs to the first page only; continuation
+        // pages mutate a committed session and surface through the final frame.
+        let progress = if slot.is_none() { Some(observer) } else { None };
+        let hydrated = self.read_sources(
+            bindings,
+            &mut draft,
+            input.refresh,
+            operation,
+            progress.as_deref(),
+        )?;
         // A new source page can repeat an object issued by an earlier page or
         // another source. Prune it before ranking and continuation admission.
         draft.prune_issued();
@@ -733,6 +809,7 @@ impl<E: SearchExecutor> SearchRuntime<E> {
         draft: &mut Session,
         refresh: bool,
         operation: &Operation,
+        observer: Option<&dyn ProgressObserver>,
     ) -> Result<HashMap<usize, Vec<ResultItem>>, SearchError> {
         let deadline = operation.deadline - Duration::from_millis(100);
         let (tx, rx) = mpsc::channel();
@@ -817,7 +894,19 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                         source.state.state = source.coverage.state;
                         source.state.extent = source.coverage.extent;
                     }
+                    let source_id = source.state.source_id.clone();
+                    let frame_items = hydrated.items.clone();
                     items.insert(index, hydrated.items);
+                    if let Some(observer) = observer {
+                        publish_progress(
+                            bindings,
+                            draft,
+                            &source_id,
+                            frame_items,
+                            operation,
+                            observer,
+                        )?;
+                    }
                 }
                 Err(SearchError::SourceChanged) => {
                     log::debug!(target: "search",
@@ -825,7 +914,20 @@ impl<E: SearchExecutor> SearchRuntime<E> {
                         source.state.source_id);
                     return Err(SearchError::SourceChanged);
                 }
-                Err(error) => failed(source, &error),
+                Err(error) => {
+                    let source_id = source.state.source_id.clone();
+                    failed(source, &error);
+                    if let Some(observer) = observer {
+                        publish_progress(
+                            bindings,
+                            draft,
+                            &source_id,
+                            Vec::new(),
+                            operation,
+                            observer,
+                        )?;
+                    }
+                }
             }
         }
         for index in remaining {
