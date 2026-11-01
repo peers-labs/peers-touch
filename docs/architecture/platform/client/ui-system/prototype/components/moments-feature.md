@@ -1,7 +1,8 @@
 # MomentsFeature · 朋友圈动态子系统（迁移增量 4）
 
 > **Status**: draft（北极星窗框内，未晋升 peers-ui）
-> **Created**: 2026-10-31 · **Owner**: Client Platform / UI System
+> **Created**: 2026-10-31 · **Updated**: 2026-11-02（增量 38：反馈条单胶囊化并上移）
+> · **Owner**: Client Platform / UI System
 > **旧来源**：`pages/moments/*`（MomentsApp、MomentsFeedPage、MomentDetailPage、
 > MomentsExplorePage、MomentsUserPage、UserSearchPage、CircleManagePage）与
 > `components/moments/*`（MomentCard、reactionCatalog、surfaces/*）
@@ -22,10 +23,18 @@
   卡内即写即发，单行 `TextField` + 同高右贴发送键，Enter/发送、空态禁用）、
   **评论互动**（增量 32：每条评论带「赞 N/回复」meta 行，赞可翻转并带计数与已赞语义色；
   回复在该评论下展开行内单行输入框，回复进入 tinted 嵌套回复块，**回复的回复挂同一根**；
-  动作条评论计数递归含嵌套回复）、动作条（反应与评论计数，气泡钮可收起评论区）；
-  more 菜单只在自己的动态上出现（删除动态）。
-- **反应**：desktop `reactionCatalog` 同款 16 种 emoji 的 Popover 选择器；
-  汇总胶囊显示总数，观看者反应以**全框唯一琥珀**（墨色 + 12% 淡洗）标记，可翻转/迁移。
+  反馈条评论计数递归含嵌套回复）；more 菜单只在自己的动态上出现（删除动态）。
+- **反馈条（增量 38 收敛）**：动作条**紧贴正文/图片下方、评论区上方**，数量首屏可见
+  （评论默认全展且可上十条，旧位置在评论区最底，要划过整串评论才看到计数）。条上只有两个
+  peers `Button`：一个**反应胶囊** + 一个**评论数**（点击展开/收起评论区）。
+  「赞」不是独立按钮——数据层本就只有单选表情反应（赞是 16 种 emoji 的第一种），旧 UI 却把
+  「最高频表情+总数」胶囊与旁边一个「更多反应」笑脸钮并置，看起来像「点赞 + 表情」两件事，
+  增量 38 合并为单一反应胶囊。
+- **反应**：desktop `reactionCatalog` 同款 16 种 emoji 的 Popover 选择器（向下弹）。
+  胶囊是 Popover 的唯一触发器：点击打开选择面板，选 emoji 即设为本人单选反应（换表情自动迁移），
+  **再次选择当前表情取消**；无反应时是纯笑脸图标钮，有反应时显示「表情 + 总数」
+  （本人已选显示本人表情，否则显示最高频表情），总数挂 `data-reaction-total`。
+  观看者反应以**全框唯一琥珀**（墨色 + 12% 淡洗）标记。
 - **评论删除**：仅自己的评论在 meta 行出现「删除」（danger quiet 钮，非 hover 才可见的图标），
   两段确认（删除动态/删除评论共用确认 Dialog），删除递归清理嵌套回复；他人评论无删除入口。
 - **个人页**：72px 方圆身份头（r20）、站点/简介、动态数、关注翻转、TA 的动态列表。
@@ -54,9 +63,14 @@
 - **信任行不降级为单一圈子 Tag。** 旧实现的 `SocialTrustMeta` 是三段语义
   （source · reason · audience）；inc4 初版只放了一个圈子 Tag，丢了来源与关系理由。
   现按段渲染，联邦探索明确显示「来自 \<站点\>」。
-- 反应选中色覆写：peers-ui `Toggle[aria-pressed=true]` 用库 primary（玻璃皮肤为近黑），
+- 反应选中色覆写：peers-ui 胶囊 `[aria-pressed=true]` 用库 primary（玻璃皮肤为近黑），
   与「赞=琥珀」语义冲突；`.sk-post-actions .pt-button.is-liked` 用更高特异性改走琥珀，
   与 inc2 输入区去框、inc3 portal 令牌同源，属于窗框对库组件的主题化接缝。
+- 增量 38 审计：旧 ReactionBar 在「有他人反应」态渲染一个最高频表情 `Toggle`（点击=直接赞 top）
+  **外加**一个「更多反应」笑脸 `IconButton`，数据是单选表情、UI 却像「点赞 + 表情」两个控件；
+  且整条沉在默认全展的评论区下方，计数要划到底才可见。现合并为**一个** Popover 触发胶囊
+  （点击开 16 面板，再选当前表情取消）+ 一个评论数钮，并上移到正文与评论区之间。
+  代价：一键快赞变两步（开面板→赞），换取无二元并置、触摸/鼠标一致的单一入口。
 - 库组件外观接缝统一：卡片表面由 `.sk-post` 用 `--sk-card-*` 材质重述；
   embedded `TextArea` 无框，发布器表面画在 `.pt-field-frame` 宿主上（圆角宿主拥有焦点环）。
 
@@ -77,9 +91,12 @@
 
 ## 4. 门禁
 
-`north-star.suite.json` 中 17 个 moments 场景：feed 全解剖与工艺电池、
-加载更多 3→6、快速反应（27→28 琥珀）、选择器 16 项、选择器选第 3 种、
-灯箱开关、卡内发评论（3→4、清空）、仅自己可删评论、>10 条**顶层**折叠/展开（嵌套回复单列计数）、
+`north-star.suite.json` 中 18 个 moments 场景：feed 全解剖与工艺电池、
+加载更多 3→6、反应单胶囊（初始 `data-reaction-total=27` → 开面板选赞 → 琥珀选中且 28 →
+再选同一表情取消回 27、`aria-pressed` 复位）、选择器 16 项、选择器选第 3 种、
+**反馈条位置与单控件（增量 38）**：`.sk-post-body + .sk-post-actions + .sk-comments`
+相邻关系、条上恰 2 个 `.pt-button`、初始反应 27/评论 12、旧 `.sk-react-more/.sk-react-add`
+计数为 0、灯箱开关、卡内发评论（3→4、清空）、仅自己可删评论、>10 条**顶层**折叠/展开（嵌套回复单列计数）、
 评论赞翻转（他人初始未赞→on；自己种子已赞→off，计数保留他人赞）、
 评论回复进入嵌套块且动作条评论计数递归更新（12→13）、发动态插入首位、探索远端信任、
 找人关注+过滤、圈友新建（3→4、头像组计数）、个人页返回、个人页 72 身份内容。

@@ -129,13 +129,16 @@
 .sk-inline-composer .pt-icon-button { flex-shrink: 0; }
 .sk-reply-composer { margin-top: 6px; }
 
-/* Reaction bar — viewer reaction is the single amber accent. */
-.sk-post-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+/* Feedback bar — directly under the body, above the comments tile, so the
+   reaction/comment counts are visible without scrolling through comments.
+   The viewer's reaction is the single amber accent. */
+.sk-post-actions { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
 .sk-post-actions .pt-button.is-liked {
   color: var(--sk-accent);
   background: color-mix(in srgb, var(--sk-accent) 12%, transparent);
   border-color: transparent;
 }
+.sk-react-emoji { display: inline-flex; font-size: 15px; line-height: 1; }
 .sk-react-popover { padding: 6px; border-radius: var(--sk-radius-soft); }
 .sk-react-picker { display: grid; grid-template-columns: repeat(8, 30px); gap: 2px; }
 .sk-react-picker .pt-button {

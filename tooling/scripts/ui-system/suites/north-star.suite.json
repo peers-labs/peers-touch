@@ -5491,7 +5491,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-react-quick",
-      "title": "反应汇总胶囊：未赞首条显示 27（24赞+3喜欢），点击翻转为琥珀选中且总数 28",
+      "title": "单反应胶囊：首条显示 27（24赞+3喜欢），开面板选赞后翻为琥珀选中且总数 28，再选同一表情取消",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -5499,23 +5499,66 @@
           "target": "[data-rail-target='moments']"
         },
         {
+          "op": "expect",
+          "id": "initial-total",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-action-id='moment.reaction.mo-1']",
+            "attr": "data-reaction-total",
+            "equals": "27"
+          }
+        },
+        {
           "op": "click",
-          "target": ".sk-post:first-of-type .sk-post-actions .pt-button[aria-pressed='false']"
+          "target": "[data-action-id='moment.reaction.mo-1']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".sk-react-picker .pt-button:first-child"
+        },
+        {
+          "op": "expect",
+          "id": "reacted",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked",
+            "attr": "aria-pressed",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "total-28",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-action-id='moment.reaction.mo-1']",
+            "attr": "data-reaction-total",
+            "equals": "28"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='moment.reaction.mo-1']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".sk-react-picker .pt-button:first-child"
         }
       ],
       "oracles": [
         {
-          "id": "reacted",
+          "id": "unreacted-clears",
           "type": "attr",
-          "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked",
-          "attr": "aria-pressed",
-          "equals": "true"
+          "target": "[data-action-id='moment.reaction.mo-1']",
+          "attr": "data-reaction-total",
+          "equals": "27"
         },
         {
-          "id": "total-28",
-          "type": "textContains",
-          "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked",
-          "contains": "28"
+          "id": "pressed-reset",
+          "type": "attr",
+          "target": "[data-action-id='moment.reaction.mo-1']",
+          "attr": "aria-pressed",
+          "equals": "false"
         }
       ],
       "finalizers": []
@@ -5531,7 +5574,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-post:first-of-type .sk-react-more"
+          "target": "[data-action-id='moment.reaction.mo-1']"
         }
       ],
       "oracles": [
@@ -5562,7 +5605,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-post:first-of-type .sk-react-more"
+          "target": "[data-action-id='moment.reaction.mo-1']"
         },
         {
           "op": "clickGlobal",
@@ -5586,6 +5629,55 @@
           "type": "textContains",
           "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked",
           "contains": "28"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-feedback-bar-above-comments",
+      "title": "增量38：反馈条是单反应胶囊+评论数两个控件，紧贴正文下方、评论区上方，数量首屏可见，无独立赞/更多反应钮",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "bar-follows-body",
+          "type": "exists",
+          "target": ".sk-post:first-of-type .sk-post-body + .sk-post-actions"
+        },
+        {
+          "id": "comments-follow-bar",
+          "type": "exists",
+          "target": ".sk-post:first-of-type .sk-post-actions + .sk-comments[data-comments-open='true']"
+        },
+        {
+          "id": "exactly-two-controls",
+          "type": "count",
+          "target": ".sk-post:first-of-type .sk-post-actions .pt-button",
+          "equals": 2
+        },
+        {
+          "id": "reaction-total-27",
+          "type": "attr",
+          "target": "[data-action-id='moment.reaction.mo-1']",
+          "attr": "data-reaction-total",
+          "equals": "27"
+        },
+        {
+          "id": "comment-count-12",
+          "type": "textContains",
+          "target": "[data-action-id='moment.comments.mo-1']",
+          "contains": "12"
+        },
+        {
+          "id": "no-legacy-like-or-more",
+          "type": "count",
+          "target": ".sk-react-more, .sk-react-add",
+          "equals": 0
         }
       ],
       "finalizers": []

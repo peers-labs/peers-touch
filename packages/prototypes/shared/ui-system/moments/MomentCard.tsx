@@ -12,7 +12,7 @@ import {
   Globe, Lock, MessageCircle, Smile, Trash2, UserCheck, Users, UsersRound,
 } from 'lucide-react';
 import {
-  Avatar, Button, Dialog, IconButton, Menu, Popover, TextField, Toggle,
+  Avatar, Button, Dialog, IconButton, Menu, Popover, TextField,
 } from '@peers-touch/ui';
 import {
   REACTION_CATALOG, REACTION_BY_KIND, VIEWER_NAME,
@@ -88,14 +88,28 @@ function ReactionBar({ post, commentsOpen, onToggleComments, onReact, onUnreact 
     .sort((a, b) => b[1] - a[1]);
   const total = totals.reduce((sum, [, count]) => sum + count, 0);
   const viewerMeta = post.viewerReaction ? REACTION_BY_KIND.get(post.viewerReaction) : undefined;
-  const topMeta = totals.length ? REACTION_BY_KIND.get(totals[0][0]) : undefined;
+  // One single reaction control. It shows the viewer's own choice when set,
+  // otherwise the most-used reaction; a post with no reactions shows the
+  // smile entry. There is no separate "like" button — like is just the first
+  // emoji in the picker.
+  const shownMeta = viewerMeta ?? (totals.length ? REACTION_BY_KIND.get(totals[0][0]) : undefined);
+
+  // Re-picking the viewer's current reaction clears it; any other emoji
+  // switches the single-choice reaction.
+  const choose = (kind: ReactionKind) => {
+    setPickerOpen(false);
+    if (post.viewerReaction === kind) onUnreact(post.id);
+    else onReact(post.id, kind);
+  };
 
   const picker = (
     <div className="sk-react-picker" role="group" aria-label="选择反应">
       {REACTION_CATALOG.map(meta => (
         <Button key={meta.kind} actionId={`moment.react.${meta.kind}`} emphasis="quiet"
           density="compact" aria-label={meta.label}
-          onActivate={() => { setPickerOpen(false); onReact(post.id, meta.kind); }}>
+          aria-pressed={post.viewerReaction === meta.kind}
+          data-reaction-kind={meta.kind}
+          onActivate={() => choose(meta.kind)}>
           <span aria-hidden="true">{meta.emoji}</span>
         </Button>
       ))}
@@ -104,32 +118,18 @@ function ReactionBar({ post, commentsOpen, onToggleComments, onReact, onUnreact 
 
   return (
     <div className="sk-post-actions">
-      {viewerMeta ? (
-        <Toggle actionId={`moment.reaction.${post.id}`} emphasis="quiet" density="compact"
-          selected leading={<span aria-hidden="true">{viewerMeta.emoji}</span>}
-          label={String(total)} aria-label={`取消${viewerMeta.label}`}
-          className="is-liked"
-          onSelectedChange={() => onUnreact(post.id)} />
-      ) : topMeta ? (
-        <>
-          <Toggle actionId={`moment.reaction.${post.id}`} emphasis="quiet" density="compact"
-            selected={false} leading={<span aria-hidden="true">{topMeta.emoji}</span>}
-            label={String(total)} aria-label={`反应：${topMeta.label}`}
-            onSelectedChange={() => onReact(post.id, topMeta.kind)} />
-          <Popover open={pickerOpen} onOpenChange={setPickerOpen} content={picker}
-            placement="top" label="选择反应" className="sk-react-popover">
-            <IconButton actionId={`moment.react-more.${post.id}`} iconId="smile" iconSize={15}
-              label="更多反应" emphasis="quiet" density="compact" className="sk-react-more" />
-          </Popover>
-        </>
-      ) : (
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen} content={picker}
-          placement="top" label="选择反应" className="sk-react-popover">
-          <Button actionId={`moment.react-add.${post.id}`} emphasis="quiet" density="compact"
-            leading={<Smile size={14} />} label="添加反应"
-            aria-label="添加反应" className="sk-react-add" />
-        </Popover>
-      )}
+      <Popover open={pickerOpen} onOpenChange={setPickerOpen} content={picker}
+        placement="bottom" label="选择反应" className="sk-react-popover">
+        <Button actionId={`moment.reaction.${post.id}`} emphasis="quiet" density="compact"
+          leading={shownMeta
+            ? <span className="sk-react-emoji" aria-hidden="true">{shownMeta.emoji}</span>
+            : <Smile size={14} />}
+          label={shownMeta ? String(total) : undefined}
+          className={viewerMeta ? 'is-liked' : undefined}
+          aria-pressed={Boolean(viewerMeta)}
+          data-reaction-total={total}
+          aria-label={shownMeta ? `反应：${shownMeta.label}，共 ${total}` : '添加反应'} />
+      </Popover>
       <Button actionId={`moment.comments.${post.id}`} emphasis="quiet" density="compact"
         leading={<MessageCircle size={14} />} label={String(commentCount)}
         aria-label={`${commentCount} 条评论`} aria-expanded={commentsOpen}
@@ -349,6 +349,13 @@ export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onLi
         {post.images && post.images.length > 0 && <ImageGrid images={post.images} />}
       </div>
 
+      {/* Feedback bar sits directly under the body, above the comments tile,
+          so reaction/comment counts are visible without scrolling past a
+          long default-expanded comment list. */}
+      <ReactionBar post={post} commentsOpen={commentsOpen}
+        onToggleComments={() => setCommentsOpen(value => !value)}
+        onReact={onReact} onUnreact={onUnreact} />
+
       {commentsOpen && (
         <div className="sk-comments" data-comments-open="true">
           {post.comments.length > 0 && (
@@ -378,10 +385,6 @@ export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onLi
           </span>
         </div>
       )}
-
-      <ReactionBar post={post} commentsOpen={commentsOpen}
-        onToggleComments={() => setCommentsOpen(value => !value)}
-        onReact={onReact} onUnreact={onUnreact} />
 
       <Dialog open={confirmTarget !== null} onDismiss={() => setConfirmTarget(null)}
         title={confirmTarget === 'post' ? '删除这条动态？' : '删除这条评论？'} width={380}
