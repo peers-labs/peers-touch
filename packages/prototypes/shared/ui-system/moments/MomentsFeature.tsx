@@ -5,9 +5,9 @@
  * profile) with peers-ui components and local state only.
  */
 import { useState, type KeyboardEvent } from 'react';
-import { Check, ChevronLeft, Plus, Search, UserPlus } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Plus, Search, UserPlus } from 'lucide-react';
 import {
-  Avatar, AvatarGroup, Button, Dialog, Empty, Segmented, Select,
+  Avatar, AvatarGroup, Button, Dialog, Empty, IconButton, Segmented, Select,
   TextArea, TextField, Toggle,
 } from '@peers-touch/ui';
 import { MomentCard } from './MomentCard';
@@ -35,7 +35,7 @@ const TAB_HINT: Record<MomentsTab, string> = {
   feed: '关注与同圈邻居的最新动态',
   explore: '联邦内其他站点的公开动态',
   people: '按名字找到本站与联邦内的人',
-  circles: '你加入的圈子与成员',
+  circles: '发布动态的受众分组与成员',
 };
 
 const AUDIENCE_OPTIONS: { value: AudienceKind; label: string }[] = [
@@ -56,12 +56,15 @@ function ComposeDialog({ open, circles, onDismiss, onPublish }: {
 }) {
   const [text, setText] = useState('');
   const [audience, setAudience] = useState<AudienceKind>('public');
+  // Stay bound to a surviving circle; when the audience list shrinks to zero
+  // (the publisher deleted every group) the circle Select is not rendered.
   const [circleId, setCircleId] = useState(circles[0]?.id ?? '');
   const trimmed = text.trim();
-  const circle = circles.find(entry => entry.id === circleId);
+  const circle = circles.find(entry => entry.id === circleId) ?? circles[0];
+  const circleMissing = audience === 'circle' && circles.length === 0;
 
   const publish = () => {
-    if (!trimmed) return;
+    if (!trimmed || circleMissing) return;
     onPublish({ text: trimmed, audience, circle: audience === 'circle' ? circle?.name : undefined });
     setText('');
     setAudience('public');
@@ -74,7 +77,11 @@ function ComposeDialog({ open, circles, onDismiss, onPublish }: {
         <>
           <Button actionId="compose.cancel" emphasis="quiet" label="取消" onActivate={onDismiss} />
           <Button actionId="compose.publish" emphasis="primary" label="发布"
-            availability={trimmed ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入动态内容' }}
+            availability={!trimmed
+              ? { kind: 'disabled', reason: '请输入动态内容' }
+              : circleMissing
+                ? { kind: 'disabled', reason: '还没有圈子，先去圈友新建分组' }
+                : { kind: 'enabled' }}
             onActivate={publish} />
         </>
       }>
@@ -88,9 +95,13 @@ function ComposeDialog({ open, circles, onDismiss, onPublish }: {
             options={AUDIENCE_OPTIONS} value={audience}
             onValueChange={value => setAudience((Array.isArray(value) ? value[0] : value) ?? 'public')} />
           {audience === 'circle' && (
-            <Select<string> label="圈子" aria-label="选择圈子"
-              options={circles.map(entry => ({ value: entry.id, label: entry.name }))}
-              value={circleId} onValueChange={value => setCircleId(String(value))} />
+            circles.length > 0 ? (
+              <Select<string> label="圈子" aria-label="选择圈子" className="sk-circle-select"
+                options={circles.map(entry => ({ value: entry.id, label: entry.name }))}
+                value={circle?.id ?? ''} onValueChange={value => setCircleId(String(value))} />
+            ) : (
+              <span className="sk-circle-missing">还没有圈子，先去「圈友」新建分组</span>
+            )
           )}
         </div>
       </div>
@@ -211,32 +222,143 @@ function CircleCreateDialog({ open, onDismiss, onCreate }: {
   );
 }
 
-function CirclesView({ circles }: { circles: Circle[] }) {
-  // Pure list: the create action lives in the sub-bar next to the scope
-  // switcher (same slot as 发动态 on the feed), so circles never carry a
-  // second, near-empty toolbar row just for a count and a button.
+// Circles are the publisher's own audience lists (protocol Circle: a named,
+// owner-private PTID list — not a bidirectional group, so there is no "leave";
+// group leave/dissolve belongs to chat.Group). Each card opens its management
+// dialog: rename/describe, add/remove members, delete.
+function CirclesView({ circles, onOpenManage }: {
+  circles: Circle[];
+  onOpenManage: (id: string) => void;
+}) {
+  if (circles.length === 0) {
+    return (
+      <div className="sk-circles">
+        <Empty description="还没有受众分组，点右上角「新建圈子」创建" />
+      </div>
+    );
+  }
   return (
     <div className="sk-circles">
       <ul className="sk-circle-list">
         {circles.map(circle => (
           <li key={circle.id}>
-            <section className="sk-post sk-circle-card">
-              <div className="sk-circle-id">
-                <h3>{circle.name}</h3>
-                <p>{circle.desc}</p>
+            <Button actionId={`circle.manage.${circle.id}`} emphasis="quiet" density="normal"
+              fullWidth className="sk-post sk-circle-card" aria-label={`管理 ${circle.name}`}
+              onActivate={() => onOpenManage(circle.id)}>
+              <span className="sk-circle-id">
+                <strong className="sk-circle-name">{circle.name}</strong>
+                {circle.desc && <span className="sk-circle-desc">{circle.desc}</span>}
                 <span className="sk-post-time">{circle.members.length} 位成员</span>
-              </div>
-              <AvatarGroup className="sk-circle-avatars" aria-label={`${circle.name} 成员`}>
-                {circle.members.slice(0, 5).map(member => (
-                  <Avatar key={member.id} name={member.name} background={member.tone}
-                    size={28} style={{ borderRadius: 8 }} />
-                ))}
-              </AvatarGroup>
-            </section>
+              </span>
+              <span className="sk-circle-tail">
+                <AvatarGroup className="sk-circle-avatars" aria-label={`${circle.name} 成员`}>
+                  {circle.members.slice(0, 5).map(member => (
+                    <Avatar key={member.id} name={member.name} background={member.tone}
+                      size={28} style={{ borderRadius: 8 }} />
+                  ))}
+                </AvatarGroup>
+                <ChevronRight size={15} className="sk-circle-chevron" aria-hidden="true" />
+              </span>
+            </Button>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+interface CircleDraft {
+  name: string;
+  desc: string;
+  memberIds: string[];
+}
+
+function CircleManageDialog({ circle, people, onDismiss, onSave, onRequestDelete }: {
+  circle: Circle;
+  people: Person[];
+  onDismiss: () => void;
+  onSave: (id: string, draft: CircleDraft) => void;
+  onRequestDelete: (circle: Circle) => void;
+}) {
+  const [draft, setDraft] = useState<CircleDraft>({
+    name: circle.name,
+    desc: circle.desc === '新建圈子' ? '' : circle.desc,
+    memberIds: circle.members.map(member => member.id),
+  });
+  const trimmedName = draft.name.trim();
+  const memberOf = (id: string) => circle.members.find(member => member.id === id);
+  const memberName = (id: string) => memberOf(id)?.name ?? people.find(person => person.id === id)?.name ?? id;
+  const memberTone = (id: string) => memberOf(id)?.tone ?? people.find(person => person.id === id)?.tone ?? '#7d8c7d';
+  const candidates = people.filter(person => !draft.memberIds.includes(person.id));
+
+  return (
+    <Dialog open onDismiss={onDismiss} title="管理圈子" width={460}
+      description="圈子是你的发布受众分组，成员不会收到通知（本地示例）" closeLabel="关闭"
+      footer={
+        <div className="sk-circle-manage-footer">
+          <Button actionId={`circle.delete.${circle.id}`} emphasis="quiet" tone="danger"
+            label="删除分组" onActivate={() => onRequestDelete(circle)} />
+          <span className="sk-circle-footer-spacer" />
+          <Button actionId="circle.save-cancel" emphasis="quiet" label="取消" onActivate={onDismiss} />
+          <Button actionId="circle.save" emphasis="primary" label="保存"
+            availability={trimmedName ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入圈子名称' }}
+            onActivate={() => onSave(circle.id, { ...draft, name: trimmedName })} />
+        </div>
+      }>
+      <div className="sk-circle-manage">
+        <TextField className="sk-circle-name-edit" aria-label="圈子名称"
+          data-circle-name={trimmedName} placeholder="圈子名称"
+          value={draft.name} onValueChange={name => setDraft(d => ({ ...d, name }))} autoFocus />
+        <TextField className="sk-circle-desc-edit" aria-label="圈子描述"
+          data-circle-desc={draft.desc} placeholder="描述（可选）"
+          value={draft.desc} onValueChange={desc => setDraft(d => ({ ...d, desc }))} />
+
+        <div className="sk-circle-manage-members" data-circle-member-count={draft.memberIds.filter(id => id !== 'viewer').length}>
+          <span className="sk-circle-manage-label">成员 · {draft.memberIds.length}</span>
+          <ul className="sk-circle-member-list">
+            {draft.memberIds.map(id => (
+              <li key={id} className="sk-circle-member-row" data-circle-member={id}>
+                <Avatar name={memberName(id)} background={memberTone(id)} size={30}
+                  style={{ borderRadius: 8 }} aria-hidden="true" />
+                <strong className="sk-circle-member-name">{memberName(id)}</strong>
+                {id === 'viewer'
+                  ? <span className="sk-circle-member-self">我</span>
+                  : (
+                    <IconButton actionId={`circle.member.remove.${circle.id}.${id}`}
+                      iconId="user-minus" iconSize={14} density="compact" emphasis="quiet"
+                      label={`移除 ${memberName(id)}`} className="is-danger"
+                      onActivate={() => setDraft(d => ({ ...d, memberIds: d.memberIds.filter(m => m !== id) }))} />
+                  )}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="sk-circle-candidates">
+          <span className="sk-circle-manage-label">添加已知人</span>
+          {candidates.length === 0
+            ? <span className="sk-circle-candidates-empty">已知人都已在分组里</span>
+            : (
+              <ul className="sk-circle-member-list">
+                {candidates.map(person => (
+                  <li key={person.id} className="sk-circle-member-row" data-circle-candidate={person.id}>
+                    <Avatar name={person.name} background={person.tone} size={30}
+                      style={{ borderRadius: 8 }} aria-hidden="true" />
+                    <span className="sk-circle-member-meta">
+                      <strong className="sk-circle-member-name">{person.name}</strong>
+                      <span className="sk-post-time">{person.station} · {person.bio}</span>
+                    </span>
+                    <IconButton actionId={`circle.member.add.${circle.id}.${person.id}`}
+                      iconId="user-plus" iconSize={14} density="compact" emphasis="quiet"
+                      label={`添加 ${person.name}`}
+                      onActivate={() => setDraft(d => ({ ...d, memberIds: [...d.memberIds, person.id] }))} />
+                  </li>
+                ))}
+              </ul>
+            )}
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -249,6 +371,8 @@ export function MomentsFeature() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [composerOpen, setComposerOpen] = useState(false);
   const [circleComposerOpen, setCircleComposerOpen] = useState(false);
+  const [circleManageId, setCircleManageId] = useState<string | null>(null);
+  const [circleDeleteTarget, setCircleDeleteTarget] = useState<Circle | null>(null);
 
   const homePosts = posts.filter(post => !post.federated);
   const federatedPosts = posts.filter(post => post.federated);
@@ -360,9 +484,38 @@ export function MomentsFeature() {
 
   const createCircle = (name: string) => {
     setCircles(list => [...list, {
-      id: `local-${Date.now()}`, name, desc: '新建圈子',
+      id: `local-${Date.now()}`, name, desc: '',
       members: [{ id: 'viewer', name: VIEWER.name, tone: VIEWER.tone }],
     }]);
+  };
+
+  // Circle lifecycle: circles are the publisher's own audience lists, so the
+  // closure is rename/describe + member add/remove + delete (no "leave").
+  const saveCircle = (id: string, draft: CircleDraft) => {
+    setCircles(list => list.map(circle => {
+      if (circle.id !== id) return circle;
+      const memberById = (memberId: string) => {
+        const existing = circle.members.find(member => member.id === memberId);
+        if (existing) return existing;
+        const person = people.find(p => p.id === memberId);
+        return person
+          ? { id: person.id, name: person.name, tone: person.tone }
+          : { id: memberId, name: memberId, tone: '#7d8c7d' };
+      };
+      return {
+        ...circle,
+        name: draft.name,
+        desc: draft.desc.trim(),
+        members: draft.memberIds.map(memberById),
+      };
+    }));
+    setCircleManageId(null);
+  };
+
+  const deleteCircle = (id: string) => {
+    setCircles(list => list.filter(circle => circle.id !== id));
+    setCircleDeleteTarget(null);
+    setCircleManageId(null);
   };
 
   const sharedCardProps = {
@@ -429,7 +582,7 @@ export function MomentsFeature() {
           )}
 
           {tab === 'circles' && (
-            <CirclesView circles={circles} />
+            <CirclesView circles={circles} onOpenManage={setCircleManageId} />
           )}
         </>
       ) : nav.kind === 'profile' ? (
@@ -453,6 +606,28 @@ export function MomentsFeature() {
       <CircleCreateDialog key={circleComposerOpen ? 'open' : 'closed'} open={circleComposerOpen}
         onDismiss={() => setCircleComposerOpen(false)}
         onCreate={name => { createCircle(name); setCircleComposerOpen(false); }} />
+      {circleManageId && circles.find(c => c.id === circleManageId) && (
+        <CircleManageDialog
+          key={circleManageId}
+          circle={circles.find(c => c.id === circleManageId)!}
+          people={people}
+          onDismiss={() => setCircleManageId(null)}
+          onSave={saveCircle}
+          onRequestDelete={circle => { setCircleManageId(null); setCircleDeleteTarget(circle); }} />
+      )}
+      <Dialog open={circleDeleteTarget !== null} onDismiss={() => setCircleDeleteTarget(null)}
+        title={circleDeleteTarget ? `删除分组「${circleDeleteTarget.name}」？` : '删除分组？'} width={380}
+        closeLabel="取消" description="仅删除本地原型中的受众分组，不影响已发布动态的可见范围。"
+        footer={
+          <>
+            <Button actionId="circle.delete-cancel" emphasis="quiet" label="取消"
+              onActivate={() => setCircleDeleteTarget(null)} />
+            <Button actionId="circle.delete-ok" emphasis="primary" tone="danger" label="删除"
+              onActivate={() => circleDeleteTarget && deleteCircle(circleDeleteTarget.id)} />
+          </>
+        }>
+        <span data-circle-delete-target={circleDeleteTarget?.id} />
+      </Dialog>
     </div>
   );
 }

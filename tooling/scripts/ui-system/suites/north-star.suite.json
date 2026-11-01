@@ -6232,6 +6232,329 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.moments-circle-manage",
+      "title": "增量40：圈子管理闭环——卡片打开管理弹层，移除/添加成员、改名后保存，列表与成员数实时更新",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='circle.manage.c-life']"
+        },
+        {
+          "op": "expect",
+          "id": "dialog-open",
+          "oracle": {
+            "type": "exists",
+            "scope": "global",
+            "target": ".sk-circle-manage"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "name-prefilled",
+          "oracle": {
+            "type": "attr",
+            "scope": "global",
+            "target": "[data-circle-name]",
+            "attr": "data-circle-name",
+            "equals": "小区生活圈"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.member.remove.c-life.p-laozhou']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.member.add.c-life.p-suhe']"
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": ".sk-circle-name-edit",
+          "value": "小区生活群"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.save']"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "renamed-in-list",
+          "type": "textContains",
+          "target": ".sk-circle-list",
+          "contains": "小区生活群"
+        },
+        {
+          "id": "still-three-cards",
+          "type": "count",
+          "target": ".sk-circle-card",
+          "equals": 3
+        },
+        {
+          "id": "member-count-preserved",
+          "type": "textContains",
+          "target": ".sk-circle-list li:first-child",
+          "contains": "5 位成员"
+        },
+        {
+          "id": "avatars-preserved",
+          "type": "count",
+          "target": ".sk-circle-avatars .pt-avatar",
+          "equals": 12
+        },
+        {
+          "id": "dialog-closed",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-circle-manage"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-circle-manage-members",
+      "title": "增量40：管理弹层内成员移除/添加即时翻转，本人行无移除钮，候选池同步增减",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='circle.manage.c-seeds']"
+        },
+        {
+          "op": "expect",
+          "id": "four-members",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": "[data-circle-member]",
+            "equals": 4
+          }
+        },
+        {
+          "op": "expect",
+          "id": "three-candidates",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": "[data-circle-candidate]",
+            "equals": 3
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.member.remove.c-seeds.p-laozhou']"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "members-drop",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-circle-member]",
+          "equals": 3
+        },
+        {
+          "id": "candidates-grow",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-circle-candidate]",
+          "equals": 4
+        },
+        {
+          "id": "self-not-removable",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-action-id='circle.member.remove.c-seeds.viewer']",
+          "equals": 0
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.save-cancel']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.moments-circle-delete",
+      "title": "增量40：管理弹层删除分组走两段确认，确认后卡片消失，成员头像聚合随之减少",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='circle.manage.c-life']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.delete.c-life']"
+        },
+        {
+          "op": "expect",
+          "id": "confirm-dialog",
+          "oracle": {
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-circle-delete-target='c-life']"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.delete-ok']"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "two-cards-left",
+          "type": "count",
+          "target": ".sk-circle-card",
+          "equals": 2
+        },
+        {
+          "id": "card-gone",
+          "type": "count",
+          "target": "[data-action-id='circle.manage.c-life']",
+          "equals": 0
+        },
+        {
+          "id": "avatars-reduced",
+          "type": "count",
+          "target": ".sk-circle-avatars .pt-avatar",
+          "equals": 7
+        },
+        {
+          "id": "confirm-gone",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-circle-delete-target]"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-circle-empty-compose-guard",
+      "title": "增量40：删完全部分组列表出空态；发动态选圈子受众时不再出现圈子选择，给出引导，不产生空圈发布",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='circle.manage.c-life']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.delete.c-life']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.delete-ok']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='circle.manage.c-seeds']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.delete.c-seeds']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.delete-ok']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='circle.manage.c-books']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.delete.c-books']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='circle.delete-ok']"
+        },
+        {
+          "op": "expect",
+          "id": "empty-state",
+          "oracle": {
+            "type": "exists",
+            "target": ".sk-circles .pt-empty"
+          }
+        },
+        {
+          "op": "click",
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:first-child"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='moments.compose']"
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": ".sk-compose-audience .pt-select-trigger"
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": ".pt-select-options > div:nth-child(4) [role='option']"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "circle-select-absent",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-circle-select",
+          "equals": 0
+        },
+        {
+          "id": "missing-hint",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-circle-missing"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='compose.cancel']"
+        }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.moments-profile",
       "title": "头像进个人页：72 方圆身份头、作者动态列表；返回回首页流",
       "level": "L3_DYNAMIC",

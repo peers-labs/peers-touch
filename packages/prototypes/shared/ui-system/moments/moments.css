@@ -182,10 +182,24 @@
   padding: 6px 22px 24px; display: flex; flex-direction: column; gap: 12px;
 }
 .sk-circle-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.sk-circle-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.sk-circle-id { min-width: 0; }
-.sk-circle-id h3 { margin: 0; font-size: 14.5px; color: var(--sk-text); }
-.sk-circle-id p { margin: 4px 0; font-size: 12.5px; color: var(--sk-text-2); }
+/* Whole card is one peers Button opening the management dialog; neutralise
+   library chrome so it keeps the .sk-post tile surface. */
+.pt-button.sk-circle-card {
+  justify-content: flex-start; width: 100%; min-height: 0;
+  padding: 16px 18px; text-align: left; font-weight: 400; color: var(--sk-text);
+  flex-shrink: 1;
+}
+.pt-button.sk-circle-card:hover:not([aria-disabled='true']) {
+  background: var(--sk-card-bg); border-color: color-mix(in srgb, var(--sk-text) 14%, transparent);
+}
+.pt-button.sk-circle-card > .pt-button-content {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%;
+}
+.sk-circle-id { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; }
+.sk-circle-name { font-size: 14.5px; font-weight: 650; color: var(--sk-text); }
+.sk-circle-desc { font-size: 12.5px; color: var(--sk-text-2); }
+.sk-circle-tail { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.sk-circle-chevron { color: var(--sk-text-3); }
 .sk-circle-avatars { flex-shrink: 0; }
 .sk-circle-avatars .pt-avatar {
   margin-left: -8px;
@@ -203,12 +217,41 @@
   padding: 4px 8px;
   align-items: flex-start;
 }
-.sk-compose-audience { display: flex; gap: 10px; flex-wrap: wrap; }
+.sk-compose-audience { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.sk-circle-missing { font-size: 12.5px; color: var(--sk-text-3); align-self: center; }
+
+/* Circle management dialog */
+.sk-circle-manage { display: flex; flex-direction: column; gap: 12px; }
+.sk-circle-manage .sk-circle-desc-edit { margin-top: -4px; }
+.sk-circle-manage-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  color: var(--sk-text-3); text-transform: uppercase;
+}
+.sk-circle-manage-members, .sk-circle-candidates { display: flex; flex-direction: column; gap: 6px; }
+.sk-circle-member-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sk-circle-member-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 4px 6px; border-radius: 10px;
+}
+.sk-circle-member-row:hover { background: var(--sk-tile); }
+.sk-circle-member-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sk-circle-member-name { font-size: 13.5px; font-weight: 600; color: var(--sk-text); }
+.sk-circle-member-row .sk-post-time { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-circle-member-row .pt-icon-button { margin-left: auto; flex-shrink: 0; }
+.sk-circle-member-self {
+  margin-left: auto; font-size: 10.5px; font-weight: 600;
+  color: var(--sk-text-3); border: 1px solid var(--sk-card-border);
+  border-radius: 999px; padding: 1px 8px;
+}
+.sk-circle-candidates-empty { font-size: 12.5px; color: var(--sk-text-3); }
+.sk-circle-manage-footer { display: flex; align-items: center; gap: 8px; width: 100%; }
+.sk-circle-footer-spacer { flex: 1; }
 
 @media (max-width: 760px) {
   .sk-moments-subbar { padding: 8px 12px; gap: 8px; }
   .sk-moments-scroll, .sk-people, .sk-circles { padding: 4px 12px 20px; }
-  .sk-circle-card { flex-direction: column; align-items: flex-start; }
+  .pt-button.sk-circle-card > .pt-button-content { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .pt-button.sk-circle-card .sk-circle-tail { align-self: flex-end; }
   .sk-react-picker { grid-template-columns: repeat(8, 28px); }
   .sk-react-picker .pt-button { width: 28px; min-width: 28px; height: 28px; }
 }

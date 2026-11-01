@@ -64,6 +64,14 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 }
 .pt-menu .pt-menu-item[aria-disabled='true']:hover{background:transparent;border-color:transparent}
 .pt-modal-layer{position:fixed;inset:0;background:var(--pt-scrim);display:flex;align-items:center;justify-content:center;padding:var(--pt-space-lg);z-index:1}
+/* Non-modal overlays portal into the same host as siblings of the modal
+   scrim; with auto z-index they paint UNDER the scrim, so a popover/menu/
+   select opened from inside a dialog could not receive pointer events.
+   Keep them one level above any modal layer; ties resolve by DOM order
+   (the later-registered overlay paints on top). */
+.pt-overlay-host .pt-popover,
+.pt-overlay-host .pt-menu,
+.pt-overlay-host .pt-tooltip{z-index:2}
 .pt-dialog{position:relative;max-height:calc(100dvh - var(--pt-space-xl));max-width:100%;display:flex;flex-direction:column;border-radius:var(--pt-radius-xl)}
 .pt-dialog-header{display:flex;align-items:center;gap:var(--pt-space-xs);padding:var(--pt-space-md);flex-shrink:0;border-bottom:1px solid var(--pt-border)}
 .pt-dialog-header h2{font-size:16px;font-weight:600;margin:0;flex:1;overflow-wrap:anywhere}
