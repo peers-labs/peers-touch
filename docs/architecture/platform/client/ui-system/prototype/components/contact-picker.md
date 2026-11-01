@@ -1,7 +1,8 @@
-# ContactPicker · 找人/新建会话无头选择器（迁移增量 3，增量 35 重做）
+# ContactPicker · 找人/新建会话无头选择器（迁移增量 3，增量 35 重做，增量 37 补身份态）
 
 > **Status**: draft（北极星窗框内，未晋升 peers-ui）
-> **Created**: 2026-10-30 · **Updated**: 2026-11-01（增量 35：无头化 + 联邦目录查找）
+> **Created**: 2026-10-30 · **Updated**: 2026-11-02（增量 37：联邦行 PTID 行 + 自己/已是好友身份态）
+> · 2026-11-01（增量 35：无头化 + 联邦目录查找）
 > · **Owner**: Client Platform / UI System
 > **旧来源**：`components/chat/FindPeopleModal.tsx`、`ChatContactsPanel.tsx`、`CreateGroupModal.tsx`
 > **真身对齐**：desktop `components/chat/FindPeopleModal.tsx`（scope chips、`@user@host` 解析、
@@ -39,8 +40,14 @@ footer 取消钮、解释性 tip 段落——「带找人图标的搜索框 + �
 - **handle 精确解析**：`@user@host` 形态只在目录里做唯一直属解析，
   抑制已知人结果；未解析到 → 空态（真身 `federationResolve` 语义）。
 - **联邦行**：方圆头像 + 姓名 + ✓已验证 Tag + 站名 Tag + `@user@host` handle 副行 +
-  尾列动作钮。动作态：`发送请求`（primary）→ 点击后 `等待通过`（secondary + disabled，
-  `data-fed-state=pending`，真身 awaiting-approval）。行本身不可点开会话（杜绝 button 嵌 button）。
+  PTID 副行（`.sk-fed-ptid[data-fed-ptid]`，显示联邦 actor id，对齐真身身份标识）+
+  尾列动作钮。行身份由 `data-fed-state` 四态机决定（`PickPersonDialog` 经新增 props
+  `friends` 与 `selfName` 推导）：
+  - `available`：陌生人，钮 primary「发送请求」，点击翻 `pending`；
+  - `pending`：已发请求，钮 secondary + disabled「等待通过」（真身 awaiting-approval）；
+  - `friend`：目录命中的人已是好友（同名同站），钮 secondary + disabled「已是好友」；
+  - `self`：命中当前观众（`selfName`，种子为 `VIEWER_NAME`），钮 secondary + disabled「自己」。
+  只有 `available` 可动作；其余三态禁用原因即状态串。行本身不可点开会话（杜绝 button 嵌 button）。
 - **空态**：唯一允许的零结果提示，联邦 scope 空查询时给功能性引导文案
   （输入名字或 @user@host），不写成 tip 段落。
 
@@ -74,8 +81,10 @@ peers-ui Dialog 经 `createPortal` 渲染在 `UIProvider` 的 `.pt-overlay-host`
 - `picker-create`：点第 5 行（老周）直接创建并选中、轨 7→8、弹窗关。
 - `picker-filter-empty`：无命中出 peers-ui `Empty`，弹层 input 无方形 outline。
 - `picker-cancel`：搜索行 ✕（`picker.close`）关闭且会话数不变。
-- `picker-federation-discover`（35）：搜「青衫」→ 1 联邦行，站名/handle/已验证可见；
+- `picker-federation-discover`（35，37 增 `ptid-line`）：搜「青衫」→ 1 联邦行，
+  站名/handle/已验证/PTID 行可见（全局 `[data-fed-ptid]` 断言）；
   发送请求 → `data-fed-state=pending`、钮 `aria-disabled`、文案「等待通过」、已知人 0 行。
+  自己 / 已是好友态由同型 disabled 钮表达（`data-fed-state=self|friend`）。
 - `picker-federation-scope`（35）：切联邦后已知人 0 行、空查询功能空态、搜「晚」只出晚舟。
 - `picker-handle-resolve`（35）：`@muyun@seeds.local` 精确 1 行且抑制已知人；
   未知 handle → 0 行 + 空态。

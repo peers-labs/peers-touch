@@ -23,10 +23,14 @@ type PickerScope = 'all' | 'federation';
 // resolution; anything else is a catalog/contact prefix query.
 const HANDLE_RE = /^@([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+(?::\d+)?)$/;
 
-export function PickPersonDialog({ open, people, directory, onDismiss, onPick }: {
+export function PickPersonDialog({ open, people, directory, friends, selfName, onDismiss, onPick }: {
   open: boolean;
   people: Person[];
   directory: FederatedActor[];
+  /** Already-friend identities; a directory match renders a disabled Friends state. */
+  friends: Person[];
+  /** Current viewer name; a self match renders a disabled You state. */
+  selfName: string;
   onDismiss: () => void;
   onPick: (person: Person) => void;
 }) {
@@ -110,10 +114,12 @@ export function PickPersonDialog({ open, people, directory, onDismiss, onPick }:
               <ul className="sk-picker-list">
                 {federatedMatches.map(a => {
                   const isPending = pending.has(a.id);
+                  const isFriend = friends.some(f => f.name === a.name && f.station === a.station);
+                  const isSelf = a.name === selfName;
+                  const state = isSelf ? 'self' : isFriend ? 'friend' : isPending ? 'pending' : 'available';
                   return (
                     <li key={a.id}>
-                      <div className="sk-fed-row" data-fed-id={a.id}
-                        data-fed-state={isPending ? 'pending' : 'available'}>
+                      <div className="sk-fed-row" data-fed-id={a.id} data-fed-state={state}>
                         <Avatar name={a.name} background={a.tone} size={36}
                           style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
                         <span className="sk-picker-meta">
@@ -123,10 +129,16 @@ export function PickPersonDialog({ open, people, directory, onDismiss, onPick }:
                             <Tag tone="neutral">{a.station}</Tag>
                           </span>
                           <span className="sk-fed-handle">{a.handle}</span>
+                          <span className="sk-fed-ptid" data-fed-ptid>{a.id}</span>
                         </span>
-                        <Button actionId={`picker.fedsend.${a.id}`} emphasis={isPending ? 'secondary' : 'primary'}
-                          density="compact" label={isPending ? t('picker.pending') : t('picker.sendRequest')}
-                          availability={isPending ? { kind: 'disabled', reason: t('picker.pending') } : undefined}
+                        <Button actionId={`picker.fedsend.${a.id}`}
+                          emphasis={state === 'available' ? 'primary' : 'secondary'}
+                          density="compact"
+                          label={isSelf ? t('picker.self') : isFriend ? t('picker.alreadyFriend')
+                            : isPending ? t('picker.pending') : t('picker.sendRequest')}
+                          availability={state === 'available'
+                            ? undefined
+                            : { kind: 'disabled', reason: state }}
                           onActivate={() => setPending(prev => new Set(prev).add(a.id))} />
                       </div>
                     </li>

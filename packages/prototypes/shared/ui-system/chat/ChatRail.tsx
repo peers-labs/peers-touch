@@ -170,7 +170,7 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
 
 import type { FriendRequest } from './chat-data';
 
-type ContactSectionKey = 'incoming' | 'outgoing' | 'history' | 'friends';
+type ContactSectionKey = 'incoming' | 'outgoing' | 'history' | 'groups' | 'friends';
 
 // Settled history is an archive, not a todo queue: it starts collapsed while
 // every action-bearing section starts open.
@@ -178,6 +178,7 @@ const SECTION_COLLAPSED_DEFAULT: Record<ContactSectionKey, boolean> = {
   incoming: false,
   outgoing: false,
   history: true,
+  groups: false,
   friends: false,
 };
 
@@ -262,10 +263,11 @@ function ContactSection({ sectionKey, label, collapsed, onToggle, children }: {
   );
 }
 
-export function ContactsPane({ requests, friends, selectedContactId, failedIds, query,
-  onAccept, onReject, onCancelRequest, onDeleteRecord, onRemoveContact, onSelectContact }: {
+export function ContactsPane({ requests, friends, groups, selectedContactId, failedIds, query,
+  onAccept, onReject, onCancelRequest, onDeleteRecord, onRemoveContact, onSelectContact, onOpenGroup }: {
   requests: FriendRequest[];
   friends: Person[];
+  groups: Conversation[];
   selectedContactId: string | null;
   failedIds: Set<string>;
   query: string;
@@ -275,6 +277,7 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
   onDeleteRecord: (id: string) => void;
   onRemoveContact: (id: string) => void;
   onSelectContact: (person: Person) => void;
+  onOpenGroup: (id: string) => void;
 }) {
   const { t } = useT();
   const [collapsed, setCollapsed] = useState(SECTION_COLLAPSED_DEFAULT);
@@ -293,6 +296,25 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
     [request.name, request.station, request.greeting].join(' ').toLowerCase().includes(q);
   const friendMatches = (person: Person) =>
     [person.name, person.station ?? '', person.bio].join(' ').toLowerCase().includes(q);
+  const groupMatches = (group: Conversation) =>
+    [group.name, ...(group.members ?? []).map(m => m.name)].join(' ').toLowerCase().includes(q);
+
+  const renderGroup = (group: Conversation) => (
+    <li key={group.id} className="sk-conv-item sk-contact-group" data-contact-group-id={group.id}>
+      <Button actionId={`contact.open-group.${group.id}`} emphasis="quiet" density="normal"
+        className={`sk-conv-row${selectedContactId === group.id ? ' is-selected' : ''}`}
+        onActivate={() => onOpenGroup(group.id)}>
+        <GroupAvatarComposite members={(group.members ?? []).map(m => ({ name: m.name, tone: m.tone }))}
+          label={group.name} size={38} />
+        <span className="sk-conv-meta">
+          <span className="sk-conv-name-line"><strong>{group.name}</strong></span>
+          <span className="sk-conv-preview"><span className="sk-conv-last">
+            {t('contacts.membersCount', { n: group.members?.length ?? 0 })}
+          </span></span>
+        </span>
+      </Button>
+    </li>
+  );
 
   const renderCard = (request: FriendRequest) => (
     <RequestCard key={request.id} request={request} failed={failedIds.has(request.id)}
@@ -323,17 +345,20 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
   const matchedRequests = searching
     ? [...incoming, ...outgoing, ...history].filter(requestMatches)
     : [];
+  const matchedGroups = searching ? groups.filter(groupMatches) : [];
   const matchedFriends = searching ? friends.filter(friendMatches) : [];
 
   return (
     <div className="sk-contacts" data-pending-count={incoming.length} data-outgoing-count={outgoing.length}
-      data-history-count={history.length} data-friends-count={friends.length}
+      data-history-count={history.length} data-groups-count={groups.length}
+      data-friends-count={friends.length}
       data-searching={searching ? 'true' : 'false'}>
       {searching ? (
         <>
           {matchedRequests.map(renderCard)}
+          {matchedGroups.map(renderGroup)}
           {matchedFriends.map(renderFriend)}
-          {matchedRequests.length === 0 && matchedFriends.length === 0 && (
+          {matchedRequests.length === 0 && matchedGroups.length === 0 && matchedFriends.length === 0 && (
             <Empty description={t('contacts.noResults')} />
           )}
         </>
@@ -360,6 +385,13 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
               {history.map(renderCard)}
             </ContactSection>
           )}
+          <ContactSection sectionKey="groups"
+            label={t('contacts.savedGroups', { n: groups.length })}
+            collapsed={collapsed.groups} onToggle={() => toggle('groups')}>
+            {groups.length > 0
+              ? <ul className="sk-conv-list">{groups.map(renderGroup)}</ul>
+              : <Empty description={t('contacts.noGroups')} />}
+          </ContactSection>
           <ContactSection sectionKey="friends"
             label={t('contacts.friends', { n: friends.length })}
             collapsed={collapsed.friends} onToggle={() => toggle('friends')}>
@@ -390,15 +422,17 @@ export function ContactsPane({ requests, friends, selectedContactId, failedIds, 
 
 /* ── Rail shell ────────────────────────────────────────── */
 
-export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onTogglePin, onToggleMute,
+export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSelect, onTogglePin, onToggleMute,
   onMarkRead, onHide, onDelete,
-  requests, friends, selectedContactId, failedRequestIds, onAccept, onReject, onCancelRequest,
-  onDeleteRequestRecord, onRemoveContact, onSelectContact,
+  requests, friends, groups, selectedContactId, failedRequestIds, onAccept, onReject, onCancelRequest,
+  onDeleteRequestRecord, onRemoveContact, onSelectContact, onOpenGroup,
   onFindPeople, onCreateGroup }: {
   tab: 'chats' | 'contacts';
   onTabChange: (tab: 'chats' | 'contacts') => void;
   sessions: Conversation[];
   selectedId: string | null;
+  /** Known-people pool (contacts + recent chats) for search-as-create. */
+  people: Person[];
   onSelect: (id: string) => void;
   onTogglePin: (id: string) => void;
   onToggleMute: (id: string) => void;
@@ -407,6 +441,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   onDelete: (id: string) => void;
   requests: FriendRequest[];
   friends: Person[];
+  groups: Conversation[];
   selectedContactId: string | null;
   failedRequestIds: Set<string>;
   onAccept: (id: string) => void;
@@ -415,6 +450,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   onDeleteRequestRecord: (id: string) => void;
   onRemoveContact: (id: string) => void;
   onSelectContact: (person: Person) => void;
+  onOpenGroup: (id: string) => void;
   onFindPeople: () => void;
   onCreateGroup: () => void;
 }) {
@@ -433,6 +469,13 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
   const visibleSessions = q
     ? sortedSessions.filter(c => [c.name, c.last].join(' ').toLowerCase().includes(q))
     : sortedSessions;
+  // Desktop parity: search also surfaces known people without a conversation,
+  // so picking one starts it directly (search-as-create).
+  const extraPeople = q
+    ? people.filter(p =>
+        !sessions.some(c => c.id === p.id || c.name === p.name)
+        && [p.name, p.station ?? '', p.bio].join(' ').toLowerCase().includes(q))
+    : [];
 
   return (
     <aside className="sk-conv-rail" aria-label={t('rail.aria')}>
@@ -479,16 +522,44 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, onSelect, onT
       {tab === 'chats' ? (
         <>
           <h2 className="sk-conv-title">{t('rail.recent')}</h2>
-          <SessionRows sessions={visibleSessions} selectedId={selectedId} onSelect={onSelect}
+          {/* Activating a search result rests the inline filter, so the rail
+              returns to the full pinned-first list instead of staying scoped
+              to the query after navigation. */}
+          <SessionRows sessions={visibleSessions} selectedId={selectedId}
+            onSelect={id => { closeSearch(); onSelect(id); }}
             onTogglePin={onTogglePin} onToggleMute={onToggleMute}
             onMarkRead={onMarkRead} onHide={onHide} onDelete={onDelete} />
+          {q && extraPeople.length > 0 && (
+            <div className="sk-rail-extra-contacts" data-rail-extra-contacts>
+              <span className="sk-rail-search-section">{t('contacts.sectionPeople')}</span>
+              <ul className="sk-rail-extra-list">
+                {extraPeople.map(person => (
+                  <li key={person.id} className="sk-rail-extra-item" data-contact-id={person.id}>
+                    <Button actionId={`contact.search-open.${person.id}`} emphasis="quiet" density="normal"
+                      className="sk-conv-row sk-conv-contact-row"
+                      onActivate={() => { closeSearch(); onSelectContact(person); }}>
+                      <Avatar name={person.name} background={person.tone} size={40}
+                        style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+                      <span className="sk-conv-meta">
+                        <span className="sk-conv-name-line"><strong>{person.name}</strong></span>
+                        <span className="sk-conv-preview"><span className="sk-conv-last">
+                          {[person.station, person.bio].filter(Boolean).join(' · ')}
+                        </span></span>
+                      </span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       ) : (
-        <ContactsPane requests={requests} friends={friends} selectedContactId={selectedContactId}
+        <ContactsPane requests={requests} friends={friends} groups={groups} selectedContactId={selectedContactId}
           failedIds={failedRequestIds} query={query}
           onAccept={onAccept} onReject={onReject} onCancelRequest={onCancelRequest}
           onDeleteRecord={onDeleteRequestRecord} onRemoveContact={onRemoveContact}
-          onSelectContact={onSelectContact} />
+          onSelectContact={person => { closeSearch(); onSelectContact(person); }}
+          onOpenGroup={id => { closeSearch(); onOpenGroup(id); }} />
       )}
     </aside>
   );

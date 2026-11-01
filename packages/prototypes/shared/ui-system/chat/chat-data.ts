@@ -135,6 +135,9 @@ export type FriendRequest = {
   direction?: 'in' | 'out';
 };
 
+/** Local viewer identity (seeds are frozen local data). */
+export const VIEWER_NAME = '林野';
+
 export const FRIEND_REQUESTS: FriendRequest[] = [
   { id: 'fr-1', name: '阿砚', tone: '#7a6a92', station: '松绿书屋站', greeting: '在植物医院帖里聊过，想加个邻居', state: 'pending' },
   { id: 'fr-2', name: '河埠头', tone: '#6f8fa6', station: '河埠头站', greeting: '修补摊想加入小区生活圈', state: 'pending' },

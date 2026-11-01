@@ -12,7 +12,7 @@ import { ConversationView } from './ConversationView';
 import { CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
 import type { CallDirection, CallKind } from './CallOverlay';
 import {
-  CONVERSATIONS, FEDERATION_DIRECTORY, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES,
+  CONVERSATIONS, FEDERATION_DIRECTORY, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES, VIEWER_NAME,
   type ChatMessage, type Conversation, type FriendRequest, type Person,
 } from './chat-data';
 import { usePrefs, makeTranslate, locTag } from '../prefs';
@@ -26,7 +26,12 @@ export type ChatNavigationRequest =
   | { nonce: number; kind: 'conversation'; conversationId: string; messageId?: string }
   | { nonce: number; kind: 'person'; personId: string };
 
-export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest | null }) {
+export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
+  navigation?: ChatNavigationRequest | null;
+  /** Increments to open the find-people picker (shell ⌘N shortcut). */
+  newChatSignal?: number;
+  onUnreadTotal?: (total: number) => void;
+}) {
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
   const [tab, setTab] = useState<'chats' | 'contacts'>('chats');
@@ -61,6 +66,19 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [sessions, prefs.locale]);
   const friends = PEOPLE.filter(p => p.station === '本站' && !removedContacts.has(p.id));
+  const groupSessions = useMemo(() => sessions.filter(c => c.kind === 'group'), [sessions]);
+  const unreadTotal = useMemo(() => sessions.reduce((sum, c) => sum + c.unread, 0), [sessions]);
+
+  // Report the aggregate unread count to the shell for the outer-rail badge.
+  useEffect(() => { onUnreadTotal?.(unreadTotal); }, [unreadTotal, onUnreadTotal]);
+
+  // Shell shortcut (⌘/Ctrl+N): route to chats and summon the find-people picker.
+  useEffect(() => {
+    if (newChatSignal > 0) {
+      setTab('chats');
+      setPickerOpen(true);
+    }
+  }, [newChatSignal]);
 
   const togglePin = (id: string) => setSessions(list =>
     list.map(c => c.id === id ? { ...c, pinned: !c.pinned } : c));
@@ -182,6 +200,12 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
     setTab('chats');
   };
 
+  const openGroup = (id: string) => {
+    setSelectedId(id);
+    setTab('chats');
+    markAsRead(id);
+  };
+
   const acceptRequest = (id: string) => {
     // One transient failure, then success — mirrors desktop request error/retry.
     if (!failedRequests.has(id)) {
@@ -290,13 +314,15 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
       <ChatRail
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId}
+        people={peoplePool}
         onSelect={id => { setSelectedId(id); markAsRead(id); }}
         onTogglePin={togglePin} onToggleMute={toggleMute}
         onMarkRead={markAsRead} onHide={hideConversation} onDelete={deleteConversation}
-        requests={requests} friends={friends} selectedContactId={null}
+        requests={requests} friends={friends} groups={groupSessions} selectedContactId={null}
         failedRequestIds={failedRequests}
         onAccept={acceptRequest} onReject={rejectRequest} onCancelRequest={cancelRequest}
         onDeleteRequestRecord={deleteRequestRecord} onRemoveContact={removeContact}
+        onOpenGroup={openGroup}
         // WeChat parity: tapping a person anywhere (contacts tab, search)
         // opens their conversation directly — no intermediate profile pane.
         onSelectContact={openPerson}
@@ -338,6 +364,7 @@ export function ChatFeature({ navigation }: { navigation?: ChatNavigationRequest
       </div>
 
       <PickPersonDialog open={pickerOpen} people={peoplePool} directory={FEDERATION_DIRECTORY}
+        friends={friends} selfName={VIEWER_NAME}
         onDismiss={() => setPickerOpen(false)} onPick={person => { setPickerOpen(false); openPerson(person); }} />
       {/* Candidate pool includes federated contacts: selecting one must hit
           the encrypted-group boundary instead of silently creating a group. */}

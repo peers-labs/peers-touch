@@ -190,6 +190,28 @@
   font-size: 11px; color: var(--sk-text-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.sk-fed-ptid {
+  font-size: 9.5px; color: var(--sk-text-3); opacity: .75;
+  font-variant-numeric: tabular-nums; letter-spacing: .02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Chats-tab search: known people without a conversation (search-as-create).
+   Distinct list/item classes keep session-list structural selectors
+   (.sk-conv-list > .sk-conv-item) from bleeding into suggestion rows. */
+.sk-rail-extra-contacts { display: flex; flex-direction: column; gap: 2px; }
+.sk-rail-extra-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sk-rail-search-section {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
+  color: var(--sk-text-3); padding: 6px 8px 2px;
+}
+/* peers Button carrying the row skin (groups / search-as-create rows):
+   neutralise library chrome so it matches the raw session rows. */
+.pt-button.sk-conv-row {
+  justify-content: flex-start; width: 100%;
+  min-height: 0; height: auto; padding: 8px;
+  font-weight: 400; color: var(--sk-text);
+}
 
 /* create group dialog */
 .sk-group-dialog { display: flex; flex-direction: column; gap: 12px; }

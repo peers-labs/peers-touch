@@ -2,6 +2,8 @@
    The trigger reuses the .sk-rail-icon geometry from design-directions.css;
    only the unread badge and open wash live here. */
 
+/* Any rail icon tile that carries a corner badge (bell, chat total). */
+.sk-rail-entry,
 .sk-rail-notif { position: relative; display: inline-flex; }
 .sk-rail-notif.is-open .sk-rail-icon {
   color: var(--sk-text);

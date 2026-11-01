@@ -79,6 +79,8 @@ export function DesignDirections() {
   const [railTab, setRailTab] = useState<RailTab>('moments');
   const [searchOpen, setSearchOpen] = useState(false);
   const [chatNav, setChatNav] = useState<ChatNavigationRequest | null>(null);
+  const [newChatSignal, setNewChatSignal] = useState(0);
+  const [chatUnread, setChatUnread] = useState(0);
   const [settingsNav, setSettingsNav] = useState<SettingsNavigationRequest | null>(null);
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
@@ -107,6 +109,29 @@ export function DesignDirections() {
       if (event.key === 'k' || event.key === 'K' || event.key === 'f' || event.key === 'F') {
         event.preventDefault();
         setSearchOpen(open => !open);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Desktop parity shortcuts: ⌘/Ctrl+, opens settings; ⌘/Ctrl+N starts a new
+  // chat. Ignored while typing in a field (the field owns the chord).
+  useEffect(() => {
+    const isEditable = (node: EventTarget | null) => {
+      if (!(node instanceof HTMLElement)) return false;
+      return ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName) || node.isContentEditable;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229) return;
+      if (!(event.metaKey || event.ctrlKey) || isEditable(event.target)) return;
+      if (event.key === ',') {
+        event.preventDefault();
+        setRailTab('settings');
+      } else if (event.key === 'n' || event.key === 'N') {
+        event.preventDefault();
+        setRailTab('chat');
+        setNewChatSignal(n => n + 1);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -202,11 +227,19 @@ export function DesignDirections() {
             {RAIL_NAV.map(n => {
               const Icon = n.icon;
               return (
-                <button key={n.key} type="button" className={`sk-rail-icon${railTab === n.key ? ' is-active' : ''}`}
-                  aria-label={t(n.labelKey)} aria-current={railTab === n.key ? 'page' : undefined}
-                  onClick={() => setRailTab(n.key)}>
-                  <Icon size={19} strokeWidth={1.7} />
-                </button>
+                <span key={n.key} className="sk-rail-entry">
+                  <button type="button" className={`sk-rail-icon${railTab === n.key ? ' is-active' : ''}`}
+                    aria-label={t(n.labelKey)} aria-current={railTab === n.key ? 'page' : undefined}
+                    data-rail-target={n.key}
+                    onClick={() => setRailTab(n.key)}>
+                    <Icon size={19} strokeWidth={1.7} />
+                  </button>
+                  {n.key === 'chat' && chatUnread > 0 && (
+                    <span className="sk-rail-badge" data-chat-unread={chatUnread}>
+                      {chatUnread > 99 ? '99+' : chatUnread}
+                    </span>
+                  )}
+                </span>
               );
             })}
           </div>
@@ -237,13 +270,17 @@ export function DesignDirections() {
             </header>
           )}
 
-          {isChat ? (
-            <ChatFeature navigation={chatNav} />
-          ) : railTab === 'moments' ? (
+          {/* All three surfaces stay mounted so cross-surface state (e.g. the
+              outer-rail unread badge) stays live; only the active pane shows. */}
+          <div className="sk-feed-pane" data-pane-active={isChat ? 'true' : 'false'}>
+            <ChatFeature navigation={chatNav} newChatSignal={newChatSignal} onUnreadTotal={setChatUnread} />
+          </div>
+          <div className="sk-feed-pane" data-pane-active={railTab === 'moments' ? 'true' : 'false'}>
             <MomentsFeature />
-          ) : (
+          </div>
+          <div className="sk-feed-pane" data-pane-active={railTab === 'settings' ? 'true' : 'false'}>
             <SettingsFeature navigation={settingsNav} />
-          )}
+          </div>
         </main>
       </div>
 

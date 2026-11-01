@@ -125,3 +125,20 @@ Frontend Eles 不是组件陈列室，而是一台**自训练机器**：桌面/�
   陌生人走独立联邦目录（默认不列出），前缀即时搜、`@user@host` 精确解析、
   联邦行动作是「发送请求→等待通过」而非直接开会话。已知人默认直接列出这一真身没有的
   优点保留。三个新门禁锁死目录发现+请求态、scope 隔离、handle 解析/未知空态。
+- 37 真身对齐五项 + 窗框架构一次收紧：
+  ① 联系人轨增「已保存群组」段（五分区，`GroupAvatarComposite` 38px + 成员数，点群直接开群会话）；
+  ② 消息轨搜索补出无会话的已知好友（search-as-create，点人直接新建会话）；
+  ③ 外轨消息钮未读**总数**角标（聊天面求和实时上报）；
+  ④ 找人联邦行补 PTID 身份行与 self/friend/pending/available 四身份态（仅 available 可发请求）；
+  ⑤ `⌘/Ctrl+,` 设置、`⌘/Ctrl+N` 新会话（输入控件与输入法合成期不触发）。
+  为让角标跨面实时，聊天/动态/设置三面改为**常驻挂载**（`.sk-feed-pane[data-pane-active]`
+  切 display，状态/effect 存活）。
+  两条用门禁固化的教训：
+  - **角标定位包裹会改写子节点位置，禁止位置型导航选择器**：把消息/动态钮包进
+    `.sk-rail-entry` 以挂角标后，按钮在父节点的 `:nth-child` 序号变化，95 处
+    `.sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2|3)` 探针一次性失配。
+    轨钮一律稳定钩子（`data-rail-target=chat|moments|settings`），结构包裹不再能炸导航。
+  - **选中轨内搜索结果必须复位搜索**：否则带着 query 跳到单行过滤列表（看似「会话没建成」），
+    选中即收起搜索框并清空 query，落点是完整 pin-first 列表。
+  另一条断言时序规则：对某 tab/分区内元素的断言必须在导航切走（该子树卸载）**之前**
+  以 mid-operation `expect` 完成，终态只断言导航结果。

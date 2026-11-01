@@ -66,16 +66,35 @@
 
 对齐真身 `AppSideNav`（60px 轨、38px 命中区、方圆非圆）：
 
-- 顶部组：身份 44/r12 → 搜索（⌘K 浮层触发）→ 消息（聊天面）→ 动态（朋友圈面）。
+- 顶部组：身份 44/r12 → 搜索（⌘K 浮层触发）→ 消息（聊天面，带未读总数角标）→ 动态（朋友圈面）。
+- **消息未读总数角标（增量 37）**：消息钮包一层定位宿主 `.sk-rail-entry`，
+  未读总数由聊天面实时上报（`onUnreadTotal`，所有会话 unread 求和），
+  在图标右上角渲染红数胶囊 `.sk-rail-badge[data-chat-unread]`（>99 显示 99+，0 不渲染）。
+  角标是**跨面实时状态**：人在动态/设置面读不到消息，但计数仍随聊天面常驻状态变化。
+  与通知铃共用 `.sk-rail-entry` 角标定位语法。
 - 底部组：**通知铃（增量 34 补齐，真身 `NotificationBell` 解剖）→ 设置**。
   铃是 peers-ui `IconButton`（不长裸元素债），复用 `.sk-rail-icon` 几何；
   红点角标只允许红数胶囊（圆形状态点语法的延伸）；点击弹出向右的
   peers-ui `Popover` 面板（未读高亮、分类 Tag、全部已读、单条已读/删除、空态），
   浮层挂 `.pt-overlay-host`，**不落业务面、不切换 railTab**。
-- 选择器合同：底组新增第二个钮后，位置型 `.sk-rail-group:nth-child(4) .sk-rail-icon`
-  已歧义（先命中铃）；设置钮以 `data-rail-target="settings"` 为稳定钩子，
-  铃走 `[data-action-id='nav.notifications']`。轨钮结构计数 = 5。
+- 选择器合同：轨钮一律以稳定钩子寻址，**禁止位置型 `:nth-child` 选择器**——
+  角标宿主 `.sk-rail-entry` 包裹会改变按钮在父节点中的位置，增量 37 前 95 处
+  `.sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2|3)` 在包裹后全部失配。
+  现合同：消息 `[data-rail-target='chat']`、动态 `[data-rail-target='moments']`、
+  设置 `[data-rail-target='settings']`，搜索 `[data-global-search-trigger]`，
+  铃 `[data-action-id='nav.notifications']`。轨钮结构计数 = 5。
 - ≤760px 轨道转顶栏时铃与设置同行，既有媒体查询自动覆盖。
+
+## Surface lifecycle 与全局快捷键（增量 37）
+
+- **三面常驻挂载**：聊天 / 动态 / 设置三个面同时挂载为 `.sk-feed-pane`，
+  仅以 `data-pane-active='true|false'` 切 `display:flex|none`（CSS 唯一真值）。
+  非激活面不渲染视觉、不占高，但状态与 effect 存活——这是外轨未读总数角标
+  全局实时的前提。早期「按 tab 条件挂载」会在离开聊天面时冻结/丢失计数。
+- **快捷键**（窗框宿主统一监听，输入控件内不触发：`INPUT/TEXTAREA/SELECT` 或
+  `contenteditable`，且忽略输入法合成 `keyCode 229`）：
+  - `⌘/Ctrl+,` → 打开设置面；
+  - `⌘/Ctrl+N` → 切到消息面并唤起找人弹窗（经 `newChatSignal` 非相传入聊天面）。
 
 ## Gate（机器门禁）
 

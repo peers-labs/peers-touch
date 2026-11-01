@@ -1,7 +1,8 @@
-# 聊天目录层（迁移增量 10，增量 17/19/20/21/29/33 修订）
+# 聊天目录层（迁移增量 10，增量 17/19/20/21/29/33/37 修订）
 
 > **Status**: draft（北极星窗框内，未晋升 peers-ui）
-> **Created**: 2026-10-31 · **Updated**: 2026-11-01（增量 21；增量 33：轨内搜索回归、联系人分区折叠、请求动作图标化）
+> **Created**: 2026-10-31 · **Updated**: 2026-11-02（增量 37：已保存群组段、消息轨搜索补无会话好友、
+> 外轨未读总数角标、找人联邦身份态、⌘,/⌘N 快捷键、三面常驻挂载）
 > · **Owner**: Client Platform / UI System
 > **旧来源**：`pages/SocialChatPage.tsx`（chats/contacts 子导航）、
 > `ChatSessionList`、`ChatContactsPanel`、`ChatContactsDetailPanel`、
@@ -16,8 +17,13 @@
 - **头部薄板（增量 29 收敛，增量 33 修订）**：消息/联系人 `Segmented`（compact）＋
   轨内搜索图标钮＋行尾一个「＋」方圆图标钮，收进一条薄板（`.sk-rail-header`）。
   轨内搜索是**当前 tab 的就地列表过滤**：搜索钮展开单行 `TextField` 吃掉 tab 空间
-  （Esc/关闭钮还原），消息轨按会话名/最后发言过滤，联系人轨跨四分区按
-  姓名/站点/招呼语/简介过滤，搜索态分区标题隐去、结果打平。
+  （Esc/关闭钮还原），消息轨按会话名/最后发言过滤；只要补出无会话好友，
+  就固定出「联系人」小标题（即使会话零命中），其下补出**无会话的已知好友**
+  （`[data-rail-extra-contacts]`，点人即按「点人即开聊」直接新建会话）；
+  联系人轨跨五分区按
+  姓名/站点/招呼语/简介/群成员名过滤，搜索态分区标题隐去、结果打平。
+  **选中任意搜索结果即复位搜索**（收起输入框、清空 query），落点是完整的
+  pin-first 列表，而不是被 query 过滤后的单行列表。
   跨面全局导航仍走外轨 ⌘K（见 global-search-overlay.md）；
   会话内找消息统一收进资料卡「查找聊天记录」。三类搜索职责不重叠。
 - **新建菜单**：「＋」弹出 发起单聊 / 建群两项（Menu 自带触发器，方圆 quiet 钮）。
@@ -29,10 +35,16 @@
   拼贴（2–4 人 2×2，5–9 人 3×3；列表与资料卡共用同一渲染，增量 29）。
   置顶/免打扰标记；hover 行尾操作（静音/置顶/⋯ 三个兄弟钮，与行点击同为 `li` 子节点，杜绝 button 嵌套）；
   未读角标；置顶行优先排序。
-- **联系人四分区（增量 33）**：新的请求 / 已发出 / 历史请求 / 联系人四段，标题统一为
-  peers-ui 全宽安静钮（chevron + 名称 · N，`aria-expanded`、`data-collapsed`），
-  空分区不渲染；默认仅**历史请求收起**（已处理存档不是待办），其余三段展开。
-  计数（`data-pending-/outgoing-/history-/friends-count`）只挂数据，与折叠/搜索无关。
+- **联系人五分区（增量 33 四段，增量 37 加群段）**：新的请求 / 已发出 / 历史请求 /
+  已保存群组 / 联系人五段（渲染顺序如此），标题统一为
+  peers-ui 全宽安静钮（chevron + 名称 · N，`aria-expanded`、`data-collapsed`、
+  `data-contact-section`），空分区不渲染（群为空时出 Empty 而非隐藏段头）；
+  默认仅**历史请求收起**（已处理存档不是待办），其余四段展开。
+  计数（`data-pending-/outgoing-/history-/groups-/friends-count`）只挂数据，与折叠/搜索无关。
+- **已保存群组段（增量 37）**：列出当前会话中的群（`kind:'group'`），行用 peers `Button`
+  承载行皮肤（`.pt-button.sk-conv-row` 中和库 chrome），`GroupAvatarComposite` 38px
+  拼贴 + 群名 + `{n} 位成员`；钩子 `[data-contact-group-id]`。点群直接 `setSelectedId`
+  打开群会话、标记已读并切回消息轨（与点人同一「点即开聊」合同，走 `onOpenGroup`）。
 - **请求动作图标化（增量 33）**：接受/拒绝/撤回/删除不再独占整行文字钮，全部收进
   name 行右侧的 ghost `IconButton` 簇（✓ 接受，✕ 拒绝，↩ 撤回，🗑 删记录）；
   桌面 hover/聚焦行才浮现（与会话行动钮同一语法，主 owner 是人不是按钮），
@@ -98,6 +110,21 @@
 390 无横向溢出；import-guard 裸元素债务持平 697；boards/foundation OBSERVED，tsc 干净。
 > 滚动总数以 [migration-chat-social-settings.md](../migration-chat-social-settings.md)
 > 为准（增量 22 起 north-star 108/108、consumer 17/17）；本节数字是增量 21 历史截点，不随后续增量回改。
+
+增量 37 增补四场景并修订两处旧断言：
+`contact-saved-groups`（联系人轨 `data-groups-count=2`、两段、群行成员文案必须在**点击前**
+断言——点击后切到消息轨，联系人列表卸载；点击群后 chats 子导航 `aria-pressed=true`、
+`.sk-conv-row.is-selected` 唯一、`.sk-chat-head[data-conversation-open='true']`）、
+`rail-search-contact-new`（搜「阿砚」补出无会话好友 `[data-rail-extra-contacts]`，
+零会话命中也必须有「联系人」小标题；点击后选中即**复位搜索**、完整会话列表计数 8，
+而非被 query 过滤的单行）、
+`rail-chat-unread-badge`（外轨消息钮 `[data-chat-unread]` 初始为 7，打开一条未读会话后
+实时降为 6，角标 `.sk-rail-entry .sk-rail-badge` 存在）、
+`shell-shortcuts`（`Ctrl/⌘+,` 置设置钮 `aria-current=page`，`Ctrl/⌘+N` 置 chats
+`aria-pressed=true` 并全局唤起 `.sk-picker-dialog`，finalizer 关闭弹窗）。
+另给 `picker-federation-discover` 加 `ptid-line` 全局断言；群段插到好友段上方后，
+`contact-direct-open` 的行选择器锚定到 `[data-contact-section='friends']`，避免误点群。
+外轨导航选择器随角标宿主包裹全部迁到稳定钩子（见 [north-star-frame.md](../north-star-frame.md)）。
 
 ## 4. UNPROVEN
 

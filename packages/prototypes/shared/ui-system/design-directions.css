@@ -190,6 +190,10 @@
 
 /* feed */
 .sk-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Surface panes stay mounted (live cross-surface state); only the active one shows. */
+.sk-feed-pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.sk-feed-pane[data-pane-active='true'] { display: flex; }
+.sk-feed-pane[data-pane-active='true'] > * { flex: 1; min-height: 0; }
 .sk-feed-head {
   height: 62px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 0 22px;
