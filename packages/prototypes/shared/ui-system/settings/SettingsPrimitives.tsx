@@ -36,7 +36,7 @@ export function SettingsSection({ icon: Icon, title, subtitle, extra, children }
 export function SettingsRow({ label, description, children, vertical = false }: {
   label: ReactNode;
   description?: string;
-  children: ReactNode;
+  children?: ReactNode;
   vertical?: boolean;
 }) {
   return (
@@ -45,11 +45,26 @@ export function SettingsRow({ label, description, children, vertical = false }: 
         <span className="sk-settings-row-label">{label}</span>
         {description && <span className="sk-settings-row-desc">{description}</span>}
       </div>
-      <div className="sk-settings-row-control">{children}</div>
+      {children != null && <div className="sk-settings-row-control">{children}</div>}
     </div>
   );
 }
 
-export function SettingsItemCard({ children }: { children: ReactNode }) {
-  return <div className="sk-settings-item">{children}</div>;
+export function SettingsItemCard({ children, onClick, active }: {
+  children: ReactNode; onClick?: () => void; active?: boolean;
+}) {
+  return (
+    <div
+      className={`sk-settings-item${active ? ' is-active' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick
+        ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick(); } }
+        : undefined}
+      style={onClick ? { cursor: 'pointer' } : undefined}
+    >
+      {children}
+    </div>
+  );
 }

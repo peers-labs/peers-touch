@@ -44,3 +44,7 @@ consumer 18/18，tsc 干净，0 console error。
 
 真实磁盘用量测算、留存清理执行、OSS 上传/下载/外链、日志真实落盘流与导出、
 批量删除的失败部分恢复。
+
+> **增量 23 更新**：数据/日志/定时任务/命令面板/关于归入「高级」组，统计为其独立分区；
+> 文件管理大表与留存/会话批量删除等临时演示已移除，结构以
+> [settings-frame.md](./settings-frame.md) 的 IA 与 [settings-channels-ai-advanced.md](./settings-channels-ai-advanced.md) 为准。

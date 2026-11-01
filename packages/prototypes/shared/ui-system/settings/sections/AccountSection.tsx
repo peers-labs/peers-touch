@@ -1,22 +1,19 @@
 /**
- * AccountSection — prototype counterpart of desktop AccountTab + DeviceLinkPanel.
+ * AccountSection — prototype counterpart of desktop AccountTab.
  *
- * Card order follows what friends look at first: identity → public profile →
- * devices. The banner is its own tile (the avatar never overlaps the tinted
- * gradient, so there is no edge staining); the identity card uses the same
- * clean surface as the in-chat profile card plus configuration controls.
- * Secondary affordances (copy) stay quiet icon buttons — identity content
- * carries the visual weight. Linked devices paginate five per page and only
- * show the pager + total beyond five. Device link keeps the simulated QR flow
- * (qr -> request -> comparison-code approval -> result) and appends a row.
+ * Desktop Settings IA parity: Identity → Public profile → Relationships
+ * (blocked users). Authorized devices and the QR linking flow live under
+ * Network › Your Station (LinkedDevices). The banner is its own tile so the
+ * avatar never overlaps the tinted gradient; copy stays a quiet icon button
+ * — identity content carries the visual weight.
  */
 import { useRef, useState } from 'react';
-import { Camera, Link2, Plus, Smartphone, Trash2 } from 'lucide-react';
+import { Camera, ChevronDown, ChevronRight, Link2, Plus, Trash2, Users } from 'lucide-react';
 import {
-  Avatar, Button, Dialog, IconButton, QrCode, Select, Tag, TextArea, TextField,
+  Avatar, Button, IconButton, Select, Tag, TextArea, TextField,
 } from '@peers-touch/ui';
-import { SettingsItemCard, SettingsRow, SettingsSection } from '../SettingsPrimitives';
-import { locTag, useT, type Locale } from '../../prefs';
+import { useT } from '../../prefs';
+import { SettingsRow, SettingsSection } from '../SettingsPrimitives';
 import '../settings.css';
 
 interface ProfileLink { id: string; label: string; url: string }
@@ -27,37 +24,11 @@ const INITIAL_LINKS: ProfileLink[] = [
 
 const TIMEZONES = ['Asia/Shanghai', 'Asia/Tokyo', 'Europe/Berlin', 'America/Los_Angeles'];
 
-// The QR approval flow always names the requesting device; a completed link
-// appends this model to the list (one simulated new device in the prototype).
-const LINKING_DEVICE_MODEL = 'iPhone 15';
-const DEVICE_PAGE_SIZE = 5;
-
-interface LinkedDevice {
-  id: string;
-  model: string;
-  joinedAt: number;
-  lastUsedAt: number;
-  current?: boolean;
-}
-
-// Six seeded rows so pagination genuinely exists; dates are fixed fixtures.
-const INITIAL_DEVICES: LinkedDevice[] = [
-  { id: 'dev-1', model: 'MacBook Pro 14″', joinedAt: Date.UTC(2025, 9, 3), lastUsedAt: Date.now() - 2 * 3_600_000, current: true },
-  { id: 'dev-2', model: 'iPhone 15', joinedAt: Date.UTC(2025, 9, 3), lastUsedAt: Date.now() - 26 * 3_600_000 },
-  { id: 'dev-3', model: 'iPad Air', joinedAt: Date.UTC(2025, 11, 15), lastUsedAt: Date.now() - 9 * 86_400_000 },
-  { id: 'dev-4', model: 'MacBook Air (Home)', joinedAt: Date.UTC(2026, 5, 20), lastUsedAt: Date.now() - 41 * 86_400_000 },
-  { id: 'dev-5', model: 'Pixel 8', joinedAt: Date.UTC(2026, 7, 1), lastUsedAt: Date.now() - 63 * 86_400_000 },
-  { id: 'dev-6', model: 'Web · Safari', joinedAt: Date.UTC(2026, 9, 21), lastUsedAt: Date.now() - 11 * 86_400_000 },
+const INITIAL_BLOCKED = [
+  { id: 'bl-1', name: 'Spam Bot' },
+  { id: 'bl-2', name: 'Old Contact' },
+  { id: 'bl-3', name: 'Noise Account' },
 ];
-
-function formatDate(ts: number, locale: Locale): string {
-  return new Date(ts).toLocaleDateString(locTag(locale), { year: 'numeric', month: 'short', day: 'numeric' });
-}
-function formatDateTime(ts: number, locale: Locale): string {
-  return new Date(ts).toLocaleString(locTag(locale), {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
 
 function readImage(file: File | undefined): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -72,22 +43,22 @@ function readImage(file: File | undefined): Promise<string> {
   });
 }
 
-function ImagePick({ label, onPick }: { label: string; onPick: (dataUrl: string) => void }) {
+function ImagePick({ label, onPick, actionId }: {
+  label: string; onPick: (dataUrl: string) => void; actionId: string;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <>
       <input ref={inputRef} type="file" accept="image/*" hidden
         onChange={event => { const file = event.target.files?.[0]; if (file) void readImage(file).then(onPick); event.target.value = ''; }} />
-      <Button actionId="account.pick-image" emphasis="quiet" density="compact" leading={<Camera size={13} />}
+      <Button actionId={actionId} emphasis="quiet" density="compact" leading={<Camera size={13} />}
         label={label} onActivate={() => inputRef.current?.click()} />
     </>
   );
 }
 
-type LinkStage = 'qr' | 'approve' | 'finishing' | 'complete' | 'expired';
-
 export function AccountSection() {
-  const { t, locale } = useT();
+  const { t } = useT();
   const [displayName, setDisplayName] = useState('林野');
   const [bio, setBio] = useState('共享书架轮值 · 小区生活圈 · 喜欢把邻居连接起来的小事');
   const [region, setRegion] = useState('上海');
@@ -97,11 +68,8 @@ export function AccountSection() {
   const [links, setLinks] = useState<ProfileLink[]>(INITIAL_LINKS);
   const [avatar, setAvatar] = useState<string>('');
   const [banner, setBanner] = useState<string>('');
-
-  const [devices, setDevices] = useState<LinkedDevice[]>(INITIAL_DEVICES);
-  const [devicePage, setDevicePage] = useState(1);
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [stage, setStage] = useState<LinkStage>('qr');
+  const [blocked, setBlocked] = useState(INITIAL_BLOCKED);
+  const [blockedOpen, setBlockedOpen] = useState(false);
 
   const addTag = () => {
     const value = tagDraft.trim();
@@ -110,45 +78,22 @@ export function AccountSection() {
   };
   const addLink = () => setLinks(list => [...list, { id: `local-${Date.now()}`, label: '', url: '' }]);
 
-  const devicePages = Math.max(1, Math.ceil(devices.length / DEVICE_PAGE_SIZE));
-  const visibleDevices = devices.slice((devicePage - 1) * DEVICE_PAGE_SIZE, devicePage * DEVICE_PAGE_SIZE);
-  const removeDevice = (id: string) => {
-    setDevices(list => {
-      const next = list.filter(device => device.id !== id);
-      setDevicePage(page => Math.min(page, Math.max(1, Math.ceil(next.length / DEVICE_PAGE_SIZE))));
-      return next;
-    });
-  };
-
-  const openDeviceLink = () => { setStage('qr'); setLinkOpen(true); };
-  const startApproval = () => setStage('approve');
-  const allow = () => {
-    setStage('finishing');
-    window.setTimeout(() => {
-      const now = Date.now();
-      setDevices(list => [{
-        id: `local-${now}`, model: LINKING_DEVICE_MODEL, joinedAt: now, lastUsedAt: now,
-      }, ...list]);
-      setDevicePage(1);
-      setStage('complete');
-    }, 800);
-  };
-
   return (
     <>
-      {/* Identity — clean card grammar matching the in-chat profile card;
-          the banner is a separate tile, never under the avatar. */}
+      {/* Identity */}
       <SettingsSection title={t('account.identity')} subtitle={t('account.identitySubtitle')}>
         <div className="sk-banner" data-has-image={banner ? 'true' : 'false'}>
           {banner && <img src={banner} alt="" />}
-          <div className="sk-banner-action"><ImagePick label={t('account.bannerChange')} onPick={setBanner} /></div>
+          <div className="sk-banner-action">
+            <ImagePick actionId="account.pick-banner" label={t('account.bannerChange')} onPick={setBanner} />
+          </div>
         </div>
-        <SettingsItemCard>
+        <div className="sk-identity-card" data-profile-identity>
           <div className="sk-identity-row">
             <div className="sk-identity-avatar">
               <Avatar name={displayName} source={avatar || undefined} background="#22302a"
                 size={80} style={{ borderRadius: 22 }} />
-              <ImagePick label={t('account.avatarChange')} onPick={setAvatar} />
+              <ImagePick actionId="account.pick-image" label={t('account.avatarChange')} onPick={setAvatar} />
             </div>
             <div className="sk-identity-meta">
               <div className="sk-identity-names">
@@ -180,12 +125,12 @@ export function AccountSection() {
                 onActivate={() => { void navigator.clipboard?.writeText('ptid:3f9a7c21:8c2e04ab'); }} />
             </div>
           </div>
-        </SettingsItemCard>
+        </div>
       </SettingsSection>
 
-      {/* Public profile — friends read this first, so it precedes devices. */}
+      {/* Public profile */}
       <SettingsSection title={t('account.publicProfile')} subtitle={t('account.publicProfileSubtitle')}>
-        <SettingsRow label={t('account.displayName')} vertical>
+        <SettingsRow label={t('account.displayName')}>
           <TextField aria-label={t('account.displayName')} value={displayName} maxLength={60} onValueChange={setDisplayName} />
         </SettingsRow>
         <SettingsRow label={t('account.bio')} vertical>
@@ -234,88 +179,26 @@ export function AccountSection() {
         </SettingsRow>
       </SettingsSection>
 
-      {/* Devices — link action at the title row's end; linked devices below. */}
-      <SettingsSection title={t('account.devices')} subtitle={t('account.devicesSubtitle')}
-        extra={
-          <Button actionId="device.link-start" emphasis="secondary" density="compact" leading={<Smartphone size={14} />}
-            label={t('account.linkDevice')} onActivate={openDeviceLink} />
-        }>
-        <div className="sk-device-list" data-device-count={devices.length}>
-          <div className="sk-device-row is-head">
-            <span>{t('account.deviceModel')}</span>
-            <span>{t('account.deviceJoined')}</span>
-            <span>{t('account.deviceLastUsed')}</span>
-            <span />
-          </div>
-          {visibleDevices.map(device => (
-            <div className="sk-device-row" key={device.id} data-device-id={device.id}>
-              <span className="sk-device-model">
-                <Smartphone size={14} className="sk-device-icon" />
-                <strong>{device.model}</strong>
-                {device.current && <Tag tone="info">{t('account.deviceCurrent')}</Tag>}
-              </span>
-              <span>{formatDate(device.joinedAt, locale)}</span>
-              <span>{formatDateTime(device.lastUsedAt, locale)}</span>
-              <span className="sk-device-op">
-                {!device.current && (
-                  <IconButton iconId="delete" iconSize={14} density="compact" emphasis="quiet"
-                    actionId={`device.remove-${device.id}`}
-                    label={t('account.deviceRemoveAria', { name: device.model })}
-                    onActivate={() => removeDevice(device.id)} />
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-        {devices.length > DEVICE_PAGE_SIZE && (
-          <div className="sk-device-pager" data-device-pager>
-            <span>{t('account.deviceCount', { n: devices.length })} · {t('account.devicePage', { page: devicePage, pages: devicePages })}</span>
-            <span className="sk-device-pager-controls">
-              <IconButton iconId="chevron-left" iconSize={14} density="compact" emphasis="quiet"
-                actionId="device.page-prev" label={t('account.devicePrev')}
-                availability={devicePage === 1 ? { kind: 'disabled', reason: t('doc.firstPage') } : undefined}
-                onActivate={() => setDevicePage(page => Math.max(1, page - 1))} />
-              <IconButton iconId="chevron-right" iconSize={14} density="compact" emphasis="quiet"
-                actionId="device.page-next" label={t('account.deviceNext')}
-                availability={devicePage === devicePages ? { kind: 'disabled', reason: t('doc.lastPage') } : undefined}
-                onActivate={() => setDevicePage(page => Math.min(devicePages, page + 1))} />
-            </span>
+      {/* Relationships */}
+      <SettingsSection icon={Users} title={t('account.relationships')} subtitle={t('account.relationshipsDesc')}>
+        <button type="button" className="sk-blocked-head" data-blocked-toggle
+          aria-expanded={blockedOpen} onClick={() => setBlockedOpen(open => !open)}>
+          <span className="sk-blocked-title">{t('account.blockedUsers')}</span>
+          <span className="sk-blocked-count">{blocked.length}</span>
+          {blockedOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+        </button>
+        {blockedOpen && (
+          <div className="sk-blocked-list" data-blocked-list>
+            {blocked.map(person => (
+              <SettingsRow key={person.id} label={person.name}>
+                <Button actionId={`account.unblock-${person.id}`} emphasis="quiet" density="compact"
+                  label={t('account.unblock')}
+                  onActivate={() => setBlocked(list => list.filter(entry => entry.id !== person.id))} />
+            </SettingsRow>
+            ))}
+            {blocked.length === 0 && <p className="sk-field-hint">{t('account.blockedEmpty')}</p>}
           </div>
         )}
-
-        <Dialog open={linkOpen} onDismiss={() => setLinkOpen(false)} title={t('account.linkDialogTitle')} width={400}
-          closeLabel={t('common.close')}
-          footer={stage === 'complete'
-            ? <Button actionId="device.link-done" emphasis="primary" label={t('common.done')} onActivate={() => setLinkOpen(false)} />
-            : stage === 'expired'
-              ? <Button actionId="device.link-refresh" emphasis="primary" label={t('account.refreshQr')} onActivate={() => setStage('qr')} />
-              : undefined}>
-          <div className="sk-device-stage" data-stage={stage}>
-            {stage === 'qr' && (
-              <>
-                <QrCode value="peers-touch://device-link/offer/local-909" label={t('account.qrLabel')} size={220} />
-                <p className="sk-device-hint">{t('account.qrHint')}</p>
-                <Button actionId="device.link-simulate" emphasis="quiet" label={t('account.simulateScan')}
-                  onActivate={startApproval} />
-              </>
-            )}
-            {stage === 'approve' && (
-              <>
-                <strong>{t('account.deviceRequesting', { model: LINKING_DEVICE_MODEL })}</strong>
-                <span className="sk-device-code">47 2096</span>
-                <p className="sk-device-hint">{t('account.codeHint')}</p>
-                <div className="sk-device-decide">
-                  <Button actionId="device.link-allow" emphasis="primary" label={t('common.allow')} onActivate={allow} />
-                  <Button actionId="device.link-deny" emphasis="secondary" label={t('common.deny')}
-                    onActivate={() => setStage('expired')} />
-                </div>
-              </>
-            )}
-            {stage === 'finishing' && <span className="sk-device-status" role="status">{t('account.deviceFinishing')}</span>}
-            {stage === 'complete' && <span className="sk-device-status" role="status">{t('account.deviceComplete')}</span>}
-            {stage === 'expired' && <span className="sk-device-status" role="status">{t('account.deviceExpired')}</span>}
-          </div>
-        </Dialog>
       </SettingsSection>
     </>
   );

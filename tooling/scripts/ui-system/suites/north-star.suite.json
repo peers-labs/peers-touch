@@ -10,7 +10,14 @@
       "packages/prototypes/shared/ui-system/design-directions.css",
       "packages/prototypes/shared/ui-system/prefs.ts",
       "packages/prototypes/shared/ui-system/settings/SettingsFeature.tsx",
+      "packages/prototypes/shared/ui-system/settings/SettingsPrimitives.tsx",
       "packages/prototypes/shared/ui-system/settings/sections/AccountSection.tsx",
+      "packages/prototypes/shared/ui-system/settings/sections/GeneralSections.tsx",
+      "packages/prototypes/shared/ui-system/settings/sections/NetworkSections.tsx",
+      "packages/prototypes/shared/ui-system/settings/sections/AiSections.tsx",
+      "packages/prototypes/shared/ui-system/settings/sections/ChannelsSections.tsx",
+      "packages/prototypes/shared/ui-system/settings/sections/AdvancedSections.tsx",
+      "packages/prototypes/shared/ui-system/settings/sections/LinkedDevices.tsx",
       "packages/prototypes/shared/ui-system/chat/MessageActions.tsx",
       "packages/prototypes/shared/ui-system/chat/chat.css",
       "packages/prototypes/shared/ui-system/settings/settings.css",
@@ -586,7 +593,7 @@
           "id": "cancel-back-to-new",
           "type": "exists",
           "target": "[data-action-id='sk.new-menu']"
-          }
+        }
       ],
       "finalizers": []
     },
@@ -4466,64 +4473,67 @@
     },
     {
       "id": "ui.prototype.north-star.settings-frame",
-      "title": "增量6：齿轮进入设置——6 分组材质药丸、通用组 3 分区导航、账号分区诚实空态、无发丝 chrome、工艺电池全清",
+      "title": "增量23：齿轮进入设置——下划线分组 tab（非 SaaS 药丸）、5 组、通用组 4 分区、默认账号身份卡、发丝仅在 tab 栏底",
       "level": "L3_DYNAMIC",
       "operations": [
         {
           "op": "click",
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 200
         }
       ],
       "oracles": [
         {
-          "id": "settings-current",
-          "type": "attr",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon",
-          "attr": "aria-current",
-          "equals": "page"
+          "id": "tab-underline-form",
+          "type": "computedStyle",
+          "prop": "borderBottomWidth",
+          "target": ".sk-settings-tabbar",
+          "equals": "1px"
         },
         {
-          "id": "title",
-          "type": "textContains",
-          "target": ".sk-feed-head h1",
-          "contains": "设置"
+          "id": "no-pill-container",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-settings-groups"
         },
         {
-          "id": "six-groups",
+          "id": "five-groups",
           "type": "count",
-          "target": ".sk-settings-group",
-          "equals": 6
-        },
-        {
-          "id": "general-active",
-          "type": "count",
-          "target": ".sk-settings-group.is-active",
-          "equals": 1
-        },
-        {
-          "id": "five-sections",
-          "type": "count",
-          "target": ".sk-settings-nav-item",
+          "target": ".sk-settings-tab",
           "equals": 5
         },
         {
-          "id": "account-built",
-          "type": "exists",
-          "target": ".sk-identity-row"
-        },
-        {
-          "id": "no-conversation-rail",
+          "id": "general-four-sides",
           "type": "count",
           "scope": "global",
-          "target": ".sk-conv-rail",
-          "equals": 0
+          "target": ".sk-settings-sidebar [data-settings-section]",
+          "equals": 4
         },
         {
-          "id": "groups-no-hairline",
-          "type": "computedStyle",
-          "target": ".sk-settings-subbar",
-          "prop": "borderBottomWidth",
-          "equals": "0px"
+          "id": "general-labels",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-settings-sidebar",
+          "contains": "账号"
+        },
+        {
+          "id": "account-default",
+          "type": "exists",
+          "target": "[data-profile-identity], .sk-identity-row"
+        },
+        {
+          "id": "no-applets-entry",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-settings-section='applets']"
+        },
+        {
+          "id": "active-tab-indicator",
+          "type": "exists",
+          "target": ".sk-settings-tab.is-active .sk-settings-tab-indicator"
         },
         {
           "id": "craft-clean",
@@ -4533,8 +4543,8 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.settings-general-section",
-      "title": "通用分区：语言 Select 与截图快捷键两行真实控件，默认快捷键 Mod+Shift+A，重置键初始禁用",
+      "id": "ui.prototype.north-star.settings-groups",
+      "title": "增量23：五个分组的二级分区数量与真身 IA 一致（4/3/6/2/6）",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -4542,129 +4552,83 @@
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
         },
         {
+          "op": "wait",
+          "ms": 150
+        },
+        {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(4)"
+          "target": "[data-settings-group='network']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='ai']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='channels']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='advanced']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         }
       ],
       "oracles": [
         {
-          "id": "section-open",
-          "type": "exists",
-          "target": ".sk-settings-section .sk-shortcut-input"
-        },
-        {
-          "id": "two-rows",
+          "id": "general-four",
           "type": "count",
-          "target": ".sk-settings-row",
-          "equals": 2
+          "scope": "global",
+          "target": ".sk-settings-sidebar [data-settings-section]",
+          "equals": 6
         },
         {
-          "id": "language-select",
-          "type": "exists",
-          "target": ".sk-settings-row .pt-select"
+          "id": "advanced-labels",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-settings-sidebar",
+          "contains": "命令面板"
         },
         {
-          "id": "default-shortcut",
-          "type": "attr",
-          "target": ".sk-shortcut-input",
-          "attr": "data-shortcut",
-          "equals": "Mod+Shift+A"
-        },
-        {
-          "id": "reset-disabled",
-          "type": "attr",
-          "target": "[data-action-id='settings.shortcut.reset']",
-          "attr": "aria-disabled",
-          "equals": "true"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-shortcut-record",
-      "title": "录制快捷键：进入聆听后按 ⌘/Ctrl+Shift+S 落值，重置恢复默认",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(4)"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='settings.shortcut.record']"
-        },
-        {
-          "op": "press",
-          "key": "Meta+Shift+S"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='settings.shortcut.reset']"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "restored-default",
-          "type": "attr",
-          "target": ".sk-shortcut-input",
-          "attr": "data-shortcut",
-          "equals": "Mod+Shift+A"
-        },
-        {
-          "id": "reset-redisabled",
-          "type": "attr",
-          "target": "[data-action-id='settings.shortcut.reset']",
-          "attr": "aria-disabled",
-          "equals": "true"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-group-switch",
-      "title": "切到数据组：分区导航变 3 项且空态标增量 8；单分区的小程序组隐藏分区导航",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(5)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(4)"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "applets-no-nav",
+          "id": "no-applets",
           "type": "missing",
-          "target": ".sk-settings-nav"
-        },
-        {
-          "id": "applets-built",
-          "type": "count",
-          "target": ".sk-applet-row",
-          "equals": 3
+          "scope": "global",
+          "target": "[data-settings-section='applets']"
         }
       ],
-      "finalizers": []
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
     },
     {
       "id": "ui.prototype.north-star.settings-account",
-      "title": "增量7 账号：身份卡（80 头像/头图/统计/可复制 ID）、标签回车添加、链接增删均为真实本地状态",
+      "title": "增量23：账号=身份/公开资料/关系；安静复制钮、标签回车添加、链接增删、黑名单展开与解除",
       "level": "L3_DYNAMIC",
       "operations": [
         {
           "op": "click",
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "type",
@@ -4680,66 +4644,16 @@
           "target": "[data-action-id='account.link-add']"
         },
         {
-          "op": "click",
-          "target": ".sk-link-row:nth-child(2) [aria-label='删除链接']"
+          "op": "wait",
+          "ms": 100
         }
       ],
       "oracles": [
         {
-          "id": "banner",
-          "type": "exists",
-          "target": ".sk-banner"
-        },
-        {
-          "id": "avatar-80",
-          "type": "computedStyle",
-          "target": ".sk-identity-avatar .pt-avatar",
-          "prop": "width",
-          "equals": "80px"
-        },
-        {
-          "id": "stats",
-          "type": "textContains",
-          "target": ".sk-identity-stats",
-          "contains": "粉丝"
-        },
-        {
-          "id": "copy-fields",
+          "id": "two-quiet-copy",
           "type": "count",
-          "target": ".sk-identity-field .pt-button",
-          "equals": 2
-        },
-        {
-          "id": "copy-quiet-icon",
-          "type": "computedStyle",
-          "all": true,
           "target": ".sk-identity-field .pt-icon-button",
-          "prop": "width",
-          "equals": "26px"
-        },
-        {
-          "id": "no-overlap-stain",
-          "type": "computedStyle",
-          "target": ".sk-identity-row",
-          "prop": "marginTop",
-          "equals": "0px"
-        },
-        {
-          "id": "device-pager-default",
-          "type": "exists",
-          "target": ".sk-device-pager"
-        },
-        {
-          "id": "device-five-rows",
-          "type": "count",
-          "target": ".sk-device-list .sk-device-row:not(.is-head)",
-          "equals": 5
-        },
-        {
-          "id": "ptid",
-          "type": "textContains",
-          "target": ".sk-identity-fields",
-          "contains": "ptid:3f9a7c21"
+          "gte": 2
         },
         {
           "id": "tag-added",
@@ -4751,74 +4665,43 @@
           "id": "link-restored",
           "type": "count",
           "target": ".sk-link-row",
-          "equals": 1
+          "equals": 2
         },
         {
-          "id": "craft-clean",
-          "type": "craftBattery"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-device-link",
-      "title": "设备关联：二维码 → 模拟请求 → 核对码允许 → 完成，拒绝走过期态",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='device.link-start']"
-        },
-        {
-          "op": "clickGlobal",
-          "target": "[data-action-id='device.link-simulate']"
-        },
-        {
-          "op": "clickGlobal",
-          "target": "[data-action-id='device.link-allow']"
-        },
-        {
-          "op": "wait",
-          "ms": 1000
-        }
-      ],
-      "oracles": [
-        {
-          "id": "complete",
-          "type": "textContains",
+          "id": "blocked-collapsed",
+          "type": "missing",
           "scope": "global",
-          "target": ".sk-device-stage",
-          "contains": "设备已关联"
+          "target": "[data-blocked-list]"
         },
         {
-          "id": "stage-complete",
-          "type": "attr",
+          "id": "no-devices-in-account",
+          "type": "missing",
           "scope": "global",
-          "target": ".sk-device-stage",
-          "attr": "data-stage",
-          "equals": "complete"
-        },
-        {
-          "id": "device-appended",
-          "type": "textContains",
-          "target": ".sk-device-pager",
-          "contains": "7"
+          "target": "[data-device-count]"
         }
       ],
       "finalizers": [
         {
           "op": "clickGlobal",
-          "target": "[data-action-id='device.link-done']"
+          "target": "[data-blocked-toggle]"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='account.unblock-bl-1']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
         }
       ]
     },
     {
-      "id": "ui.prototype.north-star.settings-security",
-      "title": "安全：生成 24 词助记词后才能创建备份；恢复对话框 24 词门槛与完成 Alert",
+      "id": "ui.prototype.north-star.settings-notifications",
+      "title": "增量23：通用›消息通知 7 开关，关闭提及后切走再回来仍保持（偏好持久）",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -4826,8 +4709,99 @@
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
         },
         {
+          "op": "wait",
+          "ms": 150
+        },
+        {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(5)"
+          "target": "[data-settings-section='notifications']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "seven-switches",
+          "type": "count",
+          "target": "[data-notify]",
+          "equals": 7
+        },
+        {
+          "id": "mentions-on-default",
+          "type": "attr",
+          "target": "[data-notify='mentions']",
+          "attr": "aria-checked",
+          "equals": "true"
+        },
+        {
+          "id": "sound-off-default",
+          "type": "attr",
+          "target": "[data-notify='sound']",
+          "attr": "aria-checked",
+          "equals": "false"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-notify='mentions']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-section='account']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-section='notifications']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-notify='mentions']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-privacy-recovery",
+      "title": "增量23：隐私与安全=PIN/自动锁定/可见性 + 24 词恢复密钥全链（生成→备份→恢复门槛）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='privacy']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-privacy='pinLock']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
         },
         {
           "op": "click",
@@ -4844,16 +4818,46 @@
         {
           "op": "wait",
           "ms": 800
+        }
+      ],
+      "oracles": [
+        {
+          "id": "pin-actions-shown",
+          "type": "exists",
+          "target": "[data-action-id='privacy.change-pin']"
         },
         {
-          "op": "click",
+          "id": "autolock-select",
+          "type": "exists",
+          "target": "[aria-label='自动锁定']"
+        },
+        {
+          "id": "phrase-24",
+          "type": "count",
+          "target": "[data-phrase-words] li",
+          "equals": 24
+        },
+        {
+          "id": "backup-created",
+          "type": "textContains",
+          "target": ".sk-recovery-meta",
+          "contains": "最近备份"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
           "target": "[data-action-id='security.restore-open']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
         },
         {
           "op": "type",
           "scope": "global",
           "target": "textarea.sk-restore-input",
-          "value": "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree twentyfour"
+          "value": "a b c d e f g h i j k l m n o p q r s t u v w x"
         },
         {
           "op": "clickGlobal",
@@ -4862,408 +4866,63 @@
         {
           "op": "wait",
           "ms": 900
-        }
-      ],
-      "oracles": [
-        {
-          "id": "phrase-24",
-          "type": "count",
-          "target": ".sk-recovery-phrase ol li",
-          "equals": 24
         },
-        {
-          "id": "backup-exists",
-          "type": "textContains",
-          "target": ".sk-recovery-status",
-          "contains": "最近备份"
-        },
-        {
-          "id": "restore-done",
-          "type": "textContains",
-          "target": ".sk-settings-scroll",
-          "contains": "恢复已完成"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-security-gate",
-      "title": "恢复门槛：不足 24 词时确认按钮禁用（填 3 词）",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(5)"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='security.restore-open']"
-        },
-        {
-          "op": "type",
-          "scope": "global",
-          "target": "textarea.sk-restore-input",
-          "value": "a b c"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "confirm-disabled",
-          "type": "attr",
-          "scope": "global",
-          "target": "[data-action-id='security.restore-confirm']",
-          "attr": "aria-disabled",
-          "equals": "true"
-        }
-      ],
-      "finalizers": [
         {
           "op": "clickGlobal",
-          "target": "[data-action-id='security.restore-cancel']"
+          "target": "[data-privacy='pinLock']"
         }
       ]
     },
     {
-      "id": "ui.prototype.north-star.settings-help",
-      "title": "帮助：关于卡与 4 个可搜索功能项（联邦/AI 入口已排除）",
+      "id": "ui.prototype.north-star.settings-appearance",
+      "title": "增量23：外观与语言——主题/密度/消息对齐分段、语言选择，均为真实偏好",
       "level": "L3_DYNAMIC",
       "operations": [
         {
           "op": "click",
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(6)"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "about",
-          "type": "textContains",
-          "target": ".sk-settings-scroll",
-          "contains": "Peers Touch"
-        },
-        {
-          "id": "four-entries",
-          "type": "count",
-          "target": ".sk-help-item",
-          "equals": 4
-        },
-        {
-          "id": "no-nav",
-          "type": "missing",
-          "target": ".sk-settings-nav"
-        },
-        {
-          "id": "craft-clean",
-          "type": "craftBattery"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-help-nav",
-      "title": "帮助跳转：点击「聊天存储」真实跳到数据组存储分区的诚实空态",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(6)"
-        },
-        {
-          "op": "click",
-          "target": "[data-help-target='storage']"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "jumped-to-data",
-          "type": "textContains",
-          "target": ".sk-settings-scroll",
-          "contains": "存储用量"
-        },
-        {
-          "id": "data-group-active",
-          "type": "count",
-          "target": ".sk-settings-group.is-active",
-          "equals": 1
-        },
-        {
-          "id": "storage-section-active",
-          "type": "attr",
-          "target": ".sk-settings-nav-item:nth-child(1)",
-          "attr": "aria-current",
-          "equals": "page"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-storage",
-      "title": "增量8 聊天存储：用量4格、留存4选、清缓存两段确认、6 会话表与搜索过滤",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(5)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(1)"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "usage-cells",
-          "type": "count",
-          "target": ".sk-usage-cell",
-          "equals": 4
-        },
-        {
-          "id": "retention-options",
-          "type": "count",
-          "target": "[aria-label='消息留存'] .pt-button",
-          "equals": 4
-        },
-        {
-          "id": "clear-button",
-          "type": "exists",
-          "target": "[data-action-id='storage.clear-open']"
-        },
-        {
-          "id": "six-rows-plus-head",
-          "type": "count",
-          "target": ".sk-storage-row",
-          "equals": 7
-        },
-        {
-          "id": "craft-clean",
-          "type": "craftBattery"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-storage-filter",
-      "title": "会话存储搜索过滤与选中批量条：选中 1 行后出现批量管理条",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(5)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(1)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-storage-table .sk-storage-row:nth-child(3) input[type='checkbox']"
-        },
-        {
-          "op": "type",
-          "target": ".sk-storage-toolbar input",
-          "value": "群"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "filtered",
-          "type": "count",
-          "target": ".sk-storage-row:not(.is-head)",
-          "equals": 1
-        },
-        {
-          "id": "batch-bar",
-          "type": "exists",
-          "target": ".sk-batch-bar"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-storage-batch",
-      "title": "批量清理：全选→确认→进度条→行删除到 0；清缓存确认后释放",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(5)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(1)"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='storage.clear-open']"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='storage.clear-apply']"
-        },
-        {
-          "op": "click",
-          "target": ".sk-storage-table .sk-storage-row:nth-child(3) input[type='checkbox']"
-        },
-        {
-          "op": "click",
-          "target": ".sk-batch-bar input[type='checkbox']"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='storage.batch-open']"
-        },
-        {
-          "op": "clickGlobal",
-          "target": "[data-action-id='storage.batch-confirm']"
         },
         {
           "op": "wait",
-          "ms": 2600
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='appearance']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         }
       ],
       "oracles": [
         {
-          "id": "cache-zero",
-          "type": "attr",
-          "target": "[data-cache-mb]",
-          "attr": "data-cache-mb",
-          "equals": "0"
-        },
-        {
-          "id": "all-deleted",
+          "id": "theme-three",
           "type": "count",
-          "target": ".sk-storage-row:not(.is-head)",
-          "equals": 0
+          "target": "[aria-label='主题'] [data-action-id^='segment.']",
+          "equals": 3
         },
         {
-          "id": "empty-state",
-          "type": "textContains",
-          "target": ".sk-settings-scroll",
-          "contains": "没有匹配的会话"
-        },
-        {
-          "id": "table-gone",
-          "type": "missing",
-          "target": ".sk-storage-table"
-        },
-        {
-          "id": "batch-done",
-          "type": "textContains",
-          "target": ".sk-settings-scroll",
-          "contains": "已清理 6 个会话"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-files",
-      "title": "文件：3 文件表；上传对话框提交后变 4；删除行后变 2",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(5)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(2)"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='files.upload-open']"
-        },
-        {
-          "op": "type",
-          "scope": "global",
-          "target": "input.sk-upload-name",
-          "value": "夜跑路线.kml"
-        },
-        {
-          "op": "type",
-          "scope": "global",
-          "target": ".sk-upload-dialog [aria-label='存储桶']",
-          "value": "notes"
-        },
-        {
-          "op": "clickGlobal",
-          "target": "[data-action-id='files.upload-submit']"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "four-files",
+          "id": "density-two",
           "type": "count",
-          "target": ".sk-storage-row:not(.is-head)",
-          "equals": 4
+          "target": "[aria-label='消息密度'] [data-action-id^='segment.']",
+          "equals": 2
         },
         {
-          "id": "first-new-file",
-          "type": "textContains",
-          "target": ".sk-storage-row:nth-child(2)",
-          "contains": "夜跑路线"
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-logs",
-      "title": "日志：默认 info/warn/error 共 6 行；过滤后 1 行；打开 TRACE 后多 1 行",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+          "id": "layout-two",
+          "type": "count",
+          "target": "[aria-label='消息对齐'] [data-action-id^='segment.']",
+          "equals": 2
         },
         {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(5)"
+          "id": "language-select",
+          "type": "exists",
+          "target": "[aria-label='界面语言']"
         },
         {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(3)"
-        },
-        {
-          "op": "type",
-          "target": "input.sk-log-filter-input",
-          "value": "qrcode"
-        },
-        {
-          "op": "click",
-          "target": ".sk-log-toolbar .sk-log-filter.is-trace"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "trace-on",
+          "id": "sides-default",
           "type": "attr",
-          "target": ".sk-log-toolbar .sk-log-filter.is-trace",
+          "target": "[aria-label='消息对齐'] [data-action-id='segment.sides']",
           "attr": "aria-pressed",
           "equals": "true"
         }
@@ -5271,8 +4930,8 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.settings-cron",
-      "title": "增量9 定时任务：3 任务/计数标签；新建对话框 cron 校验；暂停任务的运行键禁用；删除真实移除",
+      "id": "ui.prototype.north-star.settings-messages-layout-left",
+      "title": "增量23：外观内消息对齐切「统一靠左」后聊天根 data-message-layout=left 且 me 气泡左对齐、工具条换侧",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -5280,138 +4939,103 @@
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
         },
         {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(2)"
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(1)"
+          "target": "[data-settings-section='appearance']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "click",
-          "target": "[data-action-id='cron.create-open']"
+          "target": "[data-action-id='segment.left']"
         },
         {
-          "op": "type",
-          "scope": "global",
-          "target": ".sk-cron-form input:nth-child(1)",
-          "value": "晚间提醒"
+          "op": "wait",
+          "ms": 200
         },
         {
-          "op": "clickGlobal",
-          "target": "[data-action-id='cron.create-cancel']"
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m1']"
         }
       ],
       "oracles": [
         {
-          "id": "three-jobs",
-          "type": "count",
-          "target": ".sk-cron-row",
-          "equals": 3
-        },
-        {
-          "id": "paused-run-disabled",
+          "id": "layout-attr-left",
           "type": "attr",
-          "target": "[data-action-id='cron.run-cron-3']",
-          "attr": "aria-disabled",
-          "equals": "true"
+          "scope": "global",
+          "target": ".sk-chat-feature",
+          "attr": "data-message-layout",
+          "equals": "left"
         },
         {
-          "id": "craft-clean",
-          "type": "craftBattery"
+          "id": "own-bubbles-align-start",
+          "type": "computedStyle",
+          "target": ".sk-msg-me",
+          "prop": "alignSelf",
+          "equals": "flex-start"
+        },
+        {
+          "id": "own-bar-moves-right",
+          "type": "attr",
+          "target": "[data-message-id='m2'] .sk-msg-actions-bar",
+          "attr": "data-bar-side",
+          "equals": "right"
+        },
+        {
+          "id": "peer-bar-right",
+          "type": "attr",
+          "target": "[data-message-id='m1'] .sk-msg-actions-bar",
+          "attr": "data-bar-side",
+          "equals": "right"
         }
       ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-cron-delete",
-      "title": "定时任务删除：点击删除后列表 3→2",
-      "level": "L3_DYNAMIC",
-      "operations": [
+      "finalizers": [
         {
           "op": "click",
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
         },
         {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(2)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(1)"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='cron.delete-cron-3']"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "two-after-delete",
-          "type": "count",
-          "target": ".sk-cron-row",
-          "equals": 2
-        }
-      ],
-      "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-cron-create",
-      "title": "新建定时任务：合法 5 段表达式才能提交，提交后列表 3→4",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        {
-          "op": "click",
-          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(2)"
-        },
-        {
-          "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(1)"
-        },
-        {
-          "op": "click",
-          "target": "[data-action-id='cron.create-open']"
-        },
-        {
-          "op": "type",
-          "scope": "global",
-          "target": ".sk-cron-form input:nth-child(1)",
-          "value": "晨间天气"
-        },
-        {
-          "op": "type",
-          "scope": "global",
-          "target": "input[data-cron-expr]",
-          "value": "30 7 * * *"
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "clickGlobal",
-          "target": "[data-action-id='cron.create-submit']"
-        }
-      ],
-      "oracles": [
-        {
-          "id": "four-jobs",
-          "type": "count",
-          "target": ".sk-cron-row",
-          "equals": 4
+          "target": "[data-settings-section='appearance']"
         },
         {
-          "id": "new-job",
-          "type": "textContains",
-          "target": ".sk-cron-list",
-          "contains": "晨间天气"
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='segment.sides']"
         }
-      ],
-      "finalizers": []
+      ]
     },
     {
-      "id": "ui.prototype.north-star.settings-palette",
-      "title": "命令面板：打开→过滤→选中关闭，结果随输入收敛",
+      "id": "ui.prototype.north-star.settings-language-en",
+      "title": "增量23：外观语言切 English 后聊天 chrome 英文化（Recent/Chats），finalizer 可靠切回中文不泄漏",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -5419,43 +5043,187 @@
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
         },
         {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(2)"
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(2)"
+          "target": "[data-settings-section='appearance']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "click",
-          "target": "[data-action-id='command-palette.open']"
+          "target": ".sk-settings-scroll .pt-select-trigger"
         },
         {
-          "op": "type",
-          "scope": "global",
-          "target": "input[data-palette-query]",
-          "value": "设置"
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".pt-select-options > div:nth-child(2) [role='option']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "wait",
+          "ms": 250
         }
       ],
       "oracles": [
         {
-          "id": "filtered-one",
-          "type": "count",
+          "id": "chat-locale-en",
+          "type": "attr",
           "scope": "global",
-          "target": ".sk-palette-item",
-          "equals": 1
+          "target": ".sk-chat-feature",
+          "attr": "data-locale",
+          "equals": "en"
+        },
+        {
+          "id": "rail-recent-english",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-conv-title",
+          "contains": "Recent"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-section='appearance']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".sk-settings-scroll .pt-select-trigger"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": ".pt-select-options > div:first-child [role=\"option\"]"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-station-devices",
+      "title": "增量23：网络›你的站点——站点连接态、已授权设备分页（6台/页5）、QR 关联真实追加",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='network']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='station']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "connected",
+          "type": "textContains",
+          "target": "[data-station-binding]",
+          "contains": "已连接"
+        },
+        {
+          "id": "five-rows-first-page",
+          "type": "count",
+          "target": ".sk-device-list .sk-device-row:not(.is-head)",
+          "equals": 5
+        },
+        {
+          "id": "pager-present",
+          "type": "exists",
+          "target": "[data-device-pager]"
+        },
+        {
+          "id": "pager-total-six",
+          "type": "textContains",
+          "target": "[data-device-pager]",
+          "contains": "共 6 台设备"
         }
       ],
       "finalizers": [
         {
           "op": "clickGlobal",
-          "target": "[data-command-id='open-settings']"
+          "target": "[data-action-id='device.link-start']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='device.link-simulate']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='device.link-allow']"
+        },
+        {
+          "op": "wait",
+          "ms": 1000
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='device.link-done']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
         }
       ]
     },
     {
-      "id": "ui.prototype.north-star.settings-tools",
-      "title": "工具表：5 个工具、审批/放行标签、重新扫描 pending",
+      "id": "ui.prototype.north-star.settings-discovery",
+      "title": "增量23：网络›发现——可被发现开关、各联邦可见性、联系范围三分段",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -5463,33 +5231,57 @@
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
         },
         {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(2)"
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "click",
-          "target": ".sk-settings-nav-item:nth-child(3)"
+          "target": "[data-settings-group='network']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='discovery']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         }
       ],
       "oracles": [
         {
-          "id": "five-tools",
-          "type": "count",
-          "target": ".sk-tools-row:not(.is-head)",
-          "equals": 5
+          "id": "master-switch",
+          "type": "attr",
+          "target": "[data-discovery='master']",
+          "attr": "aria-checked",
+          "equals": "true"
         },
         {
-          "id": "approval-tags",
-          "type": "textContains",
-          "target": ".sk-tools-table",
-          "contains": "需要审批"
+          "id": "three-fed-switches",
+          "type": "count",
+          "target": "[data-discovery-federations] .pt-switch",
+          "equals": 3
+        },
+        {
+          "id": "reach-three",
+          "type": "count",
+          "target": "[aria-label='谁可以联系你'] [data-action-id^='segment.']",
+          "equals": 3
         }
       ],
-      "finalizers": []
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
     },
     {
-      "id": "ui.prototype.north-star.settings-channels",
-      "title": "通道：1 个已连接通道与 Bots 挂起说明；开通向导 3 步后变 2 通道",
+      "id": "ui.prototype.north-star.settings-federation",
+      "title": "增量23：网络›联邦——3 种子卡可展开、加入新联邦校验后变 4 张",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -5497,12 +5289,619 @@
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
         },
         {
+          "op": "wait",
+          "ms": 150
+        },
+        {
           "op": "click",
-          "target": ".sk-settings-group:nth-child(3)"
+          "target": "[data-settings-group='network']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='federation']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='federation.add-open']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "type",
+          "target": "[data-fed-endpoint]",
+          "value": "https://neigh.example.com"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-action-id='federation.join-confirm']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "four-federations",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-settings-item",
+          "equals": 4
+        },
+        {
+          "id": "new-host",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-federation-list",
+          "contains": "neigh.example.com"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-providers",
+      "title": "增量23：AI›供应商——4 个供应商、选中态、密钥字段、模型行真实存在",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='ai']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "four-providers",
+          "type": "count",
+          "target": "[data-provider]",
+          "equals": 4
+        },
+        {
+          "id": "first-active",
+          "type": "attr",
+          "target": "[data-provider='openai']",
+          "attr": "aria-pressed",
+          "equals": "true"
+        },
+        {
+          "id": "model-rows",
+          "type": "count",
+          "target": ".sk-model-row",
+          "gte": 2
+        },
+        {
+          "id": "api-key-field",
+          "type": "exists",
+          "target": "[aria-label='API Key']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-provider='ollama']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-provider='openai']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-models",
+      "title": "增量23：AI›模型——默认模型选择器存在且含已启用模型",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='ai']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='models']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "default-model-select",
+          "type": "exists",
+          "target": "[aria-label='默认模型']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-discover",
+      "title": "增量23：AI›发现——3 个扩展包，卸载后出现安装按钮并可还原",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='ai']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='discover']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-package='source-reader'] [data-action-id='discover.source-reader.uninstall']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        }
+      ],
+      "oracles": [
+        {
+          "id": "three-packages",
+          "type": "count",
+          "target": "[data-package]",
+          "equals": 3
+        },
+        {
+          "id": "uninstalled-becomes-install",
+          "type": "exists",
+          "target": "[data-package='source-reader'] [data-action-id='discover.source-reader.install']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-package='source-reader'] [data-action-id='discover.source-reader.install']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-memory",
+      "title": "增量23：AI›记忆——启用开关、SQLite/Postgres 切换显示 DSN、双权重滑杆",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='ai']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='memory']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "memory-enabled",
+          "type": "attr",
+          "target": "[data-memory='enabled']",
+          "attr": "aria-checked",
+          "equals": "true"
+        },
+        {
+          "id": "backend-two",
+          "type": "count",
+          "target": "[aria-label='存储后端'] [data-action-id^='segment.']",
+          "equals": 2
+        },
+        {
+          "id": "no-dsn-on-sqlite",
+          "type": "missing",
+          "target": "[aria-label='PostgreSQL DSN']"
+        },
+        {
+          "id": "two-weights",
+          "type": "count",
+          "target": ".sk-weights input[type='range']",
+          "equals": 2
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='ai']"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-section='memory']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[aria-label='存储后端'] [data-action-id='segment.postgres']"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[aria-label='存储后端'] [data-action-id='segment.sqlite']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-skills",
+      "title": "增量23：AI›技能——三分类 tab、市场安装入口、导入框空输入禁用",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='ai']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='skills']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-skill-tabs] .sk-subtab:nth-child(3)"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='skill.import-open']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "three-subtabs",
+          "type": "count",
+          "target": "[data-skill-tabs] .sk-subtab",
+          "equals": 3
+        },
+        {
+          "id": "market-install-btn",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-skill] [data-action-id$='.install']"
+        },
+        {
+          "id": "import-disabled-empty",
+          "type": "attr",
+          "scope": "global",
+          "target": "[data-action-id='skill.import-confirm']",
+          "attr": "aria-disabled",
+          "equals": "true"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-mcp",
+      "title": "增量23：AI›MCP——3 台服务器、添加表单真实增行、启停与删除",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='ai']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='mcp']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='mcp.add-open']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "type",
+          "target": "[data-mcp-name]",
+          "value": "github",
+          "scope": "global"
+        },
+        {
+          "op": "type",
+          "target": "[placeholder='npx @pt/mcp-xxx 或 https://…']",
+          "value": "npx -y @modelcontextprotocol/server-github"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='mcp.add-confirm']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "four-servers",
+          "type": "count",
+          "scope": "global",
+          "target": "[data-mcp]",
+          "equals": 4
+        },
+        {
+          "id": "new-server-row",
+          "type": "exists",
+          "target": "[data-mcp='mcp-github']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-mcp='mcp-github'] [data-action-id$='.delete']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-bots",
+      "title": "增量23：通道›机器人——2 种子状态标签、停用切换、新建对话框真实增行",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='channels']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "two-bots",
+          "type": "count",
+          "target": "[data-bot]",
+          "equals": 2
+        },
+        {
+          "id": "build-active",
+          "type": "textContains",
+          "target": "[data-bot='bot-build']",
+          "contains": "运行中"
+        },
+        {
+          "id": "release-disabled",
+          "type": "textContains",
+          "target": "[data-bot='bot-release']",
+          "contains": "已停用"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='bot.create-open']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "[data-bot-name]",
+          "value": "Nightly Bot"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='bot.create-confirm']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-lark",
+      "title": "增量23：通道›飞书——开通向导 3 步后变 2 通道；Bots 挂起说明保留",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='channels']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='lark']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "click",
           "target": "[data-action-id='channel.add-open']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "type",
@@ -5521,29 +5920,37 @@
       ],
       "oracles": [
         {
-          "id": "bots-held",
-          "type": "textContains",
-          "target": ".sk-settings-scroll",
-          "contains": "暂不支持 Bots"
-        },
-        {
           "id": "two-after-wizard",
           "type": "count",
+          "scope": "global",
           "target": ".sk-channel-card",
           "equals": 2
         },
         {
           "id": "new-channel",
           "type": "textContains",
+          "scope": "global",
           "target": ".sk-channel-list",
           "contains": "hezuo"
+        },
+        {
+          "id": "bots-held-note",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-settings-scroll",
+          "contains": "Bots 通道"
         }
       ],
-      "finalizers": []
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
     },
     {
-      "id": "ui.prototype.north-star.settings-applets",
-      "title": "小程序：3 个小程序，可配置项钻取到开关面板并可返回；只读项不可点",
+      "id": "ui.prototype.north-star.settings-data-storage",
+      "title": "增量23：高级›数据与存储——4 条占用条、文件/导出诚实禁用、清缓存反馈、重置两段确认",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -5551,245 +5958,450 @@
           "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
         },
         {
-          "op": "click",
-          "target": ".sk-settings-group:nth-child(4)"
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "click",
-          "target": "[data-applet-id='ap-shelf']"
+          "target": "[data-settings-group='advanced']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         }
       ],
       "oracles": [
         {
-          "id": "drilled-in",
-          "type": "exists",
-          "target": "[data-action-id='applets.back']"
+          "id": "four-buckets",
+          "type": "count",
+          "target": ".sk-storage-bar",
+          "equals": 4
         },
         {
-          "id": "two-switches",
+          "id": "pending-file-actions",
           "type": "count",
-          "target": ".pt-switch",
+          "target": "[data-action-id='storage.manage-files'][aria-disabled='true'], [data-action-id='storage.export'][aria-disabled='true']",
           "equals": 2
         }
       ],
-      "finalizers": []
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='storage.clear-cache']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-reset-onboarding]"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='reset-onboarding-confirm']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-statistics",
+      "title": "增量23：高级›统计——4 汇总卡、4 周热力图 28 格、3 张榜单",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='advanced']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='statistics']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "four-cards",
+          "type": "count",
+          "target": ".sk-stat-card",
+          "equals": 4
+        },
+        {
+          "id": "heatmap-28",
+          "type": "count",
+          "target": ".sk-heatmap i",
+          "equals": 28
+        },
+        {
+          "id": "three-ranks",
+          "type": "count",
+          "target": ".sk-rank-card",
+          "equals": 3
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-logs",
+      "title": "增量23：高级›日志——级别过滤、关键词过滤、8 条示例流",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='advanced']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='logs']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "four-filters",
+          "type": "count",
+          "target": "[data-log-filters] .sk-log-filter",
+          "equals": 4
+        },
+        {
+          "id": "eight-rows",
+          "type": "count",
+          "target": ".sk-log-table .sk-log-line",
+          "equals": 8
+        },
+        {
+          "id": "head-columns",
+          "type": "textContains",
+          "target": ".sk-log-head",
+          "contains": "来源"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-log-filters] .is-warn"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": ".sk-log-filter-input",
+          "value": "Anthropic"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-cron",
+      "title": "增量23：高级›定时任务——两条固定任务开关，默认一运行一暂停",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='advanced']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='cron']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "two-task-switches",
+          "type": "count",
+          "target": "[data-task] .pt-switch, [data-task].pt-switch",
+          "equals": 2
+        },
+        {
+          "id": "daily-active",
+          "type": "attr",
+          "target": "[data-task='daily']",
+          "attr": "aria-checked",
+          "equals": "true"
+        },
+        {
+          "id": "weekly-paused",
+          "type": "attr",
+          "target": "[data-task='weekly']",
+          "attr": "aria-checked",
+          "equals": "false"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-command-palette",
+      "title": "增量23：高级›命令面板——打开对话框、过滤到单条、点击后关闭",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='advanced']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='command-menu']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='command-palette.open']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": ".sk-palette-input",
+          "value": "动态"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "palette-open",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-command-palette]"
+        },
+        {
+          "id": "filter-one",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-palette-item",
+          "equals": 1
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-command-id='new-moment']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-about",
+      "title": "增量23：高级›关于——版本四元信息、能力分组可展开且各含 4 项",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(4) .sk-rail-icon"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-group='advanced']"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        },
+        {
+          "op": "click",
+          "target": "[data-settings-section='about']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "click",
+          "target": ".sk-about-group:first-child"
+        },
+        {
+          "op": "wait",
+          "ms": 100
+        }
+      ],
+      "oracles": [
+        {
+          "id": "version-present",
+          "type": "textContains",
+          "target": ".sk-settings-scroll",
+          "contains": "v0.9.2-beta"
+        },
+        {
+          "id": "four-groups",
+          "type": "count",
+          "target": ".sk-about-group",
+          "equals": 4
+        },
+        {
+          "id": "expanded-four-items",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-about-items span",
+          "equals": 4
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "clickGlobal",
+          "target": "[data-settings-group='general']"
+        }
+      ]
     },
     {
       "id": "ui.prototype.north-star.action-bar-hugs-bubble",
-      "title": "消息工具条贴气泡近侧：他人气泡在右、自己气泡在左（飞书对齐），工具条是内容列直接子级",
+      "title": "增量22/23：消息悬浮工具条是气泡内容列子级——peer 在右、me 在左（data-bar-side 契约）",
       "level": "L3_DYNAMIC",
       "operations": [
-        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
-        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
-        { "op": "hover", "target": "[data-message-id='m1']" }
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m1']"
+        }
       ],
       "oracles": [
         {
           "id": "bar-in-content-column",
           "type": "count",
-          "target": ".sk-msg-peer .sk-msg-col > .sk-msg-actions-bar",
+          "target": "[data-message-id='m1'] .sk-msg-col > .sk-msg-actions-bar",
           "gte": 1
         },
         {
-          "id": "peer-bars-right-edge",
-          "type": "count",
-          "target": ".sk-msg-peer .sk-msg-actions-bar[data-bar-side='right']",
-          "gte": 1
+          "id": "peer-bar-right-edge",
+          "type": "attr",
+          "target": "[data-message-id='m1'] .sk-msg-actions-bar",
+          "attr": "data-bar-side",
+          "equals": "right"
         },
         {
-          "id": "peer-bars-never-left",
-          "type": "count",
-          "target": ".sk-msg-peer .sk-msg-actions-bar[data-bar-side='left']",
-          "equals": 0
+          "id": "own-bar-left-edge",
+          "type": "attr",
+          "target": "[data-message-id='m2'] .sk-msg-actions-bar",
+          "attr": "data-bar-side",
+          "equals": "left"
         },
         {
-          "id": "own-bars-left-edge",
-          "type": "count",
-          "target": ".sk-msg-me .sk-msg-actions-bar[data-bar-side='left']",
-          "gte": 1
-        },
-        {
-          "id": "own-bars-never-right",
-          "type": "count",
-          "target": ".sk-msg-me .sk-msg-actions-bar[data-bar-side='right']",
-          "equals": 0
-        },
-        {
-          "id": "absolute-positioned",
+          "id": "peer-position-absolute",
           "type": "computedStyle",
-          "all": true,
-          "target": ".sk-msg-actions-bar",
+          "target": "[data-message-id='m1'] .sk-msg-actions-bar",
           "prop": "position",
           "equals": "absolute"
         }
       ],
       "finalizers": []
-    },
-    {
-      "id": "ui.prototype.north-star.settings-messages-layout-left",
-      "title": "消息设置「统一靠左」：设置落盘后聊天根 data-message-layout=left，自己气泡左对齐且工具条换到右侧，重进设置仍在",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
-        { "op": "click", "target": ".sk-settings-nav-item:nth-child(2)" },
-        { "op": "click", "target": "[data-action-id='segment.left']" },
-        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" },
-        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
-        { "op": "hover", "target": "[data-message-id='m1']" }
-      ],
-      "oracles": [
-        {
-          "id": "layout-attr-left",
-          "type": "attr",
-          "target": ".sk-chat-feature",
-          "attr": "data-message-layout",
-          "equals": "left"
-        },
-        {
-          "id": "own-bubbles-align-start",
-          "type": "computedStyle",
-          "all": true,
-          "target": ".sk-msg-me",
-          "prop": "alignSelf",
-          "equals": "flex-start"
-        },
-        {
-          "id": "own-bars-move-right",
-          "type": "count",
-          "target": ".sk-msg-me .sk-msg-actions-bar[data-bar-side='right']",
-          "gte": 1
-        },
-        {
-          "id": "own-bars-no-left",
-          "type": "count",
-          "target": ".sk-msg-me .sk-msg-actions-bar[data-bar-side='left']",
-          "equals": 0
-        }
-      ],
-      "finalizers": [
-        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
-        { "op": "click", "target": ".sk-settings-nav-item:nth-child(2)" },
-        { "op": "click", "target": "[data-action-id='segment.sides']" }
-      ]
-    },
-    {
-      "id": "ui.prototype.north-star.settings-notifications",
-      "title": "消息通知：7 个开关（5 事件 + 2 投递），关闭提及后切走再回来仍保持关闭（跨面持久化）",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
-        { "op": "click", "target": ".sk-settings-nav-item:nth-child(3)" },
-        { "op": "click", "target": "[data-notify='mentions']" },
-        { "op": "click", "target": ".sk-settings-nav-item:nth-child(1)" },
-        { "op": "click", "target": ".sk-settings-nav-item:nth-child(3)" }
-      ],
-      "oracles": [
-        {
-          "id": "seven-switches",
-          "type": "count",
-          "target": "[data-notify] .pt-switch, .pt-switch[data-notify]",
-          "equals": 7
-        },
-        {
-          "id": "mentions-off-persisted",
-          "type": "attr",
-          "target": ".pt-switch[data-notify='mentions']",
-          "attr": "aria-checked",
-          "equals": "false"
-        },
-        {
-          "id": "sound-default-off",
-          "type": "attr",
-          "target": ".pt-switch[data-notify='sound']",
-          "attr": "aria-checked",
-          "equals": "false"
-        },
-        {
-          "id": "inapp-default-on",
-          "type": "attr",
-          "target": ".pt-switch[data-notify='inApp']",
-          "attr": "aria-checked",
-          "equals": "true"
-        }
-      ],
-      "finalizers": [
-        { "op": "click", "target": ".pt-switch[data-notify='mentions']" }
-      ]
-    },
-    {
-      "id": "ui.prototype.north-star.settings-language-en",
-      "title": "多语言：通用分区切 English 后设置与聊天界面立即英文化（Notifications/Recent/Chats），切回中文恢复",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
-        { "op": "click", "target": ".sk-settings-nav-item:nth-child(4)" },
-        { "op": "click", "target": ".sk-settings-row .pt-select" },
-        { "op": "wait", "ms": 200 },
-        { "op": "clickGlobal", "target": ".pt-select-options > div:nth-child(2) [role='option']" },
-        { "op": "wait", "ms": 200 },
-        { "op": "click", "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2)" }
-      ],
-      "oracles": [
-        {
-          "id": "chat-locale-en",
-          "type": "attr",
-          "target": ".sk-chat-feature",
-          "attr": "data-locale",
-          "equals": "en"
-        },
-        {
-          "id": "rail-recent-english",
-          "type": "textContains",
-          "target": ".sk-conv-title",
-          "contains": "Recent"
-        },
-        {
-          "id": "tab-chats-english",
-          "type": "textContains",
-          "target": ".sk-chat-subnav",
-          "contains": "Chats"
-        }
-      ],
-      "finalizers": [
-        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
-        { "op": "click", "target": ".sk-settings-nav-item:nth-child(4)" },
-        { "op": "click", "target": ".sk-settings-row .pt-select" },
-        { "op": "wait", "ms": 200 },
-        { "op": "clickGlobal", "target": ".pt-select-options > div:nth-child(1) [role='option']" }
-      ]
-    },
-    {
-      "id": "ui.prototype.north-star.settings-device-pagination",
-      "title": "已关联设备：6 台时分页——首屏 5 行、分页器含总数，下一页 1 行，返回恢复 5 行",
-      "level": "L3_DYNAMIC",
-      "operations": [
-        { "op": "click", "target": ".sk-rail-group:nth-child(4) .sk-rail-icon" },
-        { "op": "click", "target": "[data-action-id='device.page-next']" }
-      ],
-      "oracles": [
-        {
-          "id": "pager-total-six",
-          "type": "textContains",
-          "target": ".sk-device-pager",
-          "contains": "6"
-        },
-        {
-          "id": "second-page-one-row",
-          "type": "count",
-          "target": ".sk-device-list .sk-device-row:not(.is-head)",
-          "equals": 1
-        },
-        {
-          "id": "next-disabled-on-last",
-          "type": "attr",
-          "target": "[data-action-id='device.page-next']",
-          "attr": "aria-disabled",
-          "equals": "true"
-        }
-      ],
-      "finalizers": [
-        { "op": "click", "target": "[data-action-id='device.page-prev']" }
-      ]
     }
   ]
 }
