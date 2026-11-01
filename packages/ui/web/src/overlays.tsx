@@ -49,10 +49,24 @@ function OverlayLayer({
       const a = anchorPoint ? {left:anchorPoint.x,right:anchorPoint.x,top:anchorPoint.y,bottom:anchorPoint.y} : anchor.getBoundingClientRect();
       const r = root.current.getBoundingClientRect(), gap = 4;
       let left = a.left, top = a.bottom + gap;
+      const edgeBottom = placement.endsWith('-bottom');
       if (placement === 'top') top = a.top - r.height - gap;
-      if (placement === 'left') { left = a.left - r.width - gap; top = a.top; }
-      if (placement === 'right') { left = a.right + gap; top = a.top; }
-      if (top + r.height > win.innerHeight - gap) top = Math.max(gap, a.top - r.height - gap);
+      if (placement === 'left' || placement === 'left-bottom') {
+        left = a.left - r.width - gap;
+        top = edgeBottom ? a.bottom - r.height : a.top;
+      }
+      if (placement === 'right' || placement === 'right-bottom') {
+        left = a.right + gap;
+        top = edgeBottom ? a.bottom - r.height : a.top;
+      }
+      // Keep on-screen. Side panels only flip above the trigger for the
+      // start-aligned variants; bottom-aligned ones clamp toward the gap so
+      // they share the owner's bottom edge whenever the viewport allows it.
+      if (top + r.height > win.innerHeight - gap) {
+        top = edgeBottom ? Math.max(gap, win.innerHeight - r.height - gap)
+          : Math.max(gap, a.top - r.height - gap);
+      }
+      if (top < gap) top = gap;
       setPosition({
         left: Math.max(gap, Math.min(left, win.innerWidth - r.width - gap)),
         top: Math.max(gap, Math.min(top, win.innerHeight - r.height - gap)),
@@ -101,6 +115,7 @@ function OverlayLayer({
   }, [open, host, id, modal, anchor, anchorPoint, placement, kind, inputMode, dismissOutside]);
   if (!open || !host.element) return null;
   const content = <div ref={root} id={id} className={`pt-overlay pt-${kind} ${className}`}
+    data-placement={placement}
     role={modal ? 'dialog' : kind === 'menu' ? 'menu' : kind === 'tooltip' ? 'tooltip' : undefined}
     aria-modal={modal || undefined} aria-label={label} aria-labelledby={labelledBy} aria-describedby={describedBy}
     tabIndex={kind === 'tooltip' ? undefined : -1} style={{ ...position, ...style }}>{children}</div>;

@@ -350,6 +350,41 @@ async function checkOracle(page, anchor, oracle) {
         return { pass: offenders.length === 0, offenders: [...new Set(offenders)].slice(0, 8) };
       }, { props, banned });
     }
+    case 'anchoredTo': {
+      // Owner-alignment gate for portaled overlays (e.g. rightBottom bell
+      // panel): the overlay rectangle must sit on the required side of its
+      // owner and share the required edge within a pixel tolerance. Guards
+      // against the panel flipping into a visually detached position.
+      const overlay = await one();
+      const owner = await resolveOne(page, null, oracle.owner, { scope: 'global' });
+      const box = b => b ? { left: b.x, right: b.x + b.width, top: b.y, bottom: b.y + b.height } : null;
+      const [ovRect, owRect] = await Promise.all([overlay.boundingBox(), owner.boundingBox()]);
+      const ov = box(ovRect), ow = box(owRect);
+      const tol = oracle.tolerance ?? 6;
+      const offenders = [];
+      if (!ov) offenders.push('overlay has no rect');
+      if (!ow) offenders.push('owner has no rect');
+      if (ov && ow) {
+        if (oracle.side === 'right' && !(ov.left >= ow.right - tol)) {
+          offenders.push(`overlay.left ${Math.round(ov.left)} is not right of owner.right ${Math.round(ow.right)}`);
+        }
+        if (oracle.side === 'left' && !(ov.right <= ow.left + tol)) {
+          offenders.push(`overlay.right ${Math.round(ov.right)} is not left of owner.left ${Math.round(ow.left)}`);
+        }
+        if (oracle.align === 'bottom' && Math.abs(ov.bottom - ow.bottom) > tol) {
+          offenders.push(`overlay.bottom ${Math.round(ov.bottom)} != owner.bottom ${Math.round(ow.bottom)}`);
+        }
+        if (oracle.align === 'top' && Math.abs(ov.top - ow.top) > tol) {
+          offenders.push(`overlay.top ${Math.round(ov.top)} != owner.top ${Math.round(ow.top)}`);
+        }
+      }
+      return {
+        pass: offenders.length === 0,
+        offenders,
+        overlay: ov ? { left: Math.round(ov.left), bottom: Math.round(ov.bottom) } : null,
+        owner: ow ? { right: Math.round(ow.right), bottom: Math.round(ow.bottom) } : null,
+      };
+    }
     case 'craftBattery': {
       // Craft geometry gate: native-control leakage, intrinsic compact-control
       // geometry, corner composition, frame containment and hit targets.

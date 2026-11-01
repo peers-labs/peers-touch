@@ -74,9 +74,12 @@
   与通知铃共用 `.sk-rail-entry` 角标定位语法。
 - 底部组：**通知铃（增量 34 补齐，真身 `NotificationBell` 解剖）→ 设置**。
   铃是 peers-ui `IconButton`（不长裸元素债），复用 `.sk-rail-icon` 几何；
-  红点角标只允许红数胶囊（圆形状态点语法的延伸）；点击弹出向右的
-  peers-ui `Popover` 面板（未读高亮、分类 Tag、全部已读、单条已读/删除、空态），
-  浮层挂 `.pt-overlay-host`，**不落业务面、不切换 railTab**。
+  红点角标只允许红数胶囊（圆形状态点语法的延伸）；点击弹出 **`right-bottom`
+  锚定**的 peers-ui `Popover` 面板——面板在铃右侧、**底边与铃共边、向上生长**
+  （owner 引导原则，对齐真身 antd `rightBottom`；增量 42 前用 start 对齐 `right`，
+  超高时被防溢出翻到钮上方并留缝，像漂走）。面板含未读高亮、**不可点灰色分类 chip**
+  （不是 Tag/按钮）、全部已读、单条已读/删除、空态；浮层挂 `.pt-overlay-host`，
+  **不落业务面、不切换 railTab**。
 - 选择器合同：轨钮一律以稳定钩子寻址，**禁止位置型 `:nth-child` 选择器**——
   角标宿主 `.sk-rail-entry` 包裹会改变按钮在父节点中的位置，增量 37 前 95 处
   `.sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(2|3)` 在包裹后全部失配。

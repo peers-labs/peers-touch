@@ -11,7 +11,7 @@ import {
   AtSign, Bell, CalendarCheck, Info, UserCheck, UserPlus,
   type LucideProps,
 } from 'lucide-react';
-import { Empty, IconButton, Popover, Tag } from '@peers-touch/ui';
+import { Empty, IconButton, Popover } from '@peers-touch/ui';
 import { useT, type Translate } from '../prefs';
 import {
   NOTIFICATION_SEEDS,
@@ -25,13 +25,6 @@ const KIND_ICON: Record<NotificationKind, ComponentType<LucideProps>> = {
   mention: AtSign,
   task: CalendarCheck,
   system: Info,
-};
-
-const CATEGORY_TONE: Record<NotificationCategory, 'neutral' | 'success'> = {
-  social: 'neutral',
-  chat: 'neutral',
-  task: 'neutral',
-  system: 'neutral',
 };
 
 function categoryLabel(t: Translate, category: NotificationCategory): string {
@@ -71,9 +64,9 @@ function NotificationPanel({ items, onRead, onReadAll, onDelete }: {
                       <time>{item.at}</time>
                     </span>
                     {item.body && <span className="sk-notif-body">{item.body}</span>}
-                    <Tag tone={CATEGORY_TONE[item.category]}>
-                      {categoryLabel(t, item.category)}
-                    </Tag>
+                    {/* Category is a non-interactive label, mirroring desktop
+                        (a quiet grey chip) — never a button-looking affordance. */}
+                    <span className="sk-notif-chip">{categoryLabel(t, item.category)}</span>
                   </span>
                   <span className="sk-notif-actions">
                     {item.unread && (
@@ -100,7 +93,7 @@ export function NotificationBell() {
   const unread = items.filter(item => item.unread).length;
 
   return (
-    <Popover open={open} onOpenChange={setOpen} placement="right" label={t('notif.title')}
+    <Popover open={open} onOpenChange={setOpen} placement="right-bottom" label={t('notif.title')}
       className="sk-notif-popover"
       content={
         <NotificationPanel items={items}

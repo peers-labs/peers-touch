@@ -39,7 +39,13 @@ export interface FieldContract {
   availability?: Availability;
 }
 export type OverlayKind = 'tooltip' | 'popover' | 'menu' | 'dialog' | 'drawer';
-export type OverlayPlacement = 'top' | 'bottom' | 'left' | 'right';
+// Edge placements share the start edge; the *-bottom variants share the
+// owner's bottom edge and grow upward (rightBottom semantics), so a panel
+// anchored to a bottom-rail tile stays owner-aligned instead of flipping
+// into a detached above-trigger position.
+export type OverlayPlacement =
+  | 'top' | 'bottom' | 'left' | 'right'
+  | 'left-bottom' | 'right-bottom';
 export type DismissReason = 'escape' | 'outside' | 'close' | 'selection';
 export interface OverlayIntent {
   overlayId: string;

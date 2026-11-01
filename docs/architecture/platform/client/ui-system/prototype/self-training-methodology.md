@@ -179,3 +179,12 @@ Frontend Eles 不是组件陈列室，而是一台**自训练机器**：桌面/�
     清空后恢复分页与加载更多（门禁验证恢复，不只验证过滤）。
   - TextField 的 className/data 属性落在原生 input（非 FieldFrame），宽度/外边距等宿主级布局
     要用 `:has(> .class)` 作用在 frame 上。
+- 42 通知面板 owner 对齐：底部轨钮触发的高面板用 start 对齐的 `placement="right"` 时，防溢出翻转
+  会把它放到钮上方并留缝，与 owner 失共边（「走弯了」）。规则：
+  - **浮层锚定遵循 owner 引导**：owner 在边缘（底轨/顶栏）时用共边变体——库 OverlayPlacement 新增
+    `right-bottom/left-bottom`（与 owner 共底边、向上生长），视口不够时贴边夹取而不是翻转脱离；
+    overlay 节点带 `data-placement`。
+  - **分类/类型标签不得伪装成按钮**：真身通知分类是不可点灰 chip；用带边框 Tag 会被读成「聊天」
+    可点的死 affordance。无动作的元数据一律灰 chip（`pointer-events:none`）。
+  - 机器规则：新增 `anchoredTo` 几何门禁，断言浮层在 owner 指定侧且共边（容差 8px），
+    结构断言（data-placement）+ 几何断言（boundingBox 共边）+ chip 计数/旧 Tag 计数 0 三重锁定。

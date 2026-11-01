@@ -3133,6 +3133,49 @@
           }
         },
         {
+          "op": "expect",
+          "id": "panel-placement-right-bottom",
+          "oracle": {
+            "type": "attr",
+            "scope": "global",
+            "target": ".sk-notif-popover",
+            "attr": "data-placement",
+            "equals": "right-bottom"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "panel-owner-aligned",
+          "oracle": {
+            "type": "anchoredTo",
+            "scope": "global",
+            "target": ".sk-notif-popover",
+            "owner": "[data-action-id='nav.notifications']",
+            "side": "right",
+            "align": "bottom",
+            "tolerance": 8
+          }
+        },
+        {
+          "op": "expect",
+          "id": "category-is-quiet-chip",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": ".sk-notif-chip",
+            "equals": 5
+          }
+        },
+        {
+          "op": "expect",
+          "id": "no-fake-tag-affordance",
+          "oracle": {
+            "type": "missing",
+            "scope": "global",
+            "target": ".sk-notif-item .pt-tag"
+          }
+        },
+        {
           "op": "clickGlobal",
           "target": "[data-action-id='notification.read-all']"
         },

@@ -62,7 +62,14 @@
   font-size: 11.5px; color: var(--sk-text-2); line-height: 1.5;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.sk-notif-content .pt-tag { align-self: flex-start; margin-top: 1px; }
+/* Non-interactive category label (desktop parity: quiet grey chip). */
+.sk-notif-chip {
+  align-self: flex-start; margin-top: 2px;
+  font-size: 10px; line-height: 1; color: var(--sk-text-3);
+  background: color-mix(in srgb, var(--sk-text) 7%, transparent);
+  border-radius: 4px; padding: 3px 6px;
+  pointer-events: none;
+}
 
 .sk-notif-actions {
   display: flex; gap: 2px; flex-shrink: 0;
