@@ -28,6 +28,9 @@ pub struct PendingSenderProjection<'a> {
     pub private_content: &'a [u8],
     pub delivery_plan_sha256: &'a [u8],
     pub created_at_unix_ms: i64,
+    /// MP-D34: required recipient devices in the delivery plan, excluding
+    /// the originator actor's own devices. The immutable x/N denominator.
+    pub required_device_count: u32,
 }
 
 #[derive(Clone)]

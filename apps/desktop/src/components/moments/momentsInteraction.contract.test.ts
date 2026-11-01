@@ -9,6 +9,7 @@ function source(relativePath: string): string {
 const composerSource = source('./MomentComposer.tsx');
 const audiencePickerSource = source('./AudiencePicker.tsx');
 const commentListSource = source('./CommentList.tsx');
+const commentsSectionSource = source('./MomentCommentsSection.tsx');
 const detailSource = source('../../pages/moments/MomentDetailPage.tsx');
 const appSource = source('../../pages/moments/MomentsApp.tsx');
 const threadSource = source('./surfaces/SocialThreadSurface.tsx');
@@ -45,16 +46,19 @@ describe('Desktop Moments interaction contract', () => {
     expect(composerSource).toContain('border: `1px solid ${token.colorBorderSecondary}`');
   });
 
-  it('lets users collapse and restore the mounted comment composer', () => {
+  it('lets users collapse and restore the comment thread inside the card', () => {
     expect(threadSource).toContain('data-moments-comments-toggle');
-    expect(detailSource).toContain('data-moments-comments-region');
-    expect(detailSource).toContain('commentsOpen && (');
-    expect(detailSource).toContain('<CommentList');
+    // Comments expand inline in the card; the section anchor stays on the
+    // card root so deep-link captures find the thread from its card.
+    expect(momentCardSource).toContain('data-moments-comments-region={post.id}');
+    expect(momentCardSource).toContain('commentsOpen && (');
+    expect(momentCardSource).toContain('<MomentCommentsSection');
+    expect(commentsSectionSource).toContain('<CommentList');
     expect(appSource).toContain('key={view.postId}');
     // The thread composer must not be remounted by draft/native
     // revision identity — only thread + viewer identity keys it.
-    expect(detailSource).not.toContain('draftRevision');
-    expect(detailSource).not.toContain('rendererGeneration');
+    expect(commentsSectionSource).not.toContain('draftRevision');
+    expect(commentsSectionSource).not.toContain('rendererGeneration');
   });
 
   it('keeps a committed private Comment actionable without plaintext', () => {
@@ -65,7 +69,7 @@ describe('Desktop Moments interaction contract', () => {
       text: '',
       draftText: '',
     })).toBe('reconcile');
-    expect(detailSource).toContain('composerPublicationState');
+    expect(commentsSectionSource).toContain('composerPublicationState');
     expect(commentListSource).toContain("t('moments.comment.confirmResult')");
     expect(commentListSource).toContain(
       "composerPublicationState === 'COMMITTED_PENDING_READBACK'",
@@ -76,7 +80,7 @@ describe('Desktop Moments interaction contract', () => {
     );
     expect(commentListSource).toContain('retryDeadlinePending');
     expect(commentListSource).toContain('withinRetryDeadline');
-    expect(detailSource).toContain(
+    expect(commentsSectionSource).toContain(
       "privateThread.state === 'COMMENT_PARENT_UNAVAILABLE'",
     );
   });

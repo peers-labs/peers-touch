@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip, toast } from '@lobehub/ui';
@@ -7,24 +7,23 @@ import {
   Inbox, Phone, Server, RefreshCw, Video, MoreHorizontal,
   Lock, ShieldAlert, Bot, Pencil,
 } from 'lucide-react';
-import {
-  socialThreadKey,
-  useSocialChatStore,
-} from '../../store/socialChat';
+import { useSocialChatStore } from '../../store/socialChat';
 import {
   directConversationDisplayName,
-  projectDesktopIMMessages,
+  type SocialMessage,
 } from '../../store/socialProjection';
 import { useCryptoStore } from '../../store/cryptoStore';
 import {
   useActiveChatFederationSlice,
   useActiveSocialChatSlice,
+  useActiveSocialChatStore,
 } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { callP2p } from '../../modules/p2p/callP2p';
 import { groupCallManager } from '../../modules/groupCall';
 import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
+import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
@@ -43,13 +42,8 @@ import {
   isChatMessageTailPinned,
 } from './message/chatMessageTimelinePolicy';
 import {
-  resolveChatMessageThreadStats,
-} from './message/chatMessageThreadStats';
-import {
   beginMessageReactionMutation,
   messageReactionProjectionMatches,
-  reactionMutationForProjection,
-  visibleMessageReactions,
   type MessageReactionMutation,
 } from './message/messageReactionState';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
@@ -65,6 +59,8 @@ import {
 
 const { Text } = Typography;
 const REACTION_PROJECTION_TIMEOUT_MS = 8_000;
+const EMPTY_RAW_MESSAGES: SocialMessage[] = [];
+const EMPTY_PROJECTED_MESSAGES: ChatMessage[] = [];
 
 interface ChatMessageAreaProps {
   directOpenIntent: DirectConversationOpenIntent | null;
@@ -112,6 +108,7 @@ export function ChatMessageArea({
     getIMConversations,
     getIMMessages,
     getIMSenderProfile,
+    getIMThreadMessages,
     messageHasMore,
     messageLoadingMore,
     markFriendRead,
@@ -125,7 +122,6 @@ export function ChatMessageArea({
     peerOnline,
     typingPeers,
     threadCounts,
-    threadMessages,
     reactions,
     pinnedMessages,
     reactToMessage,
@@ -151,6 +147,7 @@ export function ChatMessageArea({
     getIMConversations: s.getIMConversations,
     getIMMessages: s.getIMMessages,
     getIMSenderProfile: s.getIMSenderProfile,
+    getIMThreadMessages: s.getIMThreadMessages,
     messageHasMore: s.messageHasMore,
     messageLoadingMore: s.messageLoadingMore,
     markFriendRead: s.markFriendRead,
@@ -164,7 +161,6 @@ export function ChatMessageArea({
     peerOnline: s.peerOnline,
     typingPeers: s.typingPeers,
     threadCounts: s.threadCounts,
-    threadMessages: s.threadMessages,
     reactions: s.reactions,
     pinnedMessages: s.pinnedMessages,
     reactToMessage: s.reactToMessage,
@@ -180,18 +176,27 @@ export function ChatMessageArea({
   const [groupNameDraft, setGroupNameDraft] = useState('');
   const [groupNameSaving, setGroupNameSaving] = useState(false);
   const [groupNameHovered, setGroupNameHovered] = useState(false);
-  const [inputValue, setInputValue] = useState('');
+  // Composer text lives inside <ChatComposer /> (remounted per
+  // conversation/edit target via React key); draftsRef only restores
+  // the seed text when switching back. No message-list state depends on
+  // keystrokes.
   const draftsRef = useRef<Record<string, string>>({});
-  const prevActiveRef = useRef<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [sending, setSending] = useState(false);
   const [replyToUlid, setReplyToUlid] = useState<string | null>(null);
   const [highlightedMessageUlid, setHighlightedMessageUlid] = useState<string | null>(null);
+  // Tracks the conversation whose ephemeral UI state has been reset; drives
+  // the render-phase adjustment below.
+  const [resetConversationId, setResetConversationId] = useState<string | null>(null);
   // When set, the input field operates in "edit" mode: pressing
   // Send dispatches `editFriendMessage(activeUlid, editingUlid, …)`
   // instead of creating a new message. The banner above the input
   // shows the original content + a cancel handle.
   const [editingUlid, setEditingUlid] = useState<string | null>(null);
+  // Mirror for the mount-stable draft-change callback: edited text must
+  // never overwrite the new-message draft for a conversation. Synced in a
+  // commit effect (render-phase ref writes are banned by react-hooks/refs).
+  const editingUlidRef = useRef<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
@@ -206,6 +211,12 @@ export function ChatMessageArea({
   const reactionRequestIdRef = useRef(0);
   const reactionsRef = useRef(reactions);
   const reactionTimeoutsRef = useRef<Map<string, number>>(new Map());
+  // Commit-synced mirrors (see the sync effect after activeUlidRef) keep
+  // timeline callbacks mount-stable so the memoized timeline and rows are not
+  // invalidated by per-render closure identities.
+  const reactionMutationsRef = useRef(reactionMutations);
+  const currentUserPtidRef = useRef(currentUserPtid);
+  const pinnedMessagesRef = useRef(pinnedMessages);
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   // Bot direct conversations are Station-resident plaintext: no E2EE lock,
@@ -219,11 +230,42 @@ export function ChatMessageArea({
     activeUlid ? state.conversationSecurity[activeUlid]?.aggregateLevel ?? 'idle' : 'idle'
   ));
   const activeKind = activeTab === 'friend' ? 'friend' : 'group';
+  const activeKindRef = useRef<'friend' | 'group'>(activeKind);
   const activeConversation = activeUlid
     ? getIMConversations().find((conversation) => conversation.kind === activeKind && conversation.id === activeUlid)
     : undefined;
-  const currentMessages = activeUlid ? getIMMessages(activeKind, activeUlid) : [];
-  const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
+  // Subscribe to the raw slice identity explicitly: the projected array is
+  // read through a store getter, so its useMemo needs the raw identity to
+  // invalidate when messages actually change.
+  const activeRawMessages = useActiveSocialChatStore(
+    (s) => (activeUlid ? s.messages[activeUlid] ?? EMPTY_RAW_MESSAGES : EMPTY_RAW_MESSAGES),
+    Object.is,
+  );
+  const currentMessages = useMemo(() => {
+    if (!activeUlid) return EMPTY_PROJECTED_MESSAGES;
+    // activeRawMessages is the source-array identity: it changes exactly when
+    // the store replaces this conversation's message slice, which is the
+    // invalidation signal for the store-memoized projection below.
+    return activeRawMessages === EMPTY_RAW_MESSAGES
+      ? EMPTY_PROJECTED_MESSAGES
+      : getIMMessages(activeKind, activeUlid);
+  }, [activeKind, activeUlid, activeRawMessages, getIMMessages]);
+  // Stable array identity: the timeline memo must not see a new roots array
+  // on every parent re-render caused by unrelated store fan-out.
+  const mainTimelineMessages = useMemo(
+    () => currentMessages.filter((message) => !messageThreadRootUlid(message)),
+    [currentMessages],
+  );
+  const pinnedMessageUlids = useMemo(
+    () => new Set(Object.keys(pinnedMessages).filter((ulid) => Boolean(pinnedMessages[ulid]))),
+    [pinnedMessages],
+  );
+  const projectThreadMessages = useCallback(
+    (rootUlid: string) => (
+      activeUlid ? getIMThreadMessages(activeKind, activeUlid, rootUlid) : []
+    ),
+    [activeKind, activeUlid, getIMThreadMessages],
+  );
   const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
   const newestAuthoritySequence = currentMessages.reduce(
     (maximum, message) => Math.max(maximum, message.eventSequence),
@@ -414,11 +456,12 @@ export function ChatMessageArea({
     tailPinnedRef.current = true;
   }, [scrollToMessageTail]);
 
-  useEffect(() => {
-    const prev = prevActiveRef.current;
-    if (prev) draftsRef.current[prev] = inputValue;
-    setInputValue(activeUlid ? (draftsRef.current[activeUlid] ?? '') : '');
-    prevActiveRef.current = activeUlid ?? null;
+  // Reset ephemeral reply / delete / rename UI when the active conversation
+  // changes. The guarded render-phase update is React's documented "adjusting
+  // state when a prop changes" pattern: it commits before paint without the
+  // cascading render a synchronous effect update would cause.
+  if (resetConversationId !== (activeUlid ?? null)) {
+    setResetConversationId(activeUlid ?? null);
     setReplyToUlid(null);
     setDeleteTarget(null);
     setDeletingMessage(false);
@@ -426,7 +469,7 @@ export function ChatMessageArea({
     setEditingGroupName(false);
     setGroupNameDraft('');
     setGroupNameHovered(false);
-  }, [activeUlid]);
+  }
 
   useEffect(() => {
     const openSearch = () => setShowSearch(true);
@@ -466,30 +509,59 @@ export function ChatMessageArea({
     idleTimer: null,
   });
 
-  const fireTyping = (typing: boolean) => {
-    if (!activeUlid) return;
-    api.messagingTypingSend(activeUlid, typing).catch((err) => {
+  // The composer owns text state; the parent only keeps a per-conversation
+  // draft ref and emits throttled typing pulses. Everything here is
+  // mount-stable so keystrokes never invalidate composer props or re-render
+  // the message list.
+  const activeUlidRef = useRef<string | null>(null);
+
+  // Mirrors for mount-stable callbacks sync at commit time: event handlers
+  // only observe them after paint, while render-phase ref writes are banned
+  // by react-hooks/refs.
+  useEffect(() => {
+    activeUlidRef.current = activeUlid;
+    activeKindRef.current = activeKind;
+    editingUlidRef.current = editingUlid;
+    currentUserPtidRef.current = currentUserPtid;
+    reactionMutationsRef.current = reactionMutations;
+    pinnedMessagesRef.current = pinnedMessages;
+  });
+
+  const fireTyping = useCallback((conversationId: string, typing: boolean) => {
+    api.messagingTypingSend(conversationId, typing).catch((err) => {
       // Typing is best-effort; debug-level only so a temporarily
       // unreachable station does not spam the user-visible log.
       log.debug('chat', 'typing pulse failed', { typing, error: err });
     });
-  };
+  }, []);
 
-  const scheduleIdleStop = () => {
+  const scheduleIdleStop = useCallback((conversationId: string) => {
     const ref = typingThrottleRef.current;
     if (ref.idleTimer != null) {
       window.clearTimeout(ref.idleTimer);
     }
     ref.idleTimer = window.setTimeout(() => {
-      fireTyping(false);
+      fireTyping(conversationId, false);
       ref.lastTrueAt = 0;
       ref.idleTimer = null;
     }, 4000);
-  };
+  }, [fireTyping]);
 
-  const handleInputChange = (value: string) => {
-    setInputValue(value);
-    if (!activeUlid) return;
+  // Zero-arg seed for the keyed composer's lazy initializer: ref access
+  // stays inside a callback body (never render scope) and the draft is read
+  // exactly once per composer mount.
+  const readActiveConversationDraft = useCallback(() => {
+    const conversationId = activeUlidRef.current;
+    return conversationId ? draftsRef.current[conversationId] ?? '' : '';
+  }, []);
+
+  const handleDraftChange = useCallback((value: string) => {
+    const conversationId = activeUlidRef.current;
+    if (!conversationId) return;
+    // Edited-message text is not a new-message draft.
+    if (!editingUlidRef.current) {
+      draftsRef.current[conversationId] = value;
+    }
     if (!value.trim()) {
       // Empty input — treat as "stopped". Cancel the idle timer
       // and emit `typing=false` only if we previously emitted true.
@@ -499,7 +571,7 @@ export function ChatMessageArea({
         ref.idleTimer = null;
       }
       if (ref.lastTrueAt > 0) {
-        fireTyping(false);
+        fireTyping(conversationId, false);
         ref.lastTrueAt = 0;
       }
       return;
@@ -507,11 +579,11 @@ export function ChatMessageArea({
     const now = Date.now();
     const ref = typingThrottleRef.current;
     if (now - ref.lastTrueAt > 3000) {
-      fireTyping(true);
+      fireTyping(conversationId, true);
       ref.lastTrueAt = now;
     }
-    scheduleIdleStop();
-  };
+    scheduleIdleStop(conversationId);
+  }, [fireTyping, scheduleIdleStop]);
 
   // Cleanup on unmount / session switch: emit `typing=false` so the
   // receivers' bubbles clear immediately rather than waiting for the
@@ -600,26 +672,27 @@ export function ChatMessageArea({
     }
   };
 
-  const stopTypingPulse = () => {
+  const stopTypingPulse = useCallback(() => {
+    const conversationId = activeUlidRef.current;
     const ref = typingThrottleRef.current;
     if (ref.idleTimer != null) {
       window.clearTimeout(ref.idleTimer);
       ref.idleTimer = null;
     }
-    if (ref.lastTrueAt > 0) {
-      fireTyping(false);
+    if (ref.lastTrueAt > 0 && conversationId) {
+      fireTyping(conversationId, false);
       ref.lastTrueAt = 0;
     }
-  };
+  }, [fireTyping]);
 
-  const handleSend = async (draft: ChatComposerDraft) => {
-    if ((!draft.text && draft.attachments.length === 0) || !activeUlid) return;
+  const handleSend = async (draft: ChatComposerDraft): Promise<boolean> => {
+    if ((!draft.text && draft.attachments.length === 0) || !activeUlid) return false;
     const content = draft.text;
     const replyRef = replyToUlid || undefined;
     const editTarget = editingUlid;
-    setInputValue('');
-    setReplyToUlid(null);
-    setEditingUlid(null);
+    // The composer clears its own text after success; these resets only
+    // flip reply/edit UI state. On failure the composer keeps its text
+    // and reply target.
     setComposerError(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
@@ -641,11 +714,21 @@ export function ChatMessageArea({
         } catch (err) {
           log.error('chat', 'edit message failed', err);
           toast.error(t('chat.social.messageArea.editFailed'));
+          // Keep the editor open with its text on failure.
+          setSending(false);
+          return false;
         }
-        return;
+        setReplyToUlid(null);
+        setEditingUlid(null);
+        setSending(false);
+        return true;
       }
       if (activeTab === 'friend') {
         const receiverPtid = activeConversation?.peerPtid || '';
+        // MP-D33: one user send action keeps one send intent; the BFF
+        // dedupes on (device, intent) and a lost IPC answer is reconciled
+        // by status lookup rather than resend.
+        const sendIntentId = newSendIntentId();
         await sendFriendMessage(
           activeUlid,
           receiverPtid,
@@ -653,28 +736,36 @@ export function ChatMessageArea({
           draft.messageType,
           replyRef,
           draft.attachments.length > 0 ? draft.attachments : undefined,
+          undefined,
+          sendIntentId,
         );
       } else {
+        const sendIntentId = newSendIntentId();
         await sendGroupMessage(
           activeUlid,
           content,
           draft.messageType,
           replyRef,
           draft.attachments.length > 0 ? draft.attachments : undefined,
+          undefined,
+          sendIntentId,
         );
       }
+      setReplyToUlid(null);
+      setSending(false);
+      return true;
     } catch (err) {
       log.error('chat', 'composer send failed', err);
-      setInputValue(content);
-      setReplyToUlid(replyRef ?? null);
       const presentedError = presentError(err, {
         mode: 'toast',
         mapper: mapChatError,
         context: { operation: 'send' },
       });
       setComposerError(presentedError);
-    } finally {
       setSending(false);
+      // Keep composer text + reply target; the composer does not clear
+      // because onSend resolved false.
+      return false;
     }
   };
 
@@ -703,29 +794,33 @@ export function ChatMessageArea({
     }
   };
 
-  const handleRecall = async (msg: ChatMessage) => {
-    if (!activeUlid) return;
+  const handleRecall = useCallback(async (msg: ChatMessage) => {
+    const conversationId = activeUlidRef.current;
+    if (!conversationId) return;
     try {
-      if (activeKind === 'friend') {
-        await recallFriendMessage(activeUlid, msg.ulid);
+      if (activeKindRef.current === 'friend') {
+        await recallFriendMessage(conversationId, msg.ulid);
       } else {
-        await recallGroupMessage(activeUlid, msg.ulid);
+        await recallGroupMessage(conversationId, msg.ulid);
       }
     } catch (err) {
       log.error('chat', 'recall message failed', err);
       toast.error(t('chat.social.messageArea.recallFailed'));
     }
-  };
+  }, [recallFriendMessage, recallGroupMessage, t]);
 
-  const handleReaction = async (message: ChatMessage, emoji: string) => {
-    if (!activeUlid || !currentUserPtid) return;
-    const currentMutation = reactionMutations[message.ulid];
+  const handleReaction = useCallback(async (message: ChatMessage, emoji: string) => {
+    const conversationId = activeUlidRef.current;
+    const actorPtid = currentUserPtidRef.current;
+    if (!conversationId || !actorPtid) return;
+    const currentMutation = reactionMutationsRef.current[message.ulid];
+    const currentReactions = reactionsRef.current[message.ulid] ?? [];
     const currentMutationConverged = Boolean(
       currentMutation
       && currentMutation.phase !== 'pending'
       && messageReactionProjectionMatches(
-        reactions[message.ulid] ?? [],
-        currentUserPtid,
+        currentReactions,
+        actorPtid,
         currentMutation,
       ),
     );
@@ -739,8 +834,8 @@ export function ChatMessageArea({
 
     const requestId = ++reactionRequestIdRef.current;
     const mutation = beginMessageReactionMutation(
-      reactions[message.ulid] ?? [],
-      currentUserPtid,
+      currentReactions,
+      actorPtid,
       emoji,
       requestId,
     );
@@ -750,7 +845,7 @@ export function ChatMessageArea({
     setReactionMutations(current => ({ ...current, [message.ulid]: mutation }));
 
     try {
-      await reactToMessage(activeUlid, message.ulid, emoji, mutation.remove);
+      await reactToMessage(conversationId, message.ulid, emoji, mutation.remove);
       setReactionMutations((current) => {
         const activeMutation = current[message.ulid];
         if (!activeMutation || activeMutation.requestId !== requestId) return current;
@@ -772,11 +867,15 @@ export function ChatMessageArea({
           ) {
             return current;
           }
-          if (messageReactionProjectionMatches(
-            reactionsRef.current[message.ulid] ?? [],
-            currentUserPtid,
-            activeMutation,
-          )) {
+          const actorPtid = currentUserPtidRef.current;
+          if (
+            actorPtid
+            && messageReactionProjectionMatches(
+              reactionsRef.current[message.ulid] ?? [],
+              actorPtid,
+              activeMutation,
+            )
+          ) {
             const next = { ...current };
             delete next[message.ulid];
             return next;
@@ -794,7 +893,7 @@ export function ChatMessageArea({
       reactionTimeoutsRef.current.set(message.ulid, timeout);
     } catch (error) {
       log.error('chat', 'message reaction failed', {
-        conversationId: activeUlid,
+        conversationId,
         messageId: message.ulid,
         error,
       });
@@ -810,32 +909,48 @@ export function ChatMessageArea({
         };
       });
     }
-  };
+  }, [reactToMessage]);
 
-  const retryReaction = (message: ChatMessage) => {
-    const mutation = reactionMutations[message.ulid];
+  const retryReaction = useCallback((message: ChatMessage) => {
+    const mutation = reactionMutationsRef.current[message.ulid];
     if (!mutation || mutation.phase !== 'error') return;
     void handleReaction(message, mutation.emoji);
-  };
+  }, [handleReaction]);
 
-  const retryFailedMessage = async (message: ChatMessage) => {
-    if (!activeUlid) return;
+  const retryFailedMessage = useCallback(async (message: ChatMessage) => {
+    const conversationId = activeUlidRef.current;
+    if (!conversationId) return;
     try {
-      await retryMessage(activeUlid, message.ulid, activeKind);
+      await retryMessage(conversationId, message.ulid, activeKindRef.current);
     } catch (error) {
       log.error('chat', 'message retry failed', {
-        conversationId: activeUlid,
+        conversationId,
         messageId: message.ulid,
         error,
       });
       toast.error(t('chat.social.messageArea.retryFailed'));
     }
-  };
+  }, [retryMessage, t]);
 
-  const confirmDeleteMessage = (target: ChatMessage) => {
-    if (!activeUlid) return;
+  const confirmDeleteMessage = useCallback((target: ChatMessage) => {
+    if (!activeUlidRef.current) return;
     setDeleteTarget(target);
-  };
+  }, []);
+
+  const handlePin = useCallback((message: ChatMessage) => {
+    const conversationId = activeUlidRef.current;
+    if (!conversationId) return;
+    pinMessage(conversationId, message.ulid, !pinnedMessagesRef.current[message.ulid]);
+  }, [pinMessage]);
+
+  const handleReply = useCallback((messageUlid: string) => {
+    setEditingUlid(null);
+    setReplyToUlid(messageUlid);
+  }, []);
+
+  const handleAnchorReached = useCallback(() => {
+    setScrollToMessageUlid(null);
+  }, [setScrollToMessageUlid]);
 
   const handleConfirmDelete = async () => {
     if (!activeUlid || !deleteTarget) return;
@@ -851,11 +966,12 @@ export function ChatMessageArea({
     }
   };
 
-  const handleStartEdit = (msg: ChatMessage) => {
+  const handleStartEdit = useCallback((msg: ChatMessage) => {
+    // The composer remounts (key includes editingUlid) and seeds from
+    // editPreview — no controlled text state in the parent.
     setEditingUlid(msg.ulid);
-    setInputValue(msg.content);
     setReplyToUlid(null);
-  };
+  }, []);
 
   const handleForwardSelect = async (conv: { id: string; kind: string }) => {
     if (!forwardTarget) return;
@@ -874,10 +990,13 @@ export function ChatMessageArea({
     }
   };
 
-  const cancelEdit = () => {
+  const cancelEdit = useCallback(() => {
+    // Remount seeds the composer from the saved draft, not edit text.
     setEditingUlid(null);
-    setInputValue('');
-  };
+  }, []);
+  const cancelReply = useCallback(() => {
+    setReplyToUlid(null);
+  }, []);
 
   const replyingMsg = replyToUlid ? currentMessages.find((m) => m.ulid === replyToUlid) : null;
   const replyingPreview = replyPreviewForMessage(replyingMsg, {
@@ -951,15 +1070,14 @@ export function ChatMessageArea({
         </Flexbox>
 
         <ChatComposer
+          key="chat-composer:disabled"
           activeConversationId=""
           disabled
           editing={false}
           surfaceBackground={token.colorBgContainer}
-          value={inputValue}
-          onChange={handleInputChange}
           onBlurInput={stopTypingPulse}
           onCancelEdit={cancelEdit}
-          onCancelReply={() => setReplyToUlid(null)}
+          onCancelReply={cancelReply}
           onSend={handleSend}
           replyPreview={replyingPreview}
           replyPreviewKey={replyToUlid}
@@ -1285,67 +1403,25 @@ export function ChatMessageArea({
             getSenderProfile={getIMSenderProfile}
             highlightedMessageUlid={highlightedMessageUlid}
             scrollToMessageUlid={scrollToMessageUlid}
-            onAnchorReached={() => setScrollToMessageUlid(null)}
-            isPinned={(message) => Boolean(pinnedMessages[message.ulid])}
+            onAnchorReached={handleAnchorReached}
+            conversationMessages={currentMessages}
             messages={mainTimelineMessages}
             onTimelineMeasured={handleTimelineMeasured}
             onDelete={confirmDeleteMessage}
             onEdit={handleStartEdit}
             onForward={setForwardTarget}
             onOpenThread={openThread}
-            onPin={(msg) => {
-              if (!activeUlid) return;
-              pinMessage(activeUlid, msg.ulid, Boolean(pinnedMessages[msg.ulid]));
-            }}
-            onReact={(message, emoji) => {
-              void handleReaction(message, emoji);
-            }}
+            onPin={handlePin}
+            onReact={handleReaction}
             onRecall={handleRecall}
-            onReply={(messageUlid) => {
-              setEditingUlid(null);
-              setReplyToUlid(messageUlid);
-            }}
-            onRetryMessage={(message) => {
-              void retryFailedMessage(message);
-            }}
+            onReply={handleReply}
+            onRetryMessage={retryFailedMessage}
             onRetryReaction={retryReaction}
-            reactionMutationFor={(message) => {
-              const mutation = reactionMutationForProjection(
-                reactions[message.ulid] ?? [],
-                currentUserPtid,
-                reactionMutations[message.ulid],
-              );
-              return mutation
-                ? { emoji: mutation.emoji, phase: mutation.phase }
-                : undefined;
-            }}
-            resolveReactions={(message) => [
-              ...visibleMessageReactions(
-                reactions[message.ulid] ?? [],
-                reactionMutationForProjection(
-                  reactions[message.ulid] ?? [],
-                  currentUserPtid,
-                  reactionMutations[message.ulid],
-                ),
-              ),
-            ]}
-            resolveThreadStats={(message) => {
-              const threadKey = socialThreadKey(activeKind, activeUlid, message.ulid);
-              const threadSummary = threadCounts[threadKey];
-              return {
-                ...resolveChatMessageThreadStats({
-                  rootUlid: message.ulid,
-                  currentMessages,
-                  loadedThreadMessages: projectDesktopIMMessages(
-                    activeKind,
-                    activeUlid,
-                    threadMessages[threadKey] ?? [],
-                  ),
-                  projectedReplyCount: threadSummary?.replyCount,
-                }),
-                unreadCount: threadSummary?.unreadCount ?? 0,
-              };
-            }}
+            pinnedMessageUlids={pinnedMessageUlids}
+            projectThreadMessages={projectThreadMessages}
+            reactions={reactions}
+            reactionMutations={reactionMutations}
+            threadCounts={threadCounts}
           />
         )}
         <div
@@ -1386,15 +1462,19 @@ export function ChatMessageArea({
         </Flexbox>
       ) : (
       <ChatComposer
+        key={`chat-composer:${activeUlid}:${editingUlid ?? 'new'}`}
         activeConversationId={activeUlid}
         disabled={!activeUlid}
         editing={Boolean(editingUlid)}
         surfaceBackground={conversationSurfaceBackground}
-        value={inputValue}
-        onChange={handleInputChange}
+        initialValue={editingUlid
+          ? currentMessages.find((m) => m.ulid === editingUlid)?.content ?? ''
+          : undefined}
+        initialDraft={readActiveConversationDraft}
+        onDraftChange={handleDraftChange}
         onBlurInput={stopTypingPulse}
         onCancelEdit={cancelEdit}
-        onCancelReply={() => setReplyToUlid(null)}
+        onCancelReply={cancelReply}
         onSend={handleSend}
         replyPreview={replyingPreview}
         replyPreviewKey={replyToUlid}

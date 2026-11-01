@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { MomentComposer } from '../../components/moments/MomentComposer';
@@ -44,6 +45,7 @@ export function MomentsFeedView({
     loadFeed,
     reactToPost,
     unreactToPost,
+    deletePost,
   } = useActiveMomentsSlice((s) => ({
     feed: s.feeds.home,
     postsById: s.postsById,
@@ -53,16 +55,17 @@ export function MomentsFeedView({
     loadFeed: s.loadFeed,
     reactToPost: s.reactToPost,
     unreactToPost: s.unreactToPost,
+    deletePost: s.deletePost,
   }));
 
   const posts = feed.postIds.map((id) => postsById[id]).filter(Boolean);
 
-  const handleReact = async (postId: string, kind: ReactionKind) => {
-    await reactToPost(postId, kind);
-  };
-  const handleUnreact = async (postId: string, kind?: ReactionKind) => {
-    await unreactToPost(postId, kind);
-  };
+  const handleReact = useCallback((postId: string, kind: ReactionKind) =>
+    reactToPost(postId, kind), [reactToPost]);
+  const handleUnreact = useCallback((postId: string, kind?: ReactionKind) =>
+    unreactToPost(postId, kind), [unreactToPost]);
+  const handleDelete = useCallback((postId: string) =>
+    deletePost(postId), [deletePost]);
 
   // Background refresh never replaces existing cards with a
   // page-level loading surface; the local list footer (MomentListState)
@@ -105,10 +108,10 @@ export function MomentsFeedView({
           viewerActorPtid={_viewerActorPtid}
           surface="home"
           onOpen={onOpenPost}
-          onOpenComments={onOpenPost}
           onAuthorClick={onAuthorClick}
           onReact={handleReact}
           onUnreact={handleUnreact}
+          onDelete={handleDelete}
         />
       ))}
 

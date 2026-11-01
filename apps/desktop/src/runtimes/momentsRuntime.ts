@@ -18,6 +18,8 @@ import {
   type Post,
 } from '../gen/proto/domain/social/post_pb';
 import { EVENT, eventBus } from '../kernel/events';
+import { isDocumentHidden, onDocumentForeground } from '../kernel/documentVisibility';
+import { createTrailingCoalescer, type TrailingCoalescer } from '../kernel/trailingCoalesce';
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import type {
   MomentCommentedPayload,
@@ -40,9 +42,38 @@ import { log } from '../utils/logger';
 
 const MOMENTS_RECONCILE_INTERVAL_MS = 45_000;
 const MOMENTS_RECONNECT_REFRESH_MIN_INTERVAL_MS = 5_000;
+// Realtime invalidations (create/delete/revoke/resync) collapse into one
+// feed refresh this long after the burst settles. Post-scoped reaction and
+// comment wakes stay immediate.
+const MOMENTS_EVENT_COALESCE_MS = 1_800;
+
+function createProjectionEventCoalescer(): TrailingCoalescer {
+  return createTrailingCoalescer(
+    MOMENTS_EVENT_COALESCE_MS,
+    () => {
+      runDetached(
+        'coalesced moments projection refresh',
+        enqueueScopedProjection((scope) => (
+          refreshMomentsProjectionNow(scope, 'event:coalesced')
+        )).then(() => undefined),
+      );
+    },
+    {
+      setTimeout: (handler, timeoutMs) => window.setTimeout(handler, timeoutMs),
+      clearTimeout: (handle) => window.clearTimeout(handle as number),
+    },
+  );
+}
+
+let projectionEventCoalescer: TrailingCoalescer = createProjectionEventCoalescer();
+
+function scheduleCoalescedProjectionRefresh(): void {
+  projectionEventCoalescer.schedule();
+}
 
 let teardownRuntime: (() => void) | null = null;
 let reconcileTimer: number | null = null;
+let unsubscribeForeground: (() => void) | null = null;
 let bootstrapSequence = 0;
 let activeScope: MomentsRuntimeScope | null = null;
 let pendingScopeKey: string | null = null;
@@ -553,7 +584,7 @@ function onMomentCreated(payload: MomentCreatedPayload): void {
     'moment created projection refresh',
     async (scope) => {
       await ensureMomentDetailProjectionNow(scope, payload.postId);
-      await refreshMomentsProjectionNow(scope, 'event:moment.created');
+      if (isCurrentScope(scope)) scheduleCoalescedProjectionRefresh();
     },
   );
 }
@@ -573,7 +604,7 @@ function onMomentDeleted(payload: MomentDeletedPayload): void {
       );
       await usePrivateMomentsStore.getState().purgeMoment(payload.postId);
       if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
-      await refreshMomentsProjectionNow(scope, 'event:moment.deleted');
+      scheduleCoalescedProjectionRefresh();
     },
   );
 }
@@ -601,7 +632,7 @@ function onMomentRevoked(payload: MomentRevokedPayload): void {
       useMomentsStore.getState().hydratePrivateMoments(
         Object.values(usePrivateMomentsStore.getState().postsById),
       );
-      await refreshMomentsProjectionNow(scope, 'event:moment.revoked');
+      if (isCurrentScope(scope)) scheduleCoalescedProjectionRefresh();
     },
   );
 }
@@ -683,33 +714,20 @@ function onRelationshipChanged(payload: RelationshipChangedPayload): void {
       await Promise.allSettled([
         relationships.loadRelationship(payload.targetActorPtid),
         relationships.loadFollowers(payload.targetActorPtid, true),
-        refreshMomentsProjectionNow(
-          scope,
-          `event:relationship.changed:${payload.action}`,
-        ),
       ]);
+      if (isCurrentScope(scope)) scheduleCoalescedProjectionRefresh();
     }).then(() => undefined),
   );
 }
 
-function onMomentResyncRequested(payload: MomentResyncRequestedPayload): void {
+function onMomentResyncRequested(_payload: MomentResyncRequestedPayload): void {
   if (!activeScope) return;
-  runDetached(
-    'moment resync projection refresh',
-    enqueueScopedProjection((scope) => (
-      refreshMomentsProjectionNow(scope, `event:moment.resync:${payload.reason}`)
-    )).then(() => undefined),
-  );
+  scheduleCoalescedProjectionRefresh();
 }
 
-function onRealtimeResync(payload: RealtimeResyncPayload): void {
+function onRealtimeResync(_payload: RealtimeResyncPayload): void {
   if (!activeScope) return;
-  runDetached(
-    'realtime resync moments projection refresh',
-    enqueueScopedProjection((scope) => (
-      refreshMomentsProjectionNow(scope, `event:realtime.resync:${payload.reason}`)
-    )).then(() => undefined),
-  );
+  scheduleCoalescedProjectionRefresh();
 }
 
 function onRealtimeConnectionState(payload: RealtimeConnectionStatePayload): void {
@@ -825,29 +843,38 @@ function onStationChanged(payload: StationActiveChangedPayload): void {
   void reconcileAuthenticatedRuntime('station-switch');
 }
 
+function runPeriodicMomentsReconcile(): void {
+  if (!activeScope) {
+    const session = useSessionStore.getState();
+    if (session.authenticated && session.currentUser?.actorPtid) {
+      void reconcileAuthenticatedRuntime('periodic-retry');
+    }
+    return;
+  }
+  runDetached(
+    'periodic moments projection refresh',
+    enqueueScopedProjection((scope) => (
+      refreshMomentsProjectionNow(scope, 'periodic reconcile')
+    )).then(() => undefined),
+  );
+}
+
 function startReconcileTimer(): void {
   if (reconcileTimer) return;
   reconcileTimer = window.setInterval(() => {
-    if (!activeScope) {
-      const session = useSessionStore.getState();
-      if (session.authenticated && session.currentUser?.actorPtid) {
-        void reconcileAuthenticatedRuntime('periodic-retry');
-      }
-      return;
-    }
-    runDetached(
-      'periodic moments projection refresh',
-      enqueueScopedProjection((scope) => (
-        refreshMomentsProjectionNow(scope, 'periodic reconcile')
-      )).then(() => undefined),
-    );
+    // Background tabs skip refresh; the foreground listener catches up.
+    if (isDocumentHidden()) return;
+    runPeriodicMomentsReconcile();
   }, MOMENTS_RECONCILE_INTERVAL_MS);
+  unsubscribeForeground = onDocumentForeground(runPeriodicMomentsReconcile);
 }
 
 function stopReconcileTimer(): void {
   if (!reconcileTimer) return;
   window.clearInterval(reconcileTimer);
   reconcileTimer = null;
+  unsubscribeForeground?.();
+  unsubscribeForeground = null;
 }
 
 export async function reconcileMomentsProjection(reason: string): Promise<void> {
@@ -861,6 +888,9 @@ export const momentsRuntime: RuntimeDescriptor = {
   scope: 'app',
   install(): void {
     if (teardownRuntime) return;
+    // Fresh coalescer per install: a pending burst from a previous runtime
+    // generation must not fire into the new scope.
+    projectionEventCoalescer = createProjectionEventCoalescer();
 
     const unsubscribeSession = useSessionStore.subscribe((state, previous) => {
       if (
@@ -899,6 +929,7 @@ export const momentsRuntime: RuntimeDescriptor = {
 
     teardownRuntime = () => {
       unsubs.forEach((unsubscribe) => unsubscribe());
+      projectionEventCoalescer.cancel();
       stopReconcileTimer();
       teardownRuntime = null;
       pendingScopeKey = null;

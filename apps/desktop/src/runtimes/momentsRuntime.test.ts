@@ -170,6 +170,7 @@ import { EVENT, eventBus } from '../kernel/events';
 import { useMomentsNavigationStore } from '../store/momentsNavigation';
 
 let intervalCallbacks: Array<() => void>;
+let timerRegistry: Map<number, () => void>;
 
 function setSession(next: typeof mocks.sessionState): void {
   const previous = mocks.sessionState;
@@ -181,16 +182,39 @@ async function flushRuntime(): Promise<void> {
   await momentsRuntime.bootstrap(null);
 }
 
+// The runtime coalesces feed refreshes behind a trailing window.setTimeout;
+// the fake window captures the fire callbacks for deterministic flushing.
+async function flushCoalescedRefreshes(): Promise<void> {
+  // Run every timer still live after clearTimeout cancellations.
+  const pending = Array.from(timerRegistry.values());
+  timerRegistry.clear();
+  pending.forEach((callback) => callback());
+  // The coalesced fire enqueues scoped projection work whose promise chain
+  // spans several awaits; macrotask turns drain it deterministically.
+  for (let i = 0; i < 3; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 beforeEach(() => {
   momentsRuntime.teardown();
   vi.clearAllMocks();
   intervalCallbacks = [];
+  timerRegistry = new Map();
   const target = Object.assign(new EventTarget(), {
     setInterval: vi.fn((callback: () => void) => {
       intervalCallbacks.push(callback);
       return intervalCallbacks.length;
     }),
     clearInterval: vi.fn(),
+    setTimeout: vi.fn((callback: () => void) => {
+      const handle = timerRegistry.size + 1;
+      timerRegistry.set(handle, callback);
+      return handle;
+    }),
+    clearTimeout: vi.fn((handle: number) => {
+      timerRegistry.delete(handle);
+    }),
   });
   vi.stubGlobal('window', target);
   mocks.sessionState = {
@@ -343,14 +367,48 @@ describe('momentsRuntime identity fence', () => {
       expect(mocks.privateMoments.readMoment).toHaveBeenCalledWith(
         '01REMOTEPRIVATEPOST',
       );
-      expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
-        'event:moment.created',
-      );
     });
+    // Feed refresh is trailing-coalesced, not immediate per event.
+    expect(mocks.moments.syncProjection).not.toHaveBeenCalled();
+    await flushCoalescedRefreshes();
+    expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(1);
+    expect(mocks.moments.syncProjection).toHaveBeenCalledWith('event:coalesced');
 
     eventBus.publish(EVENT.MOMENT_CREATED, wake);
     await Promise.resolve();
     expect(mocks.privateMoments.readMoment).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces a burst of realtime invalidations into one feed refresh', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    await vi.waitFor(() => {
+      expect(captureMomentsRuntimeScope()).not.toBeNull();
+    });
+    vi.clearAllMocks();
+    const wake = {
+      eventId: 'burst-event',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId: '01BURSTPOST',
+      authorActorPtid: 'ptid:alice',
+      occurredAtUnixMs: 456,
+      audience: 'FRIENDS',
+    };
+
+    eventBus.publish(EVENT.MOMENT_CREATED, wake);
+    eventBus.publish(EVENT.REALTIME_RESYNC, {
+      reason: 'test-1',
+      newestEventId: 'event-1',
+    });
+    eventBus.publish(EVENT.MOMENT_RESYNC_REQUESTED, { reason: 'test-2' });
+    await Promise.resolve();
+    expect(mocks.moments.syncProjection).not.toHaveBeenCalled();
+
+    await flushCoalescedRefreshes();
+    expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes a hidden private Comment thread once per EventBus event', async () => {
@@ -454,10 +512,10 @@ describe('momentsRuntime identity fence', () => {
         wake.postId,
         'RELATIONSHIP_REVOKED',
       );
-      expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
-        'event:moment.revoked',
-      );
     });
+    await flushCoalescedRefreshes();
+    expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(1);
+    expect(mocks.moments.syncProjection).toHaveBeenCalledWith('event:coalesced');
 
     eventBus.publish(EVENT.MOMENT_REVOKED, wake);
     await Promise.resolve();
@@ -524,10 +582,11 @@ describe('momentsRuntime identity fence', () => {
         'private-bob',
         'RECIPIENT_BLOCKED',
       );
-      expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
-        'event:relationship.changed:block',
-      );
+      expect(mocks.relationships.loadRelationship).toHaveBeenCalledWith('ptid:bob');
     });
+    await flushCoalescedRefreshes();
+    expect(mocks.moments.syncProjection).toHaveBeenCalledTimes(1);
+    expect(mocks.moments.syncProjection).toHaveBeenCalledWith('event:coalesced');
   });
 
   it('rejects imported Moment wakes from another actor or Station scope', async () => {

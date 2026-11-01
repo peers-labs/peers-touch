@@ -68,6 +68,26 @@ pub struct DirectFanOutResult {
     pub private_content_bytes: Vec<u8>,
 }
 
+/// MP-D34 immutable x/N denominator: required recipient endpoints in the
+/// authority delivery plan, excluding the originator actor's own devices.
+/// This mirrors the Station aggregate rule (`required_recipient` is true
+/// exactly when the endpoint actor differs from the event originator). A
+/// malformed endpoint propagates the decode error rather than silently
+/// shrinking the denominator; plan validation already rejects such plans.
+pub(crate) fn plan_required_recipient_count(
+    plan: &PrepareConversationCommandResponse,
+    originator_ptid: &str,
+) -> Result<u32, String> {
+    plan.required_endpoints
+        .iter()
+        .map(|endpoint| actor_device_ptid(endpoint).map(|ptid| (ptid != originator_ptid) as u32))
+        .try_fold(0u32, |total, required| {
+            total
+                .checked_add(required?)
+                .ok_or_else(|| "messaging delivery plan requires too many devices".to_string())
+        })
+}
+
 pub struct DirectOutboundPreparer<R> {
     store: Arc<R>,
     endpoint: ProtoCryptoEndpoint,
@@ -104,6 +124,8 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         let command_bytes = command.encode_to_vec();
         let session_advances =
             build_session_advances(previous_sessions, fan_out.advanced_sessions, session_inits)?;
+        let required_device_count =
+            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_direct_outbound_send(&DirectOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -124,6 +146,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
                     private_content: &fan_out.private_content_bytes,
                     delivery_plan_sha256: &plan.delivery_plan_sha256,
                     created_at_unix_ms: intent.client_timestamp_unix_ms,
+                    required_device_count,
                 },
             })?;
         Ok(command)
@@ -204,6 +227,8 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         let command_bytes = command.encode_to_vec();
         let session_advances =
             build_session_advances(previous_sessions, fan_out.advanced_sessions, session_inits)?;
+        let required_device_count =
+            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_direct_outbound_send(&DirectOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -224,6 +249,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
                     private_content: &fan_out.private_content_bytes,
                     delivery_plan_sha256: &plan.delivery_plan_sha256,
                     created_at_unix_ms: intent.client_timestamp_unix_ms,
+                    required_device_count,
                 },
             })?;
         Ok(command)

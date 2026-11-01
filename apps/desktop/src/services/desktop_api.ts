@@ -709,6 +709,15 @@ export interface AgentAttachmentRefInput {
 
 export type AgentUploadAttachmentBytesInput = OssUploadAttachmentBytesInput;
 
+/** Input for the Moments bytes upload command (downsampled JPEGs). */
+export interface OssSocialUploadAttachmentBytesInput {
+  filename: string;
+  mime_type: string;
+  /** Raw bytes; invoke serializes them as a number array. */
+  bytes: number[];
+  bucket?: string;
+}
+
 /**
  * Payload returned by `oss_upload_local_file` /
  * `oss_upload_attachment_social`.
@@ -5074,6 +5083,19 @@ export const api = {
     invokeRustDataFromStatus<{ file_path: string }, OssAttachmentUploaded>(
       'oss_upload_attachment_social',
       { file_path: filePath },
+    ),
+
+  /**
+   * Social/Moments consumer — upload renderer-re-encoded image bytes
+   * (client-side downsample). Rust writes a temp file and routes it
+   * through the same social upload path as `ossUploadAttachmentSocial`.
+   */
+  ossUploadAttachmentSocialBytes: (
+    input: OssSocialUploadAttachmentBytesInput,
+  ) =>
+    invokeRustDataFromStatus<OssSocialUploadAttachmentBytesInput, OssAttachmentUploaded>(
+      'oss_upload_attachment_social_bytes',
+      input,
     ),
 
   /**

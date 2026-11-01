@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dropdown, Typography, theme, message } from 'antd';
-import { ExternalLink, MapPin, MoreHorizontal } from 'lucide-react';
+import { Button, Dropdown, Popconfirm, Typography, theme, message } from 'antd';
+import { ExternalLink, MapPin, MoreHorizontal, Trash2 } from 'lucide-react';
 import {
   Audience_Kind,
   RelationshipReason_Kind,
@@ -14,6 +14,7 @@ import {
 import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import { ImageGrid } from './ImageGrid';
 import { PrivateMediaGrid } from './PrivateMediaGrid';
+import { MomentCommentsSection } from './MomentCommentsSection';
 import { MomentCommentAuthorName } from './MomentCommentAuthorName';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useActorIdentity } from '../common/useActorIdentity';
@@ -30,6 +31,8 @@ import {
   SocialTrustMeta,
   SocialActionBar,
   SocialPrivateState,
+  SocialThreadDivider,
+  SocialThreadSection,
 } from './surfaces';
 
 const { Paragraph, Text, Link } = Typography;
@@ -59,11 +62,17 @@ interface MomentCardProps {
   explanation?: FeedObjectExplanation;
   viewerActorPtid?: string;
   surface?: 'home' | 'federated' | 'profile' | 'circle';
+  /** Deep-link / menu navigation to the standalone detail surface. */
   onOpen?: (postId: string) => void;
-  onOpenComments?: (postId: string) => void;
+  /** Expanded-by-default inline comments (detail surface). */
+  defaultCommentsOpen?: boolean;
+  /** Deep-linked comment id focused when the thread opens. */
+  targetCommentId?: string;
   onReact?: (postId: string, kind: ReactionKind, operationId: string) => Promise<void> | void;
   onUnreact?: (postId: string, kind: ReactionKind | undefined, operationId: string) => Promise<void> | void;
   onAuthorClick?: (actorPtid: string) => void;
+  /** Own-Moment delete; the menu entry only renders for the author. */
+  onDelete?: (postId: string) => Promise<void> | void;
   commentPreview?: Comment[];
   embedded?: boolean;
 }
@@ -202,17 +211,21 @@ function getRepostOriginal(post: Post): Post | undefined {
   return undefined;
 }
 
-export function MomentCard({
+// Memoized: feed refreshes fan out new arrays every cycle, and cards whose
+// props kept identity (post/reactions/explanation/callbacks) must not commit.
+export const MomentCard = memo(function MomentCard({
   post,
   reactions,
   explanation,
   viewerActorPtid,
   surface = 'home',
   onOpen,
-  onOpenComments,
+  defaultCommentsOpen = false,
+  targetCommentId,
   onReact,
   onUnreact,
   onAuthorClick,
+  onDelete,
   commentPreview,
   embedded,
 }: MomentCardProps) {
@@ -240,6 +253,9 @@ export function MomentCard({
     retryPrivateReaction: s.retryReaction,
   }));
   const [expanded, setExpanded] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(defaultCommentsOpen);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const author = post.author;
   const authorPtid = post.authorPtid || author?.id || '';
@@ -315,6 +331,7 @@ export function MomentCard({
     : authorIdentity.homeStationPeerId || stationDomain
       ? 'remote'
       : 'unknown';
+  const canDelete = isSelf && Boolean(onDelete);
   const fallbackReason = reasonLabel({
     audienceKind,
     isSelf,
@@ -356,19 +373,31 @@ export function MomentCard({
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!onDelete) return;
+    setDeleting(true);
+    try {
+      await onDelete(post.id);
+      setDeleteConfirmOpen(false);
+    } catch {
+      message.error(t('moments.delete.error'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const createdText = relativeTime(post.createdAt?.seconds, t);
 
   return (
     <div
       data-acceptance-id="social-moment-card"
       data-post-id={post.id}
-      onClick={() => onOpen?.(post.id)}
+      data-moments-comments-region={post.id}
       style={{
         background: embedded ? 'transparent' : token.colorBgContainer,
         border: embedded ? 'none' : `1px solid ${token.colorBorderSecondary}`,
         borderRadius: embedded ? 0 : 14,
         padding: embedded ? 0 : 16,
-        cursor: onOpen ? 'pointer' : 'default',
       }}
     >
       <div style={{ display: 'flex', gap: 12 }}>
@@ -407,26 +436,47 @@ export function MomentCard({
               )}
             </div>
 
-            {onOpen && (
-              <Dropdown
-                trigger={['click']}
-                menu={{
-                  items: [
-                    { key: 'open', label: t('moments.action.openPost') },
-                  ],
-                  onClick: ({ key, domEvent }) => {
-                    domEvent.stopPropagation();
-                    if (key === 'open') onOpen(post.id);
-                  },
+            {(onOpen || canDelete) && (
+              <Popconfirm
+                open={deleteConfirmOpen}
+                trigger={[]}
+                onOpenChange={(open) => {
+                  if (!deleting) setDeleteConfirmOpen(open);
                 }}
+                title={t('moments.delete.confirmTitle')}
+                description={t('moments.delete.confirmDescription')}
+                okText={t('moments.delete.action')}
+                cancelText={t('moments.action.cancel')}
+                okButtonProps={{ danger: true, loading: deleting }}
+                onConfirm={() => void handleConfirmDelete()}
               >
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<MoreHorizontal size={16} />}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </Dropdown>
+                <Dropdown
+                  trigger={['click']}
+                  menu={{
+                    items: [
+                      ...(onOpen ? [{ key: 'open', label: t('moments.action.openPost') }] : []),
+                      ...(canDelete ? [{
+                        key: 'delete',
+                        danger: true,
+                        icon: <Trash2 size={14} />,
+                        label: t('moments.delete.action'),
+                      }] : []),
+                    ],
+                    onClick: ({ key, domEvent }) => {
+                      domEvent.stopPropagation();
+                      if (key === 'open') onOpen?.(post.id);
+                      if (key === 'delete') setDeleteConfirmOpen(true);
+                    },
+                  }}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MoreHorizontal size={16} />}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </Dropdown>
+              </Popconfirm>
             )}
           </div>
 
@@ -646,15 +696,27 @@ export function MomentCard({
             </div>
           )}
 
-          {!isPrivate && onOpenComments
+          {!commentsOpen
+            && !isPrivate
             && (visibleComments.length > 0 || commentsCount > 0) && (
             <div
-              onClick={(e) => e.stopPropagation()}
+              role="button"
+              tabIndex={0}
+              aria-expanded={false}
+              data-moments-comments-teaser={post.id}
+              onClick={() => setCommentsOpen(true)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setCommentsOpen(true);
+                }
+              }}
               style={{
                 marginTop: 10,
                 padding: '8px 12px',
                 borderRadius: 12,
                 background: token.colorFillQuaternary,
+                cursor: 'pointer',
               }}
             >
               {visibleComments.map((comment) => (
@@ -666,13 +728,30 @@ export function MomentCard({
               <Button
                 type="link"
                 size="small"
-                onClick={() => onOpenComments?.(post.id)}
                 style={{ padding: 0, height: 22, fontSize: 12 }}
               >
                 {commentsCount > visibleComments.length
                   ? `${t('moments.comment.viewAll')} (${commentsCount})`
                   : t('moments.comment.viewAll')}
               </Button>
+            </div>
+          )}
+
+          {commentsOpen && (
+            <div style={{ marginTop: 10 }}>
+              <SocialThreadDivider
+                label={t('moments.comment.hide')}
+                expanded
+                onToggle={() => setCommentsOpen(false)}
+              />
+              <SocialThreadSection>
+                <MomentCommentsSection
+                  postId={post.id}
+                  isPrivate={isPrivate}
+                  viewerActorPtid={viewerActorPtid}
+                  targetCommentId={targetCommentId}
+                />
+              </SocialThreadSection>
             </div>
           )}
 
@@ -692,13 +771,11 @@ export function MomentCard({
                   : handleReact
               }
               onUnreact={remoteSourceUnavailable ? undefined : handleUnreact}
-              onOpenComments={onOpenComments
-                ? () => onOpenComments(post.id)
-                : undefined}
+              onOpenComments={() => setCommentsOpen(true)}
             />
           </div>
         </div>
       </div>
     </div>
   );
-}
+});

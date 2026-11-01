@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
 use tauri::{State, Window};
+use ulid::Ulid;
 
 #[derive(Debug, Deserialize)]
 pub struct MessagingLocalAttachmentInput {
@@ -46,6 +47,13 @@ pub struct MessagingSendMessageInput {
     pub thread_root_message_id: String,
     #[serde(default)]
     pub attachments: Vec<MessagingLocalAttachmentInput>,
+    /// MP-D33 renderer send-intent identity. One user send action keeps the
+    /// same ULID across in-flight uncertainty and retries; a repeated
+    /// admission resolves to the same message instead of creating a second
+    /// one. Required: an internal caller without renderer ownership must
+    /// mint a fresh ULID.
+    #[serde(default)]
+    pub send_intent_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -398,6 +406,11 @@ fn message_projection_json(message: &crate::messaging::ConversationMessageProjec
         "pinned_by_ptid": message.pinned_by_ptid,
         "pinned_at_unix_ms": message.pinned_at_unix_ms,
         "read_by_ptids": message.read_by_ptids,
+        "attempt_count": message.attempt_count,
+        "next_attempt_at_unix_ms": message.next_attempt_at_unix_ms,
+        "last_error_code": message.last_error_code,
+        "required_device_count": message.required_device_count,
+        "delivered_device_count": message.delivered_device_count,
     })
 }
 
@@ -1441,6 +1454,9 @@ pub async fn messaging_acceptance_create_restorable_command(
             "",
             "",
             &[],
+            // Internal diagnostic send: each invocation is one independent
+            // admission, so mint the device-local send intent here.
+            &Ulid::new().to_string(),
         )
     })
     .await
@@ -2187,6 +2203,13 @@ pub async fn messaging_send_message(
             None,
         ));
     }
+    if input.send_intent_id.trim().is_empty() {
+        return Ok(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "send_intent_id is required",
+            None,
+        ));
+    }
     let (account_id, token, engine) = match active_engine(state.inner(), &window) {
         Ok(value) => value,
         Err(error) => return Ok(error),
@@ -2195,6 +2218,7 @@ pub async fn messaging_send_message(
     let plaintext = input.plaintext;
     let reply_to_message_id = input.reply_to_message_id;
     let thread_root_message_id = input.thread_root_message_id;
+    let send_intent_id = input.send_intent_id;
     let attachment_intents = input
         .attachments
         .into_iter()
@@ -2219,7 +2243,70 @@ pub async fn messaging_send_message(
             &reply_to_message_id,
             &thread_root_message_id,
             &attachment_intents,
+            &send_intent_id,
         )
+    })
+    .await
+    {
+        Ok(Ok(value)) => value,
+        // Pre-admission errors (validation, missing conversation projection,
+        // attachment policy) are the only failures: the renderer may keep
+        // the composer content and the user can deliberately retry. Once
+        // submit_message returns Ok, the message is durable.
+        Ok(Err(error)) => return Ok(AppResult::fail(ErrorCode::InternalError, error, None)),
+        Err(error) => {
+            // The blocking worker itself failed before admission resolved;
+            // the renderer must reconcile by intent, never auto-resend.
+            return Ok(AppResult::fail(
+                ErrorCode::InternalError,
+                format!("messaging send worker failed: {error}"),
+                None,
+            ))
+        }
+    };
+    // MP-D33: post-admission worker wake uncertainty must not turn an
+    // admitted message into a request failure. The lifecycle worker owns
+    // dispatch and MP-D31 reconciliation converges the command; the renderer
+    // only learns the admission succeeded.
+    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+        tracing::warn!(
+            account_id = %account_id,
+            error = %error,
+            "messaging post-admission wake failed; lifecycle worker retains dispatch"
+        );
+    }
+    Ok(AppResult::success(json!({
+        "admission": "admitted",
+        "command_id": outcome.command_id.unwrap_or_default(),
+        "message_id": outcome.message_id,
+        "attachment_ids": outcome.attachment_ids,
+        "state": outcome.state,
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingSendIntentStatusInput {
+    pub send_intent_id: String,
+}
+
+/// MP-D33 post-admission reconciliation. When the renderer cannot tell
+/// whether an IPC call admitted a message (worker failure, ambiguous
+/// transport answer), it queries by the device-local intent instead of
+/// resending. `admitted: false` means no durable row exists, so the
+/// composer content may be retained for a deliberate new user action.
+#[tauri::command]
+pub async fn messaging_send_intent_status(
+    input: MessagingSendIntentStatusInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> Result<AppResult<Value>, String> {
+    let (_, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return Ok(error),
+    };
+    let send_intent_id = input.send_intent_id;
+    let admitted = match tauri::async_runtime::spawn_blocking(move || {
+        engine.find_send_intent_admission(&token, &send_intent_id)
     })
     .await
     {
@@ -2228,19 +2315,18 @@ pub async fn messaging_send_message(
         Err(error) => {
             return Ok(AppResult::fail(
                 ErrorCode::InternalError,
-                format!("messaging send worker failed: {error}"),
+                format!("messaging send-intent status worker failed: {error}"),
                 None,
             ))
         }
     };
-    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
-        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
-    }
     Ok(AppResult::success(json!({
-        "command_id": outcome.command_id.unwrap_or_default(),
-        "message_id": outcome.message_id,
-        "attachment_ids": outcome.attachment_ids,
-        "state": outcome.state,
+        "admitted": admitted.is_some(),
+        "admission": admitted.as_ref().map(|_| "admitted"),
+        "message_id": admitted.as_ref().map(|value| value.message_id.clone()).unwrap_or_default(),
+        "command_id": admitted.as_ref().and_then(|value| value.command_id.clone()).unwrap_or_default(),
+        "state": admitted.as_ref().map(|value| value.state).unwrap_or("none"),
+        "attachment_ids": admitted.map(|value| value.attachment_ids).unwrap_or_default(),
     })))
 }
 
@@ -2756,6 +2842,11 @@ pub fn messaging_list_thread_messages(
             "pinned_by_ptid": message.pinned_by_ptid,
             "pinned_at_unix_ms": message.pinned_at_unix_ms,
             "read_by_ptids": message.read_by_ptids,
+            "attempt_count": message.attempt_count,
+            "next_attempt_at_unix_ms": message.next_attempt_at_unix_ms,
+            "last_error_code": message.last_error_code,
+            "required_device_count": message.required_device_count,
+            "delivered_device_count": message.delivered_device_count,
         })).collect::<Vec<_>>()
     }))
 }

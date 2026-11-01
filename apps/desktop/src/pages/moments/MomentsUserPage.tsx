@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { ChevronLeft } from 'lucide-react';
@@ -53,6 +54,7 @@ export function MomentsUserView({
     loadUserFeed,
     reactToPost,
     unreactToPost,
+    deletePost,
   } = useActiveMomentsSlice((s) => ({
     feed: s.userFeeds[actorPtid],
     postsById: s.postsById,
@@ -62,6 +64,7 @@ export function MomentsUserView({
     loadUserFeed: s.loadUserFeed,
     reactToPost: s.reactToPost,
     unreactToPost: s.unreactToPost,
+    deletePost: s.deletePost,
   }));
 
   const { followers, following } = useActiveRelationshipsSlice((s) => ({
@@ -87,12 +90,12 @@ export function MomentsUserView({
     isFollowing: false,
   } as PostAuthor;
 
-  const handleReact = async (id: string, k: ReactionKind) => {
-    await reactToPost(id, k);
-  };
-  const handleUnreact = async (id: string, k?: ReactionKind) => {
-    await unreactToPost(id, k);
-  };
+  const handleReact = useCallback((id: string, k: ReactionKind) =>
+    reactToPost(id, k), [reactToPost]);
+  const handleUnreact = useCallback((id: string, k?: ReactionKind) =>
+    unreactToPost(id, k), [unreactToPost]);
+  const handleDelete = useCallback((id: string) =>
+    deletePost(id), [deletePost]);
 
   return (
     <div>
@@ -131,9 +134,9 @@ export function MomentsUserView({
             viewerActorPtid={viewerActorPtid}
             surface="profile"
             onOpen={onOpenPost}
-            onOpenComments={onOpenPost}
             onReact={handleReact}
             onUnreact={handleUnreact}
+            onDelete={handleDelete}
           />
         ))}
 

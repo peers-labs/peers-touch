@@ -1,5 +1,6 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import { EVENT, eventBus } from '../kernel/events';
+import { isDocumentHidden, onDocumentForeground } from '../kernel/documentVisibility';
 import type { AgentTurnStreamEventPayload } from '../kernel/events/types';
 import {
   classifyAgentTurnTerminalEvent,
@@ -106,6 +107,7 @@ let unsubscribeRecoveryRetry: (() => void) | null = null;
 let unsubscribeTurnAdmitted: (() => void) | null = null;
 let unsubscribeTurnQueueCancelled: (() => void) | null = null;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
+let unsubscribeForeground: (() => void) | null = null;
 let persistence:
   | ReturnType<typeof createDesktopClientStorageRuntime>['repositories']['runtimeProjection']
   | null = null;
@@ -741,16 +743,24 @@ function reconcileActiveTurns(
   }
 }
 
+function runPeriodicRecoveryReconcile(): void {
+  reconcileActiveTurns('periodic');
+  void syncPendingTurnQueues().catch((error) => {
+    log.warn('chatRuntime', 'Periodic turn-queue sync failed', {
+      error: String(error),
+    });
+  });
+}
+
 function installTimer(): void {
   if (reconcileTimer) return;
   reconcileTimer = setInterval(() => {
-    reconcileActiveTurns('periodic');
-    void syncPendingTurnQueues().catch((error) => {
-      log.warn('chatRuntime', 'Periodic turn-queue sync failed', {
-        error: String(error),
-      });
-    });
+    // Background tabs skip the recovery backstop; live events keep flowing
+    // and the foreground listener runs one immediate catch-up.
+    if (isDocumentHidden()) return;
+    runPeriodicRecoveryReconcile();
   }, RECOVERY_RECONCILE_INTERVAL_MS);
+  unsubscribeForeground = onDocumentForeground(runPeriodicRecoveryReconcile);
 }
 
 export function retryAgentTurnRecovery(conversationId: string): void {
@@ -931,6 +941,8 @@ export const chatRuntime: RuntimeDescriptor = {
     unsubscribeTurnQueueCancelled = null;
     if (reconcileTimer) clearInterval(reconcileTimer);
     reconcileTimer = null;
+    unsubscribeForeground?.();
+    unsubscribeForeground = null;
     admittingTurns.clear();
     for (const conversationId of recoverySubscriptions.keys()) {
       stopRecoverySubscription(conversationId);

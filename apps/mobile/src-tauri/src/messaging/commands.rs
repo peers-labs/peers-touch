@@ -2679,6 +2679,11 @@ mod tests {
                 pinned_by_ptid: None,
                 pinned_at_unix_ms: None,
                 read_by_ptids: Vec::new(),
+                attempt_count: 0,
+                next_attempt_at_unix_ms: None,
+                last_error_code: None,
+                required_device_count: 0,
+                delivered_device_count: 0,
             },
             |_| Ok(None),
         )

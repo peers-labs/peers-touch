@@ -82,6 +82,7 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 | [integration.md](./integration.md) | 影响面、原子切换与删除矩阵 |
 | [../api-ownership/README.md](../../../engineering/api-governance/README.md) | Accepted canonical API owner, route/store hard cut, Conversation DDD, and cross-domain Federation boundary |
 | [../chat-lifecycle/README.md](../lifecycle/README.md) | 当前 Chat 全生命周期产品合同与执行入口 |
+| [execution-plans/20261101-send-admission-delivery-verdict/plan.md](./execution-plans/20261101-send-admission-delivery-verdict/plan.md) | MP-D33 send-intent 幂等准入 + MP-D34 送达判定视野（60s/24h）与常规负载横向验收 |
 | [execution-plans/20261015-message-publishing-acceptance-v5/plan.md](./execution-plans/20261015-message-publishing-acceptance-v5/plan.md) | 通用 Message Publishing 正式验收计划；v5 保持直接管理 HTTP，并为 Native 接入已有 HTTPS Relay |
 | [execution-plans/20260808-messaging-platform.md](./execution-plans/20260808-messaging-platform.md) | 已终止的历史实现与证据计划 |
 | [execution-plans/20260808-review-prompt.md](./execution-plans/20260808-review-prompt.md) | 独立产品/架构/计划评审提示 |
@@ -94,6 +95,12 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
   the Conversation owner, and Conversation DDD plus resource-owned APIs are
   accepted. `MP-D31` defines canonical submitted-command reconciliation and
   `MP-D32` defines Authority-mediated cross-Station ephemeral typing.
+  `MP-D33` (device-local send-intent admission idempotency) and `MP-D34`
+  (fact/local-judgment delivery verdict horizons, 60s/24h) are accepted;
+  MP-D33 is implemented and MP-D34 verdict projection (attempt metadata,
+  per-device x/N facts, renderer horizons) lands under the same plan;
+  execution follows
+  [`20261101-send-admission-delivery-verdict/plan.md`](./execution-plans/20261101-send-admission-delivery-verdict/plan.md).
 - Plan：Chat Lifecycle 既有闭环仍以
   [`../lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md`](../lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md)
   为历史完成记录；Message Publishing 的新增正式验收使用

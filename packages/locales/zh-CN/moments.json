@@ -170,6 +170,7 @@
   "moments.compose.imageRetry": "重试",
   "moments.compose.imageRemove": "移除图片",
   "moments.compose.imagePendingAlt": "待发布图片",
+  "moments.compose.privateSlot": "仅保留给安全内容，不上传明文",
 
   "moments.lightbox.close": "关闭",
   "moments.lightbox.previous": "上一张",

@@ -105,6 +105,21 @@ SOCIAL_PROFILE_PROJECTION = (
     ROOT / "apps/desktop/src/store/socialProfileProjection.ts"
 )
 SOCIAL_CHAT_STORE = ROOT / "apps/desktop/src/store/socialChat.ts"
+MESSAGING_ENGINE = (
+    ROOT / "apps/desktop/src-tauri/src/messaging/engine.rs"
+)
+MESSAGING_SCHEMA = (
+    ROOT / "packages/messaging-core/src/store/schema.rs"
+)
+MESSAGING_COMMAND = (
+    ROOT / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+)
+CHAT_THREAD_PANEL = (
+    ROOT / "apps/desktop/src/components/chat/ChatThreadPanel.tsx"
+)
+SEND_INTENT_UTIL = (
+    ROOT / "apps/desktop/src/utils/messagingSendIntent.ts"
+)
 FRIENDSHIP_PROJECTION = (
     ROOT / "apps/desktop/src/store/friendshipProjection.ts"
 )
@@ -1611,6 +1626,156 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         bots = BOTS_SETTINGS.read_text(encoding="utf-8")
         self.assertIn("canonicalProfileAvatar(profile)", bots)
         self.assertIn("actorPtid={bot.botPtid}", bots)
+
+    def test_send_admission_is_idempotent_per_device_intent_mp_d33(self) -> None:
+        """One user send action admits one message.
+
+        Regression gate for the 2026-10-31 split-brain: a deferred draft and
+        a post-admission wake failure were surfaced to the renderer as send
+        failure, so the user-visible toast, composer-resident content and a
+        manual resend produced duplicate messages even though the first send
+        was durable. MP-D33 keys admission on (sender device, send intent).
+        """
+        schema = MESSAGING_SCHEMA.read_text(encoding="utf-8")
+        assert "send_intent_id TEXT NOT NULL DEFAULT ''" in schema
+        assert "uidx_messaging_pending_messages_send_intent" in schema
+        # The admission ledger survives pending-row deletion on commit.
+        assert "CREATE TABLE IF NOT EXISTS messaging_send_intents" in schema
+        # Additive single-writer migration keeps frozen-baseline DBs usable.
+        assert "ADDITIVE_COLUMN_MIGRATIONS" in schema
+        assert "ADD COLUMN send_intent_id" in schema
+
+        engine = MESSAGING_ENGINE.read_text(encoding="utf-8")
+        assert "send_intent_id: &str" in engine
+        assert "find_pending_message_admission" in engine
+        # Duplicate admission must be resolved before any durable write.
+        admission_index = engine.index("find_pending_message_admission")
+        create_index = engine.index("create_message_draft")
+        assert admission_index < create_index
+        assert "find_send_intent_admission" in engine
+
+        store_rs = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        assert "messaging_send_intents" in store_rs
+        assert "INSERT OR IGNORE INTO messaging_send_intents" in store_rs
+        # Ledger fallback survives pending-row deletion on commit.
+        fallback_index = store_rs.index("FROM messaging_send_intents")
+        assert fallback_index > store_rs.index("find_pending_message_admission")
+
+        command = MESSAGING_COMMAND.read_text(encoding="utf-8")
+        assert "pub send_intent_id: String" in command
+        assert 'send_intent_id.trim().is_empty()' in command
+        assert "messaging_send_intent_status" in command
+        # Post-admission wake uncertainty must not fail the command.
+        wake_index = command.index("post-admission wake failed")
+        assert wake_index > command.index("admission")
+        wake_block = command[wake_index - 260:wake_index + 180]
+        assert "AppResult::fail" not in wake_block
+
+        store = SOCIAL_CHAT_STORE.read_text(encoding="utf-8")
+        assert "newSendIntentId()" in store
+        assert "admitMessagingSendOutcome" in store
+        assert "sendMessageWithAdmissionReconciliation" in store
+        assert "sendIntentStatus" in store
+        # The old draft-throws path must not return.
+        assert "requireQueuedMessagingSendOutcome" not in store
+        assert "not_queued" not in store
+
+        service = (
+            ROOT / "apps/desktop/src/services/im-service.ts"
+        ).read_text(encoding="utf-8")
+        assert "send_intent_id" in service
+        assert "messaging_send_intent_status" in service
+
+        for path in (CHAT_MESSAGE_AREA, CHAT_THREAD_PANEL):
+            text = path.read_text(encoding="utf-8")
+            assert "newSendIntentId()" in text, path.name
+
+    def test_sender_verdict_facts_and_horizon_judgments_mp_d34(self) -> None:
+        """Facts vs judgments never mix in the sender delivery verdict.
+
+        MP-D34 surfaces attempt metadata and per-device x/N delivery facts
+        from the local store, while 60s/24h horizons are projection-only
+        judgments that never stop outbox retry and stay upgradable by later
+        receipts.
+        """
+        schema = MESSAGING_SCHEMA.read_text(encoding="utf-8")
+        # Per-device delivered projection and immutable required denominator.
+        assert "CREATE TABLE IF NOT EXISTS messaging_message_delivery_devices" in schema
+        assert "required_device_count INTEGER NOT NULL DEFAULT 0" in schema
+        assert "ADD COLUMN required_device_count" in schema
+
+        contracts = (
+            ROOT / "packages/messaging-core/src/contracts/mod.rs"
+        ).read_text(encoding="utf-8")
+        assert "consumer_ptid: &'a str" in contracts
+        assert "consumer_device_id: &'a str" in contracts
+        assert "required_device_count: u32" in (
+            ROOT / "packages/messaging-core/src/store/repository.rs"
+        ).read_text(encoding="utf-8")
+
+        receipt_processor = (
+            ROOT / "packages/messaging-core/src/inbox/receipt.rs"
+        ).read_text(encoding="utf-8")
+        # The originator x/N denominator excludes the originator actor.
+        assert "plan_required_recipient_count" in (
+            ROOT / "packages/messaging-core/src/outbox/send.rs"
+        ).read_text(encoding="utf-8")
+        # The inbound receipt consumer identity feeds the durable projection.
+        assert "consumer_ptid: &receipt.ptid" in receipt_processor
+        assert "consumer_device_id: &receipt.device_id" in receipt_processor
+
+        store_rs = (
+            ROOT / "apps/desktop/src-tauri/src/messaging/store.rs"
+        ).read_text(encoding="utf-8")
+        assert "INSERT OR IGNORE INTO messaging_message_delivery_devices" in store_rs
+        assert "load_message_delivery_facts" in store_rs
+        # The verdict page exposes attempt metadata and both counts.
+        command = MESSAGING_COMMAND.read_text(encoding="utf-8")
+        assert '"delivered_device_count": message.delivered_device_count' in command
+        assert '"required_device_count": message.required_device_count' in command
+        assert '"next_attempt_at_unix_ms": message.next_attempt_at_unix_ms' in command
+
+        verdict = (
+            ROOT / "apps/desktop/src/messaging/deliveryVerdict.ts"
+        ).read_text(encoding="utf-8")
+        # Device-local constants and the layered verdict kinds.
+        assert "SUBMIT_CONVERGENCE_HORIZON_MS = 60_000" in verdict
+        assert "DELIVERY_HORIZON_MS = 24 * 60 * 60_000" in verdict
+        assert "'submit_overdue'" in verdict
+        assert "'undeliverable_suspected'" in verdict
+        assert "'failed_terminal'" in verdict
+        # Terminal/read facts always take precedence over horizon judgments.
+        assert verdict.index("case 'failed'") < verdict.index("case 'accepted'")
+        assert verdict.index("case 'read'") < verdict.index("case 'accepted'")
+
+        meta = (
+            ROOT / "apps/desktop/src/components/chat/message/DeliveryVerdictMeta.tsx"
+        ).read_text(encoding="utf-8")
+        # Unconfirmed is a non-failure judgment, retry keeps message identity.
+        assert "'undeliverable_suspected'" in meta
+        assert "data-message-delivery-state={verdict.kind}" in meta
+        assert "data-message-retry={message.ulid}" in meta
+
+        chat_row = (
+            ROOT / "apps/desktop/src/components/chat/message/ChatMessageRow.tsx"
+        ).read_text(encoding="utf-8")
+        assert "<DeliveryVerdictMeta" in chat_row
+
+        service = (
+            ROOT / "apps/desktop/src/services/im-service.ts"
+        ).read_text(encoding="utf-8")
+        assert "delivered_device_count" in service
+        assert "required_device_count" in service
+
+        for locale in ("en", "zh-CN"):
+            chat_json = (
+                ROOT / f"packages/locales/{locale}/chat.json"
+            ).read_text(encoding="utf-8")
+            assert "stateSubmitOverdue" in chat_json, locale
+            assert "stateUndeliverable" in chat_json, locale
+            assert "stateDeliveredPartial" in chat_json, locale
 
     def test_identity_continuity_rejection_projects_an_explicit_recovery_gate(self) -> None:
         # Rust status must expose the typed readiness kind.

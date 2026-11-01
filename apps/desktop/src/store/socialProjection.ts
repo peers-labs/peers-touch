@@ -125,6 +125,13 @@ export interface SocialMessage {
   readByPtids?: string[];
   deliveryState?: string;
   senderDeviceId?: string;
+  /** MP-D34 outbox attempt facts (own messages only). */
+  attemptCount?: number;
+  nextAttemptAtUnixMs?: number;
+  lastErrorCode?: string;
+  /** MP-D34 immutable x/N delivery facts (own messages only). */
+  requiredDeviceCount?: number;
+  deliveredDeviceCount?: number;
   serviceMessage?: DesktopServiceMessage;
 }
 
@@ -310,6 +317,12 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   readByPtids: string[];
   eventSequence: number;
   deliveryState: string;
+  // MP-D34 sender verdict facts (own messages).
+  attemptCount?: number;
+  nextAttemptAtUnixMs?: number;
+  lastErrorCode?: string;
+  requiredDeviceCount?: number;
+  deliveredDeviceCount?: number;
   // Common typed content for non-E2EE Station service messages.
   serviceMessage?: DesktopServiceMessage;
 };

@@ -6,7 +6,10 @@ import {
 } from '../../gen/proto/domain/social/post_pb';
 import {
   ComposerMediaError,
+  PUBLIC_IMAGE_MAX_EDGE,
   decideComposerImageAttachments,
+  scaleImageDimensions,
+  shouldDownscaleImage,
   sniffImageMime,
 } from './composerMediaDecision';
 
@@ -44,6 +47,38 @@ describe('sniffImageMime', () => {
 
   it('rejects unknown signatures', () => {
     expect(sniffImageMime(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))).toBeNull();
+  });
+});
+
+describe('public image downsample policy', () => {
+  it('keeps small dimensions untouched', () => {
+    expect(scaleImageDimensions(1024, 768, PUBLIC_IMAGE_MAX_EDGE)).toEqual({
+      width: 1024,
+      height: 768,
+      scale: 1,
+    });
+  });
+
+  it('scales the long edge to the cap while preserving aspect ratio', () => {
+    const landscape = scaleImageDimensions(4032, 3024, PUBLIC_IMAGE_MAX_EDGE);
+    expect(landscape.scale).toBeCloseTo(2048 / 4032, 5);
+    expect(landscape.width).toBe(2048);
+    expect(landscape.height).toBe(1536);
+
+    const portrait = scaleImageDimensions(1000, 4000, PUBLIC_IMAGE_MAX_EDGE);
+    expect(portrait.width).toBe(512);
+    expect(portrait.height).toBe(2048);
+  });
+
+  it('never enlarges small images', () => {
+    expect(scaleImageDimensions(100, 200, PUBLIC_IMAGE_MAX_EDGE).scale).toBe(1);
+  });
+
+  it('downsamples oversized still images but preserves GIF animation', () => {
+    expect(shouldDownscaleImage('image/jpeg', 3000, 2000)).toBe(true);
+    expect(shouldDownscaleImage('image/png', 2049, 100)).toBe(true);
+    expect(shouldDownscaleImage('image/gif', 4000, 3000)).toBe(false);
+    expect(shouldDownscaleImage('image/webp', 1024, 1024)).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Segmented, Typography } from 'antd';
 import { MomentCard } from '../../components/moments/MomentCard';
@@ -37,6 +37,7 @@ export function MomentsExploreView({ viewerActorPtid: _viewerActorPtid, onOpenPo
     loadFeed,
     reactToPost,
     unreactToPost,
+    deletePost,
   } = useActiveMomentsSlice((s) => ({
     feed: s.feeds.explore,
     postsById: s.postsById,
@@ -46,6 +47,7 @@ export function MomentsExploreView({ viewerActorPtid: _viewerActorPtid, onOpenPo
     loadFeed: s.loadFeed,
     reactToPost: s.reactToPost,
     unreactToPost: s.unreactToPost,
+    deletePost: s.deletePost,
   }));
 
   const [sort, setSort] = useState<TimelineSort>(feed.sort ?? 'recent');
@@ -57,12 +59,12 @@ export function MomentsExploreView({ viewerActorPtid: _viewerActorPtid, onOpenPo
     loadFeed('explore', { refresh: true, sort: nextSort }).catch(() => {});
   };
 
-  const handleReact = async (postId: string, kind: ReactionKind) => {
-    await reactToPost(postId, kind);
-  };
-  const handleUnreact = async (postId: string, kind?: ReactionKind) => {
-    await unreactToPost(postId, kind);
-  };
+  const handleReact = useCallback((postId: string, kind: ReactionKind) =>
+    reactToPost(postId, kind), [reactToPost]);
+  const handleUnreact = useCallback((postId: string, kind?: ReactionKind) =>
+    unreactToPost(postId, kind), [unreactToPost]);
+  const handleDelete = useCallback((postId: string) =>
+    deletePost(postId), [deletePost]);
 
   return (
     <div>
@@ -112,10 +114,10 @@ export function MomentsExploreView({ viewerActorPtid: _viewerActorPtid, onOpenPo
           viewerActorPtid={_viewerActorPtid}
           surface="federated"
           onOpen={onOpenPost}
-          onOpenComments={onOpenPost}
           onAuthorClick={onAuthorClick}
           onReact={handleReact}
           onUnreact={handleUnreact}
+          onDelete={handleDelete}
         />
       ))}
 

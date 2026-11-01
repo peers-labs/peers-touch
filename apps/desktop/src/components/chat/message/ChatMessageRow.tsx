@@ -39,6 +39,7 @@ import {
   type ChatSurfaceKind,
 } from './chatMessageModel';
 import { blocksMessageActionOverlay } from './messageReactionState';
+import { DeliveryVerdictMeta } from './DeliveryVerdictMeta';
 import { MessageSenderProfileCard } from './MessageSenderProfileCard';
 import type { ServiceEventAggregation } from './serviceEventAggregation';
 
@@ -587,18 +588,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const messageActionAnchorRef = useRef<HTMLDivElement>(null);
   const messageActionsAvailable = showHoverActions
     && !blocksMessageActionOverlay(reactionMutationPhase);
-  const retryableFailure = isOwn
-    && message.deliveryState === 'failed'
-    && !isRecalled;
-  const pendingStateLabel = isOwn && !isRecalled
-    ? {
-        draft: t('chat.social.messageArea.stateQueued'),
-        pending: t('chat.social.messageArea.stateQueued'),
-        retry_wait: t('chat.social.messageArea.stateRetrying'),
-        submitted: t('chat.social.messageArea.stateSubmitted'),
-        failed: t('chat.social.messageArea.stateFailed'),
-      }[message.deliveryState]
-    : undefined;
+  const showDeliveryVerdict = isOwn && !isRecalled;
 
   const bubbleBg = mediaOnlyMessage
     ? 'transparent'
@@ -843,27 +833,13 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               <ReadReceipt status={message.status as MessageStatus} />
             </span>
           )}
-          {pendingStateLabel && (
-            <Text
-              data-message-delivery-state={message.deliveryState}
-              type={retryableFailure ? 'danger' : 'secondary'}
-              style={{ fontSize: compact ? 10 : 11, lineHeight: 1.2 }}
-            >
-              {pendingStateLabel}
-            </Text>
-          )}
-          {retryableFailure && (
-            <Button
-              data-message-retry={message.ulid}
-              aria-label={t('chat.message.action.retry')}
-              type="text"
-              size="small"
-              icon={<RotateCcw size={12} />}
-              onClick={() => onRetryMessage(message)}
-              style={{ height: 24, paddingInline: 5 }}
-            >
-              {t('chat.message.action.retry')}
-            </Button>
+          {showDeliveryVerdict && (
+            <DeliveryVerdictMeta
+              message={message}
+              isGroup={isGroup}
+              compact={compact}
+              onRetryMessage={onRetryMessage}
+            />
           )}
         </Flexbox>
         <MessageInteractionRail

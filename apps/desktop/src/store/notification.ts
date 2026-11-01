@@ -7,6 +7,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { api, isUnauthorizedError, type NotificationData, type NotificationUnreadCountsResponse } from '../services/desktop_api';
+import { isDocumentHidden, onDocumentForeground } from '../kernel/documentVisibility';
 import { currentAuthenticatedActorPtid } from './session';
 import { log } from '../utils/logger';
 
@@ -14,6 +15,9 @@ const POLL_INTERVAL = 15_000;
 const MAX_ITEMS = 200;
 const NOTIFICATION_STATUS_UNREAD = 1;
 const NOTIFICATION_STATUS_READ = 2;
+
+// Lifetime matches polling: skip background-tab polls and catch up on return.
+let foregroundUnlisten: (() => void) | null = null;
 
 interface NotificationStore {
   notifications: NotificationData[];
@@ -51,6 +55,8 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
   reset: () => {
     const { pollTimer } = get();
     if (pollTimer) clearInterval(pollTimer);
+    foregroundUnlisten?.();
+    foregroundUnlisten = null;
     set({ ...initialNotificationState });
   },
 
@@ -210,9 +216,14 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
     get().refreshUnreadCounts();
 
     const timer = setInterval(() => {
+      if (isDocumentHidden()) return;
       get().refreshUnreadCounts();
     }, POLL_INTERVAL);
     set({ pollTimer: timer });
+    foregroundUnlisten = onDocumentForeground(() => {
+      void get().loadNotifications();
+      void get().refreshUnreadCounts();
+    });
   },
 
   stopPolling: () => {
@@ -221,6 +232,8 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
       clearInterval(pollTimer);
       set({ pollTimer: null });
     }
+    foregroundUnlisten?.();
+    foregroundUnlisten = null;
   },
 }));
 

@@ -1,5 +1,6 @@
 import type { RuntimeDescriptor } from '../kernel/runtime';
 import { EVENT, eventBus } from '../kernel/events';
+import { isDocumentHidden, onDocumentForeground } from '../kernel/documentVisibility';
 import { useEvaluationStore } from '../store/evaluation';
 import {
   useAgentCapabilityStore,
@@ -24,6 +25,7 @@ let queuedReconcileReason:
   | null = null;
 let eventInFlight: Promise<void> | null = null;
 let unsubscribers: Array<() => void> = [];
+let unsubscribeForeground: (() => void) | null = null;
 
 async function loadTargetAgents(): Promise<void> {
   await useAgentStore.getState().loadAgents();
@@ -117,14 +119,24 @@ function clearSubscriptions(): void {
 function installTimers(): void {
   if (reconcileTimer === null) {
     reconcileTimer = setInterval(() => {
+      // Skip background-tab polls; the foreground listener catches up.
+      if (isDocumentHidden()) return;
       runDetached('periodic reconciliation failed', () =>
         reconcileProjection('reconcile'));
     }, EVALUATION_RECONCILE_INTERVAL_MS);
   }
   if (eventTimer === null) {
     eventTimer = setInterval(() => {
+      if (isDocumentHidden()) return;
       runDetached('event consumption failed', consumeEvents);
     }, EVALUATION_EVENT_INTERVAL_MS);
+  }
+  if (unsubscribeForeground === null) {
+    unsubscribeForeground = onDocumentForeground(() => {
+      runDetached('foreground reconciliation failed', () =>
+        reconcileProjection('reconcile'));
+      runDetached('foreground event consumption failed', consumeEvents);
+    });
   }
 }
 
@@ -133,6 +145,8 @@ function clearTimers(): void {
   if (eventTimer !== null) clearInterval(eventTimer);
   reconcileTimer = null;
   eventTimer = null;
+  unsubscribeForeground?.();
+  unsubscribeForeground = null;
 }
 
 export function refreshEvaluationProjection(): Promise<void> {

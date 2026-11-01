@@ -31,13 +31,13 @@ import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
   MessagingLocalAttachmentIntent,
   MessagingProjection,
-  MessagingQueuedSendOutcome,
   MessagingSendOutcome,
   MessagingSendOutcomeRecord,
   MemberSettingsResult,
 } from '../services/im-service-contract';
 import { useCryptoStore } from './cryptoStore';
 import { log } from '../utils/logger';
+import { newSendIntentId } from '../utils/messagingSendIntent';
 import {
   readDesktopDomainValueSync,
   writeDesktopDomainValueSync,
@@ -117,7 +117,6 @@ export function conversationLocalStateForProfile(
 }
 
 export type MessagingSendOutcomeErrorCode =
-  | 'not_queued'
   | 'missing_command_id'
   | 'attachment_count_mismatch';
 
@@ -133,27 +132,69 @@ export class MessagingSendOutcomeError extends Error {
   }
 }
 
-export function requireQueuedMessagingSendOutcome(
+/**
+ * MP-D33 admission boundary. Every BFF response is already an *admitted*
+ * durable message — a deferred `draft` (Station plan/crypto prep still
+ * pending) is success, not failure, and the lifecycle worker keeps exact
+ * retry alive. The only local inconsistencies worth rejecting are a
+ * `pending` state without a command identity, or attachment count drift.
+ */
+export function admitMessagingSendOutcome(
   outcome: MessagingSendOutcome,
   expectedAttachmentCount: number,
-): MessagingQueuedSendOutcome {
-  if (outcome.state !== 'pending') {
-    throw new MessagingSendOutcomeError('not_queued', outcome);
-  }
-  if (!outcome.commandId) {
-    throw new MessagingSendOutcomeError('missing_command_id', outcome);
-  }
+): MessagingSendOutcome {
   if (
     outcome.attachmentCount !== outcome.attachmentIds.length
     || outcome.attachmentCount !== expectedAttachmentCount
   ) {
     throw new MessagingSendOutcomeError('attachment_count_mismatch', outcome);
   }
-  return {
-    ...outcome,
-    commandId: outcome.commandId,
-    state: outcome.state,
-  };
+  if (outcome.state === 'pending' && !outcome.commandId) {
+    throw new MessagingSendOutcomeError('missing_command_id', outcome);
+  }
+  return outcome;
+}
+
+/**
+ * Resolve an ambiguous send IPC failure without resending (MP-D33). If the
+ * BFF worker/transport answer was lost after durable admission, the intent
+ * status query proves the message already exists; its result is converted
+ * into a normal admitted outcome. Only when no durable row exists does the
+ * caller treat the action as rejected and may keep composer content.
+ */
+async function sendMessageWithAdmissionReconciliation(
+  sendIntentId: string,
+  send: () => Promise<MessagingSendOutcome>,
+  onRejected: (error: unknown) => void,
+): Promise<MessagingSendOutcome> {
+  try {
+    return await send();
+  } catch (error) {
+    let status;
+    try {
+      status = await imServiceV1.messaging.sendIntentStatus(sendIntentId);
+    } catch {
+      onRejected(error);
+      throw error;
+    }
+    if (!status.admitted || !status.messageId) {
+      onRejected(error);
+      throw error;
+    }
+    log.warn(
+      'socialChat',
+      'send IPC failed but the message was already admitted; reconciling without resend',
+      { sendIntentId, messageId: status.messageId, state: status.state },
+    );
+    return {
+      admission: 'admitted',
+      commandId: status.commandId,
+      messageId: status.messageId,
+      attachmentIds: status.attachmentIds,
+      attachmentCount: status.attachmentIds.length,
+      state: status.state === 'none' ? 'draft' : status.state,
+    };
+  }
 }
 
 // Loads common service content for a conversation, keyed by message_id.
@@ -211,6 +252,11 @@ function projectMessagingProjection(
     groupSeq: BigInt(projection.eventSequence ?? 0),
     readByPtids: projection.readByPtids,
     deliveryState: projection.state,
+    attemptCount: projection.attemptCount,
+    nextAttemptAtUnixMs: projection.nextAttemptAtUnixMs,
+    lastErrorCode: projection.lastErrorCode,
+    requiredDeviceCount: projection.requiredDeviceCount,
+    deliveredDeviceCount: projection.deliveredDeviceCount,
   };
   if (kind === 'friend') {
     const status = projection.state === 'failed'
@@ -507,7 +553,8 @@ interface SocialChatState {
     replyToUlid?: string,
     attachments?: MessagingLocalAttachmentIntent[],
     threadRootUlid?: string,
-  ) => Promise<MessagingQueuedSendOutcome>;
+    sendIntentId?: string,
+  ) => Promise<MessagingSendOutcome>;
   sendGroupMessage: (
     groupUlid: string,
     content: string,
@@ -515,7 +562,10 @@ interface SocialChatState {
     replyToUlid?: string,
     attachments?: MessagingLocalAttachmentIntent[],
     threadRootUlid?: string,
-  ) => Promise<MessagingQueuedSendOutcome>;
+    sendIntentId?: string,
+  ) => Promise<MessagingSendOutcome>;
+  /** Append one admission outcome to the per-conversation revision record. */
+  recordSendOutcome: (conversationUlid: string, outcome: MessagingSendOutcome) => void;
   loadGroupMembers: (groupUlid: string) => Promise<void>;
   toggleDetail: () => void;
   setShowDetail: (show: boolean) => void;
@@ -970,6 +1020,35 @@ let loadSessionsGeneration = 0;
 let messagingProjectionGeneration = 0;
 let socialProfileGeneration = 0;
 
+/**
+ * Per-conversation projection memo. `projectDesktopIMMessages` allocates
+ * one new object per source message on every call; the chat surface used to
+ * invoke it during every store fan-out, which made message rows re-render
+ * even when their source slice had not changed. Cache the projected array by
+ * source-array identity and clear it on projection resets.
+ */
+const messageProjectionCache = new Map<
+  string,
+  { source: SocialMessage[]; projected: DesktopIMMessageProjection[] }
+>();
+
+function projectMessagesMemoized(
+  kind: 'friend' | 'group',
+  conversationId: string,
+  source: SocialMessage[],
+): DesktopIMMessageProjection[] {
+  const key = `${kind}:${conversationId}`;
+  const cached = messageProjectionCache.get(key);
+  if (cached && cached.source === source) return cached.projected;
+  const projected = projectDesktopIMMessages(kind, conversationId, source);
+  messageProjectionCache.set(key, { source, projected });
+  return projected;
+}
+
+function clearMessageProjectionCache(): void {
+  messageProjectionCache.clear();
+}
+
 function profileReadIsCurrent(): () => boolean {
   const actorPtid = currentAuthenticatedActorPtid();
   const sessionEpoch = useSessionStore.getState().sessionEpoch;
@@ -986,11 +1065,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   reset: () => {
     messagingProjectionGeneration += 1;
     socialProfileGeneration += 1;
+    clearMessageProjectionCache();
     set({ ...initialSocialState });
   },
   resetMessagingProjection: () => {
     loadSessionsGeneration += 1;
     messagingProjectionGeneration += 1;
+    clearMessageProjectionCache();
     set({
       conversations: [],
       conversationMembers: {},
@@ -1743,7 +1824,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  sendFriendMessage: async (sessionUlid, receiverPtid, content, type, replyToUlid, attachments, explicitThreadRootUlid) => {
+  recordSendOutcome: (conversationUlid, outcome) => {
+    set((state) => ({
+      sendOutcomes: {
+        ...state.sendOutcomes,
+        [conversationUlid]: {
+          revision: (state.sendOutcomes[conversationUlid]?.revision ?? 0) + 1,
+          outcome,
+        },
+      },
+    }));
+  },
+
+  sendFriendMessage: async (sessionUlid, receiverPtid, content, type, replyToUlid, attachments, explicitThreadRootUlid, sendIntentId) => {
     try {
       if (!receiverPtid) {
         throw new Error('A recipient is required for a direct message');
@@ -1751,25 +1844,25 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       if ((type ?? 1) !== 1 && !attachments?.length) {
         throw new Error('This message type has not been migrated to the Messaging Engine');
       }
+      const intentId = sendIntentId ?? newSendIntentId();
       const threadRootUlid = resolveReplyThreadRootUlid(
         get().messages[sessionUlid] ?? [],
         replyToUlid,
         explicitThreadRootUlid,
       );
-      const outcome = await imServiceV1.messaging.sendMessage(sessionUlid, 'direct', content, attachments, {
-        replyToMessageId: replyToUlid,
-        threadRootMessageId: threadRootUlid,
-      });
-      set((state) => ({
-        sendOutcomes: {
-          ...state.sendOutcomes,
-          [sessionUlid]: {
-            revision: (state.sendOutcomes[sessionUlid]?.revision ?? 0) + 1,
-            outcome,
-          },
+      const outcome = await sendMessageWithAdmissionReconciliation(
+        intentId,
+        () => imServiceV1.messaging.sendMessage(sessionUlid, 'direct', content, attachments, {
+          replyToMessageId: replyToUlid,
+          threadRootMessageId: threadRootUlid,
+          sendIntentId: intentId,
+        }),
+        (error) => {
+          log.error('socialChat', 'sendFriendMessage admission failed', error);
         },
-      }));
-      const queuedOutcome = requireQueuedMessagingSendOutcome(
+      );
+      get().recordSendOutcome(sessionUlid, outcome);
+      admitMessagingSendOutcome(
         outcome,
         attachments?.length ?? 0,
       );
@@ -1783,37 +1876,41 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           [sessionUlid]: { content, type: 1, senderPtid: get().currentUserPtid ?? '' },
         },
       }));
-      return queuedOutcome;
+      return outcome;
     } catch (error) {
       log.error('socialChat', 'sendFriendMessage failed', error);
       throw error;
     }
   },
 
-  sendGroupMessage: async (groupUlid, content, type, _replyToUlid, attachments, explicitThreadRootUlid) => {
+  sendGroupMessage: async (groupUlid, content, type, _replyToUlid, attachments, explicitThreadRootUlid, sendIntentId) => {
     try {
       if ((type ?? 1) !== 1 && !attachments?.length) {
         throw new Error('This message type has not been migrated to the Messaging Engine');
       }
+      const intentId = sendIntentId ?? newSendIntentId();
       const threadRootUlid = resolveReplyThreadRootUlid(
         get().messages[groupUlid] ?? [],
         _replyToUlid,
         explicitThreadRootUlid,
       );
-      const outcome = await imServiceV1.messaging.sendMessage(groupUlid, 'group', content, attachments, {
-        replyToMessageId: _replyToUlid,
-        threadRootMessageId: threadRootUlid,
-      });
-      set((state) => ({
-        sendOutcomes: {
-          ...state.sendOutcomes,
-          [groupUlid]: {
-            revision: (state.sendOutcomes[groupUlid]?.revision ?? 0) + 1,
-            outcome,
-          },
+      const outcome = await sendMessageWithAdmissionReconciliation(
+        intentId,
+        () => imServiceV1.messaging.sendMessage(groupUlid, 'group', content, attachments, {
+          replyToMessageId: _replyToUlid,
+          threadRootMessageId: threadRootUlid,
+          sendIntentId: intentId,
+        }),
+        (error) => {
+          const currentSecurityState = get().groupSecurityState[groupUlid];
+          if (currentSecurityState !== 'establishing' && currentSecurityState !== 'crypto-desynced') {
+            get().setGroupSecurityState(groupUlid, 'error');
+          }
+          log.error('socialChat', 'sendGroupMessage admission failed', error);
         },
-      }));
-      const queuedOutcome = requireQueuedMessagingSendOutcome(
+      );
+      get().recordSendOutcome(groupUlid, outcome);
+      admitMessagingSendOutcome(
         outcome,
         attachments?.length ?? 0,
       );
@@ -1827,7 +1924,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           [groupUlid]: { content, type: 1, senderPtid: get().currentUserPtid ?? '' },
         },
       }));
-      return queuedOutcome;
+      return outcome;
     } catch (error) {
       const currentSecurityState = get().groupSecurityState[groupUlid];
       if (currentSecurityState !== 'establishing' && currentSecurityState !== 'crypto-desynced') {
@@ -2638,7 +2735,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   getIMMessages: (kind, conversationUlid) => {
     const state = get();
-    return projectDesktopIMMessages(
+    return projectMessagesMemoized(
       kind,
       conversationUlid,
       state.messages[conversationUlid] || [],
@@ -2661,9 +2758,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   getIMThreadMessages: (kind, conversationUlid, rootUlid) => {
     const state = get();
     const key = socialThreadKey(kind, conversationUlid, rootUlid);
-    return projectDesktopIMMessages(
+    return projectMessagesMemoized(
       kind,
-      conversationUlid,
+      `thread:${key}`,
       state.threadMessages[key] || [],
     );
   },

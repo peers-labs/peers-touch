@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { Input, Space, Tooltip, Typography, message, theme } from 'antd';
@@ -30,8 +30,8 @@ import {
 import {
   ComposerMediaError,
   decideComposerImageAttachments,
-  uploadPublicComposerImage,
   sniffPickedImageMagic,
+  uploadPreparedPublicImage,
   type PublicComposerImage,
 } from './composerMediaDecision';
 import { api } from '../../services/desktop_api';
@@ -76,6 +76,15 @@ const TAG = 'moment-composer';
 // The "Publish" button stays disabled while ANY upload is in flight.
 
 const MAX_IMAGES_PER_POST = 9;
+// Text keystrokes coalesce into one global draft write after typing pauses.
+// Image/audience changes stay immediate (discrete actions that also gate
+// private-recipient readiness).
+const DRAFT_PERSIST_DEBOUNCE_MS = 400;
+// Bound pre-upload concurrency: two images validate/downsample/upload at a
+// time so canvas work and multipart memory stay bounded on slow devices.
+const PUBLIC_UPLOAD_CONCURRENCY = 2;
+// One automatic retry per slot before surfacing the manual retry affordance.
+const PUBLIC_UPLOAD_AUTO_RETRIES = 1;
 
 interface MomentComposerProps {
   /** Optional initial audience override (defaults to PUBLIC). */
@@ -100,8 +109,11 @@ interface PendingImage {
   filePath: string;
   /** Tauri-converted file:// src for instant preview. */
   previewSrc: string;
-  /** OSS upload state. */
-  status: 'pending' | 'uploading' | 'done' | 'error';
+  /**
+   * OSS upload state. 'private' slots are held for Secure Content (never
+   * uploaded to OSS); switching the audience back to public re-enqueues them.
+   */
+  status: 'pending' | 'uploading' | 'done' | 'error' | 'private';
   /** Populated when status === 'done'. */
   cid?: string;
   /** Typed descriptor persisted into CreateImagePostRequest.images. */
@@ -175,6 +187,15 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   const [draftId] = useState(() => draft?.draftId ?? makeLocalId());
   const draftRevision = useRef(draft?.revision ?? 0);
   const readinessAttempt = useRef(0);
+  // Bounded pre-upload queue. Mirrors are read by async queue workers, which
+  // outlive the render closure that enqueued them.
+  const pendingMirrorRef = useRef<PendingImage[]>([]);
+  const audienceMirrorRef = useRef<Audience>(audience);
+  // Queue entries are self-contained: the worker must not read React state,
+  // which is not yet committed when a pick handler enqueues synchronously.
+  const uploadQueueRef = useRef<Array<{ localId: string; filePath: string }>>([]);
+  const queuedUploadIdsRef = useRef<Set<string>>(new Set());
+  const activeUploadsRef = useRef(0);
   const [readinessReady, setReadinessReady] = useState(false);
   const [checkingReadiness, setCheckingReadiness] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -307,7 +328,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     && !checkingReadiness
     && !submitting;
 
-  const writeDraft = (
+  const writeDraft = useCallback((
     revision: number,
     nextText: string,
     nextAudience: Audience,
@@ -325,22 +346,109 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
         previewSrc: item.previewSrc,
       })),
     });
+  }, [draftId, setDraft]);
+
+  // Trailing global-store write. Only setDraft is delayed; readiness
+  // invalidation stays synchronous. Any immediate commit cancels the pending
+  // write, and the revision guard drops a stale timer at flush time.
+  const draftWriteTimerRef = useRef<number | null>(null);
+  const scheduledDraftWriteRef = useRef<{
+    revision: number;
+    text: string;
+    audience: Audience;
+    pending: PendingImage[];
+  } | null>(null);
+
+  const cancelScheduledDraftWrite = useCallback(() => {
+    if (draftWriteTimerRef.current !== null) {
+      window.clearTimeout(draftWriteTimerRef.current);
+      draftWriteTimerRef.current = null;
+    }
+    scheduledDraftWriteRef.current = null;
+  }, []);
+
+  const scheduleDraftWrite = useCallback((
+    revision: number,
+    nextText: string,
+    nextAudience: Audience,
+    nextPending: PendingImage[],
+  ) => {
+    if (draftWriteTimerRef.current !== null) {
+      window.clearTimeout(draftWriteTimerRef.current);
+    }
+    scheduledDraftWriteRef.current = {
+      revision,
+      text: nextText,
+      audience: nextAudience,
+      pending: nextPending,
+    };
+    draftWriteTimerRef.current = window.setTimeout(() => {
+      draftWriteTimerRef.current = null;
+      const scheduled = scheduledDraftWriteRef.current;
+      scheduledDraftWriteRef.current = null;
+      if (scheduled && scheduled.revision === draftRevision.current) {
+        writeDraft(
+          scheduled.revision,
+          scheduled.text,
+          scheduled.audience,
+          scheduled.pending,
+        );
+      }
+    }, DRAFT_PERSIST_DEBOUNCE_MS);
+  }, [writeDraft]);
+
+  // Flush a pending store write on unmount so the last keystrokes survive.
+  useEffect(() => {
+    const timerRef = draftWriteTimerRef;
+    const scheduledRef = scheduledDraftWriteRef;
+    const revisionRef = draftRevision;
+    const writer = writeDraft;
+    return () => {
+      if (timerRef.current === null) return;
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+      const scheduled = scheduledRef.current;
+      scheduledRef.current = null;
+      if (scheduled && scheduled.revision === revisionRef.current) {
+        writer(
+          scheduled.revision,
+          scheduled.text,
+          scheduled.audience,
+          scheduled.pending,
+        );
+      }
+    };
+  }, [writeDraft]);
+
+  const invalidateDraftReadiness = () => {
+    readinessAttempt.current += 1;
+    setReadinessReady(false);
+    setCheckingReadiness(false);
+    // Skip the global private-store fan-out on every keystroke while no
+    // readiness state exists for this (or any) draft.
+    if (privatePublish.state !== 'IDLE' || privatePublish.draftId) {
+      clearPrivatePublishState();
+    }
   };
 
   const persistDraft = (
     nextText: string,
     nextAudience: Audience,
     nextPending: PendingImage[],
+    mode: 'immediate' | 'trailing' = 'immediate',
   ) => {
-    readinessAttempt.current += 1;
-    setReadinessReady(false);
-    setCheckingReadiness(false);
-    clearPrivatePublishState();
+    invalidateDraftReadiness();
     draftRevision.current += 1;
-    writeDraft(draftRevision.current, nextText, nextAudience, nextPending);
+    if (mode === 'trailing') {
+      scheduleDraftWrite(draftRevision.current, nextText, nextAudience, nextPending);
+    } else {
+      cancelScheduledDraftWrite();
+      writeDraft(draftRevision.current, nextText, nextAudience, nextPending);
+    }
   };
 
   const checkpointDraft = (): number => {
+    cancelScheduledDraftWrite();
     if (draftRevision.current === 0) {
       draftRevision.current = 1;
     }
@@ -350,79 +458,144 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
 
   const handleClear = () => {
     if (text.trim()) {
+      // Immediate commit also cancels a trailing write that carried stale text.
       persistDraft(text, audience, pending);
     } else {
+      cancelScheduledDraftWrite();
       clearDraft();
     }
+    queuedUploadIdsRef.current.clear();
+    uploadQueueRef.current = [];
     setText('');
     setPending([]);
   };
 
-  // Sequential upload bounds Rust-side memory (multipart parser keeps
-  // the body in memory pre-save). 9 images at e.g. 8MB each would
-  // otherwise spike to ~70MB if uploaded in parallel.
-  const uploadOne = async (filePath: string, localId: string) => {
-    setPending((prev) =>
-      prev.map((item) => (
-        item.localId === localId ? { ...item, status: 'uploading' } : item
-      )),
-    );
-    try {
-      // PUBLIC is the only path that reaches OSS, and it goes through
-      // the same audience decision the acceptance harness drives.
-      // PRIVATE slots are never uploaded; Secure Content consumes the
-      // local file intents at private publish time.
-      if (isPrivateAudience(audience)) {
-        const skipped: PendingImage = {
-          localId,
-          filePath,
-          previewSrc: pending.find((item) => item.localId === localId)?.previewSrc ?? '',
-          status: 'pending',
-        };
-        return skipped;
+  // Keep queue mirrors current across async upload boundaries.
+  useEffect(() => {
+    pendingMirrorRef.current = pending;
+    audienceMirrorRef.current = audience;
+  });
+
+  const uploadSlotThroughDecision = useCallback(
+    (filePath: string) => uploadPreparedPublicImage(
+      { filePath },
+      {
+        uploadPath: (path) => api.ossUploadAttachmentSocial(path),
+        uploadBytes: ({ filename, mime, bytes }) =>
+          api.ossUploadAttachmentSocialBytes({
+            filename,
+            mime_type: mime,
+            bytes: Array.from(bytes),
+          }),
+      },
+    ),
+    [],
+  );
+
+  // Bounded worker: takes the next queued PUBLIC slot, flips it to
+  // uploading, and resolves it (with one automatic retry) independently of
+  // the other slots. PRIVATE slots never reach OSS.
+  const pumpUploadQueue = useCallback(() => {
+    while (
+      activeUploadsRef.current < PUBLIC_UPLOAD_CONCURRENCY
+      && uploadQueueRef.current.length > 0
+    ) {
+      const entry = uploadQueueRef.current.shift();
+      if (!entry) break;
+      queuedUploadIdsRef.current.delete(entry.localId);
+      const { localId, filePath } = entry;
+
+      if (isPrivateAudience(audienceMirrorRef.current)) {
+        setPending((prev) => prev.map((item) => (
+          item.localId === localId && item.status === 'pending'
+            ? { ...item, status: 'private' }
+            : item
+        )));
+        continue;
       }
-      const result = await uploadPublicComposerImage(
-        { filePath },
-        (path) => api.ossUploadAttachmentSocial(path),
-      );
-      const completed: PendingImage = {
-        localId,
-        filePath,
-        previewSrc: pending.find((item) => item.localId === localId)?.previewSrc ?? '',
-        status: 'done',
-        cid: result.cid,
-        image: result.attachment,
-        uploaded: result,
+      const slot = pendingMirrorRef.current.find((item) => item.localId === localId);
+      if (slot?.status === 'done') continue;
+
+      activeUploadsRef.current += 1;
+      setPending((prev) => prev.map((item) => (
+        item.localId === localId ? { ...item, status: 'uploading' } : item
+      )));
+
+      const settle = async () => {
+        let result: PublicComposerImage | null = null;
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt <= PUBLIC_UPLOAD_AUTO_RETRIES; attempt += 1) {
+          try {
+            result = await uploadSlotThroughDecision(filePath);
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        // The slot may have been removed while the upload was in flight.
+        const stillPresent = pendingMirrorRef.current.some(
+          (item) => item.localId === localId,
+        );
+        if (!stillPresent) return;
+        if (result) {
+          setPending((prev) => prev.map((item) => (
+            item.localId === localId
+              ? {
+                ...item,
+                status: 'done',
+                cid: result!.cid,
+                image: result!.attachment,
+                uploaded: result!,
+                error: undefined,
+              }
+              : item
+          )));
+        } else {
+          log.warn(TAG, 'image upload failed after retry', {
+            filePath,
+            err: String(lastError),
+          });
+          setPending((prev) => prev.map((item) => (
+            item.localId === localId
+              ? {
+                ...item,
+                status: 'error',
+                error: lastError instanceof ComposerMediaError
+                  ? t(`moments.compose.media.${lastError.code}`, { defaultValue: lastError.code })
+                  : String(lastError),
+              }
+              : item
+          )));
+        }
       };
-      setPending((prev) =>
-        prev.map((p) =>
-          p.localId === localId
-            ? { ...completed, previewSrc: p.previewSrc }
-            : p,
-        ),
-      );
-      return completed;
-    } catch (err) {
-      const failed: PendingImage = {
-        localId,
-        filePath,
-        previewSrc: pending.find((item) => item.localId === localId)?.previewSrc ?? '',
-        status: 'error',
-        error: err instanceof ComposerMediaError
-          ? t(`moments.compose.media.${err.code}`, { defaultValue: err.code })
-          : String(err),
-      };
-      log.warn(TAG, 'image upload failed', { filePath, err: String(err) });
-      setPending((prev) =>
-        prev.map((p) =>
-          p.localId === localId
-            ? { ...failed, previewSrc: p.previewSrc }
-            : p,
-        ),
-      );
-      return failed;
+
+      void settle().finally(() => {
+        activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
+        pumpUploadQueue();
+      });
     }
-  };
+  }, [t, uploadSlotThroughDecision]);
+
+  const enqueueUploads = useCallback((
+    entries: Array<{ localId: string; filePath: string }>,
+  ) => {
+    entries.forEach((entry) => {
+      if (queuedUploadIdsRef.current.has(entry.localId)) return;
+      queuedUploadIdsRef.current.add(entry.localId);
+      uploadQueueRef.current.push(entry);
+    });
+    pumpUploadQueue();
+  }, [pumpUploadQueue]);
+
+  // Restored draft slots resume their upload (or flip to private) on mount.
+  useEffect(() => {
+    if (pending.length === 0) return;
+    enqueueUploads(pending.map((item) => ({
+      localId: item.localId,
+      filePath: item.filePath,
+    })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePickImages = async () => {
     if (slotsLeft <= 0) {
@@ -468,18 +641,31 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
       message.warning(t('moments.compose.media.IMAGE_TYPE_UNSUPPORTED'));
     }
 
+    const privatePick = isPrivateAudience(audience);
     const fresh: PendingImage[] = accepted.map((p) => ({
       localId: makeLocalId(),
       filePath: p,
       previewSrc: convertFileSrc(p),
-      status: 'pending',
+      // PUBLIC slots pre-upload in the bounded queue; PRIVATE slots are
+      // held for Secure Content and never reach OSS.
+      status: privatePick ? 'private' : 'pending',
     }));
     const next = [...pending, ...fresh];
     setPending(next);
     persistDraft(text, audience, next);
+    if (!privatePick) {
+      enqueueUploads(fresh.map((item) => ({
+        localId: item.localId,
+        filePath: item.filePath,
+      })));
+    }
   };
 
   const handleRemoveImage = (localId: string) => {
+    queuedUploadIdsRef.current.delete(localId);
+    uploadQueueRef.current = uploadQueueRef.current.filter(
+      (entry) => entry.localId !== localId,
+    );
     const next = pending.filter((item) => item.localId !== localId);
     setPending(next);
     persistDraft(text, audience, next);
@@ -491,11 +677,39 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     setPending((prev) =>
       prev.map((p) =>
         p.localId === localId
-          ? { ...p, status: 'uploading', error: undefined }
+          ? { ...p, status: isPrivateAudience(audience) ? 'private' : 'pending', error: undefined }
           : p,
       ),
     );
-    void uploadOne(target.filePath, localId);
+    if (!isPrivateAudience(audience)) {
+      enqueueUploads([{ localId, filePath: target.filePath }]);
+    }
+  };
+
+  // Switching audience moves slots between the OSS queue and Secure Content
+  // ownership without dropping already-completed uploads.
+  const handleAudienceChange = (nextAudience: Audience) => {
+    setAudience(nextAudience);
+    persistDraft(text, nextAudience, pending);
+    if (isPrivateAudience(nextAudience)) {
+      queuedUploadIdsRef.current.clear();
+      uploadQueueRef.current = [];
+      setPending((prev) => prev.map((item) => (
+        item.status === 'pending'
+          ? { ...item, status: 'private' }
+          : item
+      )));
+      return;
+    }
+    const requeue = pending
+      .filter((item) => item.status === 'private')
+      .map((item) => ({ localId: item.localId, filePath: item.filePath }));
+    setPending((prev) => prev.map((item) => (
+      item.status === 'private'
+        ? { ...item, status: 'pending' }
+        : item
+    )));
+    if (requeue.length > 0) enqueueUploads(requeue);
   };
 
   const handlePublish = async () => {
@@ -566,6 +780,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
       try {
         const id = await createPost(privateDraft);
         message.success(t('moments.compose.published'));
+        cancelScheduledDraftWrite();
         setText('');
         setPending([]);
         setReadinessReady(false);
@@ -598,6 +813,12 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
         audience,
         files,
         uploader: (path) => api.ossUploadAttachmentSocial(path),
+        bytesUploader: ({ filename, mime, bytes }) =>
+          api.ossUploadAttachmentSocialBytes({
+            filename,
+            mime_type: mime,
+            bytes: Array.from(bytes),
+          }),
         preuploaded,
       });
       if (decision.kind !== 'public-attachments') {
@@ -623,6 +844,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
             })
           : await createPost({ kind: 'text', text: trimmed, audience });
       message.success(t('moments.compose.published'));
+      cancelScheduledDraftWrite();
       setText('');
       setPending([]);
       clearDraft();
@@ -680,7 +902,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
-                persistDraft(e.target.value, audience, pending);
+                persistDraft(e.target.value, audience, pending, 'trailing');
               }}
               placeholder={t('moments.compose.placeholder')}
               autoSize={{ minRows: 2, maxRows: 10 }}
@@ -783,10 +1005,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
               people={audiencePeople}
               circles={circleOptions}
               groups={groupOptions}
-              onChange={(nextAudience) => {
-                setAudience(nextAudience);
-                persistDraft(text, nextAudience, pending);
-              }}
+              onChange={handleAudienceChange}
               disabled={submitting}
             />
             {(text || pending.length > 0) && (
@@ -826,6 +1045,7 @@ function PendingThumb({ item, onRemove, onRetry, token }: PendingThumbProps) {
   const { t } = useTranslation('moments');
   const isError = item.status === 'error';
   const isUploading = item.status === 'uploading';
+  const isPrivate = item.status === 'private';
   return (
     <div
       style={{
@@ -848,6 +1068,27 @@ function PendingThumb({ item, onRemove, onRetry, token }: PendingThumbProps) {
           opacity: isError ? 0.4 : isUploading ? 0.6 : 1,
         }}
       />
+
+      {isPrivate && (
+        <div
+          aria-label={t('moments.compose.privateSlot')}
+          style={{
+            position: 'absolute',
+            left: 4,
+            bottom: 4,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 20,
+            height: 20,
+            borderRadius: '50%',
+            color: token.colorWhite,
+            background: 'rgba(0,0,0,0.45)',
+          }}
+        >
+          <LockKeyhole size={11} />
+        </div>
+      )}
 
       {isUploading && (
         <div

@@ -7311,6 +7311,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &reply_to_message_id,
                 &thread_root_message_id,
                 &[],
+                // Gateway callers do not participate in renderer intent
+                // idempotency; mint one per invocation.
+                &Ulid::new().to_string(),
             ) {
                 Ok(outcome) => {
                     let _ = state.messaging_engines.wake_profile(&account_id);

@@ -170,6 +170,7 @@
   "moments.compose.imageRetry": "Retry",
   "moments.compose.imageRemove": "Remove image",
   "moments.compose.imagePendingAlt": "Pending post image",
+  "moments.compose.privateSlot": "Kept for Secure Content — not uploaded",
 
   "moments.lightbox.close": "Close",
   "moments.lightbox.previous": "Previous",

@@ -579,6 +579,32 @@ function mergePostEntity(existing: Post | undefined, incoming: Post): Post {
   return incoming;
 }
 
+function sameReactionSummaries(
+  previous: ReactionSummary[],
+  next: ReactionSummary[],
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  return previous.every((reaction, index) => {
+    const candidate = next[index];
+    return Boolean(candidate)
+      && reaction.kind === candidate.kind
+      && reaction.count === candidate.count
+      && reaction.reactedByViewer === candidate.reactedByViewer;
+  });
+}
+
+function sameFeedExplanation(
+  previous: FeedObjectExplanation,
+  next: FeedObjectExplanation,
+): boolean {
+  if (previous === next) return true;
+  // Explanations are small, append-only protocol objects; a structural
+  // compare keeps the parent reference (and thus memo card props) stable
+  // across refreshes that carry identical content.
+  return JSON.stringify(previous) === JSON.stringify(next);
+}
+
 function ingestPosts(
   state: Pick<MomentsState, 'postsById' | 'authorsById' | 'reactions' | 'feedExplanations'>,
   posts: Post[],
@@ -605,13 +631,21 @@ function ingestPosts(
       authorsById[p.author.id] = p.author;
     }
     if (Array.isArray(p.reactions)) {
-      reactions[p.id] = p.reactions;
+      const previousReactions = reactions[p.id];
+      reactions[p.id] = previousReactions
+        && sameReactionSummaries(previousReactions, p.reactions)
+        ? previousReactions
+        : p.reactions;
     }
     ids.push(p.id);
   }
   for (const explanation of explanations) {
     if (explanation.objectId) {
-      feedExplanations[explanation.objectId] = explanation;
+      const previousExplanation = feedExplanations[explanation.objectId];
+      feedExplanations[explanation.objectId] = previousExplanation
+        && sameFeedExplanation(previousExplanation, explanation)
+        ? previousExplanation
+        : explanation;
     }
   }
   return { postsById, authorsById, reactions, feedExplanations, ids };

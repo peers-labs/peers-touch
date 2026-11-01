@@ -43,6 +43,8 @@
 | MP-D30 | Conversation DDD 与 Device Messaging Engine 分离 | accepted |
 | MP-D31 | Submitted command 通过 canonical existing truth 收敛 | accepted |
 | MP-D32 | 跨 Station typing 使用 Authority-mediated ephemeral Federation | accepted |
+| MP-D33 | Send admission 以设备本地 send-intent 幂等，UI/BFF 共享准入结果语义 | accepted |
+| MP-D34 | 最终送达判定是带视野的本地投影：事实与本地判断严格分层，不取消重试 | accepted |
 
 `MP-D29` remains accepted historical design evidence under the Conversation
 owner. Its implementation and proof are governed only by the active CA-HC plan,
@@ -318,6 +320,145 @@ Command response 只更新 durable command submission state，不改变 authorit
 ### Acceptance
 
 Owner accepted on 2026-08-09.
+
+## MP-D34: Final delivery verdict is a fact layer with revocable local horizon judgments
+
+**Status**: accepted
+**Date**: 2026-11-01
+
+### Context
+
+MP-D33 made admission idempotent, but the sender still had no honest final verdict.
+A message could sit in `queued`/`retry_wait` indefinitely with no reason, and a
+2026-10-31 incident surfaced the impossible combination "已排队 + 发送失败": the UI
+merged an admission fact with a transport wake failure. Distributed systems can
+prove per-device delivery facts, but they cannot prove that an unreachable peer
+will never receive a message. Negative transport facts must therefore never
+become a permanent sender verdict.
+
+### Decision
+
+The local message projection exposes durable facts only:
+
+- pending-state attempt metadata: typed `last_error_code`, `attempt_count`,
+  and `next_attempt_at` from the local outbox;
+- per-device delivered facts: inbound `MessageReceipt` items are projected into
+  a local `messaging_message_delivery_devices` ledger keyed by
+  `(conversation_id, message_id, consumer_ptid, consumer_device_id)`;
+- the immutable x/N denominator: `required_device_count` is recorded on the
+  command attempt from the Station-signed delivery plan, excluding the
+  originator actor's own devices (exactly the authority `required_recipient`
+  rule).
+
+Two device-local horizons derive revocable judgments in the renderer, never in
+the store or the wire contract:
+
+1. **60s command convergence** after admission without `submitted` →
+   `submit_overdue`; the message keeps queued/retry semantics, its typed reason,
+   and its scheduled next attempt.
+2. **24h delivery** after the authority-accepted fact without a positive
+   receipt → `undeliverable_suspected`. The copy says "delivery unconfirmed",
+   never "failed"; background exact-byte retry continues.
+
+Precedence is fact-first: terminal typed reject → `failed_terminal`; read →
+`read`; per-device receipts → `delivered` / `fully_delivered` (x/N when N is
+known; x alone when the denominator is unavailable); horizons never override a
+fact, and a late receipt always upgrades `undeliverable_suspected`. Retry from
+failure or the unconfirmed judgment reuses the same message and command
+identity. Revoked-after-send devices are not folded into the local denominator:
+missing a "fully" upgrade is honest; inventing recipients is not.
+
+### Rationale
+
+The originator Device Inbox already receives every required recipient's
+`MessageReceipt`; persisting the consumer identity is the minimal additional
+projection. Horizon evaluation needs no transport writes and therefore cannot
+cancel, dead-letter, or stop outbox retry. Keeping judgment derivation in the
+renderer with explicit time inputs makes 60s/24h transitions unit-testable
+without time acceleration in the engine.
+
+### Alternatives Considered
+
+- A terminal `undeliverable` verdict after 24h: rejected; no network can prove
+  non-delivery, and the user reported exactly this false failure.
+- Polling the Station's `MessageDeliveryAggregate`: deferred; the local receipt
+  stream is authoritative for the originator, and a sender-readable aggregate
+  query is added only if a fresh device cannot reconstruct counts.
+- Recomputing the denominator from current membership/MLS leaves: rejected;
+  mutable member state must not rewrite an immutable delivery commitment.
+- Deriving horizons in Rust/store state: rejected; it would turn judgments into
+  durable facts and add time-driven writes.
+
+### Consequences
+
+- Additive schema: `messaging_message_delivery_devices` table and
+  `required_device_count` column, both migrated inside the single-writer
+  schema transaction.
+- The core receipt commit carries the consumer endpoint; Desktop renders the
+  full verdict, Mobile persists facts as schema/protocol follow without a
+  verdict UI.
+- A device that joins after deploy undercounts receipts for historical
+  messages; the fraction is hidden until both N and receipt facts exist.
+- A real 24h transition on an idle conversation stays UNPROVEN without a
+  bounded time-acceleration acceptance path; natural-time behavior is not
+  claimed as proof.
+
+Owner accepted on 2026-11-01 with the reviewed MP-D33/MP-D34 send-reliability
+package.
+
+## MP-D33: Send admission is idempotent per device-scoped send intent
+
+**Status**: accepted
+**Date**: 2026-11-01
+
+### Context
+
+Double-click, ambiguous IPC answers, worker wake failures after a durable
+admission, and failure-driven UI retries could each mint a second
+`message_id` and a second attachment batch for one user action. The Station
+wire contract is unchanged and stays exactly-once by command identity, but the
+device-local admission boundary had no idempotency key.
+
+### Decision
+
+One renderer send action mints one Crockford-base32 ULID `send_intent_id`.
+Admission is keyed `(sender_device_id, send_intent_id)` with a partial unique
+index over non-empty intents. `submit_message` resolves a repeated intent to
+the existing draft/pending/failed admission before any durable write. A
+durable `messaging_send_intents` ledger retains the
+`(device, intent) → message` binding after the pending row is deleted at commit,
+so a late duplicate still resolves to the one admitted message. A worker wake
+failure after admission is logged and leaves the outcome admitted (draft or
+pending); it never returns a send failure. The renderer clears composer content
+only on admission and reconciles an uncertain IPC answer through
+`messaging_send_intent_status` instead of resending.
+
+### Rationale
+
+The idempotency boundary is device-local admission, not the Station: it removes
+duplicate local rows without touching the wire protocol. Keeping the ledger
+independent of pending-row lifetime covers the ambiguous-answer window after
+commit.
+
+### Alternatives Considered
+
+- Idempotency keys on the Station API: rejected; duplicates originate locally
+  before any command exists.
+- Deduping on plaintext+timestamp: rejected; legitimate identical messages
+  collide.
+- Failing the IPC call when the post-admission wake fails: rejected; the
+  admission is already durable and the lifecycle worker owns retry.
+
+### Consequences
+
+- Additive `send_intent_id` column and `messaging_send_intents` ledger with a
+  single-writer migration preceding the canonical schema batch.
+- `messaging_send_message` returns `admission: "admitted"` plus draft/pending
+  state; rejection exists only when no durable row was created.
+- Empty intents are invalid at the engine boundary; legacy/empty rows are
+  ignored by the partial unique index.
+
+Owner accepted on 2026-11-01.
 
 ## MP-D31: Submitted Command 通过 Canonical Existing Truth 收敛
 

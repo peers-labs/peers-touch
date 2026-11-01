@@ -61,6 +61,16 @@ pub struct OssUploadAttachmentBytesInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct OssUploadAttachmentSocialBytesInput {
+    pub filename: String,
+    #[serde(default)]
+    pub mime_type: String,
+    pub bytes: Vec<u8>,
+    #[serde(default)]
+    pub bucket: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct OssPickImageSocialInput {
     /// Maximum number of files the picker is allowed to return.
     /// Moments enforces 9; the picker truncates silently if the user
@@ -533,6 +543,60 @@ pub fn oss_upload_attachment_social(
         "public",
         None,
     )
+}
+
+#[tauri::command]
+pub fn oss_upload_attachment_social_bytes(
+    input: OssUploadAttachmentSocialBytesInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = match require_token(state.inner(), &window) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if input.bytes.is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "bytes is required", None);
+    }
+    let filename = safe_temp_filename(input.filename.as_str());
+    if filename.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "filename is required", None);
+    }
+    // Downsampled images are re-encoded in the renderer; the temp file only
+    // bridges bytes into the same social upload path used for picked paths.
+    let temp_path =
+        std::env::temp_dir().join(format!("peers-social-{}-{filename}", Ulid::new()));
+    if let Err(error) = std::fs::write(&temp_path, input.bytes) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("write temp social attachment: {error}"),
+            None,
+        );
+    }
+    let cleanup = application_oss::TempFileCleanup::new(temp_path.clone(), "social byte attachment");
+
+    let bucket = if input.bucket.trim().is_empty() {
+        "moments"
+    } else {
+        input.bucket.trim()
+    };
+    let mime_override = input.mime_type.trim();
+    let result = application_oss::upload_attachment_with_mime(
+        state.station.resources(),
+        temp_path.to_string_lossy().as_ref(),
+        &token,
+        "social",
+        bucket,
+        "public",
+        None,
+        if mime_override.is_empty() {
+            None
+        } else {
+            Some(mime_override)
+        },
+    );
+    cleanup.remove_now();
+    result
 }
 
 // ── Generic ────────────────────────────────────────────────────────
