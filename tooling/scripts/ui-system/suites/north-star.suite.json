@@ -6178,6 +6178,23 @@
           "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(4)"
         },
         {
+          "op": "expect",
+          "id": "create-action-in-subbar",
+          "oracle": {
+            "type": "exists",
+            "target": ".sk-moments-subbar [data-action-id='circle.open-create']"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "no-dedicated-head-row",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-circles-head",
+            "equals": 0
+          }
+        },
+        {
           "op": "click",
           "target": "[data-action-id='circle.open-create']"
         },

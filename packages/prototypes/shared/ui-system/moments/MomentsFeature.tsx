@@ -211,18 +211,12 @@ function CircleCreateDialog({ open, onDismiss, onCreate }: {
   );
 }
 
-function CirclesView({ circles, onCreate }: {
-  circles: Circle[];
-  onCreate: (name: string) => void;
-}) {
-  const [dialogOpen, setDialogOpen] = useState(false);
+function CirclesView({ circles }: { circles: Circle[] }) {
+  // Pure list: the create action lives in the sub-bar next to the scope
+  // switcher (same slot as 发动态 on the feed), so circles never carry a
+  // second, near-empty toolbar row just for a count and a button.
   return (
     <div className="sk-circles">
-      <div className="sk-circles-head">
-        <span>{circles.length} 个圈子</span>
-        <Button actionId="circle.open-create" emphasis="secondary" density="compact"
-          leading={<Plus size={14} />} label="新建圈子" onActivate={() => setDialogOpen(true)} />
-      </div>
       <ul className="sk-circle-list">
         {circles.map(circle => (
           <li key={circle.id}>
@@ -242,8 +236,6 @@ function CirclesView({ circles, onCreate }: {
           </li>
         ))}
       </ul>
-      <CircleCreateDialog open={dialogOpen} onDismiss={() => setDialogOpen(false)}
-        onCreate={name => { onCreate(name); setDialogOpen(false); }} />
     </div>
   );
 }
@@ -256,6 +248,7 @@ export function MomentsFeature() {
   const [circles, setCircles] = useState<Circle[]>(CIRCLE_SEEDS);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [circleComposerOpen, setCircleComposerOpen] = useState(false);
 
   const homePosts = posts.filter(post => !post.federated);
   const federatedPosts = posts.filter(post => post.federated);
@@ -400,6 +393,10 @@ export function MomentsFeature() {
               <Button actionId="moments.compose" emphasis="primary" className="sk-compose-open"
                 leading={<Plus size={15} />} label="发动态" onActivate={() => setComposerOpen(true)} />
             )}
+            {tab === 'circles' && (
+              <Button actionId="circle.open-create" emphasis="primary" className="sk-circle-open"
+                leading={<Plus size={15} />} label="新建圈子" onActivate={() => setCircleComposerOpen(true)} />
+            )}
           </div>
 
           {tab === 'feed' && (
@@ -432,7 +429,7 @@ export function MomentsFeature() {
           )}
 
           {tab === 'circles' && (
-            <CirclesView circles={circles} onCreate={createCircle} />
+            <CirclesView circles={circles} />
           )}
         </>
       ) : nav.kind === 'profile' ? (
@@ -453,6 +450,9 @@ export function MomentsFeature() {
 
       <ComposeDialog open={composerOpen} circles={circles}
         onDismiss={() => setComposerOpen(false)} onPublish={publish} />
+      <CircleCreateDialog key={circleComposerOpen ? 'open' : 'closed'} open={circleComposerOpen}
+        onDismiss={() => setCircleComposerOpen(false)}
+        onCreate={name => { createCircle(name); setCircleComposerOpen(false); }} />
     </div>
   );
 }

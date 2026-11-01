@@ -10,7 +10,8 @@
   padding: 8px 22px 10px; flex-wrap: wrap;
 }
 .sk-moments-hint { font-size: 12px; color: var(--sk-text-3); }
-.sk-compose-open { margin-left: auto; }
+.sk-compose-open,
+.sk-circle-open { margin-left: auto; }
 
 .sk-moments-scroll {
   flex: 1; min-height: 0; overflow: auto;
@@ -179,10 +180,6 @@
 .sk-circles {
   flex: 1; min-height: 0; overflow: auto;
   padding: 6px 22px 24px; display: flex; flex-direction: column; gap: 12px;
-}
-.sk-circles-head {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 12.5px; color: var(--sk-text-3);
 }
 .sk-circle-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .sk-circle-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
