@@ -42,6 +42,8 @@ const SLUGS = [
   'journey-federation-governance',
   'journey-cross-station',
   'journey-agent-execution',
+  'journey-realtime-call',
+  'journey-group-call',
 ];
 const LOCALES = ['en', 'zh'];
 

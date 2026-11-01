@@ -43,6 +43,8 @@ const copy = zh
         ['journey-federation-governance', 'Federation 副本拉取与原子投影', '拉取后先过 Membership、签名与 PrevHash 校验，再让 Ledger 和 Projection 一起原子落库。'],
         ['journey-cross-station', '跨 Station 的持久社交投递', '源站 Accepted、目标站 Committed、接收设备 Visible，是三个不同的完成时刻。'],
         ['journey-agent-execution', '执行位置显式的 Agent Turn', '权威始终留在 Agent Domain，执行时明确派发给 Station Adapter 或 Client Capability。'],
+        ['journey-realtime-call', '一对一音视频通话', '呼叫与协商走 SSE 密封信封，DTLS-SRTP 媒体端到端直连、TURN 兜底，信令与媒体分离。'],
+        ['journey-group-call', '群组音视频通话', 'Home Station 校验成员并换取 LiveKit Token，媒体单点上行、由 SFU 分发，房间事件仍走 SSE。'],
       ],
       evidenceTitle: '证据边界',
       evidence: '全部架构图都锁定在源码快照 9f32b700。在节点检视器里可以直接跳到该 Revision 的对应源码行。它能证明结构与职责划分，但不等于生产部署、业务 Journey 或多节点运行已经通过当前验收。',
@@ -82,6 +84,8 @@ const copy = zh
         ['journey-federation-governance', 'Federation replica pull and atomic projection', 'Fetch, membership/signature/PrevHash verification, atomic Ledger + Projection commit.'],
         ['journey-cross-station', 'Durable cross-Station social delivery', 'Accepted at source, committed at target and visible on receiver device are distinct boundaries.'],
         ['journey-agent-execution', 'Agent turn with explicit execution placement', 'Agent Domain retains authority while dispatching a Station adapter or Client Capability.'],
+        ['journey-realtime-call', '1:1 voice and video calls', 'Ringing and negotiation use sealed SSE envelopes while DTLS-SRTP media flows end-to-end directly with TURN fallback; signaling and media stay separate.'],
+        ['journey-group-call', 'Group voice and video calls', 'The Home Station verifies membership and mints a LiveKit token; media uploads once to the SFU for distribution, while room events stay on SSE.'],
       ],
       evidenceTitle: 'Evidence boundary',
       evidence: 'Every diagram is bound to pinned source snapshot 9f32b700. Node inspectors link to verified source lines at that revision. This proves structure and responsibility, not production deployment, business Journey acceptance or multi-node runtime proof.',
@@ -108,6 +112,8 @@ const DIAGRAM_VIEWBOX: Record<string, [number, number]> = {
   'journey-federation-governance': [1085, 688],
   'journey-cross-station': [1085, 688],
   'journey-agent-execution': [1067, 688],
+  'journey-realtime-call': [920, 791],
+  'journey-group-call': [1085, 801],
 };
 const aspectOf = (slug: string): number => {
   const artboard = DIAGRAM_VIEWBOX[slug];

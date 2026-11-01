@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Group voice and video calls: Station authorization + LiveKit SFU",
+    "subtitle": "Clients do not build a P2P mesh: the Home Station verifies membership, obtains a short-lived LiveKit token from the Conversation Authority, and media is uploaded once and distributed by the SFU.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-group-call.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "member",
+      "type": "frontend",
+      "label": "Member Client",
+      "sublabel": "livekit-client",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/groupCall/groupCallManager.ts",
+          "label": "groupCallManager.ts · joinGroupCall",
+          "line": 89,
+          "end_line": 136
+        }
+      ]
+    },
+    {
+      "id": "home",
+      "type": "backend",
+      "label": "Home Station",
+      "sublabel": "groupcall subserver: membership check",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/groupcall/handler.go",
+          "label": "handler.go · /group-call/join",
+          "line": 27,
+          "end_line": 145
+        }
+      ]
+    },
+    {
+      "id": "authority",
+      "type": "backend",
+      "label": "Conversation Authority",
+      "sublabel": "Group's owning Station (may be remote)",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/routes.go",
+          "label": "routes.go · group-call authority route",
+          "line": 55,
+          "end_line": 62
+        }
+      ]
+    },
+    {
+      "id": "sfu",
+      "type": "external",
+      "label": "LiveKit SFU",
+      "sublabel": "External media service (7880/7881)",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/groupcall/livekit_adapter.go",
+          "label": "livekit_adapter.go · token minting",
+          "line": 37,
+          "end_line": 100
+        }
+      ]
+    },
+    {
+      "id": "others",
+      "type": "frontend",
+      "label": "Other members",
+      "sublabel": "Clients in the same room"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 350,
+      "label": "Join authorization (federation-transparent)"
+    },
+    {
+      "from": 365,
+      "to": 595,
+      "label": "SFU room media"
+    },
+    {
+      "from": 610,
+      "to": 690,
+      "label": "Room lifecycle"
+    }
+  ],
+  "messages": [
+    {
+      "id": "join",
+      "from": "member",
+      "to": "home",
+      "y": 185,
+      "label": "POST /group-call/join (group_ulid)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "resolve",
+      "from": "home",
+      "to": "authority",
+      "y": 240,
+      "label": "Resolve group call authority (federation route)",
+      "variant": "security",
+      "note": "If remote, the request is forwarded over the federation channel"
+    },
+    {
+      "id": "grant",
+      "from": "authority",
+      "to": "home",
+      "y": 295,
+      "label": "AUTHORIZED + epoch",
+      "variant": "return"
+    },
+    {
+      "id": "token",
+      "from": "home",
+      "to": "member",
+      "y": 340,
+      "label": "LiveKit url + short-lived participant token + room",
+      "variant": "return",
+      "note": "Station holds the API key/secret; clients only receive a scoped JWT"
+    },
+    {
+      "id": "connect",
+      "from": "member",
+      "to": "sfu",
+      "y": 400,
+      "label": "WS connect; publish mic/camera tracks",
+      "variant": "emphasis"
+    },
+    {
+      "id": "fanout",
+      "from": "sfu",
+      "to": "others",
+      "y": 455,
+      "label": "SFU distributes tracks (one upload per member)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "others-publish",
+      "from": "others",
+      "to": "sfu",
+      "y": 510,
+      "label": "Other members publish/subscribe",
+      "variant": "dashed"
+    },
+    {
+      "id": "events",
+      "from": "sfu",
+      "to": "member",
+      "y": 565,
+      "label": "Participant list / active speaker events",
+      "variant": "dashed"
+    },
+    {
+      "id": "webhook",
+      "from": "sfu",
+      "to": "home",
+      "y": 625,
+      "label": "Webhook: room started/ended",
+      "variant": "dashed"
+    },
+    {
+      "id": "notify",
+      "from": "home",
+      "to": "member",
+      "y": 670,
+      "label": "SSE ROOM_ACTIVE / ROOM_ENDED",
+      "variant": "dashed",
+      "note": "Members who have not joined also see the 'call in progress' hint"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "SFU, not a P2P mesh",
+      "items": [
+        "Each client uploads once to LiveKit; the SFU distributes to room members, avoiding N×N links.",
+        "1:1 calls use P2P with TURN fallback; group calls use the SFU — two independent media paths."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "External dependency and degradation",
+      "items": [
+        "LiveKit is deployed separately via LIVEKIT_API_URL / PUBLIC_URL / KEY / SECRET; when unconfigured, join is rejected while 1:1 calls and messaging keep working.",
+        "LiveKit's built-in TURN is disabled; media uses ports 7880/7881 and the configured external IP."
+      ]
+    }
+  ]
+}

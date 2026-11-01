@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "一对一语音与视频通话：SSE 信令 + WebRTC 媒体",
+    "subtitle": "呼叫/接听/挂断走 SSE 密封信封，Station 只扇出、不持有密钥；媒体走端到端 DTLS-SRTP，直连优先、TURN 兜底。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/journey-realtime-call.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "caller",
+      "type": "frontend",
+      "label": "发起端 Client",
+      "sublabel": "getUserMedia 采集",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/p2p/callP2p.ts",
+          "label": "callP2p.ts · startCall",
+          "line": 1299,
+          "end_line": 1340
+        },
+        {
+          "path": "apps/desktop/src/components/chat/CallSurface.tsx",
+          "label": "CallSurface.tsx",
+          "line": 81,
+          "end_line": 230
+        }
+      ]
+    },
+    {
+      "id": "signaling",
+      "type": "messagebus",
+      "label": "SSE 实时信令",
+      "sublabel": "Station 扇出密封信封，不持密钥",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/handler.go",
+          "label": "handler.go · CallSignal 扇出",
+          "line": 257,
+          "end_line": 340
+        }
+      ]
+    },
+    {
+      "id": "callee",
+      "type": "frontend",
+      "label": "接收端 Client",
+      "sublabel": "响铃 / 接听 / 拒绝",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/p2p/callP2p.ts",
+          "label": "callP2p.ts · acceptCall",
+          "line": 1344,
+          "end_line": 1406
+        }
+      ]
+    },
+    {
+      "id": "turn",
+      "type": "backend",
+      "label": "STUN / TURN",
+      "sublabel": "ICE 发现与 Relay（:3478）",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/plugin/native/subserver/turn/turn.go",
+          "label": "turn.go · Pion TURN",
+          "line": 37,
+          "end_line": 105
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 345,
+      "label": "振铃（45s 无应答自动结束）"
+    },
+    {
+      "from": 360,
+      "to": 690,
+      "label": "通话中：端到端实时媒体"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "caller",
+      "to": "signaling",
+      "y": 180,
+      "label": "密封 CALL_REQUEST（X25519 + AES-256-GCM）",
+      "variant": "security",
+      "note": "发起前先 getUserMedia；采集失败直接 media-failed，不发呼叫"
+    },
+    {
+      "id": "ring",
+      "from": "signaling",
+      "to": "callee",
+      "y": 235,
+      "label": "SSE 扇出，接收端所有在线设备响铃",
+      "variant": "dashed"
+    },
+    {
+      "id": "accept",
+      "from": "callee",
+      "to": "signaling",
+      "y": 290,
+      "label": "密封 CALL_ACCEPT",
+      "variant": "security",
+      "note": "他机已接听时，本机收到同 callId 信号后静默停响"
+    },
+    {
+      "id": "accepted",
+      "from": "signaling",
+      "to": "caller",
+      "y": 340,
+      "label": "接听完成，进入 active",
+      "variant": "return"
+    },
+    {
+      "id": "offer",
+      "from": "caller",
+      "to": "signaling",
+      "y": 400,
+      "label": "媒体 OFFER + ICE 候选",
+      "variant": "dashed"
+    },
+    {
+      "id": "answer",
+      "from": "signaling",
+      "to": "callee",
+      "y": 450,
+      "label": "扇出 OFFER；乱序候选先缓冲后回放",
+      "variant": "dashed"
+    },
+    {
+      "id": "answer-back",
+      "from": "callee",
+      "to": "signaling",
+      "y": 500,
+      "label": "密封 ANSWER + ICE 候选",
+      "variant": "dashed"
+    },
+    {
+      "id": "media",
+      "from": "caller",
+      "to": "callee",
+      "y": 560,
+      "label": "DTLS-SRTP 加密媒体直连",
+      "variant": "emphasis",
+      "note": "DataChannel 仅服务通话就绪，不再承载消息文本"
+    },
+    {
+      "id": "relay",
+      "from": "caller",
+      "to": "turn",
+      "y": 610,
+      "label": "直连失败：申请短期 Relay 凭证",
+      "variant": "dashed"
+    },
+    {
+      "id": "relay-media",
+      "from": "turn",
+      "to": "callee",
+      "y": 660,
+      "label": "经 TURN Relay 的 SRTP 媒体",
+      "variant": "dashed",
+      "note": "挂断发 CALL_END；ICE 断开有 20s 重连窗口，超时 network-failed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "信令与媒体分离",
+      "items": [
+        "呼叫、SDP 协商与挂断全部走 SSE 密封信封；Station 只做不透明扇出。",
+        "音频/视频媒体走浏览器 WebRTC：DTLS-SRTP 端到端加密，优先 P2P，失败经 TURN。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "回退与恢复",
+      "items": [
+        "ICE 断开进入 reconnecting：仅 offerer 发起 ICE restart，20s 内恢复，否则 network-failed。",
+        "振铃 45s 无应答自动 CALL_END；权限失败以 media-failed 拒绝，主叫不用等满超时。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "群组通话不是这套",
+      "items": [
+        "群语音/视频不做 P2P 网格：Client 向 Station 换取 LiveKit SFU 授权后直连 SFU，见群组通话 Journey。"
+      ]
+    }
+  ]
+}

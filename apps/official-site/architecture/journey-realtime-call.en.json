@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "1:1 voice and video calls: SSE signaling + WebRTC media",
+    "subtitle": "Ring/accept/end travel as sealed envelopes over SSE; Station only fans out and never holds keys. Media is end-to-end DTLS-SRTP, direct first with TURN fallback.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-realtime-call.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "caller",
+      "type": "frontend",
+      "label": "Caller Client",
+      "sublabel": "getUserMedia capture",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/p2p/callP2p.ts",
+          "label": "callP2p.ts · startCall",
+          "line": 1299,
+          "end_line": 1340
+        },
+        {
+          "path": "apps/desktop/src/components/chat/CallSurface.tsx",
+          "label": "CallSurface.tsx",
+          "line": 81,
+          "end_line": 230
+        }
+      ]
+    },
+    {
+      "id": "signaling",
+      "type": "messagebus",
+      "label": "SSE Realtime Signaling",
+      "sublabel": "Fans out sealed envelopes, holds no keys",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/handler.go",
+          "label": "handler.go · CallSignal fan-out",
+          "line": 257,
+          "end_line": 340
+        }
+      ]
+    },
+    {
+      "id": "callee",
+      "type": "frontend",
+      "label": "Callee Client",
+      "sublabel": "Ring / accept / decline",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/p2p/callP2p.ts",
+          "label": "callP2p.ts · acceptCall",
+          "line": 1344,
+          "end_line": 1406
+        }
+      ]
+    },
+    {
+      "id": "turn",
+      "type": "backend",
+      "label": "STUN / TURN",
+      "sublabel": "ICE discovery and relay (:3478)",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/plugin/native/subserver/turn/turn.go",
+          "label": "turn.go · Pion TURN",
+          "line": 37,
+          "end_line": 105
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 345,
+      "label": "Ringing (auto-ends after 45s unanswered)"
+    },
+    {
+      "from": 360,
+      "to": 690,
+      "label": "In call: end-to-end realtime media"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "caller",
+      "to": "signaling",
+      "y": 180,
+      "label": "Sealed CALL_REQUEST (X25519 + AES-256-GCM)",
+      "variant": "security",
+      "note": "getUserMedia runs first; a capture failure ends as media-failed before ringing"
+    },
+    {
+      "id": "ring",
+      "from": "signaling",
+      "to": "callee",
+      "y": 235,
+      "label": "SSE fan-out; every online callee device rings",
+      "variant": "dashed"
+    },
+    {
+      "id": "accept",
+      "from": "callee",
+      "to": "signaling",
+      "y": 290,
+      "label": "Sealed CALL_ACCEPT",
+      "variant": "security",
+      "note": "A sibling device answering stops this ring"
+    },
+    {
+      "id": "accepted",
+      "from": "signaling",
+      "to": "caller",
+      "y": 340,
+      "label": "Acceptance confirmed; call is active",
+      "variant": "return"
+    },
+    {
+      "id": "offer",
+      "from": "caller",
+      "to": "signaling",
+      "y": 400,
+      "label": "Media OFFER + ICE candidates",
+      "variant": "dashed"
+    },
+    {
+      "id": "answer",
+      "from": "signaling",
+      "to": "callee",
+      "y": 450,
+      "label": "Offer fan-out; out-of-order candidates buffered then replayed",
+      "variant": "dashed"
+    },
+    {
+      "id": "answer-back",
+      "from": "callee",
+      "to": "signaling",
+      "y": 500,
+      "label": "Sealed ANSWER + ICE candidates",
+      "variant": "dashed"
+    },
+    {
+      "id": "media",
+      "from": "caller",
+      "to": "callee",
+      "y": 560,
+      "label": "Direct DTLS-SRTP encrypted media",
+      "variant": "emphasis",
+      "note": "The DataChannel only serves call readiness; it no longer carries message text"
+    },
+    {
+      "id": "relay",
+      "from": "caller",
+      "to": "turn",
+      "y": 615,
+      "label": "Direct path fails: request short-lived relay credential",
+      "variant": "dashed"
+    },
+    {
+      "id": "relay-media",
+      "from": "turn",
+      "to": "callee",
+      "y": 660,
+      "label": "SRTP media via TURN relay",
+      "variant": "dashed",
+      "note": "Hangup sends CALL_END; ICE drops get a 20s reconnect window, then network-failed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Signaling/media separation",
+      "items": [
+        "Ringing, SDP negotiation and hangup use SSE sealed envelopes; Station only relays opaque payloads.",
+        "Audio/video runs over browser WebRTC: end-to-end DTLS-SRTP, P2P first, TURN on failure."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Fallback and recovery",
+      "items": [
+        "On an ICE drop the call enters reconnecting: only the offerer sends an ICE restart; recovery must land within 20s or it ends network-failed.",
+        "Ringing auto-sends CALL_END after 45s; a permission failure rejects with media-failed so the caller never waits out the timeout."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Group calls differ",
+      "items": [
+        "Group voice/video is not a P2P mesh: clients obtain a LiveKit SFU grant from Station and connect to the SFU. See the group-call journey."
+      ]
+    }
+  ]
+}
