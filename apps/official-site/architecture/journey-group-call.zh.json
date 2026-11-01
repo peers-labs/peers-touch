@@ -120,7 +120,7 @@
       "from": "authority",
       "to": "home",
       "y": 295,
-      "label": "AUTHORIZED + epoch",
+      "label": "AUTHORIZED 加入决策",
       "variant": "return"
     },
     {
@@ -128,7 +128,7 @@
       "from": "home",
       "to": "member",
       "y": 340,
-      "label": "LiveKit url + 短期参与 Token + room",
+      "label": "LiveKit url + 限时参与 JWT（6h）+ room",
       "variant": "return",
       "note": "Station 持有 API Key/Secret；Client 只拿到受限 JWT"
     },
@@ -196,7 +196,7 @@
       "title": "外部依赖与降级",
       "items": [
         "LiveKit 单独部署，经 LIVEKIT_API_URL / PUBLIC_URL / KEY / SECRET 配置；未配置时拒绝加入，1:1 与消息不受影响。",
-        "LiveKit 内置 TURN 关闭，媒体走 7880/7881 与配置的外部 IP。"
+        "内置 TURN 关闭，复用 Station :3478 的 Pion TURN；WSS 走 7880、RTC 媒体走 TCP/UDP 7881，对外通告 LIVEKIT_NODE_IP。"
       ]
     }
   ]

@@ -120,7 +120,7 @@
       "from": "authority",
       "to": "home",
       "y": 295,
-      "label": "AUTHORIZED + epoch",
+      "label": "AUTHORIZED join decision",
       "variant": "return"
     },
     {
@@ -128,7 +128,7 @@
       "from": "home",
       "to": "member",
       "y": 340,
-      "label": "LiveKit url + short-lived participant token + room",
+      "label": "LiveKit url + time-limited participant JWT (6h) + room",
       "variant": "return",
       "note": "Station holds the API key/secret; clients only receive a scoped JWT"
     },
@@ -196,7 +196,7 @@
       "title": "External dependency and degradation",
       "items": [
         "LiveKit is deployed separately via LIVEKIT_API_URL / PUBLIC_URL / KEY / SECRET; when unconfigured, join is rejected while 1:1 calls and messaging keep working.",
-        "LiveKit's built-in TURN is disabled; media uses ports 7880/7881 and the configured external IP."
+        "Built-in TURN is disabled and the Station Pion TURN on :3478 is reused; client WSS uses 7880, RTC media runs on TCP/UDP 7881 and advertises LIVEKIT_NODE_IP."
       ]
     }
   ]

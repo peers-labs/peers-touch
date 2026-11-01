@@ -165,8 +165,9 @@
       "from": "caller",
       "to": "turn",
       "y": 610,
-      "label": "直连失败：申请短期 Relay 凭证",
-      "variant": "dashed"
+      "label": "直连不通：ICE 改用 TURN 中继分配",
+      "variant": "dashed",
+      "note": "TURN-REST 凭证建连时经 /api/v1/turn/ice-servers 预配（24h）"
     },
     {
       "id": "relay-media",

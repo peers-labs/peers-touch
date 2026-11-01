@@ -165,8 +165,9 @@
       "from": "caller",
       "to": "turn",
       "y": 615,
-      "label": "Direct path fails: request short-lived relay credential",
-      "variant": "dashed"
+      "label": "Direct ICE fails: use TURN relay allocation",
+      "variant": "dashed",
+      "note": "TURN-REST credential is provisioned at setup via /api/v1/turn/ice-servers (24h)"
     },
     {
       "id": "relay-media",
