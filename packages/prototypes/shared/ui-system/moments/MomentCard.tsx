@@ -1,24 +1,25 @@
 /**
  * MomentCard — one social post in the north-star frame.
  *
- * Migrated anatomy of the desktop components/moments/MomentCard.tsx:
- * identity header (48px rounded-square avatar), source · reason · audience
- * trust line, body with long-text expansion, image grid + lightbox, comment
- * preview tile, and an action bar (16-kind reaction picker with summaries,
- * comment count, more menu). Every affordance has a real destination; the
- * card body itself opens detail just like the desktop surface.
+ * The card is the whole surface: there is no separate detail page. Comments
+ * live inline inside the card, shown by default; only beyond COMMENT_FOLD
+ * are they collapsed behind an explicit toggle. Commenting and deleting
+ * happen here too — and delete exists solely on the viewer's own content
+ * (comments and the viewer's own post menu).
  */
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import {
-  Globe, Lock, MessageCircle, MoreHorizontal, Smile, UserCheck, Users, UsersRound,
+  Globe, Lock, MessageCircle, Smile, Trash2, UserCheck, Users, UsersRound,
 } from 'lucide-react';
-import { Avatar, Button, Dialog, IconButton, Menu, Popover, Toggle } from '@peers-touch/ui';
+import { Avatar, Button, Dialog, IconButton, Menu, Popover, TextArea, Toggle } from '@peers-touch/ui';
 import {
-  REACTION_CATALOG, REACTION_BY_KIND,
-  type AudienceKind, type Moment, type ReactionKind, type TrustReason,
+  REACTION_CATALOG, REACTION_BY_KIND, VIEWER_NAME,
+  type AudienceKind, type Moment, type MomentComment, type ReactionKind, type TrustReason,
 } from './moments-data';
 
 const EXPAND_THRESHOLD = 320;
+/** Comments visible without an explicit expand action. */
+const COMMENT_FOLD = 10;
 
 const AUDIENCE_LABEL: Record<AudienceKind, string> = {
   public: '公开',
@@ -69,11 +70,12 @@ function TrustMeta({ post }: { post: Moment }) {
   );
 }
 
-function ReactionBar({ post, onReact, onUnreact, onOpenComments }: {
+function ReactionBar({ post, commentsOpen, onToggleComments, onReact, onUnreact }: {
   post: Moment;
+  commentsOpen: boolean;
+  onToggleComments: () => void;
   onReact: (id: string, kind: ReactionKind) => void;
   onUnreact: (id: string) => void;
-  onOpenComments: () => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const totals = (Object.entries(post.reactions) as [ReactionKind, number][])
@@ -125,8 +127,8 @@ function ReactionBar({ post, onReact, onUnreact, onOpenComments }: {
       )}
       <Button actionId={`moment.comments.${post.id}`} emphasis="quiet" density="compact"
         leading={<MessageCircle size={14} />} label={String(post.comments.length)}
-        aria-label={`${post.comments.length} 条评论`}
-        onActivate={event => { event.stopPropagation(); onOpenComments(); }} />
+        aria-label={`${post.comments.length} 条评论`} aria-expanded={commentsOpen}
+        onActivate={onToggleComments} />
     </div>
   );
 }
@@ -173,29 +175,86 @@ function ImageGrid({ images }: { images: string[] }) {
   );
 }
 
+function CommentItem({ comment, onAuthor, onRequestDelete }: {
+  comment: MomentComment;
+  onAuthor: (name: string) => void;
+  onRequestDelete: (comment: MomentComment) => void;
+}) {
+  const mine = comment.author === VIEWER_NAME;
+  return (
+    <li className="sk-comment-item" data-comment-id={comment.id} data-own-comment={mine ? 'true' : 'false'}>
+      <Avatar name={comment.author} background={comment.tone} size={30}
+        style={{ borderRadius: 9 }} aria-hidden="true" />
+      <span className="sk-comment-body">
+        <span className="sk-comment-line">
+          <button type="button" className="sk-comment-author"
+            onClick={() => onAuthor(comment.author)}>{comment.author}</button>
+          <span className="sk-comment-text">{comment.text}</span>
+          {mine && (
+            <IconButton actionId={`comment.delete.${comment.id}`} iconId="delete" iconSize={12}
+              label="删除评论" density="compact" emphasis="quiet"
+              className="sk-comment-delete" onActivate={() => onRequestDelete(comment)} />
+          )}
+        </span>
+        <time>{comment.at}</time>
+      </span>
+    </li>
+  );
+}
+
 export interface MomentCardProps {
   post: Moment;
-  onOpen: (id: string) => void;
   onAuthor: (name: string) => void;
   onReact: (id: string, kind: ReactionKind) => void;
   onUnreact: (id: string) => void;
+  onComment: (id: string, text: string) => void;
+  onDeleteComment: (postId: string, commentId: string) => void;
+  onDeletePost: (postId: string) => void;
 }
 
-export function MomentCard({ post, onOpen, onAuthor, onReact, onUnreact }: MomentCardProps) {
+export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onDeleteComment, onDeletePost }: MomentCardProps) {
   const [expanded, setExpanded] = useState(false);
+  // Comments are visible by default; the bubble hides/shows the inline tile.
+  const [commentsOpen, setCommentsOpen] = useState(true);
+  const [allComments, setAllComments] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [confirmTarget, setConfirmTarget] = useState<'post' | MomentComment | null>(null);
   const longBody = post.text.length > EXPAND_THRESHOLD;
   const visibleBody = expanded || !longBody
     ? post.text
     : `${post.text.slice(0, EXPAND_THRESHOLD)}…`;
-  const previewComments = post.comments.slice(0, 2);
+
+  const needsFold = post.comments.length > COMMENT_FOLD;
+  const visibleComments = needsFold && !allComments
+    ? post.comments.slice(0, COMMENT_FOLD)
+    : post.comments;
+  const ownPost = post.author === VIEWER_NAME;
+
+  const submitComment = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onComment(post.id, text);
+    setDraft('');
+    setCommentsOpen(true);
+    setAllComments(true);
+  };
+  const onEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    event.preventDefault();
+    submitComment();
+  };
+
+  const runConfirm = () => {
+    if (confirmTarget === 'post') onDeletePost(post.id);
+    else if (confirmTarget) onDeleteComment(post.id, confirmTarget.id);
+    setConfirmTarget(null);
+  };
 
   return (
-    <article className="sk-post" data-post-id={post.id} data-acceptance-id="social-moment-card"
-      onClick={() => onOpen(post.id)}>
+    <article className="sk-post" data-post-id={post.id} data-acceptance-id="social-moment-card">
       <header className="sk-post-head">
         <button type="button" className="sk-post-author"
           aria-label={`查看 ${post.author} 的主页`}
-          onClick={event => { event.stopPropagation(); onAuthor(post.author); }}>
+          onClick={() => onAuthor(post.author)}>
           <Avatar name={post.author} background={post.tone} size={48}
             style={{ borderRadius: 13 }} aria-hidden="true" />
           <span className="sk-post-idcol">
@@ -203,18 +262,24 @@ export function MomentCard({ post, onOpen, onAuthor, onReact, onUnreact }: Momen
             <span className="sk-post-time">{post.at}</span>
           </span>
         </button>
-        <span className="sk-post-menu" onClick={event => event.stopPropagation()}>
-          <Menu placement="bottom" label="动态操作"
-            actions={[{ id: `moment.open.${post.id}`, label: '打开动态', onActivate: () => onOpen(post.id) }]}>
-            <IconButton actionId={`moment.menu.${post.id}`} iconId="more-horizontal" iconSize={16}
-              label="更多" emphasis="quiet" density="compact" />
-          </Menu>
-        </span>
+        {ownPost && (
+          <span className="sk-post-menu">
+            <Menu placement="bottom" label="动态操作"
+              actions={[{
+                id: `moment.delete.${post.id}`, label: '删除动态',
+                leading: <Trash2 size={14} />, tone: 'danger',
+                onActivate: () => setConfirmTarget('post'),
+              }]}>
+              <IconButton actionId={`moment.menu.${post.id}`} iconId="more-horizontal" iconSize={16}
+                label="更多" emphasis="quiet" density="compact" />
+            </Menu>
+          </span>
+        )}
       </header>
 
       <div className="sk-post-meta"><TrustMeta post={post} /></div>
 
-      <div className="sk-post-body" onClick={event => event.stopPropagation()}>
+      <div className="sk-post-body">
         <p>{visibleBody}</p>
         {longBody && (
           <button type="button" className="sk-post-expand"
@@ -225,28 +290,53 @@ export function MomentCard({ post, onOpen, onAuthor, onReact, onUnreact }: Momen
         {post.images && post.images.length > 0 && <ImageGrid images={post.images} />}
       </div>
 
-      {(previewComments.length > 0 || post.comments.length > 0) && (
-        <div className="sk-comments" onClick={event => event.stopPropagation()}>
-          {previewComments.map(comment => (
-            <p key={comment.id} className="sk-comment-row">
-              <button type="button" className="sk-comment-author"
-                onClick={() => onAuthor(comment.author)}>{comment.author}</button>
-              <span> {comment.text}</span>
-            </p>
-          ))}
-          <button type="button" className="sk-comment-all"
-            onClick={() => onOpen(post.id)}>
-            {post.comments.length > previewComments.length
-              ? `查看全部 ${post.comments.length} 条`
-              : '查看评论'}
-          </button>
+      {commentsOpen && (
+        <div className="sk-comments" data-comments-open="true">
+          {post.comments.length > 0 && (
+            <ul className="sk-comment-list">
+              {visibleComments.map(comment => (
+                <CommentItem key={comment.id} comment={comment} onAuthor={onAuthor}
+                  onRequestDelete={setConfirmTarget} />
+              ))}
+            </ul>
+          )}
+          {needsFold && (
+            <button type="button" className="sk-comment-fold" data-comments-folded={allComments ? 'false' : 'true'}
+              onClick={() => setAllComments(value => !value)}>
+              {allComments ? '收起评论' : `展开全部 ${post.comments.length} 条评论`}
+            </button>
+          )}
+          <div className="sk-inline-composer">
+            <TextArea framing="embedded" minimumRows={1} maximumRows={4}
+              className="sk-composer-input" value={draft} aria-label="写评论"
+              data-comment-value={draft} placeholder="写评论……"
+              onValueChange={setDraft} onEnter={onEnter} />
+            <IconButton iconId="send" iconSize={16} label="发送评论"
+              actionId={`comment.send.${post.id}`} emphasis="primary"
+              availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入评论' }}
+              onActivate={submitComment} />
+          </div>
         </div>
       )}
 
-      <div onClick={event => event.stopPropagation()}>
-        <ReactionBar post={post} onReact={onReact} onUnreact={onUnreact}
-          onOpenComments={() => onOpen(post.id)} />
-      </div>
+      <ReactionBar post={post} commentsOpen={commentsOpen}
+        onToggleComments={() => setCommentsOpen(value => !value)}
+        onReact={onReact} onUnreact={onUnreact} />
+
+      <Dialog open={confirmTarget !== null} onDismiss={() => setConfirmTarget(null)}
+        title={confirmTarget === 'post' ? '删除这条动态？' : '删除这条评论？'} width={380}
+        closeLabel="取消"
+        description="删除仅作用于本地原型视图。"
+        footer={
+          <>
+            <Button actionId="comment.delete-cancel" emphasis="quiet" label="取消"
+              onActivate={() => setConfirmTarget(null)} />
+            <Button actionId="comment.delete-ok" emphasis="primary" tone="danger" label="删除"
+              onActivate={runConfirm} />
+          </>
+        }>
+        <span data-delete-confirm={confirmTarget === 'post' ? 'post' : 'comment'} />
+      </Dialog>
     </article>
   );
 }

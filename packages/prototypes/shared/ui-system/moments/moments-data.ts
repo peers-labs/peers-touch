@@ -85,6 +85,7 @@ export interface Circle {
 
 /** Viewer identity (the rail avatar is the initial of this name). */
 export const VIEWER = { name: '林野', tone: '#22302a' };
+export const VIEWER_NAME = VIEWER.name;
 
 /** Deterministic abstract photo stand-in; keeps the prototype network-free. */
 export function artwork(a: string, b: string, glyph: string): string {
@@ -121,6 +122,15 @@ export const MOMENT_SEEDS: Moment[] = [
     comments: [
       { id: 'mo-1-c1', author: '周禾', tone: '#5f7d5a', text: '下周也教我扦插吧，我家那盆一直徒长。', at: '5 分钟前' },
       { id: 'mo-1-c2', author: '苏禾', tone: OLIVE_1, text: '想要一盆！种子交换日带给我？', at: '2 分钟前' },
+      { id: 'mo-1-c3', author: '陈屿', tone: MINT_1, text: '徒长是光照不够，我放窗台就好多了。', at: '3 分钟前' },
+      { id: 'mo-1-c4', author: '老周', tone: '#8a7a55', text: '修自行车摊旁边阳光好，可以搬过去晒。', at: '6 分钟前' },
+      { id: 'mo-1-c5', author: '阿砚', tone: '#7a6a92', text: '植物医院也可以帮忙看徒长，松绿书屋站欢迎。', at: '8 分钟前' },
+      { id: 'mo-1-c6', author: '林晚', tone: CLAY_1, text: '三盆有点多啦，分我一盆好不好。', at: '10 分钟前' },
+      { id: 'mo-1-c7', author: '周禾', tone: '#5f7d5a', text: '我家罗勒也分你，周末书架见。', at: '12 分钟前' },
+      { id: 'mo-1-c8', author: '河埠头', tone: '#6f8fa6', text: '旧衣摊收了几个旧花盆，可以来拿。', at: '15 分钟前' },
+      { id: 'mo-1-c9', author: '苏禾', tone: OLIVE_1, text: '番茄苗也该分盆了，一起弄。', at: '18 分钟前' },
+      { id: 'mo-1-c10', author: '陈屿', tone: MINT_1, text: '今晚风筝夜，操场见。', at: '20 分钟前' },
+      { id: 'mo-1-c11', author: '林野', tone: VIEWER.tone, text: '谢谢大家，周末带薄荷苗来交换。', at: '刚刚' },
     ],
   },
   {

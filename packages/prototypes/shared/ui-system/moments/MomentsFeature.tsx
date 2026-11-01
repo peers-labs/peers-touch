@@ -5,9 +5,9 @@
  * profile) with peers-ui components and local state only.
  */
 import { useState, type KeyboardEvent } from 'react';
-import { ArrowLeft, Check, Plus, Search, UserPlus } from 'lucide-react';
+import { Check, ChevronLeft, Plus, Search, UserPlus } from 'lucide-react';
 import {
-  Avatar, AvatarGroup, Button, Dialog, Empty, IconButton, Segmented, Select,
+  Avatar, AvatarGroup, Button, Dialog, Empty, Segmented, Select,
   TextArea, TextField, Toggle,
 } from '@peers-touch/ui';
 import { MomentCard } from './MomentCard';
@@ -19,9 +19,9 @@ import './moments.css';
 
 type MomentsTab = 'feed' | 'explore' | 'people' | 'circles';
 
+// Feed/profile stay in one surface; cards carry their own comments inline.
 type MomentsNav =
   | { kind: 'tab' }
-  | { kind: 'detail'; id: string; from: MomentsTab }
   | { kind: 'profile'; name: string; from: MomentsTab };
 
 const TAB_OPTIONS: { value: MomentsTab; label: string }[] = [
@@ -98,67 +98,7 @@ function ComposeDialog({ open, circles, onDismiss, onPublish }: {
   );
 }
 
-function DetailView({ post, onBack, onAuthor, onReact, onUnreact, onComment }: {
-  post: Moment;
-  onBack: () => void;
-  onAuthor: (name: string) => void;
-  onReact: (id: string, kind: ReactionKind) => void;
-  onUnreact: (id: string) => void;
-  onComment: (id: string, text: string) => void;
-}) {
-  const [draft, setDraft] = useState('');
-  const send = () => {
-    const text = draft.trim();
-    if (!text) return;
-    onComment(post.id, text);
-    setDraft('');
-  };
-  const onEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    event.preventDefault();
-    send();
-  };
-  return (
-    <div className="sk-moment-detail">
-      <Button actionId="detail.back" emphasis="quiet" leading={<ArrowLeft size={15} />}
-        label="返回" onActivate={onBack} className="sk-detail-back" />
-      <MomentCard post={post} onOpen={() => undefined} onAuthor={onAuthor}
-        onReact={onReact} onUnreact={onUnreact} />
-      <section className="sk-post sk-comment-panel" aria-label="评论">
-        <h2 className="sk-comment-title">全部评论 {post.comments.length}</h2>
-        {post.comments.length === 0
-          ? <Empty description="还没有评论，来说第一句" />
-          : (
-            <ul className="sk-comment-list">
-              {post.comments.map(comment => (
-                <li key={comment.id} className="sk-comment-item">
-                  <Avatar name={comment.author} background={comment.tone} size={28}
-                    style={{ borderRadius: 8 }} />
-                  <span className="sk-comment-body">
-                    <button type="button" className="sk-comment-author"
-                      onClick={() => onAuthor(comment.author)}>{comment.author}</button>
-                    <p>{comment.text}</p>
-                    <time>{comment.at}</time>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        <div className="sk-composer sk-comment-composer">
-          <TextArea framing="embedded" minimumRows={1} maximumRows={4}
-            className="sk-composer-input" value={draft} aria-label="写评论"
-            data-comment-value={draft} placeholder="写评论……"
-            onValueChange={setDraft} onEnter={onEnter} />
-          <IconButton iconId="send" iconSize={16} label="发送评论"
-            actionId="comment.send" emphasis="primary"
-            availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入评论' }}
-            onActivate={send} />
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function ProfileView({ name, people, postCount, onBack, onOpen, onAuthor, onReact, onUnreact,
+function ProfileView({ name, people, postCount, onBack, onAuthor, onReact, onUnreact,
   followed, onToggleFollow }: {
   name: string;
   people: Person[];
@@ -166,7 +106,6 @@ function ProfileView({ name, people, postCount, onBack, onOpen, onAuthor, onReac
   followed: boolean;
   onToggleFollow: (id: string) => void;
   onBack: () => void;
-  onOpen: (id: string) => void;
   onAuthor: (name: string) => void;
   onReact: (id: string, kind: ReactionKind) => void;
   onUnreact: (id: string) => void;
@@ -177,7 +116,7 @@ function ProfileView({ name, people, postCount, onBack, onOpen, onAuthor, onReac
   const bio = person?.bio ?? '';
   return (
     <div className="sk-profile-view">
-      <Button actionId="profile.back" emphasis="quiet" leading={<ArrowLeft size={15} />}
+      <Button actionId="profile.back" emphasis="quiet" leading={<ChevronLeft size={15} />}
         label="返回" onActivate={onBack} className="sk-detail-back" />
       <section className="sk-post sk-profile">
         <Avatar name={name} background={tone} size={72} style={{ borderRadius: 20 }} />
@@ -327,7 +266,6 @@ export function MomentsFeature() {
     setVisibleCount(PAGE_SIZE);
   };
 
-  const openDetail = (id: string) => setNav({ kind: 'detail', id, from: tab });
   const openProfile = (name: string) => setNav({ kind: 'profile', name, from: tab });
   const backToTab = () => {
     if (nav.kind === 'tab') return;
@@ -358,6 +296,16 @@ export function MomentsFeature() {
           }],
         }
       : post));
+  };
+
+  const deleteComment = (postId: string, commentId: string) => {
+    setPosts(list => list.map(post => post.id === postId
+      ? { ...post, comments: post.comments.filter(comment => comment.id !== commentId) }
+      : post));
+  };
+
+  const deletePost = (postId: string) => {
+    setPosts(list => list.filter(post => post.id !== postId));
   };
 
   const publish = (draft: { text: string; audience: AudienceKind; circle?: string }) => {
@@ -394,13 +342,14 @@ export function MomentsFeature() {
   };
 
   const sharedCardProps = {
-    onOpen: openDetail,
     onAuthor: openProfile,
     onReact: (id: string, kind: ReactionKind) => applyReaction(id, kind),
     onUnreact: (id: string) => applyReaction(id, null),
+    onComment: addComment,
+    onDeleteComment: deleteComment,
+    onDeletePost: deletePost,
   };
 
-  const detailPost = nav.kind === 'detail' ? posts.find(post => post.id === nav.id) : undefined;
   const profileName = nav.kind === 'profile' ? nav.name : '';
   const profilePosts = nav.kind === 'profile'
     ? posts.filter(post => post.author === nav.name)
@@ -453,18 +402,12 @@ export function MomentsFeature() {
             <CirclesView circles={circles} onCreate={createCircle} />
           )}
         </>
-      ) : nav.kind === 'detail' && detailPost ? (
-        <div className="sk-moments-scroll">
-          <DetailView post={detailPost} onBack={backToTab}
-            onAuthor={openProfile} onComment={addComment}
-            onReact={sharedCardProps.onReact} onUnreact={sharedCardProps.onUnreact} />
-        </div>
       ) : nav.kind === 'profile' ? (
         <div className="sk-moments-scroll">
           <ProfileView name={profileName} people={people} postCount={profilePosts.length}
             followed={people.find(person => person.name === profileName)?.followed ?? false}
             onToggleFollow={toggleFollow} onBack={backToTab}
-            onOpen={openDetail} onAuthor={openProfile}
+            onAuthor={openProfile}
             onReact={sharedCardProps.onReact} onUnreact={sharedCardProps.onUnreact} />
           <div className="sk-profile-posts">
             {profilePosts.map(post => (

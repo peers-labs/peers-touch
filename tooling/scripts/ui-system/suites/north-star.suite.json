@@ -4580,8 +4580,8 @@
       ]
     },
     {
-      "id": "ui.prototype.north-star.moments-detail-comment",
-      "title": "查看全部进详情：3 条评论，发送键空态禁用；发评论后变 4 条且输入清空",
+      "id": "ui.prototype.north-star.moments-inline-comments",
+      "title": "增量31：评论默认在卡片内全显并可直接回复，不跳详情页",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -4589,43 +4589,175 @@
           "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)"
         },
         {
-          "op": "click",
-          "target": ".sk-post:nth-of-type(2) .sk-comment-all"
+          "op": "wait",
+          "ms": 200
         },
         {
           "op": "type",
-          "target": ".sk-comment-composer textarea",
+          "target": ".sk-post:nth-of-type(2) .sk-inline-composer textarea",
           "value": "周末书架见"
         },
         {
           "op": "click",
-          "target": ".sk-comment-composer .pt-icon-button"
+          "target": ".sk-post:nth-of-type(2) [data-action-id^='comment.send.']"
         }
       ],
       "oracles": [
         {
-          "id": "detail-open",
-          "type": "exists",
+          "id": "no-detail-view",
+          "type": "missing",
           "target": ".sk-moment-detail"
+        },
+        {
+          "id": "no-open-menu-item",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-action-id^='moment.open']"
         },
         {
           "id": "four-comments",
           "type": "count",
-          "target": ".sk-comment-item",
+          "target": ".sk-post:nth-of-type(2) .sk-comment-item",
           "equals": 4
         },
         {
           "id": "last-comment",
           "type": "textContains",
-          "target": ".sk-comment-item:last-of-type .sk-comment-body p",
+          "target": ".sk-post:nth-of-type(2) .sk-comment-item:last-of-type .sk-comment-text",
           "contains": "书架见"
         },
         {
           "id": "composer-cleared",
           "type": "attr",
-          "target": ".sk-comment-composer textarea",
+          "target": ".sk-post:nth-of-type(2) .sk-inline-composer textarea",
           "attr": "data-comment-value",
           "equals": ""
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-comment-delete-own-only",
+      "title": "增量31：只有自己的评论带删除入口；确认后删除",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "id": "own-comment-has-delete",
+          "oracle": {
+            "type": "exists",
+            "target": "[data-comment-id='mo-2-c1'][data-own-comment='true'] .sk-comment-delete"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "other-comment-no-delete",
+          "oracle": {
+            "type": "missing",
+            "target": "[data-comment-id='mo-2-c2'] .sk-comment-delete"
+          }
+        },
+        {
+          "op": "hover",
+          "target": "[data-comment-id='mo-2-c1'] .sk-comment-delete"
+        },
+        {
+          "op": "click",
+          "target": "[data-comment-id='mo-2-c1'] .sk-comment-delete"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "confirm-open",
+          "oracle": {
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-delete-confirm='comment']"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='comment.delete-ok']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "two-comments-left",
+          "type": "count",
+          "target": ".sk-post:nth-of-type(2) .sk-comment-item",
+          "equals": 2
+        },
+        {
+          "id": "own-removed",
+          "type": "missing",
+          "target": "[data-comment-id='mo-2-c1']"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-comment-fold",
+      "title": "增量31：评论超过 10 条默认折叠为 10 条，展开后全显",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "id": "folded-ten",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-post:first-of-type .sk-comment-item",
+            "equals": 10
+          }
+        },
+        {
+          "op": "click",
+          "target": ".sk-post:first-of-type .sk-comment-fold"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        }
+      ],
+      "oracles": [
+        {
+          "id": "fold-toggle-present",
+          "type": "exists",
+          "target": ".sk-post:first-of-type .sk-comment-fold"
+        },
+        {
+          "id": "expanded-eleven",
+          "type": "count",
+          "target": ".sk-post:first-of-type .sk-comment-item",
+          "equals": 11
+        },
+        {
+          "id": "toggle-label-collapses",
+          "type": "textContains",
+          "target": ".sk-post:first-of-type .sk-comment-fold",
+          "contains": "收起评论"
         }
       ],
       "finalizers": []
