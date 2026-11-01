@@ -78,38 +78,56 @@
 /* Inline comment tile: comments stay inside the post card. All comments
    show by default; beyond 10 the card folds behind an explicit toggle. */
 .sk-comments {
-  margin-top: 10px; padding: 10px 12px 8px; border-radius: 12px;
-  background: var(--sk-tile); display: flex; flex-direction: column; gap: 10px;
+  margin-top: 10px; padding: 12px; border-radius: 12px;
+  background: var(--sk-tile); display: flex; flex-direction: column; gap: 12px;
 }
-.sk-comment-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sk-comment-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .sk-comment-item { display: flex; gap: 8px; }
-.sk-comment-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.sk-comment-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .sk-comment-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .sk-comment-text { font-size: 13.5px; line-height: 1.6; color: var(--sk-text); min-width: 0; }
-.sk-comment-body time { font-size: 10.5px; color: var(--sk-text-3); padding-left: 2px; }
+.sk-comment-meta {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 11px; color: var(--sk-text-3);
+}
 .sk-comment-author {
   border: 0; background: transparent; padding: 0; cursor: pointer; flex-shrink: 0;
   color: var(--sk-text); font-weight: 650; font-size: 13.5px; font-family: inherit;
 }
 .sk-comment-author:hover { color: var(--sk-primary); }
-.sk-comment-delete {
-  margin-left: auto; align-self: center; flex-shrink: 0;
-  width: 22px; height: 22px; opacity: 0;
-  color: var(--sk-text-3);
+.sk-comment-action {
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 11px; color: var(--sk-text-3);
 }
-.sk-comment-item:hover .sk-comment-delete,
-.sk-comment-delete:focus-visible { opacity: 1; }
-.sk-comment-delete:hover { color: #b0413a; background: color-mix(in srgb, #b0413a 8%, transparent); }
+.sk-comment-action:hover { color: var(--sk-text); }
+.sk-comment-action.is-liked { color: var(--sk-primary); font-weight: 600; }
+.sk-comment-action.is-danger:hover { color: #b0413a; }
+/* Nested replies: tinted rounded block hugging the root comment. */
+.sk-reply-list {
+  list-style: none; margin: 4px 0 0; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 8px;
+  border-radius: 10px; background: color-mix(in srgb, var(--sk-text) 4%, transparent);
+}
+.sk-reply-list .sk-comment-item .pt-avatar { width: 24px !important; height: 24px !important; border-radius: 7px !important; }
 .sk-comment-fold {
   align-self: flex-start; border: 0; background: transparent; padding: 0;
   cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 500;
   color: var(--sk-text-3);
 }
 .sk-comment-fold:hover { color: var(--sk-primary); }
-.sk-inline-composer { display: flex; align-items: flex-end; gap: 6px; }
-.sk-inline-composer .sk-composer-input { flex: 1; min-width: 0; }
-.sk-inline-composer .pt-field-frame { background: var(--sk-card-bg); border-color: var(--sk-card-border); }
-.sk-inline-composer .pt-textarea { min-height: 34px; }
+
+/* Compact single-line composer: one field row + inline send tile. The
+   library TextArea carries an 80px min-height by design, so inline comment
+   inputs always use TextField (single line, Enter submits). */
+.sk-inline-composer { display: flex; align-items: center; gap: 6px; }
+.sk-inline-composer .pt-field-frame {
+  flex: 1; min-width: 0; min-height: 36px;
+  background: var(--sk-card-bg); border-color: var(--sk-card-border);
+  border-radius: 10px; padding: 0 12px;
+}
+.sk-inline-composer .pt-input { min-height: 36px; font-size: 13px; }
+.sk-inline-composer .pt-icon-button { flex-shrink: 0; }
+.sk-reply-composer { margin-top: 6px; }
 
 /* Reaction bar — viewer reaction is the single amber accent. */
 .sk-post-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; }

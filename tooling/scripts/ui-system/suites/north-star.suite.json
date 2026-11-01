@@ -4594,7 +4594,7 @@
         },
         {
           "op": "type",
-          "target": ".sk-post:nth-of-type(2) .sk-inline-composer textarea",
+          "target": ".sk-post:nth-of-type(2) [data-card-composer] input",
           "value": "周末书架见"
         },
         {
@@ -4629,7 +4629,7 @@
         {
           "id": "composer-cleared",
           "type": "attr",
-          "target": ".sk-post:nth-of-type(2) .sk-inline-composer textarea",
+          "target": ".sk-post:nth-of-type(2) [data-card-composer] input",
           "attr": "data-comment-value",
           "equals": ""
         }
@@ -4654,7 +4654,7 @@
           "id": "own-comment-has-delete",
           "oracle": {
             "type": "exists",
-            "target": "[data-comment-id='mo-2-c1'][data-own-comment='true'] .sk-comment-delete"
+            "target": "[data-comment-id='mo-2-c1'][data-own-comment='true'] [data-comment-delete]"
           }
         },
         {
@@ -4662,16 +4662,12 @@
           "id": "other-comment-no-delete",
           "oracle": {
             "type": "missing",
-            "target": "[data-comment-id='mo-2-c2'] .sk-comment-delete"
+            "target": "[data-comment-id='mo-2-c2'] [data-comment-delete]"
           }
         },
         {
-          "op": "hover",
-          "target": "[data-comment-id='mo-2-c1'] .sk-comment-delete"
-        },
-        {
           "op": "click",
-          "target": "[data-comment-id='mo-2-c1'] .sk-comment-delete"
+          "target": "[data-action-id='comment.delete.mo-2-c1']"
         },
         {
           "op": "wait",
@@ -4728,8 +4724,16 @@
           "id": "folded-ten",
           "oracle": {
             "type": "count",
-            "target": ".sk-post:first-of-type .sk-comment-item",
+            "target": ".sk-post:first-of-type .sk-comment-list > .sk-comment-item",
             "equals": 10
+          }
+        },
+        {
+          "op": "expect",
+          "id": "nested-reply-visible-folded",
+          "oracle": {
+            "type": "exists",
+            "target": ".sk-post:first-of-type [data-comment-id='mo-1-c1-r1']"
           }
         },
         {
@@ -4750,14 +4754,140 @@
         {
           "id": "expanded-eleven",
           "type": "count",
-          "target": ".sk-post:first-of-type .sk-comment-item",
+          "target": ".sk-post:first-of-type .sk-comment-list > .sk-comment-item",
           "equals": 11
+        },
+        {
+          "id": "total-items-includes-reply",
+          "type": "count",
+          "target": ".sk-post:first-of-type .sk-comment-item",
+          "equals": 12
         },
         {
           "id": "toggle-label-collapses",
           "type": "textContains",
           "target": ".sk-post:first-of-type .sk-comment-fold",
           "contains": "收起评论"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-comment-like",
+      "title": "增量32：评论可点赞，再次点击取消；他人评论初始未赞可赞，自己已赞可取消",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "click",
+          "target": "[data-comment-id='mo-2-c2'] [data-comment-like]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "click",
+          "target": "[data-comment-id='mo-2-c1'] [data-comment-like]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        }
+      ],
+      "oracles": [
+        {
+          "id": "liked-flag-on",
+          "type": "attr",
+          "target": "[data-comment-id='mo-2-c2'] [data-comment-like]",
+          "attr": "data-comment-like",
+          "equals": "on"
+        },
+        {
+          "id": "unlike-own-seed",
+          "type": "attr",
+          "target": "[data-comment-id='mo-2-c1'] [data-comment-like]",
+          "attr": "data-comment-like",
+          "equals": "off"
+        },
+        {
+          "id": "own-like-label",
+          "type": "textContains",
+          "target": "[data-comment-id='mo-2-c1'] [data-comment-like]",
+          "contains": "赞"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-comment-reply",
+      "title": "增量32：评论可回复，回复进入该评论的嵌套块；回复回复挂在同一根",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": ".sk-rail-group:nth-child(2) .sk-rail-icon:nth-child(3)"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='comment.reply.mo-1-c1']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "type",
+          "target": "[data-reply-value]",
+          "value": "我也想学扦插"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='reply.send.mo-1-c1']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "seeded-reply-block",
+          "type": "exists",
+          "target": "[data-comment-id='mo-1-c1'] .sk-reply-list"
+        },
+        {
+          "id": "new-reply",
+          "type": "textContains",
+          "target": "[data-comment-id='mo-1-c1'] .sk-reply-list",
+          "contains": "我也想学扦插"
+        },
+        {
+          "id": "new-reply-own",
+          "type": "exists",
+          "target": ".sk-reply-list [data-own-comment='true']"
+        },
+        {
+          "id": "reply-count-reflected",
+          "type": "textContains",
+          "target": "[data-action-id^='moment.comments.mo-1']",
+          "contains": "13"
+        },
+        {
+          "id": "input-cleared",
+          "type": "missing",
+          "target": "[data-reply-value]"
         }
       ],
       "finalizers": []

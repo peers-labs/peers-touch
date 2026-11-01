@@ -46,6 +46,10 @@ export interface MomentComment {
   tone: string;
   text: string;
   at: string;
+  /** Viewer-name set when the local viewer liked this comment. */
+  likes?: string[];
+  /** Flat one-level replies (a reply to a reply attaches to the root). */
+  replies?: MomentComment[];
 }
 
 export interface Moment {
@@ -120,7 +124,11 @@ export const MOMENT_SEEDS: Moment[] = [
     images: [artwork(MINT_1, MINT_2, '\u{1F33F}')],
     reactions: { like: 24, love: 3 },
     comments: [
-      { id: 'mo-1-c1', author: '周禾', tone: '#5f7d5a', text: '下周也教我扦插吧，我家那盆一直徒长。', at: '5 分钟前' },
+      { id: 'mo-1-c1', author: '周禾', tone: '#5f7d5a', text: '下周也教我扦插吧，我家那盆一直徒长。', at: '5 分钟前',
+        likes: ['林晚', '陈屿'],
+        replies: [
+          { id: 'mo-1-c1-r1', author: '老周', tone: '#8a7a55', text: '徒长就打顶，把顶端掐掉会分枝。', at: '4 分钟前', likes: ['周禾'] },
+        ] },
       { id: 'mo-1-c2', author: '苏禾', tone: OLIVE_1, text: '想要一盆！种子交换日带给我？', at: '2 分钟前' },
       { id: 'mo-1-c3', author: '陈屿', tone: MINT_1, text: '徒长是光照不够，我放窗台就好多了。', at: '3 分钟前' },
       { id: 'mo-1-c4', author: '老周', tone: '#8a7a55', text: '修自行车摊旁边阳光好，可以搬过去晒。', at: '6 分钟前' },
@@ -139,7 +147,7 @@ export const MOMENT_SEEDS: Moment[] = [
     text: '和邻居一起整理了小区共享书架，今天有人在架上放了一本我找了很久的诗集，扉页还留着上一位读者的批注。人和人这样接上的感觉真好——不需要认识很久，只需要在同一个地方认真生活过一阵。我们把书架编号重新刷了漆，又给儿童角加了两盏暖光灯。如果你家也有读完想流转的书，周末可以直接带来，登记一下就能上架。',
     reactions: { like: 58, laugh: 1, clap: 12 },
     comments: [
-      { id: 'mo-2-c1', author: '林野', tone: VIEWER.tone, text: '诗集名字叫什么？我也想读。', at: '1 小时前' },
+      { id: 'mo-2-c1', author: '林野', tone: VIEWER.tone, text: '诗集名字叫什么？我也想读。', at: '1 小时前', likes: ['林野', '陈屿'] },
       { id: 'mo-2-c2', author: '林晚', tone: CLAY_1, text: '批注比诗本身还有意思。', at: '40 分钟前' },
       { id: 'mo-2-c3', author: '陈屿', tone: MINT_1, text: '周末我来帮忙刷第二层漆。', at: '20 分钟前' },
     ],

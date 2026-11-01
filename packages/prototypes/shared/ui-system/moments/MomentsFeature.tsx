@@ -299,9 +299,40 @@ export function MomentsFeature() {
   };
 
   const deleteComment = (postId: string, commentId: string) => {
+    const removeRecursive = (comments: Moment['comments']): Moment['comments'] =>
+      comments
+        .filter(comment => comment.id !== commentId)
+        .map(comment => comment.replies?.length
+          ? { ...comment, replies: removeRecursive(comment.replies) }
+          : comment);
     setPosts(list => list.map(post => post.id === postId
-      ? { ...post, comments: post.comments.filter(comment => comment.id !== commentId) }
+      ? { ...post, comments: removeRecursive(post.comments) }
       : post));
+  };
+
+  const likeComment = (postId: string, commentId: string) => {
+    const toggleIn = (comments: Moment['comments']): Moment['comments'] =>
+      comments.map(comment => {
+        const liked = (comment.likes ?? []).includes(VIEWER.name);
+        const likes = comment.id === commentId
+          ? (liked
+              ? comment.likes!.filter(name => name !== VIEWER.name)
+              : [...(comment.likes ?? []), VIEWER.name])
+          : comment.likes;
+        return comment.replies?.length ? { ...comment, likes, replies: toggleIn(comment.replies) } : { ...comment, likes };
+      });
+    setPosts(list => list.map(post => post.id === postId ? { ...post, comments: toggleIn(post.comments) } : post));
+  };
+
+  const replyComment = (postId: string, rootId: string, text: string) => {
+    const reply: Moment['comments'][number] = {
+      id: `local-${Date.now()}`, author: VIEWER.name, tone: VIEWER.tone, text, at: '刚刚',
+    };
+    const appendIn = (comments: Moment['comments']): Moment['comments'] =>
+      comments.map(comment => comment.id === rootId
+        ? { ...comment, replies: [...(comment.replies ?? []), reply] }
+        : comment.replies?.length ? { ...comment, replies: appendIn(comment.replies) } : comment);
+    setPosts(list => list.map(post => post.id === postId ? { ...post, comments: appendIn(post.comments) } : post));
   };
 
   const deletePost = (postId: string) => {
@@ -346,6 +377,8 @@ export function MomentsFeature() {
     onReact: (id: string, kind: ReactionKind) => applyReaction(id, kind),
     onUnreact: (id: string) => applyReaction(id, null),
     onComment: addComment,
+    onLikeComment: likeComment,
+    onReplyComment: replyComment,
     onDeleteComment: deleteComment,
     onDeletePost: deletePost,
   };

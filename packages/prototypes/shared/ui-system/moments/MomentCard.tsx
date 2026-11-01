@@ -1,17 +1,19 @@
 /**
  * MomentCard — one social post in the north-star frame.
  *
- * The card is the whole surface: there is no separate detail page. Comments
- * live inline inside the card, shown by default; only beyond COMMENT_FOLD
- * are they collapsed behind an explicit toggle. Commenting and deleting
- * happen here too — and delete exists solely on the viewer's own content
- * (comments and the viewer's own post menu).
+ * The card is the whole surface: no separate detail page. Comments live
+ * inline (shown by default, folded after COMMENT_FOLD), and every comment
+ * is itself interactive — like and reply, with one level of nested
+ * replies rendered in a tinted reply block (a reply to a reply attaches
+ * to the root). Delete exists solely on the viewer's own content.
  */
-import { useState, type KeyboardEvent } from 'react';
+import { useState } from 'react';
 import {
   Globe, Lock, MessageCircle, Smile, Trash2, UserCheck, Users, UsersRound,
 } from 'lucide-react';
-import { Avatar, Button, Dialog, IconButton, Menu, Popover, TextArea, Toggle } from '@peers-touch/ui';
+import {
+  Avatar, Button, Dialog, IconButton, Menu, Popover, TextField, Toggle,
+} from '@peers-touch/ui';
 import {
   REACTION_CATALOG, REACTION_BY_KIND, VIEWER_NAME,
   type AudienceKind, type Moment, type MomentComment, type ReactionKind, type TrustReason,
@@ -78,6 +80,9 @@ function ReactionBar({ post, commentsOpen, onToggleComments, onReact, onUnreact 
   onUnreact: (id: string) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const countComments = (comments: Moment['comments']): number =>
+    comments.reduce((sum, c) => sum + 1 + countComments(c.replies ?? []), 0);
+  const commentCount = countComments(post.comments);
   const totals = (Object.entries(post.reactions) as [ReactionKind, number][])
     .filter(([, count]) => count > 0)
     .sort((a, b) => b[1] - a[1]);
@@ -126,8 +131,8 @@ function ReactionBar({ post, commentsOpen, onToggleComments, onReact, onUnreact 
         </Popover>
       )}
       <Button actionId={`moment.comments.${post.id}`} emphasis="quiet" density="compact"
-        leading={<MessageCircle size={14} />} label={String(post.comments.length)}
-        aria-label={`${post.comments.length} 条评论`} aria-expanded={commentsOpen}
+        leading={<MessageCircle size={14} />} label={String(commentCount)}
+        aria-label={`${commentCount} 条评论`} aria-expanded={commentsOpen}
         onActivate={onToggleComments} />
     </div>
   );
@@ -175,14 +180,36 @@ function ImageGrid({ images }: { images: string[] }) {
   );
 }
 
-function CommentItem({ comment, onAuthor, onRequestDelete }: {
+interface CommentItemProps {
   comment: MomentComment;
+  depth?: number;
+  rootId: string;
+  postId: string;
   onAuthor: (name: string) => void;
+  onLikeComment: (postId: string, commentId: string) => void;
+  onReplyComment: (postId: string, rootId: string, text: string) => void;
   onRequestDelete: (comment: MomentComment) => void;
-}) {
+}
+
+function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, onLikeComment, onReplyComment, onRequestDelete }: CommentItemProps) {
+  const [replying, setReplying] = useState(false);
+  const [draft, setDraft] = useState('');
   const mine = comment.author === VIEWER_NAME;
+  const liked = (comment.likes ?? []).includes(VIEWER_NAME);
+  const likeCount = comment.likes?.length ?? 0;
+  const replies = comment.replies ?? [];
+
+  const submit = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onReplyComment(postId, rootId, text);
+    setDraft('');
+    setReplying(false);
+  };
+
   return (
-    <li className="sk-comment-item" data-comment-id={comment.id} data-own-comment={mine ? 'true' : 'false'}>
+    <li className="sk-comment-item" data-comment-id={comment.id} data-own-comment={mine ? 'true' : 'false'}
+      data-depth={depth}>
       <Avatar name={comment.author} background={comment.tone} size={30}
         style={{ borderRadius: 9 }} aria-hidden="true" />
       <span className="sk-comment-body">
@@ -190,13 +217,47 @@ function CommentItem({ comment, onAuthor, onRequestDelete }: {
           <button type="button" className="sk-comment-author"
             onClick={() => onAuthor(comment.author)}>{comment.author}</button>
           <span className="sk-comment-text">{comment.text}</span>
-          {mine && (
-            <IconButton actionId={`comment.delete.${comment.id}`} iconId="delete" iconSize={12}
-              label="删除评论" density="compact" emphasis="quiet"
-              className="sk-comment-delete" onActivate={() => onRequestDelete(comment)} />
-          )}
         </span>
-        <time>{comment.at}</time>
+        <div className="sk-comment-meta">
+          <time>{comment.at}</time>
+          <Button actionId={`comment.like.${comment.id}`} emphasis="quiet" density="compact"
+            className={`sk-comment-action${liked ? ' is-liked' : ''}`}
+            data-comment-like={liked ? 'on' : 'off'}
+            label={likeCount > 0 ? `赞 ${likeCount}` : '赞'}
+            onActivate={() => onLikeComment(postId, comment.id)} />
+          <Button actionId={`comment.reply.${comment.id}`} emphasis="quiet" density="compact"
+            className="sk-comment-action" data-comment-reply label="回复"
+            onActivate={() => setReplying(value => !value)} />
+          {mine && (
+            <Button actionId={`comment.delete.${comment.id}`} emphasis="quiet" density="compact"
+              className="sk-comment-action is-danger" data-comment-delete label="删除"
+              tone="danger" onActivate={() => onRequestDelete(comment)} />
+          )}
+        </div>
+
+        {replies.length > 0 && (
+          <ul className="sk-reply-list">
+            {replies.map(reply => (
+              <CommentItem key={reply.id} comment={reply} depth={1} rootId={rootId} postId={postId}
+                onAuthor={onAuthor} onLikeComment={onLikeComment}
+                onReplyComment={onReplyComment} onRequestDelete={onRequestDelete} />
+            ))}
+          </ul>
+        )}
+
+        {replying && (
+          <span className="sk-inline-composer sk-reply-composer" data-reply-to={comment.author}>
+            <TextField aria-label={`回复 ${comment.author}`}
+              placeholder={`回复 ${comment.author}……`} value={draft}
+              data-reply-value={draft}
+              onValueChange={setDraft}
+              onEnter={event => { event.preventDefault(); submit(); }} autoFocus />
+            <IconButton iconId="send" iconSize={14} label="发送回复"
+              actionId={`reply.send.${comment.id}`} emphasis="primary" density="compact"
+              availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入回复' }}
+              onActivate={submit} />
+          </span>
+        )}
       </span>
     </li>
   );
@@ -208,13 +269,15 @@ export interface MomentCardProps {
   onReact: (id: string, kind: ReactionKind) => void;
   onUnreact: (id: string) => void;
   onComment: (id: string, text: string) => void;
+  onLikeComment: (postId: string, commentId: string) => void;
+  onReplyComment: (postId: string, rootCommentId: string, text: string) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onDeletePost: (postId: string) => void;
 }
 
-export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onDeleteComment, onDeletePost }: MomentCardProps) {
+export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onLikeComment,
+  onReplyComment, onDeleteComment, onDeletePost }: MomentCardProps) {
   const [expanded, setExpanded] = useState(false);
-  // Comments are visible by default; the bubble hides/shows the inline tile.
   const [commentsOpen, setCommentsOpen] = useState(true);
   const [allComments, setAllComments] = useState(false);
   const [draft, setDraft] = useState('');
@@ -237,10 +300,6 @@ export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onDe
     setDraft('');
     setCommentsOpen(true);
     setAllComments(true);
-  };
-  const onEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    event.preventDefault();
-    submitComment();
   };
 
   const runConfirm = () => {
@@ -295,8 +354,9 @@ export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onDe
           {post.comments.length > 0 && (
             <ul className="sk-comment-list">
               {visibleComments.map(comment => (
-                <CommentItem key={comment.id} comment={comment} onAuthor={onAuthor}
-                  onRequestDelete={setConfirmTarget} />
+                <CommentItem key={comment.id} comment={comment} rootId={comment.id} postId={post.id}
+                  onAuthor={onAuthor} onLikeComment={onLikeComment}
+                  onReplyComment={onReplyComment} onRequestDelete={setConfirmTarget} />
               ))}
             </ul>
           )}
@@ -306,16 +366,16 @@ export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onDe
               {allComments ? '收起评论' : `展开全部 ${post.comments.length} 条评论`}
             </button>
           )}
-          <div className="sk-inline-composer">
-            <TextArea framing="embedded" minimumRows={1} maximumRows={4}
-              className="sk-composer-input" value={draft} aria-label="写评论"
-              data-comment-value={draft} placeholder="写评论……"
-              onValueChange={setDraft} onEnter={onEnter} />
-            <IconButton iconId="send" iconSize={16} label="发送评论"
+          <span className="sk-inline-composer" data-card-composer>
+            <TextField aria-label="写评论" placeholder="写评论……"
+              value={draft} data-comment-value={draft}
+              onValueChange={setDraft}
+              onEnter={event => { event.preventDefault(); submitComment(); }} />
+            <IconButton iconId="send" iconSize={15} label="发送评论"
               actionId={`comment.send.${post.id}`} emphasis="primary"
               availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入评论' }}
               onActivate={submitComment} />
-          </div>
+          </span>
         </div>
       )}
 
