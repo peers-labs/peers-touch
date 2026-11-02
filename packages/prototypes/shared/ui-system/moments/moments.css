@@ -137,8 +137,31 @@
 
 /* Feedback bar — directly under the body, above the comments tile, so the
    reaction/comment counts are visible without scrolling through comments.
-   The viewer's reaction is the single amber accent. */
-.sk-post-actions { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
+   Reactions are multi-select: every chosen kind shows its own chip. */
+.sk-post-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+/* Multi-select can pile several kinds into one post; chips wrap on their own
+   row instead of scrolling, so narrow frames never hide chosen reactions
+   behind a horizontal scroller. */
+.sk-react-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.sk-react-summary:empty { display: none; }
+/* Smile/comment tiles keep one stable right-aligned row under the chips. */
+.sk-post-action-buttons { display: flex; justify-content: flex-end; gap: 4px; }
+.sk-react-summary .sk-react-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.sk-react-count { font-size: 12.5px; font-weight: 500; line-height: 1; }
 .sk-post-actions .pt-button.is-liked {
   color: var(--sk-accent);
   background: color-mix(in srgb, var(--sk-accent) 12%, transparent);
@@ -150,6 +173,10 @@
 .sk-react-picker .pt-button {
   width: 30px; min-width: 30px; height: 30px; padding: 0;
   font-size: 16px; border-radius: 8px;
+}
+.sk-react-picker .pt-button.is-liked {
+  background: color-mix(in srgb, var(--sk-accent) 14%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--sk-accent) 45%, transparent);
 }
 
 .sk-feed-end { text-align: center; font-size: 11.5px; color: var(--sk-text-3); padding: 6px 0 2px; }

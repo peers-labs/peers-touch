@@ -72,44 +72,36 @@ function TrustMeta({ post }: { post: Moment }) {
   );
 }
 
-function ReactionBar({ post, commentsOpen, onToggleComments, onReact, onUnreact }: {
+function ReactionBar({ post, commentsOpen, onToggleComments, onToggleReaction }: {
   post: Moment;
   commentsOpen: boolean;
   onToggleComments: () => void;
-  onReact: (id: string, kind: ReactionKind) => void;
-  onUnreact: (id: string) => void;
+  onToggleReaction: (id: string, kind: ReactionKind) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const countComments = (comments: Moment['comments']): number =>
     comments.reduce((sum, c) => sum + 1 + countComments(c.replies ?? []), 0);
   const commentCount = countComments(post.comments);
+  const chosen = new Set(post.viewerReactions ?? []);
   const totals = (Object.entries(post.reactions) as [ReactionKind, number][])
     .filter(([, count]) => count > 0)
     .sort((a, b) => b[1] - a[1]);
   const total = totals.reduce((sum, [, count]) => sum + count, 0);
-  const viewerMeta = post.viewerReaction ? REACTION_BY_KIND.get(post.viewerReaction) : undefined;
-  // One single reaction control. It shows the viewer's own choice when set,
-  // otherwise the most-used reaction; a post with no reactions shows the
-  // smile entry. There is no separate "like" button — like is just the first
-  // emoji in the picker.
-  const shownMeta = viewerMeta ?? (totals.length ? REACTION_BY_KIND.get(totals[0][0]) : undefined);
 
-  // Re-picking the viewer's current reaction clears it; any other emoji
-  // switches the single-choice reaction.
-  const choose = (kind: ReactionKind) => {
-    setPickerOpen(false);
-    if (post.viewerReaction === kind) onUnreact(post.id);
-    else onReact(post.id, kind);
-  };
-
+  // Multi-select reactions:
+  // - each kind with a count shows its own chip (emoji + count);
+  // - a chip the viewer chose is accented, and tapping it again unchecks;
+  // - the smile tile opens the 16-kind picker, which stays open so several
+  //   reactions can be chosen in one pass; outside press dismisses it.
   const picker = (
     <div className="sk-react-picker" role="group" aria-label="选择反应">
       {REACTION_CATALOG.map(meta => (
         <Button key={meta.kind} actionId={`moment.react.${meta.kind}`} emphasis="quiet"
           density="compact" aria-label={meta.label}
-          aria-pressed={post.viewerReaction === meta.kind}
+          aria-pressed={chosen.has(meta.kind)}
           data-reaction-kind={meta.kind}
-          onActivate={() => choose(meta.kind)}>
+          className={chosen.has(meta.kind) ? 'is-liked' : undefined}
+          onActivate={() => onToggleReaction(post.id, meta.kind)}>
           <span aria-hidden="true">{meta.emoji}</span>
         </Button>
       ))}
@@ -118,22 +110,42 @@ function ReactionBar({ post, commentsOpen, onToggleComments, onReact, onUnreact 
 
   return (
     <div className="sk-post-actions">
-      <Popover open={pickerOpen} onOpenChange={setPickerOpen} content={picker}
-        placement="bottom" label="选择反应" className="sk-react-popover">
-        <Button actionId={`moment.reaction.${post.id}`} emphasis="quiet" density="compact"
-          leading={shownMeta
-            ? <span className="sk-react-emoji" aria-hidden="true">{shownMeta.emoji}</span>
-            : <Smile size={14} />}
-          label={shownMeta ? String(total) : undefined}
-          className={viewerMeta ? 'is-liked' : undefined}
-          aria-pressed={Boolean(viewerMeta)}
-          data-reaction-total={total}
-          aria-label={shownMeta ? `反应：${shownMeta.label}，共 ${total}` : '添加反应'} />
-      </Popover>
-      <Button actionId={`moment.comments.${post.id}`} emphasis="quiet" density="compact"
-        leading={<MessageCircle size={14} />} label={String(commentCount)}
-        aria-label={`${commentCount} 条评论`} aria-expanded={commentsOpen}
-        onActivate={onToggleComments} />
+      <span className="sk-react-summary" data-reaction-summary>
+        {totals.map(([kind, count]) => {
+          const meta = REACTION_BY_KIND.get(kind);
+          if (!meta) return null;
+          const selected = chosen.has(kind);
+          return (
+            <Button key={kind} actionId={`moment.reaction-chip.${post.id}.${kind}`}
+              emphasis="quiet" density="compact"
+              className={selected ? 'sk-react-chip is-liked' : 'sk-react-chip'}
+              aria-label={`${meta.label} ${count}${selected ? '，点击取消' : ''}`}
+              aria-pressed={selected}
+              data-reaction-kind={kind}
+              data-reaction-count={count}
+              onActivate={() => onToggleReaction(post.id, kind)}>
+              <span className="sk-react-emoji" aria-hidden="true">{meta.emoji}</span>
+              <span className="sk-react-count">{count}</span>
+            </Button>
+          );
+        })}
+      </span>
+      {/* Chips own their own wrapping row; the action tiles stay a stable
+          second row so a long multi-reaction selection never strands the
+          smile/comment controls between chip lines. */}
+      <span className="sk-post-action-buttons">
+        <Popover open={pickerOpen} onOpenChange={setPickerOpen} content={picker}
+          placement="bottom" label="选择反应" className="sk-react-popover">
+          <Button actionId={`moment.reaction.${post.id}`} emphasis="quiet" density="compact"
+            leading={<Smile size={14} />}
+            aria-label="添加反应" aria-haspopup="dialog" aria-expanded={pickerOpen}
+            data-reaction-total={total} />
+        </Popover>
+        <Button actionId={`moment.comments.${post.id}`} emphasis="quiet" density="compact"
+          leading={<MessageCircle size={14} />} label={String(commentCount)}
+          aria-label={`${commentCount} 条评论`} aria-expanded={commentsOpen}
+          onActivate={onToggleComments} />
+      </span>
     </div>
   );
 }
@@ -266,8 +278,7 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, onLikeComme
 export interface MomentCardProps {
   post: Moment;
   onAuthor: (name: string) => void;
-  onReact: (id: string, kind: ReactionKind) => void;
-  onUnreact: (id: string) => void;
+  onToggleReaction: (id: string, kind: ReactionKind) => void;
   onComment: (id: string, text: string) => void;
   onLikeComment: (postId: string, commentId: string) => void;
   onReplyComment: (postId: string, rootCommentId: string, text: string) => void;
@@ -275,7 +286,7 @@ export interface MomentCardProps {
   onDeletePost: (postId: string) => void;
 }
 
-export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onLikeComment,
+export function MomentCard({ post, onAuthor, onToggleReaction, onComment, onLikeComment,
   onReplyComment, onDeleteComment, onDeletePost }: MomentCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(true);
@@ -354,7 +365,7 @@ export function MomentCard({ post, onAuthor, onReact, onUnreact, onComment, onLi
           long default-expanded comment list. */}
       <ReactionBar post={post} commentsOpen={commentsOpen}
         onToggleComments={() => setCommentsOpen(value => !value)}
-        onReact={onReact} onUnreact={onUnreact} />
+        onToggleReaction={onToggleReaction} />
 
       {commentsOpen && (
         <div className="sk-comments" data-comments-open="true">

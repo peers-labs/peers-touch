@@ -995,6 +995,80 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.composer-expand-grow",
+      "title": "输入框：展开即抬高书写区（空内容也有效），收起回落；发送键是圆角矩形非正圆",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "collapsed-pressed-false",
+            "type": "attr",
+            "target": "[data-composer-expand]",
+            "attr": "aria-pressed",
+            "equals": "false"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-composer-expand]"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "expanded-pressed-true",
+            "type": "attr",
+            "target": "[data-composer-expand]",
+            "attr": "aria-pressed",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "expanded-tall",
+            "type": "attr",
+            "scope": "global",
+            "target": ".sk-conv-view[data-select-mode='false'] .sk-composer-input",
+            "attr": "data-composer-expanded",
+            "equals": "true"
+          }
+        }
+      ],
+      "oracles": [
+        {
+          "id": "send-not-circle",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-composer .pt-icon-button",
+          "prop": "borderRadius",
+          "equals": "12px"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-composer-expand]"
+        }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.picker-open",
       "title": "增量35：＋→找人打开无头 Dialog：首行即搜索框，默认 11 位已知人，无标题/描述/footer/tip，无联邦结果",
       "level": "L3_DYNAMIC",
@@ -2027,6 +2101,29 @@
           "type": "count",
           "target": ".sk-chat-head-actions .pt-icon-button",
           "equals": 3
+        },
+        {
+          "id": "slim-header",
+          "type": "computedStyle",
+          "target": ".sk-chat-head",
+          "prop": "height",
+          "equals": "52px"
+        },
+        {
+          "id": "borderless-action",
+          "type": "computedStyle",
+          "all": true,
+          "target": ".sk-chat-head-actions .pt-icon-button",
+          "prop": "backgroundColor",
+          "equals": "rgba(0, 0, 0, 0)"
+        },
+        {
+          "id": "glyph-size-19",
+          "type": "computedStyle",
+          "target": ".sk-chat-head-actions .pt-icon-button svg",
+          "prop": "width",
+          "all": true,
+          "equals": "19px"
         },
         {
           "id": "member-count",
@@ -3150,6 +3247,26 @@
           }
         },
         {
+          "op": "expect",
+          "id": "bell-tile-square-width",
+          "oracle": {
+            "type": "computedStyle",
+            "target": "[data-action-id='nav.notifications']",
+            "prop": "width",
+            "equals": "38px"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "bell-tile-square-height",
+          "oracle": {
+            "type": "computedStyle",
+            "target": "[data-action-id='nav.notifications']",
+            "prop": "height",
+            "equals": "38px"
+          }
+        },
+        {
           "op": "click",
           "target": "[data-action-id='nav.notifications']"
         },
@@ -3165,6 +3282,44 @@
             "scope": "global",
             "target": ".sk-notif-item",
             "equals": 5
+          }
+        },
+        {
+          "op": "expect",
+          "id": "pager-offers-five-more",
+          "oracle": {
+            "type": "attr",
+            "scope": "global",
+            "target": "[data-action-id='notification.load-more']",
+            "attr": "data-remaining",
+            "equals": "5"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.load-more']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "pager-shows-all-ten",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": ".sk-notif-item",
+            "equals": 10
+          }
+        },
+        {
+          "op": "expect",
+          "id": "pager-gone-when-complete",
+          "oracle": {
+            "type": "missing",
+            "scope": "global",
+            "target": "[data-action-id='notification.load-more']"
           }
         },
         {
@@ -3198,7 +3353,7 @@
             "type": "count",
             "scope": "global",
             "target": ".sk-notif-chip",
-            "equals": 5
+            "equals": 10
           }
         },
         {
@@ -3254,11 +3409,11 @@
           "target": "[data-action-id='notification.read-all']"
         },
         {
-          "id": "four-items-left",
+          "id": "nine-items-left",
           "type": "count",
           "scope": "global",
           "target": ".sk-notif-item",
-          "equals": 4
+          "equals": 9
         },
         {
           "id": "row-gone",
@@ -3280,7 +3435,7 @@
     },
     {
       "id": "ui.prototype.north-star.rail-notification-empty",
-      "title": "增量34：通知逐条删除后到达空态，角标消失，面板不塌",
+      "title": "增量34：展开全部通知并逐条删除后到达空态，角标消失，面板不塌",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -3290,6 +3445,14 @@
         {
           "op": "wait",
           "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.load-more']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         },
         {
           "op": "clickGlobal",
@@ -3310,6 +3473,26 @@
         {
           "op": "clickGlobal",
           "target": "[data-action-id='notification.delete.nt-5']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-6']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-7']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-8']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-9']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='notification.delete.nt-10']"
         },
         {
           "op": "wait",
@@ -4669,7 +4852,7 @@
     },
     {
       "id": "ui.prototype.north-star.msg-delete",
-      "title": "删除本人消息：⋯菜单 → 确认对话框后消息从流中移除",
+      "title": "仅对我隐藏本人消息：⋯菜单 → 隐藏确认对话框后消息仅从本地流移除（HideMessageForActor 语义）",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -4690,11 +4873,22 @@
         },
         {
           "op": "clickGlobal",
-          "target": "[data-action-id='delete']"
+          "target": "[data-action-id='hide']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "hide-dialog-one",
+            "type": "attr",
+            "scope": "global",
+            "target": "[data-hide-confirm]",
+            "attr": "data-hide-confirm",
+            "equals": "one"
+          }
         },
         {
           "op": "clickGlobal",
-          "target": "[data-action-id='msg.delete-confirm']"
+          "target": "[data-action-id='msg.hide-confirm']"
         }
       ],
       "oracles": [
@@ -4708,6 +4902,378 @@
           "id": "m2-gone",
           "type": "missing",
           "target": "[data-message-id='m2']"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.message-menu-peer-geometry",
+      "title": "他人消息菜单：Feishu 密度（180 宽/32 行/13 字）+ 三组分区，含多选/举报/仅对我隐藏，无编辑撤回",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m1']"
+        },
+        {
+          "op": "click",
+          "target": "[data-message-id='m1'] [data-action='more']"
+        },
+        {
+          "op": "wait",
+          "ms": 180
+        }
+      ],
+      "oracles": [
+        {
+          "id": "compact-width",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".pt-menu",
+          "prop": "width",
+          "equals": "180px"
+        },
+        {
+          "id": "row-32",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".pt-menu .pt-menu-item",
+          "prop": "minHeight",
+          "all": true,
+          "equals": "32px"
+        },
+        {
+          "id": "font-13",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".pt-menu .pt-menu-item",
+          "prop": "fontSize",
+          "all": true,
+          "equals": "13px"
+        },
+        {
+          "id": "five-rows",
+          "type": "count",
+          "scope": "global",
+          "target": ".pt-menu .pt-menu-item",
+          "equals": 5
+        },
+        {
+          "id": "two-groups",
+          "type": "count",
+          "scope": "global",
+          "target": ".pt-menu .pt-menu-separator",
+          "equals": 2
+        },
+        {
+          "id": "has-thread",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-action-id='thread']"
+        },
+        {
+          "id": "has-multiselect",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-action-id='multiselect']"
+        },
+        {
+          "id": "has-report",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-action-id='report']"
+        },
+        {
+          "id": "has-hide",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-action-id='hide']"
+        },
+        {
+          "id": "peer-no-edit",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-action-id='edit']"
+        },
+        {
+          "id": "peer-no-recall",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-action-id='recall']"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.message-menu-own-groups",
+      "title": "本人消息菜单：话题/置顶复制多选/编辑撤回/隐藏 四组，窗口外编辑撤回禁用，隐藏红色危险项",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m3']"
+        },
+        {
+          "op": "click",
+          "target": "[data-message-id='m3'] [data-action='more']"
+        },
+        {
+          "op": "wait",
+          "ms": 180
+        }
+      ],
+      "oracles": [
+        {
+          "id": "seven-rows",
+          "type": "count",
+          "scope": "global",
+          "target": ".pt-menu .pt-menu-item",
+          "equals": 7
+        },
+        {
+          "id": "three-groups",
+          "type": "count",
+          "scope": "global",
+          "target": ".pt-menu .pt-menu-separator",
+          "equals": 3
+        },
+        {
+          "id": "has-pin",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-action-id='pin']"
+        },
+        {
+          "id": "edit-disabled",
+          "type": "disabled",
+          "scope": "global",
+          "target": "[data-action-id='edit']"
+        },
+        {
+          "id": "recall-disabled",
+          "type": "disabled",
+          "scope": "global",
+          "target": "[data-action-id='recall']"
+        },
+        {
+          "id": "hide-danger-color",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": "[data-action-id='hide']",
+          "prop": "color",
+          "equals": "rgb(198, 57, 57)"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.message-multiselect-hide",
+      "title": "多选模式：菜单进入→勾选两条→批量条→隐藏确认后两条消息本地移除并退出模式",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m1']"
+        },
+        {
+          "op": "click",
+          "target": "[data-message-id='m1'] [data-action='more']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='multiselect']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "mode-on",
+            "type": "attr",
+            "target": ".sk-conv-view",
+            "attr": "data-select-mode",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "seed-checked",
+            "type": "attr",
+            "target": "[data-select-check='m1']",
+            "attr": "aria-checked",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-select-check='m3']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "count-two",
+            "type": "textEquals",
+            "target": "[data-bulk-count]",
+            "equals": "已选 2 条"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='bulk.hide']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "bulk-confirm",
+            "type": "attr",
+            "scope": "global",
+            "target": "[data-hide-confirm]",
+            "attr": "data-hide-confirm",
+            "equals": "bulk"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='msg.hide-confirm']"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "m1-gone",
+          "type": "missing",
+          "target": "[data-message-id='m1']"
+        },
+        {
+          "id": "m3-gone",
+          "type": "missing",
+          "target": "[data-message-id='m3']"
+        },
+        {
+          "id": "m2-stays",
+          "type": "exists",
+          "target": "[data-message-id='m2']"
+        },
+        {
+          "id": "mode-exits",
+          "type": "attr",
+          "target": ".sk-conv-view",
+          "attr": "data-select-mode",
+          "equals": "false"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.message-report",
+      "title": "举报：他人菜单进入，未选原因时提交禁用；选择原因后提交，对话框关闭并提示已提交",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m1']"
+        },
+        {
+          "op": "click",
+          "target": "[data-message-id='m1'] [data-action='more']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='report']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "dialog-open",
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-report-dialog]"
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "submit-disabled",
+            "type": "disabled",
+            "scope": "global",
+            "target": "[data-action-id='report.submit']"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-report-reason='abuse']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "reason-pressed",
+            "type": "ariaPressed",
+            "scope": "global",
+            "target": "[data-report-reason='abuse']",
+            "equals": true
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='report.submit']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "dialog-closed",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-report-dialog]"
+        },
+        {
+          "id": "report-toast",
+          "type": "textContains",
+          "target": ".sk-chat-toast",
+          "contains": "举报"
         }
       ],
       "finalizers": []
@@ -6151,7 +6717,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-react-quick",
-      "title": "单反应胶囊：首条显示 27（24赞+3喜欢），开面板选赞后翻为琥珀选中且总数 28，再选同一表情取消",
+      "title": "多选反应：首条 27（24赞+3喜欢）显示两个芯片；选鼓掌再加到 28，选满分再加到 29 且两种芯片都在；再点鼓掌取消后满分保留、回到 28",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -6169,21 +6735,41 @@
           }
         },
         {
+          "op": "expect",
+          "id": "initial-chips",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-post:first-of-type [data-reaction-summary] .sk-react-chip",
+            "equals": 2
+          }
+        },
+        {
           "op": "click",
           "target": "[data-action-id='moment.reaction.mo-1']"
         },
         {
           "op": "clickGlobal",
-          "target": ".sk-react-picker .pt-button:first-child"
+          "target": ".sk-react-picker .pt-button[data-reaction-kind='clap']"
         },
         {
           "op": "expect",
-          "id": "reacted",
+          "id": "clap-pressed",
           "oracle": {
             "type": "attr",
-            "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked",
+            "scope": "global",
+            "target": ".sk-react-picker .pt-button[data-reaction-kind='clap']",
             "attr": "aria-pressed",
             "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "clap-chip-count",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-action-id='moment.reaction-chip.mo-1.clap']",
+            "attr": "data-reaction-count",
+            "equals": "1"
           }
         },
         {
@@ -6197,28 +6783,91 @@
           }
         },
         {
-          "op": "click",
-          "target": "[data-action-id='moment.reaction.mo-1']"
+          "op": "clickGlobal",
+          "target": ".sk-react-picker .pt-button[data-reaction-kind='hundred']"
+        },
+        {
+          "op": "expect",
+          "id": "both-selected-clap",
+          "oracle": {
+            "type": "attr",
+            "scope": "global",
+            "target": ".sk-react-picker .pt-button[data-reaction-kind='clap']",
+            "attr": "aria-pressed",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "both-selected-hundred",
+          "oracle": {
+            "type": "attr",
+            "scope": "global",
+            "target": ".sk-react-picker .pt-button[data-reaction-kind='hundred']",
+            "attr": "aria-pressed",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "four-chips",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-post:first-of-type [data-reaction-summary] .sk-react-chip",
+            "equals": 4
+          }
+        },
+        {
+          "op": "expect",
+          "id": "hundred-chip-visible",
+          "oracle": {
+            "type": "exists",
+            "target": "[data-action-id='moment.reaction-chip.mo-1.hundred']"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "total-29",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-action-id='moment.reaction.mo-1']",
+            "attr": "data-reaction-total",
+            "equals": "29"
+          }
         },
         {
           "op": "clickGlobal",
-          "target": ".sk-react-picker .pt-button:first-child"
+          "target": ".sk-react-picker .pt-button[data-reaction-kind='clap']"
         }
       ],
       "oracles": [
         {
-          "id": "unreacted-clears",
+          "id": "clap-unchecked",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-react-picker .pt-button[data-reaction-kind='clap']",
+          "attr": "aria-pressed",
+          "equals": "false"
+        },
+        {
+          "id": "hundred-retained",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-react-picker .pt-button[data-reaction-kind='hundred']",
+          "attr": "aria-pressed",
+          "equals": "true"
+        },
+        {
+          "id": "clap-chip-removed",
+          "type": "missing",
+          "target": "[data-action-id='moment.reaction-chip.mo-1.clap']"
+        },
+        {
+          "id": "back-to-28",
           "type": "attr",
           "target": "[data-action-id='moment.reaction.mo-1']",
           "attr": "data-reaction-total",
-          "equals": "27"
-        },
-        {
-          "id": "pressed-reset",
-          "type": "attr",
-          "target": "[data-action-id='moment.reaction.mo-1']",
-          "attr": "aria-pressed",
-          "equals": "false"
+          "equals": "28"
         }
       ],
       "finalizers": []
@@ -6256,7 +6905,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-react-picker-select",
-      "title": "从选择器选第 3 种反应（大笑）：胶囊翻转为选中、总数 28、弹层关闭",
+      "title": "从选择器选第 3 种反应（大笑）：弹层保持打开、大笑按钮选中、芯片出现且总数 28，便于继续多选",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -6274,28 +6923,37 @@
       ],
       "oracles": [
         {
-          "id": "picker-closed",
-          "type": "missing",
+          "id": "picker-stays-open",
+          "type": "exists",
           "scope": "global",
           "target": ".sk-react-picker"
         },
         {
-          "id": "reacted",
+          "id": "laugh-pressed",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-react-picker .pt-button:nth-child(3)",
+          "attr": "aria-pressed",
+          "equals": "true"
+        },
+        {
+          "id": "laugh-chip",
           "type": "exists",
-          "target": ".sk-post:first-of-type .pt-button.is-liked"
+          "target": "[data-action-id='moment.reaction-chip.mo-1.laugh']"
         },
         {
           "id": "total-28",
-          "type": "textContains",
-          "target": ".sk-post:first-of-type .sk-post-actions .pt-button.is-liked",
-          "contains": "28"
+          "type": "attr",
+          "target": "[data-action-id='moment.reaction.mo-1']",
+          "attr": "data-reaction-total",
+          "equals": "28"
         }
       ],
       "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.moments-feedback-bar-above-comments",
-      "title": "增量38：反馈条是单反应胶囊+评论数两个控件，紧贴正文下方、评论区上方，数量首屏可见，无独立赞/更多反应钮",
+      "title": "反馈条：反应芯片组（多选，每种反应一个芯片）+添加反应+评论数，紧贴正文下方、评论区上方，数量首屏可见，无独立赞/更多反应钮",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -6315,9 +6973,14 @@
           "target": ".sk-post:first-of-type .sk-post-actions + .sk-comments[data-comments-open='true']"
         },
         {
-          "id": "exactly-two-controls",
+          "id": "reaction-summary-present",
+          "type": "exists",
+          "target": ".sk-post:first-of-type .sk-post-actions [data-reaction-summary]"
+        },
+        {
+          "id": "two-fixed-controls",
           "type": "count",
-          "target": ".sk-post:first-of-type .sk-post-actions .pt-button",
+          "target": ".sk-post:first-of-type .sk-post-action-buttons > .pt-button",
           "equals": 2
         },
         {

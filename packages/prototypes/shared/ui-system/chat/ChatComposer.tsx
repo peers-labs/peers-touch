@@ -5,7 +5,7 @@
  * desktop shell captures the screen; the browser shell selects an image
  * file), real MediaRecorder voice notes, and input expand/collapse.
  */
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import {
   FolderOpen, Maximize2, Mic, Minimize2, Scissors, Smile, Square, Trash2, X,
 } from 'lucide-react';
@@ -172,6 +172,27 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
     addFiles(Array.from(event.dataTransfer.files ?? []));
   };
 
+  // Auto-grow: the textarea height tracks its content, clamped between a
+  // collapsed single-line floor and the active row cap. Expanding raises BOTH
+  // the floor and the cap, so an empty composer still visibly enlarges
+  // (toggling only the max-height did nothing — the native rows=1 box never
+  // grew with content).
+  const minRows = expanded ? 6 : 1;
+  const maxRows = expanded ? 12 : 4;
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    const lineHeight = parseFloat(cs.lineHeight) || 20;
+    const blockPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const minH = minRows * lineHeight + blockPad;
+    const maxH = maxRows * lineHeight + blockPad;
+    el.style.height = 'auto';
+    const next = Math.min(Math.max(el.scrollHeight, minH), maxH);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > maxH + 1 ? 'auto' : 'hidden';
+  }, [draft, expanded, minRows, maxRows]);
+
   const emojiPanel = (
     <div className="sk-emoji-panel" data-emoji-panel>
       {recentEmojis.length > 0 && (
@@ -306,10 +327,10 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
               ))}
             </div>
           )}
-          <TextArea ref={textareaRef} framing="embedded" minimumRows={1}
-            maximumRows={expanded ? 10 : 4}
+          <TextArea ref={textareaRef} framing="embedded" rows={1}
             className="sk-composer-input" value={draft} aria-label={t('composer.inputAria')}
             data-composer-value={draft}
+            data-composer-expanded={expanded ? 'true' : 'false'}
             onValueChange={setDraft}
             onEnter={(event: KeyboardEvent<HTMLTextAreaElement>) => {
               event.preventDefault();

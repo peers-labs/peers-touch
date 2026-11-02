@@ -46,4 +46,29 @@ export const NOTIFICATION_SEEDS: AppNotification[] = [
     title: '本机资料已备份', body: '聊天与联系人快照写入本机。',
     at: '周一', unread: false,
   },
+  {
+    id: 'nt-6', kind: 'mention', category: 'chat',
+    title: '周禾 在「种子交换群」@了你', body: '这周日的罗勒苗给你留了两盆。',
+    at: '周一', unread: false,
+  },
+  {
+    id: 'nt-7', kind: 'task', category: 'task',
+    title: '共享书架轮值提醒', body: '明天轮到你整理共享书架二层。',
+    at: '上周日', unread: false,
+  },
+  {
+    id: 'nt-8', kind: 'friend-accepted', category: 'social',
+    title: '河埠头 已和你建立两跳连接', body: '联邦路由已打通，可以跨站私聊。',
+    at: '上周六', unread: false,
+  },
+  {
+    id: 'nt-9', kind: 'system', category: 'system',
+    title: '加密群密钥已轮换', body: '小区生活群的会话密钥完成本周轮换。',
+    at: '上周五', unread: false,
+  },
+  {
+    id: 'nt-10', kind: 'mention', category: 'chat',
+    title: '苏禾 在「种子交换群」@了你', body: '番茄籽发芽了，周六记得来拿育苗盘。',
+    at: '上周四', unread: false,
+  },
 ];

@@ -65,7 +65,8 @@ export interface Moment {
   text: string;
   images?: string[];
   reactions: Partial<Record<ReactionKind, number>>;
-  viewerReaction?: ReactionKind;
+  /** Multi-select: every kind the viewer chose on this post. Tapping a chosen kind again removes it. */
+  viewerReactions?: ReactionKind[];
   comments: MomentComment[];
   federated?: boolean;
 }

@@ -2,34 +2,60 @@
    The trigger reuses the .sk-rail-icon geometry from design-directions.css;
    only the unread badge and open wash live here. */
 
-/* Any rail icon tile that carries a corner badge (bell, chat total). */
+/* Any rail icon tile that carries a corner badge (bell, chat total).
+   Fixed 38px square so the badge anchors to the tile's actual corner even
+   though the trigger itself is a compact-density icon button. */
 .sk-rail-entry,
-.sk-rail-notif { position: relative; display: inline-flex; }
+.sk-rail-notif {
+  position: relative; display: inline-flex;
+  width: 38px; height: 38px; align-items: center; justify-content: center;
+}
 .sk-rail-notif.is-open .sk-rail-icon {
   color: var(--sk-text);
   background: var(--sk-btn-quiet-bg-hover);
 }
 .sk-rail-badge {
-  position: absolute; top: -4px; right: -4px;
+  position: absolute; top: -6px; right: -6px; z-index: 1;
   min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+  /* Flex centers the glyph on the circle; a 13px line-height inside a 16px
+     badge left the digit sitting above the vertical center. */
+  display: inline-flex; align-items: center; justify-content: center;
   border-radius: 999px; background: #c0453b; color: #fff;
   border: 1.5px solid var(--sk-rail-bg);
-  font-size: 9.5px; font-weight: 650; line-height: 13px; text-align: center;
+  font-size: 9.5px; font-weight: 650; line-height: 1;
 }
 
 /* Popover layer: flush panel, fixed width, internal scroll. */
 .sk-notif-popover { padding: 0; width: 340px; max-width: calc(100vw - 84px); }
 .sk-notif-panel {
   display: flex; flex-direction: column;
-  max-height: 440px;
+  max-height: min(440px, calc(100dvh - 24px));
 }
 .sk-notif-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px;
+  padding: 10px 12px; flex-shrink: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
   font-size: 13.5px;
 }
-.sk-notif-list { display: flex; flex-direction: column; overflow-y: auto; }
+/* The list owns scrolling; rows never get hard-clipped by the panel edge —
+   a soft fade over the last row signals more content below. */
+.sk-notif-list {
+  display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.sk-notif-list[data-can-scroll='true'] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+}
+/* "Show earlier" pager: pinned at the bottom of the list, always reachable. */
+.sk-notif-more {
+  position: sticky; bottom: 0; flex-shrink: 0;
+  display: flex; justify-content: center;
+  padding: 8px 12px;
+  background: var(--pt-raised, #fff);
+  border-top: 1px solid color-mix(in srgb, var(--sk-text) 6%, transparent);
+}
+.sk-notif-more .pt-button { width: 100%; justify-content: center; color: var(--sk-text-2); }
 .sk-notif-item {
   display: flex; align-items: flex-start; gap: 9px;
   padding: 10px 12px;

@@ -117,7 +117,7 @@ function ComposeDialog({ open, circles, onDismiss, onPublish }: {
   );
 }
 
-function ProfileView({ name, people, postCount, onBack, onAuthor, onReact, onUnreact,
+function ProfileView({ name, people, postCount, onBack, onAuthor, onToggleReaction,
   followed, onToggleFollow }: {
   name: string;
   people: Person[];
@@ -126,8 +126,7 @@ function ProfileView({ name, people, postCount, onBack, onAuthor, onReact, onUnr
   onToggleFollow: (id: string) => void;
   onBack: () => void;
   onAuthor: (name: string) => void;
-  onReact: (id: string, kind: ReactionKind) => void;
-  onUnreact: (id: string) => void;
+  onToggleReaction: (id: string, kind: ReactionKind) => void;
 }) {
   const person = people.find(entry => entry.name === name);
   const tone = person?.tone ?? '#5d6b62';
@@ -371,17 +370,25 @@ export function MomentsFeature() {
     setNav({ kind: 'tab' });
   };
 
-  const applyReaction = (id: string, kind: ReactionKind | null) => {
+  // Reactions are multi-select. A kind the viewer already has is unchecked
+  // (count decremented); a new kind is added (count incremented). Other
+  // chosen kinds stay visible and counted.
+  const toggleReaction = (id: string, kind: ReactionKind) => {
     setPosts(list => list.map(post => {
       if (post.id !== id) return post;
+      const chosen = new Set(post.viewerReactions ?? []);
       const reactions = { ...post.reactions };
-      if (post.viewerReaction) {
-        const current = reactions[post.viewerReaction] ?? 0;
-        if (current <= 1) delete reactions[post.viewerReaction];
-        else reactions[post.viewerReaction] = current - 1;
+      if (chosen.has(kind)) {
+        chosen.delete(kind);
+        const current = reactions[kind] ?? 0;
+        if (current <= 1) delete reactions[kind];
+        else reactions[kind] = current - 1;
+      } else {
+        chosen.add(kind);
+        reactions[kind] = (reactions[kind] ?? 0) + 1;
       }
-      if (kind) reactions[kind] = (reactions[kind] ?? 0) + 1;
-      return { ...post, reactions, viewerReaction: kind ?? undefined };
+      const viewerReactions = [...chosen];
+      return { ...post, reactions, viewerReactions: viewerReactions.length ? viewerReactions : undefined };
     }));
   };
 
@@ -501,8 +508,7 @@ export function MomentsFeature() {
 
   const sharedCardProps = {
     onAuthor: openProfile,
-    onReact: (id: string, kind: ReactionKind) => applyReaction(id, kind),
-    onUnreact: (id: string) => applyReaction(id, null),
+    onToggleReaction: toggleReaction,
     onComment: addComment,
     onLikeComment: likeComment,
     onReplyComment: replyComment,
@@ -580,7 +586,7 @@ export function MomentsFeature() {
             followed={people.find(person => person.name === profileName)?.followed ?? false}
             onToggleFollow={toggleFollow} onBack={backToTab}
             onAuthor={openProfile}
-            onReact={sharedCardProps.onReact} onUnreact={sharedCardProps.onUnreact} />
+            onToggleReaction={sharedCardProps.onToggleReaction} />
           <div className="sk-profile-posts">
             {profilePosts.map(post => (
               <MomentCard key={post.id} post={post} {...sharedCardProps} />

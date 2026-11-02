@@ -56,14 +56,16 @@ export function ConversationHeader({ conversation, infoOpen,
         </div>
       </div>
       <div className="sk-chat-head-actions">
-        <IconButton iconId="phone" iconSize={16} label={t('conv.callAudio')} actionId="chat.call-audio"
-          emphasis="quiet" onActivate={onAudio} />
-        <IconButton iconId="video" iconSize={16} label={t('conv.callVideo')} actionId="chat.call-video"
-          emphasis="quiet" onActivate={onVideo} />
-        <IconButton iconId="info" iconSize={16} label={t('conv.info')}
+        <IconButton iconId="phone" iconSize={19} label={t('conv.callAudio')} actionId="chat.call-audio"
+          density="comfortable" emphasis="quiet" className="sk-head-action"
+          onActivate={onAudio} />
+        <IconButton iconId="video" iconSize={19} label={t('conv.callVideo')} actionId="chat.call-video"
+          density="comfortable" emphasis="quiet" className="sk-head-action"
+          onActivate={onVideo} />
+        <IconButton iconId="info" iconSize={19} label={t('conv.info')}
           actionId="chat.open-info"
-          className={infoOpen ? 'is-active' : ''}
-          emphasis="quiet" aria-expanded={infoOpen} onActivate={onInfo} />
+          density="comfortable" emphasis="quiet" className={`sk-head-action${infoOpen ? ' is-active' : ''}`}
+          aria-expanded={infoOpen} onActivate={onInfo} />
       </div>
     </header>
   );

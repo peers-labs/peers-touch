@@ -6,18 +6,23 @@
  * popover (read/unread rows, category tags, per-row read/delete, mark-all).
  * Local seeds and local state only — no station polling.
  */
-import { useState, type ComponentType } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import {
   AtSign, Bell, CalendarCheck, Info, UserCheck, UserPlus,
   type LucideProps,
 } from 'lucide-react';
-import { Empty, IconButton, Popover } from '@peers-touch/ui';
+import { Button, Empty, IconButton, Popover } from '@peers-touch/ui';
 import { useT, type Translate } from '../prefs';
 import {
   NOTIFICATION_SEEDS,
   type AppNotification, type NotificationCategory, type NotificationKind,
 } from './notifications-data';
 import './notifications.css';
+
+// The popover shows the first page; older notifications load on demand. A
+// real inbox paginates from the station rather than dumping every record
+// into a 440px panel.
+const NOTIF_PAGE_SIZE = 5;
 
 const KIND_ICON: Record<NotificationKind, ComponentType<LucideProps>> = {
   'friend-request': UserPlus,
@@ -31,16 +36,34 @@ function categoryLabel(t: Translate, category: NotificationCategory): string {
   return t(`notif.category.${category}`);
 }
 
-function NotificationPanel({ items, onRead, onReadAll, onDelete }: {
+function NotificationPanel({ items, visibleCount, onShowMore, onRead, onReadAll, onDelete }: {
   items: AppNotification[];
+  visibleCount: number;
+  onShowMore: () => void;
   onRead: (id: string) => void;
   onReadAll: () => void;
   onDelete: (id: string) => void;
 }) {
   const { t } = useT();
+  const listRef = useRef<HTMLDivElement>(null);
+  const [canScroll, setCanScroll] = useState(false);
   const unread = items.filter(item => item.unread).length;
+  const visibleItems = items.slice(0, visibleCount);
+  const remaining = items.length - visibleItems.length;
+
+  // Fade the list edge only while more rows exist below the fold.
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const update = () => setCanScroll(el.scrollHeight - el.clientHeight > 2);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visibleItems.length, remaining]);
+
   return (
-    <div className="sk-notif-panel" data-notif-panel data-unread={unread}>
+    <div className="sk-notif-panel" data-notif-panel data-unread={unread} data-has-more={remaining > 0 ? 'true' : 'false'}>
       <div className="sk-notif-head">
         <strong>{t('notif.title')}</strong>
         {unread > 0 && (
@@ -49,10 +72,11 @@ function NotificationPanel({ items, onRead, onReadAll, onDelete }: {
             onActivate={onReadAll} />
         )}
       </div>
-      <div className="sk-notif-list">
-        {items.length === 0
+      <div className="sk-notif-list" data-notif-list ref={listRef}
+        data-can-scroll={canScroll ? 'true' : 'false'}>
+        {visibleItems.length === 0
           ? <Empty className="sk-notif-empty" description={t('notif.empty')} />
-          : items.map(item => {
+          : visibleItems.map(item => {
               const KindIcon = KIND_ICON[item.kind] ?? Bell;
               return (
                 <div key={item.id} className={`sk-notif-item${item.unread ? ' is-unread' : ''}`}
@@ -81,6 +105,16 @@ function NotificationPanel({ items, onRead, onReadAll, onDelete }: {
                 </div>
               );
             })}
+        {remaining > 0 && (
+          <div className="sk-notif-more">
+            <Button actionId="notification.load-more" emphasis="quiet" density="compact"
+              label={t('notif.loadMore', { n: remaining })}
+              data-remaining={remaining}
+              onActivate={onShowMore}>
+              {t('notif.loadMore', { n: remaining })}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -90,13 +124,23 @@ export function NotificationBell() {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<AppNotification[]>(NOTIFICATION_SEEDS);
+  const [visibleCount, setVisibleCount] = useState(NOTIF_PAGE_SIZE);
   const unread = items.filter(item => item.unread).length;
 
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    // Reopening starts back at the first page — the bell is an at-a-glance
+    // surface, not a growing list.
+    if (next) setVisibleCount(NOTIF_PAGE_SIZE);
+  };
+
   return (
-    <Popover open={open} onOpenChange={setOpen} placement="right-bottom" label={t('notif.title')}
+    <Popover open={open} onOpenChange={handleOpenChange} placement="right-bottom" label={t('notif.title')}
       className="sk-notif-popover"
       content={
-        <NotificationPanel items={items}
+        <NotificationPanel items={items} visibleCount={visibleCount}
+          onShowMore={() => setVisibleCount(count =>
+            Math.min(count + NOTIF_PAGE_SIZE, items.length))}
           onRead={id => setItems(list => list.map(item =>
             item.id === id ? { ...item, unread: false } : item))}
           onReadAll={() => setItems(list => list.map(item => ({ ...item, unread: false })))}

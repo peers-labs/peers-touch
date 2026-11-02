@@ -85,8 +85,12 @@
 .sk-unread-badge {
   position: absolute; right: -6px; top: -6px;
   min-width: 17px; height: 17px; padding: 0 4.5px; box-sizing: border-box;
+  /* Flex centers the glyph against the whole border-box, so the fixed
+     min-width + side padding never shifts a single digit off the circle's
+     center (text-align + line-height left ~0.5px horizontal drift). */
+  display: inline-flex; align-items: center; justify-content: center;
   border-radius: 999px; background: var(--sk-primary); color: var(--sk-primary-ink);
-  font-size: 10px; font-weight: 650; line-height: 17px; text-align: center;
+  font-size: 10px; font-weight: 650; line-height: 1;
   border: 1.5px solid var(--sk-card-bg);
 }
 .sk-unread-badge.is-muted { background: var(--sk-text-3); }
@@ -287,8 +291,11 @@
 
 /* ── Increment 11: header / sheets / search / thread / call ── */
 .sk-conv-view { position: relative; }
+/* Compact flat conversation header (WeChat parity): a slim one-line bar, not
+   a tall toolbar. Title sits on the left baseline; three borderless glyphs
+   share an even rhythm on the right. */
 .sk-chat-head {
-  flex-shrink: 0; height: 60px; padding: 0 16px;
+  flex-shrink: 0; height: 52px; padding: 0 20px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
@@ -296,20 +303,27 @@
 /* Title and subtitle share one baseline row: the member count / presence is
    a trailing inline annotation, never a second line under the title. */
 .sk-chat-head-name { display: flex; flex-direction: row; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
-.sk-chat-head-name strong { font-size: 15px; font-weight: 650; color: var(--sk-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; }
+.sk-chat-head-name strong { font-size: 15.5px; font-weight: 650; letter-spacing: .01em; color: var(--sk-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; }
 .sk-chat-head-name span {
   flex-shrink: 0; font-size: 12px; color: var(--sk-text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.sk-chat-head-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-/* Chrome icons stay quiet line glyphs; "panel open" is an ink wash, never a
-   filled black block. */
-.sk-chat-head-actions .pt-icon-button.is-active {
-  background: color-mix(in srgb, var(--sk-primary) 9%, transparent);
+/* Borderless glyph targets: no tile, no hover box, one fixed hit target and
+   an even 6px rhythm. The quiet emphasis already removes the resting fill;
+   we flatten the hover into a subtle ink wash rather than a button chip. */
+.sk-chat-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.sk-chat-head-actions .sk-head-action {
+  width: 34px; height: 34px; min-height: 34px; padding: 0; border: 0;
+  border-radius: 8px; background: transparent;
+  color: var(--sk-text-2);
+}
+.sk-chat-head-actions .sk-head-action:hover {
+  background: color-mix(in srgb, var(--sk-text) 7%, transparent);
   color: var(--sk-text);
 }
-.sk-chat-head-actions .pt-icon-button.is-active:hover {
-  background: color-mix(in srgb, var(--sk-primary) 13%, transparent);
+.sk-chat-head-actions .sk-head-action.is-active {
+  background: color-mix(in srgb, var(--sk-primary) 10%, transparent);
+  color: var(--sk-primary);
 }
 @media (min-width: 721px) {
   /* Persistent two-pane: name starts flush without a back slot */
@@ -350,11 +364,14 @@
    share one continuous hairline instead of two offset rules. */
 .sk-side-head {
   position: relative;
-  height: 60px; flex-shrink: 0; margin-top: 18px; padding: 0 12px;
+  /* The sheet is inset by the 18px conv-view top pad, so the title starts
+     18px down and its 52px band lands on the chat header's hairline
+     (18 + 52 = the chat-head bottom edge). */
+  height: 52px; flex-shrink: 0; margin-top: 18px; padding: 0 12px;
   display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
-.sk-side-head strong { font-size: 15px; font-weight: 650; color: var(--sk-text); text-align: center; }
+.sk-side-head strong { font-size: 15.5px; font-weight: 650; letter-spacing: .01em; color: var(--sk-text); text-align: center; }
 .sk-side-head .pt-icon-button { position: absolute; right: 10px; }
 .sk-side-body { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 
@@ -924,6 +941,53 @@
   position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%);
   background: rgba(16,32,24,.86); color: #f3f8f4;
   font-size: 12px; padding: 7px 14px; border-radius: 999px; z-index: 20;
+}
+
+/* ── Multiselect mode (bulk forward / copy / hide) ─────────────────── */
+.sk-conv-view[data-select-mode='true'] .sk-msg { cursor: pointer; }
+.sk-msg-select-check {
+  align-self: flex-start;
+  width: 18px; height: 18px; margin: 2px 6px 0 0;
+  border-radius: 50%; border: 1.5px solid var(--sk-card-border, currentColor);
+  background: transparent; color: #fff; cursor: pointer;
+  display: grid; place-items: center; flex-shrink: 0;
+  transition: background .1s, border-color .1s;
+}
+.sk-msg.is-selected .sk-msg-select-check,
+.sk-msg-select-check[aria-checked='true'] {
+  background: var(--sk-primary, #202431);
+  border-color: var(--sk-primary, #202431);
+}
+.sk-msg.is-selectable.is-selected .sk-msg-bubble {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-accent, #202431) 38%, transparent);
+}
+
+.sk-bulk-bar {
+  flex-shrink: 0;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--sk-card-border);
+  background: var(--sk-card-bg);
+}
+.sk-bulk-count {
+  font-size: 13px; font-weight: 600; color: var(--sk-text);
+  padding: 0 8px 0 2px; white-space: nowrap;
+}
+.sk-bulk-spacer { flex: 1; }
+
+/* ── Report dialog reason list (ModerateMessageIntent) ─────────────── */
+.sk-report-reasons { display: flex; flex-direction: column; gap: 4px; }
+.sk-report-reason {
+  display: block; width: 100%; text-align: left;
+  border: 1px solid var(--sk-card-border); background: var(--sk-card-bg);
+  border-radius: 10px; padding: 10px 12px; cursor: pointer;
+  font-family: inherit; font-size: 13px; color: var(--sk-text);
+}
+.sk-report-reason:hover { border-color: color-mix(in srgb, var(--sk-primary, #202431) 40%, transparent); }
+.sk-report-reason[aria-pressed='true'] {
+  border-color: var(--sk-primary, #202431);
+  background: color-mix(in srgb, var(--sk-primary, #202431) 8%, transparent);
+  font-weight: 600;
 }
 
 /* ── Increment 13: rich composer (tools / drafts / emoji / voice) ── */

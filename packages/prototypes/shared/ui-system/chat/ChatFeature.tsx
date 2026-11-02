@@ -337,18 +337,22 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
     later(() => patchMessage(conversationId, messageId, { status: 'delivered' }), RETRY_DELAY_MS);
   };
 
-  const deleteMessage = (messageId: string) => {
-    if (!selectedId) return;
-    setMessagesByConv(map => ({ ...map, [selectedId]: (map[selectedId] ?? []).filter(m => m.id !== messageId) }));
+  // HideMessageForActorIntent semantics: removal is local to this viewer only.
+  const hideMessages = (messageIds: string[]) => {
+    if (!selectedId || messageIds.length === 0) return;
+    const hidden = new Set(messageIds);
+    setMessagesByConv(map => ({ ...map, [selectedId]: (map[selectedId] ?? []).filter(m => !hidden.has(m.id)) }));
   };
-  const forwardMessage = (message: ChatMessage, conversationId: string) => {
-    const text = `${t('preview.forwardPrefix')}${message.text}`;
-    setMessagesByConv(map => ({ ...map, [conversationId]: [...(map[conversationId] ?? []), {
-      id: `local-fwd-${Date.now()}`, from: 'me',
-      text,
-      at: new Date().toLocaleTimeString(locTag(prefs.locale), { hour: '2-digit', minute: '2-digit' }),
-    }] }));
-    setSessions(list => list.map(c => c.id === conversationId ? { ...c, last: text } : c));
+  const forwardMessages = (messagesToForward: ChatMessage[], conversationId: string) => {
+    if (messagesToForward.length === 0) return;
+    const stamp = new Date().toLocaleTimeString(locTag(prefs.locale), { hour: '2-digit', minute: '2-digit' });
+    const forwarded = messagesToForward.map((message, index) => ({
+      id: `local-fwd-${Date.now()}-${index}`, from: 'me' as const,
+      text: `${t('preview.forwardPrefix')}${message.text}`,
+      at: stamp,
+    }));
+    setMessagesByConv(map => ({ ...map, [conversationId]: [...(map[conversationId] ?? []), ...forwarded] }));
+    setSessions(list => list.map(c => c.id === conversationId ? { ...c, last: forwarded[forwarded.length - 1].text } : c));
   };
 
   const createGroup = (group: Conversation) => {
@@ -410,7 +414,7 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
             onRecallMessage={recallMessage}
             onPinMessage={pinMessage}
             onRetryMessage={retryMessage}
-            onDelete={deleteMessage}
+            onHideMessages={hideMessages}
             onClearHistory={clearMessages}
             onDeleteConversation={deleteConversation}
             onRenameConversation={renameConversation}
@@ -422,7 +426,7 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
             onSetGroupMemberRole={setGroupMemberRole}
             onDissolveGroup={dissolveGroup}
             onLeaveGroup={leaveGroup}
-            onForward={forwardMessage}
+            onForwardMessages={forwardMessages}
             onStartCall={kind => setCall({ conversationId: selectedConversation.id, kind, direction: 'out' })} />
         ) : (
           <div className="sk-chat-placeholder">

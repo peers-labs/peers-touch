@@ -5,15 +5,15 @@
  * action bar, and the rich composer. Thread/detail/search sheets and the
  * call overlay stay one level up in this file.
  */
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Link as LinkIcon, Pin, Undo2 } from 'lucide-react';
-import { Avatar, Empty } from '@peers-touch/ui';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Check, Copy, CornerUpRight, EyeOff, Link as LinkIcon, Pin, Undo2, X } from 'lucide-react';
+import { Avatar, Button, Empty } from '@peers-touch/ui';
 import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
 import { SEED_THREADS, VIEWER_NAME, VIEWER_TONE } from './chat-data';
 import { ConversationHeader, DetailSheet, MessageSearchDialog, ThreadSheet } from './ConversationPanels';
 import {
-  DeleteConfirm, DeliveryMeta, ForwardDialog, isEmojiOnly, MessageActionBar,
-  MessageReactions, type MessageActionTarget,
+  DeliveryMeta, ForwardDialog, HideConfirm, isEmojiOnly, MessageActionBar,
+  MessageReactions, ReportDialog, type MessageActionTarget,
 } from './MessageActions';
 import { MessageAttachments } from './MessageAttachments';
 import { VoicePlayer } from './VoiceNote';
@@ -32,7 +32,7 @@ function renderRichText(text: string) {
 
 export function ConversationView({ conversation, messages, call, peerTyping, onEndCall, onSimulateIncoming,
   onSend, onTogglePin, onToggleMute, onReact, onEditMessage, onRecallMessage, onPinMessage,
-  onRetryMessage, onDelete, onForward, onStartCall, onBack, conversations, people,
+  onRetryMessage, onHideMessages, onForwardMessages, onStartCall, onBack, conversations, people,
   onClearHistory, onDeleteConversation, onRenameConversation,
   onSetGroupAvatar, onSetMyNickname, onSetChatBackground,
   onAddGroupMembers, onRemoveGroupMember, onSetGroupMemberRole,
@@ -51,8 +51,9 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onRecallMessage: (conversationId: string, messageId: string) => void;
   onPinMessage: (conversationId: string, messageId: string) => void;
   onRetryMessage: (conversationId: string, messageId: string) => void;
-  onDelete: (messageId: string) => void;
-  onForward: (message: ChatMessage, conversationId: string, name: string) => void;
+  /** HideMessageForActorIntent: remove from this viewer's local view only. */
+  onHideMessages: (messageIds: string[]) => void;
+  onForwardMessages: (messages: ChatMessage[], conversationId: string) => void;
   onStartCall: (kind: CallKind) => void;
   onBack: () => void;
   conversations: Conversation[];
@@ -77,8 +78,13 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [editTarget, setEditTarget] = useState<ChatMessage | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
+  const [forwardTargets, setForwardTargets] = useState<ChatMessage[]>([]);
+  const [hideTargetIds, setHideTargetIds] = useState<string[] | null>(null);
+  const [reportTarget, setReportTarget] = useState<ChatMessage | null>(null);
+  // Bulk multiselect: a pure client-side mode (no protocol command of its
+  // own) that batches forward / copy / hide over chosen messages.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [toast, setToast] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const { t } = useT();
@@ -96,7 +102,27 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
     setThreadId(null);
     setReplyTarget(null);
     setEditTarget(null);
+    exitSelectMode();
   }, [conversation.id]);
+
+  const selectableMessages = useMemo(
+    () => messages.filter(m => m.kind !== 'service' && !m.recalled),
+    [messages],
+  );
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  function enterSelectMode(seedId: string) {
+    setReplyTarget(null);
+    setEditTarget(null);
+    setSelectMode(true);
+    setSelectedIds([seedId]);
+  }
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds([]);
+  }
+  const toggleSelected = (id: string) => setSelectedIds(list =>
+    list.includes(id) ? list.filter(entry => entry !== id) : [...list, id]);
 
   const flash = (message: string) => {
     setToast(message);
@@ -126,10 +152,20 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
         setCopiedId(message.id);
         flash(t('msg.copied'));
         break;
+      case 'multiselect': enterSelectMode(message.id); break;
       case 'edit': setReplyTarget(null); setEditTarget(message); break;
       case 'recall': onRecallMessage(conversation.id, message.id); flash(t('msg.recalled')); break;
-      case 'delete': setDeleteTarget(message); break;
+      case 'report': setReportTarget(message); break;
+      case 'hide': setHideTargetIds([message.id]); break;
     }
+  };
+
+  const selectedMessages = selectableMessages.filter(m => selectedSet.has(m.id));
+
+  const bulkCopy = () => {
+    if (!selectedMessages.length) return;
+    void navigator.clipboard?.writeText(selectedMessages.map(m => m.text).filter(Boolean).join('\n'));
+    flash(selectedMessages.length === 1 ? t('select.copyOne') : t('select.copyMany', { n: selectedMessages.length }));
   };
 
   const threadMessage = messages.find(m => m.id === threadId) ?? null;
@@ -143,6 +179,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   return (
     <section className="sk-conv-view" aria-label={t('conv.aria', { name: conversation.name })}
       data-chat-background={conversation.backgroundImage ? 'image' : (conversation.background ?? 'default')}
+      data-select-mode={selectMode ? 'true' : 'false'}
       style={conversation.backgroundImage
         ? { '--sk-chat-bg-image': `url("${conversation.backgroundImage}")` } as CSSProperties
         : undefined}>
@@ -181,8 +218,20 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
             );
           }
           const emojiOnly = isEmojiOnly(m.text);
+          const checked = selectedSet.has(m.id);
           return (
-            <div key={m.id} className={`sk-msg sk-msg-${m.from}${emojiOnly ? ' is-emoji-only' : ''}`} data-message-id={m.id}>
+            <div key={m.id}
+              className={`sk-msg sk-msg-${m.from}${emojiOnly ? ' is-emoji-only' : ''}${selectMode ? ' is-selectable' : ''}${checked ? ' is-selected' : ''}`}
+              data-message-id={m.id}
+              onClick={selectMode ? () => toggleSelected(m.id) : undefined}>
+              {selectMode && (
+                <button type="button" className="sk-msg-select-check"
+                  role="checkbox" aria-checked={checked} aria-label={t('select.count', { n: 1 })}
+                  data-select-check={m.id} data-checked={checked ? 'true' : 'false'}
+                  onClick={event => { event.stopPropagation(); toggleSelected(m.id); }}>
+                  {checked && <Check size={13} />}
+                </button>
+              )}
               {m.from === 'peer' ? (
                 conversation.kind === 'group' && m.senderName
                   ? <Avatar name={m.senderName} background={m.senderTone ?? conversation.tone} size={32}
@@ -233,21 +282,23 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                     </div>
                   )}
                   {/* Toolbar hugs the bubble: right of peer bubbles, left of
-                      own bubbles in sides mode (Feishu parity). */}
-                  <MessageActionBar
-                    message={m}
-                    canDelete={m.from === 'me'}
-                    copied={copiedId === m.id}
-                    onReact={emoji => onReact(m.id, emoji)}
-                    onReply={() => { setEditTarget(null); setReplyTarget(m); }}
-                    onThread={() => setThreadId(m.id)}
-                    onCopy={() => {
-                      void navigator.clipboard?.writeText(m.text);
-                      setCopiedId(m.id);
-                      flash(t('msg.copied'));
-                    }}
-                    onForwardOpen={() => setForwardTarget(m)}
-                    onMenuAction={action => handleMenuAction(m, action)} />
+                      own bubbles in sides mode (Feishu parity). It yields to
+                      the selection checkboxes in multiselect mode. */}
+                  {!selectMode && (
+                    <MessageActionBar
+                      message={m}
+                      copied={copiedId === m.id}
+                      onReact={emoji => onReact(m.id, emoji)}
+                      onReply={() => { setEditTarget(null); setReplyTarget(m); }}
+                      onThread={() => setThreadId(m.id)}
+                      onCopy={() => {
+                        void navigator.clipboard?.writeText(m.text);
+                        setCopiedId(m.id);
+                        flash(t('msg.copied'));
+                      }}
+                      onForwardOpen={() => setForwardTargets([m])}
+                      onMenuAction={action => handleMenuAction(m, action)} />
+                  )}
                 </div>
                 <div className="sk-msg-under">
                   <time className="sk-msg-time">{m.at}</time>
@@ -280,16 +331,44 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
         )}
       </div>
 
-      <ChatComposer key={conversation.id} groupMembers={conversation.members}
-        replyTarget={replyTarget ? {
-          who: replyTarget.from === 'me' ? t('common.me') : (replyTarget.senderName ?? conversation.name),
-          text: replyTarget.text,
-        } : null}
-        editTarget={editTarget ? { id: editTarget.id, text: editTarget.text } : null}
-        placeholder={t('composer.placeholder', { name: conversation.name })}
-        onCancelReply={() => setReplyTarget(null)}
-        onCancelEdit={() => setEditTarget(null)}
-        onSend={submit} />
+      {selectMode ? (
+        <div className="sk-bulk-bar" data-bulk-bar role="toolbar" aria-label={t('action.multiselect')}>
+          <span className="sk-bulk-count" data-bulk-count>{t('select.count', { n: selectedIds.length }) }</span>
+          <span className="sk-bulk-spacer" />
+          <Button actionId="bulk.forward" emphasis="quiet" density="compact"
+            leading={<CornerUpRight size={14} />} label={t('select.forward')}
+            availability={selectedIds.length
+              ? { kind: 'enabled' }
+              : { kind: 'disabled', reason: t('select.emptyHint') }}
+            onActivate={() => setForwardTargets(selectedMessages)} />
+          <Button actionId="bulk.copy" emphasis="quiet" density="compact"
+            leading={<Copy size={14} />} label={t('select.copy')}
+            availability={selectedIds.length
+              ? { kind: 'enabled' }
+              : { kind: 'disabled', reason: t('select.emptyHint') }}
+            onActivate={bulkCopy} />
+          <Button actionId="bulk.hide" emphasis="quiet" density="compact" tone="danger"
+            leading={<EyeOff size={14} />} label={t('select.hide')}
+            availability={selectedIds.length
+              ? { kind: 'enabled' }
+              : { kind: 'disabled', reason: t('select.emptyHint') }}
+            onActivate={() => setHideTargetIds(selectedIds)} />
+          <Button actionId="bulk.cancel" emphasis="quiet" density="compact"
+            leading={<X size={14} />} label={t('select.cancel')}
+            onActivate={exitSelectMode} />
+        </div>
+      ) : (
+        <ChatComposer key={conversation.id} groupMembers={conversation.members}
+          replyTarget={replyTarget ? {
+            who: replyTarget.from === 'me' ? t('common.me') : (replyTarget.senderName ?? conversation.name),
+            text: replyTarget.text,
+          } : null}
+          editTarget={editTarget ? { id: editTarget.id, text: editTarget.text } : null}
+          placeholder={t('composer.placeholder', { name: conversation.name })}
+          onCancelReply={() => setReplyTarget(null)}
+          onCancelEdit={() => setEditTarget(null)}
+          onSend={submit} />
+      )}
 
       {toast && <div className="sk-chat-toast" role="status">{toast}</div>}
 
@@ -323,21 +402,31 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
         onClose={() => setSearchOpen(false)}
         onLocate={() => { /* scroll-to-result lands with follow-up increments */ }} />
 
-      <ForwardDialog open={!!forwardTarget} message={forwardTarget}
+      <ForwardDialog open={forwardTargets.length > 0} messages={forwardTargets}
         conversations={conversations.filter(c => c.id !== conversation.id)}
-        onClose={() => setForwardTarget(null)}
-        onForward={(conversationId, name) => {
-          if (forwardTarget) {
-            onForward(forwardTarget, conversationId, name);
-            flash(t('msg.forwarded', { name }));
-          }
-          setForwardTarget(null);
+        onClose={() => setForwardTargets([])}
+        onForward={(targetId, name) => {
+          const count = forwardTargets.length;
+          onForwardMessages(forwardTargets, targetId);
+          flash(count > 1
+            ? t('select.forwardDone', { n: count, name })
+            : t('msg.forwarded', { name }));
+          setForwardTargets([]);
+          exitSelectMode();
         }} />
-      <DeleteConfirm open={!!deleteTarget}
-        onCancel={() => setDeleteTarget(null)}
+      <HideConfirm open={hideTargetIds !== null} count={hideTargetIds?.length ?? 0}
+        onCancel={() => setHideTargetIds(null)}
         onConfirm={() => {
-          if (deleteTarget) onDelete(deleteTarget.id);
-          setDeleteTarget(null);
+          if (hideTargetIds) onHideMessages(hideTargetIds);
+          flash(t('msg.hideDone'));
+          setHideTargetIds(null);
+          exitSelectMode();
+        }} />
+      <ReportDialog open={reportTarget !== null}
+        onCancel={() => setReportTarget(null)}
+        onSubmit={() => {
+          setReportTarget(null);
+          flash(t('report.done'));
         }} />
 
       {call && (
