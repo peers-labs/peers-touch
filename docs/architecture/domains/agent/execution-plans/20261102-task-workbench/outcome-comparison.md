@@ -124,7 +124,7 @@
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "TW-20261102",
-  "sourceIdentity": "46dae9f96",
+  "sourceIdentity": "c920a9b15",
   "items": [
     {
       "id": "TW-O01",
@@ -139,14 +139,17 @@
     },
     {
       "id": "TW-O02",
-      "status": "PARTIAL",
-      "actualEffect": "Native Journey 证实 admission 前双击只挂载 1 条用户消息（在途去重生效）；重复提交在真实 UI+真实 Station 下不产生第二 Turn。Stop 终态仍以 Station turn_id+status=cancelled 回读为唯一来源（源码审计 + TD-J03 覆盖）。",
+      "status": "PASS",
+      "actualEffect": "TW-D2 在当前源码 Station+真实模型+acceptance cell 上证实：运行中输入进入 FIFO 队列（2 条排队、取消队首、对下一条取消并取回编辑，取回文本在 reload 后作为任务草稿恢复）；任务级草稿（文本 + Station OSS 附件引用，同一 object_ref）经切任务与 renderer reload 后完整水合。Station 侧新增 TURN_ADMISSION_STATUS_AMENDED：provider dispatch 栅栏（agent_turns.dispatch_fenced_at）未跨过且 FIFO 为空时，输入原子并入当前 Turn（持久 amendment 行 + payload hash 幂等 + claim 一次性合并；栅栏后/等待本地工具/队列非空一律排队），栅栏/队列/工具等待的并发分支由 Go 测试确定性证明；Desktop 投影 amended 回执、不落新 Turn、文案区分（单测覆盖）。",
       "evidenceRefs": [
-        "tooling/acceptance/reports/task-workbench/tw-d1-journey.json",
-        "apps/desktop/src/store/chat.ts",
-        "commit 46dae9f9"
+        "tooling/acceptance/reports/task-workbench/tw-d2-journey.json",
+        "apps/desktop/e2e/tests/tw-d2-journeys.spec.ts",
+        "apps/station/app/subserver/agent/service/turn_admission_service.go",
+        "apps/station/app/subserver/agent/service/turn_admission_service_test.go",
+        "apps/desktop/src/storage/desktopAgentComposerDrafts.ts",
+        "commit c920a9b15"
       ],
-      "deviation": "started/amended/queued/rejected delivery 回执与安全 amendment 属 TW-D2；Stop 的 D1 独立 Native 断言未单列（由 TD-J03 承担）。"
+      "deviation": "amended 的 Native 端到端观测为 UNPROVEN：pre-dispatch 窗口在真实 HTTP/SSE 往返下窄于同帧双击，3 轮竞速均落入 QUEUED；栅栏/合并语义由 Station Go 并发测试（TestTurnAdmissionAmendsBeforeDispatchFence 等）确定性证明，Desktop amended 投影由单测证明，exact-source amended 旅程待 D7 跨夜旅程在受控调度下补跑。审批/AskUser 因验收 agent 无 capability 绑定且 0.5b 模型不稳定发起 tool call，Native 旅程绑定到 D4（真实文件/命令能力），旧 epoch/旧 revision 拒绝由 tool_dispatch/turn_admission Go 测试举证。Stop 独立 Native 断言仍由 TD-J03 承担。"
     },
     {
       "id": "TW-O03",
