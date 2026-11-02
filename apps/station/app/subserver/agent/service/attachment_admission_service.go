@@ -125,8 +125,11 @@ func (s *AttachmentAdmissionService) Admit(
 			}
 		}
 
-		mimeType := strings.ToLower(strings.TrimSpace(candidate.GetMimeType()))
-		if mimeType != strings.ToLower(strings.TrimSpace(meta.Mime)) {
+		// Compare MIME essences: parameters (e.g. "text/plain; charset=utf-8"
+		// stored by the OSS layer) do not change the admitted material type.
+		mimeType := attachmentMimeEssence(candidate.GetMimeType())
+		storedMimeType := attachmentMimeEssence(meta.Mime)
+		if mimeType != storedMimeType {
 			return nil, attachmentRejected(attachmentID, "attachment MIME metadata does not match stored object")
 		}
 		if !attachmentMimeAllowed(mimeType) {
@@ -197,6 +200,16 @@ func attachmentMimeAllowed(mimeType string) bool {
 	default:
 		return false
 	}
+}
+
+// attachmentMimeEssence returns the lowercase media type without
+// parameters, so "text/plain; charset=utf-8" admits as "text/plain".
+func attachmentMimeEssence(mimeType string) string {
+	normalized := strings.ToLower(strings.TrimSpace(mimeType))
+	if idx := strings.IndexByte(normalized, ';'); idx >= 0 {
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+	return normalized
 }
 
 func attachmentContentMatches(mimeType string, body []byte) bool {

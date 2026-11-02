@@ -41,7 +41,8 @@ pub mod peers_touch {
 }
 
 use interface::tauri_commands::{
-    account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_turn, agents,
+    account, actor, admin, agent_events, agent_growth, agent_logical_artifact,
+    agent_orchestration, agent_turn, agents,
     applets, auth, bot, capability_authority, channels, conversation, cron, crypto,
     desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home, host_events,
     i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_files,
@@ -944,6 +945,16 @@ fn main() {
             agent_turn::agent_turn_artifact_upload,
             agent_turn::agent_turn_artifact_open_local,
             agent_turn::agent_turn_artifact_download,
+            agent_logical_artifact::agent_task_artifact_claim_version,
+            agent_logical_artifact::agent_task_artifact_list,
+            agent_logical_artifact::agent_task_artifact_versions,
+            agent_logical_artifact::agent_task_artifact_body_get,
+            agent_logical_artifact::agent_task_artifact_feedback_submit,
+            agent_logical_artifact::agent_task_artifact_feedback_list,
+            agent_logical_artifact::agent_task_artifact_check_record,
+            agent_logical_artifact::agent_task_artifact_check_list,
+            agent_logical_artifact::agent_task_artifact_accept,
+            agent_logical_artifact::agent_task_artifact_acceptance_list,
             agent_turn::agent_submit_tool_decision,
             runtime_evidence::agent_runtime_profile_effective,
             capability_authority::agent_capability_manifest_list,

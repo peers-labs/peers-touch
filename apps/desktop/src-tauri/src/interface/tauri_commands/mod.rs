@@ -3,6 +3,7 @@ pub mod actor;
 pub mod admin;
 pub mod agent_events;
 pub mod agent_growth;
+pub mod agent_logical_artifact;
 pub mod agent_orchestration;
 pub mod agent_turn;
 pub mod agents;

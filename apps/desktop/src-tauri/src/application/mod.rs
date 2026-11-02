@@ -2,6 +2,7 @@ pub mod account;
 pub mod admin;
 pub mod agent_event_stream;
 pub mod agent_growth;
+pub mod agent_logical_artifact;
 pub mod agent_orchestration;
 pub mod agent_scheduler;
 pub mod agent_turn;
