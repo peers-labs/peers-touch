@@ -33,8 +33,17 @@
 .sk-rail-search { flex: 1 1 auto; min-width: 0; display: flex; }
 .sk-rail-search .pt-field-frame { flex: 1; min-width: 0; }
 /* Rounded-square ghost tile, never a circle; compact peers-ui sizing,
-   glyph optically centered by the button content rule. */
+   glyph optically centered by the button content rule. These are quiet
+   chrome: no border in ANY state (the library hover rule can paint a
+   primary border when specificity ties — keep the rail frameless). */
 .sk-rail-new { color: var(--sk-text-2); flex: 0 0 auto; }
+.pt-button.sk-rail-new,
+.pt-button.sk-rail-new:hover,
+.pt-button.sk-rail-new:active,
+.pt-button.sk-rail-new[aria-pressed='true'] {
+  border-color: transparent;
+  background: transparent;
+}
 .sk-rail-new:hover { color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover); }
 
 /* session row extensions */

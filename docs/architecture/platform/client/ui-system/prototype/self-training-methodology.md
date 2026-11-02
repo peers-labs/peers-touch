@@ -235,3 +235,15 @@ Frontend Eles 不是组件陈列室，而是一台**自训练机器**：桌面/�
     「本地我 + 全部 members」，种子含 viewer 后自己重复（1+5=6）导致 `data-participant-count`
     漂移；入站群呼叫头像预览同理。规则：渲染远端参与者/远端预览时显式过滤 viewer 身份，
     「会话成员（含自己）」与「通话远端（不含自己）」是两个集合，不能共用。
+- 46 轨头「消息/联系人」不等宽、搜索钮黑框。规则：
+  - **同级分段控件必须等长对称**：二选一分段不是内容定宽的两个胶囊，容器占满后两段 `flex:1`
+    平分（peers-ui `Segmented fullWidth`），label 在等宽格内居中。门禁用 bbox 宽度差 ≤2px
+    锁（新增 `sameWidth` 几何 oracle：target 与 peer 等宽），不能只断言「有两个按钮」。
+  - **黑框来自库 hover 规则特异性持平，不是 antd**：重构面 100% peers-ui（shared/ui-system
+    零 antd 引用；手机原型的 antd 是登记在册的历史债务）。库 `.pt-button:hover`(0,3,0) 与
+    quiet 去边框规则 `:is(...)`(0,3,0) 同特异性、靠源序生效，任何加载顺序/皮肤变化都可能让
+    quiet chrome hover 露出 primary 描边。修复在库层：去边框规则用显式属性选择器提升到
+    (0,4,0) 覆盖 hover/active/pressed；宿主层对轨头 chrome 再钉一道「全状态 border 透明」
+    护栏。门禁：hover 后 `border-top-color` computed 必须是透明色。
+  - **「像 antd」的观感必须先实测再下结论**：用探针读 idle/hover/:focus-visible/交互后各态
+    的 border-color/outline/boxShadow 与 activeElement，不靠截图猜组件来源。

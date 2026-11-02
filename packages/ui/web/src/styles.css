@@ -20,7 +20,13 @@
 .pt-button[data-tone=danger][data-emphasis=primary]{background:var(--pt-danger);color:var(--pt-surface)}
 .pt-button[aria-disabled='true']{color:var(--pt-secondary);background:var(--pt-subtle);border-color:var(--pt-border)}
 .pt-button[aria-pressed=true]{background:var(--pt-primarySubtle);color:var(--pt-primary);border-color:var(--pt-primary)}
-.pt-button:is([data-emphasis=quiet],[data-emphasis=inline]):is(:hover,[aria-pressed=true]){border-color:transparent}
+/* Must out-specify the generic hover rule above (0,3,0): quiet/inline chrome
+   never paints a border, including while hovered/pressed/disabled-released. */
+.pt-button[data-emphasis=quiet]:hover:not([aria-disabled='true']),
+.pt-button[data-emphasis=inline]:hover:not([aria-disabled='true']),
+.pt-button[data-emphasis=quiet]:active:not([aria-disabled='true']),
+.pt-button[data-emphasis=quiet][aria-pressed=true],
+.pt-button[data-emphasis=inline][aria-pressed=true]{border-color:transparent}
 .pt-button-content{display:flex;align-items:center;justify-content:center;gap:var(--pt-space-xs);min-width:0;white-space:normal}
 .pt-button[data-execution=pending]>.pt-button-content,.pt-button[data-execution=recovering]>.pt-button-content{visibility:hidden}
 .pt-button-pending{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}

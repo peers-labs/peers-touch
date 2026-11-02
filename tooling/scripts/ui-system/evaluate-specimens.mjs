@@ -385,6 +385,21 @@ async function checkOracle(page, anchor, oracle) {
         owner: ow ? { right: Math.round(ow.right), bottom: Math.round(ow.bottom) } : null,
       };
     }
+    case 'sameWidth': {
+      // Sibling-symmetry gate: the target and a peer must share an equal
+      // width within tolerance (e.g. two tabs in a segmented control).
+      const peerBase = oracle.scope === 'global' ? page : scope;
+      const peer = peerBase.locator(oracle.peer).first();
+      const [a, b] = await Promise.all([one(), peer]);
+      const [ra, rb] = await Promise.all([a.boundingBox(), b.boundingBox()]);
+      const tol = oracle.tolerance ?? 2;
+      if (!ra || !rb) return { pass: false, offenders: ['node has no rect'] };
+      const delta = Math.abs(ra.width - rb.width);
+      return {
+        pass: delta <= tol,
+        offenders: delta > tol ? [`widths ${Math.round(ra.width)} vs ${Math.round(rb.width)} differ by ${Math.round(delta)}`] : [],
+      };
+    }
     case 'craftBattery': {
       // Craft geometry gate: native-control leakage, intrinsic compact-control
       // geometry, corner composition, frame containment and hit targets.

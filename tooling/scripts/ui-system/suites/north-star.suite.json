@@ -603,6 +603,20 @@
         {
           "op": "click",
           "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "hover",
+          "target": "[data-action-id='sk.rail-search']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "search-tile-borderless-on-hover",
+            "type": "computedStyle",
+            "target": "[data-action-id='sk.rail-search']",
+            "prop": "borderTopColor",
+            "equals": "rgba(0, 0, 0, 0)"
+          }
         }
       ],
       "oracles": [
@@ -616,6 +630,18 @@
           "type": "count",
           "target": ".sk-chat-subnav .pt-button",
           "equals": 2
+        },
+        {
+          "id": "subnav-tabs-equal-width",
+          "type": "sameWidth",
+          "target": ".sk-chat-subnav .pt-button:first-child",
+          "peer": ".sk-chat-subnav .pt-button:nth-child(2)",
+          "tolerance": 2
+        },
+        {
+          "id": "rail-chrome-is-peers-ui",
+          "type": "exists",
+          "target": ".sk-rail-header .pt-icon-button[data-action-id='sk.rail-search']"
         },
         {
           "id": "seven-rows",

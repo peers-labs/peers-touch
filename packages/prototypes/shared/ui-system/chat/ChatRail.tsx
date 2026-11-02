@@ -497,7 +497,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
           <>
             <div className="sk-rail-tabs">
               <Segmented<'chats' | 'contacts'> className="sk-chat-subnav" aria-label="chat-subnav"
-                density="compact"
+                density="compact" fullWidth
                 options={[
                   { value: 'chats', label: <span className="sk-subnav-label"><MessageCircle size={13} />{t('tab.chats')}</span> },
                   { value: 'contacts', label: <span className="sk-subnav-label"><Users size={13} />{t('tab.contacts')}</span> },
