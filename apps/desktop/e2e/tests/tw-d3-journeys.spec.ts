@@ -351,7 +351,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   await settleLatest(page);
 
   // Claim the new assistant output as v2 of the same artifact.
-  await poll(page, '[data-pt-artifact-save-version] ? 1 : null', 30_000);
+  await poll(page, "document.querySelector('[data-pt-artifact-save-version]') ? 1 : null", 30_000);
   const saveVersionSelector = await page.evaluate<string>(
     `document.querySelector('[data-pt-artifact-save-version]')?.getAttribute('data-pt-artifact-save-version') || ''`,
   );
