@@ -46,6 +46,37 @@ function writeEvidence(id: string, payload: Record<string, unknown>): void {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// The forked antd Select in this WebKit does not open on a trusted click;
+// drive rc-select through its React DOM events instead.
+async function openVersionSelect(page: TauriPage): Promise<void> {
+  await page.evaluate(
+    `(() => {
+      const sel = document.querySelector('[data-pt-artifact-version-select]');
+      const target = sel?.querySelector('.ant-select-content') || sel;
+      if (!target) return;
+      ['mousedown', 'mouseup', 'click'].forEach((type) => target.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, cancelable: true, view: window }),
+      ));
+    })()`,
+  );
+  await sleep(500);
+}
+
+async function chooseVersion(page: TauriPage, label: string): Promise<void> {
+  await openVersionSelect(page);
+  await page.evaluate(
+    `(() => {
+      const option = Array.from(document.querySelectorAll('.ant-select-item-option'))
+        .find((el) => (el.textContent || '').trim() === ${JSON.stringify(label)});
+      if (!option) return;
+      ['mousedown', 'mouseup', 'click'].forEach((type) => option.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, cancelable: true, view: window }),
+      ));
+    })()`,
+  );
+  await sleep(500);
+}
+
 async function poll<T>(page: TauriPage, fn: string, timeoutMs: number, tickMs = 1_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   let last = '';
@@ -369,22 +400,8 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   expect(v2.id).not.toBe(v1.id);
 
   // v1 is now historical; its acceptance row is retained but no longer
-  // projected as current. The antd Select has no native <select>, so drive
-  // it through the rendered trigger and dropdown options.
-  await page.evaluate(
-    `(() => {
-      const trigger = document.querySelector('[data-pt-artifact-version-select] .ant-select-selector');
-      trigger?.click();
-    })()`,
-  );
-  await sleep(500);
-  await page.evaluate(
-    `(() => {
-      const options = Array.from(document.querySelectorAll('.ant-select-item-option'));
-      const v1opt = options.find((el) => (el.textContent || '').includes('v1'));
-      v1opt?.click();
-    })()`,
-  );
+  // projected as current.
+  await chooseVersion(page, 'v1');
   await poll(page,
     `(() => {
       const id = document.querySelector('[data-pt-artifact-panel]')?.getAttribute('data-pt-artifact-version');
@@ -395,18 +412,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
     15_000);
 
   // Back to v2: check + accept.
-  await page.evaluate(
-    `(() => {
-      document.querySelector('[data-pt-artifact-version-select] .ant-select-selector')?.click();
-    })()`,
-  );
-  await sleep(500);
-  await page.evaluate(
-    `(() => {
-      const options = Array.from(document.querySelectorAll('.ant-select-item-option'));
-      options.find((el) => (el.textContent || '').includes('v2'))?.click();
-    })()`,
-  );
+  await chooseVersion(page, 'v2');
   await poll(page,
     `document.querySelector('[data-pt-artifact-panel]')?.getAttribute('data-pt-artifact-version') === ${JSON.stringify(v2.id)} ? 1 : null`,
     10_000);
