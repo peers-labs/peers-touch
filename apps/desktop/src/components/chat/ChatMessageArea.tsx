@@ -37,9 +37,9 @@ import {
 } from './message/chatMessageModel';
 import { ChatMessageTimeline } from './message/ChatMessageTimeline';
 import {
-  chatMessageTailScrollOptions,
   chatMessageTailScrollTop,
   isChatMessageTailPinned,
+  reconcileTailScrollOnResize,
 } from './message/chatMessageTimelinePolicy';
 import {
   beginMessageReactionMutation,
@@ -412,10 +412,15 @@ export function ChatMessageArea({
   }, [activeTab, activeUlid, loadGroupMembers]);
 
   const scrollToMessageTail = useCallback(() => {
-    bottomRef.current?.scrollIntoView(chatMessageTailScrollOptions());
     const container = scrollContainerRef.current;
-    if (container) {
-      container.scrollTop = chatMessageTailScrollTop(container);
+    if (!container) return;
+    // Pin the scroll port directly. scrollIntoView on a sentinel also moves
+    // ancestor scrollers and produces the visible entry jump; the direct
+    // assignment is the single tail-pin mechanism (search anchors use their
+    // own viewport math in ChatMessageTimeline).
+    const target = chatMessageTailScrollTop(container);
+    if (Math.abs(container.scrollTop - target) > 1) {
+      container.scrollTop = target;
     }
   }, []);
 
@@ -435,19 +440,36 @@ export function ChatMessageArea({
     tailReconcilePendingRef.current = true;
     tailPinnedRef.current = true;
     scrollToMessageTail();
-  }, [mainTimelineMessages.length, scrollToMessageTail]);
+    // activeUlid forces a fresh tail pin on conversation switch even when the
+    // new conversation renders the same number of messages as the old one.
+  }, [activeUlid, mainTimelineMessages.length, scrollToMessageTail]);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || typeof ResizeObserver === 'undefined') return;
+    // Re-pin while tail-pinned when the scroll port OR its content resizes.
+    // Observing only the container misses growth that happens after the pin:
+    // async image preview loads (the <img> reserves no intrinsic box),
+    // late delivery-status rows and reaction rows all grow the timeline
+    // without resizing the viewport, leaving the last message under the
+    // composer. Observe the timeline content wrapper as well as the port.
     const observer = new ResizeObserver(() => {
-      if (tailPinnedRef.current) {
-        scrollToMessageTail();
-      }
+      if (!tailPinnedRef.current) return;
+      const next = reconcileTailScrollOnResize(
+        {
+          clientHeight: container.clientHeight,
+          scrollHeight: container.scrollHeight,
+          scrollTop: container.scrollTop,
+        },
+        tailPinnedRef.current,
+      );
+      if (next !== null) container.scrollTop = next;
     });
     observer.observe(container);
+    const content = container.querySelector<HTMLElement>('[data-chat-message-timeline]');
+    if (content) observer.observe(content);
     return () => observer.disconnect();
-  }, [scrollToMessageTail]);
+  }, [scrollToMessageTail, activeUlid, mainTimelineMessages.length]);
 
   const handleTimelineMeasured = useCallback(() => {
     if (!tailReconcilePendingRef.current && !tailPinnedRef.current) return;

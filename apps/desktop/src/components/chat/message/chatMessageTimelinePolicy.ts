@@ -46,6 +46,24 @@ export function chatMessageTailScrollTop(
   return Math.max(0, metrics.scrollHeight - metrics.clientHeight);
 }
 
+/**
+ * Decide a tail-pin reconciliation after a scroll port or content resize.
+ * Async growth (preview image load, late delivery/reaction rows) increases
+ * scrollHeight without changing scrollTop; while the conversation is
+ * tail-pinned the tail must be re-pinned, otherwise the last message ends
+ * under the composer. Returns the next scrollTop, or null to leave the
+ * scroll position untouched (user scrolled up, or sub-pixel jitter only).
+ */
+export function reconcileTailScrollOnResize(
+  metrics: ChatMessageScrollMetrics,
+  tailPinned: boolean,
+): number | null {
+  if (!tailPinned) return null;
+  const target = chatMessageTailScrollTop(metrics);
+  if (Math.abs(target - metrics.scrollTop) <= 1) return null;
+  return target;
+}
+
 export function isChatMessageTailPinned(
   metrics: ChatMessageScrollMetrics,
 ): boolean {
