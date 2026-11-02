@@ -1475,6 +1475,8 @@ pub async fn messaging_acceptance_create_restorable_command(
             // Internal diagnostic send: each invocation is one independent
             // admission, so mint the device-local send intent here.
             &Ulid::new().to_string(),
+            // Direct diagnostic fixture never carries group @mentions.
+            &crate::messaging::private_content::MessageMentions::empty(),
         )
     })
     .await
