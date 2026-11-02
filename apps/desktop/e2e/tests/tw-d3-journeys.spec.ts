@@ -285,19 +285,23 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
 
   // Export binds the exact viewed version: intercept the synthetic download
   // anchor so no native download dialog is triggered in the harness webview.
-  await page.evaluate(() => {
-    const w = window as unknown as Record<string, unknown>;
-    w.__twD3Export = null;
-    const originalClick = HTMLAnchorElement.prototype.click;
-    HTMLAnchorElement.prototype.click = function interceptClick(this: HTMLAnchorElement) {
-      w.__twD3Export = this.download;
-      HTMLAnchorElement.prototype.click = originalClick;
-    };
-  });
+  await page.evaluate(
+    `(() => {
+      window.__twD3Export = null;
+      const originalClick = HTMLAnchorElement.prototype.click;
+      window.__twD3RestoreExportClick = () => {
+        HTMLAnchorElement.prototype.click = originalClick;
+      };
+      HTMLAnchorElement.prototype.click = function interceptClick() {
+        window.__twD3Export = this.getAttribute('download') || this.href || '';
+      };
+    })()`,
+  );
   await page.click('[data-pt-artifact-export]');
   const exportName = await poll<string>(page,
     "(window).__twD3Export ? String((window).__twD3Export) : null",
     10_000);
+  await page.evaluate('window.__twD3RestoreExportClick && window.__twD3RestoreExportClick()');
   expect(exportName).toContain('v1');
 
   // ── 4. Selection feedback → v2 ─────────────────────────────────────────
