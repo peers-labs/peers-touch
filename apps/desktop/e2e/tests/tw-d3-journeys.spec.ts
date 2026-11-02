@@ -429,8 +429,8 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   const v2Parent = psql(`SELECT parent_version_id FROM agent_artifact_versions WHERE id='${v2.id}'`);
   const v2Origin = psql(`SELECT origin FROM agent_artifact_versions WHERE id='${v2.id}'`);
   const feedbackLinked = psql(`SELECT resulting_version_id FROM agent_artifact_feedback WHERE resulting_version_id='${v2.id}'`);
-  const v1BodyImmutable = psql(`SELECT encode(sha256,'escape') FROM agent_artifact_version_bodies WHERE version_id='${v1.id}'`);
-  const v2BodyImmutable = psql(`SELECT encode(sha256,'escape') FROM agent_artifact_version_bodies WHERE version_id='${v2.id}'`);
+  const v1BodyImmutable = psql(`SELECT sha256 FROM agent_artifact_version_bodies WHERE version_id='${v1.id}'`);
+  const v2BodyImmutable = psql(`SELECT sha256 FROM agent_artifact_version_bodies WHERE version_id='${v2.id}'`);
   const v1AcceptanceRow = psql(
     `SELECT CASE WHEN EXISTS (SELECT 1 FROM agent_artifact_acceptances WHERE version_id='${v1.id}') THEN 'history-kept' ELSE 'missing' END`,
   );
