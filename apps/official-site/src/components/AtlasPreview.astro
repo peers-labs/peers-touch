@@ -42,6 +42,7 @@ const copy = zh
         ['journey-device-messaging', '设备消息接收全流程', 'Durable Device Inbox、唤醒、拉取、解密、本地提交、对用户可见与 ACK，环环相扣。'],
         ['journey-federation-governance', 'Federation 副本拉取与原子投影', '拉取后先过 Membership、签名与 PrevHash 校验，再让 Ledger 和 Projection 一起原子落库。'],
         ['journey-cross-station', '跨 Station 的持久社交投递', '源站 Accepted、目标站 Committed、接收设备 Visible，是三个不同的完成时刻。'],
+        ['journey-send-verdict', '发送准入与送达判定', '同一发送意图只准入一条消息；Accepted 不是送达，回执给事实、60 秒/24 小时视野给可升级的本地判断。'],
         ['journey-agent-execution', '执行位置显式的 Agent Turn', '权威始终留在 Agent Domain，执行时明确派发给 Station Adapter 或 Client Capability。'],
       ],
       evidenceTitle: '证据边界',
@@ -81,6 +82,7 @@ const copy = zh
         ['journey-device-messaging', 'Device messaging receiver loop', 'Durable Device Inbox, wake, pull, decrypt, local commit, visible projection and ACK.'],
         ['journey-federation-governance', 'Federation replica pull and atomic projection', 'Fetch, membership/signature/PrevHash verification, atomic Ledger + Projection commit.'],
         ['journey-cross-station', 'Durable cross-Station social delivery', 'Accepted at source, committed at target and visible on receiver device are distinct boundaries.'],
+        ['journey-send-verdict', 'Send admission and the delivery verdict', 'One intent admits one message; acceptance is not delivery. Receipts supply facts and 60s/24h horizons supply revocable local judgment.'],
         ['journey-agent-execution', 'Agent turn with explicit execution placement', 'Agent Domain retains authority while dispatching a Station adapter or Client Capability.'],
       ],
       evidenceTitle: 'Evidence boundary',
@@ -107,6 +109,7 @@ const DIAGRAM_VIEWBOX: Record<string, [number, number]> = {
   'journey-device-messaging': [1085, 708],
   'journey-federation-governance': [1085, 688],
   'journey-cross-station': [1085, 688],
+  'journey-send-verdict': [1053, 888],
   'journey-agent-execution': [1067, 688],
 };
 const aspectOf = (slug: string): number => {

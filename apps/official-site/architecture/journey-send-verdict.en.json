@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Send Admission and the Delivery Verdict",
+    "subtitle": "One user send action admits exactly one durable message. Authority acceptance is not delivery; receipts deliver facts, and horizons deliver honest local judgment without stopping retry.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261101/journey-send-verdict.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "composer",
+      "type": "frontend",
+      "label": "Composer",
+      "sublabel": "one send-intent per action",
+      "sources": [
+        {
+          "path": "apps/desktop/src/utils/messagingSendIntent.ts",
+          "label": "messagingSendIntent.ts",
+          "line": 1,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "bff",
+      "type": "backend",
+      "label": "Tauri BFF",
+      "sublabel": "admitted vs rejected",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "label": "messaging.rs",
+          "line": 2170,
+          "end_line": 2290
+        }
+      ]
+    },
+    {
+      "id": "ledger",
+      "type": "database",
+      "label": "Local Store",
+      "sublabel": "durable draft + intent ledger",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/messaging/store.rs",
+          "label": "store.rs",
+          "line": 5880,
+          "end_line": 5990
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Outbox Worker",
+      "sublabel": "capped backoff, no ceiling",
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/outbox/dispatch.rs",
+          "label": "dispatch.rs",
+          "line": 100,
+          "end_line": 205
+        }
+      ]
+    },
+    {
+      "id": "authority",
+      "type": "backend",
+      "label": "Authority",
+      "sublabel": "fact, not verdict",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/conversation/application/interaction/service.go",
+          "label": "service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "receipts",
+      "type": "database",
+      "label": "Receipts / UI",
+      "sublabel": "facts above local horizons",
+      "sources": [
+        {
+          "path": "apps/desktop/src/components/chat/message/ChatMessageRow.tsx",
+          "label": "ChatMessageRow.tsx",
+          "line": 590,
+          "end_line": 610
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 330,
+      "label": "Idempotent admission"
+    },
+    {
+      "from": 340,
+      "to": 590,
+      "label": "Dispatch and exact retry"
+    },
+    {
+      "from": 600,
+      "to": 790,
+      "label": "Facts and horizons"
+    }
+  ],
+  "messages": [
+    {
+      "id": "intent",
+      "from": "composer",
+      "to": "bff",
+      "y": 170,
+      "label": "send with device-scoped send-intent ULID",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dedupe",
+      "from": "bff",
+      "to": "ledger",
+      "y": 220,
+      "label": "lookup (device, intent) before any write",
+      "variant": "return"
+    },
+    {
+      "id": "admit",
+      "from": "bff",
+      "to": "ledger",
+      "y": 270,
+      "label": "durable draft + intent ledger in one admission",
+      "variant": "emphasis"
+    },
+    {
+      "id": "accepted-response",
+      "from": "bff",
+      "to": "composer",
+      "y": 320,
+      "label": "admitted draft/pending; composer clears, never auto-resends",
+      "variant": "return"
+    },
+    {
+      "id": "dispatch",
+      "from": "worker",
+      "to": "authority",
+      "y": 380,
+      "label": "submit exact command bytes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "retry",
+      "from": "worker",
+      "to": "authority",
+      "y": 430,
+      "label": "network/route failure: capped backoff, retries forever",
+      "variant": "dashed"
+    },
+    {
+      "id": "terminal",
+      "from": "authority",
+      "to": "worker",
+      "y": 480,
+      "label": "typed terminal reject: failed with reason; user retries",
+      "variant": "return"
+    },
+    {
+      "id": "accepted",
+      "from": "authority",
+      "to": "receipts",
+      "y": 530,
+      "label": "accepted command fact",
+      "variant": "emphasis"
+    },
+    {
+      "id": "delivered",
+      "from": "authority",
+      "to": "receipts",
+      "y": 580,
+      "label": "per-device receipts -> N delivered / fully delivered",
+      "variant": "emphasis"
+    },
+    {
+      "id": "submit-horizon",
+      "from": "worker",
+      "to": "receipts",
+      "y": 640,
+      "label": "60s still queued: submitted? retrying (local judgment)",
+      "variant": "dashed"
+    },
+    {
+      "id": "delivery-horizon",
+      "from": "ledger",
+      "to": "receipts",
+      "y": 700,
+      "label": "24h no receipt: delivery unconfirmed, reason class shown (local judgment)",
+      "variant": "dashed"
+    },
+    {
+      "id": "upgrade",
+      "from": "authority",
+      "to": "receipts",
+      "y": 760,
+      "label": "late receipt upgrades the judgment; retry never stopped",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One action, one message",
+      "items": [
+        "Double click, ambiguous IPC answer or failure-driven retry with the same intent resolves to the same message and attachment batch.",
+        "A deferred draft is an admitted success; worker wake uncertainty no longer reports send failure."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Facts beat judgment",
+      "items": [
+        "Queued, submitted, delivered, fully delivered, read and terminal failure come from durable truth.",
+        "60s/24h horizons are projection-only local judgments: a later receipt always upgrades them."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "No negative proof",
+      "items": [
+        "An unreachable peer Station can recover hours later, so the network cannot prove non-delivery; exact-bytes retry continues."
+      ]
+    }
+  ]
+}
