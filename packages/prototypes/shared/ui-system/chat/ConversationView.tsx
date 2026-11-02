@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link as LinkIcon, Pin, Undo2 } from 'lucide-react';
 import { Avatar, Empty } from '@peers-touch/ui';
 import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
-import { SEED_THREADS } from './chat-data';
+import { SEED_THREADS, VIEWER_NAME, VIEWER_TONE } from './chat-data';
 import { ConversationHeader, DetailSheet, MessageSearchDialog, ThreadSheet } from './ConversationPanels';
 import {
   DeleteConfirm, DeliveryMeta, ForwardDialog, isEmojiOnly, MessageActionBar,
@@ -69,6 +69,9 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const [toast, setToast] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const { t } = useT();
+  // Squared-square avatar geometry: group senders keep the 8px tile, direct
+  // chats the skin radius — applies to both peers and the viewer.
+  const avatarRadius: string | number = conversation.kind === 'group' ? 8 : 'var(--sk-avatar-radius)';
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -144,10 +147,13 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
           if (m.recalled) {
             return (
               <div key={m.id} className={`sk-msg sk-msg-${m.from}`} data-message-id={m.id}>
-                {m.from === 'peer' && (
+                {m.from === 'peer' ? (
                   <Avatar name={m.senderName ?? conversation.name}
                     background={m.senderTone ?? conversation.tone} size={32}
-                    className="sk-msg-avatar" style={{ borderRadius: 8 }} />
+                    className="sk-msg-avatar" style={{ borderRadius: avatarRadius }} />
+                ) : (
+                  <Avatar name={VIEWER_NAME} background={VIEWER_TONE} size={32}
+                    className="sk-msg-avatar sk-msg-avatar-self" style={{ borderRadius: avatarRadius }} />
                 )}
                 <div className="sk-msg-col">
                   <span className="sk-recalled-tombstone" data-recalled>
@@ -160,49 +166,72 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
           const emojiOnly = isEmojiOnly(m.text);
           return (
             <div key={m.id} className={`sk-msg sk-msg-${m.from}${emojiOnly ? ' is-emoji-only' : ''}`} data-message-id={m.id}>
-              {m.from === 'peer' && (
+              {m.from === 'peer' ? (
                 conversation.kind === 'group' && m.senderName
                   ? <Avatar name={m.senderName} background={m.senderTone ?? conversation.tone} size={32}
                       className="sk-msg-avatar" style={{ borderRadius: 8 }} />
                   : <Avatar name={conversation.name} background={conversation.tone} size={32}
                       className="sk-msg-avatar" style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+              ) : (
+                <Avatar name={VIEWER_NAME} background={VIEWER_TONE} size={32}
+                  className="sk-msg-avatar sk-msg-avatar-self" style={{ borderRadius: avatarRadius }} />
               )}
               <div className="sk-msg-col">
                 {m.from === 'peer' && conversation.kind === 'group' && m.senderName && (
                   <span className="sk-msg-sender">{m.senderName}</span>
                 )}
-                {emojiOnly ? (
-                  <div className="sk-emoji-only-bubble" data-emoji-only>{renderRichText(m.text)}</div>
-                ) : (
-                  <div className="sk-msg-bubble" data-message-kind={m.kind ?? 'text'}>
-                    {m.replyTo && (
-                      <div className="sk-reply-quote" data-reply-to>
-                        <span>{m.replyTo.who}</span>
-                        <p>{m.replyTo.text}</p>
-                      </div>
-                    )}
-                    {m.kind === 'voice' ? (
-                      <VoicePlayer url={m.voiceUrl} durationSeconds={m.voiceSeconds ?? 0} />
-                    ) : (
-                      <>
-                        {m.text && <p>{renderRichText(m.text)}</p>}
-                        {m.attachments && m.attachments.length > 0 && (
-                          <MessageAttachments attachments={m.attachments} />
-                        )}
-                        {m.link && (
-                          <a className="sk-link-card" href={m.link.url} onClick={e => e.preventDefault()}
-                            data-link-preview>
-                            <span className="sk-link-icon"><LinkIcon size={14} /></span>
-                            <span className="sk-link-id">
-                              <strong>{m.link.title}</strong>
-                              <span>{m.link.desc}</span>
-                            </span>
-                          </a>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
+                {/* Bubble + hover toolbar share one anchor box so the bar hugs
+                    the bubble edge instead of the sender-name column. */}
+                <div className="sk-msg-main">
+                  {emojiOnly ? (
+                    <div className="sk-emoji-only-bubble" data-emoji-only>{renderRichText(m.text)}</div>
+                  ) : (
+                    <div className="sk-msg-bubble" data-message-kind={m.kind ?? 'text'}>
+                      {m.replyTo && (
+                        <div className="sk-reply-quote" data-reply-to>
+                          <span>{m.replyTo.who}</span>
+                          <p>{m.replyTo.text}</p>
+                        </div>
+                      )}
+                      {m.kind === 'voice' ? (
+                        <VoicePlayer url={m.voiceUrl} durationSeconds={m.voiceSeconds ?? 0} />
+                      ) : (
+                        <>
+                          {m.text && <p>{renderRichText(m.text)}</p>}
+                          {m.attachments && m.attachments.length > 0 && (
+                            <MessageAttachments attachments={m.attachments} />
+                          )}
+                          {m.link && (
+                            <a className="sk-link-card" href={m.link.url} onClick={e => e.preventDefault()}
+                              data-link-preview>
+                              <span className="sk-link-icon"><LinkIcon size={14} /></span>
+                              <span className="sk-link-id">
+                                <strong>{m.link.title}</strong>
+                                <span>{m.link.desc}</span>
+                              </span>
+                            </a>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {/* Toolbar hugs the bubble: right of peer bubbles, left of
+                      own bubbles in sides mode (Feishu parity). */}
+                  <MessageActionBar
+                    message={m}
+                    canDelete={m.from === 'me'}
+                    copied={copiedId === m.id}
+                    onReact={emoji => onReact(m.id, emoji)}
+                    onReply={() => { setEditTarget(null); setReplyTarget(m); }}
+                    onThread={() => setThreadId(m.id)}
+                    onCopy={() => {
+                      void navigator.clipboard?.writeText(m.text);
+                      setCopiedId(m.id);
+                      flash(t('msg.copied'));
+                    }}
+                    onForwardOpen={() => setForwardTarget(m)}
+                    onMenuAction={action => handleMenuAction(m, action)} />
+                </div>
                 <div className="sk-msg-under">
                   <time className="sk-msg-time">{m.at}</time>
                   <MessageReactions message={m} />
@@ -219,22 +248,6 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                   ) : null}
                   <DeliveryMeta message={m} onRetry={() => onRetryMessage(conversation.id, m.id)} />
                 </div>
-                {/* Toolbar hugs the content column: right of peer bubbles,
-                    left of own bubbles (Feishu parity). */}
-                <MessageActionBar
-                  message={m}
-                  canDelete={m.from === 'me'}
-                  copied={copiedId === m.id}
-                  onReact={emoji => onReact(m.id, emoji)}
-                  onReply={() => { setEditTarget(null); setReplyTarget(m); }}
-                  onThread={() => setThreadId(m.id)}
-                  onCopy={() => {
-                    void navigator.clipboard?.writeText(m.text);
-                    setCopiedId(m.id);
-                    flash(t('msg.copied'));
-                  }}
-                  onForwardOpen={() => setForwardTarget(m)}
-                  onMenuAction={action => handleMenuAction(m, action)} />
               </div>
             </div>
           );

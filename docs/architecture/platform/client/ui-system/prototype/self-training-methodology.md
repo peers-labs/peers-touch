@@ -188,3 +188,23 @@ Frontend Eles 不是组件陈列室，而是一台**自训练机器**：桌面/�
     可点的死 affordance。无动作的元数据一律灰 chip（`pointer-events:none`）。
   - 机器规则：新增 `anchoredTo` 几何门禁，断言浮层在 owner 指定侧且共边（容差 8px），
     结构断言（data-placement）+ 几何断言（boundingBox 共边）+ chip 计数/旧 Tag 计数 0 三重锁定。
+- 43 消息行几何与双边身份的四个修正：群聊悬浮工具条对齐昵称行而非气泡；统一靠左后自己头像消失；
+  分段选中态是库默认冷灰；自己/对方在同侧时风格塌缩风险。固化规则：
+  - **悬浮工具条锚定气泡盒，不锚定「昵称 + 气泡」列**：气泡与工具条放进同一个气泡尺寸的锚定盒
+    （`.sk-msg-main`），工具条相对它绝对定位、顶边贴气泡首行（`top:6px`）；锚到列时群聊昵称行
+    会把工具条抬到名字高度。DM 无昵称时结构同样成立。≤720px 统一改为气泡上方浮层（bottom 锚定），
+    统一靠左的自己消息与 peer 共用右侧外边。几何门禁用 `anchoredTo` 对气泡断言侧别 + 顶边共边
+    （容差 10px），群聊场景单独建锁。
+  - **双边消息默认都有头像**：自己的消息在「各在一边」与「统一靠左」都渲染头像（撤回分支同规则），
+    群聊 8px 圆角、单聊皮肤半径，与 peer 完全对称；头像色用本地 viewer 身份 token。隐藏自己头像只是
+    sides 的**子偏好**：子 Switch 只在 sides 出现并缩进为子行，切到 left 开关消失且头像强制保留，
+    根节点 `data-hide-own-avatar` 仅在 sides+开启时为 true。
+  - **可见性门禁用 computedStyle display，不用 count**：`display:none` 节点仍命中选择器计数；
+    隐藏断言必须是 `display:none`，显示断言取真身计算值（avatar 被原型规则提升为 `flex`，不照抄
+    库里的 inline-flex）。
+  - **同侧只改位置，不改涂装**：统一靠左后自己气泡仍是 primary 填充白字、peer 仍是 tile，
+    左右风格差异不许塌缩；门禁用双方气泡 backgroundColor 物理值锁定。
+  - **token 桥接要成对**：桥了 `--pt-primary` 就必须桥 `--pt-primarySubtle`，否则分段控件选中态、
+    Select 选中项会露出库默认冷灰（`#e9ecf2`），与暖色皮肤不搭；subtle 值用
+    `color-mix(in srgb, var(--sk-primary) 10%, var(--sk-raised))` 随皮肤派生，不硬编码。
+    门禁双锁：选中态文字色为皮肤 primary + `computedStyleNone` 扫整卡禁画冷色元组。

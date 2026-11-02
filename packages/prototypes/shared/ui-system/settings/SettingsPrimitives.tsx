@@ -33,14 +33,16 @@ export function SettingsSection({ icon: Icon, title, subtitle, extra, children }
   );
 }
 
-export function SettingsRow({ label, description, children, vertical = false }: {
+export function SettingsRow({ label, description, children, vertical = false, className = '' }: {
   label: ReactNode;
   description?: string;
   children?: ReactNode;
   vertical?: boolean;
+  /** Optional row-level modifier (e.g. sk-settings-subrow for a child preference). */
+  className?: string;
 }) {
   return (
-    <div className={`sk-settings-row${vertical ? ' is-vertical' : ''}`}>
+    <div className={`sk-settings-row${vertical ? ' is-vertical' : ''}${className ? ` ${className}` : ''}`}>
       <div className="sk-settings-row-text">
         <span className="sk-settings-row-label">{label}</span>
         {description && <span className="sk-settings-row-desc">{description}</span>}

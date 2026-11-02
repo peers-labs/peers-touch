@@ -98,6 +98,10 @@
 .sk-settings-row-control { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
 .sk-settings-row.is-vertical .sk-settings-row-control { width: 100%; }
 .sk-settings-row.is-vertical .sk-settings-row-control > .pt-field-frame { flex: 1; }
+/* Child preference under a segmented row: indented, quieter label. */
+.sk-settings-subrow { padding: 9px 0 9px; }
+.sk-settings-subrow .sk-settings-row-text { padding-left: 16px; }
+.sk-settings-subrow .sk-settings-row-label { font-size: 12.5px; font-weight: 450; color: var(--sk-text-2); }
 
 /* Embedded multiline fields own a rounded tile surface inside settings. */
 .sk-settings-section .pt-field-frame[data-framing="embedded"] {

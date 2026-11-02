@@ -40,6 +40,10 @@ type Skin = { id: string; name: string; desc: string };
 const PT_BRIDGE = {
   '--pt-primary': 'var(--sk-primary)',
   '--pt-onPrimary': 'var(--sk-primary-ink)',
+  // Selected segmented chips / select options / pressed toggles paint a soft
+  // ink wash of the active skin primary; the library default is cold SaaS
+  // grey and clashes with the warm skins. Derive it instead of hardcoding.
+  '--pt-primarySubtle': 'color-mix(in srgb, var(--sk-primary) 10%, var(--sk-raised))',
   '--pt-text': 'var(--sk-text)',
   '--pt-text-secondary': 'var(--sk-text-2)',
   '--pt-text-tertiary': 'var(--sk-text-3)',

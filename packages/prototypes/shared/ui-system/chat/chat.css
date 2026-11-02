@@ -656,14 +656,20 @@
 .sk-chat-feature[data-message-layout='left'] .sk-msg-me .sk-msg-actions-bar {
   right: auto; left: calc(100% + 8px);
 }
+/* Own avatars render by default. The sides-only preference hides just the
+   viewer's avatar; peer avatars are never affected, and unified-left always
+   shows it. */
+.sk-chat-feature[data-hide-own-avatar='true'] .sk-msg-me .sk-msg-avatar-self { display: none; }
 
 /* ── Increment 12: message anatomy ─────────────────────── */
 .sk-msg { position: relative; }
-/* The toolbar is inside .sk-msg-col and hugs the bubble's near edge:
-   right of a left (peer) bubble, left of a right (own) bubble. */
-.sk-msg-col { position: relative; }
+/* The toolbar lives inside .sk-msg-main, the bubble-sized anchor box, and
+   hugs the bubble's top edge: right of a peer bubble, left of an own bubble.
+   Anchoring to the bubble box — not the sender-name + bubble column — keeps
+   the bar level with the message in group chats. */
+.sk-msg-main { position: relative; }
 .sk-msg-actions-bar {
-  position: absolute; top: -10px;
+  position: absolute; top: 6px;
   display: flex; gap: 1px; padding: 2px;
   border-radius: 999px; opacity: 0; transition: opacity .12s;
   background: var(--sk-overlay);
@@ -675,9 +681,16 @@
 .sk-msg:hover .sk-msg-actions-bar,
 .sk-msg:focus-within .sk-msg-actions-bar { opacity: 1; }
 @media (max-width: 720px) {
-  /* Phone width: overlay on the bubble's outer side instead of pushing. */
-  .sk-msg-peer .sk-msg-actions-bar { left: auto; right: 0; top: -30px; }
-  .sk-msg-me .sk-msg-actions-bar { right: auto; left: 0; top: -30px; }
+  /* Phone width: float just above the bubble's outer edge instead of
+     pushing the stream. Unified-left own messages share the peer (right)
+     side; only sides-mode own messages keep the left outer edge. */
+  .sk-msg-peer .sk-msg-actions-bar,
+  .sk-chat-feature[data-message-layout='left'] .sk-msg-me .sk-msg-actions-bar {
+    left: auto; right: 0; top: auto; bottom: calc(100% + 6px);
+  }
+  .sk-msg-me .sk-msg-actions-bar {
+    right: auto; left: 0; top: auto; bottom: calc(100% + 6px);
+  }
 }
 .sk-msg-action {
   width: 26px; height: 26px; border: 0; border-radius: 50%;

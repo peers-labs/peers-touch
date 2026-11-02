@@ -255,6 +255,14 @@ export function AppearanceSection() {
           value={prefs.messageLayout}
           onValueChange={value => setPrefs({ messageLayout: (value ?? 'sides') as 'sides' | 'left' })} />
       </SettingsRow>
+      {prefs.messageLayout === 'sides' && (
+        <SettingsRow className="sk-settings-subrow"
+          label={t('settings.hideOwnAvatar')} description={t('settings.hideOwnAvatarHint')}>
+          <Switch checked={prefs.hideOwnAvatarInSides} aria-label={t('settings.hideOwnAvatar')}
+            data-hide-own-avatar-switch
+            onCheckedChange={value => setPrefs({ hideOwnAvatarInSides: value })} />
+        </SettingsRow>
+      )}
       <SettingsRow label={t('settings.language')} description={t('settings.languageHint')}>
         <Select<'zh-CN' | 'en'> aria-label={t('settings.language')}
           options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en', label: 'English' }]}

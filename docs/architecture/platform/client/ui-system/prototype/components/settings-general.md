@@ -1,7 +1,7 @@
-# 通用组设置：账号 / 通知 / 隐私与安全 / 外观（增量 7/22/23）
+# 通用组设置：账号 / 通知 / 隐私与安全 / 外观（增量 7/22/23/43）
 
 > **Status**: draft · **Owner**: Client Platform · UI System
-> **Last updated**: 2026-11-01
+> **Last updated**: 2026-11-02
 > **Frame source**: `desktop/shell/src/Settings.tsx`（AccountTab / NotificationsSettingsSection / PrivacySection / AppearanceSection）
 
 ## 账号 Account
@@ -24,3 +24,8 @@
 
 - 主题（跟随系统/浅色/深色）、消息密度（宽松/紧凑）、消息对齐（各在一边/统一靠左）、界面语言（简体中文/English）。
 - 消息对齐与语言即时作用于聊天面；所有选择走 `prefs.ts`。
+- **增量 43**：消息对齐下新增子开关「双边展示时隐藏自己头像」（`hideOwnAvatarInSides`，默认关），
+  缩进为子行（`sk-settings-subrow`），仅在「各在一边」出现；切「统一靠左」即卸载，该模式下自己头像
+  强制保留。分段选中态经 `PT_BRIDGE` 桥接 `--pt-primarySubtle`
+  （`color-mix(in srgb, var(--sk-primary) 10%, var(--sk-raised))`）为皮肤派生墨洗，
+  不再落库默认冷灰 `#e9ecf2`。

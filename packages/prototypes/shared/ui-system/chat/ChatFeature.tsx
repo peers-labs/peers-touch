@@ -310,7 +310,9 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
 
   return (
     <div className={`sk-chat-feature${narrowOpen ? ' sk-narrow-open' : ''}`}
-      data-message-layout={prefs.messageLayout} data-locale={prefs.locale}>
+      data-message-layout={prefs.messageLayout}
+      data-hide-own-avatar={prefs.messageLayout === 'sides' && prefs.hideOwnAvatarInSides ? 'true' : 'false'}
+      data-locale={prefs.locale}>
       <ChatRail
         tab={tab} onTabChange={setTab}
         sessions={sessions} selectedId={selectedId}

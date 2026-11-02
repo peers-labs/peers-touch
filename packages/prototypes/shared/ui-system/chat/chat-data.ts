@@ -135,8 +135,9 @@ export type FriendRequest = {
   direction?: 'in' | 'out';
 };
 
-/** Local viewer identity (seeds are frozen local data). */
+/** Local viewer identity (seeds are frozen local data). Tone matches the moments viewer ink. */
 export const VIEWER_NAME = '林野';
+export const VIEWER_TONE = '#22302a';
 
 export const FRIEND_REQUESTS: FriendRequest[] = [
   { id: 'fr-1', name: '阿砚', tone: '#7a6a92', station: '松绿书屋站', greeting: '在植物医院帖里聊过，想加个邻居', state: 'pending' },

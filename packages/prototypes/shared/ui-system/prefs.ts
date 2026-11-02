@@ -6,6 +6,7 @@
  * page, chat, moments) re-render together. This module owns:
  *  - interface locale (zh-CN / en)
  *  - message layout (sides: own-right/peer-left | left: unified left)
+ *  - sides-only sub-preference hiding the viewer's own avatar
  *  - notification preferences (mentions / invites / requests / …)
  *
  * i18n is a keyed dictionary (zh/en). Components call useT() and render
@@ -40,6 +41,8 @@ export type Prefs = {
   theme: ThemeMode;
   density: DensityMode;
   messageLayout: MessageLayout;
+  /** Only meaningful in "sides" layout: hide the viewer's own avatar while peer avatars stay. */
+  hideOwnAvatarInSides: boolean;
   notifications: NotificationPrefs;
   privacy: PrivacyPrefs;
 };
@@ -52,6 +55,7 @@ export const DEFAULT_PREFS: Prefs = {
   theme: 'system',
   density: 'comfortable',
   messageLayout: 'sides',
+  hideOwnAvatarInSides: false,
   notifications: {
     mentions: true,
     invites: true,
@@ -478,6 +482,8 @@ export const STRINGS = {
     'settings.messageLayoutSides': '各在一边',
     'settings.messageLayoutLeft': '统一靠左',
     'settings.messageLayoutHint': '「各在一边」自己的消息靠右、对方靠左；「统一靠左」所有消息靠左排列。',
+    'settings.hideOwnAvatar': '双边展示时隐藏自己头像',
+    'settings.hideOwnAvatarHint': '仅在「各在一边」生效：不显示你自己的头像，对方头像不受影响。',
     // settings · notifications
     'settings.notifyWhat': '通知我哪些事件',
     'settings.notifyWhatSubtitle': '选择哪些事件进入通知中心',
@@ -1398,6 +1404,8 @@ export const STRINGS = {
     'settings.messageLayoutSides': 'Split sides',
     'settings.messageLayoutLeft': 'All on the left',
     'settings.messageLayoutHint': 'Split sides puts your messages on the right; All on the left aligns every message left.',
+    'settings.hideOwnAvatar': 'Hide my avatar in split sides',
+    'settings.hideOwnAvatarHint': 'Only applies to Split sides: hide your own avatar; peer avatars stay visible.',
     // settings · notifications
     'settings.notifyWhat': 'What to notify me about',
     'settings.notifyWhatSubtitle': 'Choose which events reach your notification center',

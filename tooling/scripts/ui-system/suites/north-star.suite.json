@@ -7289,6 +7289,26 @@
           "target": "[aria-label='消息对齐'] [data-action-id='segment.sides']",
           "attr": "aria-pressed",
           "equals": "true"
+        },
+        {
+          "id": "hide-own-avatar-switch-in-sides",
+          "type": "count",
+          "target": "[data-hide-own-avatar-switch]",
+          "equals": 1
+        },
+        {
+          "id": "layout-active-chip-uses-skin-ink",
+          "type": "computedStyle",
+          "target": "[aria-label='消息对齐'] .pt-button[aria-pressed='true']",
+          "prop": "color",
+          "contains": "rgb(13, 16, 13)"
+        },
+        {
+          "id": "appearance-no-cold-saas-grey",
+          "type": "computedStyleNone",
+          "target": ".sk-settings-section[aria-label='外观与语言']",
+          "props": ["backgroundColor"],
+          "banned": ["rgb(233, 236, 242)"]
         }
       ],
       "finalizers": []
@@ -7372,6 +7392,33 @@
           "target": "[data-message-id='m1'] .sk-msg-actions-bar",
           "attr": "data-bar-side",
           "equals": "right"
+        },
+        {
+          "id": "hide-attr-false-in-sides-flow",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-chat-feature",
+          "attr": "data-hide-own-avatar",
+          "equals": "false"
+        },
+        {
+          "id": "own-avatar-kept-unified-left",
+          "type": "count",
+          "target": "[data-message-id='m2'] .sk-msg-avatar",
+          "equals": 1
+        },
+        {
+          "id": "peer-avatar-kept-unified-left",
+          "type": "count",
+          "target": "[data-message-id='m1'] .sk-msg-avatar",
+          "equals": 1
+        },
+        {
+          "id": "own-bubble-stays-primary-unified-left",
+          "type": "computedStyle",
+          "target": "[data-message-id='m2'] .sk-msg-bubble",
+          "prop": "backgroundColor",
+          "contains": "rgb(13, 16, 13)"
         }
       ],
       "finalizers": [
@@ -7396,6 +7443,82 @@
           "target": "[data-action-id='segment.sides']"
         }
       ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-hide-own-avatar-sides",
+      "title": "增量43：「双边展示时隐藏自己头像」子开关仅各在一边出现；开启仅隐藏自己头像，统一靠左下开关消失且自己头像保留",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='settings']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "click", "target": "[data-settings-section='appearance']" },
+        { "op": "wait", "ms": 150 },
+        {
+          "op": "expect",
+          "id": "subswitch-present-in-sides",
+          "oracle": { "type": "count", "target": "[data-hide-own-avatar-switch]", "equals": 1 }
+        },
+        { "op": "click", "target": "[data-hide-own-avatar-switch]" },
+        { "op": "wait", "ms": 150 },
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "wait", "ms": 300 },
+        {
+          "op": "expect",
+          "id": "hide-attr-true",
+          "oracle": { "type": "attr", "scope": "global", "target": ".sk-chat-feature", "attr": "data-hide-own-avatar", "equals": "true" }
+        },
+        {
+          "op": "expect",
+          "id": "own-avatar-hidden",
+          "oracle": { "type": "computedStyle", "target": "[data-message-id='m2'] .sk-msg-avatar", "prop": "display", "equals": "none" }
+        },
+        {
+          "op": "expect",
+          "id": "peer-avatar-still-present",
+          "oracle": { "type": "count", "target": "[data-message-id='m1'] .sk-msg-avatar", "equals": 1 }
+        },
+        { "op": "click", "target": "[data-rail-target='settings']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "clickGlobal", "target": "[data-settings-section='appearance']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "click", "target": "[data-action-id='segment.left']" },
+        { "op": "wait", "ms": 200 },
+        {
+          "op": "expect",
+          "id": "subswitch-hidden-in-left",
+          "oracle": { "type": "count", "target": "[data-hide-own-avatar-switch]", "equals": 0 }
+        },
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "click", "target": ".sk-conv-list li:nth-child(2) .sk-conv-row" },
+        { "op": "wait", "ms": 300 },
+        {
+          "op": "expect",
+          "id": "hide-attr-false-in-left",
+          "oracle": { "type": "attr", "scope": "global", "target": ".sk-chat-feature", "attr": "data-hide-own-avatar", "equals": "false" }
+        },
+        {
+          "op": "expect",
+          "id": "own-avatar-forced-in-left",
+          "oracle": { "type": "computedStyle", "target": "[data-message-id='m2'] .sk-msg-avatar", "prop": "display", "equals": "flex" }
+        },
+        { "op": "click", "target": "[data-rail-target='settings']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "clickGlobal", "target": "[data-settings-section='appearance']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "clickGlobal", "target": "[data-action-id='segment.sides']" },
+        { "op": "wait", "ms": 200 },
+        {
+          "op": "expect",
+          "id": "subswitch-returns-in-sides",
+          "oracle": { "type": "count", "target": "[data-hide-own-avatar-switch][aria-checked='true']", "equals": 1 }
+        },
+        { "op": "click", "target": "[data-hide-own-avatar-switch]" }
+      ],
+      "oracles": [],
+      "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.settings-language-en",
@@ -8712,7 +8835,7 @@
     },
     {
       "id": "ui.prototype.north-star.action-bar-hugs-bubble",
-      "title": "增量22/23：消息悬浮工具条是气泡内容列子级——peer 在右、me 在左（data-bar-side 契约）",
+      "title": "增量43：悬浮工具条锚定气泡盒（.sk-msg-main）——peer 在右、me 在左、顶边对齐气泡而非昵称列；双边消息均有头像",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -8738,10 +8861,16 @@
       ],
       "oracles": [
         {
-          "id": "bar-in-content-column",
+          "id": "bar-in-bubble-main",
           "type": "count",
-          "target": "[data-message-id='m1'] .sk-msg-col > .sk-msg-actions-bar",
-          "gte": 1
+          "target": "[data-message-id='m1'] .sk-msg-main > .sk-msg-actions-bar",
+          "equals": 1
+        },
+        {
+          "id": "bubble-in-bubble-main",
+          "type": "count",
+          "target": "[data-message-id='m1'] .sk-msg-main > .sk-msg-bubble",
+          "equals": 1
         },
         {
           "id": "peer-bar-right-edge",
@@ -8763,6 +8892,81 @@
           "target": "[data-message-id='m1'] .sk-msg-actions-bar",
           "prop": "position",
           "equals": "absolute"
+        },
+        {
+          "id": "peer-bar-bubble-top-anchored",
+          "type": "anchoredTo",
+          "target": "[data-message-id='m1'] .sk-msg-actions-bar",
+          "owner": "[data-message-id='m1'] .sk-msg-bubble",
+          "side": "right",
+          "align": "top",
+          "tolerance": 10
+        },
+        {
+          "id": "own-bar-bubble-top-anchored",
+          "type": "anchoredTo",
+          "target": "[data-message-id='m2'] .sk-msg-actions-bar",
+          "owner": "[data-message-id='m2'] .sk-msg-bubble",
+          "side": "left",
+          "align": "top",
+          "tolerance": 10
+        },
+        {
+          "id": "peer-avatar-present",
+          "type": "count",
+          "target": "[data-message-id='m1'] .sk-msg-avatar",
+          "equals": 1
+        },
+        {
+          "id": "own-avatar-present",
+          "type": "count",
+          "target": "[data-message-id='m2'] .sk-msg-avatar",
+          "equals": 1
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.group-bar-anchors-bubble-not-name",
+      "title": "增量43：群聊带昵称行时，悬浮工具条与气泡顶边对齐而非昵称列",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(1) .sk-conv-row"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m1']"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "group-peer-bar-bubble-anchored",
+          "type": "anchoredTo",
+          "target": "[data-message-id='m1'] .sk-msg-actions-bar",
+          "owner": "[data-message-id='m1'] .sk-msg-bubble",
+          "side": "right",
+          "align": "top",
+          "tolerance": 10
+        },
+        {
+          "id": "group-own-avatar-present",
+          "type": "count",
+          "target": "[data-message-id='m3'] .sk-msg-avatar",
+          "equals": 1
         }
       ],
       "finalizers": []
