@@ -1073,5 +1073,6 @@
   "chat.queue.snapshot": "快照",
   "chat.queue.cancelAndEdit": "取消并取回编辑",
   "chat.queue.showInQueue": "在队列中显示",
-  "chat.queue.showInConversation": "在对话中定位"
+  "chat.queue.showInConversation": "在对话中定位",
+  "chat.delivery.amended": "已并入当前执行轮次"
 }

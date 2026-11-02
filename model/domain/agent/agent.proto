@@ -672,6 +672,10 @@ enum TurnAdmissionStatus {
   TURN_ADMISSION_STATUS_STARTED = 1;
   TURN_ADMISSION_STATUS_QUEUED = 2;
   TURN_ADMISSION_STATUS_REPLAYED = 3;
+  // The request was merged into the still-pre-dispatch Turn as an
+  // amendment. Once a Turn has crossed its irreversible provider/tool
+  // dispatch fence, every later admission queues as a new Turn.
+  TURN_ADMISSION_STATUS_AMENDED = 4;
 }
 
 enum TurnQueueStatus {
@@ -975,6 +979,9 @@ message TurnAdmission {
   TurnQueueEntry queue_entry = 3;
   uint32 queue_capacity = 4;
   uint64 conversation_version = 5;
+  // AMENDED admissions: 1-based sequence of the amendment within the Turn
+  // identified by turn_id.
+  uint32 amended_count = 6;
 }
 
 message TurnAttempt {

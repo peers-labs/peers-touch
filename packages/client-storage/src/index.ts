@@ -14,7 +14,8 @@ export type ClientStorageDomainId =
   | 'agent.conversation'
   | 'agent.message'
   | 'agent.turn-event'
-  | 'agent.cursor';
+  | 'agent.cursor'
+  | 'agent.composer-draft';
 
 export type StorageScopeLevel = 'app' | 'station' | 'actor' | 'device' | 'session' | 'process';
 
@@ -45,6 +46,7 @@ export const CLIENT_STORAGE_DOMAINS: Record<ClientStorageDomainId, ClientStorage
   'agent.message': { id: 'agent.message', scope: 'actor', ttlMs: null, persistent: true },
   'agent.turn-event': { id: 'agent.turn-event', scope: 'actor', ttlMs: null, persistent: true },
   'agent.cursor': { id: 'agent.cursor', scope: 'actor', ttlMs: null, persistent: true },
+  'agent.composer-draft': { id: 'agent.composer-draft', scope: 'actor', ttlMs: null, persistent: true },
 };
 
 export interface ClientStorageScope {

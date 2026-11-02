@@ -1360,6 +1360,24 @@ func (s *TurnService) SettleAdmittedTurnAfterError(
 //	Step 8  — nudge state counters
 //	Step 9  — persist assistant message + complete turn
 //	Step 10 — save TurnTrace
+
+// mergeAmendedTurnInput appends a pre-dispatch amendment to the current
+// provider input behind an explicit, model-visible boundary. The distinct
+// expressions are persisted separately as user messages; this merged form
+// only drives the single Turn's model request.
+func mergeAmendedTurnInput(primary string, amendment string) string {
+	primary = strings.TrimSpace(primary)
+	amendment = strings.TrimSpace(amendment)
+	switch {
+	case primary == "":
+		return amendment
+	case amendment == "":
+		return primary
+	default:
+		return fmt.Sprintf("%s\n\n[Additional input]\n%s", primary, amendment)
+	}
+}
+
 func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userInput string) (*domain.Turn, error) {
 	if config == nil {
 		return nil, errcode.New(
@@ -1465,6 +1483,42 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}
 		return nil, settleAdmissionFailure(maxDelegationDepthExhaustedReason, budgetErr)
 	}
+	// TW-D2: cross the irreversible-dispatch fence and claim every amendment
+	// admitted before it. The merged input is what budget validation,
+	// attachment admission, prompt assembly, and the provider call observe;
+	// admissions arriving after the claim queue FIFO as new Turns. The
+	// original primary input is persisted verbatim in its own user message.
+	primaryUserInput := userInput
+	primaryAttachmentObjectRefs := attachmentObjectRefSet(config.Attachments)
+	amendedUserInputs := make([]string, 0)
+	amendmentObjectRefs := make([]map[string]struct{}, 0)
+	if s.turnAdmission != nil && admittedTurnID != "" {
+		claimed, claimErr := s.turnAdmission.ClaimTurnAmendments(
+			ctx,
+			config.ActorID,
+			config.AgentID,
+			config.ConversationID,
+			admittedTurnID,
+		)
+		if claimErr != nil {
+			return nil, settleAdmissionFailure("claim turn amendments", claimErr)
+		}
+		for _, amendment := range claimed {
+			text := strings.TrimSpace(amendment.GetUserInput())
+			amendedUserInputs = append(amendedUserInputs, text)
+			if text != "" {
+				userInput = mergeAmendedTurnInput(userInput, text)
+			}
+			amendmentObjectRefs = append(
+				amendmentObjectRefs,
+				attachmentObjectRefSet(amendment.GetAttachments()),
+			)
+			config.Attachments = appendMissingAttachmentRefs(
+				config.Attachments,
+				amendment.GetAttachments(),
+			)
+		}
+	}
 	if admittedTurnID == "" {
 		if err := validateInputBudgetBeforePersistence(
 			s.compression,
@@ -1497,6 +1551,20 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	config.AdmittedAttachments = admittedAttachments
 	config.Attachments = attachmentRefs(admittedAttachments)
+	// Per-input attachment attribution after re-admission, in claim order:
+	// primary Turn input keeps its own refs; each amendment keeps only refs
+	// its request carried.
+	primaryPersistedAttachments := filterAttachmentRefs(
+		config.Attachments,
+		primaryAttachmentObjectRefs,
+	)
+	amendmentPersistedAttachments := make([][]*model.AgentAttachmentRef, 0, len(amendmentObjectRefs))
+	for _, refs := range amendmentObjectRefs {
+		amendmentPersistedAttachments = append(
+			amendmentPersistedAttachments,
+			filterAttachmentRefs(config.Attachments, refs),
+		)
+	}
 
 	// Attachment admission is intentionally complete before any Turn, attempt,
 	// runtime binding, message, or provider state is persisted.
@@ -1628,18 +1696,35 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Persist user message unless a revision command already created or selected
-	// the immutable source branch.
+	// the immutable source branch. TW-D2: the primary Turn input and each
+	// claimed amendment are persisted as their own user messages, in send
+	// order. Prompt assembly excludes all current-Turn user messages from
+	// history and sends the merged current input, so the model sees each
+	// expression exactly once.
 	if !config.SkipUserMessage {
 		if err := s.persistMessageWithAttachments(
 			ctx,
 			config.ConversationID,
 			turnID,
 			string(domain.MessageRoleUser),
-			userInput,
+			primaryUserInput,
 			config.Model,
-			config.Attachments,
+			primaryPersistedAttachments,
 		); err != nil {
 			return nil, settleRunningFailure("failed to persist user message", err)
+		}
+		for index, text := range amendedUserInputs {
+			if err := s.persistMessageWithAttachments(
+				ctx,
+				config.ConversationID,
+				turnID,
+				string(domain.MessageRoleUser),
+				text,
+				config.Model,
+				amendmentPersistedAttachments[index],
+			); err != nil {
+				return nil, settleRunningFailure("failed to persist amendment user message", err)
+			}
 		}
 	}
 

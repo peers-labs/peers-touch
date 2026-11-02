@@ -268,6 +268,66 @@ func attachmentRefs(attachments []AdmittedAttachment) []*model.AgentAttachmentRe
 	return refs
 }
 
+// attachmentObjectRefSet indexes attachment refs by their Station object
+// reference for per-input attribution after TW-D2 amendment re-admission.
+func attachmentObjectRefSet(attachments []*model.AgentAttachmentRef) map[string]struct{} {
+	set := make(map[string]struct{}, len(attachments))
+	for _, attachment := range attachments {
+		if attachment == nil {
+			continue
+		}
+		if objectRef := strings.TrimSpace(attachment.GetObjectRef()); objectRef != "" {
+			set[objectRef] = struct{}{}
+		}
+	}
+	return set
+}
+
+// appendMissingAttachmentRefs unions amendment attachment refs into the
+// primary Turn's ref list, preserving order and skipping duplicates.
+func appendMissingAttachmentRefs(
+	primary []*model.AgentAttachmentRef,
+	extra []*model.AgentAttachmentRef,
+) []*model.AgentAttachmentRef {
+	known := attachmentObjectRefSet(primary)
+	for _, attachment := range extra {
+		if attachment == nil {
+			continue
+		}
+		objectRef := strings.TrimSpace(attachment.GetObjectRef())
+		if objectRef == "" {
+			continue
+		}
+		if _, exists := known[objectRef]; exists {
+			continue
+		}
+		primary = append(primary, attachment)
+		known[objectRef] = struct{}{}
+	}
+	return primary
+}
+
+// filterAttachmentRefs returns admitted refs whose object_ref belongs to the
+// given per-input attribution set.
+func filterAttachmentRefs(
+	admitted []*model.AgentAttachmentRef,
+	include map[string]struct{},
+) []*model.AgentAttachmentRef {
+	if len(include) == 0 {
+		return nil
+	}
+	filtered := make([]*model.AgentAttachmentRef, 0, len(include))
+	for _, attachment := range admitted {
+		if attachment == nil {
+			continue
+		}
+		if _, ok := include[strings.TrimSpace(attachment.GetObjectRef())]; ok {
+			filtered = append(filtered, attachment)
+		}
+	}
+	return filtered
+}
+
 func attachmentContextSegments(attachments []AdmittedAttachment) []ContextSegment {
 	segments := make([]ContextSegment, 0, len(attachments))
 	for _, admitted := range attachments {

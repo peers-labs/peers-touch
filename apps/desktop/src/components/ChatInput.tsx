@@ -223,6 +223,14 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     conversationId: currentSessionKey,
     disabled: false,
     fallbackName: t('chat.input.attachmentFallbackName'),
+    // TW-D2: rehydrate Station-owned staged attachments from the durable
+    // task draft and mirror ready refs back whenever staging changes.
+    hydrateReadyAttachments: () => (
+      useChatStore.getState().composerAttachments[currentSessionKey] ?? []
+    ),
+    onReadyAttachmentsChange: (refs) => {
+      useChatStore.getState().setComposerAttachments(currentSessionKey, refs);
+    },
   });
   const currentModelId = selectedModel || defaultModel;
   const currentProviderId = selectedProviderId || defaultProviderId;

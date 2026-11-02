@@ -80,6 +80,7 @@ export function UserMessage({ message }: UserMessageProps) {
     <Flexbox
       data-pt-agent-message="user"
       data-pt-agent-message-id={message.id}
+      data-pt-agent-delivery={message.deliveryStatus}
       data-pt-user-actor-ptid={user.ptid}
       id={`agent-message-${message.id}`}
       align="flex-end"
@@ -114,6 +115,16 @@ export function UserMessage({ message }: UserMessageProps) {
         >
           {timeAgo(message.timestamp, t)}
         </span>
+        {message.deliveryStatus === 'amended' && (
+          <Tag
+            bordered={false}
+            color="gold"
+            data-pt-agent-delivery-amended
+            style={{ margin: 0, fontSize: 11 }}
+          >
+            {t('chat.delivery.amended')}
+          </Tag>
+        )}
       </Flexbox>
 
       {/* Message body */}

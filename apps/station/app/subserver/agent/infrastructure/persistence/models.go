@@ -86,6 +86,7 @@ func AllModels() []interface{} {
 		&TurnArtifact{},
 		&AgentTurnTodo{},
 		&TurnQueueEntry{},
+		&AgentTurnAmendment{},
 		&TurnTrace{},
 		&ScheduledJob{},
 		&ScheduledJobRun{},

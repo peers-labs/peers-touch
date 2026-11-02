@@ -40,6 +40,11 @@ import {
   isAgentDraftKey,
 } from './agentDraft';
 import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
+import { deleteAgentAttachment } from '../services/agentAttachments';
+import {
+  readAgentComposerDraftsSync,
+  writeAgentComposerDraftsSync,
+} from '../storage/desktopAgentComposerDrafts';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import { resolvePinnedClientCapabilitySessionId } from '../runtimes/agentCapabilityRuntime';
 import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
@@ -224,6 +229,9 @@ export interface ChatMessage {
   queuePosition?: number;
   budgetNotice?: BudgetNotice;
   turnAttribution?: TurnAttributionProjection;
+  // TW-D2: this user input produced no new Turn; Station merged it into the
+  // still-pre-dispatch Turn identified by turnId.
+  deliveryStatus?: 'amended';
 }
 
 // #region debug-point A-B:foundation-approval-receiver
@@ -1051,6 +1059,11 @@ interface ChatState {
   memoryDisabledSessions: Record<string, boolean>;
   draftPromotions: Record<string, string>;
   composerDrafts: Record<string, string>;
+  // TW-D2: Station-owned attachment references staged for an unsent Turn,
+  // keyed by session key alongside composerDrafts. The binaries live in
+  // Station OSS; this map only keeps the refs so staged material survives
+  // task switches and reloads until sent or explicitly abandoned.
+  composerAttachments: Record<string, AgentAttachmentRefInput[]>;
   readinessErrorKey: string | null;
   revisionCommandFailure: AgentRevisionCommandFailure | null;
   revisionReloadingConversationId: string | null;
@@ -1071,6 +1084,7 @@ interface ChatState {
   mergeSessions: (sessions: Session[]) => void;
   selectSession: (key: string, sessionOverride?: Session) => Promise<void>;
   setComposerDraft: (sessionKey: string, value: string) => void;
+  setComposerAttachments: (sessionKey: string, refs: AgentAttachmentRefInput[]) => void;
   bootstrapSession: () => Promise<void>;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
@@ -1883,6 +1897,35 @@ async function loadSessionMessages(
   }
 }
 
+/**
+ * TW-D2: best-effort reclamation for Station OSS attachment refs that drop
+ * out of the durable composer-draft map because the draft was abandoned
+ * (session purged or agent draft replaced). Sent and still-drafted refs are
+ * never passed here: the Turn owns sent refs, the draft document keeps
+ * switched-away refs and Station OSS TTL sweep is the final backstop.
+ */
+function releaseAbandonedAttachmentRefs(
+  before: Record<string, AgentAttachmentRefInput[]>,
+  after: Record<string, AgentAttachmentRefInput[]>,
+): void {
+  for (const [sessionKey, refs] of Object.entries(before)) {
+    if (after[sessionKey]) continue;
+    for (const ref of refs) {
+      deleteAgentAttachment(ref).catch((error: unknown) => {
+        log.warn('chat', 'abandoned composer attachment cleanup failed', {
+          sessionKey,
+          attachmentId: ref.attachment_id,
+          error: String(error),
+        });
+      });
+    }
+  }
+}
+
+// Hydrate task-level composer drafts once, before the store is created, so
+// the first render already seeds the composer text and staged attachments.
+const durableComposerDrafts = readAgentComposerDraftsSync();
+
 export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => ({
   sessions: [],
   currentSessionKey: 'main',
@@ -1895,7 +1938,8 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   abortController: null,
   memoryDisabledSessions: {},
   draftPromotions: {},
-  composerDrafts: {},
+  composerDrafts: durableComposerDrafts.texts,
+  composerAttachments: durableComposerDrafts.attachments,
   readinessErrorKey: null,
   revisionCommandFailure: null,
   revisionReloadingConversationId: null,
@@ -1928,6 +1972,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       memoryDisabledSessions: {},
       draftPromotions: {},
       composerDrafts: {},
+      composerAttachments: {},
       readinessErrorKey: null,
       revisionCommandFailure: null,
       revisionReloadingConversationId: null,
@@ -1979,6 +2024,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   selectSession: async (key: string, sessionOverride?: Session) => {
     log.info('chat', 'Selecting session', { key });
     if (sessionOverride) {
+      const previousAttachments = get().composerAttachments;
       set((state) => {
         const draftAgentId = agentIdFromDraftKey(key);
         const retained = state.sessions.filter((session) => (
@@ -1988,21 +2034,27 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             || agentIdFromDraftKey(session.key) !== draftAgentId
           )
         ));
+        const filterSameAgentDraft = ([sessionKey]: readonly [string, unknown]) => (
+          sessionKey === key
+          || agentIdFromDraftKey(sessionKey) !== draftAgentId
+        );
         const composerDrafts = draftAgentId === null
           ? state.composerDrafts
           : Object.fromEntries(
-            Object.entries(state.composerDrafts).filter(
-              ([sessionKey]) => (
-                sessionKey === key
-                || agentIdFromDraftKey(sessionKey) !== draftAgentId
-              ),
-            ),
+            Object.entries(state.composerDrafts).filter(filterSameAgentDraft),
+          );
+        const composerAttachments = draftAgentId === null
+          ? state.composerAttachments
+          : Object.fromEntries(
+            Object.entries(state.composerAttachments).filter(filterSameAgentDraft),
           );
         return {
           sessions: [sessionOverride, ...retained],
           composerDrafts,
+          composerAttachments,
         };
       });
+      releaseAbandonedAttachmentRefs(previousAttachments, get().composerAttachments);
     }
     if (key === get().currentSessionKey) return;
     const liveOp = get().operations[key];
@@ -2038,6 +2090,25 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     });
   },
 
+  // TW-D2: mirror of composerDrafts for Station-owned staged attachment
+  // refs. The identity guard makes hook rehydration/notify cycles no-ops.
+  setComposerAttachments: (sessionKey, refs) => {
+    if (!sessionKey) return;
+    const current = get().composerAttachments[sessionKey] ?? [];
+    const unchanged = current.length === refs.length
+      && current.every((ref, index) => (
+        ref.attachment_id === refs[index]?.attachment_id
+        && ref.object_ref === refs[index]?.object_ref
+      ));
+    if (unchanged) return;
+    set((state) => {
+      const composerAttachments = { ...state.composerAttachments };
+      if (refs.length > 0) composerAttachments[sessionKey] = refs;
+      else delete composerAttachments[sessionKey];
+      return { composerAttachments };
+    });
+  },
+
   bootstrapSession: async () => {
     const key = get().currentSessionKey;
     log.info('chat', 'Bootstrapping current session history', { key });
@@ -2070,6 +2141,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       updated_at: now,
     };
     log.info('chat', 'New draft session created', { key, agentName });
+    const previousAttachments = get().composerAttachments;
     set((state) => ({
       currentSessionKey: key,
       messages: [],
@@ -2085,7 +2157,15 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           ([sessionKey]) => agentIdFromDraftKey(sessionKey) !== agent.id,
         ),
       ),
+      // Starting a fresh draft abandons every older draft of this Agent,
+      // including staged attachments that were never sent.
+      composerAttachments: Object.fromEntries(
+        Object.entries(state.composerAttachments).filter(
+          ([sessionKey]) => agentIdFromDraftKey(sessionKey) !== agent.id,
+        ),
+      ),
     }));
+    releaseAbandonedAttachmentRefs(previousAttachments, get().composerAttachments);
   },
 
   deleteSession: async (key: string) => {
@@ -2102,6 +2182,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     const retain = <T,>(records: Record<string, T>) => Object.fromEntries(
       Object.entries(records).filter(([key]) => !removed.has(key)),
     );
+    const previousAttachments = get().composerAttachments;
     set((state) => {
       const currentDeleted = removed.has(state.currentSessionKey);
       return {
@@ -2110,6 +2191,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         turnQueues: retain(state.turnQueues),
         memoryDisabledSessions: retain(state.memoryDisabledSessions),
         composerDrafts: retain(state.composerDrafts),
+        composerAttachments: retain(state.composerAttachments),
         draftPromotions: Object.fromEntries(Object.entries(state.draftPromotions)
           .filter(([key, promoted]) => !removed.has(key) && !removed.has(promoted))),
         operations: Object.fromEntries(Object.entries(state.operations)
@@ -2131,6 +2213,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         } : {}),
       };
     });
+    releaseAbandonedAttachmentRefs(previousAttachments, get().composerAttachments);
     await Promise.all(keys.filter((key) => !isAgentDraftKey(key)).map(async (key) => {
       try {
         await agentChatCache.clearConversation(key);
@@ -2878,6 +2961,14 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             const composerDraft = nextComposerDrafts[currentSessionKey];
             delete nextComposerDrafts[currentSessionKey];
             if (composerDraft) nextComposerDrafts[realConvId] = composerDraft;
+            // TW-D2: staged attachment refs follow the draft when it is
+            // promoted to its canonical conversation; no OSS reclamation.
+            const nextComposerAttachments = { ...state.composerAttachments };
+            const promotedAttachments = nextComposerAttachments[currentSessionKey];
+            delete nextComposerAttachments[currentSessionKey];
+            if (promotedAttachments?.length) {
+              nextComposerAttachments[realConvId] = promotedAttachments;
+            }
             const isCurrent = state.currentSessionKey === currentSessionKey;
             return {
               currentSessionKey: isCurrent ? realConvId : state.currentSessionKey,
@@ -2885,6 +2976,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               operations: nextOps,
               sessionBuffers: nextBuffers,
               composerDrafts: nextComposerDrafts,
+              composerAttachments: nextComposerAttachments,
               draftPromotions: {
                 ...state.draftPromotions,
                 [currentSessionKey]: realConvId,
@@ -2904,6 +2996,41 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
               .promoteDraftTopic(agentId, currentSessionKey, promotedSession);
           }
         }
+        if (event.event === 'amended') {
+          // TW-D2: the input merged into the still-pre-dispatch Turn. Bind
+          // its user message to that Turn, mark the delivery, and settle
+          // this send's optimistic assistant placeholder (no new Turn was
+          // created). The running Turn's own stream continues independently.
+          const admissionPayload = event.data && typeof event.data.admission === 'object'
+            ? event.data.admission as Record<string, unknown>
+            : {};
+          const amendedTurnId = String(
+            admissionPayload.turnId ?? admissionPayload.turn_id ?? '',
+          );
+          set((state) => {
+            const isCurrent = state.currentSessionKey === resolvedSessionKey;
+            const applyAmendment = (list: ChatMessage[]): ChatMessage[] => list
+              .map((message) => (
+                message.id === userMsg.id
+                  ? {
+                      ...message,
+                      turnId: amendedTurnId || message.turnId,
+                      deliveryStatus: 'amended' as const,
+                    }
+                  : message
+              ))
+              .filter((message) => message.id !== assistantId);
+            return {
+              operations: completeOperationAtKey(state.operations, sendOperationKey),
+              ...(isCurrent ? { messages: applyAmendment(state.messages) } : {}),
+              sessionBuffers: setBuffer(
+                state.sessionBuffers,
+                resolvedSessionKey,
+                applyAmendment,
+              ),
+            };
+          });
+        } else {
         set((state) => {
           const selectedOperationKey = operationKeyForStreamEvent(
             state.operations,
@@ -2968,6 +3095,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         }
         if (event.event === 'tool_result' && !isAgentDraftKey(resolvedSessionKey)) {
           void useChatArtifactStore.getState().load(resolvedSessionKey).catch(() => []);
+        }
         }
       },
       () => {
@@ -3749,3 +3877,26 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
   },
 }));
+
+// TW-D2: mirror the task-level composer draft tables into the durable
+// actor-scoped client-storage owner. Text and staged attachment refs are
+// persisted together as one document; an empty document removes the key.
+let lastDurableComposerSignature = '';
+useChatStore.subscribe((state, previousState) => {
+  if (
+    state.composerDrafts === previousState.composerDrafts
+    && state.composerAttachments === previousState.composerAttachments
+  ) {
+    return;
+  }
+  const signature = JSON.stringify({
+    texts: state.composerDrafts,
+    attachments: state.composerAttachments,
+  });
+  if (signature === lastDurableComposerSignature) return;
+  lastDurableComposerSignature = signature;
+  writeAgentComposerDraftsSync({
+    texts: state.composerDrafts,
+    attachments: state.composerAttachments,
+  });
+});

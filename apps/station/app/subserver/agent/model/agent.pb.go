@@ -792,6 +792,10 @@ const (
 	TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED     TurnAdmissionStatus = 1
 	TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED      TurnAdmissionStatus = 2
 	TurnAdmissionStatus_TURN_ADMISSION_STATUS_REPLAYED    TurnAdmissionStatus = 3
+	// The request was merged into the still-pre-dispatch Turn as an
+	// amendment. Once a Turn has crossed its irreversible provider/tool
+	// dispatch fence, every later admission queues as a new Turn.
+	TurnAdmissionStatus_TURN_ADMISSION_STATUS_AMENDED TurnAdmissionStatus = 4
 )
 
 // Enum value maps for TurnAdmissionStatus.
@@ -801,12 +805,14 @@ var (
 		1: "TURN_ADMISSION_STATUS_STARTED",
 		2: "TURN_ADMISSION_STATUS_QUEUED",
 		3: "TURN_ADMISSION_STATUS_REPLAYED",
+		4: "TURN_ADMISSION_STATUS_AMENDED",
 	}
 	TurnAdmissionStatus_value = map[string]int32{
 		"TURN_ADMISSION_STATUS_UNSPECIFIED": 0,
 		"TURN_ADMISSION_STATUS_STARTED":     1,
 		"TURN_ADMISSION_STATUS_QUEUED":      2,
 		"TURN_ADMISSION_STATUS_REPLAYED":    3,
+		"TURN_ADMISSION_STATUS_AMENDED":     4,
 	}
 )
 
@@ -8372,8 +8378,11 @@ type TurnAdmission struct {
 	QueueEntry          *TurnQueueEntry `protobuf:"bytes,3,opt,name=queue_entry,json=queueEntry,proto3" json:"queue_entry,omitempty"`
 	QueueCapacity       uint32          `protobuf:"varint,4,opt,name=queue_capacity,json=queueCapacity,proto3" json:"queue_capacity,omitempty"`
 	ConversationVersion uint64          `protobuf:"varint,5,opt,name=conversation_version,json=conversationVersion,proto3" json:"conversation_version,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// AMENDED admissions: 1-based sequence of the amendment within the Turn
+	// identified by turn_id.
+	AmendedCount  uint32 `protobuf:"varint,6,opt,name=amended_count,json=amendedCount,proto3" json:"amended_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TurnAdmission) Reset() {
@@ -8437,6 +8446,13 @@ func (x *TurnAdmission) GetQueueCapacity() uint32 {
 func (x *TurnAdmission) GetConversationVersion() uint64 {
 	if x != nil {
 		return x.ConversationVersion
+	}
+	return 0
+}
+
+func (x *TurnAdmission) GetAmendedCount() uint32 {
+	if x != nil {
+		return x.AmendedCount
 	}
 	return 0
 }
@@ -16934,14 +16950,15 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1d\n" +
 	"\n" +
 	"user_input\x18\v \x01(\tR\tuserInput\x12?\n" +
-	"\x1cclient_capability_session_id\x18\f \x01(\tR\x19clientCapabilitySessionId\"\x98\x02\n" +
+	"\x1cclient_capability_session_id\x18\f \x01(\tR\x19clientCapabilitySessionId\"\xbd\x02\n" +
 	"\rTurnAdmission\x12G\n" +
 	"\x06status\x18\x01 \x01(\x0e2/.peers_touch.model.agent.v1.TurnAdmissionStatusR\x06status\x12\x17\n" +
 	"\aturn_id\x18\x02 \x01(\tR\x06turnId\x12K\n" +
 	"\vqueue_entry\x18\x03 \x01(\v2*.peers_touch.model.agent.v1.TurnQueueEntryR\n" +
 	"queueEntry\x12%\n" +
 	"\x0equeue_capacity\x18\x04 \x01(\rR\rqueueCapacity\x121\n" +
-	"\x14conversation_version\x18\x05 \x01(\x04R\x13conversationVersion\"\xed\x04\n" +
+	"\x14conversation_version\x18\x05 \x01(\x04R\x13conversationVersion\x12#\n" +
+	"\ramended_count\x18\x06 \x01(\rR\famendedCount\"\xed\x04\n" +
 	"\vTurnAttempt\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12\x17\n" +
@@ -17813,12 +17830,13 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x18AGENT_TURN_STATUS_FAILED\x10\f\x12\x1f\n" +
 	"\x1bAGENT_TURN_STATUS_CANCELLED\x10\r\x12!\n" +
 	"\x1dAGENT_TURN_STATUS_INTERRUPTED\x10\x0e\x12\x1e\n" +
-	"\x1aAGENT_TURN_STATUS_REJECTED\x10\x0f*\xa5\x01\n" +
+	"\x1aAGENT_TURN_STATUS_REJECTED\x10\x0f*\xc8\x01\n" +
 	"\x13TurnAdmissionStatus\x12%\n" +
 	"!TURN_ADMISSION_STATUS_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dTURN_ADMISSION_STATUS_STARTED\x10\x01\x12 \n" +
 	"\x1cTURN_ADMISSION_STATUS_QUEUED\x10\x02\x12\"\n" +
-	"\x1eTURN_ADMISSION_STATUS_REPLAYED\x10\x03*\x94\x01\n" +
+	"\x1eTURN_ADMISSION_STATUS_REPLAYED\x10\x03\x12!\n" +
+	"\x1dTURN_ADMISSION_STATUS_AMENDED\x10\x04*\x94\x01\n" +
 	"\x0fTurnQueueStatus\x12!\n" +
 	"\x1dTURN_QUEUE_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19TURN_QUEUE_STATUS_PENDING\x10\x01\x12\x1e\n" +

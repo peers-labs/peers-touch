@@ -1073,5 +1073,6 @@
   "chat.queue.snapshot": "Snapshot",
   "chat.queue.cancelAndEdit": "Cancel and edit",
   "chat.queue.showInQueue": "Show in queue",
-  "chat.queue.showInConversation": "Show in conversation"
+  "chat.queue.showInConversation": "Show in conversation",
+  "chat.delivery.amended": "Merged into the running turn"
 }
