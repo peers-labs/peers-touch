@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS messaging_pending_messages (
     next_attempt_at_unix_ms INTEGER NOT NULL,
     last_error_code TEXT NOT NULL,
     created_at_unix_ms INTEGER NOT NULL,
+    mentions_json TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(conversation_id, message_id)
 );
 CREATE INDEX IF NOT EXISTS idx_messaging_pending_messages_thread
@@ -357,6 +358,7 @@ CREATE TABLE IF NOT EXISTS messaging_message_projections (
     hidden_for_actor INTEGER NOT NULL DEFAULT 0,
     moderated INTEGER NOT NULL DEFAULT 0,
     moderation_reason_code TEXT,
+    mentions_json TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(conversation_id, event_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_projection_message
@@ -591,6 +593,22 @@ const ADDITIVE_COLUMN_MIGRATIONS: &[(&str, &str, &str)] = &[
         "required_device_count",
         "ALTER TABLE messaging_command_attempts \
          ADD COLUMN required_device_count INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        // @mentions: compact JSON of the in-ciphertext mention set so retries
+        // re-encode the same private body. Empty string = no mentions.
+        "messaging_pending_messages",
+        "mentions_json",
+        "ALTER TABLE messaging_pending_messages \
+         ADD COLUMN mentions_json TEXT NOT NULL DEFAULT ''",
+    ),
+    (
+        // @mentions: denormalized mention set for the read/projection path so
+        // renderers and the local mention-notification gate need not re-decode.
+        "messaging_message_projections",
+        "mentions_json",
+        "ALTER TABLE messaging_message_projections \
+         ADD COLUMN mentions_json TEXT NOT NULL DEFAULT ''",
     ),
 ];
 

@@ -1,8 +1,11 @@
 pub use messaging_core::codec::private_content::{
     decode_message_private_content, encode_message_private_content,
-    validate_attachment_plaintext_metadata, validate_message_private_content,
-    MESSAGE_MAX_ATTACHMENT_COUNT, MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
+    encode_message_private_content_with_mentions,
+    validate_attachment_plaintext_metadata, validate_message_private_content, MessageMentions,
+    MESSAGE_MAX_ATTACHMENT_COUNT, MESSAGE_MAX_MENTIONS, MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
 };
+
+pub use crate::model::chat::MessageMention;
 
 #[cfg(test)]
 pub(super) fn test_attachment_metadata(
@@ -57,6 +60,8 @@ mod tests {
             format_version: MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
             text: "exact plaintext".to_string(),
             attachments: vec![test_attachment_metadata("attachment-1")],
+            mentions: vec![],
+            mention_all: false,
         };
         let encoded =
             encode_message_private_content(&expected.text, &expected.attachments).unwrap();
@@ -74,6 +79,8 @@ mod tests {
                 test_attachment_metadata("attachment-1"),
                 test_attachment_metadata("attachment-1"),
             ],
+            mentions: vec![],
+            mention_all: false,
         };
         assert!(validate_message_private_content(&duplicate).is_err());
 
