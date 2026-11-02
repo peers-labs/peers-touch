@@ -209,6 +209,10 @@ message Conversation {
   ConversationRuntimeBinding runtime_binding = 16;
   uint32 queued_turn_count = 17;
   uint64 version = 18;
+  // Canonical Chat-surface TaskRun that owns this conversation. Exactly one
+  // task owns a conversation (TaskRun.canonical_conversation_id is the
+  // reverse link); empty only before the first admitted Turn.
+  string task_id = 19;
 }
 
 // AgentThread is a durable sub-conversation forked from a source message

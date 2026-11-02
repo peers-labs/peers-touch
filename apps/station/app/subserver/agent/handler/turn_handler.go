@@ -114,7 +114,7 @@ func (h *TurnHandlers) beginChatTaskStep(
 	if actorID == "" {
 		return "", nil, nil
 	}
-	taskID, err = h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
+	taskID, err = h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), truncateForTitle(req.GetUserInput()), req.GetUserInput())
 	if err != nil {
 		return "", nil, err
 	}

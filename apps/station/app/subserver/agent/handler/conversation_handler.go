@@ -22,6 +22,7 @@ type ConversationHandlers struct {
 	convService     *service.ConversationService
 	turnService     *service.TurnService
 	externalRuntime *service.ExternalRuntimeService
+	chatTaskID      func(ctx context.Context, actorPTID string, conversationIDs []string) (map[string]string, error)
 }
 
 func NewConversationHandlers(
@@ -34,6 +35,38 @@ func NewConversationHandlers(
 		turnService:     turnService,
 		externalRuntime: externalRuntime,
 	}
+}
+
+// SetChatTaskIdentityResolver attaches the canonical Chat task identity
+// resolver so conversation reads project the owning TaskRun id.
+func (h *ConversationHandlers) SetChatTaskIdentityResolver(resolver func(ctx context.Context, actorPTID string, conversationIDs []string) (map[string]string, error)) {
+	h.chatTaskID = resolver
+}
+
+// enrichTaskIDs projects canonical Chat task ids onto conversations. Read
+// failures surface as 500 because task identity is part of the conversation
+// contract, never silently omitted.
+func (h *ConversationHandlers) enrichTaskIDs(ctx context.Context, actorPTID string, conversations []*domain.Conversation) error {
+	if h.chatTaskID == nil || len(conversations) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		if conversation != nil && conversation.ConversationID != "" {
+			ids = append(ids, conversation.ConversationID)
+		}
+	}
+	identity, err := h.chatTaskID(ctx, actorPTID, ids)
+	if err != nil {
+		return err
+	}
+	for _, conversation := range conversations {
+		if conversation == nil {
+			continue
+		}
+		conversation.TaskID = identity[conversation.ConversationID]
+	}
+	return nil
 }
 
 type conversationListRequest struct {
@@ -119,6 +152,10 @@ func (h *ConversationHandlers) HandleListConversations(ctx context.Context, req 
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
+	if err := h.enrichTaskIDs(ctx, ptid, conversations); err != nil {
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
+		return nil
+	}
 	writeJSON(resp, http.StatusOK, map[string]any{
 		"ok":            true,
 		"conversations": conversationsToJSON(conversations),
@@ -142,6 +179,10 @@ func (h *ConversationHandlers) HandleGetConversation(ctx context.Context, req se
 	conv, err := h.convService.GetConversation(ctx, subjectActorID(ctx), input.ConversationID)
 	if err != nil {
 		writeJSON(resp, http.StatusNotFound, map[string]any{"ok": false, "error": err.Error()})
+		return nil
+	}
+	if err := h.enrichTaskIDs(ctx, subjectActorID(ctx), []*domain.Conversation{conv}); err != nil {
+		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
 	}
 	writeJSON(resp, http.StatusOK, map[string]any{
@@ -554,6 +595,7 @@ func conversationToJSON(c *domain.Conversation) map[string]any {
 		"conversation_id":          c.ConversationID,
 		"agent_id":                 c.AgentID,
 		"ptid":                     c.ActorPTID,
+		"task_id":                  c.TaskID,
 		"title":                    c.Title,
 		"description":              c.Description,
 		"provider_id":              c.ProviderID,

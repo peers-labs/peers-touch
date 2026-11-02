@@ -1151,6 +1151,34 @@ let composerReferenceRemovalCounter = 0;
 let composerResourceSelectionCounter = 0;
 const pendingMessageRetries = new Map<string, Promise<void>>();
 
+// D1: one user submission gesture owns exactly one Station Turn. A double
+// Enter/click in the pre-admission window must not create two Turns — the
+// second gesture is suppressed locally while Station admission for the first
+// is still in flight, and both gestures would otherwise carry different
+// idempotency keys. The entry is released once Station admits (non-error
+// stream event), errors before admission (so retry works), or the stream
+// closes. Server-side payload-hash conflict remains the cross-client backstop.
+const inFlightSubmissions = new Map<string, string>();
+
+function submissionGuardKey(
+  sessionKey: string,
+  content: string,
+  attachments: ChatComposerAttachment[],
+): string {
+  const attachmentKey = attachments
+    .map((attachment) => attachment.cid || '')
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  return `${sessionKey}\u0000${content}\u0000${attachmentKey}`;
+}
+
+function releaseInFlightSubmission(guardKey: string, idempotencyKey: string): void {
+  if (inFlightSubmissions.get(guardKey) === idempotencyKey) {
+    inFlightSubmissions.delete(guardKey);
+  }
+}
+
 function tempId() {
   return `temp-${Date.now()}-${messageCounter++}`;
 }
@@ -1252,6 +1280,7 @@ function reconcileRevisionSession(
     key: conversation.conversation_id,
     agent_name: conversation.agent_id,
     title: resolveI18nValue(conversation.title) || '',
+    ...(conversation.task_id ? { task_id: conversation.task_id } : {}),
     message_count: existing?.message_count ?? 0,
     version: conversation.version,
     model_override: conversation.model_name,
@@ -1880,6 +1909,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
   composerFocusNonce: 0,
 
   reset: () => {
+    inFlightSubmissions.clear();
     for (const operation of Object.values(get().operations)) {
       if (!operation.abortController.signal.aborted) {
         operation.abortController.abort();
@@ -2722,10 +2752,22 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
     }
     set({ readinessErrorKey: null });
 
+    // Suppress a duplicate submission gesture (double Enter/click) before
+    // Station admits the first one: two in-flight submissions of the same
+    // draft would each mint a different idempotency key and create two Turns.
+    const guardKey = submissionGuardKey(effectiveConvId, content, attachments);
+    if (inFlightSubmissions.has(guardKey)) {
+      log.info('chat', 'Suppressed duplicate in-flight submission', {
+        sessionKey: effectiveConvId,
+        contentLength: content.length,
+      });
+      return false;
+    }
     // One send owns one correlation key from the optimistic rows through the
     // Station admission; snapshot merges join on it so a turn never projects
     // as two assistant messages during the pre-identity connect window.
     const clientIdempotencyKey = lifecycle?.clientIdempotencyKey || tempId();
+    inFlightSubmissions.set(guardKey, clientIdempotencyKey);
 
     const userMsg: ChatMessage = {
       id: tempId(),
@@ -2781,7 +2823,12 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         currentSessionKey,
       ),
       (event: StreamEvent) => {
-        if (event.event !== 'error') notifyAccepted();
+        if (event.event !== 'error') {
+          notifyAccepted();
+          // Station now owns the intent (started or queued); an intentional
+          // identical resend after this point is a new submission.
+          releaseInFlightSubmission(guardKey, clientIdempotencyKey);
+        }
         if (event.event === 'conversation_created' && typeof event.data?.conversation_id === 'string' && isDraft) {
           const realConvId = event.data.conversation_id.trim();
           const topicDraft = useAgentTopicStore.getState()
@@ -2925,6 +2972,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       },
       () => {
         notifyAccepted();
+        releaseInFlightSubmission(guardKey, clientIdempotencyKey);
         log.info('chat', 'Stream complete');
         set((state) => {
           const isCurrent = state.currentSessionKey === resolvedSessionKey;
@@ -2961,6 +3009,10 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       (err: AgentTurnStreamError) => {
+        // Release regardless of admission state: post-admission errors are
+        // terminal Turn facts from Station (the gesture itself succeeded),
+        // and pre-admission errors must allow an immediate retry.
+        releaseInFlightSubmission(guardKey, clientIdempotencyKey);
         const attachmentRejected =
           err.typedError?.error_type === 'CONTEXT_ATTACHMENT_REJECTED';
         if (attachmentDiagnostic && attachmentRejected) {

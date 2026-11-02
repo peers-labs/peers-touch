@@ -890,6 +890,8 @@ export interface Session {
   key: string;
   agent_name: string;
   title: string;
+  // Canonical Chat TaskRun identity (Station truth) backing this session.
+  task_id?: string;
   message_count: number;
   version?: number;
   model_override?: string;
@@ -3986,6 +3988,9 @@ export interface AgentConversation {
   conversation_id: string;
   agent_id: string;
   ptid: string;
+  // Canonical Chat-surface TaskRun owning this conversation; empty before the
+  // first admitted Turn.
+  task_id?: string;
   title: string;
   description?: string;
   provider_id?: string;

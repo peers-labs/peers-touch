@@ -17,9 +17,13 @@ const (
 )
 
 type Conversation struct {
-	ConversationID        string
-	AgentID               string
-	ActorPTID             string
+	ConversationID string
+	AgentID        string
+	ActorPTID      string
+	// TaskID is the canonical Chat-surface TaskRun owning this conversation.
+	// Empty only before the first admitted Turn; it is a read projection, not
+	// conversation-owned state.
+	TaskID                string
 	Title                 string
 	Description           string
 	ProviderID            string

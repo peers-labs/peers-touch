@@ -3473,8 +3473,12 @@ type Conversation struct {
 	RuntimeBinding        *ConversationRuntimeBinding `protobuf:"bytes,16,opt,name=runtime_binding,json=runtimeBinding,proto3" json:"runtime_binding,omitempty"`
 	QueuedTurnCount       uint32                      `protobuf:"varint,17,opt,name=queued_turn_count,json=queuedTurnCount,proto3" json:"queued_turn_count,omitempty"`
 	Version               uint64                      `protobuf:"varint,18,opt,name=version,proto3" json:"version,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Canonical Chat-surface TaskRun that owns this conversation. Exactly one
+	// task owns a conversation (TaskRun.canonical_conversation_id is the
+	// reverse link); empty only before the first admitted Turn.
+	TaskId        string `protobuf:"bytes,19,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Conversation) Reset() {
@@ -3631,6 +3635,13 @@ func (x *Conversation) GetVersion() uint64 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *Conversation) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
 }
 
 // AgentThread is a durable sub-conversation forked from a source message
@@ -16406,7 +16417,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x0ftool_iterations\x18\a \x01(\x05R\x0etoolIterations\x129\n" +
 	"\n" +
 	"started_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xaa\x06\n" +
+	"\bended_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xc3\x06\n" +
 	"\fConversation\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1d\n" +
@@ -16432,7 +16443,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x18active_branch_message_id\x18\x0f \x01(\tR\x15activeBranchMessageId\x12_\n" +
 	"\x0fruntime_binding\x18\x10 \x01(\v26.peers_touch.model.agent.v1.ConversationRuntimeBindingR\x0eruntimeBinding\x12*\n" +
 	"\x11queued_turn_count\x18\x11 \x01(\rR\x0fqueuedTurnCount\x12\x18\n" +
-	"\aversion\x18\x12 \x01(\x04R\aversion\x1a7\n" +
+	"\aversion\x18\x12 \x01(\x04R\aversion\x12\x17\n" +
+	"\atask_id\x18\x13 \x01(\tR\x06taskId\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xaa\x02\n" +

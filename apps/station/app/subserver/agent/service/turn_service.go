@@ -684,6 +684,7 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 			request.GetAgentId(),
 			request.GetConversationId(),
 			request.GetUserInput(),
+			request.GetUserInput(),
 		)
 		if err != nil {
 			if settleErr := s.failTurn(

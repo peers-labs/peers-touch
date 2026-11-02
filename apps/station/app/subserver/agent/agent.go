@@ -418,6 +418,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		turnSvc,
 		externalRuntimeSvc,
 	)
+	convHandlers.SetChatTaskIdentityResolver(chatTaskSvc.TaskIDsForConversations)
 	revisionHandlers := handler.NewRevisionHandlers(service.NewRevisionService(convSvc, turnSvc))
 	threadHandlers := handler.NewThreadHandlers(service.NewThreadService())
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)

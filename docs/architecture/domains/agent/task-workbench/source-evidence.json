@@ -1,0 +1,347 @@
+{
+  "evidenceClass": "source-inspection-and-proposal",
+  "productionRoot": "/home/shuxian/peers-some/peers-touch",
+  "head": "48f9aa2ca043c0bad0d29a8f817795c3bf717dac",
+  "branch": "master",
+  "workingTreeHasOtherChanges": true,
+  "source": [
+    {
+      "path": "apps/station/app/subserver/agent/service/chat_task_service.go",
+      "sha256": "fcdf31034e0030bdd52869d35cf42c66a32e4b1045e5ebcbadd4591383c2857f",
+      "anchors": [
+        {
+          "symbol": "EnsureChatTask",
+          "lines": [
+            104,
+            106
+          ]
+        },
+        {
+          "symbol": "BeginChatStep",
+          "lines": [
+            157,
+            160
+          ]
+        }
+      ]
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/agent_task_service.go",
+      "sha256": "803a3541f8a5583309590e9b47b748c42ad99ef18ce1e1f4d6b64cad717f6836",
+      "anchors": [
+        {
+          "symbol": "CreateAndStartTask",
+          "lines": [
+            29
+          ]
+        },
+        {
+          "symbol": "UpdateStatus",
+          "lines": [
+            250,
+            251
+          ]
+        }
+      ]
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/conversation_service.go",
+      "sha256": "44c09507043886678055e63e5e80dc3e2fb640227e6c7e4787bebdf2da68303a",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/turn_service.go",
+      "sha256": "192749ec80e66e1cd8c68c75768cfc977581cacadddcfb73170594846e81e94d",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/turn_admission_service.go",
+      "sha256": "fa36ef1865f1ae5a83a1e8fefbb3503d759634a68d00cdea72d88a307727c9ca",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/tool_dispatch_service.go",
+      "sha256": "3814ba7484be3287fa0653448e7934e5918cdf0b617a077c310dbf2159d862c3",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/task_event_writer.go",
+      "sha256": "96a50ce13364e6d8d06c5a3220898b60771138fb18cc5cb3ad17b9d89d1f5883",
+      "anchors": [
+        {
+          "symbol": "syncTaskArtifactBlobForTaskEventTx",
+          "lines": [
+            123,
+            379
+          ]
+        }
+      ]
+    },
+    {
+      "path": "apps/station/app/subserver/agent/infrastructure/persistence/task_artifact.go",
+      "sha256": "859e820e27c876fa2bc7e69b703bc80509b046044733764e15031b9b5784f4ff",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/infrastructure/persistence/task_artifact_blob.go",
+      "sha256": "559f34527e3047afedb409adceb44dbaa4949c9d7d64cb18ca2e4b95e02971a3",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/prompt_assembly_service.go",
+      "sha256": "5a239e04a82eb94c1f3d50990fcc507bded04091667ab9dcd2d3d0a7aed2a552",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/memory_service.go",
+      "sha256": "e097b84065a0175f5e31a66ba033300ff4e606018d2168797bfd7d88d00f72de",
+      "anchors": [
+        {
+          "symbol": "BuildRelevantSnapshot",
+          "lines": [
+            1362
+          ]
+        },
+        {
+          "symbol": "ExtractFromTurn",
+          "lines": [
+            1567
+          ]
+        }
+      ]
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/memory_embedding.go",
+      "sha256": "63fe03ebdd56d9725b1b4bc773e8e3245eadf320844cc5080c33b9b05453ec30",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/provider_config_service.go",
+      "sha256": "d773e30f05e602425412721a1f57302a2ef796c4744b88afcfe0f31c06682338",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/credential_config_service.go",
+      "sha256": "1a33c993ef55b90be3aa40ae243410c079abf330e7eb941804c71e59ffcd92d2",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/external_runtime_service.go",
+      "sha256": "f5ed3f0d975bf824c2969dea24953fe6a9f68f878f50965f45705599dcda44d1",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/externalruntime/protocol.go",
+      "sha256": "0f3fa8ca491856136fc95a846c5ba8eaf8f00a1b4bc812d96cfb200cd02c5753",
+      "anchors": [
+        {
+          "symbol": "normalizeCompletedItem",
+          "lines": [
+            62,
+            88
+          ]
+        }
+      ]
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/externalruntime/manager.go",
+      "sha256": "df4f5a601fbe7621751b8ebdf2499b64b43fc760c6daf7d02d638ba166af8d67",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/cli/executor.go",
+      "sha256": "d3a64a751999e8011b7b1a90778b1bfdea64b774cb2a3858031b46d90db9a381",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/home_command_service.go",
+      "sha256": "4dd0db22fbea6606628a9dd33d62a38102022ce87e1dd32a4b917207dbce30ec",
+      "anchors": []
+    },
+    {
+      "path": "apps/station/app/subserver/agent/service/home_projection_service.go",
+      "sha256": "a72837cf88e1f147e90f21c977505a5a65f06b24d358c325fab8ade671a74848",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src-tauri/src/application/desktop_executor_worker/local_executor.rs",
+      "sha256": "ffcb26ab3353bc719b3e2769bd635f652004767d01120774546d167ef217ab87",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/components/agent/workbench/AgentWorkbench.tsx",
+      "sha256": "d2896cecea8f2fe8c550605e49d7b2f1aac81cc7350349e6e7f477fa6c0e7cab",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/components/agent/workbench/ConversationRail.tsx",
+      "sha256": "0d6a56d228c16890cfe36c22f6b5786f65aaa41a5fa07aac458a81b4099c0aa2",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/components/portal/PortalPanel.tsx",
+      "sha256": "d259be454c834b49baa5f92f68621c9f3be9c02b1757026520468f54689923dd",
+      "anchors": [
+        {
+          "symbol": "export function PortalPanel",
+          "lines": [
+            19
+          ]
+        },
+        {
+          "symbol": "extractMessageArtifacts",
+          "lines": [
+            7,
+            26
+          ]
+        }
+      ]
+    },
+    {
+      "path": "apps/desktop/src/components/portal/views/ArtifactDetailView.tsx",
+      "sha256": "e2fd815637fad096a38a23e6bb0d27c35d394bbcaaca8a3505e0ca6f3b559449",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/store/chat.ts",
+      "sha256": "2623a373227096d78b07540a4715771be2cbc14aa1db8a653de45ddb62fe071e",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/store/tasks.ts",
+      "sha256": "6825375fec56d45064c0445064bdf14b702b2e3d4292b042e4d486626e62dd3a",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/store/agentTopics.ts",
+      "sha256": "06621c81a6e7aea113d40cffe2ba004a23e0c56ceb8c7c29fc4fe6c4e83bf361",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/runtimes/agentTopicRuntime.ts",
+      "sha256": "88f8a0d330721772f5074a82589d0aff545f3b0deaaa5ec65a014e7331ea8e45",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/runtimes/homeRuntime.ts",
+      "sha256": "54356f4157c498a3a4b006370d908407864187c8f7b0cd55edd74c49308e6bc5",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/services/agentAttachments.ts",
+      "sha256": "7dd1e37fb18a3666b057ed6ac0782726473060248b99559c31dace88c36d304e",
+      "anchors": []
+    },
+    {
+      "path": "apps/desktop/src/modules/memory.ts",
+      "sha256": "3bc7a97f9565b2493d3ca8053adbbcfd8de08ca5db5c2cedfc5c4dc344e69943",
+      "anchors": []
+    },
+    {
+      "path": "model/domain/agent/task.proto",
+      "sha256": "81b549c35cfc304e2e346743857493d3f9b5f030fad9ab24060941186f6780d2",
+      "anchors": []
+    },
+    {
+      "path": "model/domain/agent/orchestration.proto",
+      "sha256": "c5e59742145576cf25a15478051ae816a3cf7ecce34023b9bd9c6f8196d5fa6d",
+      "anchors": [
+        {
+          "symbol": "message TaskRun",
+          "lines": [
+            213
+          ]
+        },
+        {
+          "symbol": "message TaskArtifact",
+          "lines": [
+            265,
+            279
+          ]
+        }
+      ]
+    },
+    {
+      "path": "docs/architecture/agent/modern-chat-agent/README.md",
+      "sha256": "a42926fee65f6b9a6185e051ae760cf2e2493dddde7dea43e70ca5cdab73acea",
+      "anchors": []
+    },
+    {
+      "path": "docs/architecture/agent/agent-memory-architecture.md",
+      "sha256": "c7b4688cc26bc2d30e3bdebd3da8cb65c3849844ff2af7679b9cdcc3f6130422",
+      "anchors": []
+    },
+    {
+      "path": "docs/global/first-principles.md",
+      "sha256": "ea74abea55159272f170915b6cc6db517f268e034382cf9b26f5ce5c9b8c2ad9",
+      "anchors": []
+    }
+  ],
+  "prototypeSourceBinding": {
+    "path": "/home/shuxian/peers-some/peers-touch/.local/deliverables/agent-space-usage-20261101/source-binding.json",
+    "sha256": "928c126d9c9496e6d48b1aea182d648f5c7cf6663729d892109e0e714133ea92",
+    "matchesCurrentPrototypeSources": true,
+    "checkClass": "prototype-ui-only"
+  },
+  "documents": [
+    {
+      "path": "README.md",
+      "sha256": "ffcc07f58bd81089160eb641757923eefd82e17ca33f9971c9ec4b54eefaf7b1"
+    },
+    {
+      "path": "data-model.md",
+      "sha256": "15f1bdd982ee885238520de964343fcaecd957af7bdc3a04f4391576ec50e491"
+    },
+    {
+      "path": "decisions.md",
+      "sha256": "ba26bd7e92f8fc793da5631eed51efebbcde77232fbaa3adbef775d39990b809"
+    },
+    {
+      "path": "design.md",
+      "sha256": "ea5fad22ac2387e110b66991cbdba0f788e39064fbe4adedea34d6cb07e2af19"
+    },
+    {
+      "path": "execution-outline.md",
+      "sha256": "1b3b2243ca0d8c88db5d6ff0a9afbaac4a30fae8f7281324f221f999690e13be"
+    },
+    {
+      "path": "integration.md",
+      "sha256": "f7b7f7ffd662064506513c46076f09a08019a1d64b40ea37141f7028b41e93ab"
+    },
+    {
+      "path": "module-layout.md",
+      "sha256": "1eb2434ca34ad8ef1ef90ad5951616aa0e1fe14741e5502366c0b6937a9a7da1"
+    },
+    {
+      "path": "review.md",
+      "sha256": "157e0eac96426f091c4568ed788dda393166354bb93bac237ee6c0502d94dc4b"
+    },
+    {
+      "path": "tasks.md",
+      "sha256": "b48bb4e2e0017cdf4bd146289b72416b2900fe20d0a9fba665fd22935616c4d5"
+    }
+  ],
+  "notPerformed": [
+    "production-code-edit",
+    "implementation",
+    "production-runtime-testing",
+    "schema-migration",
+    "deployment",
+    "push",
+    "pull-request"
+  ],
+  "remainingReleaseEvidence": [
+    "integrated-base-commit",
+    "deployed-consumers",
+    "migration-data-profile",
+    "native-runtime-version",
+    "host-protocol-and-permissions",
+    "memory-quality"
+  ],
+  "codexReviewEvidence": {
+    "path": "../codex-source-review/source-evidence.json",
+    "head": "67f0994b532b8740f14b5b738af7b7b2a915b1d6",
+    "evidenceClass": "source-inspection-not-runtime-validation"
+  },
+  "checkpointScope": "design-and-prototype-preservation; production-implementation-and-runtime-proof-pending"
+}
