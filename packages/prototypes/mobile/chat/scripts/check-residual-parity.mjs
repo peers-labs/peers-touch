@@ -179,8 +179,8 @@ try {
       ) - before)).toBeLessThanOrEqual(2);
     }
     async function openHistory() {
-      await device.getByRole('button', { name: 'More', exact: true }).click();
-      await device.getByRole('button', { name: 'Search Chat History', exact: true }).click();
+      await device.getByRole('button', { name: copy['mobile.chat.moreActions'], exact: true }).click();
+      await device.getByRole('button', { name: copy['mobile.chat.searchHistory'], exact: true }).click();
       await expect(list('messages')).toHaveCount(0);
       await expect(searchQuery()).toBeFocused();
     }
@@ -348,7 +348,10 @@ try {
     await submit();
     await back();
     await expect(search()).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Search results', exact: true })).toBeDisabled();
+    // peers-ui B19: unavailable commands are focusable with aria-disabled and
+    // an AT reason, never native disabled.
+    await expect(page.locator('[data-action-id="evidence.search.results"]'))
+      .toHaveAttribute('aria-disabled', 'true');
     await outcome('Discarded search results');
     await expect(search()).toHaveCount(0);
     await openHistory();

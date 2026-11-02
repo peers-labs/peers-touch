@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { useT } from '../i18n';
 import { Icon, Text, TextArea } from '@peers-touch/ui';
 import type { Message, Conversation } from '../types';
 import { demoAvatarUrls } from '../data';
@@ -8,6 +9,7 @@ export function ThreadView({ message, conversation, onBack, targetId, onReply }:
   message: Message; conversation: Conversation; onBack: () => void; targetId?: string;
   onReply: (reply: Message) => void;
 }) {
+  const t = useT();
   const [threadInput, setThreadInput] = useState('');
   const replies = message.threadReplies ?? [];
   const root = useRef<HTMLDivElement>(null);
@@ -38,12 +40,12 @@ export function ThreadView({ message, conversation, onBack, targetId, onReply }:
   return (
     <div className="mp-thread-view" ref={root}>
       <header className="mp-thread-header">
-        <button type="button" className="mp-thread-back" onClick={onBack} aria-label="Back">
+        <button type="button" className="mp-thread-back" onClick={onBack} aria-label={t('mobile.chat.back')}>
           <Icon iconId="arrow-left" size={22} />
         </button>
         <div className="mp-thread-contact">
           <div className="mp-thread-contact-info">
-            <Text strong className="mp-thread-name">Thread</Text>
+            <Text strong className="mp-thread-name">{t('mobile.ui.thread')}</Text>
             <Text tone="muted" style={{ fontSize: 11 }}>{message.mine ? 'You' : conversation.name}</Text>
           </div>
         </div>
@@ -77,11 +79,11 @@ export function ThreadView({ message, conversation, onBack, targetId, onReply }:
       </div>
 
       <div className="mp-composer">
-        <button type="button" className="mp-composer-attach" aria-label="Attach"><Icon iconId="plus" size={22} /></button>
+        <button type="button" className="mp-composer-attach" aria-label={t('mobile.chat.attach')}><Icon iconId="plus" size={22} /></button>
         <TextArea
           className="mp-composer-input"
           value={threadInput}
-          placeholder="Reply in thread"
+          placeholder={t('mobile.thread.replyPlaceholder')}
           minimumRows={1}
           maximumRows={4}
           framing="embedded"
@@ -91,7 +93,7 @@ export function ThreadView({ message, conversation, onBack, targetId, onReply }:
         <button
           type="button"
           className={`mp-composer-send ${threadInput.trim() ? 'active' : ''}`}
-          aria-label="Send"
+          aria-label={t('mobile.chat.send')}
           disabled={!threadInput.trim()}
           onClick={handleThreadSend}
         >

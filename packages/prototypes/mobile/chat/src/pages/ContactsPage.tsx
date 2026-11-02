@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
+import { useT } from '../i18n';
 import { Icon, IconButton, Text, TextField } from '@peers-touch/ui';
 import type { AvatarRenderState, Contact, GroupItem } from '../types';
 import { demoContacts, demoGroups } from '../data';
-import copy from '../../../../../locales/en/common.json';
 import { demoRequestContact, type DemoFriendRequest } from '../socialDemo';
 import { PrototypeListWindow } from '../components/PrototypeListWindow';
 import type { PrototypeListMemory } from '../listPresentation';
@@ -28,7 +28,15 @@ export function ContactsPage({
   onAddContact?: () => void;
   onCreateGroup?: () => void;
 }) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const t = useT();
+  // The page unmounts while a contact/group detail is open; the query survives
+  // detail round-trips through the same shell-owned memory as window positions.
+  const queryKey = 'contacts-query';
+  const [searchQuery, setSearchQueryState] = useState(() => listMemory.read(queryKey)?.query ?? '');
+  const setSearchQuery = (value: string) => {
+    setSearchQueryState(value);
+    listMemory.save(queryKey, { query: value });
+  };
 
   const filteredContacts = useMemo(() => {
     if (!searchQuery.trim()) return [...contacts].sort((a, b) => a.name.localeCompare(b.name));
@@ -49,17 +57,17 @@ export function ContactsPage({
   return (
     <div className="mp-page" data-prototype-page="contacts">
       <header className="mp-header">
-        <h1 className="mp-header-title">{copy['mobile.contacts.title']}</h1>
-        <IconButton actionId="contacts.create-group" iconId="users" label={copy['mobile.group.create']}
+        <h1 className="mp-header-title">{t('mobile.contacts.title')}</h1>
+        <IconButton actionId="contacts.create-group" iconId="users" label={t('mobile.group.create')}
           emphasis="quiet" onActivate={() => onCreateGroup?.()} />
-        <IconButton actionId="contacts.find-people" iconId="user-plus" label={copy['mobile.contacts.findPeople']}
+        <IconButton actionId="contacts.find-people" iconId="user-plus" label={t('mobile.contacts.findPeople')}
           emphasis="quiet" onActivate={() => onAddContact?.()} />
       </header>
 
       <div className="mp-search-well">
         <TextField
-          aria-label={copy['mobile.contacts.searchPlaceholder']}
-          placeholder={copy['mobile.contacts.searchPlaceholder']}
+          aria-label={t('mobile.contacts.searchPlaceholder')}
+          placeholder={t('mobile.contacts.searchPlaceholder')}
           value={searchQuery}
           clearable
           onClear={() => setSearchQuery('')}
@@ -71,7 +79,7 @@ export function ContactsPage({
       <div className="mp-contacts-body">
         {filteredGroups.length > 0 && (
           <section className="mp-contact-section">
-            <div className="mp-section-header"><span>Groups</span></div>
+            <div className="mp-section-header"><span>{t('mobile.contacts.groupsTitle')}</span></div>
             <div className="mp-group-list">
               {filteredGroups.map((group) => (
                 <button key={group.key} type="button" className="mp-group-item" onClick={() => onGroupClick(group)}>
@@ -89,7 +97,7 @@ export function ContactsPage({
         )}
 
         <section className="mp-contact-section">
-          <div className="mp-section-header"><span>Contacts</span></div>
+          <div className="mp-section-header"><span>{t('mobile.contacts.title')}</span></div>
           <div className="mp-contact-list">
             <PrototypeListWindow items={filteredContacts} itemKey={contactKey}
               surfaceKey={`contacts:${searchQuery.trim().toLowerCase()}`} memory={listMemory}>
@@ -120,14 +128,14 @@ export function ContactsPage({
             </PrototypeListWindow>
             {filteredContacts.length === 0 && (
               <div className="mp-request-item" role="status">
-                <Text tone="secondary">{copy['mobile.contacts.noSearchResults']}</Text>
+                <Text tone="secondary">{t('mobile.contacts.noSearchResults')}</Text>
               </div>
             )}
           </div>
         </section>
         {requests.length > 0 && (
           <section className="mp-contact-section">
-            <div className="mp-section-header"><span>{copy['mobile.contacts.friendRequests']}</span></div>
+            <div className="mp-section-header"><span>{t('mobile.contacts.friendRequests')}</span></div>
             <div className="mp-request-list">
               <PrototypeListWindow items={filteredRequests} itemKey={requestKey}
                 surfaceKey={`requests:${searchQuery.trim().toLowerCase()}`} memory={listMemory}>
@@ -139,18 +147,18 @@ export function ContactsPage({
                     <div className="mp-request-info">
                       <Text strong>{entry.contact.name}</Text>
                       <Text tone="secondary">
-                        {entry.direction === 'incoming' ? entry.contact.name : copy['mobile.contacts.self']}
+                        {entry.direction === 'incoming' ? entry.contact.name : t('mobile.contacts.self')}
                         {' → '}
-                        {entry.direction === 'incoming' ? copy['mobile.contacts.self'] : entry.contact.name}
+                        {entry.direction === 'incoming' ? t('mobile.contacts.self') : entry.contact.name}
                       </Text>
-                      <Text>{copy['mobile.contacts.requestPending']}</Text>
+                      <Text>{t('mobile.contacts.requestPending')}</Text>
                     </div>
                   </div>
                 ))}
               </PrototypeListWindow>
               {filteredRequests.length === 0 && (
                 <div className="mp-request-item" role="status">
-                  <Text tone="secondary">{copy['mobile.contacts.noFriendRequests']}</Text>
+                  <Text tone="secondary">{t('mobile.contacts.noFriendRequests')}</Text>
                 </div>
               )}
             </div>
@@ -158,16 +166,16 @@ export function ContactsPage({
         )}
         {request?.status === 'sent' && (
           <section className="mp-contact-section">
-            <div className="mp-section-header"><span>{copy['mobile.contacts.sentRequests']}</span></div>
+            <div className="mp-section-header"><span>{t('mobile.contacts.sentRequests')}</span></div>
             <div className="mp-request-list">
               <div className="mp-request-item">
                 <IdentityAvatar name={demoRequestContact.name} initials={demoRequestContact.avatar}
                   src={demoRequestContact.avatarUrl} size={40} renderState={avatarState} />
                 <div className="mp-request-info">
                   <Text strong>{demoRequestContact.name}</Text>
-                  <Text tone="secondary">{copy['mobile.contacts.waitingForAccept']}</Text>
+                  <Text tone="secondary">{t('mobile.contacts.waitingForAccept')}</Text>
                 </div>
-                <Text>{copy['mobile.contacts.requestPending']}</Text>
+                <Text>{t('mobile.contacts.requestPending')}</Text>
               </div>
             </div>
           </section>
@@ -178,5 +186,6 @@ export function ContactsPage({
 }
 
 function ChevronIcon() {
+  const t = useT();
   return <Icon iconId="chevron-right" size={18} />;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '@peers-touch/ui';
+import { useT } from '../i18n';
 import type { AvatarRenderState } from '../types';
 
 /**
@@ -28,6 +29,7 @@ export function IdentityAvatar({
   renderState?: AvatarRenderState;
   className?: string;
 }) {
+  const t = useT();
   const [assetState, setAssetState] = useState<AvatarRenderState>(src ? 'loading' : 'failed');
 
   useEffect(() => {
@@ -61,7 +63,7 @@ export function IdentityAvatar({
       )}
       {renderState === 'loading' && <span className="mp-identity-loading" aria-hidden="true" />}
       {showPresence && online && visibleState !== 'loading' && (
-        <span className="mp-online-dot" aria-label="Online" />
+        <span className="mp-online-dot" aria-label={t('mobile.ui.online')} />
       )}
     </span>
   );

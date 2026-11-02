@@ -1,6 +1,6 @@
+import { useT } from '../i18n';
 import { Button, Icon, Spin, Text } from '@peers-touch/ui';
 import type { IconName } from '../types';
-import copy from '../../../../../locales/en/common.json';
 import type { DemoFriendRequest, SocialDemoState } from '../socialDemo';
 
 export function SocialUnavailablePage({ title, runtime, onRetry, onBack }: {
@@ -9,12 +9,13 @@ export function SocialUnavailablePage({ title, runtime, onRetry, onBack }: {
   onRetry: () => void;
   onBack?: () => void;
 }) {
+  const t = useT();
   const retrying = runtime === 'retrying';
   return (
     <div className={`mp-page${onBack ? ' mp-page--detail' : ''}`} data-demo-runtime={runtime}>
       <header className="mp-header">
         {onBack ? (
-          <button type="button" className="mp-header-action" onClick={onBack} aria-label="Back">
+          <button type="button" className="mp-header-action" onClick={onBack} aria-label={t('mobile.chat.back')}>
             <Icon iconId="arrow-left" size={20} />
           </button>
         ) : null}
@@ -32,24 +33,20 @@ export function SocialUnavailablePage({ title, runtime, onRetry, onBack }: {
           {retrying ? <Spin size="small" /> : <Icon iconId="attention" size={22} />}
         </span>
         <Text strong className="mp-route-state-title">
-          {copy[
-            retrying
+          {t(retrying
               ? 'mobile.route.preparingTitle'
-              : 'mobile.route.unavailableTitle'
-          ].replace('{{feature}}', title)}
+              : 'mobile.route.unavailableTitle').replace('{{feature}}', title)}
         </Text>
         <Text tone="secondary" className="mp-route-state-copy">
-          {copy[
-            retrying
+          {t(retrying
               ? 'mobile.route.preparingBody'
-              : 'mobile.route.unavailableBody'
-          ]}
+              : 'mobile.route.unavailableBody')}
         </Text>
         <Button actionId="route.retry" emphasis="primary"
           execution={retrying ? 'pending' : 'idle'}
           leading={<Icon iconId="refresh-ccw" size={16} />}
           onActivate={onRetry}>
-          {copy['common.action.retry']}
+          {t('common.action.retry')}
         </Button>
       </section>
     </div>
@@ -60,17 +57,18 @@ export function RequestRecoveryNotice({ request, onCheck }: {
   request: DemoFriendRequest | null;
   onCheck: () => void;
 }) {
+  const t = useT();
   if (!request || (request.status !== 'unknown' && request.status !== 'reconciling')) return null;
   const checking = request.status === 'reconciling';
   return (
     <section className="mp-request-recovery" role="status" aria-busy={checking}
       data-demo-intent-id={request.intentId}>
-      <Text strong>{copy['mobile.recovery.command.title']}</Text>
-      <Text className="mp-recovery-description" tone="secondary">{copy['mobile.contacts.requestUnconfirmed']}</Text>
+      <Text strong>{t('mobile.recovery.command.title')}</Text>
+      <Text className="mp-recovery-description" tone="secondary">{t('mobile.contacts.requestUnconfirmed')}</Text>
       <Button actionId="request.check" execution={checking ? 'pending' : 'idle'}
         availability={checking ? { kind: 'disabled', reason: 'Checking' } : undefined}
         onActivate={onCheck}>
-        {copy['mobile.recovery.command.reconcile'].replace('{{count}}', '1')}
+        {t('mobile.recovery.command.reconcile').replace('{{count}}', '1')}
       </Button>
     </section>
   );
@@ -120,6 +118,7 @@ export function BlockingRecoveryScreen({
   onPrimary: () => void;
   onSecondary: () => void;
 }) {
+  const t = useT();
   const content = blockingContent[scenario];
 
   return (
@@ -184,6 +183,7 @@ export function ShellRecoverySheet({
   onPrimary: () => void;
   onSecondary: () => void;
 }) {
+  const t = useT();
   const content = shellContent[scenario];
 
   return (

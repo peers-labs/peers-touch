@@ -170,7 +170,7 @@ def main() -> None:
         page.get_by_role("button", name="Sign In", exact=True).click()
         page.get_by_role("heading", name="Chats").wait_for(state="visible")
         page.locator(".mp-conversation-item").filter(has_text="Alice Chen").first.click()
-        page.get_by_role("button", name="Start audio call").click()
+        page.get_by_role("button", name="Voice call").click()
         assert_layout(page, "outgoing")
         header_action = EVIDENCE_ROOT / "430-direct-header-start-audio.png"
         page.screenshot(path=header_action, full_page=True)

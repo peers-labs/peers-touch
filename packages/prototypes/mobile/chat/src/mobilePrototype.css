@@ -759,7 +759,8 @@ label.mp-request-item { cursor: pointer; }
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  /* Stay above the soft keyboard (visual-viewport var) and home indicator. */
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom) + var(--mp-keyboard-height, 0px));
   border-top: 1px solid var(--pt-border);
   background: var(--pt-canvas);
 }
@@ -879,44 +880,131 @@ label.mp-request-item { cursor: pointer; }
 }
 .mp-quick-action-btn:active { background: var(--pt-subtle); }
 .mp-reaction-bar-wrapper { display: flex; align-items: center; gap: 4px; padding: 6px 0 10px; }
-.mp-reaction-bar { flex: 1; display: flex; justify-content: space-between; }
+.mp-reaction-bar { flex: 1; display: flex; flex-wrap: wrap; gap: 2px; }
+.mp-reaction-bar[data-react-bar="quick"] { flex-wrap: nowrap; justify-content: space-between; }
 .mp-reaction-bar-btn {
   border: 0;
   background: transparent;
   font-size: 24px;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
   border-radius: var(--pt-radius-full);
   cursor: pointer;
   transition: transform var(--pt-motion-fast);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .mp-reaction-bar-btn:active { transform: scale(1.18); background: var(--pt-subtle); }
+.mp-reaction-bar-btn.is-selected {
+  background: color-mix(in srgb, var(--pt-primary) 16%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--pt-primary) 45%, transparent);
+}
 .mp-reaction-more-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
   border: 0;
   border-radius: var(--pt-radius-full);
   background: var(--pt-subtle);
   color: var(--pt-secondary);
   font-size: 18px;
   cursor: pointer;
-}
-.mp-emoji-grid {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 2px;
-  padding: 8px 0;
-  border-top: 1px solid var(--pt-border);
+  place-items: center;
 }
-.mp-emoji-grid button {
+/* Disabled catalog actions (e.g. copy without text) */
+.mp-action-item.is-disabled { opacity: .45; pointer-events: none; }
+
+/* ── Multiselect bulk bar ──────────────────────────────────────── */
+.mp-bulk-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: var(--pt-surface);
+  border-top: 1px solid var(--pt-border);
+  box-shadow: var(--pt-shadow-float);
+}
+.mp-bulk-count { font-size: 12.5px; font-weight: 600; color: var(--pt-secondary); margin-right: 2px; }
+.mp-bulk-spacer { flex: 1; }
+.mp-bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 8px 12px;
   border: 0;
+  border-radius: var(--pt-radius-md);
   background: transparent;
-  font-size: 22px;
-  height: 38px;
-  border-radius: var(--pt-radius-sm);
+  color: var(--pt-text);
+  font: inherit;
+  font-size: 13.5px;
   cursor: pointer;
 }
-.mp-emoji-grid button:active { background: var(--pt-subtle); }
+.mp-bulk-btn:active { background: var(--pt-subtle); }
+.mp-bulk-btn.danger { color: var(--pt-danger); }
+.mp-bulk-btn:disabled { opacity: .4; pointer-events: none; }
+
+/* Row selection check in multiselect mode */
+.mp-row-check {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--pt-radius-full);
+  border: 1.5px solid var(--pt-borderStrong);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  flex: 0 0 auto;
+}
+.mp-message-row.is-selectable.is-selected .mp-row-check,
+.mp-row-check.is-checked {
+  background: var(--pt-primary);
+  border-color: var(--pt-primary);
+}
+
+/* Local-only mark-for-later glyph */
+.mp-message-mark { color: var(--pt-secondary); margin-bottom: 2px; display: inline-flex; }
+
+/* Message report bottom sheet */
+.mp-report-sheet { align-items: stretch; }
+.mp-report-body { font-size: 13px; color: var(--pt-secondary); line-height: 1.5; }
+.mp-report-reasons { display: flex; flex-direction: column; gap: 4px; }
+.mp-report-reason {
+  min-height: 46px;
+  padding: 11px 12px;
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+  background: transparent;
+  color: var(--pt-text);
+  font: inherit;
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.mp-report-reason.is-selected {
+  border-color: color-mix(in srgb, var(--pt-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--pt-primary) 10%, transparent);
+}
+
+/* Marked-for-later list inside details */
+.mp-details-marked-list { display: flex; flex-direction: column; gap: 4px; }
+.mp-details-marked-row {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 48px; width: 100%;
+  padding: 10px 12px;
+  border: 0; border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+  color: var(--pt-text);
+  font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
+}
+.mp-details-marked-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 
 /* ── Confirm dialogs ───────────────────────────────────────────── */
 .mp-confirm-backdrop {
@@ -2744,4 +2832,39 @@ button.mp-chat-details-item:hover { background: var(--pt-subtle); }
 @media (prefers-reduced-motion: reduce) {
   .mp-action-sheet, .mp-action-sheet-backdrop,
   .mp-identity-loading, .mp-skeleton-block, .mp-receipt--pending { animation: none; }
+}
+
+/* ── Touch geometry ──────────────────────────────────────────────
+   Long-press owns message affordances: suppress the iOS callout and
+   text-selection churn on message rows; keep taps responsive. */
+.mp-message-row,
+.mp-bubble,
+.mp-quick-action-btn,
+.mp-action-item,
+.mp-reaction-bar-btn,
+.mp-bulk-btn,
+.mp-report-reason,
+.mp-details-marked-row {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.mp-message-row { -webkit-touch-callout: none; }
+.mp-bubble { user-select: text; }
+
+/* ── Real-device full-bleed ──────────────────────────────────────
+   Inside the desktop workbench the device keeps its bezel frame; on a
+   phone-width viewport (standalone prototype) the frame expands to the
+   dynamic viewport and respects notches via viewport-fit=cover. */
+@media (max-width: 540px) {
+  .mp-device {
+    width: 100vw;
+    width: 100dvw;
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    padding: 0;
+    background: var(--pt-canvas);
+    box-shadow: none;
+  }
+  .mp-app-shell { border-radius: 0; }
 }

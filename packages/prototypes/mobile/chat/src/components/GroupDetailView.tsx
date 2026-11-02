@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
+import { useT } from '../i18n';
 import { Icon, Text, TextField } from '@peers-touch/ui';
 import type { Contact, GroupItem } from '../types';
 import { demoContacts } from '../data';
-import copy from '../../../../../locales/en/common.json';
 import type { PrototypeListMemory } from '../listPresentation';
 import { PrototypeListWindow } from './PrototypeListWindow';
 import { IdentityAvatar } from './IdentityAvatar';
@@ -20,6 +20,7 @@ export function GroupDetailView({
   onMemberClick?: (member: Contact) => void;
   onBack: () => void;
 }) {
+  const t = useT();
   const [isMuted, setIsMuted] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const queryKey = `members-query:${group.key}`;
@@ -32,7 +33,7 @@ export function GroupDetailView({
   return (
     <div className="mp-detail-page" data-prototype-page="group-detail">
       <header className="mp-detail-header">
-        <button type="button" className="mp-thread-back" onClick={onBack} aria-label={copy['common.action.back']}>
+        <button type="button" className="mp-thread-back" onClick={onBack} aria-label={t('common.action.back')}>
           <Icon iconId="arrow-left" size={22} />
         </button>
         <h2 className="mp-detail-header-title">{group.name}</h2>
@@ -42,38 +43,38 @@ export function GroupDetailView({
         <IdentityAvatar name={group.name} initials={group.avatar} kind="group" size={64} />
         <Text className="mp-detail-hero-name">{group.name}</Text>
         <Text tone="secondary" className="mp-detail-hero-sub">
-          {copy['mobile.group.memberCount'].replace('{{count}}', String(group.memberCount))}
+          {t('mobile.group.memberCount').replace('{{count}}', String(group.memberCount))}
         </Text>
       </div>
 
       <div className="mp-detail-actions">
         <button type="button" className="mp-detail-action-btn" disabled={sampleOnly}>
           <span className="mp-detail-action-icon"><Icon iconId="message-circle" size={20} /></span>
-          <span className="mp-detail-action-label">{copy['mobile.contacts.openChat']}</span>
+          <span className="mp-detail-action-label">{t('mobile.contacts.openChat')}</span>
         </button>
         <button type="button" className="mp-detail-action-btn" disabled={sampleOnly} onClick={() => setIsMuted(!isMuted)}>
           <span className="mp-detail-action-icon"><Icon iconId={isMuted ? 'bell' : 'bell-off'} size={20} /></span>
           <span className="mp-detail-action-label">
-            {copy[isMuted ? 'mobile.group.unmuteMember' : 'mobile.chat.quickMute']}
+            {t(isMuted ? 'mobile.group.unmuteMember' : 'mobile.chat.quickMute')}
           </span>
         </button>
         <button type="button" className="mp-detail-action-btn" disabled={sampleOnly} onClick={() => setShowLeaveConfirm(true)}>
           <span className="mp-detail-action-icon" style={{ color: 'var(--pt-danger)' }}>
             <Icon iconId="log-out" size={20} />
           </span>
-          <span className="mp-detail-action-label">{copy['mobile.group.leaveGroup']}</span>
+          <span className="mp-detail-action-label">{t('mobile.group.leaveGroup')}</span>
         </button>
       </div>
-      {sampleOnly && <div className="mp-direct-state" role="status">{copy['mobile.launch.unavailable']}</div>}
+      {sampleOnly && <div className="mp-direct-state" role="status">{t('mobile.launch.unavailable')}</div>}
 
       {showLeaveConfirm && (
         <div className="mp-confirm-backdrop" onClick={() => setShowLeaveConfirm(false)}>
           <div className="mp-confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="mp-confirm-title">Leave Group?</div>
+            <div className="mp-confirm-title">{t('mobile.group.leaveTitle')}</div>
             <div className="mp-confirm-desc">You will no longer receive messages from {group.name}.</div>
             <div className="mp-confirm-actions">
-              <button type="button" className="mp-confirm-btn" onClick={() => setShowLeaveConfirm(false)}>Cancel</button>
-              <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={() => { setShowLeaveConfirm(false); onBack(); }}>Leave</button>
+              <button type="button" className="mp-confirm-btn" onClick={() => setShowLeaveConfirm(false)}>{t('mobile.chat.cancel')}</button>
+              <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={() => { setShowLeaveConfirm(false); onBack(); }}>{t('mobile.group.leave')}</button>
             </div>
           </div>
         </div>
@@ -81,13 +82,13 @@ export function GroupDetailView({
 
       <div className="mp-member-list">
         <div className="mp-member-list-title">
-          {copy['mobile.group.members']} ({group.memberCount})
+          {t('mobile.group.members')} ({group.memberCount})
         </div>
         {sampleOnly && (
           <div className="mp-search-well">
             <TextField
-              aria-label={copy['mobile.group.members']}
-              placeholder={copy['common.action.search']}
+              aria-label={t('mobile.group.members')}
+              placeholder={t('common.action.search')}
               value={query}
               clearable
               onClear={() => {
@@ -123,23 +124,23 @@ export function GroupDetailView({
           ))}
         </PrototypeListWindow>
         {filteredMembers.length === 0 && (
-          <div className="mp-details-empty" role="status">{copy['mobile.group.noMembers']}</div>
+          <div className="mp-details-empty" role="status">{t('mobile.group.noMembers')}</div>
         )}
       </div>
 
       <div className="mp-detail-section">
-        <div className="mp-detail-section-title">Group Info</div>
+        <div className="mp-detail-section-title">{t('mobile.group.info')}</div>
         <div className="mp-detail-row">
           <span className="mp-detail-row-icon"><Icon iconId="calendar" size={16} /></span>
           <div className="mp-detail-row-content">
-            <span className="mp-detail-row-label">Created</span>
+            <span className="mp-detail-row-label">{t('mobile.group.created')}</span>
             <span className="mp-detail-row-value">January 2025</span>
           </div>
         </div>
         <div className="mp-detail-row">
           <span className="mp-detail-row-icon"><Icon iconId="shield-check" size={16} /></span>
           <div className="mp-detail-row-content">
-            <span className="mp-detail-row-label">Encryption</span>
+            <span className="mp-detail-row-label">{t('mobile.contact.encryption')}</span>
             <span className="mp-detail-row-value">End-to-end encrypted</span>
           </div>
         </div>

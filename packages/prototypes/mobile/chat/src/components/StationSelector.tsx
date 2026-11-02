@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from '../i18n';
 import { Button, Icon, Text } from '@peers-touch/ui';
 import type { StationEntry } from '../types';
 
@@ -12,6 +13,7 @@ export function StationSelector({
   onAdd: (url: string) => void;
   showRemovalConfirmation?: boolean;
 }) {
+  const t = useT();
   const [stationUrl, setStationUrl] = useState('');
   const [addingStation, setAddingStation] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<StationEntry | null>(
@@ -44,7 +46,7 @@ export function StationSelector({
     <section className="mp-station-selector">
       <div className="mp-station-selector-header">
         <div>
-          <Text strong>Your Station</Text>
+          <Text strong>{t('mobile.station.your')}</Text>
           <Text className="mp-station-helper" tone="secondary">
             Tap a recent Station to change the target
           </Text>
@@ -74,7 +76,7 @@ export function StationSelector({
             <button
               type="button"
               className="mp-station-submit"
-              aria-label="Add Station"
+              aria-label={t('mobile.station.add')}
               disabled={!canAdd}
               onClick={handleAdd}
             >
@@ -82,7 +84,7 @@ export function StationSelector({
             </button>
           </div>
           {hasEntries && (
-            <Button actionId="station.cancel-add" emphasis="quiet" aria-label="Cancel adding Station"
+            <Button actionId="station.cancel-add" emphasis="quiet" aria-label={t('mobile.station.cancelAdd')}
               leading={<Icon iconId="close" size={16} />} onActivate={closeStationInput} />
           )}
         </div>
@@ -91,7 +93,7 @@ export function StationSelector({
       {showStationInput && stationUrl.trim().toLowerCase().startsWith('http://') && (
         <Text className="mp-station-field-helper" tone="warning">
           <Icon iconId="attention" size={12} />
-          <span>HTTP is unencrypted. Trusted networks only.</span>
+          <span>{t('mobile.station.httpWarning')}</span>
         </Text>
       )}
 
@@ -99,7 +101,7 @@ export function StationSelector({
         {entries.length === 0 ? (
           <div className="mp-station-empty">
             <Icon iconId="server" size={18} />
-            <Text tone="secondary">No stations configured</Text>
+            <Text tone="secondary">{t('mobile.station.none')}</Text>
           </div>
         ) : (
           entries.map((entry) => {
@@ -144,10 +146,10 @@ export function StationSelector({
       )}
 
       {pendingRemoval && (
-        <div className="mp-station-remove-boundary" role="region" aria-label="Station removal confirmation">
+        <div className="mp-station-remove-boundary" role="region" aria-label={t('mobile.station.removeConfirmAria')}>
           <div className="mp-confirm-backdrop" onClick={() => setPendingRemoval(null)}>
             <div className="mp-confirm-dialog" onClick={(event) => event.stopPropagation()}>
-              <div className="mp-confirm-title">Remove Station?</div>
+              <div className="mp-confirm-title">{t('mobile.station.removeTitle')}</div>
               <div className="mp-confirm-desc">
                 This removes the saved connection from this device. Data on the Station is not deleted.
               </div>

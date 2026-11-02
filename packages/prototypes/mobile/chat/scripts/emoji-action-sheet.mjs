@@ -3,15 +3,15 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 /**
- * Reaction action-sheet emoji layout (increment 36).
+ * Reaction action-sheet layout (shared 16-kind vocabulary, quick-8 first row).
  *
- * Regression this guards: the quick reaction row used fixed 40px cells inside
- * a hidden horizontal scroll, so the last emojis were pushed under the more
- * (···) button / off-sheet, and the full grid's internal 200px scroll cap hid
- * rows. Contract: all 8 quick reactions stay fully visible beside a fixed
- * more button at every device width (cells flex, no internal scroll), and
- * the full grid lays out all 40 emojis in 8 columns without clipping — the
- * sheet itself is the only scroll container.
+ * Contract:
+ *  - the quick row renders exactly 8 kinds in one non-scrolling row beside
+ *    the expand button, every cell a >=44px touch target;
+ *  - expanding switches the same bar to the full 16-kind catalog (no emoji
+ *    outside the shared domain, no 40-emoji free grid); the sheet is the
+ *    only scroll container;
+ *  - selecting a reaction does not dismiss the sheet (multi-select pass).
  */
 export async function checkEmojiActionSheet({ browser, url, output, viewports }) {
   const captures = [];
@@ -25,33 +25,23 @@ export async function checkEmojiActionSheet({ browser, url, output, viewports })
     const violations = [];
     const bar = document.querySelector('.mp-reaction-bar');
     const more = document.querySelector('.mp-reaction-more-btn');
-    const quick = [...document.querySelectorAll('.mp-reaction-bar-btn')].map((btn) => {
+    const mode = bar?.getAttribute('data-react-bar') ?? null;
+    const kinds = [...document.querySelectorAll('.mp-reaction-bar-btn')].map((btn) => {
       const b = rect(btn);
-      return { emoji: btn.textContent, ...b };
+      return { kind: btn.getAttribute('data-react-kind'), ...b };
     });
     const br = rect(bar);
     const mr = rect(more);
     if (br) {
-      if (bar.scrollWidth > bar.clientWidth + 1) violations.push('quick-bar-internal-scroll');
-      for (const q of quick) {
-        if (mr && q.right > mr.left + 1) violations.push(`quick-emoji-overlaps-more:${q.emoji}`);
-        if (q.width < 24) violations.push(`quick-emoji-target-under-24:${q.emoji}`);
+      if (mode === 'quick' && bar.scrollWidth > bar.clientWidth + 1) {
+        violations.push('quick-bar-internal-scroll');
+      }
+      for (const k of kinds) {
+        if (k.width < 43.5 || k.height < 43.5) violations.push(`reaction-target-under-44:${k.kind}`);
+        if (mode === 'quick' && mr && k.right > mr.left + 1) violations.push(`quick-reaction-overlaps-more:${k.kind}`);
       }
     }
-    const grid = document.querySelector('.mp-emoji-grid');
-    const gridState = grid
-      ? {
-          count: grid.querySelectorAll('button').length,
-          columns: new Set([...grid.querySelectorAll('button')].map((b) => Math.round(b.getBoundingClientRect().x))).size,
-          internalScroll: grid.scrollHeight > grid.clientHeight + 1,
-          cellsInside: [...grid.querySelectorAll('button')].every((b) => {
-            const r = b.getBoundingClientRect();
-            const g = grid.getBoundingClientRect();
-            return r.top >= g.top - 1 && r.bottom <= g.bottom + 1 && r.width > 0;
-          }),
-        }
-      : null;
-    return { quickCount: quick.length, bar: br, more: mr, quick, grid: gridState, violations };
+    return { mode, quickCount: mode === 'quick' ? kinds.length : 0, allCount: kinds.length, bar: br, more: mr, kinds, violations };
   });
 
   for (const viewport of viewports) {
@@ -70,22 +60,34 @@ export async function checkEmojiActionSheet({ browser, url, output, viewports })
       // Open the message action sheet (contextmenu = long-press parity).
       await device.locator('.mp-message-row:not(.mine) .mp-bubble').first().click({ button: 'right' });
       await device.locator('.mp-action-sheet').waitFor();
+
       const quickGeometry = await measure(device);
+      assert.equal(quickGeometry.mode, 'quick', 'bar starts in quick mode');
       assert.equal(quickGeometry.quickCount, 8, 'eight quick reactions rendered');
-      // Expand the full emoji grid.
+
+      // The sheet stays open while a reaction is chosen.
+      await device.locator('.mp-reaction-bar-btn').first().tap();
+      await device.locator('.mp-action-sheet').waitFor();
+
+      // Expand to the full shared catalog.
       await device.locator('.mp-reaction-more-btn').tap();
-      await device.locator('.mp-emoji-grid').waitFor();
+      await page.waitForTimeout(120);
       const fullGeometry = await measure(device);
-      assert.ok(fullGeometry.grid, 'full grid rendered');
-      assert.equal(fullGeometry.grid.count, 40, 'forty emojis in full grid');
-      assert.equal(fullGeometry.grid.columns, 8, 'eight columns');
-      assert.equal(fullGeometry.grid.internalScroll, false, 'grid must not scroll internally');
-      assert.equal(fullGeometry.grid.cellsInside, true, 'all grid cells inside grid bounds');
-      const geometry = { ...quickGeometry, grid: fullGeometry.grid };
-      captures.push({ viewport, theme, geometry });
-      if (geometry.violations.length) {
-        assert.fail(JSON.stringify({ viewport, theme, violations: geometry.violations }));
+      assert.equal(fullGeometry.mode, 'all', 'bar switches to full catalog');
+      assert.equal(fullGeometry.allCount, 16, 'all sixteen shared kinds rendered');
+      if (fullGeometry.violations.length) {
+        assert.fail(JSON.stringify({ viewport, theme, violations: fullGeometry.violations }));
       }
+
+      // Message-level report and multiselect exist in the catalog-driven groups.
+      const actionIds = await device.evaluate(() =>
+        [...document.querySelectorAll('.mp-action-item')].map((el) => el.getAttribute('data-action-id')));
+      assert.ok(actionIds.includes('report'), 'report action present on peer message');
+      assert.ok(actionIds.includes('multiselect'), 'multiselect action present');
+      assert.ok(actionIds.includes('mark-later'), 'mark-for-later action present');
+
+      const geometry = { quick: quickGeometry, all: fullGeometry };
+      captures.push({ viewport, theme, geometry });
       await page.screenshot({ path: undefined, animations: 'disabled' }).catch(() => {});
       await page.close();
     }
@@ -95,12 +97,15 @@ export async function checkEmojiActionSheet({ browser, url, output, viewports })
     resolve(output, 'emoji-action-sheet.json'),
     JSON.stringify({ evidenceType: 'prototype-only', captures, errors }, null, 2),
   );
-  const defects = captures.filter((c) => c.geometry.violations.length);
+  const defects = captures.filter((c) =>
+    c.geometry.all.violations.length || c.geometry.quick.violations.length);
   process.stdout.write(JSON.stringify({
     captures: captures.length,
     errors,
-    defects: defects.map(({ viewport, theme, geometry }) => ({ viewport, theme, violations: geometry.violations })),
+    defects: defects.map(({ viewport, theme, geometry }) => ({
+      viewport, theme, violations: [...geometry.all.violations, ...geometry.quick.violations],
+    })),
   }, null, 2) + '\n');
   assert.deepEqual(errors, [], 'no browser errors');
-  assert.equal(defects.length, 0, 'quick reactions and full grid must fit without clipping');
+  assert.equal(defects.length, 0, 'quick and full reaction rows must fit with 44px targets');
 }
