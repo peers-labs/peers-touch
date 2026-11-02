@@ -413,6 +413,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnSvc.SetTurnAdmissionService(turnAdmissionSvc)
 	turnAdmissionSvc.SetRequestPreflight(turnSvc.PreflightTurn)
 	turnQueueHandlers := handler.NewTurnQueueHandlers(turnAdmissionSvc)
+	logicalArtifactSvc := service.NewLogicalArtifactService()
+	logicalArtifactHandlers := handler.NewLogicalArtifactHandlers(logicalArtifactSvc)
 	convHandlers := handler.NewConversationHandlers(
 		convSvc,
 		turnSvc,
@@ -636,6 +638,16 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-turn-artifact-upload-prepare", "/agent/turn/artifact/upload/prepare", server.POST, workspaceOSSHandlers.HandlePrepareArtifactUpload, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-artifact-upload-complete", "/agent/turn/artifact/upload/complete", server.POST, workspaceOSSHandlers.HandleCompleteArtifactUpload, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-artifact-download", "/agent/turn/artifact/download", server.POST, workspaceOSSHandlers.HandleGetArtifactDownload, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-claim-version", "/agent/task/artifact/claim-version", server.POST, logicalArtifactHandlers.HandleClaimVersion, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-list", "/agent/task/artifact/list", server.POST, logicalArtifactHandlers.HandleListTaskArtifacts, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-versions", "/agent/task/artifact/versions", server.POST, logicalArtifactHandlers.HandleListArtifactVersions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-body-get", "/agent/task/artifact/body/get", server.POST, logicalArtifactHandlers.HandleGetArtifactVersionBody, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-feedback-submit", "/agent/task/artifact/feedback/submit", server.POST, logicalArtifactHandlers.HandleSubmitArtifactFeedback, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-feedback-list", "/agent/task/artifact/feedback/list", server.POST, logicalArtifactHandlers.HandleListArtifactFeedback, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-check-record", "/agent/task/artifact/check/record", server.POST, logicalArtifactHandlers.HandleRecordArtifactCheck, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-check-list", "/agent/task/artifact/check/list", server.POST, logicalArtifactHandlers.HandleListArtifactChecks, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-accept", "/agent/task/artifact/accept", server.POST, logicalArtifactHandlers.HandleAcceptArtifactVersion, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-task-artifact-acceptance-list", "/agent/task/artifact/acceptance/list", server.POST, logicalArtifactHandlers.HandleListArtifactAcceptances, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-diagnostics-export", "/agent/turn/diagnostics/export", server.POST, turnHandlers.HandleExportTurnDiagnostics, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-conversation-list", "/agent/conversation/list", server.POST, convHandlers.HandleListConversations, logIDWrapper, jwtWrapper),

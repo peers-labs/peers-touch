@@ -99,6 +99,245 @@ message GetTurnArtifactDownloadResponse {
   string download_url = 2;
 }
 
+// ── TW-D3: logical artifacts with immutable version sequences ──────────────
+
+enum LogicalArtifactKind {
+  LOGICAL_ARTIFACT_KIND_UNSPECIFIED = 0;
+  // A text/markdown document produced or revised within a task.
+  LOGICAL_ARTIFACT_KIND_DOCUMENT = 1;
+}
+
+enum ArtifactVersionOrigin {
+  ARTIFACT_VERSION_ORIGIN_UNSPECIFIED = 0;
+  // Bytes claimed from a Turn's persisted assistant output.
+  ARTIFACT_VERSION_ORIGIN_AGENT_OUTPUT = 1;
+  // Bytes written by a manual human edit with optimistic concurrency.
+  ARTIFACT_VERSION_ORIGIN_HUMAN_EDIT = 2;
+  // Bytes produced by a Turn answering selection/comment feedback.
+  ARTIFACT_VERSION_ORIGIN_FEEDBACK_REVISION = 3;
+  // One-time import of bytes that already existed in an old message.
+  ARTIFACT_VERSION_ORIGIN_IMPORT = 4;
+}
+
+enum ArtifactFeedbackKind {
+  ARTIFACT_FEEDBACK_KIND_UNSPECIFIED = 0;
+  // Feedback anchored to a selected text span of the base version.
+  ARTIFACT_FEEDBACK_KIND_SELECTION = 1;
+  // Free-form revision comment against the base version.
+  ARTIFACT_FEEDBACK_KIND_COMMENT = 2;
+}
+
+enum ArtifactCheckType {
+  ARTIFACT_CHECK_TYPE_UNSPECIFIED = 0;
+  // Deterministic structure/format validation of the version bytes.
+  ARTIFACT_CHECK_TYPE_STRUCTURAL = 1;
+  // Explicit human review recorded against the exact version.
+  ARTIFACT_CHECK_TYPE_HUMAN_REVIEW = 2;
+}
+
+enum ArtifactCheckResult {
+  ARTIFACT_CHECK_RESULT_UNSPECIFIED = 0;
+  ARTIFACT_CHECK_RESULT_PASSED = 1;
+  ARTIFACT_CHECK_RESULT_FAILED = 2;
+}
+
+// LogicalArtifact connects the immutable versions of one task result.
+message LogicalArtifact {
+  string artifact_id = 1;
+  string task_id = 2;
+  string conversation_id = 3;
+  string agent_id = 4;
+  LogicalArtifactKind kind = 5;
+  string name = 6;
+  string current_version_id = 7;
+  uint32 current_seq = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// ArtifactVersion is immutable: new bytes always create a new row with a new
+// id and sequence; historical bodies can never be overwritten in place.
+message ArtifactVersion {
+  string version_id = 1;
+  string artifact_id = 2;
+  uint32 seq = 3;
+  string parent_version_id = 4;
+  ArtifactVersionOrigin origin = 5;
+  string content_type = 6;
+  string sha256 = 7;
+  uint64 size = 8;
+  // Short summary of this revision for lists and notifications.
+  string summary = 9;
+  // Provenance when origin is AGENT_OUTPUT / FEEDBACK_REVISION.
+  string source_turn_id = 10;
+  string source_message_id = 11;
+  // Feedback this revision answers, when origin is FEEDBACK_REVISION.
+  string feedback_id = 12;
+  // Material revision (attachment object refs) actually adopted into the
+  // producing Turn, in deterministic order.
+  repeated string adopted_attachment_refs = 13;
+  string created_by = 14;
+  google.protobuf.Timestamp created_at = 15;
+}
+
+message ArtifactFeedback {
+  string feedback_id = 1;
+  string artifact_id = 2;
+  string base_version_id = 3;
+  ArtifactFeedbackKind kind = 4;
+  string anchor_text = 5;
+  string instruction = 6;
+  // Version produced in response; empty until a feedback Turn claims it.
+  string resulting_version_id = 7;
+  string created_by = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// A check is a fact about one exact version's bytes, criteria and material
+// revision. It never auto-flips; command/E2E checks join in TW-D4.
+message ArtifactCheck {
+  string check_id = 1;
+  string artifact_id = 2;
+  string version_id = 3;
+  string sha256 = 4;
+  ArtifactCheckType check_type = 5;
+  ArtifactCheckResult result = 6;
+  string detail = 7;
+  string criteria_revision = 8;
+  string material_revision = 9;
+  string environment = 10;
+  string created_by = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+// Acceptance belongs to one actor and one exact version. It is valid only
+// while that version stays current; a new version invalidates it and a new
+// check run can never restore the old acceptance.
+message ArtifactAcceptance {
+  string acceptance_id = 1;
+  string artifact_id = 2;
+  string version_id = 3;
+  string sha256 = 4;
+  repeated string check_ids = 5;
+  string actor = 6;
+  google.protobuf.Timestamp created_at = 7;
+  bool current = 8;
+}
+
+message ClaimArtifactVersionRequest {
+  string conversation_id = 1;
+  // Empty creates a new logical artifact.
+  string artifact_id = 2;
+  LogicalArtifactKind kind = 3;
+  string name = 4;
+  // Human edits must supply the version they started from; a stale base
+  // returns a conflict with the current version readable.
+  string expected_base_version_id = 5;
+  ArtifactVersionOrigin origin = 6;
+  // Source assistant message when origin is AGENT_OUTPUT/FEEDBACK_REVISION.
+  string source_turn_id = 7;
+  string source_message_id = 8;
+  // Explicit bytes for HUMAN_EDIT and IMPORT. Ignored when a source message
+  // is given.
+  string body = 9;
+  string content_type = 10;
+  string summary = 11;
+  string feedback_id = 12;
+  repeated string adopted_attachment_refs = 13;
+  string client_idempotency_key = 14;
+}
+
+message ClaimArtifactVersionResponse {
+  LogicalArtifact artifact = 1;
+  ArtifactVersion version = 2;
+}
+
+message ListTaskArtifactsRequest {
+  string conversation_id = 1;
+}
+
+message ListTaskArtifactsResponse {
+  repeated LogicalArtifact artifacts = 1;
+}
+
+message ListArtifactVersionsRequest {
+  string artifact_id = 1;
+}
+
+message ListArtifactVersionsResponse {
+  repeated ArtifactVersion versions = 1;
+}
+
+message GetArtifactVersionBodyRequest {
+  string version_id = 1;
+}
+
+message GetArtifactVersionBodyResponse {
+  ArtifactVersion version = 1;
+  string body = 2;
+}
+
+message SubmitArtifactFeedbackRequest {
+  string artifact_id = 1;
+  string base_version_id = 2;
+  ArtifactFeedbackKind kind = 3;
+  string anchor_text = 4;
+  string instruction = 5;
+  string client_idempotency_key = 6;
+}
+
+message SubmitArtifactFeedbackResponse {
+  ArtifactFeedback feedback = 1;
+}
+
+message ListArtifactFeedbackRequest {
+  string artifact_id = 1;
+}
+
+message ListArtifactFeedbackResponse {
+  repeated ArtifactFeedback feedback = 2;
+}
+
+message RecordArtifactCheckRequest {
+  string artifact_id = 1;
+  string version_id = 2;
+  ArtifactCheckType check_type = 3;
+  ArtifactCheckResult result = 4;
+  string detail = 5;
+  string environment = 6;
+  string client_idempotency_key = 7;
+}
+
+message RecordArtifactCheckResponse {
+  ArtifactCheck check = 1;
+}
+
+message ListArtifactChecksRequest {
+  string artifact_id = 1;
+}
+
+message ListArtifactChecksResponse {
+  repeated ArtifactCheck checks = 1;
+}
+
+message AcceptArtifactVersionRequest {
+  string artifact_id = 1;
+  string version_id = 2;
+  string client_idempotency_key = 3;
+}
+
+message AcceptArtifactVersionResponse {
+  ArtifactAcceptance acceptance = 1;
+}
+
+message ListArtifactAcceptancesRequest {
+  string artifact_id = 1;
+}
+
+message ListArtifactAcceptancesResponse {
+  repeated ArtifactAcceptance acceptances = 1;
+}
+
 message ToolCallRecord {
   string tool_name = 1;
   string arguments = 2;
