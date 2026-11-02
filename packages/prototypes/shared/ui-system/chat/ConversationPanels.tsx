@@ -13,7 +13,7 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useDismissOutside } from '../use-dismiss-outside';
 import {
-  BellOff, ChevronLeft, ChevronRight, Eraser, File as FileIcon,
+  BellOff, Bookmark, ChevronLeft, ChevronRight, Eraser, File as FileIcon,
   Image as ImageIcon, LogOut, Phone, Pin, Search, Smartphone, Trash2,
   UserPlus, Users, Video,
 } from 'lucide-react';
@@ -91,7 +91,7 @@ const permissionKeys = (role: GroupRole): { title: TranslationKey; body: Transla
 export function DetailSheet({ conversation, messages, people, onClose, onTogglePin, onToggleMute,
   onSearchMessages, onClearHistory, onDeleteConversation, onSimulateIncoming, onRenameConversation,
   onSetGroupAvatar, onSetMyNickname, onSetChatBackground, onAddGroupMembers, onRemoveGroupMember,
-  onSetGroupMemberRole, onDissolve, onLeave }: {
+  onSetGroupMemberRole, onDissolve, onLeave, onLocateMessage }: {
   conversation: Conversation;
   messages: ChatMessage[];
   people: { id?: string; name: string; tone: string }[];
@@ -99,6 +99,7 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
   onTogglePin: () => void;
   onToggleMute: () => void;
   onSearchMessages: () => void;
+  onLocateMessage?: (messageId: string) => void;
   onClearHistory: () => void;
   onDeleteConversation: () => void;
   onSimulateIncoming?: (kind: CallKind, multiDevice?: boolean) => void;
@@ -151,6 +152,7 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
   const files = useMemo(() => messages.flatMap(m =>
     (m.attachments ?? []).filter(a => a.kind === 'file')
       .map(a => ({ id: a.id, name: a.name }))), [messages]);
+  const markedMessages = useMemo(() => messages.filter(m => m.markedForLater && !m.recalled), [messages]);
 
   // Add-member candidates: station friends not already in the group.
   const addCandidates = useMemo(() => {
@@ -386,6 +388,25 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
             label={t('profile.findMessages')}
             onActivate={onSearchMessages} />
         </section>
+
+        {/* Marked for later — personal, this-device-only bookmarks */}
+        {markedMessages.length > 0 && (
+          <section className="sk-profile-card" data-profile-marked>
+            <span className="sk-profile-card-title">
+              {t('profile.markedMessages', { n: markedMessages.length })}
+            </span>
+            <div className="sk-profile-marked-list">
+              {markedMessages.slice(0, 30).map(m => (
+                <button key={m.id} type="button" className="sk-profile-marked-row"
+                  data-marked-item={m.id}
+                  onClick={() => onLocateMessage?.(m.id)}>
+                  <Bookmark size={13} />
+                  <span>{m.text.trim() || `[${m.kind ?? 'media'}]`}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Shared media & files — derived from real message attachments */}
         <section className="sk-profile-card" data-profile-media>

@@ -16,6 +16,7 @@ import {
   type ChatMessage, type Conversation, type FriendRequest, type Person,
 } from './chat-data';
 import { usePrefs, makeTranslate, locTag } from '../prefs';
+import { applyViewerReaction, emptyReactionState, type ReactionKind } from '../../chat-domain';
 import './chat.css';
 
 const DELIVERY_DELAY_MS = 700;
@@ -292,17 +293,12 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
   const removeContact = (id: string) =>
     setRemovedContacts(prev => new Set(prev).add(id));
 
-  const reactToMessage = (messageId: string, emoji: string) => {
+  const reactToMessage = (messageId: string, kind: ReactionKind) => {
     if (!selectedId) return;
-    setMessagesByConv(map => ({ ...map, [selectedId]: (map[selectedId] ?? []).map(message => {
-      if (message.id !== messageId) return message;
-      const reactions = { ...(message.reactions ?? {}) };
-      const current = new Set(reactions[emoji] ?? []);
-      if (current.has('me')) current.delete('me'); else current.add('me');
-      if (current.size === 0) delete reactions[emoji];
-      else reactions[emoji] = [...current];
-      return { ...message, reactions };
-    }) }));
+    setMessagesByConv(map => ({
+      ...map,
+      [selectedId]: applyViewerReaction(map[selectedId] ?? [], messageId, kind),
+    }));
   };
 
   const patchMessage = (conversationId: string, messageId: string, patch: Partial<ChatMessage>) => {
@@ -320,7 +316,8 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
 
   const recallMessage = (conversationId: string, messageId: string) => {
     patchMessage(conversationId, messageId, {
-      recalled: true, text: '', attachments: [], link: undefined, reactions: {},
+      recalled: true, text: '', attachments: [], link: undefined,
+      reactions: emptyReactionState(),
     });
   };
 
@@ -329,6 +326,15 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
       ...map,
       [conversationId]: (map[conversationId] ?? []).map(message =>
         message.id === messageId ? { ...message, pinned: !message.pinned } : message),
+    }));
+  };
+
+  // Personal, device-local bookmark; never leaves this viewer's client.
+  const markMessageForLater = (conversationId: string, messageId: string) => {
+    setMessagesByConv(map => ({
+      ...map,
+      [conversationId]: (map[conversationId] ?? []).map(message =>
+        message.id === messageId ? { ...message, markedForLater: !message.markedForLater } : message),
     }));
   };
 
@@ -413,6 +419,7 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
             onEditMessage={editMessage}
             onRecallMessage={recallMessage}
             onPinMessage={pinMessage}
+            onMarkMessageForLater={markMessageForLater}
             onRetryMessage={retryMessage}
             onHideMessages={hideMessages}
             onClearHistory={clearMessages}

@@ -15,7 +15,7 @@ import {
   Avatar, Button, Dialog, IconButton, Menu, Popover, TextField,
 } from '@peers-touch/ui';
 import {
-  REACTION_CATALOG, REACTION_BY_KIND, VIEWER_NAME,
+  REACTION_CATALOG, REACTION_BY_KIND, VIEWER_NAME, reactionLabel,
   type AudienceKind, type Moment, type MomentComment, type ReactionKind, type TrustReason,
 } from './moments-data';
 
@@ -97,7 +97,7 @@ function ReactionBar({ post, commentsOpen, onToggleComments, onToggleReaction }:
     <div className="sk-react-picker" role="group" aria-label="选择反应">
       {REACTION_CATALOG.map(meta => (
         <Button key={meta.kind} actionId={`moment.react.${meta.kind}`} emphasis="quiet"
-          density="compact" aria-label={meta.label}
+          density="compact" aria-label={reactionLabel(meta.kind)}
           aria-pressed={chosen.has(meta.kind)}
           data-reaction-kind={meta.kind}
           className={chosen.has(meta.kind) ? 'is-liked' : undefined}
@@ -119,7 +119,7 @@ function ReactionBar({ post, commentsOpen, onToggleComments, onToggleReaction }:
             <Button key={kind} actionId={`moment.reaction-chip.${post.id}.${kind}`}
               emphasis="quiet" density="compact"
               className={selected ? 'sk-react-chip is-liked' : 'sk-react-chip'}
-              aria-label={`${meta.label} ${count}${selected ? '，点击取消' : ''}`}
+              aria-label={`${reactionLabel(meta.kind)} ${count}${selected ? '，点击取消' : ''}`}
               aria-pressed={selected}
               data-reaction-kind={kind}
               data-reaction-count={count}

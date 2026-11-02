@@ -30,6 +30,8 @@ export type ChatMessage = {
   edited?: boolean;
   recalled?: boolean;
   pinned?: boolean;
+  /** Local-only "mark for later" — visible to this viewer on this device, no protocol object. */
+  markedForLater?: boolean;
   image?: string;
   voiceSeconds?: number;
   /** Runtime blob URL for a locally recorded voice note; seed notes without a
@@ -37,7 +39,7 @@ export type ChatMessage = {
   voiceUrl?: string | null;
   attachments?: MessageAttachment[];
   link?: { title: string; url: string; desc: string };
-  reactions?: Record<string, string[]>;
+  reactions?: import('../../chat-domain').ReactionState;
   replyTo?: { who: string; text: string };
   threadCount?: number;
 };
