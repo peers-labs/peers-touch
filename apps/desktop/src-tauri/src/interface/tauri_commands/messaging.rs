@@ -2251,6 +2251,19 @@ pub async fn messaging_send_message(
             duration_ms: attachment.duration_ms,
         })
         .collect::<Vec<_>>();
+    let mentions = crate::messaging::private_content::MessageMentions {
+        mention_all: input.mention_all,
+        mentions: input
+            .mentions
+            .into_iter()
+            .map(|m| crate::messaging::private_content::MessageMention {
+                actor_ptid: m.actor_ptid,
+                offset: m.offset,
+                length: m.length,
+                display: m.display,
+            })
+            .collect(),
+    };
     let outcome = match tauri::async_runtime::spawn_blocking(move || {
         engine.submit_message(
             &token,
@@ -2261,6 +2274,7 @@ pub async fn messaging_send_message(
             &thread_root_message_id,
             &attachment_intents,
             &send_intent_id,
+            &mentions,
         )
     })
     .await

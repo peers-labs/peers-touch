@@ -7302,6 +7302,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 // Gateway callers do not participate in renderer intent
                 // idempotency; mint one per invocation.
                 &Ulid::new().to_string(),
+                // HTTP gateway does not carry @mentions yet.
+                &crate::messaging::private_content::MessageMentions::empty(),
             ) {
                 Ok(outcome) => {
                     let _ = state.messaging_engines.wake_profile(&account_id);

@@ -174,6 +174,8 @@ pub struct PendingMessageDraft {
     pub attachments: Vec<AttachmentPlaintextMetadata>,
     pub attempt_count: u32,
     pub created_at_unix_ms: i64,
+    /// @mention set carried inside the ciphertext; empty for ordinary messages.
+    pub mentions: super::private_content::MessageMentions,
 }
 
 /// Existing admission returned for a repeated send intent (MP-D33). The
@@ -4786,10 +4788,12 @@ impl MessagingStore {
     }
 
     pub fn create_message_draft(&self, draft: &PendingMessageDraft) -> Result<(), String> {
-        let private_content = super::private_content::encode_message_private_content(
-            &draft.plaintext,
-            &draft.attachments,
-        )?;
+        let private_content =
+            super::private_content::encode_message_private_content_with_mentions(
+                &draft.plaintext,
+                &draft.attachments,
+                &draft.mentions,
+            )?;
         if draft.conversation_id.trim().is_empty()
             || draft.conversation_kind <= 0
             || draft.message_id.trim().is_empty()
@@ -4810,8 +4814,8 @@ impl MessagingStore {
                     sender_ptid, sender_device_id, send_intent_id, plaintext,
                     reply_to_message_id, thread_root_message_id, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
-                    created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
+                    created_at_unix_ms, mentions_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10, ?11)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -4823,7 +4827,8 @@ impl MessagingStore {
                     draft.plaintext,
                     draft.reply_to_message_id,
                     draft.thread_root_message_id,
-                    draft.created_at_unix_ms
+                    draft.created_at_unix_ms,
+                    super::private_content::encode_mentions_json(&draft.mentions),
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -4904,8 +4909,8 @@ impl MessagingStore {
                     sender_ptid, sender_device_id, send_intent_id, plaintext,
                     reply_to_message_id, thread_root_message_id, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
-                    created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
+                    created_at_unix_ms, mentions_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10, ?11)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
@@ -4917,7 +4922,8 @@ impl MessagingStore {
                     draft.plaintext,
                     draft.reply_to_message_id,
                     draft.thread_root_message_id,
-                    draft.created_at_unix_ms
+                    draft.created_at_unix_ms,
+                    super::private_content::encode_mentions_json(&draft.mentions),
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -5938,7 +5944,8 @@ impl MessagingStore {
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, send_intent_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
-                        attempt_count, created_at_unix_ms
+                        attempt_count, created_at_unix_ms,
+                        COALESCE(mentions_json, '') AS mentions_json
                  FROM messaging_pending_messages pending
                  WHERE state = 'draft'
                    AND next_attempt_at_unix_ms <= ?1
@@ -5964,6 +5971,9 @@ impl MessagingStore {
                         attachments: Vec::new(),
                         attempt_count: row.get(9)?,
                         created_at_unix_ms: row.get(10)?,
+                        mentions: super::private_content::decode_mentions_json(
+                            &row.get::<_, String>(11)?,
+                        ),
                     })
                 },
             )
@@ -5973,9 +5983,10 @@ impl MessagingStore {
             return Ok(None);
         };
         draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
-        super::private_content::encode_message_private_content(
+        super::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
+            &draft.mentions,
         )?;
         Ok(Some(draft))
     }
@@ -6100,7 +6111,8 @@ impl MessagingStore {
                 "SELECT conversation_id, conversation_kind, message_id,
                         sender_ptid, sender_device_id, send_intent_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
-                        attempt_count, created_at_unix_ms
+                        attempt_count, created_at_unix_ms,
+                        COALESCE(mentions_json, '') AS mentions_json
                  FROM messaging_pending_messages pending
                  WHERE message_id = ?1
                    AND state = 'draft'
@@ -6124,6 +6136,9 @@ impl MessagingStore {
                         attachments: Vec::new(),
                         attempt_count: row.get(9)?,
                         created_at_unix_ms: row.get(10)?,
+                        mentions: super::private_content::decode_mentions_json(
+                            &row.get::<_, String>(11)?,
+                        ),
                     })
                 },
             )
@@ -6133,9 +6148,10 @@ impl MessagingStore {
             return Ok(None);
         };
         draft.attachments = load_pending_message_attachments(&connection, &draft.message_id)?;
-        super::private_content::encode_message_private_content(
+        super::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
+            &draft.mentions,
         )?;
         Ok(Some(draft))
     }
@@ -20078,6 +20094,7 @@ mod tests {
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms: 10,
+            mentions: Default::default(),
         };
         store
             .create_message_draft_with_uploads(
@@ -20353,6 +20370,7 @@ mod tests {
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms: 100,
+            mentions: Default::default(),
         };
         store.create_message_draft(&draft).unwrap();
         assert_eq!(
@@ -20390,6 +20408,7 @@ mod tests {
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms: 100,
+            mentions: Default::default(),
         };
         store.create_message_draft(&draft).unwrap();
 
