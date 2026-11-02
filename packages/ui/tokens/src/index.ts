@@ -7,7 +7,7 @@ export { northStarTheme, northStarVariables } from './north-star-theme';
 export const geometry = {
   radius: { xs: 4, sm: 6, md: 8, lg: 12, xl: 16, full: 999 },
   space: { xxs: 4, xs: 8, sm: 12, md: 16, lg: 20, xl: 24, xxl: 32 },
-  control: { compact: 28, normal: 36, comfortable: 44 },
+  control: { compact: 28, menu: 32, normal: 36, comfortable: 44 },
   icon: { compact: 16, normal: 18, comfortable: 20 },
   font: {
     sans: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', sans-serif",

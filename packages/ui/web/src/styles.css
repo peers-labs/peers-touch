@@ -60,8 +60,14 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-tooltip{padding:var(--pt-space-xxs) var(--pt-space-xs);font-size:12px;pointer-events:none;max-width:280px}
 .pt-tooltip-trigger{display:inline-flex}
 .pt-menu{min-width:180px;padding:var(--pt-space-xxs)}
-.pt-menu-item{width:100%;justify-content:flex-start;text-align:left}
+/* Menu rows are BLOCK-level on purpose: an inline-flex row would let the
+   shrink-to-fit popup compute max-content as if every row sat on one
+   unbreakable line, stretching the menu to the sum of all rows instead of
+   the widest one. */
+.pt-menu .pt-menu-item{display:flex;width:100%;justify-content:flex-start;text-align:left;min-height:var(--pt-control-menu);padding:0 10px;font-size:13px}
 .pt-menu-item .pt-button-content{justify-content:flex-start}
+/* Command groups are divided by a full-bleed hairline (Feishu parity). */
+.pt-menu-separator{height:1px;margin:var(--pt-space-xxs) calc(-1 * var(--pt-space-xxs));padding:0;background:var(--pt-border);border:0}
 /* Menu rows are a flat list, even when unavailable: disabled never paints a
    bordered chip (that reads as a nested button). Unavailability is carried by
    muted text + aria-disabled/reason only. */
