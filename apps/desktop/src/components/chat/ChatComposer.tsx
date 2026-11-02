@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, toast } from '@lobehub/ui';
-import { Popover, Progress, theme, Tooltip, Typography } from 'antd';
+import { Popover, Progress, message, theme, Tooltip, Typography } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import {
   AlertCircle,
@@ -45,11 +45,13 @@ import {
 import { log } from '../../utils/logger';
 import { imServiceV1 } from '../../services/im-service';
 import { RustCommandException } from '../../services/desktop_api';
-import type { MessagingLocalAttachmentIntent } from '../../services/im-service-contract';
+import type { MessagingLocalAttachmentIntent, MessageMentionSet } from '../../services/im-service-contract';
 import {
   useChatAttachmentDrafts,
   type ChatDraftAttachment,
 } from './composer/useChatAttachmentDrafts';
+import { ChatMentionPicker } from './composer/ChatMentionPicker';
+import { useChatMentions } from './composer/useChatMentions';
 import { didQueueExpectedChatAttachments } from './composer/sendOutcome';
 import { useChatScreenshotCapture } from './composer/useChatScreenshotCapture';
 import { useChatVoiceRecorder } from './composer/useChatVoiceRecorder';
@@ -86,6 +88,8 @@ export interface ChatComposerDraft {
   text: string;
   attachments: MessagingLocalAttachmentIntent[];
   messageType?: number;
+  /** Group @mention set sealed into the E2EE body (group composer only). */
+  mentions?: MessageMentionSet;
 }
 
 interface ChatComposerProps {
@@ -93,6 +97,8 @@ interface ChatComposerProps {
   capabilities?: ChatComposerCapabilities;
   disabled?: boolean;
   editing: boolean;
+  /** Enable the group @mention picker and in-body mention resolution. */
+  mentionsEnabled?: boolean;
   surfaceBackground?: string;
   /**
    * Seed text for a fresh composer mount. The component owns its text
@@ -171,6 +177,7 @@ export function ChatComposer({
   visualSurface = 'desktop-main',
   editPreview,
   sending,
+  mentionsEnabled = false,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
@@ -192,6 +199,13 @@ export function ChatComposer({
     setValue(next);
     onDraftChangeRef.current?.(next);
   }, []);
+  const mentionApi = useChatMentions({
+    enabled: mentionsEnabled,
+    conversationId: activeConversationId,
+    commitValue,
+    textareaRef,
+    getValue: () => value,
+  });
   const [dragging, setDragging] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [inputExpanded, setInputExpanded] = useState(false);
@@ -462,14 +476,21 @@ export function ChatComposer({
   const submit = async () => {
     if (!canSend) return;
     const messageType = chatMessageTypeForAttachments(readyAttachments);
+    const trimmed = value.trim();
+    const { mentionSet, rateLimited } = mentionApi.buildSendSet(trimmed);
+    if (rateLimited) {
+      message.warning(t('chat.social.mentions.everyoneRateLimited'));
+      return;
+    }
     const previousOutcomeRevision = useSocialChatStore.getState()
       .sendOutcomes[activeConversationId]?.revision ?? 0;
     // The parent owns send/edit side effects and decides whether the
     // draft text survives (it returns false on failure).
     const sent = await onSend({
-      text: value.trim(),
+      text: trimmed,
       attachments: readyAttachments,
       messageType,
+      mentions: mentionSet,
     });
     if (sent === false) return;
     commitValue('');
@@ -486,6 +507,7 @@ export function ChatComposer({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionApi.handleKeyDown(event)) return;
     const native = event.nativeEvent;
     if (!shouldSendComposerEnter({
       key: event.key,
@@ -630,6 +652,15 @@ export function ChatComposer({
             onClick={banner.action}
           />
         </Flexbox>
+      )}
+
+      {mentionApi.open && (
+        <ChatMentionPicker
+          rows={mentionApi.rows}
+          highlightedIndex={mentionApi.highlightedIndex}
+          onSelect={mentionApi.insertMention}
+          onHover={mentionApi.setHighlightedIndex}
+        />
       )}
 
       <Flexbox
@@ -808,8 +839,13 @@ export function ChatComposer({
             lastCompositionEndRef.current = Date.now();
           }}
           onKeyDown={handleKeyDown}
+          onKeyUp={() => mentionApi.syncTrigger()}
+          onClick={() => mentionApi.syncTrigger()}
           onPaste={handlePaste}
-          onBlur={onBlurInput}
+          onBlur={() => {
+            mentionApi.close();
+            onBlurInput();
+          }}
           placeholder={placeholder ?? t('chat.social.messageArea.placeholder')}
           style={{
             width: '100%',

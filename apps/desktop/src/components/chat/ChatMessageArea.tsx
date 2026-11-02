@@ -771,6 +771,7 @@ export function ChatMessageArea({
           draft.attachments.length > 0 ? draft.attachments : undefined,
           undefined,
           sendIntentId,
+          draft.mentions,
         );
       }
       setReplyToUlid(null);
@@ -1503,6 +1504,7 @@ export function ChatMessageArea({
         editPreview={editingUlid ? currentMessages.find((m) => m.ulid === editingUlid)?.content || '' : undefined}
         sending={sending}
         capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN}
+        mentionsEnabled={activeTab === 'group'}
       />
       )}
 

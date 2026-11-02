@@ -2684,6 +2684,7 @@ mod tests {
                 last_error_code: None,
                 required_device_count: 0,
                 delivered_device_count: 0,
+                mentions_json: String::new(),
             },
             |_| Ok(None),
         )

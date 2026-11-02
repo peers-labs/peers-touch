@@ -1,4 +1,6 @@
-use crate::codec::private_content::encode_message_private_content;
+use crate::codec::private_content::{
+    encode_message_private_content_with_mentions, MessageMentions,
+};
 use crate::contracts::CryptoEndpoint;
 use crate::crypto::double_ratchet::{self, DrCiphertextWire};
 use crate::crypto::session::DirectSession;
@@ -28,6 +30,8 @@ pub struct DirectSendIntent<'a> {
     pub reply_to_message_id: &'a str,
     pub thread_root_message_id: &'a str,
     pub attachments: &'a [AttachmentPlaintextMetadata],
+    /// @mention set sealed into the ciphertext; empty for ordinary sends.
+    pub mentions: &'a MessageMentions,
     pub client_timestamp_unix_ms: i64,
 }
 
@@ -124,8 +128,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         let command_bytes = command.encode_to_vec();
         let session_advances =
             build_session_advances(previous_sessions, fan_out.advanced_sessions, session_inits)?;
-        let required_device_count =
-            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
+        let required_device_count = plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_direct_outbound_send(&DirectOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -161,6 +164,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         validate_edit_context(plan, intent, &self.endpoint)?;
         validate_authority_head(self.store.as_ref(), plan)?;
 
+        let edit_mentions = MessageMentions::empty();
         let direct_intent = DirectSendIntent {
             command_id: intent.command_id,
             message_id: intent.message_id,
@@ -169,6 +173,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: &[],
+            mentions: &edit_mentions,
             client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
         };
         let (sessions, previous_sessions, session_inits) =
@@ -202,6 +207,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         intent: &DirectForwardIntent<'_>,
         bootstraps: &[DirectSessionBootstrap],
     ) -> Result<ChatCommand, String> {
+        let forward_mentions = MessageMentions::empty();
         let send = DirectSendIntent {
             command_id: intent.command_id,
             message_id: intent.destination_message_id,
@@ -210,6 +216,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: intent.attachments,
+            mentions: &forward_mentions,
             client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
         };
         validate_send_context(plan, &send, &self.endpoint)?;
@@ -227,8 +234,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
         let command_bytes = command.encode_to_vec();
         let session_advances =
             build_session_advances(previous_sessions, fan_out.advanced_sessions, session_inits)?;
-        let required_device_count =
-            plan_required_recipient_count(plan, &self.endpoint.ptid)?;
+        let required_device_count = plan_required_recipient_count(plan, &self.endpoint.ptid)?;
         self.store
             .persist_direct_outbound_send(&DirectOutboundSendCommit {
                 command_bytes: &command_bytes,
@@ -353,7 +359,11 @@ pub fn encrypt_direct_fan_out(
     // A self-direct on a single-device actor has no peer sessions: the only
     // delivery is the sender's own public event (derived server-side). Empty
     // ciphertext fan-out is valid in that case.
-    let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
+    let private_content = encode_message_private_content_with_mentions(
+        intent.plaintext,
+        intent.attachments,
+        intent.mentions,
+    )?;
     let mut advanced_sessions = Vec::with_capacity(sessions.len());
     let mut session_inits = Vec::new();
     let mut payloads = Vec::with_capacity(sessions.len());
@@ -427,7 +437,11 @@ fn validate_send_context(
     intent: &DirectSendIntent<'_>,
     endpoint: &ProtoCryptoEndpoint,
 ) -> Result<(), String> {
-    let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
+    let private_content = encode_message_private_content_with_mentions(
+        intent.plaintext,
+        intent.attachments,
+        intent.mentions,
+    )?;
     if intent.command_id.trim().is_empty()
         || intent.message_id.trim().is_empty()
         || intent.conversation_id.trim().is_empty()
@@ -485,6 +499,7 @@ fn validate_edit_context(
     if intent.logical_intent_id.trim().is_empty() || !lineage_is_valid {
         return Err("messaging edit intent lineage is invalid".to_string());
     }
+    let edit_mentions = MessageMentions::empty();
     validate_send_context(
         plan,
         &DirectSendIntent {
@@ -495,6 +510,7 @@ fn validate_edit_context(
             reply_to_message_id: "",
             thread_root_message_id: "",
             attachments: &[],
+            mentions: &edit_mentions,
             client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
         },
         endpoint,
@@ -836,6 +852,7 @@ mod tests {
                 reply_to_message_id: "message-parent",
                 thread_root_message_id: "message-root",
                 attachments: &[],
+                mentions: &MessageMentions::empty(),
                 client_timestamp_unix_ms: 20,
             },
             &[],
@@ -896,8 +913,7 @@ mod tests {
                 if !commit.session_advances.is_empty() {
                     return Err("self-direct must not advance peer sessions".to_string());
                 }
-                *self.persisted.lock().unwrap() =
-                    Some(commit.command_bytes.to_vec());
+                *self.persisted.lock().unwrap() = Some(commit.command_bytes.to_vec());
                 Ok(())
             }
             fn persist_direct_outbound_edit(
@@ -918,9 +934,7 @@ mod tests {
             authority_hash: Vec::new(),
             membership_epoch: 1,
             mls_epoch: 0,
-            required_endpoints: vec![
-                actor_device_ref(&local.ptid, &local.device_id),
-            ],
+            required_endpoints: vec![actor_device_ref(&local.ptid, &local.device_id)],
             delivery_plan_sha256: vec![7; 32],
             endpoint_manifests: Vec::new(),
             authority_station_peer_id: "station-1".to_string(),
@@ -943,6 +957,7 @@ mod tests {
                 reply_to_message_id: "",
                 thread_root_message_id: "",
                 attachments: &[],
+                mentions: &MessageMentions::empty(),
                 client_timestamp_unix_ms: 20,
             },
             &[],

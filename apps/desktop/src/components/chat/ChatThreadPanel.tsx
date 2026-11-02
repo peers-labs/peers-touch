@@ -387,6 +387,7 @@ export function ChatThreadPanel() {
           hasAttachment ? draft.attachments : undefined,
           rootMessage.ulid,
           newSendIntentId(),
+          draft.mentions,
         );
       }
       await loadThreadMessages(activeUlid, rootMessage.ulid, activeKind);
@@ -667,6 +668,7 @@ export function ChatThreadPanel() {
             sending={sending}
             capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_THREAD}
             visualSurface="desktop-thread"
+            mentionsEnabled={activeKind === 'group'}
           />
         </>
       )}

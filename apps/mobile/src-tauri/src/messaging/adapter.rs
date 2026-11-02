@@ -10676,6 +10676,9 @@ fn conversation_message_from_row(
         last_error_code: None,
         required_device_count: 0,
         delivered_device_count: 0,
+        // Mobile does not render @mentions in this scope; the ciphertext set is
+        // still delivered and decoded by future builds, never mutated here.
+        mentions_json: String::new(),
     })
 }
 
@@ -10991,7 +10994,7 @@ fn validate_authority_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use messaging_core::codec::private_content::encode_message_private_content;
+    use messaging_core::codec::private_content::{encode_message_private_content, MessageMentions};
     use messaging_core::codec::verification::delivery_commitment;
     use messaging_core::contracts::{
         ConversationAuthorityMemberProjection, DirectMessageContent, MlsMessageProjection,
@@ -12596,6 +12599,7 @@ mod tests {
             committed_at_unix_ms: 20,
             reply_to_message_id: None,
             thread_root_message_id: None,
+            mentions: MessageMentions::empty(),
         };
         let commit = DirectReceiveCommit {
             item_id: "item-direct",
@@ -13087,6 +13091,7 @@ mod tests {
                 last_error_code: None,
                 required_device_count: 0,
                 delivered_device_count: 0,
+                mentions_json: String::new(),
             });
         }
         connection
@@ -13156,6 +13161,7 @@ mod tests {
             last_error_code: None,
             required_device_count: 0,
             delivered_device_count: 0,
+            mentions_json: String::new(),
         });
         drop(connection);
         (store, expected)
@@ -14114,6 +14120,7 @@ mod tests {
             committed_at_unix_ms: 43,
             reply_to_message_id: None,
             thread_root_message_id: None,
+            mentions: MessageMentions::empty(),
         };
         MlsInboundRepository::commit_mls_application(
             &store,

@@ -13,6 +13,7 @@ use messaging_core::attachment::{
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferRecord,
     AttachmentTransferWorker,
 };
+use messaging_core::codec::private_content::MessageMentions;
 use messaging_core::contracts::{
     CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
     CryptoEndpoint as CoreCryptoEndpoint,
@@ -2152,6 +2153,7 @@ impl MobileMessagingEngine {
                         reply_to_message_id,
                         thread_root_message_id,
                         attachments: &[],
+                        mentions: &MessageMentions::empty(),
                         client_timestamp_unix_ms: created_at_unix_ms,
                     },
                     &bootstraps,
@@ -2169,6 +2171,7 @@ impl MobileMessagingEngine {
                         reply_to_message_id,
                         thread_root_message_id,
                         attachments: &[],
+                        mentions: &MessageMentions::empty(),
                         client_timestamp_unix_ms: created_at_unix_ms,
                     },
                 )?;
@@ -3560,6 +3563,7 @@ impl MobileMessagingEngine {
                             reply_to_message_id: &draft.reply_to_message_id,
                             thread_root_message_id: &draft.thread_root_message_id,
                             attachments: &draft.attachments,
+                            mentions: &MessageMentions::empty(),
                             client_timestamp_unix_ms: draft.created_at_unix_ms,
                         },
                         &bootstraps,
@@ -3596,6 +3600,7 @@ impl MobileMessagingEngine {
                             reply_to_message_id: &draft.reply_to_message_id,
                             thread_root_message_id: &draft.thread_root_message_id,
                             attachments: &draft.attachments,
+                            mentions: &MessageMentions::empty(),
                             client_timestamp_unix_ms: draft.created_at_unix_ms,
                         },
                     )?,

@@ -597,6 +597,19 @@
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove authenticated ephemeral typing start, stop, session switch, disconnect and TTL cleanup without durable lane or history writes."
     },
+    "chat-native-mentions-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.native_mentions_runner",
+      "timeout_seconds": 1800,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run two isolated Native group clients and prove E2EE named @mentions and owner-only @all decrypt with offsets, render chips, and raise the muted-exception yellow marker until the conversation is opened."
+    },
     "chat-native-multi-device-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
       "timeout_seconds": 1800,

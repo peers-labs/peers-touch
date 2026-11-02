@@ -428,6 +428,7 @@ fn message_projection_json(message: &crate::messaging::ConversationMessageProjec
         "last_error_code": message.last_error_code,
         "required_device_count": message.required_device_count,
         "delivered_device_count": message.delivered_device_count,
+        "mentions_json": message.mentions_json,
     })
 }
 

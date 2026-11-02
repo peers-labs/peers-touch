@@ -122,6 +122,29 @@ export interface MessagingProjection {
   lastErrorCode?: string
   requiredDeviceCount: number
   deliveredDeviceCount: number
+  /** @mention targets decoded from the in-ciphertext private body. */
+  mentions: MessageMention[]
+  /** Whether the message carries an owner/admin @all directive. */
+  mentionAll: boolean
+}
+
+/**
+ * One @mention target with its exact UTF-16 range inside the plaintext.
+ * Offsets and length index the displayed text (UTF-16 code units, matching
+ * the textarea selection model) so renderers can paint chips without
+ * reparsing names.
+ */
+export interface MessageMention {
+  actorPtid: string
+  offset: number
+  length: number
+  display: string
+}
+
+/** Send-side mention set sealed into the ciphertext. */
+export interface MessageMentionSet {
+  mentions: MessageMention[]
+  mentionAll: boolean
 }
 
 export interface MessagingReactionProjection {
@@ -285,6 +308,7 @@ export interface MessagingServiceContract {
       threadRootMessageId?: string
       sendIntentId: string
     },
+    mentionSet?: MessageMentionSet,
   ): Promise<MessagingSendOutcome>
   sendIntentStatus(sendIntentId: string): Promise<MessagingSendIntentStatus>
   listMessages(

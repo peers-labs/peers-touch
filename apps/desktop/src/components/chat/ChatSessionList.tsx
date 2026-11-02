@@ -2,7 +2,7 @@ import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Dropdown, Input } from '@lobehub/ui';
-import { Badge, Empty, theme, Typography } from 'antd';
+import { Badge, Empty, theme, Tooltip, Typography } from 'antd';
 import {
   BellOff,
   CheckCheck,
@@ -251,6 +251,7 @@ export function ChatSessionList({
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
   const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
+  const mentionFlagsByActor = useNavigationBadgeStore((state) => state.mentionFlagsByActor);
   const stationNamesByPeerId = useMemo(() => Object.fromEntries(
     Object.values(actorStationEntries)
       .map((entry) => [entry.homeStationPeerId.trim(), entry.homeStationName.trim()])
@@ -612,6 +613,11 @@ export function ChatSessionList({
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
               const unread = c.visibleUnread;
               const localState = conversationLocalState[`${c.kind}:${c.id}`];
+              // @mention markers are local post-decryption state and stay
+              // visible even when the group is muted.
+              const hasMention = c.kind === 'group'
+                && Boolean(currentUserPtid)
+                && (mentionFlagsByActor[currentUserPtid ?? '']?.includes(c.id) ?? false);
 
               // The conversation row subtitle is always the latest message.
               // Station/identity metadata never falls back here: human station
@@ -765,6 +771,27 @@ export function ChatSessionList({
                               <Text type="secondary" ellipsis style={{ fontSize: 12, lineHeight: '20px', flex: 1, minWidth: 0 }}>
                                 {subtitle}
                               </Text>
+                              {hasMention && (
+                                <Tooltip title={t('chat.social.mentions.unreadMarker')}>
+                                  <span
+                                    data-chat-mention-marker={c.id}
+                                    style={{
+                                      flexShrink: 0,
+                                      marginLeft: 6,
+                                      padding: '0 6px',
+                                      height: 18,
+                                      lineHeight: '18px',
+                                      borderRadius: 9,
+                                      fontSize: 11,
+                                      fontWeight: 600,
+                                      color: token.colorWarning,
+                                      background: token.colorWarningBg,
+                                    }}
+                                  >
+                                    @
+                                  </span>
+                                </Tooltip>
+                              )}
                               <span
                                 data-chat-session-unread={unread}
                                 data-chat-session-unread-lane

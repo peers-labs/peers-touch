@@ -30,6 +30,7 @@ import { imServiceV1 } from '../services/im-service';
 import { messagingDomainRuntime } from '../messaging/runtime';
 import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
+  MessageMentionSet,
   MessagingLocalAttachmentIntent,
   MessagingProjection,
   MessagingSendOutcome,
@@ -258,6 +259,8 @@ function projectMessagingProjection(
     lastErrorCode: projection.lastErrorCode,
     requiredDeviceCount: projection.requiredDeviceCount,
     deliveredDeviceCount: projection.deliveredDeviceCount,
+    mentions: projection.mentions,
+    mentionAll: projection.mentionAll,
   };
   if (kind === 'friend') {
     const status = projection.state === 'failed'
@@ -283,8 +286,8 @@ function projectMessagingProjection(
     ...common,
     $typeName: 'peers_touch.model.chat.v1.ChatMessage',
     groupUlid: conversationId,
-    mentionedPtids: [],
-    mentionAll: false,
+    mentionedPtids: projection.mentions.map(mention => mention.actorPtid),
+    mentionAll: projection.mentionAll,
   };
 }
 
@@ -564,6 +567,7 @@ interface SocialChatState {
     attachments?: MessagingLocalAttachmentIntent[],
     threadRootUlid?: string,
     sendIntentId?: string,
+    mentionSet?: MessageMentionSet,
   ) => Promise<MessagingSendOutcome>;
   /** Append one admission outcome to the per-conversation revision record. */
   recordSendOutcome: (conversationUlid: string, outcome: MessagingSendOutcome) => void;
@@ -1495,6 +1499,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         openThreadRootUlid: null,
         groupUnreadCounts: { ...prev.groupUnreadCounts, [ulid]: 0 },
       }));
+      // The @me marker is cleared by the navigation badge projection, which
+      // subscribes to activeGroupUlid. Keep the social store free of an import
+      // edge back to badge state (that would be a module import cycle).
       get().markGroupRead(ulid).catch(() => {});
     },
 
@@ -1909,7 +1916,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
-  sendGroupMessage: async (groupUlid, content, type, _replyToUlid, attachments, explicitThreadRootUlid, sendIntentId) => {
+  sendGroupMessage: async (groupUlid, content, type, _replyToUlid, attachments, explicitThreadRootUlid, sendIntentId, mentionSet) => {
     try {
       if ((type ?? 1) !== 1 && !attachments?.length) {
         throw new Error('This message type has not been migrated to the Messaging Engine');
@@ -1926,7 +1933,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           replyToMessageId: _replyToUlid,
           threadRootMessageId: threadRootUlid,
           sendIntentId: intentId,
-        }),
+        }, mentionSet),
         (error) => {
           const currentSecurityState = get().groupSecurityState[groupUlid];
           if (currentSecurityState !== 'establishing' && currentSecurityState !== 'crypto-desynced') {

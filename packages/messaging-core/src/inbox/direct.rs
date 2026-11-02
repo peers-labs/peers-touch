@@ -1,4 +1,4 @@
-use crate::codec::private_content::decode_message_private_content;
+use crate::codec::private_content::{decode_message_private_content, MessageMentions};
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
     CryptoEndpoint, DirectEditCommit, DirectMessageContent, DirectReceiveCommit,
@@ -279,6 +279,7 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
             };
             self.store.commit_direct_edit(&input)?;
         } else {
+            let mentions = MessageMentions::from_private_content(&private_content);
             let projection = DirectMessageContent {
                 conversation_id: event.conversation_id.clone(),
                 event_id: event.event_id.clone(),
@@ -299,6 +300,7 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
                 committed_at_unix_ms,
                 reply_to_message_id: reply_to_message_id.map(str::to_string),
                 thread_root_message_id: thread_root_message_id.map(str::to_string),
+                mentions,
             };
             let input = DirectReceiveCommit {
                 item_id: &item.item_id,

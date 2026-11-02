@@ -27,17 +27,23 @@ impl MessageMentions {
     pub fn empty() -> Self {
         Self::default()
     }
+
+    /// Project the mention set out of a decoded private-content envelope.
+    /// Receive paths use this once after decryption; later stages never
+    /// re-decrypt just to read mentions.
+    pub fn from_private_content(content: &MessagePrivateContent) -> Self {
+        Self {
+            mentions: content.mentions.clone(),
+            mention_all: content.mention_all,
+        }
+    }
 }
 
 pub fn encode_message_private_content(
     text: &str,
     attachments: &[AttachmentPlaintextMetadata],
 ) -> Result<Vec<u8>, String> {
-    encode_message_private_content_with_mentions(
-        text,
-        attachments,
-        &MessageMentions::empty(),
-    )
+    encode_message_private_content_with_mentions(text, attachments, &MessageMentions::empty())
 }
 
 pub fn encode_message_private_content_with_mentions(
@@ -325,7 +331,10 @@ mod tests {
         let encoded = encode_message_private_content_with_mentions(
             text,
             &[],
-            &MessageMentions { mentions: mentions.clone(), mention_all: false },
+            &MessageMentions {
+                mentions: mentions.clone(),
+                mention_all: false,
+            },
         )
         .unwrap();
         let decoded = decode_message_private_content(&encoded).unwrap();

@@ -117,6 +117,9 @@ function commitAuthenticatedSession(
     }
     return { currentUser: user, authenticated: Boolean(user), restoring, sessionEpoch, stationPeerId };
   });
+  // NOTE: persisted @mention flags are rehydrated by the navigation badge
+  // projection itself, which subscribes to the authenticated actor. Keep the
+  // session store free of an import edge back to badge state (import cycle).
 }
 
 // ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──

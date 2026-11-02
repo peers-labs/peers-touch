@@ -109,6 +109,7 @@ GATE_ROLES = {
     "chat-lifecycle-group-live-e2e": ("alice", "bob", "charlie"),
     "chat-native-product-closure-e2e": ("alice", "bob"),
     "chat-contact-message-resilience-e2e": ("alice", "bob"),
+    "chat-native-mentions-e2e": ("alice", "bob"),
 }
 
 AGENT_V2_FOUNDATION_GATE = "agent-v2-kernel-foundation-e2e"
@@ -196,6 +197,7 @@ CLIENT_ROLES = {
     "chat-lifecycle-group-live-e2e": ("alice", "bob", "charlie"),
     "chat-native-product-closure-e2e": ("alice", "bob", "alice2"),
     "chat-contact-message-resilience-e2e": ("alice",),
+    "chat-native-mentions-e2e": ("alice", "bob"),
 }
 
 
