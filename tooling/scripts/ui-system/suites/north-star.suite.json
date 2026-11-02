@@ -4791,7 +4791,7 @@
     },
     {
       "id": "ui.prototype.north-star.msg-react-copy-link",
-      "title": "增量12/16：24 反应面板、⋯菜单复制，链接预览卡在气泡内",
+      "title": "首排 8 / 展开 16 反应面板、⋯菜单复制，链接预览卡在气泡内",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -4811,8 +4811,18 @@
           "target": "[data-message-id='m1'] [data-action='react']"
         },
         {
+          "op": "expect",
+          "oracle": {
+            "id": "quick-eight",
+            "type": "count",
+            "scope": "global",
+            "target": "[data-message-react][data-expanded='false'] [data-react-kind]",
+            "equals": 8
+          }
+        },
+        {
           "op": "clickGlobal",
-          "target": "[data-react-emoji='👍']"
+          "target": "[data-message-react] [data-react-kind='like']"
         },
         {
           "op": "hover",
@@ -4832,6 +4842,11 @@
           "id": "reaction-pill",
           "type": "exists",
           "target": "[data-message-id='m1'] [data-reaction='👍'][data-mine='1']"
+        },
+        {
+          "id": "reaction-kind-pill",
+          "type": "exists",
+          "target": "[data-message-id='m1'] [data-reaction-kind='like'][data-mine='1']"
         },
         {
           "id": "link-preview",
@@ -4908,7 +4923,7 @@
     },
     {
       "id": "ui.prototype.north-star.message-menu-peer-geometry",
-      "title": "他人消息菜单：Feishu 密度（180 宽/32 行/13 字）+ 三组分区，含多选/举报/仅对我隐藏，无编辑撤回",
+      "title": "他人消息菜单：Feishu 密度（180 宽/32 行/13 字）+ 三组分区，含多选/稍后处理/举报/仅对我隐藏，无编辑撤回",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -4960,11 +4975,11 @@
           "equals": "13px"
         },
         {
-          "id": "five-rows",
+          "id": "six-rows",
           "type": "count",
           "scope": "global",
           "target": ".pt-menu .pt-menu-item",
-          "equals": 5
+          "equals": 6
         },
         {
           "id": "two-groups",
@@ -4984,6 +4999,12 @@
           "type": "exists",
           "scope": "global",
           "target": "[data-action-id='multiselect']"
+        },
+        {
+          "id": "has-mark-later",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-action-id='mark-later']"
         },
         {
           "id": "has-report",
@@ -5019,7 +5040,7 @@
     },
     {
       "id": "ui.prototype.north-star.message-menu-own-groups",
-      "title": "本人消息菜单：话题/置顶复制多选/编辑撤回/隐藏 四组，窗口外编辑撤回禁用，隐藏红色危险项",
+      "title": "本人消息菜单：话题/置顶复制多选稍后处理/编辑撤回/隐藏 四组，窗口外编辑撤回禁用，隐藏红色危险项",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -5045,11 +5066,11 @@
       ],
       "oracles": [
         {
-          "id": "seven-rows",
+          "id": "eight-rows",
           "type": "count",
           "scope": "global",
           "target": ".pt-menu .pt-menu-item",
-          "equals": 7
+          "equals": 8
         },
         {
           "id": "three-groups",
@@ -5063,6 +5084,12 @@
           "type": "exists",
           "scope": "global",
           "target": "[data-action-id='pin']"
+        },
+        {
+          "id": "has-mark-later",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-action-id='mark-later']"
         },
         {
           "id": "edit-disabled",
@@ -5083,6 +5110,76 @@
           "target": "[data-action-id='hide']",
           "prop": "color",
           "equals": "rgb(198, 57, 57)"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.message-mark-later-toggle",
+      "title": "稍后处理：⋯菜单标记后气泡出现书签 chip，再次标记移除（本地单设备语义，替代 flag）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-list li:nth-child(2) .sk-conv-row"
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m1']"
+        },
+        {
+          "op": "click",
+          "target": "[data-message-id='m1'] [data-action='more']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='mark-later']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "marked-chip-on",
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-message-id='m1'] [data-msg-marked]"
+          }
+        },
+        {
+          "op": "hover",
+          "target": "[data-message-id='m1']"
+        },
+        {
+          "op": "click",
+          "target": "[data-message-id='m1'] [data-action='more']"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='mark-later']"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "marked-chip-off",
+            "type": "missing",
+            "scope": "global",
+            "target": "[data-message-id='m1'] [data-msg-marked]"
+          }
+        }
+      ],
+      "oracles": [
+        {
+          "id": "marked-chip-rested-off",
+          "type": "missing",
+          "target": "[data-message-id='m1'] [data-msg-marked]"
         }
       ],
       "finalizers": [
