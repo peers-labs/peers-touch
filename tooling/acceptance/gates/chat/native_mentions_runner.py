@@ -77,10 +77,10 @@ def park(client: TauriSession) -> None:
 
 
 def set_muted(client: TauriSession, conversation_id: str, muted: bool) -> None:
-    # Cross-Station group membership converges on the actor's Station
-    # authority snapshot slightly after the local projection already lists the
-    # member. member/settings rejects with "actor is not an active member"
-    # until that snapshot lands, so retry the mute instead of firing once.
+    # The actor's Home Station authorizes member/settings against its
+    # follower read projection. Follower event application can lag group
+    # creation briefly (see the follower-convergence pitfall), so retry the
+    # mute until the projection lists the actor as an active member.
     def attempt() -> bool:
         result = async_harness(
             client,
