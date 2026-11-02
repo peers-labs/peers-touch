@@ -1608,8 +1608,19 @@ func validSha256Hex(s string) bool {
 
 func detectMime(ext string) string {
 	mt := mime.TypeByExtension(ext)
-	if mt == "" {
-		return "application/octet-stream"
+	if mt != "" {
+		return mt
 	}
-	return mt
+	// Minimal containers (scratch/distroless) ship no shared-mime database,
+	// so stdlib cannot resolve text types by itself and .txt uploads would
+	// be stamped application/octet-stream. Keep an explicit fallback for the
+	// admitted text material type; unknown types stay octet-stream.
+	if fallback, ok := detectMimeFallback[ext]; ok {
+		return fallback
+	}
+	return "application/octet-stream"
+}
+
+var detectMimeFallback = map[string]string{
+	".txt": "text/plain; charset=utf-8",
 }
