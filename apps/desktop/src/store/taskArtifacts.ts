@@ -83,6 +83,28 @@ function tempId(): string {
   return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Coalesces concurrent detail/body fetches (openPanel sequencing and the
+// panel's render guarantee can otherwise issue duplicate RPCs).
+const detailRequests = new Map<string, Promise<void>>();
+const bodyRequests = new Map<string, Promise<void>>();
+
+function fetchVersionBody(versionId: string): Promise<void> {
+  const existing = bodyRequests.get(versionId);
+  if (existing) return existing;
+  const request = api
+    .getTaskArtifactVersionBody(versionId)
+    .then((response: GetArtifactVersionBodyResponse) => {
+      useTaskArtifactStore.setState((state) => ({
+        bodyByVersion: { ...state.bodyByVersion, [versionId]: response.body },
+      }));
+    })
+    .finally(() => {
+      bodyRequests.delete(versionId);
+    });
+  bodyRequests.set(versionId, request);
+  return request;
+}
+
 // Structural validation for D3 document versions: non-empty markdown with at
 // least one non-whitespace line. Command/E2E checks join in TW-D4.
 function structuralCheckResult(body: string): { passed: boolean; detail: string } {
@@ -136,10 +158,7 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
     selectVersion: async (versionId) => {
       set({ selectedVersionId: versionId });
       if (get().bodyByVersion[versionId] !== undefined) return;
-      const response: GetArtifactVersionBodyResponse = await api.getTaskArtifactVersionBody(versionId);
-      set((state) => ({
-        bodyByVersion: { ...state.bodyByVersion, [versionId]: response.body },
-      }));
+      await fetchVersionBody(versionId);
     },
 
     loadArtifacts: async (conversationId) => {
@@ -181,6 +200,9 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
     },
 
     loadDetail: async (artifactId) => {
+      const inFlight = detailRequests.get(artifactId);
+      if (inFlight) return inFlight;
+      const request = (async () => {
       set({ loading: true, error: null });
       try {
         const [versions, feedback, checks, acceptances] = await Promise.all([
@@ -205,10 +227,7 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
         const wantedId = get().selectedVersionId
           ?? versions.versions[versions.versions.length - 1]?.versionId;
         if (wantedId && get().bodyByVersion[wantedId] === undefined) {
-          const bodyResponse = await api.getTaskArtifactVersionBody(wantedId);
-          set((state) => ({
-            bodyByVersion: { ...state.bodyByVersion, [wantedId]: bodyResponse.body },
-          }));
+          await fetchVersionBody(wantedId);
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -216,6 +235,12 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
         set({ loading: false, error: message });
         throw error;
       }
+      })();
+      const guarded = request.finally(() => {
+        detailRequests.delete(artifactId);
+      });
+      detailRequests.set(artifactId, guarded);
+      return request;
     },
 
     claimFromMessage: async ({

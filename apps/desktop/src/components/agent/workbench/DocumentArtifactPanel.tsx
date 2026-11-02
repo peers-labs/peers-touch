@@ -36,6 +36,7 @@ export function DocumentArtifactPanel() {
   const closePanel = useTaskArtifactStore((s) => s.closePanel);
   const selectedVersionId = useTaskArtifactStore((s) => s.selectedVersionId);
   const selectVersion = useTaskArtifactStore((s) => s.selectVersion);
+  const loadDetail = useTaskArtifactStore((s) => s.loadDetail);
   const saveHumanEdit = useTaskArtifactStore((s) => s.saveHumanEdit);
   const quoteSelectionToComposer = useTaskArtifactStore((s) => s.quoteSelectionToComposer);
   const recordStructuralCheck = useTaskArtifactStore((s) => s.recordStructuralCheck);
@@ -54,6 +55,11 @@ export function DocumentArtifactPanel() {
   );
   const body = useTaskArtifactStore((s) =>
     selectedVersionId ? (s.bodyByVersion[selectedVersionId] ?? '') : '',
+  );
+  const selectedBodyLoaded = useTaskArtifactStore((s) =>
+    selectedVersionId
+      ? Object.prototype.hasOwnProperty.call(s.bodyByVersion, selectedVersionId)
+      : true,
   );
   const checks = useTaskArtifactStore((s) =>
     openArtifactId ? (s.checksByArtifact[openArtifactId] ?? EMPTY_CHECK_LIST) : EMPTY_CHECK_LIST,
@@ -76,6 +82,25 @@ export function DocumentArtifactPanel() {
     setEditing(false);
     setError(null);
   }, [selectedVersionId, openArtifactId]);
+
+  // Render-layer convergence independent of any single openPanel async chain:
+  // after a renderer reload the panel can mount with detail/body state still
+  // missing, so guarantee detail → head selection → body from render state.
+  useEffect(() => {
+    if (!openArtifactId || versions.length > 0) return;
+    void loadDetail(openArtifactId).catch(() => undefined);
+  }, [openArtifactId, versions.length, loadDetail]);
+
+  useEffect(() => {
+    if (!openArtifactId || selectedVersionId || versions.length === 0) return;
+    const head = versions[versions.length - 1];
+    if (head) void selectVersion(head.versionId);
+  }, [openArtifactId, selectedVersionId, versions, selectVersion]);
+
+  useEffect(() => {
+    if (!selectedVersionId || selectedBodyLoaded) return;
+    void selectVersion(selectedVersionId);
+  }, [selectedVersionId, selectedBodyLoaded, selectVersion]);
 
   const selectedVersion = useMemo(
     () => versions.find((version) => version.versionId === selectedVersionId),

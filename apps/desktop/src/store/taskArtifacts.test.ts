@@ -96,6 +96,54 @@ it('claims an assistant message into an artifact and loads versions and body', a
   }));
 });
 
+it('coalesces concurrent detail and body requests for the same target', async () => {
+  vi.mocked(api.listTaskArtifacts).mockResolvedValue({ artifacts: [] } as never);
+  vi.mocked(api.listTaskArtifactVersions).mockResolvedValue({
+    versions: [artifactResponse().version],
+  } as never);
+  vi.mocked(api.listTaskArtifactFeedback).mockResolvedValue({ feedback: [] } as never);
+  vi.mocked(api.listTaskArtifactChecks).mockResolvedValue({ checks: [] } as never);
+  vi.mocked(api.listTaskArtifactAcceptances).mockResolvedValue({ acceptances: [] } as never);
+  vi.mocked(api.getTaskArtifactVersionBody).mockResolvedValue({
+    version: artifactResponse().version,
+    body: '# Site study',
+  } as never);
+
+  const store = useTaskArtifactStore.getState();
+  vi.mocked(api.listTaskArtifactVersions).mockClear();
+  const firstDetail = store.loadDetail('art-1');
+  const joinedDetail = store.loadDetail('art-1');
+  expect(api.listTaskArtifactVersions).toHaveBeenCalledTimes(1);
+  await Promise.all([firstDetail, joinedDetail]);
+
+  let resolvePendingBody: (value: unknown) => void = () => undefined;
+  vi.mocked(api.getTaskArtifactVersionBody).mockImplementation(
+    ((versionId: string) => {
+      if (versionId === 'ver-pending') {
+        return new Promise((resolve) => {
+          resolvePendingBody = resolve;
+        });
+      }
+      return Promise.resolve({
+        version: { ...artifactResponse().version, versionId },
+        body: `body-${versionId}`,
+      });
+    }) as never,
+  );
+
+  vi.mocked(api.getTaskArtifactVersionBody).mockClear();
+  const firstBody = store.selectVersion('ver-pending');
+  const joinedBody = store.selectVersion('ver-pending');
+  expect(api.getTaskArtifactVersionBody).toHaveBeenCalledTimes(1);
+  expect(api.getTaskArtifactVersionBody).toHaveBeenCalledWith('ver-pending');
+  resolvePendingBody({
+    version: { ...artifactResponse().version, versionId: 'ver-pending' },
+    body: 'pending body',
+  });
+  await Promise.all([firstBody, joinedBody]);
+  expect(useTaskArtifactStore.getState().bodyByVersion['ver-pending']).toBe('pending body');
+});
+
 it('records structural/human checks and accepts only the current version', async () => {
   vi.mocked(api.listTaskArtifacts).mockResolvedValue({ artifacts: [] } as never);
   vi.mocked(api.listTaskArtifactVersions).mockResolvedValue({ versions: [] } as never);
