@@ -109,7 +109,7 @@ export function agentAttachmentDraftsBlockSend(
 }
 
 /** File types accepted by the agent attachment flow. */
-export const AGENT_ATTACHMENT_ACCEPT = 'image/png,application/pdf';
+export const AGENT_ATTACHMENT_ACCEPT = 'image/png,application/pdf,text/plain';
 
 export function useAgentAttachmentDrafts({
   conversationId,

@@ -25,7 +25,7 @@ export async function uploadAgentAttachmentFile(
   if (
     file.size <= 0
     || file.size > AGENT_ATTACHMENT_MAX_BYTES
-    || !['image/png', 'application/pdf'].includes(file.type)
+    || !['image/png', 'application/pdf', 'text/plain'].includes(file.type)
   ) {
     throw new Error('agent.errors.attachmentRejected');
   }

@@ -189,8 +189,8 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   let objectRef = '';
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await page.setInputFiles('[data-pt-agent-attachment-input]', [{
-      name: 'tw-d3-material.md',
-      mimeType: 'text/markdown',
+      name: 'tw-d3-material.txt',
+      mimeType: 'text/plain',
       buffer: MATERIAL_BYTES,
     }]);
     try {
@@ -430,7 +430,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
     turn: {
       terminalStatus: status,
       materialObjectRef: objectRef,
-      materialMimeType: 'text/markdown',
+      materialMimeType: 'text/plain',
       materialToken: MATERIAL_TOKEN,
       tokenInClaimedBytes: true,
     },
