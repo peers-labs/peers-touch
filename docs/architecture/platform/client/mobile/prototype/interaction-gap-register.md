@@ -542,3 +542,69 @@ Rebuilt as a slim one-line bar in `chat.css`:
 Gates: `chat-header` now asserts the 52px band, transparent action
 backgrounds, and 19px glyph width; `detail-panel` keeps the collinear-title
 assertion. North-star suite 152 OBSERVED.
+
+## 2026-11-03 Mobile/Desktop semantic alignment (shared chat domain)
+
+Mobile and Desktop Chat had drifted into two private interaction contracts:
+the mobile prototype carried a 5-kind local reaction vocabulary, a 40-cell
+emoji grid with a silent unknown-emoji fallback, a private local flag,
+decorative i18n (every surface statically imported the English bundle), and
+its own window/search/demo state semantics that no longer matched the gate
+suite after the peers-ui rebuild. The alignment puts one headless contract
+under both surfaces:
+
+- **Shared domain** — `packages/prototypes/shared/chat-domain/` now owns the
+  16-kind reaction catalog (`QUICK_REACTION_KINDS` = 8), strict
+  emoji↔kind mapping (unknown emoji never silently falls back), viewer
+  reaction operations (multi-select toggle, viewer-first ordering), and the
+  message action catalog/group resolver (primary / organize / mutate /
+  safety, ownership, mutation-window, danger). Desktop menu, mobile action
+  sheet, and both reaction strips derive from it.
+- **Reactions** — quick row of 8 with an expand toggle to all 16 on both
+  surfaces; selecting a reaction no longer closes the popover/sheet, so
+  multiple kinds are one gesture apart; reaction chips are toggle buttons
+  with a viewer-selected state.
+- **Mark for later replaces flag** — the personal local flag is now
+  "mark for later" (`mark-later`, bookmark glyph): a chip on the message and
+  a marked-messages list in conversation details on Desktop and mobile. It
+  stays local-only; nothing about it is visible to peers.
+- **Mobile message safety and bulk operations** — long-press / right-click
+  action sheet groups come from the shared catalog; multiselect mode has
+  real row checkboxes, a bulk bar (forward / copy / hide), a reason-coded
+  message-level report sheet (spam / abuse / misinfo / other), bulk hide
+  confirmation, and bulk forward through a real picker.
+- **Real i18n runtime** — `src/i18n.ts` resolves `?lang` then navigator
+  language, merges common/chat/search namespaces, re-renders the whole shell
+  live on toggle, and syncs `document.documentElement.lang`. All interface
+  chrome is keyed (including the tab bar); seeded narrative content stays
+  untranslated by design. The search field, composer, thread More entry, and
+  related locale values match the English the gate suite encodes.
+- **Touch geometry** — `100dvh` shell, `viewport-fit=cover`,
+  `interactive-widget=resizes-content`, safe-area insets, a
+  visual-viewport keyboard-height variable that pads the composer, 44px
+  reaction targets, and full-bleed layout under 540px.
+
+Navigation-state defects surfaced while reactivating the long-list gates were
+fixed at the shell level, not in the gates:
+
+- conversation surface keys encode the active filter query (contacts/search
+  already did), so filtering resets the window through remount while an empty
+  query keeps the prior browsing position;
+- list queries persist in shell-owned memory across thread/detail
+  round-trips;
+- search targets are one-shot intents (cleared after reveal), and a thread
+  opened from a result returns to the search overlay on its first Back;
+- the controlled search lifecycle now binds its owner on open, so submit
+  tickets transition through loading;
+- social evidence scenarios reopen on the contacts surface and the
+  find-people sheet opens for `request-unknown`;
+- a resolved direct conversation switches to the chat surface before the
+  thread renders.
+
+Gates: `check-long-lists.mjs` and `check-residual-parity.mjs` green on the
+Make Portal; `check-layout.mjs` (static touch contract + dynamic emoji sheet +
+message geometry) and `check-call-states.py` green on the standalone mobile
+server; north-star suite updated to quick-8/16 + `data-react-kind`, 6-row
+peer / 8-row own menu groups, the `mark-later` entry, and a new
+`message-mark-later-toggle` scenario — full suite OBSERVED. Evidence remains
+prototype-only; native and Station behavior stay unproven.
