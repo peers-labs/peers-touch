@@ -6,6 +6,19 @@ import { LazyMarkdown as Markdown } from '../../LazyMarkdown';
 import { chatMarkdownProps } from '../../messages/markdownConfig';
 import { useChatStore } from '../../../store/chat';
 import { useTaskArtifactStore } from '../../../store/taskArtifacts';
+import type {
+  ArtifactAcceptance,
+  ArtifactCheck,
+  ArtifactVersion,
+  LogicalArtifact,
+} from '../../../gen/proto/domain/agent/agent_pb';
+
+// Stable selector fallbacks: fresh [] literals make useSyncExternalStore see
+// a new snapshot on every render check (React #185 update loop).
+const EMPTY_ARTIFACT_LIST: readonly LogicalArtifact[] = [];
+const EMPTY_VERSION_LIST: readonly ArtifactVersion[] = [];
+const EMPTY_CHECK_LIST: readonly ArtifactCheck[] = [];
+const EMPTY_ACCEPTANCE_LIST: readonly ArtifactAcceptance[] = [];
 
 /**
  * TW-D3 document artifact work surface: immutable version reader,
@@ -31,22 +44,22 @@ export function DocumentArtifactPanel() {
 
   const artifact = useTaskArtifactStore((s) =>
     openArtifactId
-      ? (s.artifactsByConversation[s.openConversationId ?? ''] ?? []).find(
+      ? (s.artifactsByConversation[s.openConversationId ?? ''] ?? EMPTY_ARTIFACT_LIST).find(
           (item) => item.artifactId === openArtifactId,
         )
       : undefined,
   );
   const versions = useTaskArtifactStore((s) =>
-    openArtifactId ? (s.versionsByArtifact[openArtifactId] ?? []) : [],
+    openArtifactId ? (s.versionsByArtifact[openArtifactId] ?? EMPTY_VERSION_LIST) : EMPTY_VERSION_LIST,
   );
   const body = useTaskArtifactStore((s) =>
     selectedVersionId ? (s.bodyByVersion[selectedVersionId] ?? '') : '',
   );
   const checks = useTaskArtifactStore((s) =>
-    openArtifactId ? (s.checksByArtifact[openArtifactId] ?? []) : [],
+    openArtifactId ? (s.checksByArtifact[openArtifactId] ?? EMPTY_CHECK_LIST) : EMPTY_CHECK_LIST,
   );
   const acceptances = useTaskArtifactStore((s) =>
-    openArtifactId ? (s.acceptancesByArtifact[openArtifactId] ?? []) : [],
+    openArtifactId ? (s.acceptancesByArtifact[openArtifactId] ?? EMPTY_ACCEPTANCE_LIST) : EMPTY_ACCEPTANCE_LIST,
   );
   const pendingFeedback = useTaskArtifactStore((s) =>
     openArtifactId ? s.pendingFeedbackByArtifact[openArtifactId] : undefined,

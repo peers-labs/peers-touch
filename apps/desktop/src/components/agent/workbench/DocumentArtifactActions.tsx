@@ -11,6 +11,10 @@ interface DocumentArtifactActionsProps {
   message: ChatMessage;
 }
 
+// Stable fallback for selectors: a fresh [] on every getSnapshot call makes
+// useSyncExternalStore detect a changed snapshot forever (React #185 loop).
+const EMPTY_STRING_LIST: readonly string[] = [];
+
 /**
  * TW-D3 entry point: promote a completed assistant message's real bytes into
  * the immutable artifact system — either as a new logical artifact or as a
@@ -23,7 +27,7 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
   const conversationId = useChatStore((s) => s.currentSessionKey);
   const messages = useChatStore((s) => s.messages);
   const claimedIds = useTaskArtifactStore(
-    (s) => s.claimedMessageIdsByConversation[conversationId] ?? [],
+    (s) => s.claimedMessageIdsByConversation[conversationId] ?? EMPTY_STRING_LIST,
   );
   const loadArtifacts = useTaskArtifactStore((s) => s.loadArtifacts);
   const claimedMessageIds = useTaskArtifactStore((s) => s.claimedMessageIds);
