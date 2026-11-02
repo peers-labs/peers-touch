@@ -21,6 +21,7 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const conversationId = useChatStore((s) => s.currentSessionKey);
+  const messages = useChatStore((s) => s.messages);
   const claimedIds = useTaskArtifactStore(
     (s) => s.claimedMessageIdsByConversation[conversationId] ?? [],
   );
@@ -29,20 +30,28 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
   const claimFromMessage = useTaskArtifactStore((s) => s.claimFromMessage);
   const openPanel = useTaskArtifactStore((s) => s.openPanel);
   const [artifacts, setArtifacts] = useState<LogicalArtifact[]>([]);
-  const [claimed, setClaimed] = useState(false);
+  const [claimedArtifactId, setClaimedArtifactId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [list, ids] = await Promise.all([
-        loadArtifacts(conversationId),
-        claimedMessageIds(conversationId),
-      ]);
+      const list = await loadArtifacts(conversationId);
+      const ids = await claimedMessageIds(conversationId);
+      // Find which artifact owns a version sourced from this message.
+      let ownerId: string | null = null;
+      if (ids.has(message.id)) {
+        const versions = useTaskArtifactStore.getState().versionsByArtifact;
+        ownerId = list.find((artifact) =>
+          (versions[artifact.artifactId] ?? []).some(
+            (version) => version.sourceMessageId === message.id,
+          ),
+        )?.artifactId ?? null;
+      }
       if (!cancelled) {
         setArtifacts(list);
-        setClaimed(ids.has(message.id));
+        setClaimedArtifactId(ownerId);
       }
     })().catch(() => undefined);
     return () => {
@@ -53,6 +62,16 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
   const claim = useCallback(
     async (artifactId?: string, expectedBaseVersionId?: string) => {
       if (!message.turnId) return;
+      // Adoption is recorded per version: collect the admitted material
+      // object refs of every user input merged into this producing turn
+      // (TW-D2 amendments can attach more than one user message).
+      const adoptedAttachmentRefs = Array.from(new Set(
+        messages
+          .filter((item) => item.role === 'user' && item.turnId === message.turnId)
+          .flatMap((item) => item.attachments ?? [])
+          .map((attachment) => attachment.attachment?.object_ref ?? attachment.cid)
+          .filter((ref): ref is string => Boolean(ref)),
+      ));
       setBusyId(artifactId ?? 'new');
       setError(null);
       try {
@@ -62,6 +81,7 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
           messageId: message.id,
           artifactId,
           expectedBaseVersionId,
+          adoptedAttachmentRefs,
         });
         await openPanel(conversationId, response.artifact!.artifactId, response.version!.versionId);
       } catch (cause) {
@@ -70,10 +90,25 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
         setBusyId(null);
       }
     },
-    [claimFromMessage, conversationId, message.id, message.turnId, openPanel],
+    [claimFromMessage, conversationId, message.id, message.turnId, messages, openPanel],
   );
 
-  if (message.loading || message.terminalStatus === 'failed' || claimed) return null;
+  if (message.loading || message.terminalStatus === 'failed') return null;
+
+  // A message already claimed as a version only gets an "open artifact" entry.
+  if (claimedArtifactId) {
+    return (
+      <Flexbox horizontal gap={6} style={{ marginTop: 6 }}>
+        <Button
+          size="small"
+          onClick={() => void openPanel(conversationId, claimedArtifactId)}
+          data-pt-artifact-open={claimedArtifactId}
+        >
+          {t('chat.artifact.open')}
+        </Button>
+      </Flexbox>
+    );
+  }
 
   return (
     <Flexbox

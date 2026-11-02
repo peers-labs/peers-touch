@@ -78,6 +78,7 @@ it('claims an assistant message into an artifact and loads versions and body', a
     conversationId,
     turnId: 'turn-1',
     messageId: 'msg-1',
+    adoptedAttachmentRefs: ['oss/material/tw-d3.png'],
   });
   expect(response.artifact?.artifactId).toBe('art-1');
 
@@ -91,6 +92,7 @@ it('claims an assistant message into an artifact and loads versions and body', a
     conversationId,
     sourceMessageId: 'msg-1',
     origin: 'ARTIFACT_VERSION_ORIGIN_AGENT_OUTPUT',
+    adoptedAttachmentRefs: ['oss/material/tw-d3.png'],
   }));
 });
 

@@ -54,6 +54,10 @@ interface TaskArtifactsState {
     name?: string;
     artifactId?: string;
     expectedBaseVersionId?: string;
+    // Object refs of the material admitted into the producing turn. The
+    // version records which materials it actually adopted; a name alone is
+    // not adoption.
+    adoptedAttachmentRefs?: string[];
   }) => Promise<ClaimArtifactVersionResponse>;
   saveHumanEdit: (input: {
     conversationId: string;
@@ -203,7 +207,15 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
       }
     },
 
-    claimFromMessage: async ({ conversationId, turnId, messageId, name, artifactId, expectedBaseVersionId }) => {
+    claimFromMessage: async ({
+      conversationId,
+      turnId,
+      messageId,
+      name,
+      artifactId,
+      expectedBaseVersionId,
+      adoptedAttachmentRefs,
+    }) => {
       const pending = artifactId
         ? get().pendingFeedbackByArtifact[artifactId]
         : undefined;
@@ -218,6 +230,7 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
         sourceTurnId: turnId,
         sourceMessageId: messageId,
         feedbackId: pending?.feedbackId,
+        adoptedAttachmentRefs,
         clientIdempotencyKey: tempId(),
       });
       if (pending && artifactId) {

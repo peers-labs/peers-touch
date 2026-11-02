@@ -1093,5 +1093,6 @@
   "chat.artifact.check.humanReview": "人工审阅",
   "chat.artifact.check.passed": "通过",
   "chat.artifact.check.failed": "未通过",
-  "chat.artifact.accept": "接受此版本"
+  "chat.artifact.accept": "接受此版本",
+  "chat.artifact.open": "打开成果"
 }

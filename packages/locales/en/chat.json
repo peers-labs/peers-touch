@@ -1093,5 +1093,6 @@
   "chat.artifact.check.humanReview": "Human review",
   "chat.artifact.check.passed": "passed",
   "chat.artifact.check.failed": "failed",
-  "chat.artifact.accept": "Accept this version"
+  "chat.artifact.accept": "Accept this version",
+  "chat.artifact.open": "Open artifact"
 }
