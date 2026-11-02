@@ -344,3 +344,61 @@ describe('avatarAssets decoded image LRU', () => {
     expect(oldest?.src).toContain('/cache/a0png');
   });
 });
+
+describe('avatarAssets persistent last-good', () => {
+  it('paints primed cross-process last-good for a new identity without blanking', () => {
+    const resolveLocal = vi.fn<LocalResolver>(() => new Promise(() => {}));
+    const store = makeStore(resolveLocal);
+    // Simulate a cold-start prime from actor-scoped storage, at any epoch.
+    store.primePersistentLastGood([{
+      actorPtid: 'ptid:peer:bob',
+      identity: '/sub-oss/bob.png',
+      src: 'asset:///cache/bob.png',
+      localPath: '/cache/bob.png',
+      revision: null,
+    }]);
+
+    const query: AvatarAssetQuery = { identity: '/sub-oss/bob.png', actorPtid: 'ptid:peer:bob', epoch: 3 };
+    const seeded = store.request(query);
+    expect(seeded?.src).toBe('asset:///cache/bob.png');
+    expect(seeded?.degraded).toBe(true);
+    expect(store.getSnapshot(avatarAssetKey(query))?.phase).toBe('resolving');
+  });
+
+  it('does not let an unattributed or invalid prime seed a frame', () => {
+    const store = makeStore(vi.fn<LocalResolver>(() => new Promise(() => {})));
+    store.primePersistentLastGood([
+      { actorPtid: '  ', identity: 'x', src: 'asset://x' },
+      { actorPtid: 'ptid:peer:x', identity: 'x', src: '  ' },
+    ]);
+    expect(store.request({ identity: 'x', epoch: 0 })).toBeNull();
+  });
+
+  it('persists a freshly decoded attributed avatar through the sink', async () => {
+    const persist = vi.fn();
+    const store = new AvatarAssetsStore({
+      resolveLocal: vi.fn(async (identity) => ({
+        state: 'ready' as const,
+        identity,
+        local_path: '/cache/self.png',
+      })),
+      fileSrc: (path) => `asset://${path}`,
+      imageFactory: () => new FakeImage() as unknown as HTMLImageElement,
+    }, persist);
+    // Sink requires a bound session (local owner scope).
+    store.bindSession({
+      epoch: 1,
+      actorPtid: 'ptid:actor:self',
+      identity: '/sub-oss/self.png',
+      localPath: null,
+    });
+    await vi.waitFor(() => expect(persist).toHaveBeenCalled());
+    const [owner, entry] = persist.mock.calls[0];
+    expect(owner).toBe('ptid:actor:self');
+    expect(entry).toMatchObject({
+      actorPtid: 'ptid:actor:self',
+      src: 'asset:///cache/self.png',
+      localPath: '/cache/self.png',
+    });
+  });
+});

@@ -15,6 +15,7 @@ import {
   type ChatThreadCount,
 } from '../services/desktop_api';
 import { avatarAssets } from '../services/avatarAssets';
+import { cachePeerProfileLastGood, readCachedPeerProfiles } from '../services/peerProfileCache';
 import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
 import type {
   Conversation,
@@ -1017,6 +1018,13 @@ const initialSocialState: Pick<
 };
 
 let loadSessionsGeneration = 0;
+/**
+ * PTIDs whose peer profiles were seeded from the persistent last-good cache
+ * during the current actor's hydrate. The first member-profile sweep must
+ * still reconcile them over the network; each entry is consumed once by
+ * loadPeerProfile so cached identities never suppress a live refresh.
+ */
+let cachedProfileHydration: { actorPtid: string; ptids: Set<string> } | null = null;
 let messagingProjectionGeneration = 0;
 let socialProfileGeneration = 0;
 
@@ -1065,6 +1073,7 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   reset: () => {
     messagingProjectionGeneration += 1;
     socialProfileGeneration += 1;
+    cachedProfileHydration = null;
     clearMessageProjectionCache();
     set({ ...initialSocialState });
   },
@@ -1163,6 +1172,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     if (!did) return;
     if (currentAuthenticatedActorPtid() !== did) return;
     set({ currentUserPtid: did });
+    // Seed first-frame identities from the persistent last-good cache so
+    // conversation rows, group avatar tiles and profile cards paint real
+    // avatars before the per-member network reads land. Live reconciliation
+    // in loadSessions overwrites every seeded entry (see
+    // cachedProfileHydration); the cache is presentation last-good only.
+    const cachedProfiles = readCachedPeerProfiles(did);
+    const cachedPtids = Object.keys(cachedProfiles);
+    if (cachedPtids.length > 0) {
+      cachedProfileHydration = { actorPtid: did, ptids: new Set(cachedPtids) };
+      set((prev) => ({ peerProfiles: { ...cachedProfiles, ...prev.peerProfiles } }));
+    }
     const { loadCurrentUserProfile, loadSessions, loadGroups } = get();
     await loadCurrentUserProfile();
     await Promise.all([loadSessions(), loadGroups()]);
@@ -1405,7 +1425,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         ...Object.values(groupMembersUpdate),
       ]) {
         for (const m of members) {
-          if (m.ptid && !isSelfMember(m) && !get().peerProfiles[m.ptid]) {
+          if (!m.ptid || isSelfMember(m)) continue;
+          // Reconcile both unknown members and hydrate-seeded last-good
+          // profiles (the first sweep after a cold start refreshes the
+          // cache entries from Station).
+          const seeded = cachedProfileHydration?.actorPtid === actorPtid
+            && cachedProfileHydration.ptids.has(m.ptid);
+          if (!get().peerProfiles[m.ptid] || seeded) {
             get().loadPeerProfile(m.ptid).catch((error) => {
               log.warn('socialChat', 'load conversation member profile failed', {
                 peerPtid: m.ptid,
@@ -2135,7 +2161,11 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     // two different runtime channels.
     if (state.currentUserPtid && state.currentUserPtid === did) return;
     if (state.peerProfileLoading[did]) return;
-    if (!force && did in state.peerProfiles) return;
+    // A hydrate-seeded last-good profile is reconciled once over the network;
+    // consume the marker so subsequent presence short-circuits normally.
+    const seededHydration = cachedProfileHydration?.actorPtid === state.currentUserPtid
+      && cachedProfileHydration.ptids.delete(did);
+    if (!force && did in state.peerProfiles && !seededHydration) return;
 
     set((prev) => ({
       peerProfileLoading: { ...prev.peerProfileLoading, [did]: true },
@@ -2174,6 +2204,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         peerProfiles: { ...prev.peerProfiles, [did]: profile ?? null },
         peerProfileLoading: { ...prev.peerProfileLoading, [did]: false },
       }));
+      // Persist the authoritative profile as cold-start presentation
+      // last-good (identity truth stays with Station; the first hydrate
+      // sweep reconciles every cached entry).
+      const ownerPtid = currentAuthenticatedActorPtid();
+      if (ownerPtid && profile) {
+        cachePeerProfileLastGood(ownerPtid, did, profile);
+      }
       // Warm the shared avatar owner the moment the profile lands, before
       // any avatar component mounts. Key on the transport-independent
       // canonical identity so per-process projection-token rotation never

@@ -124,6 +124,73 @@ export function desktopStorageScope(scope: DesktopStorageSessionScope): ClientSt
   };
 }
 
+/**
+ * Build an actor-scoped runtime (station segment left neutral). Used for
+ * actor-owned presentation caches (peer profiles, avatar last-good) that
+ * must stay readable regardless of the active Station binding.
+ */
+function actorStorageRuntime(actorPtid: string): DesktopClientStorageRuntime | null {
+  const did = actorPtid.trim();
+  if (!did) return null;
+  return createDesktopClientStorageRuntime({ ptid: did });
+}
+
+/**
+ * Synchronously read every cached value of `domain` for one actor, keyed by
+ * the cache key. localStorage is synchronous; the promise-based kernel is
+ * only used for canonical key construction. Cold-start first-frame seeding
+ * relies on this staying synchronous.
+ */
+export function readAllActorDomainValuesSync<T>(
+  actorPtid: string,
+  domain: ClientStorageDomainId,
+): Map<string, T> {
+  const out = new Map<string, T>();
+  const storage = browserLocalStorage();
+  const runtime = actorStorageRuntime(actorPtid);
+  if (!storage || !runtime) return out;
+  // Domain entries live directly under the domain segment prefix.
+  const prefix = `${runtime.cache.storageKey(domain, '').slice(0, -1)}`;
+  for (let index = 0; index < storage.length; index += 1) {
+    const storageKey = storage.key(index);
+    if (!storageKey || !storageKey.startsWith(prefix)) continue;
+    const cacheKey = storageKey.slice(prefix.length + 1);
+    try {
+      const envelope = JSON.parse(storage.getItem(storageKey) ?? 'null') as { value?: T } | null;
+      if (envelope?.value !== undefined) out.set(cacheKey, envelope.value);
+    } catch {
+      // Corrupt envelopes are skipped; the next network reconcile rewrites.
+    }
+  }
+  return out;
+}
+
+/** Synchronously write one actor-scoped domain value (best-effort last-good). */
+export function writeActorDomainValueSync<T>(
+  actorPtid: string,
+  domain: ClientStorageDomainId,
+  key: string,
+  value: T,
+): void {
+  const storage = browserLocalStorage();
+  const runtime = actorStorageRuntime(actorPtid);
+  if (!storage || !runtime) return;
+  try {
+    const envelope = {
+      schemaVersion: 1,
+      domain,
+      key,
+      scope: runtime.kernel.scope,
+      value,
+      cachedAt: Date.now(),
+      expiresAt: null,
+    };
+    storage.setItem(runtime.cache.storageKey(domain, key), JSON.stringify(envelope));
+  } catch {
+    // Presentation caches must never break the calling projection.
+  }
+}
+
 function browserLocalStorage(): Storage | null {
   if (typeof window === 'undefined') return null;
   return window.localStorage;

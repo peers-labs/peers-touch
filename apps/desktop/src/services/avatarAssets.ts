@@ -14,6 +14,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 import { log } from '../utils/logger';
+import { persistAvatarLastGood } from './avatarLastGoodPersistence';
 import { api, type NativeAvatarState } from './desktop_api';
 
 /** Retired demo image generator prefix. Such identities must never resolve. */
@@ -87,6 +88,23 @@ export interface AvatarResolveDependencies {
   fileSrc: (path: string) => string;
   imageFactory: () => HTMLImageElement;
 }
+
+/**
+ * Sink for cross-process last-good persistence. `ownerActorPtid` is the
+ * locally authenticated actor (storage scope); `entry` describes the avatar
+ * owner. Default production wiring writes the actor-scoped `asset.avatar`
+ * cache; test stores inject a no-op.
+ */
+export type AvatarLastGoodPersistSink = (
+  ownerActorPtid: string,
+  entry: {
+    actorPtid: string;
+    identity: string;
+    src: string;
+    localPath: string | null;
+    revision: number | string | null;
+  },
+) => void;
 
 interface LastGood {
   identity: string;
@@ -214,12 +232,21 @@ const defaultDependencies: AvatarResolveDependencies = {
 export class AvatarAssetsStore {
   private readonly entries = new Map<string, AvatarEntry>();
   private readonly lastGoodByActor = new Map<string, LastGood>();
+  /**
+   * Cross-process last-good, keyed by avatar OWNER ptid (epoch-independent).
+   * Primed from persistent storage during session restore/social hydrate so
+   * first-frame paints survive restarts even before any flight starts.
+   */
+  private readonly persistentLastGood = new Map<string, LastGood>();
   private readonly flights = new Map<string, Promise<AvatarEntry>>();
   private readonly listeners = new Set<() => void>();
   private session: AvatarSessionBinding | null = null;
   private revisionCounter = 0;
 
-  constructor(private readonly deps: AvatarResolveDependencies = defaultDependencies) {}
+  constructor(
+    private readonly deps: AvatarResolveDependencies = defaultDependencies,
+    private readonly persistLastGood: AvatarLastGoodPersistSink | null = null,
+  ) {}
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -265,6 +292,42 @@ export class AvatarAssetsStore {
     if (!identity) return;
     // Explicit session binding always bypasses failure backoff.
     this.request(query, { force: true });
+  }
+
+  /**
+   * Prime cross-process last-good entries from persistent storage. Called once
+   * at session restore (self) and social runtime hydrate (known peers) so
+   * the first frame after a restart paints the previous image as degraded
+   * while the new identity resolves. Existing in-memory last-good wins.
+   */
+  primePersistentLastGood(entries: Array<{
+    actorPtid: string;
+    identity: string;
+    src: string;
+    localPath?: string | null;
+    revision?: number | string | null;
+  }>): void {
+    for (const entry of entries) {
+      const actorPtid = entry.actorPtid?.trim();
+      const src = entry.src?.trim();
+      if (!actorPtid || !src) continue;
+      if (this.persistentLastGood.has(actorPtid)) continue;
+      this.persistentLastGood.set(actorPtid, {
+        identity: entry.identity ?? '',
+        src,
+        localPath: entry.localPath?.trim() ?? null,
+        revision: entry.revision ?? null,
+      });
+    }
+  }
+
+  /** Forget primed last-good for one actor (logout/identity removal tests). */
+  clearPersistentLastGood(actorPtid?: string): void {
+    if (actorPtid) {
+      this.persistentLastGood.delete(actorPtid.trim());
+    } else {
+      this.persistentLastGood.clear();
+    }
   }
 
   /** Drop the authenticated projection (logout). Persistent entries remain. */
@@ -614,12 +677,25 @@ export class AvatarAssetsStore {
     // Last-good is only usable when the owner is known. Peer avatars without
     // an actor PTID and the authenticated session must never share a bucket.
     if (query.actorPtid) {
-      this.lastGoodByActor.set(entry.actorKey, {
+      const lastGood = {
         identity: entry.identity,
         src,
         localPath,
         revision: entry.revision,
-      });
+      };
+      this.lastGoodByActor.set(entry.actorKey, lastGood);
+      // Cross-process last-good for first-frame paint after restart.
+      this.persistentLastGood.set(query.actorPtid, lastGood);
+      const ownerPtid = this.session?.actorPtid;
+      if (this.persistLastGood && ownerPtid) {
+        this.persistLastGood(ownerPtid, {
+          actorPtid: query.actorPtid,
+          identity: entry.identity,
+          src,
+          localPath,
+          revision: entry.revision,
+        });
+      }
     }
     this.enforceEntryBound();
     this.enforceImageBound();
@@ -712,7 +788,10 @@ export class AvatarAssetsStore {
     // Only attributed owners (session actor or explicit peer PTID) may show
     // last-good. An unattributed identity must not inherit another actor.
     if (!query.actorPtid) return null;
-    const good = this.lastGoodByActor.get(actorKeyFor(query));
+    const actorPtid = query.actorPtid;
+    // In-process last-good (epoch-scoped key) wins over the primed cache.
+    const good = this.lastGoodByActor.get(actorKeyFor(query))
+      ?? this.persistentLastGood.get(actorPtid);
     if (!good?.src) return null;
     return { phase: 'ready', src: good.src, degraded: true, identity: good.identity };
   }
@@ -784,5 +863,10 @@ export class AvatarAssetsStore {
 /**
  * Process-wide AvatarAssets owner. The identity runtime and the React avatar
  * components share this single instance; there is no per-component cache.
+ *
+ * The persistence sink is no-op when localStorage is unavailable (SSR/test
+ * shells); the storage module guards that itself.
  */
-export const avatarAssets = new AvatarAssetsStore();
+export const avatarAssets = new AvatarAssetsStore(defaultDependencies, (owner, entry) => {
+  persistAvatarLastGood(owner, entry);
+});
