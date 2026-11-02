@@ -3,7 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { agentService } from '../services/agent-service';
 import { useAgentStore } from './agent';
 import { useChatStore } from './chat';
-import type { StreamEvent } from './streaming';
+
+type AnyStreamEvent = { event: string; data?: Record<string, unknown> };
 
 const conversationId = 'amend-conversation';
 
@@ -23,11 +24,11 @@ afterEach(() => {
 
 it('projects an amended admission onto the user message without a new turn', () => {
   const handlers: {
-    onEvent: (event: StreamEvent) => void;
+    onEvent: (event: AnyStreamEvent) => void;
     onComplete: () => void;
   } = { onEvent: () => undefined, onComplete: () => undefined };
   vi.spyOn(agentService, 'streamTurn').mockImplementation((_input, onEvent, onComplete) => {
-    handlers.onEvent = onEvent;
+    handlers.onEvent = onEvent as (event: AnyStreamEvent) => void;
     handlers.onComplete = onComplete as () => void;
     return Object.assign(new AbortController(), {
       streamId: 'stream-amend',
@@ -48,7 +49,7 @@ it('projects an amended admission onto the user message without a new turn', () 
   handlers.onEvent({
     event: 'amended',
     data: { admission: { turnId: 'running-turn-1' } },
-  } as unknown as StreamEvent);
+  } as unknown as AnyStreamEvent);
 
   const after = useChatStore.getState().messages;
   expect(after).toHaveLength(1);

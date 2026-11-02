@@ -78,6 +78,16 @@ import {
   QuickCompletionResponseSchema,
   RecordFeedbackResponseSchema,
   ResetConversationRuntimeResponseSchema,
+  ClaimArtifactVersionResponseSchema,
+  ListTaskArtifactsResponseSchema,
+  ListArtifactVersionsResponseSchema,
+  GetArtifactVersionBodyResponseSchema,
+  SubmitArtifactFeedbackResponseSchema,
+  ListArtifactFeedbackResponseSchema,
+  RecordArtifactCheckResponseSchema,
+  ListArtifactChecksResponseSchema,
+  AcceptArtifactVersionResponseSchema,
+  ListArtifactAcceptancesResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
   AdvanceCapabilityAcceptanceScenarioClockRequest,
@@ -5797,6 +5807,147 @@ export const api = {
       'agent_list_turn_feedback',
       ListTurnFeedbackResponseSchema,
       { turn_id: turnId },
+    ),
+
+  // ── TW-D3 logical task artifacts ────────────────────────────────────────
+  claimTaskArtifactVersion: (input: {
+    conversationId: string;
+    artifactId?: string;
+    name?: string;
+    expectedBaseVersionId?: string;
+    origin:
+      | 'ARTIFACT_VERSION_ORIGIN_AGENT_OUTPUT'
+      | 'ARTIFACT_VERSION_ORIGIN_HUMAN_EDIT'
+      | 'ARTIFACT_VERSION_ORIGIN_FEEDBACK_REVISION'
+      | 'ARTIFACT_VERSION_ORIGIN_IMPORT';
+    sourceTurnId?: string;
+    sourceMessageId?: string;
+    body?: string;
+    contentType?: string;
+    summary?: string;
+    feedbackId?: string;
+    adoptedAttachmentRefs?: string[];
+    clientIdempotencyKey?: string;
+  }) =>
+    invokeRustProto(
+      'agent_task_artifact_claim_version',
+      ClaimArtifactVersionResponseSchema,
+      {
+        conversation_id: input.conversationId,
+        artifact_id: input.artifactId ?? '',
+        name: input.name ?? '',
+        expected_base_version_id: input.expectedBaseVersionId ?? '',
+        origin: input.origin,
+        source_turn_id: input.sourceTurnId ?? '',
+        source_message_id: input.sourceMessageId ?? '',
+        body: input.body ?? '',
+        content_type: input.contentType ?? '',
+        summary: input.summary ?? '',
+        feedback_id: input.feedbackId ?? '',
+        adopted_attachment_refs: input.adoptedAttachmentRefs ?? [],
+        client_idempotency_key: input.clientIdempotencyKey ?? '',
+      },
+    ),
+
+  listTaskArtifacts: (conversationId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_list',
+      ListTaskArtifactsResponseSchema,
+      { conversation_id: conversationId },
+    ),
+
+  listTaskArtifactVersions: (artifactId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_versions',
+      ListArtifactVersionsResponseSchema,
+      { artifact_id: artifactId },
+    ),
+
+  getTaskArtifactVersionBody: (versionId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_body_get',
+      GetArtifactVersionBodyResponseSchema,
+      { version_id: versionId },
+    ),
+
+  submitTaskArtifactFeedback: (input: {
+    artifactId: string;
+    baseVersionId: string;
+    kind: 'ARTIFACT_FEEDBACK_KIND_SELECTION' | 'ARTIFACT_FEEDBACK_KIND_COMMENT';
+    anchorText?: string;
+    instruction: string;
+    clientIdempotencyKey?: string;
+  }) =>
+    invokeRustProto(
+      'agent_task_artifact_feedback_submit',
+      SubmitArtifactFeedbackResponseSchema,
+      {
+        artifact_id: input.artifactId,
+        base_version_id: input.baseVersionId,
+        kind: input.kind,
+        anchor_text: input.anchorText ?? '',
+        instruction: input.instruction,
+        client_idempotency_key: input.clientIdempotencyKey ?? '',
+      },
+    ),
+
+  listTaskArtifactFeedback: (artifactId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_feedback_list',
+      ListArtifactFeedbackResponseSchema,
+      { artifact_id: artifactId },
+    ),
+
+  recordTaskArtifactCheck: (input: {
+    artifactId: string;
+    versionId: string;
+    checkType: 'ARTIFACT_CHECK_TYPE_STRUCTURAL' | 'ARTIFACT_CHECK_TYPE_HUMAN_REVIEW';
+    result: 'ARTIFACT_CHECK_RESULT_PASSED' | 'ARTIFACT_CHECK_RESULT_FAILED';
+    detail?: string;
+    environment?: string;
+    clientIdempotencyKey?: string;
+  }) =>
+    invokeRustProto(
+      'agent_task_artifact_check_record',
+      RecordArtifactCheckResponseSchema,
+      {
+        artifact_id: input.artifactId,
+        version_id: input.versionId,
+        check_type: input.checkType,
+        result: input.result,
+        detail: input.detail ?? '',
+        environment: input.environment ?? '',
+        client_idempotency_key: input.clientIdempotencyKey ?? '',
+      },
+    ),
+
+  listTaskArtifactChecks: (artifactId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_check_list',
+      ListArtifactChecksResponseSchema,
+      { artifact_id: artifactId },
+    ),
+
+  acceptTaskArtifactVersion: (
+    artifactId: string,
+    versionId: string,
+    clientIdempotencyKey?: string,
+  ) =>
+    invokeRustProto(
+      'agent_task_artifact_accept',
+      AcceptArtifactVersionResponseSchema,
+      {
+        artifact_id: artifactId,
+        version_id: versionId,
+        client_idempotency_key: clientIdempotencyKey ?? '',
+      },
+    ),
+
+  listTaskArtifactAcceptances: (artifactId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_acceptance_list',
+      ListArtifactAcceptancesResponseSchema,
+      { artifact_id: artifactId },
     ),
 
   createAgentCollaborationTask: (input: AgentCollaborationCreateInput) =>

@@ -45,6 +45,7 @@ import { MessageActionBar } from '../messages';
 import { ForwardMessageModal } from './ForwardMessageModal';
 import { ToolCallsBlock } from './ToolCallCard';
 import { TurnArtifactBar } from './TurnArtifactBar';
+import { DocumentArtifactActions } from '../agent/workbench/DocumentArtifactActions';
 import { ThinkingIndicator } from './ThinkingBlock';
 import { chatMarkdownProps } from './markdownConfig';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
@@ -1313,6 +1314,12 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             transition: 'opacity 0.2s',
           }}
         />
+      )}
+      {/* TW-D3: promote the completed assistant bytes into the artifact system. */}
+      {!message.loading && message.content && (
+        <div style={{ alignSelf: 'flex-start' }}>
+          <DocumentArtifactActions message={message} />
+        </div>
       )}
       <ForwardMessageModal
         open={forwardOpen}
