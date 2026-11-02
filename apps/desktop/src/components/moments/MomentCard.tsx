@@ -549,6 +549,7 @@ export const MomentCard = memo(function MomentCard({
               <div style={{ marginTop: 8 }} onClick={(event) => event.stopPropagation()}>
                 <PrivateMediaGrid
                   media={privateProjection.content.media}
+                  postId={post.id}
                   onOpen={(objectId) => void openPrivateMedia(post.id, objectId)}
                 />
               </div>

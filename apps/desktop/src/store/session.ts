@@ -4,6 +4,7 @@ import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
 import { sessionIdentityScope } from '../kernel/sessionIdentity';
 import { avatarAssets } from '../services/avatarAssets';
+import { clearPrivateMediaLocalPreviews } from '../services/privateMediaLocalPreview';
 import {
   accessSubmissionDescriptor,
   completeAccessSubmission,
@@ -157,6 +158,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
 
   reset: () => set((state) => {
     avatarAssets.unbindSession();
+    clearPrivateMediaLocalPreviews();
     return {
       ...initialState,
       sessionEpoch: state.sessionEpoch + 1,
@@ -262,6 +264,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
         }
         set((state) => {
           avatarAssets.unbindSession();
+          clearPrivateMediaLocalPreviews();
           return {
             currentUser: null,
             authenticated: false,
