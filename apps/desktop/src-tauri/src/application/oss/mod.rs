@@ -449,7 +449,19 @@ pub fn upload_agent_attachment(
                 );
             }
         };
-    if uploaded.mime_type.trim().to_ascii_lowercase() != mime_type
+    // Compare the MIME essence: Go's mime.TypeByExtension reports
+    // "text/plain; charset=utf-8" for .txt while the requested override is
+    // "text/plain". Parameters never change the admitted material type.
+    let uploaded_mime = uploaded
+        .mime_type
+        .trim()
+        .to_ascii_lowercase()
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if uploaded_mime != mime_type
         || uploaded.size <= 0
         || uploaded.size as u64 > AGENT_ATTACHMENT_MAX_BYTES
     {
@@ -511,7 +523,7 @@ pub fn upload_agent_attachment(
     let attachment = AgentAttachmentUploaded {
         attachment_id: Ulid::new().to_string(),
         object_ref: format!("oss:{}", uploaded.key),
-        mime_type: uploaded.mime_type,
+        mime_type: uploaded_mime,
         size_bytes: uploaded.size.max(0) as u64,
         checksum: format!("sha256:{}", checksum.to_ascii_lowercase()),
         filename: filename.to_string(),
