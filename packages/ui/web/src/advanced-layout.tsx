@@ -86,16 +86,16 @@ export function CommandPalette({open,onDismiss,...props}:CommandPickerProps&{ope
   return <Dialog open={open} onDismiss={onDismiss} title={props.label}><CommandPicker {...props} onSelect={id=>{onDismiss();props.onSelect(id);}}/></Dialog>;
 }
 export interface CalendarEvent {id:string;date:string;label:string;onActivate?:()=>void;}
-export function CalendarView({month,events,label,onMonthChange}: {month:string;events:readonly CalendarEvent[];label:string;onMonthChange:(month:string)=>void}) {
+export function CalendarView({month,events,label,onMonthChange,previousMonthLabel='Previous month',nextMonthLabel='Next month',invalidMonthLabel='Invalid calendar month'}: {month:string;events:readonly CalendarEvent[];label:string;onMonthChange:(month:string)=>void;previousMonthLabel?:string;nextMonthLabel?:string;invalidMonthLabel?:string}) {
   const parsed=/^(\d{4})-(\d{2})$/.exec(month);
-  if(!parsed)return <div role="alert">Invalid calendar month</div>;
+  if(!parsed)return <div role="alert">{invalidMonthLabel}</div>;
   const year=Number(parsed[1]),index=Number(parsed[2])-1;
-  if(index<0||index>11)return <div role="alert">Invalid calendar month</div>;
+  if(index<0||index>11)return <div role="alert">{invalidMonthLabel}</div>;
   const days=new Date(year,index+1,0).getDate(),start=(new Date(year,index,1).getDay()+6)%7;
   const change=(offset:number)=>{const next=new Date(year,index+offset,1);onMonthChange(`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}`);};
-  return <section aria-label={label}><ActionGroup label="Calendar navigation"><Button actionId="calendar.previous" label="Previous month" onActivate={()=>change(-1)}/>
+  return <section aria-label={label}><ActionGroup label="Calendar navigation"><Button actionId="calendar.previous" label={previousMonthLabel} onActivate={()=>change(-1)}/>
     <TextField aria-label="Month" type="month" value={month} onChange={e=>onMonthChange(e.target.value)}/>
-    <Button actionId="calendar.next" label="Next month" onActivate={()=>change(1)}/></ActionGroup>
+    <Button actionId="calendar.next" label={nextMonthLabel} onActivate={()=>change(1)}/></ActionGroup>
     <div className="pt-calendar">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(day=><div key={day}>{day}</div>)}
       {Array.from({length:start},(_,i)=><div key={`blank-${i}`}/>)}
       {Array.from({length:days},(_,i)=>{const date=`${month}-${String(i+1).padStart(2,'0')}`;return <div key={date} className="pt-calendar-day">

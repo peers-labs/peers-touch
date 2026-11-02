@@ -8,7 +8,7 @@
 
 ## 工作树与文档真源
 
-- 工作树：`/Users/bytedance/Documents/Projects/peers-touch/peers-ui-system`。
+- 工作树：`<workspace-root>/peers-ui-system`。
 - 分支：`feat/peers-ui-system-20261028`。
 - 本次核实 HEAD：`879e4d51133b7372272b2cba0037f04d63e73913`；
   文档及大量已有改动尚未提交，HEAD不能独自表示当前工作区内容。
@@ -262,7 +262,7 @@ canonical记录：本工作树
 
 ```sh
 node tooling/scripts/local-dev/dev-work.mjs status \
-  --workspace-root /Users/bytedance/Documents/Projects/peers-touch/peers-ui-system \
+  --workspace-root <workspace-root>/peers-ui-system \
   --task uiux-project-scope-20261029
 ```
 

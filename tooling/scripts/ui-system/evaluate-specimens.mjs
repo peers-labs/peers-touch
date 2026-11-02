@@ -669,9 +669,9 @@ async function main() {
   fs.writeFileSync(path.join(evidenceRoot, 'latest.json'), JSON.stringify(
     { outDir, runAt: evidence.runAt, commit: sourceIdentityCached.commit, rollup: evidence.rollup }, null, 2));
 
-  console.log(JSON.stringify({ outDir, rollup: evidence.rollup, failedCapabilities: failed.map(r => r.capabilityId ?? 'foundation-baseline'),
+  process.stdout.write(JSON.stringify({ outDir, rollup: evidence.rollup, failedCapabilities: failed.map(r => r.capabilityId ?? 'foundation-baseline'),
     reports: evidence.reports.map(r => ({ capabilityId: r.capabilityId ?? 'foundation-baseline', rollup: r.rollup,
-      scenarios: r.scenarios?.map(s => `${s.id}:${s.status}`) })) }, null, 2));
+      scenarios: r.scenarios?.map(s => `${s.id}:${s.status}`) })) }, null, 2) + '\n');
   process.exitCode = failed.length ? 1 : 0;
 }
 

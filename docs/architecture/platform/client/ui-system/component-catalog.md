@@ -100,7 +100,7 @@
 - **antd 候选**：无同名候选。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`ActionIcon`（417 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/AgentSidebar.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSidebar.tsx#L8) · [apps/desktop/src/components/AppSideNav.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AppSideNav.tsx#L3) · [apps/desktop/src/components/BuilderPanel.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/BuilderPanel.tsx#L3)。
+- **Peers 代表调用**：[apps/desktop/src/components/AgentSidebar.tsx:8](../../../../../apps/desktop/src/components/AgentSidebar.tsx#L8) · [apps/desktop/src/components/AppSideNav.tsx:3](../../../../../apps/desktop/src/components/AppSideNav.tsx#L3) · [apps/desktop/src/components/BuilderPanel.tsx:3](../../../../../apps/desktop/src/components/BuilderPanel.tsx#L3)。
 - **LobeHub 代表调用**：[src/components/ImageItem/index.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ImageItem/index.tsx#L2) · [src/components/KeyValueEditor/index.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/KeyValueEditor/index.tsx#L1)。
 - **何时选哪种 / 打样场景**：消息复制、行尾更多、头部搜索；高风险删除需可见名称或确认；常用动作可加 Tooltip。
 - **相邻选择与禁用场景**：主要承诺用文本 Button；持久开关用 ToggleButton。
@@ -189,8 +189,8 @@
 - **antd 候选**：`Alert`（31 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Alert`（64 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/ModelServiceTab.tsx:12](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ModelServiceTab.tsx#L12) · [apps/desktop/src/components/SkillsTab.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillsTab.tsx#L8) · [apps/desktop/src/components/settings/MemorySettingsTab.tsx:14](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/MemorySettingsTab.tsx#L14)。
-- **antd 代表调用**：[apps/desktop/src/components/MCPTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/MCPTab.tsx#L4) · [apps/desktop/src/components/agent/AgentCapabilityInventoryPanel.tsx:5](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/agent/AgentCapabilityInventoryPanel.tsx#L5)。
+- **Peers 代表调用**：[apps/desktop/src/components/ModelServiceTab.tsx:12](../../../../../apps/desktop/src/components/ModelServiceTab.tsx#L12) · [apps/desktop/src/components/SkillsTab.tsx:8](../../../../../apps/desktop/src/components/SkillsTab.tsx#L8) · [apps/desktop/src/components/settings/MemorySettingsTab.tsx:14](../../../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx#L14)。
+- **antd 代表调用**：[apps/desktop/src/components/MCPTab.tsx:4](../../../../../apps/desktop/src/components/MCPTab.tsx#L4) · [apps/desktop/src/components/agent/AgentCapabilityInventoryPanel.tsx:5](../../../../../apps/desktop/src/components/agent/AgentCapabilityInventoryPanel.tsx#L5)。
 - **LobeHub 代表调用**：[src/components/ErrorBoundary/AlertFallback.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ErrorBoundary/AlertFallback.tsx#L3) · [src/features/Acceptance/Report/TerminalEvidence/TerminalEvidenceCard.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Acceptance/Report/TerminalEvidence/TerminalEvidenceCard.tsx#L3)。
 - **何时选哪种 / 打样场景**：字段组保存失败内联；权限不足显示下一步；可忽略提示可关闭；系统故障才用全局条。
 - **相邻选择与禁用场景**：短暂完成用 Toast；整页阻断用 Result。
@@ -244,7 +244,7 @@
 - **antd 候选**：`AutoComplete`（2 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`AutoComplete`（1 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/settings/AccountTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/AccountTab.tsx#L4) · [apps/desktop/src/components/settings/ProviderDetail.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/ProviderDetail.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/AccountTab.tsx:4](../../../../../apps/desktop/src/components/settings/AccountTab.tsx#L4) · [apps/desktop/src/components/settings/ProviderDetail.tsx:4](../../../../../apps/desktop/src/components/settings/ProviderDetail.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/MCPStdioCommandInput/index.tsx:10](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/MCPStdioCommandInput/index.tsx#L10)。
 - **何时选哪种 / 打样场景**：搜索历史可自由提交；联系人输入候选需显示身份；远端建议采用防抖和取消。
 - **相邻选择与禁用场景**：只能选已有值用 Select；@实体用 MentionPicker。
@@ -273,10 +273,10 @@
 - **上游定义**：[Avatar:18](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/index.ts#L18) · [AvatarGroup:16](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/Avatar/index.ts#L16)。
 - **Peers 直接使用**：`Avatar`（5 导入位点，8 JSX 位点；desktop）。
 - **antd 候选**：`Avatar`（10 位点）。
-- **本地替代候选**：[apps/desktop/src/components/common/SquareAvatar.tsx:79](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/common/SquareAvatar.tsx#L79) · [apps/desktop/src/components/common/UserSquareAvatar.tsx:22](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/common/UserSquareAvatar.tsx#L22) · [packages/prototypes/desktop/shared/PrototypeAgentAvatar.tsx:26](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shared/PrototypeAgentAvatar.tsx#L26) · [packages/prototypes/mobile/chat/src/components/UserSquareAvatar.tsx:19](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/mobile/chat/src/components/UserSquareAvatar.tsx#L19)。
+- **本地替代候选**：[apps/desktop/src/components/common/SquareAvatar.tsx:79](../../../../../apps/desktop/src/components/common/SquareAvatar.tsx#L79) · [apps/desktop/src/components/common/UserSquareAvatar.tsx:22](../../../../../apps/desktop/src/components/common/UserSquareAvatar.tsx#L22) · [packages/prototypes/desktop/shared/PrototypeAgentAvatar.tsx:26](../../../../../packages/prototypes/desktop/shared/PrototypeAgentAvatar.tsx#L26) · [packages/prototypes/mobile/chat/src/components/UserSquareAvatar.tsx:19](../../../../../packages/prototypes/mobile/chat/src/components/UserSquareAvatar.tsx#L19)。
 - **LobeHub 直接使用**：`Avatar`（174 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/SkillsTab.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillsTab.tsx#L8) · [apps/desktop/src/components/chat/MentionPopup.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/MentionPopup.tsx#L3) · [apps/desktop/src/components/chat/MentionTag.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/MentionTag.tsx#L3)。
-- **antd 代表调用**：[apps/desktop/src/components/settings/ProviderMenu.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/ProviderMenu.tsx#L4) · [apps/desktop/src/pages/AgentGroupsPage.tsx:6](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/pages/AgentGroupsPage.tsx#L6)。
+- **Peers 代表调用**：[apps/desktop/src/components/SkillsTab.tsx:8](../../../../../apps/desktop/src/components/SkillsTab.tsx#L8) · [apps/desktop/src/components/chat/MentionPopup.tsx:3](../../../../../apps/desktop/src/components/chat/MentionPopup.tsx#L3) · [apps/desktop/src/components/chat/MentionTag.tsx:3](../../../../../apps/desktop/src/components/chat/MentionTag.tsx#L3)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/ProviderMenu.tsx:4](../../../../../apps/desktop/src/components/settings/ProviderMenu.tsx#L4) · [apps/desktop/src/pages/AgentGroupsPage.tsx:6](../../../../../apps/desktop/src/pages/AgentGroupsPage.tsx#L6)。
 - **LobeHub 代表调用**：[src/business/client/hooks/useWorkspaceOptionLabel.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/business/client/hooks/useWorkspaceOptionLabel.tsx#L4) · [src/components/Avatar/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/Avatar/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：个人圆角方形；在线点仅附加；多人堆叠显示总数和完整列表入口。
 - **相邻选择与禁用场景**：群集合用 GroupAvatar；权限用 TrustIndicator。
@@ -312,7 +312,7 @@
 - **antd 候选**：`Badge`（15 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Badge`（11 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/AppSideNav.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AppSideNav.tsx#L4) · [apps/desktop/src/components/NotificationBell.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/NotificationBell.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/AppSideNav.tsx:4](../../../../../apps/desktop/src/components/AppSideNav.tsx#L4) · [apps/desktop/src/components/NotificationBell.tsx:4](../../../../../apps/desktop/src/components/NotificationBell.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/FileParsingStatus/index.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/FileParsingStatus/index.tsx#L1) · [src/features/Auth/SignIn/SignInEmailStep.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Auth/SignIn/SignInEmailStep.tsx#L2)。
 - **何时选哪种 / 打样场景**：未读计数截断 99+ 并提供完整可读数；在线状态仅在解释需要时显示。
 - **相邻选择与禁用场景**：状态名称用 StatusTag；可选条件用 FilterChip。
@@ -408,8 +408,8 @@
 - **antd 候选**：`Button`（90 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Button`（615 位点）；`SplitButton`（4 位点）。
-- **Peers 代表调用**：[apps/desktop/src/applet/AppletContainerShell.tsx:6](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/applet/AppletContainerShell.tsx#L6) · [apps/desktop/src/applet/LynxDebugPanel.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/applet/LynxDebugPanel.tsx#L3) · [apps/desktop/src/components/AgentSettingsModal.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSettingsModal.tsx#L4)。
-- **antd 代表调用**：[apps/desktop/src/applet/LynxContainer.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/applet/LynxContainer.tsx#L3) · [apps/desktop/src/components/chat/FollowUpChips.tsx:2](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/FollowUpChips.tsx#L2)。
+- **Peers 代表调用**：[apps/desktop/src/applet/AppletContainerShell.tsx:6](../../../../../apps/desktop/src/applet/AppletContainerShell.tsx#L6) · [apps/desktop/src/applet/LynxDebugPanel.tsx:3](../../../../../apps/desktop/src/applet/LynxDebugPanel.tsx#L3) · [apps/desktop/src/components/AgentSettingsModal.tsx:4](../../../../../apps/desktop/src/components/AgentSettingsModal.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/applet/LynxContainer.tsx:3](../../../../../apps/desktop/src/applet/LynxContainer.tsx#L3) · [apps/desktop/src/components/chat/FollowUpChips.tsx:2](../../../../../apps/desktop/src/components/chat/FollowUpChips.tsx#L2)。
 - **LobeHub 代表调用**：[src/components/404/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/404/index.tsx#L3) · [src/components/AsyncError/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/AsyncError/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：保存/发送/停止/取消/删除/重试/复制/批准各用独立场景；emphasis、tone、density 正交。
 - **相邻选择与禁用场景**：导航用 Link；持久选择用 ToggleButton；详见 button-spec.md。
@@ -473,7 +473,7 @@
 - **antd 候选**：`Checkbox` / Group（15 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Checkbox`（40 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/LogsTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/LogsTab.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](../../../../../apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/LogsTab.tsx:4](../../../../../apps/desktop/src/components/LogsTab.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/ChatGroupWizard/ChatGroupWizard.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ChatGroupWizard/ChatGroupWizard.tsx#L3) · [src/components/MemberSelectionModal/MemberSelectionModal.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/MemberSelectionModal/MemberSelectionModal.tsx#L4)。
 - **何时选哪种 / 打样场景**：批量选择；接受条款；父项 mixed；多个偏好可同时选。
 - **相邻选择与禁用场景**：立即生效设置用 Switch；互斥值用 Radio。
@@ -628,7 +628,7 @@
 - **antd 候选**：`ConfigProvider`（6 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`ConfigProvider`（3 位点）。
-- **antd 代表调用**：[apps/x-config/console/src/App.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/x-config/console/src/App.tsx#L3) · [packages/prototypes/control/x-config/src/XConfigPrototype.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/control/x-config/src/XConfigPrototype.tsx#L3)。
+- **antd 代表调用**：[apps/x-config/console/src/App.tsx:3](../../../../../apps/x-config/console/src/App.tsx#L3) · [packages/prototypes/control/x-config/src/XConfigPrototype.tsx:3](../../../../../packages/prototypes/control/x-config/src/XConfigPrototype.tsx#L3)。
 - **LobeHub 代表调用**：[src/features/AuthShell/AuthThemeLite.tsx:7](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/AuthShell/AuthThemeLite.tsx#L7) · [src/layout/GlobalProvider/AppTheme.tsx:8](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/layout/GlobalProvider/AppTheme.tsx#L8)。
 - **何时选哪种 / 打样场景**：应用根唯一配置；嵌入宿主继承；测试显式注入。
 - **相邻选择与禁用场景**：不是业务 Store；ThemeBoundary 只覆盖获准 token。
@@ -689,7 +689,7 @@
 - **antd 候选**：`DatePicker` / RangePicker（4 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`DayjsDatePicker`（2 位点）；`DayjsDateRangePicker`（1 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/settings/MyFilesSettings.tsx:28](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/MyFilesSettings.tsx#L28) · [apps/station/app/subserver/dashboard/web/src/pages/AccessGatesPage.tsx:16](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/station/app/subserver/dashboard/web/src/pages/AccessGatesPage.tsx#L16)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/MyFilesSettings.tsx:28](../../../../../apps/desktop/src/components/settings/MyFilesSettings.tsx#L28) · [apps/station/app/subserver/dashboard/web/src/pages/AccessGatesPage.tsx:16](../../../../../apps/station/app/subserver/dashboard/web/src/pages/AccessGatesPage.tsx#L16)。
 - **LobeHub 代表调用**：[src/features/Settings/apikey/features/ApiKeyDatePicker/index.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Settings/apikey/features/ApiKeyDatePicker/index.tsx#L2) · [src/features/Settings/stats/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Settings/stats/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：任务截止日期使用 date-only；统计区间显式两端；时间点需时区。
 - **相邻选择与禁用场景**：选时间用 TimeField；手写表达式用 TextField。
@@ -742,7 +742,7 @@
 - **antd 候选**：`Descriptions` / Item（9 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Descriptions`（2 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/SkillsTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillsTab.tsx#L4) · [apps/desktop/src/components/portal/views/AgentOverviewView.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/portal/views/AgentOverviewView.tsx#L3)。
+- **antd 代表调用**：[apps/desktop/src/components/SkillsTab.tsx:4](../../../../../apps/desktop/src/components/SkillsTab.tsx#L4) · [apps/desktop/src/components/portal/views/AgentOverviewView.tsx:3](../../../../../apps/desktop/src/components/portal/views/AgentOverviewView.tsx#L3)。
 - **LobeHub 代表调用**：[src/features/ResourceManager/FileDetail.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/ResourceManager/FileDetail.tsx#L3) · [src/features/Settings/creds/features/ViewCredModal/Content.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Settings/creds/features/ViewCredModal/Content.tsx#L4)。
 - **何时选哪种 / 打样场景**：身份详情、设备属性、权限摘要；可复制值；多列降为单列。
 - **相邻选择与禁用场景**：批量记录用 DataTable；可编辑表单用 Field。
@@ -766,7 +766,7 @@
 - **antd 候选**：`Divider`（8 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Divider`（57 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/ModelProviderSelect.tsx:6](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ModelProviderSelect.tsx#L6) · [apps/desktop/src/components/SkillAppletSelector.tsx:5](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillAppletSelector.tsx#L5)。
+- **antd 代表调用**：[apps/desktop/src/components/ModelProviderSelect.tsx:6](../../../../../apps/desktop/src/components/ModelProviderSelect.tsx#L6) · [apps/desktop/src/components/SkillAppletSelector.tsx:5](../../../../../apps/desktop/src/components/SkillAppletSelector.tsx#L5)。
 - **LobeHub 代表调用**：[src/components/ChangelogModal/ChangelogContent.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ChangelogModal/ChangelogContent.tsx#L1) · [src/components/Skeleton/Tasks.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/Skeleton/Tasks.tsx#L3)。
 - **何时选哪种 / 打样场景**：菜单动作分组；设置组间隔；正文 hr 表示主题变化。
 - **相邻选择与禁用场景**：仅需留白用 spacing；无需每行分隔。
@@ -807,9 +807,9 @@
 - **上游定义**：[DraggablePanel:20](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L20) · [DraggablePanelBody:2](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L2) · [DraggablePanelContainer:4](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L4) · [DraggablePanelContent:6](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L6) · [DraggablePanelFooter:8](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L8) · [DraggablePanelHandle:10](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L10) · [DraggablePanelHeader:12](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L12) · [DraggablePanelRoot:14](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L14) · [DraggablePanelToggle:16](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/DraggablePanel/index.ts#L16)。
 - **Peers 直接使用**：`DraggablePanel`（2 导入位点，2 JSX 位点；desktop）。
 - **antd 候选**：无同名候选。
-- **本地替代候选**：[apps/desktop/src/components/agent/workbench/PanelToggleDock.tsx:10](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/agent/workbench/PanelToggleDock.tsx#L10) · [packages/prototypes/desktop/shared/PanelToggleButton.tsx:32](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shared/PanelToggleButton.tsx#L32) · [packages/prototypes/desktop/shared/PanelToggleButton.tsx:82](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shared/PanelToggleButton.tsx#L82)。
+- **本地替代候选**：[apps/desktop/src/components/agent/workbench/PanelToggleDock.tsx:10](../../../../../apps/desktop/src/components/agent/workbench/PanelToggleDock.tsx#L10) · [packages/prototypes/desktop/shared/PanelToggleButton.tsx:32](../../../../../packages/prototypes/desktop/shared/PanelToggleButton.tsx#L32) · [packages/prototypes/desktop/shared/PanelToggleButton.tsx:82](../../../../../packages/prototypes/desktop/shared/PanelToggleButton.tsx#L82)。
 - **LobeHub 直接使用**：`DraggablePanel`（9 位点）；`DraggablePanelContainer`（1 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/BuilderPanel.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/BuilderPanel.tsx#L3) · [apps/desktop/src/components/portal/PortalPanel.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/portal/PortalPanel.tsx#L3)。
+- **Peers 代表调用**：[apps/desktop/src/components/BuilderPanel.tsx:3](../../../../../apps/desktop/src/components/BuilderPanel.tsx#L3) · [apps/desktop/src/components/portal/PortalPanel.tsx:3](../../../../../apps/desktop/src/components/portal/PortalPanel.tsx#L3)。
 - **LobeHub 代表调用**：[src/features/Acceptance/Viewer/Conversation/CollaboratorConversationRail.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Acceptance/Viewer/Conversation/CollaboratorConversationRail.tsx#L3) · [src/features/Acceptance/Viewer/History/AcceptanceLedgerRail.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Acceptance/Viewer/History/AcceptanceLedgerRail.tsx#L3)。
 - **何时选哪种 / 打样场景**：会话侧栏、Agent 检视区；min/max/折叠/恢复宽度。
 - **相邻选择与禁用场景**：临时细节用 Drawer；浮动窗用 FloatingPanel。
@@ -872,7 +872,7 @@
 - **antd 候选**：`Drawer`（11 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Drawer`（16 位点）；`DrawerPopup`（1 位点）；`DrawerPortal`（1 位点）；`DrawerRoot`（1 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/SkillsTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillsTab.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](../../../../../apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/SkillsTab.tsx:4](../../../../../apps/desktop/src/components/SkillsTab.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/HtmlPreview/PreviewDrawer.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/HtmlPreview/PreviewDrawer.tsx#L4) · [src/features/Acceptance/AcceptanceDrawer.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Acceptance/AcceptanceDrawer.tsx#L3)。
 - **何时选哪种 / 打样场景**：桌面消息详情；移动 sheet；需输入的侧任务。
 - **相邻选择与禁用场景**：不可绕过承诺用 Dialog；常驻工具用 Panel。
@@ -976,7 +976,7 @@
 - **上游定义**：[EmojiPicker:131](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/index.ts#L131)。
 - **Peers 直接使用**：该族无 @lobehub/ui 直接引用；不是产品缺失结论。
 - **antd 候选**：无同名候选。
-- **本地替代候选**：[apps/mobile/src/components/reactions/ReactionPicker.tsx:12](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/components/reactions/ReactionPicker.tsx#L12) · [packages/prototypes/shared/ReactionPicker.tsx:18](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/shared/ReactionPicker.tsx#L18)。
+- **本地替代候选**：[apps/mobile/src/components/reactions/ReactionPicker.tsx:12](../../../../../apps/mobile/src/components/reactions/ReactionPicker.tsx#L12) · [packages/prototypes/shared/ReactionPicker.tsx:18](../../../../../packages/prototypes/shared/ReactionPicker.tsx#L18)。
 - **LobeHub 直接使用**：该族未直接引用。
 - **何时选哪种 / 打样场景**：正文插入 emoji；消息 reaction 使用受限集；最近使用仅本地。
 - **相邻选择与禁用场景**：人物身份用 Avatar；不使用大型图像承担文本语义。
@@ -1011,8 +1011,8 @@
 - **antd 候选**：`Empty`（60 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Empty`（107 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/portal/views/AgentOverviewView.tsx:2](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/portal/views/AgentOverviewView.tsx#L2) · [apps/desktop/src/components/portal/views/WorkingFilesView.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/portal/views/WorkingFilesView.tsx#L3) · [apps/desktop/src/components/portal/views/WorkingProgressView.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/portal/views/WorkingProgressView.tsx#L3)。
-- **antd 代表调用**：[apps/desktop/src/components/LogsTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/LogsTab.tsx#L4) · [apps/desktop/src/components/MCPTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/MCPTab.tsx#L4)。
+- **Peers 代表调用**：[apps/desktop/src/components/portal/views/AgentOverviewView.tsx:2](../../../../../apps/desktop/src/components/portal/views/AgentOverviewView.tsx#L2) · [apps/desktop/src/components/portal/views/WorkingFilesView.tsx:3](../../../../../apps/desktop/src/components/portal/views/WorkingFilesView.tsx#L3) · [apps/desktop/src/components/portal/views/WorkingProgressView.tsx:3](../../../../../apps/desktop/src/components/portal/views/WorkingProgressView.tsx#L3)。
+- **antd 代表调用**：[apps/desktop/src/components/LogsTab.tsx:4](../../../../../apps/desktop/src/components/LogsTab.tsx#L4) · [apps/desktop/src/components/MCPTab.tsx:4](../../../../../apps/desktop/src/components/MCPTab.tsx#L4)。
 - **LobeHub 代表调用**：[src/business/client/features/SandboxStorageUpsell.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/business/client/features/SandboxStorageUpsell.tsx#L3) · [src/components/ChatGroupWizard/ChatGroupWizard.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ChatGroupWizard/ChatGroupWizard.tsx#L3)。
 - **何时选哪种 / 打样场景**：初次使用=创建；过滤无结果=清除筛选；权限不可见=请求访问；已清空=状态说明。
 - **相邻选择与禁用场景**：加载用 Skeleton；错误用 RecoveryState。
@@ -1066,7 +1066,7 @@
 - **antd 候选**：`Flex`（1 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Center`（210 位点）；`Flexbox`（1707 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/messages/ClarificationQuestion.tsx:2](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/messages/ClarificationQuestion.tsx#L2)。
+- **antd 代表调用**：[apps/desktop/src/components/messages/ClarificationQuestion.tsx:2](../../../../../apps/desktop/src/components/messages/ClarificationQuestion.tsx#L2)。
 - **LobeHub 代表调用**：[src/business/client/features/SandboxStorageUpsell.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/business/client/features/SandboxStorageUpsell.tsx#L3) · [src/components/AsyncBoundary/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/AsyncBoundary/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：纵向内容用 Stack；行尾动作用 Inline；响应式换行显式。
 - **相邻选择与禁用场景**：二维轨道用 Grid；边界用 Surface。
@@ -1217,7 +1217,7 @@
 - **antd 候选**：`Form` / Item（21 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Form`（1 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/settings/MemorySettingsTab.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/MemorySettingsTab.tsx#L3)。
+- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](../../../../../apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/settings/MemorySettingsTab.tsx:3](../../../../../apps/desktop/src/components/settings/MemorySettingsTab.tsx#L3)。
 - **LobeHub 代表调用**：[src/features/Projects/WorkingDirectories/AdvancedSettings.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Projects/WorkingDirectories/AdvancedSettings.tsx#L4)。
 - **何时选哪种 / 打样场景**：设置表单、身份创建、Agent 配置；group/title/helper/error/footer。
 - **相邻选择与禁用场景**：即刻生效的单项用 SettingRow + Switch；展示用 KeyValueList。
@@ -1309,7 +1309,7 @@
 - **上游定义**：[GroupAvatar:151](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/index.ts#L151)。
 - **Peers 直接使用**：该族无 @lobehub/ui 直接引用；不是产品缺失结论。
 - **antd 候选**：无同名候选。
-- **本地替代候选**：[apps/desktop/src/components/common/GroupCompositeAvatar.tsx:17](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/common/GroupCompositeAvatar.tsx#L17) · [apps/desktop/src/components/common/GroupSquareAvatar.tsx:15](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/common/GroupSquareAvatar.tsx#L15)。
+- **本地替代候选**：[apps/desktop/src/components/common/GroupCompositeAvatar.tsx:17](../../../../../apps/desktop/src/components/common/GroupCompositeAvatar.tsx#L17) · [apps/desktop/src/components/common/GroupSquareAvatar.tsx:15](../../../../../apps/desktop/src/components/common/GroupSquareAvatar.tsx#L15)。
 - **LobeHub 直接使用**：`GroupAvatar`（2 位点）。
 - **LobeHub 代表调用**：[src/features/Conversation/Messages/GroupTasks/index.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Conversation/Messages/GroupTasks/index.tsx#L4) · [src/features/GroupAvatar/index.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/GroupAvatar/index.tsx#L4)。
 - **何时选哪种 / 打样场景**：成员合成头像或群自定义图；明确成员与群名。
@@ -1531,9 +1531,9 @@
 - **上游定义**：[Image:180](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/index.ts#L180) · [PreviewGroup:183](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/index.ts#L183)。
 - **Peers 直接使用**：该族无 @lobehub/ui 直接引用；不是产品缺失结论。
 - **antd 候选**：`Image`（2 位点）。
-- **本地替代候选**：[apps/desktop/src/components/chat/AttachmentItem.tsx:323](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/AttachmentItem.tsx#L323)。
+- **本地替代候选**：[apps/desktop/src/components/chat/AttachmentItem.tsx:323](../../../../../apps/desktop/src/components/chat/AttachmentItem.tsx#L323)。
 - **LobeHub 直接使用**：`Image`（24 位点）；`PreviewGroup`（4 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/moments/ImageThumbnail.tsx:2](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/moments/ImageThumbnail.tsx#L2) · [apps/desktop/src/components/moments/PrivateMediaGrid.tsx:2](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/moments/PrivateMediaGrid.tsx#L2)。
+- **antd 代表调用**：[apps/desktop/src/components/moments/ImageThumbnail.tsx:2](../../../../../apps/desktop/src/components/moments/ImageThumbnail.tsx#L2) · [apps/desktop/src/components/moments/PrivateMediaGrid.tsx:2](../../../../../apps/desktop/src/components/moments/PrivateMediaGrid.tsx#L2)。
 - **LobeHub 代表调用**：[src/components/ImageItem/index.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ImageItem/index.tsx#L2) · [src/features/Acceptance/Report/ReportViewer.tsx:11](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Acceptance/Report/ReportViewer.tsx#L11)。
 - **何时选哪种 / 打样场景**：inline、thumbnail、单图 viewer、PreviewGroup 组浏览。
 - **相邻选择与禁用场景**：文件状态用 AttachmentItem；选择用 ImageChoice。
@@ -1586,10 +1586,10 @@
 - **上游定义**：[Input:1](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/Input/index.ts#L1) · [InputNumber:2](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/Input/index.ts#L2) · [InputOTP:3](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/Input/index.ts#L3) · [InputPassword:4](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/Input/index.ts#L4) · [TextArea:6](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/Input/index.ts#L6)。
 - **Peers 直接使用**：`Input`（17 导入位点，57 JSX 位点；desktop/prototype）；`InputPassword`（2 导入位点，2 JSX 位点；desktop）；`TextArea`（8 导入位点，12 JSX 位点；desktop）。
 - **antd 候选**：`Input` / Password、Search、TextArea（69 位点）；`InputNumber`（12 位点）。
-- **本地替代候选**：[apps/desktop/src/components/common/PinInput.tsx:99](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/common/PinInput.tsx#L99)。
+- **本地替代候选**：[apps/desktop/src/components/common/PinInput.tsx:99](../../../../../apps/desktop/src/components/common/PinInput.tsx#L99)。
 - **LobeHub 直接使用**：`Input`（150 位点）；`InputNumber`（17 位点）；`InputPassword`（12 位点）；`TextArea`（77 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/AgentSettingsModal.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSettingsModal.tsx#L4) · [apps/desktop/src/components/AgentSidebar.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSidebar.tsx#L8) · [apps/desktop/src/components/CronJobDrawer.tsx:15](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/CronJobDrawer.tsx#L15)。
-- **antd 代表调用**：[apps/desktop/src/components/ChatInput.tsx:14](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ChatInput.tsx#L14) · [apps/desktop/src/components/LogsTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/LogsTab.tsx#L4)。
+- **Peers 代表调用**：[apps/desktop/src/components/AgentSettingsModal.tsx:4](../../../../../apps/desktop/src/components/AgentSettingsModal.tsx#L4) · [apps/desktop/src/components/AgentSidebar.tsx:8](../../../../../apps/desktop/src/components/AgentSidebar.tsx#L8) · [apps/desktop/src/components/CronJobDrawer.tsx:15](../../../../../apps/desktop/src/components/CronJobDrawer.tsx#L15)。
+- **antd 代表调用**：[apps/desktop/src/components/ChatInput.tsx:14](../../../../../apps/desktop/src/components/ChatInput.tsx#L14) · [apps/desktop/src/components/LogsTab.tsx:4](../../../../../apps/desktop/src/components/LogsTab.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/FeedbackModal/FeedbackContent.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/FeedbackModal/FeedbackContent.tsx#L4) · [src/components/FormInput/FormInput.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/FormInput/FormInput.tsx#L1)。
 - **何时选哪种 / 打样场景**：短文/密码/数字/PIN/多行分开；prefix/suffix/help/error 属于 Field。
 - **相邻选择与禁用场景**：查询用 SearchField；结构选择用 Select。
@@ -1652,7 +1652,7 @@
 - **antd 候选**：`List` / Item、Item.Meta（8 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`List`（5 位点）。
-- **antd 代表调用**：[apps/desktop/src/pages/moments/CircleManagePage.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/pages/moments/CircleManagePage.tsx#L4) · [apps/desktop/src/pages/moments/UserSearchPage.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/pages/moments/UserSearchPage.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/pages/moments/CircleManagePage.tsx:4](../../../../../apps/desktop/src/pages/moments/CircleManagePage.tsx#L4) · [apps/desktop/src/pages/moments/UserSearchPage.tsx:4](../../../../../apps/desktop/src/pages/moments/UserSearchPage.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/ChatGroupWizard/ChatGroupWizard.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ChatGroupWizard/ChatGroupWizard.tsx#L3) · [src/components/MemberSelectionModal/MemberSelectionModal.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/MemberSelectionModal/MemberSelectionModal.tsx#L4)。
 - **何时选哪种 / 打样场景**：联系人、会话、文件、搜索结果；meta/action 槽和共享轨道。
 - **相邻选择与禁用场景**：多列记录用 DataTable；超过测量阈值用 VirtualList。
@@ -1683,8 +1683,8 @@
 - **antd 候选**：`Typography` / Paragraph、Text、Title（165 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Markdown`（67 位点）；`SearchResultCards`（1 位点）；`Typography`（3 位点）。
-- **Peers 代表调用**：[packages/applets/remote-cli/src/AgentChat.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/applets/remote-cli/src/AgentChat.tsx#L3) · [packages/applets/web-search/src/Page.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/applets/web-search/src/Page.tsx#L3)。
-- **antd 代表调用**：[apps/desktop/src/applet/LynxContainer.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/applet/LynxContainer.tsx#L3) · [apps/desktop/src/components/ConfigBadge.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ConfigBadge.tsx#L3)。
+- **Peers 代表调用**：[packages/applets/remote-cli/src/AgentChat.tsx:3](../../../../../packages/applets/remote-cli/src/AgentChat.tsx#L3) · [packages/applets/web-search/src/Page.tsx:3](../../../../../packages/applets/web-search/src/Page.tsx#L3)。
+- **antd 代表调用**：[apps/desktop/src/applet/LynxContainer.tsx:3](../../../../../apps/desktop/src/applet/LynxContainer.tsx#L3) · [apps/desktop/src/components/ConfigBadge.tsx:3](../../../../../apps/desktop/src/components/ConfigBadge.tsx#L3)。
 - **LobeHub 代表调用**：[src/components/CommentList/CommentItem.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/CommentList/CommentItem.tsx#L4) · [src/components/StreamingMarkdown/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/StreamingMarkdown/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：消息正文、流式内容、引用/代码/搜索来源；Typography 拆为 Text。
 - **相邻选择与禁用场景**：HTML 预览用沙箱；编辑用 RichTextEditor。
@@ -1804,8 +1804,8 @@
 - **antd 候选**：`Modal`（54 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Modal`（4 位点）；`ModalClose`（1 位点）；`ModalFooter`（41 位点）；`ModalHeader`（1 位点）；`ModalHost`（2 位点）；`ModalTitle`（1 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/settings/channels/ChannelProvisioningPanel.tsx:2](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/channels/ChannelProvisioningPanel.tsx#L2) · [packages/prototypes/desktop/shell/src/LarkChannels.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shell/src/LarkChannels.tsx#L8) · [packages/prototypes/desktop/shell/src/Notifications.tsx:15](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shell/src/Notifications.tsx#L15)。
-- **antd 代表调用**：[apps/desktop/src/components/AgentSettingsModal.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSettingsModal.tsx#L3) · [apps/desktop/src/components/AgentSidebar.tsx:10](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSidebar.tsx#L10)。
+- **Peers 代表调用**：[apps/desktop/src/components/settings/channels/ChannelProvisioningPanel.tsx:2](../../../../../apps/desktop/src/components/settings/channels/ChannelProvisioningPanel.tsx#L2) · [packages/prototypes/desktop/shell/src/LarkChannels.tsx:8](../../../../../packages/prototypes/desktop/shell/src/LarkChannels.tsx#L8) · [packages/prototypes/desktop/shell/src/Notifications.tsx:15](../../../../../packages/prototypes/desktop/shell/src/Notifications.tsx#L15)。
+- **antd 代表调用**：[apps/desktop/src/components/AgentSettingsModal.tsx:3](../../../../../apps/desktop/src/components/AgentSettingsModal.tsx#L3) · [apps/desktop/src/components/AgentSidebar.tsx:10](../../../../../apps/desktop/src/components/AgentSidebar.tsx#L10)。
 - **LobeHub 代表调用**：[src/features/MobileGroupChat/Topics.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/MobileGroupChat/Topics.tsx#L1) · [src/features/Portal/Mobile.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Portal/Mobile.tsx#L3)。
 - **何时选哪种 / 打样场景**：创建编辑、删除确认、批准权限；内容/footer/标题/描述。
 - **相邻选择与禁用场景**：轻信息用 Popover；侧补充用 Drawer；非承诺不弹窗。
@@ -1863,7 +1863,7 @@
 - **antd 候选**：`Pagination`（5 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Pagination`（11 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/settings/MemorySettingsSection.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/MemorySettingsSection.tsx#L4) · [apps/desktop/src/components/settings/MyFilesSettings.tsx:28](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/MyFilesSettings.tsx#L28)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/MemorySettingsSection.tsx:4](../../../../../apps/desktop/src/components/settings/MemorySettingsSection.tsx#L4) · [apps/desktop/src/components/settings/MyFilesSettings.tsx:28](../../../../../apps/desktop/src/components/settings/MyFilesSettings.tsx#L28)。
 - **LobeHub 代表调用**：[src/features/AgentTasks/AgentTaskList/AgentTasksPage.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/AgentTasks/AgentTaskList/AgentTasksPage.tsx#L1) · [src/routes/(main)/community/(detail)/user/features/UserAgentList.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/routes/%28main%29/community/%28detail%29/user/features/UserAgentList.tsx#L3)。
 - **何时选哪种 / 打样场景**：后台记录和可深链接页码；pageSize 选择。
 - **相邻选择与禁用场景**：会话/消息流用增量加载；不硬加页码。
@@ -1898,8 +1898,8 @@
 - **antd 候选**：`Popover`（8 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Popover`（75 位点）；`PopoverPopup`（1 位点）；`PopoverPortal`（1 位点）；`PopoverPositioner`（1 位点）；`PopoverRoot`（1 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/SkillAppletSelector.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillAppletSelector.tsx#L4)。
-- **antd 代表调用**：[apps/desktop/src/components/BuilderPanel.tsx:5](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/BuilderPanel.tsx#L5) · [apps/desktop/src/components/ConfigBadge.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ConfigBadge.tsx#L3)。
+- **Peers 代表调用**：[apps/desktop/src/components/SkillAppletSelector.tsx:4](../../../../../apps/desktop/src/components/SkillAppletSelector.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/BuilderPanel.tsx:5](../../../../../apps/desktop/src/components/BuilderPanel.tsx#L5) · [apps/desktop/src/components/ConfigBadge.tsx:3](../../../../../apps/desktop/src/components/ConfigBadge.tsx#L3)。
 - **LobeHub 代表调用**：[src/components/InlineRename/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/InlineRename/index.tsx#L3) · [src/components/ManifestPreviewer/index.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ManifestPreviewer/index.tsx#L1)。
 - **何时选哪种 / 打样场景**：emoji 选择、局部说明、轻量编辑。
 - **相邻选择与禁用场景**：命令用 Menu；阻断任务用 Dialog；纯提示用 Tooltip。
@@ -1934,7 +1934,7 @@
 - **antd 候选**：`Progress`（11 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Progress`（15 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/MCPTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/MCPTab.tsx#L4) · [apps/desktop/src/components/SkillsTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillsTab.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/MCPTab.tsx:4](../../../../../apps/desktop/src/components/MCPTab.tsx#L4) · [apps/desktop/src/components/SkillsTab.tsx:4](../../../../../apps/desktop/src/components/SkillsTab.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/RatingOverview/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/RatingOverview/index.tsx#L3) · [src/features/AgentTasks/features/TaskSubtaskProgressTag.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/AgentTasks/features/TaskSubtaskProgressTag.tsx#L3)。
 - **何时选哪种 / 打样场景**：附件已传字节/总字节；分阶段导出；无总量用 indeterminate。
 - **相邻选择与禁用场景**：无法测量不要显示假百分比；短等待用 BusyIndicator。
@@ -2027,7 +2027,7 @@
 - **antd 候选**：`Radio` / Group（4 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`RadioGroup`（3 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/settings/ProviderMenu.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/ProviderMenu.tsx#L4) · [apps/mobile/src/pages/ContactsPage.tsx:11](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/pages/ContactsPage.tsx#L11)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/ProviderMenu.tsx:4](../../../../../apps/desktop/src/components/settings/ProviderMenu.tsx#L4) · [apps/mobile/src/pages/ContactsPage.tsx:11](../../../../../apps/mobile/src/pages/ContactsPage.tsx#L11)。
 - **LobeHub 代表调用**：[src/features/ChatInput/ControlBar/HeteroControlBar/QuotaMenu/QuotaAccountManagerModal.tsx:6](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/ChatInput/ControlBar/HeteroControlBar/QuotaMenu/QuotaAccountManagerModal.tsx#L6) · [src/features/PluginDevModal/MCPManifestForm/index.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/PluginDevModal/MCPManifestForm/index.tsx#L2)。
 - **何时选哪种 / 打样场景**：权限范围、发布模式、少量设置选择。
 - **相邻选择与禁用场景**：更多候选用 Select；视图切换用 Segmented。
@@ -2100,7 +2100,7 @@
 - **antd 候选**：`Result`（1 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Result`（11 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/settings/OAuth2ConnectModal.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L3)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/OAuth2ConnectModal.tsx:3](../../../../../apps/desktop/src/components/settings/OAuth2ConnectModal.tsx#L3)。
 - **LobeHub 代表调用**：[src/features/Auth/MarketAuthCallback/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Auth/MarketAuthCallback/index.tsx#L3) · [src/features/Auth/OAuthAuthorizeError/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Auth/OAuthAuthorizeError/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：设备绑定完成、权限阻断、不可恢复错误。
 - **相邻选择与禁用场景**：局部消息用 InlineAlert；无内容用 EmptyState。
@@ -2180,7 +2180,7 @@
 - **antd 候选**：无同名候选。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`SearchBar`（36 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/AgentSidebar.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSidebar.tsx#L8) · [apps/desktop/src/components/agent/workbench/AgentRail.tsx:2](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/agent/workbench/AgentRail.tsx#L2) · [apps/desktop/src/components/settings/DiscoverSettings.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/DiscoverSettings.tsx#L4)。
+- **Peers 代表调用**：[apps/desktop/src/components/AgentSidebar.tsx:8](../../../../../apps/desktop/src/components/AgentSidebar.tsx#L8) · [apps/desktop/src/components/agent/workbench/AgentRail.tsx:2](../../../../../apps/desktop/src/components/agent/workbench/AgentRail.tsx#L2) · [apps/desktop/src/components/settings/DiscoverSettings.tsx:4](../../../../../apps/desktop/src/components/settings/DiscoverSettings.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/ChatGroupWizard/ChatGroupWizard.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ChatGroupWizard/ChatGroupWizard.tsx#L3) · [src/components/MemberSelectionModal/MemberSelectionModal.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/MemberSelectionModal/MemberSelectionModal.tsx#L4)。
 - **何时选哪种 / 打样场景**：局部实时过滤、提交式全局搜索、清空/取消；scope 可见。
 - **相邻选择与禁用场景**：普通值编辑用 TextField；大搜索工作区用 SearchWorkspace。
@@ -2205,7 +2205,7 @@
 - **antd 候选**：`Segmented`（16 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Segmented`（30 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/agent/AgentModuleNav.tsx:1](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/agent/AgentModuleNav.tsx#L1)。
+- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](../../../../../apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/agent/AgentModuleNav.tsx:1](../../../../../apps/desktop/src/components/agent/AgentModuleNav.tsx#L1)。
 - **LobeHub 代表调用**：[src/features/Acceptance/Report/TerminalEvidence/TerminalEvidenceCard.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/Acceptance/Report/TerminalEvidence/TerminalEvidenceCard.tsx#L3) · [src/features/AgentChannel/PlatformDetail/QuickView.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/AgentChannel/PlatformDetail/QuickView.tsx#L3)。
 - **何时选哪种 / 打样场景**：列表/网格、时间维度、局部筛选；支持 icon+label。
 - **相邻选择与禁用场景**：页面内容层级用 Tabs；表单值用 Radio。
@@ -2237,7 +2237,7 @@
 - **antd 候选**：`Select` / Option（40 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Select`（95 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/AgentSettingsModal.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSettingsModal.tsx#L3) · [apps/desktop/src/components/BuilderPanel.tsx:5](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/BuilderPanel.tsx#L5)。
+- **antd 代表调用**：[apps/desktop/src/components/AgentSettingsModal.tsx:3](../../../../../apps/desktop/src/components/AgentSettingsModal.tsx#L3) · [apps/desktop/src/components/BuilderPanel.tsx:5](../../../../../apps/desktop/src/components/BuilderPanel.tsx#L5)。
 - **LobeHub 代表调用**：[src/components/JSONSchemaConfig/ItemRender.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/JSONSchemaConfig/ItemRender.tsx#L1) · [src/components/TablePagination/PageSizeSelect.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/TablePagination/PageSizeSelect.tsx#L3)。
 - **何时选哪种 / 打样场景**：模型、成员、语言；search/multi/clear/virtual 是明确能力。
 - **相邻选择与禁用场景**：允许自由输入用 Autocomplete；少量互斥用 Radio。
@@ -2282,7 +2282,7 @@
 - **antd 候选**：无同名候选。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：该族未直接引用。
-- **Peers 代表调用**：[apps/desktop/src/components/AppSideNav.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AppSideNav.tsx#L3)。
+- **Peers 代表调用**：[apps/desktop/src/components/AppSideNav.tsx:3](../../../../../apps/desktop/src/components/AppSideNav.tsx#L3)。
 - **何时选哪种 / 打样场景**：desktop rail；mobile 同语义适配底部导航；active/notification。
 - **相邻选择与禁用场景**：局部 tabs 用 Tabs；tree 用 Tree。
 - **状态、恢复与键盘合同**：位置由 Shell 管理；route active 与 unread 分离；隐藏树生命周期遵循平台合同。。
@@ -2302,7 +2302,7 @@
 - **antd 候选**：`Skeleton` / Avatar、Input（6 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Skeleton`（133 位点）；`SkeletonAvatar`（3 位点）；`SkeletonText`（6 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/ModelProviderSelect.tsx:6](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ModelProviderSelect.tsx#L6) · [apps/desktop/src/components/agent/workbench/AgentRail.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/agent/workbench/AgentRail.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/ModelProviderSelect.tsx:6](../../../../../apps/desktop/src/components/ModelProviderSelect.tsx#L6) · [apps/desktop/src/components/agent/workbench/AgentRail.tsx:4](../../../../../apps/desktop/src/components/agent/workbench/AgentRail.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/EmojiPicker/index.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/EmojiPicker/index.tsx#L2) · [src/components/ListSkeleton/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ListSkeleton/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：头像+文本行；首屏卡；局部内容渐进。
 - **相邻选择与禁用场景**：未知结构短等用 BusyIndicator；失败不能无限骨架。
@@ -2327,7 +2327,7 @@
 - **antd 候选**：`Slider`（3 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Slider`（5 位点）；`SliderWithInput`（7 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/settings/ProviderDetail.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/ProviderDetail.tsx#L4) · [apps/desktop/src/components/settings/TTSSettings.tsx:14](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/TTSSettings.tsx#L14)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/ProviderDetail.tsx:4](../../../../../apps/desktop/src/components/settings/ProviderDetail.tsx#L4) · [apps/desktop/src/components/settings/TTSSettings.tsx:14](../../../../../apps/desktop/src/components/settings/TTSSettings.tsx#L14)。
 - **LobeHub 代表调用**：[src/components/DiscreteSlider/index.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/DiscreteSlider/index.tsx#L2) · [src/components/JSONSchemaConfig/ItemRender.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/JSONSchemaConfig/ItemRender.tsx#L1)。
 - **何时选哪种 / 打样场景**：音量、温度、缩放；精确值配 NumberField。
 - **相邻选择与禁用场景**：无序类别用 Select；高精度只需数字用 NumberField。
@@ -2403,7 +2403,7 @@
 - **antd 候选**：`Spin`（67 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Spin`（128 位点）。
-- **antd 代表调用**：[apps/desktop/src/applet/LynxContainer.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/applet/LynxContainer.tsx#L3) · [apps/desktop/src/components/MCPTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/MCPTab.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/applet/LynxContainer.tsx:3](../../../../../apps/desktop/src/applet/LynxContainer.tsx#L3) · [apps/desktop/src/components/MCPTab.tsx:4](../../../../../apps/desktop/src/components/MCPTab.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/AsyncBoundary/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/AsyncBoundary/index.tsx#L3) · [src/components/AvatarUpload/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/AvatarUpload/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：局部操作 pending；首次连接。
 - **相邻选择与禁用场景**：可测进度用 Progress；加载结构用 Skeleton。
@@ -2428,7 +2428,7 @@
 - **antd 候选**：`Statistic`（5 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Statistic`（1 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/settings/AgentGrowthTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/AgentGrowthTab.tsx#L4) · [apps/station/app/subserver/dashboard/web/src/pages/NodesPage.tsx:15](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/station/app/subserver/dashboard/web/src/pages/NodesPage.tsx#L15)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/AgentGrowthTab.tsx:4](../../../../../apps/desktop/src/components/settings/AgentGrowthTab.tsx#L4) · [apps/station/app/subserver/dashboard/web/src/pages/NodesPage.tsx:15](../../../../../apps/station/app/subserver/dashboard/web/src/pages/NodesPage.tsx#L15)。
 - **LobeHub 代表调用**：[src/components/StatisticCard/index.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/StatisticCard/index.tsx#L2)。
 - **何时选哪种 / 打样场景**：用量、成本、连接数；变化对比明确基期。
 - **相邻选择与禁用场景**：状态用 StatusTag；业务仪表盘由 domain 组合。
@@ -2495,7 +2495,7 @@
 - **antd 候选**：`Switch`（23 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Switch`（58 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/LogsTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/LogsTab.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/CronJobDrawer.tsx:3](../../../../../apps/desktop/src/components/CronJobDrawer.tsx#L3) · [apps/desktop/src/components/LogsTab.tsx:4](../../../../../apps/desktop/src/components/LogsTab.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/ChatGroupWizard/ChatGroupWizard.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ChatGroupWizard/ChatGroupWizard.tsx#L3) · [src/components/InstantSwitch/index.tsx:2](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/InstantSwitch/index.tsx#L2)。
 - **何时选哪种 / 打样场景**：通知开关、显示选项；需远端保存时 pending。
 - **相邻选择与禁用场景**：提交表单里的布尔用 Checkbox；危险操作用确认。
@@ -2534,7 +2534,7 @@
 - **antd 候选**：`Table`（25 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Table`（10 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/settings/AgentGrowthTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/AgentGrowthTab.tsx#L4) · [apps/desktop/src/components/settings/BotsSettings.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/BotsSettings.tsx#L3)。
+- **antd 代表调用**：[apps/desktop/src/components/settings/AgentGrowthTab.tsx:4](../../../../../apps/desktop/src/components/settings/AgentGrowthTab.tsx#L4) · [apps/desktop/src/components/settings/BotsSettings.tsx:3](../../../../../apps/desktop/src/components/settings/BotsSettings.tsx#L3)。
 - **LobeHub 代表调用**：[src/components/InlineTable/index.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/InlineTable/index.tsx#L1) · [src/features/AgentUsage/ModelBreakdown.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/AgentUsage/ModelBreakdown.tsx#L3)。
 - **何时选哪种 / 打样场景**：设备管理、后台记录、资源统计；sort/filter/select/expand/virtual。
 - **相邻选择与禁用场景**：社交流用实体 ListItem；不把所有功能页做后台表。
@@ -2629,8 +2629,8 @@
 - **antd 候选**：`Tabs`（8 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Tabs`（67 位点）；`TabsIndicator`（3 位点）；`TabsList`（3 位点）；`TabsRoot`（3 位点）；`TabsTab`（3 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/AgentSettingsModal.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/AgentSettingsModal.tsx#L4) · [apps/desktop/src/components/SkillsTab.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillsTab.tsx#L8) · [apps/desktop/src/components/settings/MemorySettingsSection.tsx:18](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/MemorySettingsSection.tsx#L18)。
-- **antd 代表调用**：[apps/desktop/src/components/ShareDialog.tsx:2](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ShareDialog.tsx#L2) · [apps/desktop/src/components/settings/channels/ChannelProvisioningPanel.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/channels/ChannelProvisioningPanel.tsx#L3)。
+- **Peers 代表调用**：[apps/desktop/src/components/AgentSettingsModal.tsx:4](../../../../../apps/desktop/src/components/AgentSettingsModal.tsx#L4) · [apps/desktop/src/components/SkillsTab.tsx:8](../../../../../apps/desktop/src/components/SkillsTab.tsx#L8) · [apps/desktop/src/components/settings/MemorySettingsSection.tsx:18](../../../../../apps/desktop/src/components/settings/MemorySettingsSection.tsx#L18)。
+- **antd 代表调用**：[apps/desktop/src/components/ShareDialog.tsx:2](../../../../../apps/desktop/src/components/ShareDialog.tsx#L2) · [apps/desktop/src/components/settings/channels/ChannelProvisioningPanel.tsx:3](../../../../../apps/desktop/src/components/settings/channels/ChannelProvisioningPanel.tsx#L3)。
 - **LobeHub 代表调用**：[src/components/HtmlPreview/PreviewDrawer.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/HtmlPreview/PreviewDrawer.tsx#L4) · [src/components/OllamaSetupGuide/index.tsx:1](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/OllamaSetupGuide/index.tsx#L1)。
 - **何时选哪种 / 打样场景**：详情页 tabs；Settings 子区；主模块由 PageHost policy 管理。
 - **相邻选择与禁用场景**：几个表单值用 Segmented/Radio；层级用 NavigationRail。
@@ -2661,8 +2661,8 @@
 - **antd 候选**：`Tag` / CheckableTag（61 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Tag`（251 位点）。
-- **Peers 代表调用**：[apps/desktop/src/applet/AppletContainerShell.tsx:6](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/applet/AppletContainerShell.tsx#L6) · [apps/desktop/src/applet/LynxDebugPanel.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/applet/LynxDebugPanel.tsx#L3) · [apps/desktop/src/components/ChatInput.tsx:13](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ChatInput.tsx#L13)。
-- **antd 代表调用**：[apps/desktop/src/components/chat/ChatDetailPanel.tsx:6](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/ChatDetailPanel.tsx#L6) · [apps/desktop/src/components/chat/FindPeopleModal.tsx:5](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/FindPeopleModal.tsx#L5)。
+- **Peers 代表调用**：[apps/desktop/src/applet/AppletContainerShell.tsx:6](../../../../../apps/desktop/src/applet/AppletContainerShell.tsx#L6) · [apps/desktop/src/applet/LynxDebugPanel.tsx:3](../../../../../apps/desktop/src/applet/LynxDebugPanel.tsx#L3) · [apps/desktop/src/components/ChatInput.tsx:13](../../../../../apps/desktop/src/components/ChatInput.tsx#L13)。
+- **antd 代表调用**：[apps/desktop/src/components/chat/ChatDetailPanel.tsx:6](../../../../../apps/desktop/src/components/chat/ChatDetailPanel.tsx#L6) · [apps/desktop/src/components/chat/FindPeopleModal.tsx:5](../../../../../apps/desktop/src/components/chat/FindPeopleModal.tsx#L5)。
 - **LobeHub 代表调用**：[src/components/ChangelogModal/VersionTag.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ChangelogModal/VersionTag.tsx#L3) · [src/components/Editor/AutoSaveHint.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/Editor/AutoSaveHint.tsx#L3)。
 - **何时选哪种 / 打样场景**：status 用静态 Tag；筛选选中用 FilterChip；可关闭标签。
 - **相邻选择与禁用场景**：计数用 Badge；不能让所有 tag 都像按钮。
@@ -2728,9 +2728,9 @@
 - **上游定义**：[ToastHost:296](https://github.com/lobehub/lobe-ui/blob/a5441425c589bb5ff6b1a971acc209b6d66abda3/src/index.ts#L296)。
 - **Peers 直接使用**：`ToastHost`（2 导入位点，2 JSX 位点；desktop/prototype）。
 - **antd 候选**：无同名候选。
-- **本地替代候选**：[packages/prototypes/desktop/shared/Toast.tsx:5](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shared/Toast.tsx#L5)。
+- **本地替代候选**：[packages/prototypes/desktop/shared/Toast.tsx:5](../../../../../packages/prototypes/desktop/shared/Toast.tsx#L5)。
 - **LobeHub 直接使用**：`ToastHost`（2 位点）。
-- **Peers 代表调用**：[apps/desktop/src/main.tsx:3](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/main.tsx#L3) · [packages/prototypes/desktop/shared/Toast.tsx:1](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shared/Toast.tsx#L1)。
+- **Peers 代表调用**：[apps/desktop/src/main.tsx:3](../../../../../apps/desktop/src/main.tsx#L3) · [packages/prototypes/desktop/shared/Toast.tsx:1](../../../../../packages/prototypes/desktop/shared/Toast.tsx#L1)。
 - **LobeHub 代表调用**：[src/features/AuthShell/AuthThemeLite.tsx:7](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/features/AuthShell/AuthThemeLite.tsx#L7) · [src/layout/SPAGlobalProvider/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/layout/SPAGlobalProvider/index.tsx#L3)。
 - **何时选哪种 / 打样场景**：复制成功、保存已完成；undo 仅在真实可撤销时。
 - **相邻选择与禁用场景**：需处理的错误用 InlineAlert/RecoveryState；批准不用 toast。
@@ -2793,8 +2793,8 @@
 - **antd 候选**：`Tooltip`（29 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Tooltip`（228 位点）；`TooltipGroup`（22 位点）。
-- **Peers 代表调用**：[apps/desktop/src/components/MCPTab.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/MCPTab.tsx#L8) · [apps/desktop/src/components/ModelProviderSelect.tsx:5](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/ModelProviderSelect.tsx#L5) · [apps/desktop/src/components/SkillsTab.tsx:8](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillsTab.tsx#L8)。
-- **antd 代表调用**：[apps/desktop/src/components/GlobalLayout.tsx:5](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/GlobalLayout.tsx#L5) · [apps/desktop/src/components/NotificationBell.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/NotificationBell.tsx#L4)。
+- **Peers 代表调用**：[apps/desktop/src/components/MCPTab.tsx:8](../../../../../apps/desktop/src/components/MCPTab.tsx#L8) · [apps/desktop/src/components/ModelProviderSelect.tsx:5](../../../../../apps/desktop/src/components/ModelProviderSelect.tsx#L5) · [apps/desktop/src/components/SkillsTab.tsx:8](../../../../../apps/desktop/src/components/SkillsTab.tsx#L8)。
+- **antd 代表调用**：[apps/desktop/src/components/GlobalLayout.tsx:5](../../../../../apps/desktop/src/components/GlobalLayout.tsx#L5) · [apps/desktop/src/components/NotificationBell.tsx:4](../../../../../apps/desktop/src/components/NotificationBell.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/ChatGroupWizard/ChatGroupWizard.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/ChatGroupWizard/ChatGroupWizard.tsx#L3) · [src/components/CodeEditorPane/StatusBar.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/CodeEditorPane/StatusBar.tsx#L3)。
 - **何时选哪种 / 打样场景**：icon 名称、快捷键、截断值；hover+focus。
 - **相邻选择与禁用场景**：需要按钮/链接用 Popover；关键原因必须可见。
@@ -2883,7 +2883,7 @@
 - **antd 候选**：`Upload`（1 位点）。
 - **本地替代候选**：未匹配；全量私有/业务声明见机器附录。
 - **LobeHub 直接使用**：`Upload`（22 位点）。
-- **antd 代表调用**：[apps/desktop/src/components/SkillsTab.tsx:4](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/SkillsTab.tsx#L4)。
+- **antd 代表调用**：[apps/desktop/src/components/SkillsTab.tsx:4](../../../../../apps/desktop/src/components/SkillsTab.tsx#L4)。
 - **LobeHub 代表调用**：[src/components/AvatarUpload/index.tsx:3](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/AvatarUpload/index.tsx#L3) · [src/components/FeedbackModal/FeedbackContent.tsx:4](https://github.com/lobehub/lobehub/blob/1aeb26ae2c7458325e241e2b377417b2404a754f/src/components/FeedbackModal/FeedbackContent.tsx#L4)。
 - **何时选哪种 / 打样场景**：点击选择和拖入等价；多文件/校验/预览；文件上传状态交给 domain。
 - **相邻选择与禁用场景**：选择已有图片用 ImageChoice；只下载用 DownloadAction。
@@ -2961,7 +2961,7 @@
 - **具体场景 / 打样**：可撤销删除、断开、移除；不可逆改用 ConfirmDialog。
 - **相邻选择**：普通按钮不强行二次确认。
 - **交互、状态与恢复**：对象名称/影响/恢复同时可见；pending 不重复发送。
-- **本地候选**：[apps/desktop/src/components/chat/ChatDeleteConfirmOverlay.tsx:18](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/ChatDeleteConfirmOverlay.tsx#L18) · [apps/desktop/src/components/settings/channels/LarkChannelsSettings.tsx:190](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/channels/LarkChannelsSettings.tsx#L190) · [apps/mobile/src/pages/chat/ChatOverlayHost.tsx:387](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/pages/chat/ChatOverlayHost.tsx#L387) · [packages/prototypes/desktop/features/social-chat/src/components/DetailPanel.tsx:194](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/features/social-chat/src/components/DetailPanel.tsx#L194) · [packages/prototypes/mobile/chat/src/components/SettingDetailView.tsx:473](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/mobile/chat/src/components/SettingDetailView.tsx#L473)。
+- **本地候选**：[apps/desktop/src/components/chat/ChatDeleteConfirmOverlay.tsx:18](../../../../../apps/desktop/src/components/chat/ChatDeleteConfirmOverlay.tsx#L18) · [apps/desktop/src/components/settings/channels/LarkChannelsSettings.tsx:190](../../../../../apps/desktop/src/components/settings/channels/LarkChannelsSettings.tsx#L190) · [apps/mobile/src/pages/chat/ChatOverlayHost.tsx:387](../../../../../apps/mobile/src/pages/chat/ChatOverlayHost.tsx#L387) · [packages/prototypes/desktop/features/social-chat/src/components/DetailPanel.tsx:194](../../../../../packages/prototypes/desktop/features/social-chat/src/components/DetailPanel.tsx#L194) · [packages/prototypes/mobile/chat/src/components/SettingDetailView.tsx:473](../../../../../packages/prototypes/mobile/chat/src/components/SettingDetailView.tsx#L473)。
 - **antd 候选**：Popconfirm（24 位点）。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -2987,7 +2987,7 @@
 - **具体场景 / 打样**：搜索命令/对象；快捷键调起；近期使用。
 - **相邻选择**：编辑器插入用 SlashCommandMenu。
 - **交互、状态与恢复**：权限与当前上下文过滤；执行后恢复对应焦点。
-- **本地候选**：[packages/prototypes/desktop/shell/src/Shell.tsx:506](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shell/src/Shell.tsx#L506)。
+- **本地候选**：[packages/prototypes/desktop/shell/src/Shell.tsx:506](../../../../../packages/prototypes/desktop/shell/src/Shell.tsx#L506)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3000,7 +3000,7 @@
 - **具体场景 / 打样**：@联系人/Agent/文件；范围可见；插入完整 identity。
 - **相邻选择**：普通建议用 Autocomplete。
 - **交互、状态与恢复**：光标 token 和实体 ID 分离；IME/失效引用/权限撤销可恢复。
-- **本地候选**：[apps/desktop/src/components/chat/MentionPopup.tsx:25](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/MentionPopup.tsx#L25) · [apps/desktop/src/components/chat/MentionTag.tsx:19](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/MentionTag.tsx#L19) · [apps/desktop/src/components/chat/MentionTag.tsx:59](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/MentionTag.tsx#L59)。
+- **本地候选**：[apps/desktop/src/components/chat/MentionPopup.tsx:25](../../../../../apps/desktop/src/components/chat/MentionPopup.tsx#L25) · [apps/desktop/src/components/chat/MentionTag.tsx:19](../../../../../apps/desktop/src/components/chat/MentionTag.tsx#L19) · [apps/desktop/src/components/chat/MentionTag.tsx:59](../../../../../apps/desktop/src/components/chat/MentionTag.tsx#L59)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3013,7 +3013,7 @@
 - **具体场景 / 打样**：帖子、Note、模板；工具栏与快捷键一致。
 - **相邻选择**：短聊天可用 MessageComposer。
 - **交互、状态与恢复**：selection/history/dirty owner 单一；粘贴净化；插入失败保留草稿。
-- **本地候选**：[apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx:239](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx#L239) · [apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx:297](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx#L297) · [apps/desktop/src/pages/AgentProfilePage.tsx:288](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/pages/AgentProfilePage.tsx#L288) · [apps/desktop/src/pages/AgentProfilePage.tsx:768](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/pages/AgentProfilePage.tsx#L768) · [apps/x-config/console/src/App.tsx:645](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/x-config/console/src/App.tsx#L645) · [apps/x-config/console/src/App.tsx:737](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/x-config/console/src/App.tsx#L737)。
+- **本地候选**：[apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx:239](../../../../../apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx#L239) · [apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx:297](../../../../../apps/applets/note/frontend/src/presentation/pages/NoteAppletPage.tsx#L297) · [apps/desktop/src/pages/AgentProfilePage.tsx:288](../../../../../apps/desktop/src/pages/AgentProfilePage.tsx#L288) · [apps/desktop/src/pages/AgentProfilePage.tsx:768](../../../../../apps/desktop/src/pages/AgentProfilePage.tsx#L768) · [apps/x-config/console/src/App.tsx:645](../../../../../apps/x-config/console/src/App.tsx#L645) · [apps/x-config/console/src/App.tsx:737](../../../../../apps/x-config/console/src/App.tsx#L737)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3078,7 +3078,7 @@
 - **具体场景 / 打样**：语音消息、播客附件；时长和加载状态。
 - **相邻选择**：视频用 VideoPlayer。
 - **交互、状态与恢复**：键盘播放/暂停、转写可读；离开暂停政策；释放资源。
-- **本地候选**：[apps/desktop/src/components/chat/GroupCallSurface.tsx:140](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/GroupCallSurface.tsx#L140)。
+- **本地候选**：[apps/desktop/src/components/chat/GroupCallSurface.tsx:140](../../../../../apps/desktop/src/components/chat/GroupCallSurface.tsx#L140)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3104,7 +3104,7 @@
 - **具体场景 / 打样**：搜索、通讯录、分享选择；身份/来源/动作一致。
 - **相邻选择**：群对象用 GroupItem。
 - **交互、状态与恢复**：读取业务投影；行点击与操作隔离；重复行共享轨道。
-- **本地候选**：[packages/prototypes/desktop/features/social-chat/src/components/ContactIdentityRow.tsx:9](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/features/social-chat/src/components/ContactIdentityRow.tsx#L9)。
+- **本地候选**：[packages/prototypes/desktop/features/social-chat/src/components/ContactIdentityRow.tsx:9](../../../../../packages/prototypes/desktop/features/social-chat/src/components/ContactIdentityRow.tsx#L9)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3130,7 +3130,7 @@
 - **具体场景 / 打样**：本人/对方/系统；发送中/失败/编辑/删除；附件引用。
 - **相邻选择**：Agent 任务进度另用 TaskCard。
 - **交互、状态与恢复**：delivery 真源来自 messaging；复制/反应/回复合同共享；不中断选区。
-- **本地候选**：[apps/desktop/src/components/MessageBubble.tsx:31](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/MessageBubble.tsx#L31) · [apps/desktop/src/components/chat/ChatMessageArea.tsx:92](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/ChatMessageArea.tsx#L92) · [apps/desktop/src/components/chat/ChatThreadPanel.tsx:82](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/ChatThreadPanel.tsx#L82) · [apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx:87](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx#L87) · [apps/desktop/src/components/chat/message/ChatMessageContent.tsx:36](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/message/ChatMessageContent.tsx#L36) · [apps/desktop/src/components/chat/message/ChatMessageRow.tsx:376](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/message/ChatMessageRow.tsx#L376) · [apps/desktop/src/components/chat/message/ChatMessageRow.tsx:387](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/message/ChatMessageRow.tsx#L387) · [apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx:116](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx#L116)。
+- **本地候选**：[apps/desktop/src/components/MessageBubble.tsx:31](../../../../../apps/desktop/src/components/MessageBubble.tsx#L31) · [apps/desktop/src/components/chat/ChatMessageArea.tsx:92](../../../../../apps/desktop/src/components/chat/ChatMessageArea.tsx#L92) · [apps/desktop/src/components/chat/ChatThreadPanel.tsx:82](../../../../../apps/desktop/src/components/chat/ChatThreadPanel.tsx#L82) · [apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx:87](../../../../../apps/desktop/src/components/chat/message/ChatMessageActionOverlay.tsx#L87) · [apps/desktop/src/components/chat/message/ChatMessageContent.tsx:36](../../../../../apps/desktop/src/components/chat/message/ChatMessageContent.tsx#L36) · [apps/desktop/src/components/chat/message/ChatMessageRow.tsx:376](../../../../../apps/desktop/src/components/chat/message/ChatMessageRow.tsx#L376) · [apps/desktop/src/components/chat/message/ChatMessageRow.tsx:387](../../../../../apps/desktop/src/components/chat/message/ChatMessageRow.tsx#L387) · [apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx:116](../../../../../apps/desktop/src/components/chat/message/ChatMessageTimeline.tsx#L116)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3143,7 +3143,7 @@
 - **具体场景 / 打样**：文本/附件/提及/回复；send/stop 分开；移动键盘恢复。
 - **相邻选择**：长编辑用 RichTextEditor。
 - **交互、状态与恢复**：草稿在 runtime/store；失败不清；IME 不发；附件状态可独立恢复。
-- **本地候选**：[apps/desktop/src/components/chat/ChatComposer.tsx:142](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/ChatComposer.tsx#L142) · [apps/desktop/src/components/composer/ChatComposer.tsx:31](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/composer/ChatComposer.tsx#L31)。
+- **本地候选**：[apps/desktop/src/components/chat/ChatComposer.tsx:142](../../../../../apps/desktop/src/components/chat/ChatComposer.tsx#L142) · [apps/desktop/src/components/composer/ChatComposer.tsx:31](../../../../../apps/desktop/src/components/composer/ChatComposer.tsx#L31)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3156,7 +3156,7 @@
 - **具体场景 / 打样**：文件名/MIME/大小/进度/重试/取消/打开。
 - **相邻选择**：图片展示用 Image；下载用 DownloadAction。
 - **交互、状态与恢复**：encrypted/ready/expired/blocked 不可由 UI 猜；断点续传交 transfer owner。
-- **本地候选**：[apps/desktop/src/components/chat/AttachmentItem.tsx:323](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/AttachmentItem.tsx#L323) · [apps/desktop/src/components/composer/AttachmentStage.tsx:35](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/composer/AttachmentStage.tsx#L35) · [apps/mobile/src/pages/chat/ChatMessagePresentation.tsx:140](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/pages/chat/ChatMessagePresentation.tsx#L140)。
+- **本地候选**：[apps/desktop/src/components/chat/AttachmentItem.tsx:323](../../../../../apps/desktop/src/components/chat/AttachmentItem.tsx#L323) · [apps/desktop/src/components/composer/AttachmentStage.tsx:35](../../../../../apps/desktop/src/components/composer/AttachmentStage.tsx#L35) · [apps/mobile/src/pages/chat/ChatMessagePresentation.tsx:140](../../../../../apps/mobile/src/pages/chat/ChatMessagePresentation.tsx#L140)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3182,7 +3182,7 @@
 - **具体场景 / 打样**：选中/计数/增减/菜单；已有相同反应去重。
 - **相邻选择**：普通 emoji 插入用 EmojiPicker。
 - **交互、状态与恢复**：optimistic 回滚有 actionId；跨端已选合并来自业务；触摸/键盘一致。
-- **本地候选**：[apps/desktop/src/components/moments/ReactionBar.tsx:42](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/moments/ReactionBar.tsx#L42) · [apps/mobile/src/components/reactions/ReactionChip.tsx:15](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/components/reactions/ReactionChip.tsx#L15) · [apps/mobile/src/components/reactions/ReactionPicker.tsx:12](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/components/reactions/ReactionPicker.tsx#L12) · [packages/prototypes/shared/ReactionChip.tsx:19](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/shared/ReactionChip.tsx#L19) · [packages/prototypes/shared/ReactionPicker.tsx:18](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/shared/ReactionPicker.tsx#L18)。
+- **本地候选**：[apps/desktop/src/components/moments/ReactionBar.tsx:42](../../../../../apps/desktop/src/components/moments/ReactionBar.tsx#L42) · [apps/mobile/src/components/reactions/ReactionChip.tsx:15](../../../../../apps/mobile/src/components/reactions/ReactionChip.tsx#L15) · [apps/mobile/src/components/reactions/ReactionPicker.tsx:12](../../../../../apps/mobile/src/components/reactions/ReactionPicker.tsx#L12) · [packages/prototypes/shared/ReactionChip.tsx:19](../../../../../packages/prototypes/shared/ReactionChip.tsx#L19) · [packages/prototypes/shared/ReactionPicker.tsx:18](../../../../../packages/prototypes/shared/ReactionPicker.tsx#L18)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3195,7 +3195,7 @@
 - **具体场景 / 打样**：联系人、消息作者、分享目标；敏感详情逐步展开。
 - **相邻选择**：普通昵称用 Text 不足以表达跨 Station 身份。
 - **交互、状态与恢复**：稳定 actor identity 与显示名分离；remote/local 可读；不得伪造 verified。
-- **本地候选**：[apps/desktop/src/components/chat/ChatActorIdentityRow.tsx:22](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/chat/ChatActorIdentityRow.tsx#L22) · [apps/mobile/src/components/recovery/ActorIdentityRecoveryOverlay.tsx:10](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/components/recovery/ActorIdentityRecoveryOverlay.tsx#L10)。
+- **本地候选**：[apps/desktop/src/components/chat/ChatActorIdentityRow.tsx:22](../../../../../apps/desktop/src/components/chat/ChatActorIdentityRow.tsx#L22) · [apps/mobile/src/components/recovery/ActorIdentityRecoveryOverlay.tsx:10](../../../../../apps/mobile/src/components/recovery/ActorIdentityRecoveryOverlay.tsx#L10)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3208,7 +3208,7 @@
 - **具体场景 / 打样**：verified/remote/degraded/blocked/unknown；展开原因。
 - **相邻选择**：普通在线点用 Badge。
 - **交互、状态与恢复**：Station/信任业务拥有状态；unknown 不自动判可信；有纠正路径。
-- **本地候选**：[apps/desktop/src/components/settings/AgentGrowthTab.tsx:47](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/AgentGrowthTab.tsx#L47)。
+- **本地候选**：[apps/desktop/src/components/settings/AgentGrowthTab.tsx:47](../../../../../apps/desktop/src/components/settings/AgentGrowthTab.tsx#L47)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3221,7 +3221,7 @@
 - **具体场景 / 打样**：Agent 工具使用、外部访问、设备授权；允许一次/有限期/拒绝。
 - **相邻选择**：普通确认用 ConfirmDialog。
 - **交互、状态与恢复**：resource/scope/duration/decision identity 明确；过期/竞争处理；不得默认批准。
-- **本地候选**：[apps/applets/atelier/frontend/src/presentation/pages/AtelierAppletPage.tsx:217](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/applets/atelier/frontend/src/presentation/pages/AtelierAppletPage.tsx#L217) · [apps/mobile/src/pages/settings/SettingsSections.tsx:1160](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/pages/settings/SettingsSections.tsx#L1160) · [packages/prototypes/desktop/applets/atelier/src/blocks.tsx:333](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L333) · [packages/prototypes/desktop/features/agent/src/Page.tsx:103](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/features/agent/src/Page.tsx#L103)。
+- **本地候选**：[apps/applets/atelier/frontend/src/presentation/pages/AtelierAppletPage.tsx:217](../../../../../apps/applets/atelier/frontend/src/presentation/pages/AtelierAppletPage.tsx#L217) · [apps/mobile/src/pages/settings/SettingsSections.tsx:1160](../../../../../apps/mobile/src/pages/settings/SettingsSections.tsx#L1160) · [packages/prototypes/desktop/applets/atelier/src/blocks.tsx:333](../../../../../packages/prototypes/desktop/applets/atelier/src/blocks.tsx#L333) · [packages/prototypes/desktop/features/agent/src/Page.tsx:103](../../../../../packages/prototypes/desktop/features/agent/src/Page.tsx#L103)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3234,7 +3234,7 @@
 - **具体场景 / 打样**：queued/running/waiting-decision/stopping/succeeded/failed。
 - **相邻选择**：聊天气泡不能承载全部任务真源。
 - **交互、状态与恢复**：status 来自 Agent runtime；stop != cancel != done；恢复上下文可追踪。
-- **本地候选**：[apps/desktop/src/pages/TasksPage.tsx:85](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/pages/TasksPage.tsx#L85)。
+- **本地候选**：[apps/desktop/src/pages/TasksPage.tsx:85](../../../../../apps/desktop/src/pages/TasksPage.tsx#L85)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3247,7 +3247,7 @@
 - **具体场景 / 打样**：准备/执行/等待批准/失败/完成；敏感内容遮挡。
 - **相邻选择**：一般日志用 CodeBlock。
 - **交互、状态与恢复**：工具和 runtime 投影真源；大输出截断可展开；不会因展开重复调用。
-- **本地候选**：[apps/desktop/src/components/messages/ToolCallCard.tsx:145](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/messages/ToolCallCard.tsx#L145) · [apps/desktop/src/components/messages/ToolCallCard.tsx:582](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/messages/ToolCallCard.tsx#L582) · [packages/prototypes/desktop/features/agent/src/Page.tsx:47](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/features/agent/src/Page.tsx#L47)。
+- **本地候选**：[apps/desktop/src/components/messages/ToolCallCard.tsx:145](../../../../../apps/desktop/src/components/messages/ToolCallCard.tsx#L145) · [apps/desktop/src/components/messages/ToolCallCard.tsx:582](../../../../../apps/desktop/src/components/messages/ToolCallCard.tsx#L582) · [packages/prototypes/desktop/features/agent/src/Page.tsx:47](../../../../../packages/prototypes/desktop/features/agent/src/Page.tsx#L47)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3273,7 +3273,7 @@
 - **具体场景 / 打样**：offline/reconnecting/degraded/needs-user/failed。
 - **相邻选择**：EmptyState 不能隐藏离线。
 - **交互、状态与恢复**：runtime 含重试预算；页面说明作用域和可恢复工作；自动重试有界。
-- **本地候选**：[apps/mobile/src/components/recovery/CommandRecoveryPanel.tsx:25](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/components/recovery/CommandRecoveryPanel.tsx#L25) · [apps/mobile/src/components/recovery/RecoveryOverlayHost.tsx:101](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/components/recovery/RecoveryOverlayHost.tsx#L101) · [packages/prototypes/desktop/applets/atelier/src/Page.tsx:492](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/applets/atelier/src/Page.tsx#L492)。
+- **本地候选**：[apps/mobile/src/components/recovery/CommandRecoveryPanel.tsx:25](../../../../../apps/mobile/src/components/recovery/CommandRecoveryPanel.tsx#L25) · [apps/mobile/src/components/recovery/RecoveryOverlayHost.tsx:101](../../../../../apps/mobile/src/components/recovery/RecoveryOverlayHost.tsx#L101) · [packages/prototypes/desktop/applets/atelier/src/Page.tsx:492](../../../../../packages/prototypes/desktop/applets/atelier/src/Page.tsx#L492)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3286,7 +3286,7 @@
 - **具体场景 / 打样**：消息跳转、关系请求、审批；读状态和处理状态分离。
 - **相邻选择**：普通 toast 不入通知真源。
 - **交互、状态与恢复**：同实体嵌入同组件；已处理/过期可读；不把已读当已批准。
-- **本地候选**：[apps/desktop/src/components/NotificationBell.tsx:35](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/NotificationBell.tsx#L35) · [apps/desktop/src/components/NotificationBell.tsx:154](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/NotificationBell.tsx#L154) · [apps/mobile/src/components/MobileNotificationCenter.tsx:127](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/components/MobileNotificationCenter.tsx#L127) · [packages/prototypes/desktop/shell/src/Notifications.tsx:97](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shell/src/Notifications.tsx#L97) · [packages/prototypes/desktop/shell/src/Notifications.tsx:207](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shell/src/Notifications.tsx#L207)。
+- **本地候选**：[apps/desktop/src/components/NotificationBell.tsx:35](../../../../../apps/desktop/src/components/NotificationBell.tsx#L35) · [apps/desktop/src/components/NotificationBell.tsx:154](../../../../../apps/desktop/src/components/NotificationBell.tsx#L154) · [apps/mobile/src/components/MobileNotificationCenter.tsx:127](../../../../../apps/mobile/src/components/MobileNotificationCenter.tsx#L127) · [packages/prototypes/desktop/shell/src/Notifications.tsx:97](../../../../../packages/prototypes/desktop/shell/src/Notifications.tsx#L97) · [packages/prototypes/desktop/shell/src/Notifications.tsx:207](../../../../../packages/prototypes/desktop/shell/src/Notifications.tsx#L207)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3299,7 +3299,7 @@
 - **具体场景 / 打样**：Desktop 首入口、workspace 切换、全局 Settings、移动适配。
 - **相邻选择**：不默认进入某个 Agent 页面。
 - **交互、状态与恢复**：Shell 和 PageHost 拥有 route/lifetime；业务页不可复制全局导航。
-- **本地候选**：[apps/mobile/src/components/MobileShell.tsx:236](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/components/MobileShell.tsx#L236) · [packages/prototypes/mobile/chat/src/MobileShell.tsx:43](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/mobile/chat/src/MobileShell.tsx#L43)。
+- **本地候选**：[apps/mobile/src/components/MobileShell.tsx:236](../../../../../apps/mobile/src/components/MobileShell.tsx#L236) · [packages/prototypes/mobile/chat/src/MobileShell.tsx:43](../../../../../packages/prototypes/mobile/chat/src/MobileShell.tsx#L43)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3312,7 +3312,7 @@
 - **具体场景 / 打样**：已安装/可打开/更新/权限异常；固定动作。
 - **相邻选择**：不把 applet 当网页链接拼图。
 - **交互、状态与恢复**：Applet manifest/宿主拥有 capabilities；UI 不自己绑定 service。
-- **本地候选**：[apps/desktop/src/pages/AppletsPage.tsx:752](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/pages/AppletsPage.tsx#L752) · [packages/prototypes/desktop/shell/src/Shell.tsx:381](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shell/src/Shell.tsx#L381)。
+- **本地候选**：[apps/desktop/src/pages/AppletsPage.tsx:752](../../../../../apps/desktop/src/pages/AppletsPage.tsx#L752) · [packages/prototypes/desktop/shell/src/Shell.tsx:381](../../../../../packages/prototypes/desktop/shell/src/Shell.tsx#L381)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3325,7 +3325,7 @@
 - **具体场景 / 打样**：token/费用/上下文容量/资源上限；unknown/stale。
 - **相邻选择**：一般数值用 Metric。
 - **交互、状态与恢复**：unit/source/asOf 必须明确；达到限制给可执行选项；不能猜测余额。
-- **本地候选**：[apps/station/app/subserver/dashboard/web/src/pages/oss/BucketsTab.tsx:64](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/station/app/subserver/dashboard/web/src/pages/oss/BucketsTab.tsx#L64) · [apps/station/app/subserver/dashboard/web/src/pages/oss/UsageTab.tsx:40](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/station/app/subserver/dashboard/web/src/pages/oss/UsageTab.tsx#L40)。
+- **本地候选**：[apps/station/app/subserver/dashboard/web/src/pages/oss/BucketsTab.tsx:64](../../../../../apps/station/app/subserver/dashboard/web/src/pages/oss/BucketsTab.tsx#L64) · [apps/station/app/subserver/dashboard/web/src/pages/oss/UsageTab.tsx:40](../../../../../apps/station/app/subserver/dashboard/web/src/pages/oss/UsageTab.tsx#L40)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3338,7 +3338,7 @@
 - **具体场景 / 打样**：创建身份→绑定设备→进入 Desktop；可回退/恢复。
 - **相邻选择**：单项帮助用 GuideStep。
 - **交互、状态与恢复**：StepProgress 只投影位置；业务完成和未证实状态分离；清理临时资源。
-- **本地候选**：[apps/desktop/src/pages/SettingsPage.tsx:1733](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/pages/SettingsPage.tsx#L1733) · [apps/desktop/src/views/OnboardingView.tsx:17](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/views/OnboardingView.tsx#L17) · [packages/prototypes/desktop/shell/src/WelcomeLoginPrototype.tsx:990](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shell/src/WelcomeLoginPrototype.tsx#L990)。
+- **本地候选**：[apps/desktop/src/pages/SettingsPage.tsx:1733](../../../../../apps/desktop/src/pages/SettingsPage.tsx#L1733) · [apps/desktop/src/views/OnboardingView.tsx:17](../../../../../apps/desktop/src/views/OnboardingView.tsx#L17) · [packages/prototypes/desktop/shell/src/WelcomeLoginPrototype.tsx:990](../../../../../packages/prototypes/desktop/shell/src/WelcomeLoginPrototype.tsx#L990)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3351,7 +3351,7 @@
 - **具体场景 / 打样**：常用可见，低频收进 Menu；键盘命令相同。
 - **相邻选择**：单按钮不用工具栏；不能隐藏唯一恢复动作。
 - **交互、状态与恢复**：基于可用空间折叠；保持 action identity；溢出不产生双 handler。
-- **本地候选**：[apps/desktop/src/components/composer/ActionBar/ActionBar.tsx:23](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/composer/ActionBar/ActionBar.tsx#L23) · [apps/desktop/src/components/messages/MessageActionBar.tsx:12](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/messages/MessageActionBar.tsx#L12) · [apps/desktop/src/components/moments/surfaces/SocialActionBar.tsx:54](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/moments/surfaces/SocialActionBar.tsx#L54) · [packages/prototypes/desktop/features/applet-workspace/src/AppletWorkspacePrototype.tsx:531](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/features/applet-workspace/src/AppletWorkspacePrototype.tsx#L531) · [packages/prototypes/desktop/features/call/src/CallPrototype.tsx:767](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/features/call/src/CallPrototype.tsx#L767) · [packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx:861](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx#L861)。
+- **本地候选**：[apps/desktop/src/components/composer/ActionBar/ActionBar.tsx:23](../../../../../apps/desktop/src/components/composer/ActionBar/ActionBar.tsx#L23) · [apps/desktop/src/components/messages/MessageActionBar.tsx:12](../../../../../apps/desktop/src/components/messages/MessageActionBar.tsx#L12) · [apps/desktop/src/components/moments/surfaces/SocialActionBar.tsx:54](../../../../../apps/desktop/src/components/moments/surfaces/SocialActionBar.tsx#L54) · [packages/prototypes/desktop/features/applet-workspace/src/AppletWorkspacePrototype.tsx:531](../../../../../packages/prototypes/desktop/features/applet-workspace/src/AppletWorkspacePrototype.tsx#L531) · [packages/prototypes/desktop/features/call/src/CallPrototype.tsx:767](../../../../../packages/prototypes/desktop/features/call/src/CallPrototype.tsx#L767) · [packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx:861](../../../../../packages/prototypes/desktop/features/social-chat/src/components/ChatArea.tsx#L861)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3364,7 +3364,7 @@
 - **具体场景 / 打样**：恢复词、API 凭据；遮挡/短时显露/复制。
 - **相邻选择**：普通属性用 KeyValueList。
 - **交互、状态与恢复**：不进入 telemetry/截图 fixture；权限和显露期限由 domain owner 提供。
-- **本地候选**：[apps/desktop/src/components/settings/RecoverySettings.tsx:38](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/RecoverySettings.tsx#L38)。
+- **本地候选**：[apps/desktop/src/components/settings/RecoverySettings.tsx:38](../../../../../apps/desktop/src/components/settings/RecoverySettings.tsx#L38)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。
@@ -3377,7 +3377,7 @@
 - **具体场景 / 打样**：label/help/control/status 同轨；即时开关和表单明确。
 - **相邻选择**：复杂组用 FieldGroup。
 - **交互、状态与恢复**：Settings 属于全局通用层；remote pending/失败在当前行；不能只 toast。
-- **本地候选**：[apps/desktop/src/components/settings/SettingsLayout.tsx:144](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/desktop/src/components/settings/SettingsLayout.tsx#L144) · [apps/mobile/src/pages/settings/SettingsSections.tsx:175](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/apps/mobile/src/pages/settings/SettingsSections.tsx#L175) · [packages/prototypes/desktop/shell/src/Settings.tsx:367](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/packages/prototypes/desktop/shell/src/Settings.tsx#L367)。
+- **本地候选**：[apps/desktop/src/components/settings/SettingsLayout.tsx:144](../../../../../apps/desktop/src/components/settings/SettingsLayout.tsx#L144) · [apps/mobile/src/pages/settings/SettingsSections.tsx:175](../../../../../apps/mobile/src/pages/settings/SettingsSections.tsx#L175) · [packages/prototypes/desktop/shell/src/Settings.tsx:367](../../../../../packages/prototypes/desktop/shell/src/Settings.tsx#L367)。
 - **antd 候选**：无。
 - **归属**：ui.requirement 条目；不能与上游族相加称为唯一组件数量。能力去重后才能冻结自有 API。
 - **状态**：DRAFT / NOT_IMPLEMENTED / NOT_BUILT；替代等价 UNPROVEN。

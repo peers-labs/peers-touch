@@ -65,7 +65,7 @@ try {
     fs.mkdirSync(args.out, { recursive: true });
     fs.writeFileSync(path.join(args.out, 'craft-gate.json'), JSON.stringify(result, null, 2));
   }
-  console.log(JSON.stringify({ pass: result.pass, offenders: battery.offenders, consoleErrors: result.consoleErrors }, null, 2));
+  process.stdout.write(JSON.stringify({ pass: result.pass, offenders: battery.offenders, consoleErrors: result.consoleErrors }, null, 2) + '\n');
   process.exitCode = result.pass ? 0 : 1;
 } finally {
   await browser.close();

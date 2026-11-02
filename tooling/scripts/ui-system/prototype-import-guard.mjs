@@ -77,7 +77,7 @@ if (write) {
   fs.writeFileSync(BASELINE, `${JSON.stringify(observed, null, 2)}\n`);
   const total = Object.values(observed).reduce((sum, c) =>
     sum + Object.values(c).reduce((a, b) => a + b, 0), 0);
-  console.log(`baseline written: ${Object.keys(observed).length} files, ${total} raw elements`);
+  process.stdout.write(`baseline written: ${Object.keys(observed).length} files, ${total} raw elements\n`);
   process.exit(0);
 }
 
@@ -106,13 +106,13 @@ for (const file of files) {
 let debt = 0;
 for (const [file, counts] of Object.entries(baseline)) {
   for (const tag of RAW_TAGS) debt += counts[tag] ?? 0;
-  if (!observed[file]) console.log(`debt cleared: ${file} removed`);
+  if (!observed[file]) process.stdout.write(`debt cleared: ${file} removed\n`);
   else {
     const now = observed[file];
     for (const tag of RAW_TAGS) {
       const b = counts[tag] ?? 0;
       const n = now[tag] ?? 0;
-      if (b && n < b) console.log(`debt reduced: ${file} <${tag}> ${b} -> ${n}`);
+      if (b && n < b) process.stdout.write(`debt reduced: ${file} <${tag}> ${b} -> ${n}\n`);
     }
   }
 }
@@ -123,4 +123,4 @@ if (failures.length) {
 }
 const current = Object.values(observed).reduce((sum, c) =>
   sum + Object.values(c).reduce((a, b) => a + b, 0), 0);
-console.log(`prototype-import-guard OK · current raw elements: ${current} · baseline debt: ${debt}`);
+process.stdout.write(`prototype-import-guard OK · current raw elements: ${current} · baseline debt: ${debt}\n`);

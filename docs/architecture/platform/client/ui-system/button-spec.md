@@ -25,7 +25,7 @@ Button 的视觉层级不决定风险。停止生成可以是高频普通动作�
 
 **已有几何约束**
 
-来自 [components.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/docs/client/common/ui-identity/components.md#L46-L55) 的视觉高度：inline icon 24、compact text 28、relationship decision 30、standard text 32、chat chrome 34、header icon 36、hero CTA 40。控件圆角只有 6/8/10/12；圆形/胶囊 icon button 不属于产品语言。
+来自 [components.md](../../../../../client/common/ui-identity/components.md#L46-L55) 的视觉高度：inline icon 24、compact text 28、relationship decision 30、standard text 32、chat chrome 34、header icon 36、hero CTA 40。控件圆角只有 6/8/10/12；圆形/胶囊 icon button 不属于产品语言。
 
 **几何绑定，新增提案**
 

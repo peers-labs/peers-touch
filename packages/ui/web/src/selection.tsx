@@ -87,11 +87,11 @@ export interface SelectProps<T extends string | number = string> extends Omit<HT
   onValueChange?: (value: T | T[] | undefined) => void;
   multiple?: boolean; searchable?: boolean; placeholder?: string; label?: string;
   disabled?: boolean; density?: Density; clearable?: boolean;
-  onQueryChange?: (query: string) => void; pending?: boolean; emptyLabel?: string; createValue?:(query:string)=>T;
+  onQueryChange?: (query: string) => void; pending?: boolean; emptyLabel?: string; pendingLabel?: string; createValue?:(query:string)=>T;
 }
 export function Select<T extends string | number>({
   options, value: controlled, defaultValue, onValueChange, multiple, searchable, placeholder = 'Select',
-  label, disabled, density, clearable, onQueryChange, pending, createValue, emptyLabel = 'No options', className = '', style,
+  label, disabled, density, clearable, onQueryChange, pending, createValue, emptyLabel = 'No options', pendingLabel, className = '', style,
   id: controlId, 'aria-describedby': describedBy, 'aria-invalid': invalid, ...props
 }: SelectProps<T>) {
   const [local, setLocal] = useState<T | readonly T[] | undefined>(defaultValue), value = controlled ?? local;
@@ -124,7 +124,7 @@ export function Select<T extends string | number>({
           setValue(multiple?(values.includes(next)?[...values]:[...values,next]):next);setQuery('');if(!multiple)setOpen(false);
         }}
           onChange={event => { setQuery(event.target.value); onQueryChange?.(event.target.value); setActive(0); }} />}
-        {pending && <div role="status">Loading</div>}
+        {pending && <div role="status" aria-live="polite">{pendingLabel}</div>}
         <div ref={list} id={id} className="pt-select-options" role="listbox" aria-label={label}
           aria-multiselectable={multiple || undefined}>
           {filtered.map((option, index) => <div key={option.value} role="presentation">

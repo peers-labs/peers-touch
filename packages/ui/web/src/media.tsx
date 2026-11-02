@@ -38,10 +38,10 @@ export function HtmlPreview({html,label,height=320}:HtmlPreviewProps) {
   return <iframe className="pt-html-preview" title={label} sandbox="" referrerPolicy="no-referrer" srcDoc={document}
     style={{width:'100%',height,border:'1px solid var(--pt-border)',borderRadius:'var(--pt-radius-md)'}} />;
 }
-export interface QrCodeProps { value: string; label: string; size?: number; correction?: 'medium'|'high'; }
-export function QrCode({value,label,size=208,correction='medium'}:QrCodeProps) {
+export interface QrCodeProps { value: string; label: string; size?: number; correction?: 'medium'|'high'; encodeErrorTitle?: string; }
+export function QrCode({value,label,size=208,correction='medium',encodeErrorTitle='QR value cannot be encoded'}:QrCodeProps) {
   const modules=(() => {try{return QRCodeEngine.create(value,{errorCorrectionLevel:correction==='high'?'H':'M'}).modules;}catch{return null;}})();
-  if (!modules) return <Alert tone="danger" title="QR value cannot be encoded" />;
+  if (!modules) return <Alert tone="danger" title={encodeErrorTitle} />;
   const dimension=modules.size+8, path:string[]=[];
   for(let y=0;y<modules.size;y++) for(let x=0;x<modules.size;x++) if(modules.get(y,x)) path.push(`M${x+4} ${y+4}h1v1h-1z`);
   return <svg role="img" aria-label={label} width={size} height={size} viewBox={`0 0 ${dimension} ${dimension}`}

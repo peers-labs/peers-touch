@@ -47,16 +47,16 @@ export function Autocomplete({projection,onQueryChange,onSelect,label,placeholde
       </li>)}</ul>}
   </div>;
 }
-export interface InlineEditProps {value:string;onCommit:(value:string)=>void;label:string;execution?:'idle'|'pending'|'failed';error?:string;}
-export function InlineEdit({value,onCommit,label,execution='idle',error}:InlineEditProps) {
+export interface InlineEditProps {value:string;onCommit:(value:string)=>void;label:string;execution?:'idle'|'pending'|'failed';error?:string;saveLabel?:string;cancelLabel?:string;finishLabel?:string;}
+export function InlineEdit({value,onCommit,label,execution='idle',error,saveLabel='Save',cancelLabel='Cancel',finishLabel='Finish editing'}:InlineEditProps) {
   const [editing,setEditing]=useState(false),[draft,setDraft]=useState(value);
   useEffect(()=>{if(!editing)setDraft(value);},[value,editing]);
   return editing?<div><Field label={label}><TextField autoFocus value={draft} onChange={e=>setDraft(e.target.value)}
     onKeyDown={e=>{if(e.key==='Escape'){setEditing(false);setDraft(value);}}}/></Field>
     {error&&<Alert title={error} tone="danger"/>}<ActionGroup label="Edit actions">
-      <Button actionId="inline.save" label="Save" execution={execution==='pending'?'pending':'idle'} onActivate={()=>onCommit(draft)}/>
-      <Button actionId="inline.cancel" label="Cancel" onActivate={()=>{setEditing(false);setDraft(value);}}/>
-      <Button actionId="inline.finish" label="Finish editing" onActivate={()=>setEditing(false)}/></ActionGroup></div>
+      <Button actionId="inline.save" label={saveLabel} execution={execution==='pending'?'pending':'idle'} onActivate={()=>onCommit(draft)}/>
+      <Button actionId="inline.cancel" label={cancelLabel} onActivate={()=>{setEditing(false);setDraft(value);}}/>
+      <Button actionId="inline.finish" label={finishLabel} onActivate={()=>setEditing(false)}/></ActionGroup></div>
     :<Button actionId="inline.edit" label={value||label} emphasis="inline" onActivate={()=>setEditing(true)}/>;
 }
 export interface ColorPickerProps {value:string;onValueChange:(value:string)=>void;label:string;disabled?:boolean;}
@@ -81,15 +81,15 @@ export function TimeField({value,onValueChange,label,...props}:DateFieldProps) {
 export function DateTimeField({value,onValueChange,label,...props}:DateFieldProps) {
   return <Field label={label}><TextField {...props} type="datetime-local" step={1} value={value} onChange={e=>onValueChange(e.target.value)}/></Field>;
 }
-export function DateTimeRangeField({value,onValueChange,label}: {value:readonly [string,string];onValueChange:(range:[string,string])=>void;label:string}) {
+export function DateTimeRangeField({value,onValueChange,label,startLabel='Start time',endLabel='End time'}: {value:readonly [string,string];onValueChange:(range:[string,string])=>void;label:string;startLabel?:string;endLabel?:string}) {
   return <fieldset className="pt-fieldset"><legend>{label}</legend><ActionGroup label={label}>
-    <DateTimeField label="Start time" value={value[0]} max={value[1]||undefined} onValueChange={next=>onValueChange([next,value[1]])}/>
-    <DateTimeField label="End time" value={value[1]} min={value[0]||undefined} onValueChange={next=>onValueChange([value[0],next])}/></ActionGroup></fieldset>;
+    <DateTimeField label={startLabel} value={value[0]} max={value[1]||undefined} onValueChange={next=>onValueChange([next,value[1]])}/>
+    <DateTimeField label={endLabel} value={value[1]} min={value[0]||undefined} onValueChange={next=>onValueChange([value[0],next])}/></ActionGroup></fieldset>;
 }
-export function DateRangeField({value,onValueChange,label,min,max}: {value:readonly [string,string];onValueChange:(range:[string,string])=>void;label:string;min?:string;max?:string}) {
+export function DateRangeField({value,onValueChange,label,min,max,startLabel='Start date',endLabel='End date'}: {value:readonly [string,string];onValueChange:(range:[string,string])=>void;label:string;min?:string;max?:string;startLabel?:string;endLabel?:string}) {
   return <fieldset className="pt-fieldset"><legend>{label}</legend><ActionGroup label={label}>
-    <DateField label="Start date" value={value[0]} min={min} max={value[1]||max} onValueChange={next=>onValueChange([next,value[1]])}/>
-    <DateField label="End date" value={value[1]} min={value[0]||min} max={max} onValueChange={next=>onValueChange([value[0],next])}/></ActionGroup></fieldset>;
+    <DateField label={startLabel} value={value[0]} min={min} max={value[1]||max} onValueChange={next=>onValueChange([next,value[1]])}/>
+    <DateField label={endLabel} value={value[1]} min={value[0]||min} max={max} onValueChange={next=>onValueChange([value[0],next])}/></ActionGroup></fieldset>;
 }
 export function ShortcutField({value,onValueChange,label,conflict}: {value:string;onValueChange:(value:string)=>void;label:string;conflict?:string}) {
   return <Field label={label} validation={conflict?{state:'invalid',message:conflict}:{state:'valid'}}><TextField value={value} readOnly

@@ -13,6 +13,7 @@ export interface MarkdownProps extends HTMLAttributes<HTMLDivElement> {
   features?: { math?: boolean; diagrams?: boolean; footnotes?: boolean; alerts?: boolean };
   streaming?: boolean;
   renderReasoning?: (content: string) => ReactNode;
+  reasoningLabel?: string;
   codeActions?: (block: DocumentCode) => ReactNode;
   resolveImage?: (image: DocumentImage) => ResourceView | undefined;
 }
@@ -118,7 +119,7 @@ function compileDocument(content: string, features: MarkdownProps['features'], i
   return { fragment, slots };
 }
 
-export function Markdown({ content, features, streaming, renderReasoning, codeActions, resolveImage,
+export function Markdown({ content, features, streaming, renderReasoning, reasoningLabel = 'Reasoning', codeActions, resolveImage,
   className = '', ...props }: MarkdownProps) {
   const id = `pt-document-${useId().replace(/[^a-z0-9]/gi, '')}`;
   const document = useMemo(() => content.length <= 1_000_000
@@ -135,7 +136,7 @@ export function Markdown({ content, features, streaming, renderReasoning, codeAc
         : <CodeBlock key={key} code={item.code} language={item.language} actions={codeActions?.(item)} />;
       if (item.kind === 'math') return <MathContent key={key} text={item.text} display={item.display} />;
       if (item.kind === 'reasoning') return <div key={key}>{renderReasoning?.(item.text)
-        ?? <details><summary>Reasoning</summary><div style={{ whiteSpace: 'pre-wrap' }}>{item.text}</div></details>}</div>;
+        ?? <details><summary>{reasoningLabel}</summary><div style={{ whiteSpace: 'pre-wrap' }}>{item.text}</div></details>}</div>;
       if (item.kind === 'image') {
         const resource = resolveImage?.(item);
         return resource ? <Image key={key} resource={resource} alt={item.alt} preview /> : <span key={key}>{item.alt || 'Image'}</span>;

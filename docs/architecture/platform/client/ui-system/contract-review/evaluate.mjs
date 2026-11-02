@@ -79,7 +79,7 @@ if(process.argv[1]&&pathToFileURL(process.argv[1]).href===import.meta.url) {
     const [, ,registryPath,calibrationPath]=process.argv;
     if(!registryPath||!calibrationPath) throw new Error('usage: node evaluate.mjs registry.json calibration.json');
     const result=evaluateCalibration(JSON.parse(fs.readFileSync(registryPath)),JSON.parse(fs.readFileSync(calibrationPath)));
-    console.log(JSON.stringify(result,null,2));
+    process.stdout.write(JSON.stringify(result,null,2)+'\n');
     process.exitCode=result.matched===result.cases?0:1;
   } catch(error) {console.error(JSON.stringify({status:'INVALID_INPUT',reason:error.message}));process.exitCode=1;}
 }

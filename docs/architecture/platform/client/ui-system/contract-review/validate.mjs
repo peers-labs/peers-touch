@@ -171,4 +171,4 @@ check('frozen-artifact-manifest',()=>{
 });
 const report={kind:'peers-ui-contract-review-validation',status:'PASS',claimScope:'SOURCE_FREEZE_MAPPING_TYPED_PREDICATE_AND_DOCUMENT_STRUCTURE_ONLY',semanticAcceptance:'UNPROVEN',usefulnessEvidence:'UNPROVEN',galleryEvidence:'NOT_BUILT',productEvidence:'NOT_RUN',independentReview:'NOT_RUN',checks};
 fs.writeFileSync(path.join(root,'validation.json'),JSON.stringify(report,null,2)+'\n');
-console.log(JSON.stringify(report,null,2));
+process.stdout.write(JSON.stringify(report,null,2)+'\n');

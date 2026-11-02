@@ -117,6 +117,6 @@ try {
   rmSync(tmpDir, { recursive: true, force: true });
 }
 
-console.log(
-  `rendered ${rendered} architecture readers -> public/architecture-assets`,
+process.stdout.write(
+  `rendered ${rendered} architecture readers -> public/architecture-assets\n`,
 );

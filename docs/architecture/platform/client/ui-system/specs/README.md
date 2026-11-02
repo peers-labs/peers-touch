@@ -41,7 +41,7 @@
 
 ### 可访问性与输入方式
 
-继承现有 [accessibility.md](file:///Users/bytedance/Documents/Projects/peers-touch/peers-touch-show/docs/client/common/ui-identity/accessibility.md) 的单一焦点所有权、具名图标、可读状态、输入方式和运动政策；新增跨 renderer 字段为提案。
+继承现有 [accessibility.md](../../../../../client/common/ui-identity/accessibility.md) 的单一焦点所有权、具名图标、可读状态、输入方式和运动政策；新增跨 renderer 字段为提案。
 
 - 每项适用的 keyboard、pointer、touch、reader 行为都在该项定义，不能以“支持可访问性”代替具体按键和落点。
 - Composite Field 由一个 FieldFrame 管 label/helper/error/focus；独立值才是独立 field。菜单、dialog、tree、tab、slider 的复合焦点规则各自定义。
