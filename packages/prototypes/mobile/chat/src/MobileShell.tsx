@@ -1,129 +1,153 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
-import { Badge } from 'antd';
-import { ArrowLeft, Image as ImageIcon, MessageCircle, Search, User, Users } from 'lucide-react';
-import type { TabId, Conversation, Contact, GroupItem, Message, MobileUiEvidence, SettingEntry } from './types';
+import { Badge, Icon, IconButton } from '@peers-touch/ui';
+import type {
+  Contact,
+  Conversation,
+  GroupItem,
+  IconName,
+  Message,
+  MobileUiEvidence,
+  SettingEntry,
+  TabId,
+} from './types';
 import {
   deliveryRecoveryMessages,
-  demoMessages,
   demoConversations,
+  demoMessages,
   directDemoMessages,
   unknownOutcomeMessages,
 } from './data';
 import {
-  longListContacts, longListConversations, longListGroups, longListMembers,
-  longListMessages, longListRequests,
+  longListContacts,
+  longListConversations,
+  longListGroups,
+  longListMembers,
+  longListMessages,
+  longListRequests,
 } from './longListDemo';
 import { PrototypeListMemory } from './listPresentation';
-import copy from '../../../../locales/en/common.json';
-import type { SocialDemoAction, SocialDemoState, SocialEvidenceScenario } from './socialDemo';
-import type { SearchDemoControl } from './searchDemo';
-import { ChatPage } from './pages/ChatPage';
-import { ChatThread } from './pages/ChatThread';
-import { SearchPage, type SearchPresentation, type SearchTarget, type SocialSearchTarget } from './pages/SearchPage';
-import { MomentsPage, preparedMoments, type MomentsEvidenceScenario } from './pages/MomentsPage';
-import { ContactsPage } from './pages/ContactsPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { ContactDetailView } from './components/ContactDetailView';
-import { GroupDetailView } from './components/GroupDetailView';
-import { SettingDetailView } from './components/SettingDetailView';
-import { FindPeopleSheet } from './components/FindPeopleSheet';
-import { CreateGroupSheet } from './components/CreateGroupSheet';
 import {
   RequestRecoveryNotice,
   ShellRecoverySheet,
   SocialUnavailablePage,
   type ShellEvidenceScenario,
 } from './components/ExperienceRecovery';
+import { ChatPage } from './pages/ChatPage';
+import { ChatThread } from './pages/ChatThread';
+import {
+  MomentsPage,
+  preparedMoments,
+  type MomentsEvidenceScenario,
+} from './pages/MomentsPage';
+import { ContactsPage } from './pages/ContactsPage';
+import { ProfilePage } from './pages/ProfilePage';
+import { SearchPage, type SearchPresentation, type SearchTarget, type SocialSearchTarget } from './pages/SearchPage';
+import { SettingDetailView } from './components/SettingDetailView';
+import { FindPeopleSheet } from './components/FindPeopleSheet';
+import { CreateGroupSheet } from './components/CreateGroupSheet';
+import { ContactDetailView } from './components/ContactDetailView';
+import { GroupDetailView } from './components/GroupDetailView';
 import { MobileCallSurface } from './components/MobileCallSurface';
+import type { SocialDemoAction, SocialDemoState } from './socialDemo';
+import type { SearchDemoControl } from './searchDemo';
 import {
   callSnapshotForScenario,
   type PrototypeCallMediaKind,
   type PrototypeCallScenario,
   type PrototypeCallSnapshot,
 } from './callPrototype';
+import copy from '../../../../locales/en/common.json';
 
 export function MobileShell({
-  stationLabel,
   onChangeStation,
   recoveryScenario,
-  onRecoveryClose,
   socialScenario,
   momentsScenario,
+  searchDemo,
   socialDemo,
   dispatchSocialDemo,
   longLists = false,
-  focusChatJourney = false,
-  deliveryRecovery = false,
   uiEvidence,
+  deliveryRecovery = false,
   callScenario,
-  searchDemo,
+  onRecoveryClose,
 }: {
   stationLabel: string;
   onChangeStation: () => void;
   recoveryScenario?: ShellEvidenceScenario;
-  onRecoveryClose?: () => void;
-  socialScenario?: SocialEvidenceScenario;
+  socialScenario?: string;
   momentsScenario?: MomentsEvidenceScenario;
+  searchDemo?: SearchDemoControl;
   socialDemo: SocialDemoState;
   dispatchSocialDemo: Dispatch<SocialDemoAction>;
   longLists?: boolean;
   focusChatJourney?: boolean;
-  deliveryRecovery?: boolean;
   uiEvidence: MobileUiEvidence;
+  deliveryRecovery?: boolean;
+  onRecoveryClose?: () => void;
   callScenario?: PrototypeCallScenario;
-  searchDemo?: SearchDemoControl;
 }) {
   const [listMemory] = useState(() => new PrototypeListMemory());
-  const [activeTab, setActiveTab] = useState<TabId>(
-    momentsScenario
-      ? 'moments'
-      : socialScenario
-        && socialScenario !== 'social-unavailable'
-        && socialScenario !== 'social-detail-unavailable'
-        ? 'contacts'
-        : 'chat',
-  );
+  const [activeTab, setActiveTab] = useState<TabId>('chat');
   const [findPeopleOpen, setFindPeopleOpen] = useState(
-    socialScenario === 'find-people-member' || socialScenario === 'find-people-no-membership'
-      || socialScenario === 'request-unknown',
+    socialScenario === 'find-people-member' || socialScenario === 'find-people-no-membership',
   );
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(() => (
-    callScenario
-      ? demoConversations.find((conversation) => conversation.key === 'alice') ?? null
-      : focusChatJourney
-        || socialScenario === 'social-detail-unavailable'
-        || uiEvidence.chatThreadState !== 'ready'
-        ? demoConversations.find((conversation) => conversation.key === 'dev-team') ?? null
-      : null
-  ));
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(
+    callScenario ? demoConversations.find((conversation) => conversation.key === 'alice') ?? null : null,
+  );
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupItem | null>(null);
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchOrigin, setSearchOrigin] = useState<{ tab: TabId; conversation: Conversation | null }>({
-    tab: 'chat', conversation: null,
-  });
-  const [searchSetting, setSearchSetting] = useState(false);
-  const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
-  const [socialSearchTarget, setSocialSearchTarget] = useState<SocialSearchTarget | null>(null);
-  const [searchMoments] = useState(preparedMoments);
+  const [searchOrigin, setSearchOrigin] = useState<{ tab: TabId; conversation: Conversation | null }>({ tab: 'chat', conversation: null });
   const [searchView, setSearchView] = useState<SearchPresentation>({
     query: '', filter: 'all', conversationKey: '', submitted: false,
   });
-  const [conversationMessages, setConversationMessages] = useState<Record<string, Message[]>>({});
+  const [socialSearchTarget, setSocialSearchTarget] = useState<SocialSearchTarget | null>(null);
+  const [momentsImmersiveOpen, setMomentsImmersiveOpen] = useState(false);
+  const [callSnapshot, setCallSnapshot] = useState<PrototypeCallSnapshot | null>(null);
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
-  const [momentsImmersiveOpen, setMomentsImmersiveOpen] = useState(false);
-  const [callSnapshot, setCallSnapshot] = useState<PrototypeCallSnapshot | null>(
-    () => callScenario ? callSnapshotForScenario(callScenario) : null,
-  );
+  const [conversationMessages, setConversationMessages] = useState<Record<string, Message[]>>({});
+  const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
+
+  const baseConversations = longLists ? longListConversations : socialDemo.conversations;
+  const conversations = uiEvidence.longContent
+    ? baseConversations.map((conversation, index) => (index === 0 ? {
+      ...conversation,
+      name: 'International Product Architecture Working Group',
+      lastMessage: 'Morgen besprechen wir die gerateubergreifende Wiederherstellung nach einem unterbrochenen Stationswechsel.',
+    } : conversation))
+    : baseConversations;
+  const unreadCount = conversations.reduce((total, conversation) => total + conversation.unread, 0);
+  const searchMoments = preparedMoments();
+
+  function initialMessages(conversation: Conversation): Message[] {
+    if (longLists) return longListMessages;
+    if (conversation.key.startsWith('demo-direct-')) return [];
+    if (deliveryRecovery) return deliveryRecoveryMessages;
+    if (uiEvidence.chatThreadState === 'unknown-outcome') return unknownOutcomeMessages;
+    return conversation.key === 'dev-team' ? demoMessages : directDemoMessages;
+  }
+
+  function readMessages(conversation: Conversation): Message[] {
+    return conversationMessages[conversation.key] ?? initialMessages(conversation);
+  }
+
+  function updateMessages(conversation: Conversation, next: SetStateAction<Message[]>) {
+    setConversationMessages((current) => ({
+      ...current,
+      [conversation.key]: typeof next === 'function'
+        ? (next as (prev: Message[]) => Message[])(current[conversation.key] ?? initialMessages(conversation))
+        : next,
+    }));
+  }
 
   useEffect(() => {
-    if (shellToast) {
-      const timer = setTimeout(() => setShellToast(null), 2100);
-      return () => clearTimeout(timer);
-    }
+    if (!shellToast) return;
+    const timer = window.setTimeout(() => setShellToast(null), 2100);
+    return () => window.clearTimeout(timer);
   }, [shellToast, shellToastKey]);
 
   function showShellToast(msg: string) {
@@ -131,31 +155,18 @@ export function MobileShell({
     setShellToastKey((k) => k + 1);
   }
 
-  const baseConversations = longLists ? longListConversations : socialDemo.conversations;
-  const conversations = uiEvidence.longContent
-    ? baseConversations.map((conversation, index) => index === 0 ? {
-      ...conversation,
-      name: 'International Product Architecture Working Group',
-      lastMessage: 'Morgen besprechen wir die gerateubergreifende Wiederherstellung nach einem unterbrochenen Stationswechsel.',
-    } : conversation)
-    : baseConversations;
-  const unreadCount = conversations.reduce((total, conversation) => total + conversation.unread, 0);
-
-  const tabs: { id: TabId; label: string; icon: typeof MessageCircle; badge?: number }[] = [
-    { id: 'chat', label: 'Chats', icon: MessageCircle, badge: unreadCount },
-    { id: 'moments', label: 'Moments', icon: ImageIcon },
-    { id: 'contacts', label: 'Contacts', icon: Users },
-    { id: 'profile', label: 'Me', icon: User },
-  ];
-
-  function handleConversationClick(conv: Conversation) {
-    setSelectedConversation(conv);
+  function openSearch(conversationKey = '') {
+    setSearchOrigin({ tab: activeTab, conversation: selectedConversation });
+    setSearchView({ query: '', filter: 'all', conversationKey, submitted: false });
+    setSearchOpen(true);
   }
 
-  function handleStartCall(
-    conversation: Conversation,
-    mediaKind: PrototypeCallMediaKind,
-  ) {
+  function leaveSearch() {
+    searchDemo?.dispatch({ type: 'close', owner: 'global-search' });
+    setSearchOpen(false);
+  }
+
+  function handleStartCall(conversation: Conversation, mediaKind: PrototypeCallMediaKind) {
     if (conversation.isGroup) return;
     setCallSnapshot({
       state: 'outgoing',
@@ -165,56 +176,10 @@ export function MobileShell({
     });
   }
 
-  function handleBackToList() {
-    if (searchTarget) {
-      setSearchTarget(null);
-      searchDemo?.dispatch({ type: 'open', owner: 'global-search' });
-      setSearchOpen(true);
-      return;
-    }
-    setSelectedConversation(null);
-  }
-
-  function openSearch(conversationKey = '') {
-    setSearchOrigin({ tab: activeTab, conversation: selectedConversation });
-    if (searchView.conversationKey !== conversationKey) {
-      setSearchView({ query: '', filter: 'all', conversationKey, submitted: false });
-    }
-    setSearchTarget(null);
+  function handleConversationClick(conv: Conversation) {
     setSocialSearchTarget(null);
-    if (searchDemo && searchDemo.state.owner !== 'global-search') {
-      searchDemo.dispatch({ type: 'open', owner: 'global-search' });
-    }
-    setSearchOpen(true);
+    setSelectedConversation(conv);
   }
-
-  function initialMessages(conversation: Conversation): Message[] {
-    if (longLists) return longListMessages;
-    if (deliveryRecovery) return deliveryRecoveryMessages;
-    if (uiEvidence.chatThreadState === 'unknown-outcome') return unknownOutcomeMessages;
-    if (conversation.key.startsWith('demo-direct-')) return [];
-    return conversation.key === 'dev-team' ? demoMessages : directDemoMessages;
-  }
-
-  function readMessages(conversation: Conversation): Message[] {
-    return conversationMessages[conversation.key] ?? initialMessages(conversation);
-  }
-
-  function updateMessages(conversation: Conversation, next: SetStateAction<Message[]>) {
-    setConversationMessages(current => ({
-      ...current,
-      [conversation.key]: typeof next === 'function'
-        ? next(current[conversation.key] ?? initialMessages(conversation)) : next,
-    }));
-  }
-
-  function leaveSearch() {
-    searchDemo?.dispatch({ type: 'close', owner: 'global-search' });
-    setSearchOpen(false);
-  }
-
-  const searchEntry = <button type="button" className="mp-header-action" aria-label="Search"
-    onClick={() => openSearch()}><Search size={20} /></button>;
 
   function handleContactClick(contact: Contact) {
     dispatchSocialDemo({ type: 'close-direct' });
@@ -225,220 +190,281 @@ export function MobileShell({
     setSelectedGroup(group);
   }
 
-  function handleSettingClick(setting: SettingEntry) {
-    setSearchSetting(false);
-    setSelectedSetting(setting);
-  }
-
   function handleContactMessage(contact: Contact) {
     dispatchSocialDemo({ type: 'open-direct', contactKey: contact.key });
   }
 
-  function handleAddContact() {
-    setCreateGroupOpen(false);
-    setFindPeopleOpen(true);
-  }
+  // Direct lifecycle: open the prepared conversation when the demo resolves ready.
+  useEffect(() => {
+    if (socialDemo.direct?.status !== 'ready' || !selectedContact) return;
+    if (socialDemo.direct.contactKey !== selectedContact.key) return;
+    const conv = socialDemo.direct.conversation;
+    if (conv) setSelectedConversation(conv);
+    setSelectedContact(null);
+  }, [socialDemo.direct, selectedContact]);
 
-  function handleCreateGroup() {
-    setFindPeopleOpen(false);
-    setCreateGroupOpen(true);
-  }
-
-  function handleRecoveryAction(action: 'primary' | 'secondary') {
-    if (recoveryScenario === 'draft-restored' && action === 'primary') {
-      setSelectedConversation(demoConversations[0]);
-      showShellToast('Draft ready to continue');
-    } else if (recoveryScenario === 'draft-restored') {
-      showShellToast('Draft discarded');
-    } else if (recoveryScenario === 'unknown-write' && action === 'primary') {
-      showShellToast('Checking message status');
-    } else if (recoveryScenario === 'unknown-write') {
-      showShellToast('Draft kept on this device');
-    } else if (recoveryScenario === 'ledger-full' && action === 'primary') {
-      showShellToast('Pending actions ready for review');
-    } else {
-      showShellToast('Read-only mode remains available');
-    }
-    onRecoveryClose?.();
-  }
-
-  function renderPage(): ReactNode {
-    if (searchOpen) {
-      const targets = conversations.flatMap(conversation => {
-        const messages = readMessages(conversation);
-        return messages.filter(message => !message.dateLabel).flatMap(message => [
-          { conversation, message },
-          ...(message.threadReplies ?? []).map(reply => ({ conversation, message: reply, root: message })),
-        ]);
-      });
-      return <SearchPage view={searchView} onChange={setSearchView} targets={targets} memory={listMemory}
-        socialTargets={searchMoments.flatMap(moment => [
-          { moment }, ...moment.comments.map(comment => ({ moment, comment })),
-        ])} onOpenSocial={target => {
-          setSocialSearchTarget(target); setActiveTab('moments'); leaveSearch();
-        }}
-        demo={searchDemo} onBack={() => {
-          leaveSearch(); setSearchTarget(null); setSelectedSetting(null);
-          setActiveTab(searchOrigin.tab); setSelectedConversation(searchOrigin.conversation);
-        }} onOpen={target => {
-          setActiveTab('chat'); setSelectedConversation(target.conversation);
-          setSearchTarget(target); leaveSearch();
-        }} onSetting={setting => {
-          setSearchSetting(true);
-          setActiveTab('profile'); setSelectedSetting(setting); leaveSearch();
-        }} />;
-    }
-    if ((activeTab === 'chat' || activeTab === 'contacts') && socialDemo.runtime !== 'ready') {
-      const conversationUnavailable = activeTab === 'chat' && selectedConversation;
-      return <SocialUnavailablePage
-        title={copy[conversationUnavailable
-          ? 'mobile.nav.chatConversation'
-          : activeTab === 'chat'
-            ? 'mobile.chat.title'
-            : 'mobile.contacts.title']}
-        runtime={socialDemo.runtime}
-        onRetry={() => dispatchSocialDemo({ type: 'retry-runtime' })}
-        onBack={conversationUnavailable ? handleBackToList : undefined}
-      />;
-    }
-    if (activeTab === 'chat' && selectedConversation) {
-      return <ChatThread key={selectedConversation.key} conversation={selectedConversation}
-        messages={readMessages(selectedConversation)}
-        onMessagesChange={next => updateMessages(selectedConversation, next)}
-        listMemory={listMemory} uiEvidence={uiEvidence}
-        messageId={searchTarget?.message.id} threadRootMessageId={searchTarget?.root?.id}
-        onSearch={() => openSearch(selectedConversation.key)}
-        onStartCall={(mediaKind) => handleStartCall(selectedConversation, mediaKind)}
-        onBack={handleBackToList} />;
-    }
-    if (activeTab === 'contacts' && selectedContact) {
-      const direct = socialDemo.direct?.contactKey === selectedContact.key ? socialDemo.direct : null;
-      if (direct?.status === 'ready' && direct.conversation) {
-        return <ChatThread key={direct.conversation.key} conversation={direct.conversation}
-          messages={readMessages(direct.conversation)}
-          onMessagesChange={next => updateMessages(direct.conversation!, next)}
-          listMemory={listMemory} uiEvidence={uiEvidence}
-          onSearch={() => openSearch(direct.conversation!.key)}
-          onStartCall={(mediaKind) => handleStartCall(direct.conversation!, mediaKind)}
-          onBack={() => dispatchSocialDemo({ type: 'close-direct' })} />;
-      }
-      return <ContactDetailView contact={selectedContact}
-        directStatus={direct?.status}
-        canMessage={!longLists && socialDemo.federations.length > 0}
-        messageUnavailableText={longLists ? copy['mobile.launch.unavailable'] : undefined}
-        onBack={() => { dispatchSocialDemo({ type: 'close-direct' }); setSelectedContact(null); }}
-        onMessage={handleContactMessage} />;
-    }
-    if (activeTab === 'contacts' && selectedGroup) {
-      return <GroupDetailView key={selectedGroup.key} group={selectedGroup}
-        members={longLists ? longListMembers : undefined} listMemory={listMemory}
-        sampleOnly={longLists} onMemberClick={longLists ? handleContactClick : undefined}
-        onBack={() => setSelectedGroup(null)} />;
-    }
-    if (activeTab === 'profile' && selectedSetting) {
-      return (
-        <SettingDetailView
-          setting={selectedSetting}
-          onBack={() => {
-            setSelectedSetting(null);
-            if (searchSetting) {
-              searchDemo?.dispatch({ type: 'open', owner: 'global-search' });
-              setSearchOpen(true);
-            }
-          }}
-          onChangeStation={onChangeStation}
-        />
-      );
-    }
-    switch (activeTab) {
-      case 'chat': return <ChatPage conversations={conversations} headerActions={searchEntry}
-        listMemory={listMemory} uiEvidence={uiEvidence} onConversationClick={handleConversationClick} />;
-      case 'moments': return <MomentsPage
-        headerActions={socialSearchTarget ? <button type="button" className="mp-header-action"
-          aria-label="Back to search results" onClick={() => {
-            setSocialSearchTarget(null); setSearchOpen(true);
-          }}><ArrowLeft size={20} /></button> : searchEntry}
-        searchTarget={socialSearchTarget ? {
-          postId: socialSearchTarget.moment.id, commentId: socialSearchTarget.comment?.id,
-        } : undefined}
-        scenario={momentsScenario}
-        onImmersiveVisibilityChange={setMomentsImmersiveOpen}
-      />;
-      case 'contacts': return <ContactsPage headerActions={searchEntry} contacts={longLists ? longListContacts : socialDemo.contacts}
-        groups={longLists ? longListGroups : undefined} requests={longLists ? longListRequests : undefined}
-        listMemory={listMemory} request={socialDemo.request}
-        avatarState={uiEvidence.avatarState}
-        onContactClick={handleContactClick} onGroupClick={handleGroupClick}
-        onAddContact={handleAddContact} onCreateGroup={handleCreateGroup} />;
-      case 'profile': return <ProfilePage headerActions={searchEntry} avatarState={uiEvidence.avatarState}
-        onChangeStation={onChangeStation} onSettingClick={handleSettingClick} />;
-    }
-  }
+  useEffect(() => {
+    if (callScenario) setCallSnapshot(callSnapshotForScenario(callScenario));
+  }, [callScenario]);
 
   const showTabBar = !searchOpen && !(activeTab === 'chat' && selectedConversation)
     && !(activeTab === 'contacts' && (selectedContact || selectedGroup))
     && !(activeTab === 'profile' && selectedSetting)
     && !(activeTab === 'moments' && momentsImmersiveOpen);
-  const overlayOpen = findPeopleOpen || createGroupOpen || Boolean(callSnapshot);
+
+  const overlayOpen = findPeopleOpen || createGroupOpen || Boolean(callSnapshot) || Boolean(recoveryScenario);
+
+  function renderPage(): ReactNode {
+    if (searchOpen) {
+      const targets = conversations.flatMap((conversation) => {
+        const messages = readMessages(conversation);
+        return messages.flatMap((message) => {
+          const entries: { conversation: Conversation; message: Message; root?: Message }[] = [
+            { conversation, message },
+          ];
+          (message.threadReplies ?? []).forEach((reply) => entries.push({ conversation, message: reply, root: message }));
+          return entries;
+        });
+      });
+      return (
+        <SearchPage
+          view={searchView}
+          onChange={setSearchView}
+          targets={targets}
+          socialTargets={searchMoments.flatMap((moment) => [
+            { moment },
+            ...moment.comments.map((comment) => ({ moment, comment })),
+          ])}
+          memory={listMemory}
+          demo={searchDemo}
+          onBack={() => {
+            leaveSearch();
+            setActiveTab(searchOrigin.tab);
+          }}
+          onOpen={(target) => {
+            leaveSearch();
+            setActiveTab('chat');
+            setSelectedConversation(target.conversation);
+            setSearchTarget(target);
+          }}
+          onSetting={(setting) => {
+            leaveSearch();
+            setActiveTab('profile');
+            setSelectedSetting(setting);
+          }}
+          onOpenSocial={(target) => {
+            leaveSearch();
+            setActiveTab('moments');
+            setSocialSearchTarget(target);
+          }}
+        />
+      );
+    }
+
+    if ((activeTab === 'chat' || activeTab === 'contacts') && socialDemo.runtime !== 'ready') {
+      const conversationUnavailable = activeTab === 'chat' && selectedConversation;
+      return (
+        <SocialUnavailablePage
+          title={conversationUnavailable ? copy['mobile.chat.thread'] : copy['mobile.chat.title']}
+          runtime={socialDemo.runtime}
+          onRetry={() => dispatchSocialDemo({ type: 'retry-runtime' })}
+          onBack={conversationUnavailable ? () => setSelectedConversation(null) : undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'chat') {
+      if (selectedConversation) {
+        return (
+          <ChatThread
+            key={selectedConversation.key}
+            conversation={selectedConversation}
+            messages={readMessages(selectedConversation)}
+            onMessagesChange={(next) => updateMessages(selectedConversation, next)}
+            listMemory={listMemory}
+            uiEvidence={uiEvidence}
+            messageId={searchTarget?.message.id}
+            threadRootMessageId={searchTarget?.root?.id}
+            onSearch={() => openSearch(selectedConversation.key)}
+            onBack={() => setSelectedConversation(null)}
+            onStartCall={(mediaKind) => handleStartCall(selectedConversation, mediaKind)}
+          />
+        );
+      }
+      return (
+        <ChatPage
+          conversations={conversations}
+          listMemory={listMemory}
+          uiEvidence={uiEvidence}
+          onConversationClick={handleConversationClick}
+          onCompose={() => setCreateGroupOpen(true)}
+        />
+      );
+    }
+
+    if (activeTab === 'moments') {
+      return (
+        <MomentsPage
+          scenario={momentsScenario ?? 'social-parity'}
+          searchTarget={socialSearchTarget ? {
+            postId: socialSearchTarget.moment.id,
+            commentId: socialSearchTarget.comment?.id,
+          } : undefined}
+          onImmersiveVisibilityChange={setMomentsImmersiveOpen}
+        />
+      );
+    }
+
+    if (activeTab === 'contacts') {
+      if (selectedContact) {
+        const direct = socialDemo.direct?.contactKey === selectedContact.key ? socialDemo.direct : null;
+        return (
+          <ContactDetailView
+            key={selectedContact.key}
+            contact={selectedContact}
+            directStatus={direct?.status}
+            canMessage={!longLists && socialDemo.federations.length > 0}
+            messageUnavailableText={longLists ? copy['mobile.launch.unavailable'] : undefined}
+            onBack={() => {
+              dispatchSocialDemo({ type: 'close-direct' });
+              setSelectedContact(null);
+            }}
+            onMessage={handleContactMessage}
+          />
+        );
+      }
+      if (selectedGroup) {
+        return (
+          <GroupDetailView
+            key={selectedGroup.key}
+            group={selectedGroup}
+            members={longLists ? longListMembers : undefined}
+            listMemory={listMemory}
+            sampleOnly={longLists}
+            onMemberClick={longLists ? handleContactClick : undefined}
+            onBack={() => setSelectedGroup(null)}
+          />
+        );
+      }
+      return (
+        <ContactsPage
+          contacts={longLists ? longListContacts : socialDemo.contacts}
+          groups={longLists ? longListGroups : undefined}
+          requests={longLists ? longListRequests : undefined}
+          listMemory={listMemory}
+          request={socialDemo.request}
+          avatarState={uiEvidence.avatarState}
+          onContactClick={handleContactClick}
+          onGroupClick={handleGroupClick}
+          onAddContact={() => setFindPeopleOpen(true)}
+          onCreateGroup={() => setCreateGroupOpen(true)}
+        />
+      );
+    }
+
+    if (activeTab === 'profile') {
+      return selectedSetting ? (
+        <SettingDetailView
+          setting={selectedSetting}
+          onBack={() => setSelectedSetting(null)}
+          onChangeStation={() => {
+            setSelectedSetting(null);
+            onChangeStation();
+          }}
+        />
+      ) : (
+        <ProfilePage
+          avatarState={uiEvidence.avatarState}
+          onChangeStation={onChangeStation}
+          onSettingClick={setSelectedSetting}
+        />
+      );
+    }
+  }
+
+  const tabItems: ReadonlyArray<{ id: TabId; label: string; iconId: IconName; badge?: number }> = [
+    { id: 'chat', label: 'Chats', iconId: 'message-circle', badge: unreadCount },
+    { id: 'moments', label: 'Moments', iconId: 'image' },
+    { id: 'contacts', label: 'Contacts', iconId: 'users-round' },
+    { id: 'profile', label: 'Me', iconId: 'circle-user' },
+  ];
 
   return (
     <div className="mp-shell">
-      <div className="mp-shell-content" inert={overlayOpen}>{renderPage()}</div>
+      <div className="mp-shell-content" inert={overlayOpen || undefined}>{renderPage()}</div>
+
       {!overlayOpen && (
-        <RequestRecoveryNotice request={socialDemo.request}
-          onCheck={() => dispatchSocialDemo({ type: 'check-request' })} />
+        <RequestRecoveryNotice
+          request={socialDemo.request}
+          onCheck={() => dispatchSocialDemo({ type: 'check-request' })}
+        />
       )}
       {showTabBar && (
-        <nav className="mp-tabbar" inert={overlayOpen}>
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                className={`mp-tabbar-item ${isActive ? 'active' : ''}`}
-                onClick={() => { dispatchSocialDemo({ type: 'close-direct' }); setFindPeopleOpen(false); setCreateGroupOpen(false); setActiveTab(tab.id); setSelectedConversation(null); setSelectedContact(null); setSelectedGroup(null); setSelectedSetting(null); }}
-              >
-                <Badge count={socialDemo.runtime === 'ready' ? tab.badge ?? 0 : 0} size="small" offset={[4, -2]}>
-                  <Icon size={24} strokeWidth={isActive ? 2.2 : 1.7} />
-                </Badge>
-                <span className="mp-tabbar-label">{tab.label}</span>
-              </button>
-            );
-          })}
+        <nav className="mp-tabbar" aria-label="Primary navigation">
+          {tabItems.map(({ id, label, iconId, badge }) => (
+            <button
+              key={id}
+              type="button"
+              className={`mp-tabbar-item ${activeTab === id ? 'active' : ''}`}
+              onClick={() => {
+                dispatchSocialDemo({ type: 'close-direct' });
+                setFindPeopleOpen(false);
+                setCreateGroupOpen(false);
+                setSocialSearchTarget(null);
+                setActiveTab(id);
+                setSelectedContact(null);
+                setSelectedGroup(null);
+                setSelectedSetting(null);
+              }}
+            >
+              <Badge count={badge}>
+                <Icon iconId={iconId} size={22} />
+              </Badge>
+              <span className="mp-tabbar-label">{label}</span>
+            </button>
+          ))}
         </nav>
       )}
-      {/* Shell-level toast */}
+
       {shellToast && <div key={shellToastKey} className="mp-toast">{shellToast}</div>}
+
       {findPeopleOpen && socialDemo.runtime === 'ready' && (
-        <FindPeopleSheet state={socialDemo} dispatch={dispatchSocialDemo}
-          onClose={() => setFindPeopleOpen(false)} />
+        <FindPeopleSheet
+          state={socialDemo}
+          dispatch={dispatchSocialDemo}
+          onClose={() => setFindPeopleOpen(false)}
+        />
       )}
-      {createGroupOpen && socialDemo.runtime === 'ready' && (
+
+      {createGroupOpen && (
         <CreateGroupSheet
           contacts={socialDemo.contacts}
           onClose={() => setCreateGroupOpen(false)}
           onCreate={(name) => {
             setCreateGroupOpen(false);
-            showShellToast(`${name} ${copy['mobile.group.create'].toLowerCase()}`);
+            showShellToast(`${name} created`);
           }}
         />
       )}
+
       {recoveryScenario && (
         <ShellRecoverySheet
           scenario={recoveryScenario}
-          onPrimary={() => handleRecoveryAction('primary')}
-          onSecondary={() => handleRecoveryAction('secondary')}
+          onPrimary={() => {
+            showShellToast(recoveryScenario === 'draft-restored' ? 'Draft ready to continue' : 'Pending actions ready for review');
+            onRecoveryClose?.();
+          }}
+          onSecondary={() => showShellToast('Read-only mode remains available')}
         />
       )}
-      {callSnapshot ? (
+
+      {callSnapshot && (
         <MobileCallSurface
           snapshot={callSnapshot}
           onChange={setCallSnapshot}
           onDismiss={() => setCallSnapshot(null)}
         />
-      ) : null}
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
@@ -163,11 +164,12 @@ def main() -> None:
         report["interactions"].append("handled_elsewhere -> close")
 
         page.goto(f"{BASE_URL}/?scenario=journey", wait_until="networkidle")
-        page.get_by_role("button", name="Continue", exact=True).click()
-        page.get_by_role("button", name="Email Login").click()
+        page.get_by_role("button", name=re.compile(r"Open .*Station")).click()
+        page.get_by_role("button", name="Email Login", exact=True).click()
+        page.locator(".mp-auth-account-chip").first.click()
         page.get_by_role("button", name="Sign In", exact=True).click()
         page.get_by_role("heading", name="Chats").wait_for(state="visible")
-        page.locator(".mp-conversation-item").filter(has_text="Alice Chen").click()
+        page.locator(".mp-conversation-item").filter(has_text="Alice Chen").first.click()
         page.get_by_role("button", name="Start audio call").click()
         assert_layout(page, "outgoing")
         header_action = EVIDENCE_ROOT / "430-direct-header-start-audio.png"

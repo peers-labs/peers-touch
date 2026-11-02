@@ -6,6 +6,13 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "lucide-react": ["./node_modules/lucide-react"],
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
+      "react-dom": ["./node_modules/@types/react-dom"]
+    },
     "types": ["vite/client"],
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,

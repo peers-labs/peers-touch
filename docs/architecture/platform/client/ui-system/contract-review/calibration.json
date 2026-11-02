@@ -1,0 +1,4767 @@
+{
+  "kind": "peers-ui-author-visible-calibration",
+  "authorship": "SAME_AUTHOR_AS_REVIEW_MODEL",
+  "exposure": "VISIBLE_TRAINING_INPUT; NOT_HOLDOUT_OR_INDEPENDENT_ORACLE",
+  "cases": [
+    {
+      "id": "ui.spec.button.calibration.positive",
+      "contractId": "ui.spec.button",
+      "class": "positive",
+      "input": {
+        "hasHref": false,
+        "unrelatedPrimaryCount": 1
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.button.calibration.negative",
+      "contractId": "ui.spec.button",
+      "class": "negative",
+      "input": {
+        "hasHref": true,
+        "unrelatedPrimaryCount": 1
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.button.calibration.boundary",
+      "contractId": "ui.spec.button",
+      "class": "boundary",
+      "input": {
+        "hasHref": false,
+        "unrelatedPrimaryCount": 0
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.button.calibration.missing",
+      "contractId": "ui.spec.button",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.actionicon.calibration.positive",
+      "contractId": "ui.spec.actionicon",
+      "class": "positive",
+      "input": {
+        "risk": "low",
+        "named": true,
+        "repeated": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.actionicon.calibration.negative",
+      "contractId": "ui.spec.actionicon",
+      "class": "negative",
+      "input": {
+        "risk": "destructive",
+        "named": true,
+        "repeated": true
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.actionicon.calibration.boundary",
+      "contractId": "ui.spec.actionicon",
+      "class": "boundary",
+      "input": {
+        "risk": "high",
+        "named": true,
+        "repeated": true
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.actionicon.calibration.missing",
+      "contractId": "ui.spec.actionicon",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.actionicongroup.calibration.positive",
+      "contractId": "ui.spec.actionicongroup",
+      "class": "positive",
+      "input": {
+        "hasIndependentAction": true,
+        "independentActionAvailable": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.actionicongroup.calibration.negative",
+      "contractId": "ui.spec.actionicongroup",
+      "class": "negative",
+      "input": {
+        "hasIndependentAction": true,
+        "independentActionAvailable": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.actionicongroup.calibration.boundary",
+      "contractId": "ui.spec.actionicongroup",
+      "class": "boundary",
+      "input": {
+        "hasIndependentAction": false,
+        "independentActionAvailable": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.actionicongroup.calibration.missing",
+      "contractId": "ui.spec.actionicongroup",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.copybutton.calibration.positive",
+      "contractId": "ui.spec.copybutton",
+      "class": "positive",
+      "input": {
+        "showsCopied": true,
+        "adapterConfirmed": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.copybutton.calibration.negative",
+      "contractId": "ui.spec.copybutton",
+      "class": "negative",
+      "input": {
+        "showsCopied": true,
+        "adapterConfirmed": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.copybutton.calibration.boundary",
+      "contractId": "ui.spec.copybutton",
+      "class": "boundary",
+      "input": {
+        "showsCopied": false,
+        "adapterConfirmed": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.copybutton.calibration.missing",
+      "contractId": "ui.spec.copybutton",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.downloadbutton.calibration.positive",
+      "contractId": "ui.spec.downloadbutton",
+      "class": "positive",
+      "input": {
+        "claimsSaved": true,
+        "saveReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.downloadbutton.calibration.negative",
+      "contractId": "ui.spec.downloadbutton",
+      "class": "negative",
+      "input": {
+        "claimsSaved": true,
+        "saveReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.downloadbutton.calibration.boundary",
+      "contractId": "ui.spec.downloadbutton",
+      "class": "boundary",
+      "input": {
+        "claimsSaved": false,
+        "saveReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.downloadbutton.calibration.missing",
+      "contractId": "ui.spec.downloadbutton",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.confirmaction.calibration.positive",
+      "contractId": "ui.spec.confirmaction",
+      "class": "positive",
+      "input": {
+        "executing": true,
+        "confirmedScopeMatches": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.confirmaction.calibration.negative",
+      "contractId": "ui.spec.confirmaction",
+      "class": "negative",
+      "input": {
+        "executing": true,
+        "confirmedScopeMatches": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.confirmaction.calibration.boundary",
+      "contractId": "ui.spec.confirmaction",
+      "class": "boundary",
+      "input": {
+        "executing": false,
+        "confirmedScopeMatches": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.confirmaction.calibration.missing",
+      "contractId": "ui.spec.confirmaction",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.overflowtoolbar.calibration.positive",
+      "contractId": "ui.spec.overflowtoolbar",
+      "class": "positive",
+      "input": {
+        "movedToOverflow": true,
+        "identityAndFocusPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.overflowtoolbar.calibration.negative",
+      "contractId": "ui.spec.overflowtoolbar",
+      "class": "negative",
+      "input": {
+        "movedToOverflow": true,
+        "identityAndFocusPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.overflowtoolbar.calibration.boundary",
+      "contractId": "ui.spec.overflowtoolbar",
+      "class": "boundary",
+      "input": {
+        "movedToOverflow": false,
+        "identityAndFocusPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.overflowtoolbar.calibration.missing",
+      "contractId": "ui.spec.overflowtoolbar",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.input.calibration.positive",
+      "contractId": "ui.spec.input",
+      "class": "positive",
+      "input": {
+        "composing": true,
+        "submitSuppressed": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.input.calibration.negative",
+      "contractId": "ui.spec.input",
+      "class": "negative",
+      "input": {
+        "composing": true,
+        "submitSuppressed": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.input.calibration.boundary",
+      "contractId": "ui.spec.input",
+      "class": "boundary",
+      "input": {
+        "composing": false,
+        "submitSuppressed": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.input.calibration.missing",
+      "contractId": "ui.spec.input",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.autocomplete.calibration.positive",
+      "contractId": "ui.spec.autocomplete",
+      "class": "positive",
+      "input": {
+        "entityMode": true,
+        "resolvedEntity": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.autocomplete.calibration.negative",
+      "contractId": "ui.spec.autocomplete",
+      "class": "negative",
+      "input": {
+        "entityMode": true,
+        "resolvedEntity": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.autocomplete.calibration.boundary",
+      "contractId": "ui.spec.autocomplete",
+      "class": "boundary",
+      "input": {
+        "entityMode": false,
+        "resolvedEntity": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.autocomplete.calibration.missing",
+      "contractId": "ui.spec.autocomplete",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.checkbox.calibration.positive",
+      "contractId": "ui.spec.checkbox",
+      "class": "positive",
+      "input": {
+        "mixed": true,
+        "aggregateOnly": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.checkbox.calibration.negative",
+      "contractId": "ui.spec.checkbox",
+      "class": "negative",
+      "input": {
+        "mixed": true,
+        "aggregateOnly": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.checkbox.calibration.boundary",
+      "contractId": "ui.spec.checkbox",
+      "class": "boundary",
+      "input": {
+        "mixed": false,
+        "aggregateOnly": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.checkbox.calibration.missing",
+      "contractId": "ui.spec.checkbox",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.radio.calibration.positive",
+      "contractId": "ui.spec.radio",
+      "class": "positive",
+      "input": {
+        "selectedCount": 1,
+        "required": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.radio.calibration.negative",
+      "contractId": "ui.spec.radio",
+      "class": "negative",
+      "input": {
+        "selectedCount": 2,
+        "required": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.radio.calibration.boundary",
+      "contractId": "ui.spec.radio",
+      "class": "boundary",
+      "input": {
+        "selectedCount": 0,
+        "required": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.radio.calibration.missing",
+      "contractId": "ui.spec.radio",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.switch.calibration.positive",
+      "contractId": "ui.spec.switch",
+      "class": "positive",
+      "input": {
+        "writeFailed": true,
+        "confirmedValueRestored": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.switch.calibration.negative",
+      "contractId": "ui.spec.switch",
+      "class": "negative",
+      "input": {
+        "writeFailed": true,
+        "confirmedValueRestored": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.switch.calibration.boundary",
+      "contractId": "ui.spec.switch",
+      "class": "boundary",
+      "input": {
+        "writeFailed": false,
+        "confirmedValueRestored": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.switch.calibration.missing",
+      "contractId": "ui.spec.switch",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.select.calibration.positive",
+      "contractId": "ui.spec.select",
+      "class": "positive",
+      "input": {
+        "querying": true,
+        "existingSelectionPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.select.calibration.negative",
+      "contractId": "ui.spec.select",
+      "class": "negative",
+      "input": {
+        "querying": true,
+        "existingSelectionPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.select.calibration.boundary",
+      "contractId": "ui.spec.select",
+      "class": "boundary",
+      "input": {
+        "querying": false,
+        "existingSelectionPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.select.calibration.missing",
+      "contractId": "ui.spec.select",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.searchbar.calibration.positive",
+      "contractId": "ui.spec.searchbar",
+      "class": "positive",
+      "input": {
+        "resultApplied": true,
+        "queryIdentityMatches": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.searchbar.calibration.negative",
+      "contractId": "ui.spec.searchbar",
+      "class": "negative",
+      "input": {
+        "resultApplied": true,
+        "queryIdentityMatches": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.searchbar.calibration.boundary",
+      "contractId": "ui.spec.searchbar",
+      "class": "boundary",
+      "input": {
+        "resultApplied": false,
+        "queryIdentityMatches": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.searchbar.calibration.missing",
+      "contractId": "ui.spec.searchbar",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.form.calibration.positive",
+      "contractId": "ui.spec.form",
+      "class": "positive",
+      "input": {
+        "saveFailed": true,
+        "draftAndErrorPathPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.form.calibration.negative",
+      "contractId": "ui.spec.form",
+      "class": "negative",
+      "input": {
+        "saveFailed": true,
+        "draftAndErrorPathPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.form.calibration.boundary",
+      "contractId": "ui.spec.form",
+      "class": "boundary",
+      "input": {
+        "saveFailed": false,
+        "draftAndErrorPathPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.form.calibration.missing",
+      "contractId": "ui.spec.form",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.editabletext.calibration.positive",
+      "contractId": "ui.spec.editabletext",
+      "class": "positive",
+      "input": {
+        "blurCommit": true,
+        "losslessExitDefined": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.editabletext.calibration.negative",
+      "contractId": "ui.spec.editabletext",
+      "class": "negative",
+      "input": {
+        "blurCommit": true,
+        "losslessExitDefined": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.editabletext.calibration.boundary",
+      "contractId": "ui.spec.editabletext",
+      "class": "boundary",
+      "input": {
+        "blurCommit": false,
+        "losslessExitDefined": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.editabletext.calibration.missing",
+      "contractId": "ui.spec.editabletext",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.colorpicker.calibration.positive",
+      "contractId": "ui.spec.colorpicker",
+      "class": "positive",
+      "input": {
+        "invalidText": true,
+        "invalidDraftPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.colorpicker.calibration.negative",
+      "contractId": "ui.spec.colorpicker",
+      "class": "negative",
+      "input": {
+        "invalidText": true,
+        "invalidDraftPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.colorpicker.calibration.boundary",
+      "contractId": "ui.spec.colorpicker",
+      "class": "boundary",
+      "input": {
+        "invalidText": false,
+        "invalidDraftPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.colorpicker.calibration.missing",
+      "contractId": "ui.spec.colorpicker",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.colorswatches.calibration.positive",
+      "contractId": "ui.spec.colorswatches",
+      "class": "positive",
+      "input": {
+        "namedAndSemanticSelection": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.colorswatches.calibration.negative",
+      "contractId": "ui.spec.colorswatches",
+      "class": "negative",
+      "input": {
+        "namedAndSemanticSelection": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.colorswatches.calibration.boundary",
+      "contractId": "ui.spec.colorswatches",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.colorswatches.calibration.missing",
+      "contractId": "ui.spec.colorswatches",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.datepicker.calibration.positive",
+      "contractId": "ui.spec.datepicker",
+      "class": "positive",
+      "input": {
+        "coercesDateToUTC": false,
+        "committingRange": true,
+        "rangeComplete": true,
+        "startDay": 5,
+        "endDay": 8
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.datepicker.calibration.negative",
+      "contractId": "ui.spec.datepicker",
+      "class": "negative",
+      "input": {
+        "coercesDateToUTC": true,
+        "committingRange": true,
+        "rangeComplete": false,
+        "startDay": 8,
+        "endDay": 5
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.datepicker.calibration.boundary",
+      "contractId": "ui.spec.datepicker",
+      "class": "boundary",
+      "input": {
+        "coercesDateToUTC": false,
+        "committingRange": true,
+        "rangeComplete": true,
+        "startDay": 5,
+        "endDay": 5
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.datepicker.calibration.missing",
+      "contractId": "ui.spec.datepicker",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.timefield.calibration.positive",
+      "contractId": "ui.spec.timefield",
+      "class": "positive",
+      "input": {
+        "instantContext": true,
+        "dateZoneAndAmbiguityPolicy": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.timefield.calibration.negative",
+      "contractId": "ui.spec.timefield",
+      "class": "negative",
+      "input": {
+        "instantContext": true,
+        "dateZoneAndAmbiguityPolicy": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.timefield.calibration.boundary",
+      "contractId": "ui.spec.timefield",
+      "class": "boundary",
+      "input": {
+        "instantContext": false,
+        "dateZoneAndAmbiguityPolicy": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.timefield.calibration.missing",
+      "contractId": "ui.spec.timefield",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.hotkeyinput.calibration.positive",
+      "contractId": "ui.spec.hotkeyinput",
+      "class": "positive",
+      "input": {
+        "recording": true,
+        "dispatchSuppressedAndEscapeAvailable": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.hotkeyinput.calibration.negative",
+      "contractId": "ui.spec.hotkeyinput",
+      "class": "negative",
+      "input": {
+        "recording": true,
+        "dispatchSuppressedAndEscapeAvailable": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.hotkeyinput.calibration.boundary",
+      "contractId": "ui.spec.hotkeyinput",
+      "class": "boundary",
+      "input": {
+        "recording": false,
+        "dispatchSuppressedAndEscapeAvailable": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.hotkeyinput.calibration.missing",
+      "contractId": "ui.spec.hotkeyinput",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.imageselect.calibration.positive",
+      "contractId": "ui.spec.imageselect",
+      "class": "positive",
+      "input": {
+        "assetFailed": true,
+        "selectedIdentityPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.imageselect.calibration.negative",
+      "contractId": "ui.spec.imageselect",
+      "class": "negative",
+      "input": {
+        "assetFailed": true,
+        "selectedIdentityPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.imageselect.calibration.boundary",
+      "contractId": "ui.spec.imageselect",
+      "class": "boundary",
+      "input": {
+        "assetFailed": false,
+        "selectedIdentityPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.imageselect.calibration.missing",
+      "contractId": "ui.spec.imageselect",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.rate.calibration.positive",
+      "contractId": "ui.spec.rate",
+      "class": "positive",
+      "input": {
+        "editable": true,
+        "scaleAndAccessiblePrecision": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.rate.calibration.negative",
+      "contractId": "ui.spec.rate",
+      "class": "negative",
+      "input": {
+        "editable": true,
+        "scaleAndAccessiblePrecision": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.rate.calibration.boundary",
+      "contractId": "ui.spec.rate",
+      "class": "boundary",
+      "input": {
+        "editable": false,
+        "scaleAndAccessiblePrecision": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.rate.calibration.missing",
+      "contractId": "ui.spec.rate",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.segmented.calibration.positive",
+      "contractId": "ui.spec.segmented",
+      "class": "positive",
+      "input": {
+        "automaticActivation": true,
+        "lightLocalView": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.segmented.calibration.negative",
+      "contractId": "ui.spec.segmented",
+      "class": "negative",
+      "input": {
+        "automaticActivation": true,
+        "lightLocalView": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.segmented.calibration.boundary",
+      "contractId": "ui.spec.segmented",
+      "class": "boundary",
+      "input": {
+        "automaticActivation": false,
+        "lightLocalView": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.segmented.calibration.missing",
+      "contractId": "ui.spec.segmented",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.slider.calibration.positive",
+      "contractId": "ui.spec.slider",
+      "class": "positive",
+      "input": {
+        "minimum": 0,
+        "lower": 2,
+        "upper": 8,
+        "maximum": 10,
+        "stepAligned": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.slider.calibration.negative",
+      "contractId": "ui.spec.slider",
+      "class": "negative",
+      "input": {
+        "minimum": 0,
+        "lower": 8,
+        "upper": 2,
+        "maximum": 10,
+        "stepAligned": true
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.slider.calibration.boundary",
+      "contractId": "ui.spec.slider",
+      "class": "boundary",
+      "input": {
+        "minimum": 0,
+        "lower": 0,
+        "upper": 10,
+        "maximum": 10,
+        "stepAligned": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.slider.calibration.missing",
+      "contractId": "ui.spec.slider",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.togglegroup.calibration.positive",
+      "contractId": "ui.spec.togglegroup",
+      "class": "positive",
+      "input": {
+        "singleSelection": true,
+        "atMostOnePressed": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.togglegroup.calibration.negative",
+      "contractId": "ui.spec.togglegroup",
+      "class": "negative",
+      "input": {
+        "singleSelection": true,
+        "atMostOnePressed": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.togglegroup.calibration.boundary",
+      "contractId": "ui.spec.togglegroup",
+      "class": "boundary",
+      "input": {
+        "singleSelection": false,
+        "atMostOnePressed": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.togglegroup.calibration.missing",
+      "contractId": "ui.spec.togglegroup",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.sortablelist.calibration.positive",
+      "contractId": "ui.spec.sortablelist",
+      "class": "positive",
+      "input": {
+        "filteredOrGrouped": true,
+        "stableFullOrderAndAuthorizedBounds": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.sortablelist.calibration.negative",
+      "contractId": "ui.spec.sortablelist",
+      "class": "negative",
+      "input": {
+        "filteredOrGrouped": true,
+        "stableFullOrderAndAuthorizedBounds": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.sortablelist.calibration.boundary",
+      "contractId": "ui.spec.sortablelist",
+      "class": "boundary",
+      "input": {
+        "filteredOrGrouped": false,
+        "stableFullOrderAndAuthorizedBounds": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.sortablelist.calibration.missing",
+      "contractId": "ui.spec.sortablelist",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.upload.calibration.positive",
+      "contractId": "ui.spec.upload",
+      "class": "positive",
+      "input": {
+        "transferOrPreviewStarted": true,
+        "actualValidationPassed": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.upload.calibration.negative",
+      "contractId": "ui.spec.upload",
+      "class": "negative",
+      "input": {
+        "transferOrPreviewStarted": true,
+        "actualValidationPassed": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.upload.calibration.boundary",
+      "contractId": "ui.spec.upload",
+      "class": "boundary",
+      "input": {
+        "transferOrPreviewStarted": false,
+        "actualValidationPassed": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.upload.calibration.missing",
+      "contractId": "ui.spec.upload",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.editorslashmenu.calibration.positive",
+      "contractId": "ui.spec.editorslashmenu",
+      "class": "positive",
+      "input": {
+        "operationApplied": true,
+        "bookmarkRevisionMatches": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.editorslashmenu.calibration.negative",
+      "contractId": "ui.spec.editorslashmenu",
+      "class": "negative",
+      "input": {
+        "operationApplied": true,
+        "bookmarkRevisionMatches": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.editorslashmenu.calibration.boundary",
+      "contractId": "ui.spec.editorslashmenu",
+      "class": "boundary",
+      "input": {
+        "operationApplied": false,
+        "bookmarkRevisionMatches": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.editorslashmenu.calibration.missing",
+      "contractId": "ui.spec.editorslashmenu",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.emojipicker.calibration.positive",
+      "contractId": "ui.spec.emojipicker",
+      "class": "positive",
+      "input": {
+        "claimsReactionCommitted": true,
+        "reactionOwnerConfirmed": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.emojipicker.calibration.negative",
+      "contractId": "ui.spec.emojipicker",
+      "class": "negative",
+      "input": {
+        "claimsReactionCommitted": true,
+        "reactionOwnerConfirmed": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.emojipicker.calibration.boundary",
+      "contractId": "ui.spec.emojipicker",
+      "class": "boundary",
+      "input": {
+        "claimsReactionCommitted": false,
+        "reactionOwnerConfirmed": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.emojipicker.calibration.missing",
+      "contractId": "ui.spec.emojipicker",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.mentionpicker.calibration.positive",
+      "contractId": "ui.spec.mentionpicker",
+      "class": "positive",
+      "input": {
+        "referenceInserted": true,
+        "authorizedIdentityAndBookmark": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.mentionpicker.calibration.negative",
+      "contractId": "ui.spec.mentionpicker",
+      "class": "negative",
+      "input": {
+        "referenceInserted": true,
+        "authorizedIdentityAndBookmark": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.mentionpicker.calibration.boundary",
+      "contractId": "ui.spec.mentionpicker",
+      "class": "boundary",
+      "input": {
+        "referenceInserted": false,
+        "authorizedIdentityAndBookmark": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.mentionpicker.calibration.missing",
+      "contractId": "ui.spec.mentionpicker",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.richtexteditor.calibration.positive",
+      "contractId": "ui.spec.richtexteditor",
+      "class": "positive",
+      "input": {
+        "saveFailedOrConflicted": true,
+        "documentAndUndoPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.richtexteditor.calibration.negative",
+      "contractId": "ui.spec.richtexteditor",
+      "class": "negative",
+      "input": {
+        "saveFailedOrConflicted": true,
+        "documentAndUndoPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.richtexteditor.calibration.boundary",
+      "contractId": "ui.spec.richtexteditor",
+      "class": "boundary",
+      "input": {
+        "saveFailedOrConflicted": false,
+        "documentAndUndoPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.richtexteditor.calibration.missing",
+      "contractId": "ui.spec.richtexteditor",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.treeselect.calibration.positive",
+      "contractId": "ui.spec.treeselect",
+      "class": "positive",
+      "input": {
+        "cascadeSelection": true,
+        "authorizedResolvedTargets": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.treeselect.calibration.negative",
+      "contractId": "ui.spec.treeselect",
+      "class": "negative",
+      "input": {
+        "cascadeSelection": true,
+        "authorizedResolvedTargets": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.treeselect.calibration.boundary",
+      "contractId": "ui.spec.treeselect",
+      "class": "boundary",
+      "input": {
+        "cascadeSelection": false,
+        "authorizedResolvedTargets": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.treeselect.calibration.missing",
+      "contractId": "ui.spec.treeselect",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.a.calibration.positive",
+      "contractId": "ui.spec.a",
+      "class": "positive",
+      "input": {
+        "targetResolved": true,
+        "mutatesDomain": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.a.calibration.negative",
+      "contractId": "ui.spec.a",
+      "class": "negative",
+      "input": {
+        "targetResolved": false,
+        "mutatesDomain": true
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.a.calibration.boundary",
+      "contractId": "ui.spec.a",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.a.calibration.missing",
+      "contractId": "ui.spec.a",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.agentavatar.calibration.positive",
+      "contractId": "ui.spec.agentavatar",
+      "class": "positive",
+      "input": {
+        "showsTaskStatus": true,
+        "taskProjectionBound": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.agentavatar.calibration.negative",
+      "contractId": "ui.spec.agentavatar",
+      "class": "negative",
+      "input": {
+        "showsTaskStatus": true,
+        "taskProjectionBound": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.agentavatar.calibration.boundary",
+      "contractId": "ui.spec.agentavatar",
+      "class": "boundary",
+      "input": {
+        "showsTaskStatus": false,
+        "taskProjectionBound": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.agentavatar.calibration.missing",
+      "contractId": "ui.spec.agentavatar",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.avatar.calibration.positive",
+      "contractId": "ui.spec.avatar",
+      "class": "positive",
+      "input": {
+        "existingResolverBound": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.avatar.calibration.negative",
+      "contractId": "ui.spec.avatar",
+      "class": "negative",
+      "input": {
+        "existingResolverBound": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.avatar.calibration.boundary",
+      "contractId": "ui.spec.avatar",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.avatar.calibration.missing",
+      "contractId": "ui.spec.avatar",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.groupavatar.calibration.positive",
+      "contractId": "ui.spec.groupavatar",
+      "class": "positive",
+      "input": {
+        "showsMembers": true,
+        "memberDisclosureAuthorized": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.groupavatar.calibration.negative",
+      "contractId": "ui.spec.groupavatar",
+      "class": "negative",
+      "input": {
+        "showsMembers": true,
+        "memberDisclosureAuthorized": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.groupavatar.calibration.boundary",
+      "contractId": "ui.spec.groupavatar",
+      "class": "boundary",
+      "input": {
+        "showsMembers": false,
+        "memberDisclosureAuthorized": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.groupavatar.calibration.missing",
+      "contractId": "ui.spec.groupavatar",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.filetypeicon.calibration.positive",
+      "contractId": "ui.spec.filetypeicon",
+      "class": "positive",
+      "input": {
+        "claimsPreviewOrSafety": true,
+        "independentResourceCapability": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.filetypeicon.calibration.negative",
+      "contractId": "ui.spec.filetypeicon",
+      "class": "negative",
+      "input": {
+        "claimsPreviewOrSafety": true,
+        "independentResourceCapability": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.filetypeicon.calibration.boundary",
+      "contractId": "ui.spec.filetypeicon",
+      "class": "boundary",
+      "input": {
+        "claimsPreviewOrSafety": false,
+        "independentResourceCapability": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.filetypeicon.calibration.missing",
+      "contractId": "ui.spec.filetypeicon",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.fluentemoji.calibration.positive",
+      "contractId": "ui.spec.fluentemoji",
+      "class": "positive",
+      "input": {
+        "artworkUsed": true,
+        "licensedSameMeaningAsset": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.fluentemoji.calibration.negative",
+      "contractId": "ui.spec.fluentemoji",
+      "class": "negative",
+      "input": {
+        "artworkUsed": true,
+        "licensedSameMeaningAsset": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.fluentemoji.calibration.boundary",
+      "contractId": "ui.spec.fluentemoji",
+      "class": "boundary",
+      "input": {
+        "artworkUsed": false,
+        "licensedSameMeaningAsset": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.fluentemoji.calibration.missing",
+      "contractId": "ui.spec.fluentemoji",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.icon.calibration.positive",
+      "contractId": "ui.spec.icon",
+      "class": "positive",
+      "input": {
+        "registeredNoninteractiveAsset": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.icon.calibration.negative",
+      "contractId": "ui.spec.icon",
+      "class": "negative",
+      "input": {
+        "registeredNoninteractiveAsset": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.icon.calibration.boundary",
+      "contractId": "ui.spec.icon",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.icon.calibration.missing",
+      "contractId": "ui.spec.icon",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.alert.calibration.positive",
+      "contractId": "ui.spec.alert",
+      "class": "positive",
+      "input": {
+        "blocking": true,
+        "persistentAndRecoverable": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.alert.calibration.negative",
+      "contractId": "ui.spec.alert",
+      "class": "negative",
+      "input": {
+        "blocking": true,
+        "persistentAndRecoverable": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.alert.calibration.boundary",
+      "contractId": "ui.spec.alert",
+      "class": "boundary",
+      "input": {
+        "blocking": false,
+        "persistentAndRecoverable": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.alert.calibration.missing",
+      "contractId": "ui.spec.alert",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.badge.calibration.positive",
+      "contractId": "ui.spec.badge",
+      "class": "positive",
+      "input": {
+        "unknownOrCapped": true,
+        "truthfulAccessibleValue": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.badge.calibration.negative",
+      "contractId": "ui.spec.badge",
+      "class": "negative",
+      "input": {
+        "unknownOrCapped": true,
+        "truthfulAccessibleValue": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.badge.calibration.boundary",
+      "contractId": "ui.spec.badge",
+      "class": "boundary",
+      "input": {
+        "unknownOrCapped": false,
+        "truthfulAccessibleValue": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.badge.calibration.missing",
+      "contractId": "ui.spec.badge",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.empty.calibration.positive",
+      "contractId": "ui.spec.empty",
+      "class": "positive",
+      "input": {
+        "emptyRendered": true,
+        "loadedEmptyReasonBound": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.empty.calibration.negative",
+      "contractId": "ui.spec.empty",
+      "class": "negative",
+      "input": {
+        "emptyRendered": true,
+        "loadedEmptyReasonBound": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.empty.calibration.boundary",
+      "contractId": "ui.spec.empty",
+      "class": "boundary",
+      "input": {
+        "emptyRendered": false,
+        "loadedEmptyReasonBound": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.empty.calibration.missing",
+      "contractId": "ui.spec.empty",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.guidecard.calibration.positive",
+      "contractId": "ui.spec.guidecard",
+      "class": "positive",
+      "input": {
+        "showsCompleted": true,
+        "journeyCompletionReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.guidecard.calibration.negative",
+      "contractId": "ui.spec.guidecard",
+      "class": "negative",
+      "input": {
+        "showsCompleted": true,
+        "journeyCompletionReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.guidecard.calibration.boundary",
+      "contractId": "ui.spec.guidecard",
+      "class": "boundary",
+      "input": {
+        "showsCompleted": false,
+        "journeyCompletionReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.guidecard.calibration.missing",
+      "contractId": "ui.spec.guidecard",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.progress.calibration.positive",
+      "contractId": "ui.spec.progress",
+      "class": "positive",
+      "input": {
+        "determinate": true,
+        "loaded": 2,
+        "total": 10,
+        "realMeasurement": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.progress.calibration.negative",
+      "contractId": "ui.spec.progress",
+      "class": "negative",
+      "input": {
+        "determinate": true,
+        "loaded": 2,
+        "total": 0,
+        "realMeasurement": true
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.progress.calibration.boundary",
+      "contractId": "ui.spec.progress",
+      "class": "boundary",
+      "input": {
+        "determinate": false,
+        "loaded": 0,
+        "total": 0,
+        "realMeasurement": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.progress.calibration.missing",
+      "contractId": "ui.spec.progress",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.result.calibration.positive",
+      "contractId": "ui.spec.result",
+      "class": "positive",
+      "input": {
+        "partial": true,
+        "perItemOutcomesAndRecovery": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.result.calibration.negative",
+      "contractId": "ui.spec.result",
+      "class": "negative",
+      "input": {
+        "partial": true,
+        "perItemOutcomesAndRecovery": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.result.calibration.boundary",
+      "contractId": "ui.spec.result",
+      "class": "boundary",
+      "input": {
+        "partial": false,
+        "perItemOutcomesAndRecovery": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.result.calibration.missing",
+      "contractId": "ui.spec.result",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.skeleton.calibration.positive",
+      "contractId": "ui.spec.skeleton",
+      "class": "positive",
+      "input": {
+        "skeletonVisible": true,
+        "actuallyPending": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.skeleton.calibration.negative",
+      "contractId": "ui.spec.skeleton",
+      "class": "negative",
+      "input": {
+        "skeletonVisible": true,
+        "actuallyPending": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.skeleton.calibration.boundary",
+      "contractId": "ui.spec.skeleton",
+      "class": "boundary",
+      "input": {
+        "skeletonVisible": false,
+        "actuallyPending": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.skeleton.calibration.missing",
+      "contractId": "ui.spec.skeleton",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.spin.calibration.positive",
+      "contractId": "ui.spec.spin",
+      "class": "positive",
+      "input": {
+        "overWaitBudget": true,
+        "nextActionVisible": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.spin.calibration.negative",
+      "contractId": "ui.spec.spin",
+      "class": "negative",
+      "input": {
+        "overWaitBudget": true,
+        "nextActionVisible": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.spin.calibration.boundary",
+      "contractId": "ui.spec.spin",
+      "class": "boundary",
+      "input": {
+        "overWaitBudget": false,
+        "nextActionVisible": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.spin.calibration.missing",
+      "contractId": "ui.spec.spin",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.tag.calibration.positive",
+      "contractId": "ui.spec.tag",
+      "class": "positive",
+      "input": {
+        "purpose": "status",
+        "interaction": "none"
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.tag.calibration.negative",
+      "contractId": "ui.spec.tag",
+      "class": "negative",
+      "input": {
+        "purpose": "status",
+        "interaction": "toggle"
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.tag.calibration.boundary",
+      "contractId": "ui.spec.tag",
+      "class": "boundary",
+      "input": {
+        "purpose": "removable-value",
+        "interaction": "remove"
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.tag.calibration.missing",
+      "contractId": "ui.spec.tag",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.toast.calibration.positive",
+      "contractId": "ui.spec.toast",
+      "class": "positive",
+      "input": {
+        "requiresDecision": true,
+        "persistentDecisionSurface": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.toast.calibration.negative",
+      "contractId": "ui.spec.toast",
+      "class": "negative",
+      "input": {
+        "requiresDecision": true,
+        "persistentDecisionSurface": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.toast.calibration.boundary",
+      "contractId": "ui.spec.toast",
+      "class": "boundary",
+      "input": {
+        "requiresDecision": false,
+        "persistentDecisionSurface": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.toast.calibration.missing",
+      "contractId": "ui.spec.toast",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.descriptions.calibration.positive",
+      "contractId": "ui.spec.descriptions",
+      "class": "positive",
+      "input": {
+        "specialValue": true,
+        "typedValueRepresentation": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.descriptions.calibration.negative",
+      "contractId": "ui.spec.descriptions",
+      "class": "negative",
+      "input": {
+        "specialValue": true,
+        "typedValueRepresentation": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.descriptions.calibration.boundary",
+      "contractId": "ui.spec.descriptions",
+      "class": "boundary",
+      "input": {
+        "specialValue": false,
+        "typedValueRepresentation": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.descriptions.calibration.missing",
+      "contractId": "ui.spec.descriptions",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.hotkey.calibration.positive",
+      "contractId": "ui.spec.hotkey",
+      "class": "positive",
+      "input": {
+        "actualBindingProjection": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.hotkey.calibration.negative",
+      "contractId": "ui.spec.hotkey",
+      "class": "negative",
+      "input": {
+        "actualBindingProjection": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.hotkey.calibration.boundary",
+      "contractId": "ui.spec.hotkey",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.hotkey.calibration.missing",
+      "contractId": "ui.spec.hotkey",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.list.calibration.positive",
+      "contractId": "ui.spec.list",
+      "class": "positive",
+      "input": {
+        "readList": true,
+        "passiveListSemantics": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.list.calibration.negative",
+      "contractId": "ui.spec.list",
+      "class": "negative",
+      "input": {
+        "readList": true,
+        "passiveListSemantics": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.list.calibration.boundary",
+      "contractId": "ui.spec.list",
+      "class": "boundary",
+      "input": {
+        "readList": false,
+        "passiveListSemantics": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.list.calibration.missing",
+      "contractId": "ui.spec.list",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.markdown.calibration.positive",
+      "contractId": "ui.spec.markdown",
+      "class": "positive",
+      "input": {
+        "richContent": true,
+        "sanitizedAndSourceBound": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.markdown.calibration.negative",
+      "contractId": "ui.spec.markdown",
+      "class": "negative",
+      "input": {
+        "richContent": true,
+        "sanitizedAndSourceBound": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.markdown.calibration.boundary",
+      "contractId": "ui.spec.markdown",
+      "class": "boundary",
+      "input": {
+        "richContent": false,
+        "sanitizedAndSourceBound": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.markdown.calibration.missing",
+      "contractId": "ui.spec.markdown",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.statistic.calibration.positive",
+      "contractId": "ui.spec.statistic",
+      "class": "positive",
+      "input": {
+        "comparisonShown": true,
+        "baselineAndTypedUnit": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.statistic.calibration.negative",
+      "contractId": "ui.spec.statistic",
+      "class": "negative",
+      "input": {
+        "comparisonShown": true,
+        "baselineAndTypedUnit": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.statistic.calibration.boundary",
+      "contractId": "ui.spec.statistic",
+      "class": "boundary",
+      "input": {
+        "comparisonShown": false,
+        "baselineAndTypedUnit": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.statistic.calibration.missing",
+      "contractId": "ui.spec.statistic",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.table.calibration.positive",
+      "contractId": "ui.spec.table",
+      "class": "positive",
+      "input": {
+        "claimsGlobalScope": true,
+        "fullQueryScopeBound": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.table.calibration.negative",
+      "contractId": "ui.spec.table",
+      "class": "negative",
+      "input": {
+        "claimsGlobalScope": true,
+        "fullQueryScopeBound": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.table.calibration.boundary",
+      "contractId": "ui.spec.table",
+      "class": "boundary",
+      "input": {
+        "claimsGlobalScope": false,
+        "fullQueryScopeBound": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.table.calibration.missing",
+      "contractId": "ui.spec.table",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.text.calibration.positive",
+      "contractId": "ui.spec.text",
+      "class": "positive",
+      "input": {
+        "truncatesMaterialText": true,
+        "fullReadableAlternative": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.text.calibration.negative",
+      "contractId": "ui.spec.text",
+      "class": "negative",
+      "input": {
+        "truncatesMaterialText": true,
+        "fullReadableAlternative": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.text.calibration.boundary",
+      "contractId": "ui.spec.text",
+      "class": "boundary",
+      "input": {
+        "truncatesMaterialText": false,
+        "fullReadableAlternative": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.text.calibration.missing",
+      "contractId": "ui.spec.text",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.calendarview.calibration.positive",
+      "contractId": "ui.spec.calendarview",
+      "class": "positive",
+      "input": {
+        "createsEvent": true,
+        "authorizedZoneBoundForm": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.calendarview.calibration.negative",
+      "contractId": "ui.spec.calendarview",
+      "class": "negative",
+      "input": {
+        "createsEvent": true,
+        "authorizedZoneBoundForm": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.calendarview.calibration.boundary",
+      "contractId": "ui.spec.calendarview",
+      "class": "boundary",
+      "input": {
+        "createsEvent": false,
+        "authorizedZoneBoundForm": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.calendarview.calibration.missing",
+      "contractId": "ui.spec.calendarview",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.virtuallist.calibration.positive",
+      "contractId": "ui.spec.virtuallist",
+      "class": "positive",
+      "input": {
+        "notAtEnd": true,
+        "anchorAndFocusPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.virtuallist.calibration.negative",
+      "contractId": "ui.spec.virtuallist",
+      "class": "negative",
+      "input": {
+        "notAtEnd": true,
+        "anchorAndFocusPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.virtuallist.calibration.boundary",
+      "contractId": "ui.spec.virtuallist",
+      "class": "boundary",
+      "input": {
+        "notAtEnd": false,
+        "anchorAndFocusPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.virtuallist.calibration.missing",
+      "contractId": "ui.spec.virtuallist",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.secretvalue.calibration.positive",
+      "contractId": "ui.spec.secretvalue",
+      "class": "positive",
+      "input": {
+        "revealedOrCopied": true,
+        "authorizedUnexpiredHandleNoLeak": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.secretvalue.calibration.negative",
+      "contractId": "ui.spec.secretvalue",
+      "class": "negative",
+      "input": {
+        "revealedOrCopied": true,
+        "authorizedUnexpiredHandleNoLeak": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.secretvalue.calibration.boundary",
+      "contractId": "ui.spec.secretvalue",
+      "class": "boundary",
+      "input": {
+        "revealedOrCopied": false,
+        "authorizedUnexpiredHandleNoLeak": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.secretvalue.calibration.missing",
+      "contractId": "ui.spec.secretvalue",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.block.calibration.positive",
+      "contractId": "ui.spec.block",
+      "class": "positive",
+      "input": {
+        "passiveSingleBoundary": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.block.calibration.negative",
+      "contractId": "ui.spec.block",
+      "class": "negative",
+      "input": {
+        "passiveSingleBoundary": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.block.calibration.boundary",
+      "contractId": "ui.spec.block",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.block.calibration.missing",
+      "contractId": "ui.spec.block",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.divider.calibration.positive",
+      "contractId": "ui.spec.divider",
+      "class": "positive",
+      "input": {
+        "noninteractiveValidSeparator": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.divider.calibration.negative",
+      "contractId": "ui.spec.divider",
+      "class": "negative",
+      "input": {
+        "noninteractiveValidSeparator": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.divider.calibration.boundary",
+      "contractId": "ui.spec.divider",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.divider.calibration.missing",
+      "contractId": "ui.spec.divider",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.draggablepanel.calibration.positive",
+      "contractId": "ui.spec.draggablepanel",
+      "class": "positive",
+      "input": {
+        "minimum": 100,
+        "size": 240,
+        "maximum": 600,
+        "keyboardEquivalent": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.draggablepanel.calibration.negative",
+      "contractId": "ui.spec.draggablepanel",
+      "class": "negative",
+      "input": {
+        "minimum": 100,
+        "size": 80,
+        "maximum": 600,
+        "keyboardEquivalent": true
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.draggablepanel.calibration.boundary",
+      "contractId": "ui.spec.draggablepanel",
+      "class": "boundary",
+      "input": {
+        "minimum": 100,
+        "size": 600,
+        "maximum": 600,
+        "keyboardEquivalent": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.draggablepanel.calibration.missing",
+      "contractId": "ui.spec.draggablepanel",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.flex.calibration.positive",
+      "contractId": "ui.spec.flex",
+      "class": "positive",
+      "input": {
+        "semanticOrderAndGap": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.flex.calibration.negative",
+      "contractId": "ui.spec.flex",
+      "class": "negative",
+      "input": {
+        "semanticOrderAndGap": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.flex.calibration.boundary",
+      "contractId": "ui.spec.flex",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.flex.calibration.missing",
+      "contractId": "ui.spec.flex",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.grid.calibration.positive",
+      "contractId": "ui.spec.grid",
+      "class": "positive",
+      "input": {
+        "sharedTracksAndSemanticOrder": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.grid.calibration.negative",
+      "contractId": "ui.spec.grid",
+      "class": "negative",
+      "input": {
+        "sharedTracksAndSemanticOrder": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.grid.calibration.boundary",
+      "contractId": "ui.spec.grid",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.grid.calibration.missing",
+      "contractId": "ui.spec.grid",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.header.calibration.positive",
+      "contractId": "ui.spec.header",
+      "class": "positive",
+      "input": {
+        "unrelatedPrimaryCount": 1,
+        "globalSettingsReachable": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.header.calibration.negative",
+      "contractId": "ui.spec.header",
+      "class": "negative",
+      "input": {
+        "unrelatedPrimaryCount": 2,
+        "globalSettingsReachable": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.header.calibration.boundary",
+      "contractId": "ui.spec.header",
+      "class": "boundary",
+      "input": {
+        "unrelatedPrimaryCount": 0,
+        "globalSettingsReachable": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.header.calibration.missing",
+      "contractId": "ui.spec.header",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.layout.calibration.positive",
+      "contractId": "ui.spec.layout",
+      "class": "positive",
+      "input": {
+        "existingKernelOwnership": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.layout.calibration.negative",
+      "contractId": "ui.spec.layout",
+      "class": "negative",
+      "input": {
+        "existingKernelOwnership": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.layout.calibration.boundary",
+      "contractId": "ui.spec.layout",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.layout.calibration.missing",
+      "contractId": "ui.spec.layout",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.maskshadow.calibration.positive",
+      "contractId": "ui.spec.maskshadow",
+      "class": "positive",
+      "input": {
+        "hintVisible": true,
+        "realOverflowAndHitPath": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.maskshadow.calibration.negative",
+      "contractId": "ui.spec.maskshadow",
+      "class": "negative",
+      "input": {
+        "hintVisible": true,
+        "realOverflowAndHitPath": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.maskshadow.calibration.boundary",
+      "contractId": "ui.spec.maskshadow",
+      "class": "boundary",
+      "input": {
+        "hintVisible": false,
+        "realOverflowAndHitPath": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.maskshadow.calibration.missing",
+      "contractId": "ui.spec.maskshadow",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.progressiveblur.calibration.positive",
+      "contractId": "ui.spec.progressiveblur",
+      "class": "positive",
+      "input": {
+        "blurEnabled": true,
+        "approvedNonsecurityEnvelope": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.progressiveblur.calibration.negative",
+      "contractId": "ui.spec.progressiveblur",
+      "class": "negative",
+      "input": {
+        "blurEnabled": true,
+        "approvedNonsecurityEnvelope": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.progressiveblur.calibration.boundary",
+      "contractId": "ui.spec.progressiveblur",
+      "class": "boundary",
+      "input": {
+        "blurEnabled": false,
+        "approvedNonsecurityEnvelope": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.progressiveblur.calibration.missing",
+      "contractId": "ui.spec.progressiveblur",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.scrollarea.calibration.positive",
+      "contractId": "ui.spec.scrollarea",
+      "class": "positive",
+      "input": {
+        "unmounted": true,
+        "localLocksAndObserversReleased": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.scrollarea.calibration.negative",
+      "contractId": "ui.spec.scrollarea",
+      "class": "negative",
+      "input": {
+        "unmounted": true,
+        "localLocksAndObserversReleased": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.scrollarea.calibration.boundary",
+      "contractId": "ui.spec.scrollarea",
+      "class": "boundary",
+      "input": {
+        "unmounted": false,
+        "localLocksAndObserversReleased": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.scrollarea.calibration.missing",
+      "contractId": "ui.spec.scrollarea",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.card.calibration.positive",
+      "contractId": "ui.spec.card",
+      "class": "positive",
+      "input": {
+        "nestedActionActivated": true,
+        "parentNavigationSuppressed": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.card.calibration.negative",
+      "contractId": "ui.spec.card",
+      "class": "negative",
+      "input": {
+        "nestedActionActivated": true,
+        "parentNavigationSuppressed": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.card.calibration.boundary",
+      "contractId": "ui.spec.card",
+      "class": "boundary",
+      "input": {
+        "nestedActionActivated": false,
+        "parentNavigationSuppressed": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.card.calibration.missing",
+      "contractId": "ui.spec.card",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.accordion.calibration.positive",
+      "contractId": "ui.spec.accordion",
+      "class": "positive",
+      "input": {
+        "panelHidden": true,
+        "focusExcludedDraftPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.accordion.calibration.negative",
+      "contractId": "ui.spec.accordion",
+      "class": "negative",
+      "input": {
+        "panelHidden": true,
+        "focusExcludedDraftPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.accordion.calibration.boundary",
+      "contractId": "ui.spec.accordion",
+      "class": "boundary",
+      "input": {
+        "panelHidden": false,
+        "focusExcludedDraftPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.accordion.calibration.missing",
+      "contractId": "ui.spec.accordion",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.collapsible.calibration.positive",
+      "contractId": "ui.spec.collapsible",
+      "class": "positive",
+      "input": {
+        "criticalContent": true,
+        "visibleWithoutExpansion": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.collapsible.calibration.negative",
+      "contractId": "ui.spec.collapsible",
+      "class": "negative",
+      "input": {
+        "criticalContent": true,
+        "visibleWithoutExpansion": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.collapsible.calibration.boundary",
+      "contractId": "ui.spec.collapsible",
+      "class": "boundary",
+      "input": {
+        "criticalContent": false,
+        "visibleWithoutExpansion": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.collapsible.calibration.missing",
+      "contractId": "ui.spec.collapsible",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.anchor.calibration.positive",
+      "contractId": "ui.spec.anchor",
+      "class": "positive",
+      "input": {
+        "activated": true,
+        "existingSemanticTarget": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.anchor.calibration.negative",
+      "contractId": "ui.spec.anchor",
+      "class": "negative",
+      "input": {
+        "activated": true,
+        "existingSemanticTarget": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.anchor.calibration.boundary",
+      "contractId": "ui.spec.anchor",
+      "class": "boundary",
+      "input": {
+        "activated": false,
+        "existingSemanticTarget": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.anchor.calibration.missing",
+      "contractId": "ui.spec.anchor",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.breadcrumb.calibration.positive",
+      "contractId": "ui.spec.breadcrumb",
+      "class": "positive",
+      "input": {
+        "ancestorOrCurrentRendered": true,
+        "authorizedHierarchyNoFakeHref": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.breadcrumb.calibration.negative",
+      "contractId": "ui.spec.breadcrumb",
+      "class": "negative",
+      "input": {
+        "ancestorOrCurrentRendered": true,
+        "authorizedHierarchyNoFakeHref": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.breadcrumb.calibration.boundary",
+      "contractId": "ui.spec.breadcrumb",
+      "class": "boundary",
+      "input": {
+        "ancestorOrCurrentRendered": false,
+        "authorizedHierarchyNoFakeHref": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.breadcrumb.calibration.missing",
+      "contractId": "ui.spec.breadcrumb",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.burger.calibration.positive",
+      "contractId": "ui.spec.burger",
+      "class": "positive",
+      "input": {
+        "closed": true,
+        "hiddenFocusExcluded": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.burger.calibration.negative",
+      "contractId": "ui.spec.burger",
+      "class": "negative",
+      "input": {
+        "closed": true,
+        "hiddenFocusExcluded": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.burger.calibration.boundary",
+      "contractId": "ui.spec.burger",
+      "class": "boundary",
+      "input": {
+        "closed": false,
+        "hiddenFocusExcluded": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.burger.calibration.missing",
+      "contractId": "ui.spec.burger",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.draggablesidenav.calibration.positive",
+      "contractId": "ui.spec.draggablesidenav",
+      "class": "positive",
+      "input": {
+        "collapsedOrResized": true,
+        "routeAndPreferencePreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.draggablesidenav.calibration.negative",
+      "contractId": "ui.spec.draggablesidenav",
+      "class": "negative",
+      "input": {
+        "collapsedOrResized": true,
+        "routeAndPreferencePreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.draggablesidenav.calibration.boundary",
+      "contractId": "ui.spec.draggablesidenav",
+      "class": "boundary",
+      "input": {
+        "collapsedOrResized": false,
+        "routeAndPreferencePreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.draggablesidenav.calibration.missing",
+      "contractId": "ui.spec.draggablesidenav",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.pagination.calibration.positive",
+      "contractId": "ui.spec.pagination",
+      "class": "positive",
+      "input": {
+        "unknownTotal": true,
+        "noFabricatedPageCount": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.pagination.calibration.negative",
+      "contractId": "ui.spec.pagination",
+      "class": "negative",
+      "input": {
+        "unknownTotal": true,
+        "noFabricatedPageCount": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.pagination.calibration.boundary",
+      "contractId": "ui.spec.pagination",
+      "class": "boundary",
+      "input": {
+        "unknownTotal": false,
+        "noFabricatedPageCount": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.pagination.calibration.missing",
+      "contractId": "ui.spec.pagination",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.sidenav.calibration.positive",
+      "contractId": "ui.spec.sidenav",
+      "class": "positive",
+      "input": {
+        "globalEntryAndDistinctState": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.sidenav.calibration.negative",
+      "contractId": "ui.spec.sidenav",
+      "class": "negative",
+      "input": {
+        "globalEntryAndDistinctState": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.sidenav.calibration.boundary",
+      "contractId": "ui.spec.sidenav",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.sidenav.calibration.missing",
+      "contractId": "ui.spec.sidenav",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.steps.calibration.positive",
+      "contractId": "ui.spec.steps",
+      "class": "positive",
+      "input": {
+        "advancesRequiredStep": true,
+        "prerequisiteReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.steps.calibration.negative",
+      "contractId": "ui.spec.steps",
+      "class": "negative",
+      "input": {
+        "advancesRequiredStep": true,
+        "prerequisiteReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.steps.calibration.boundary",
+      "contractId": "ui.spec.steps",
+      "class": "boundary",
+      "input": {
+        "advancesRequiredStep": false,
+        "prerequisiteReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.steps.calibration.missing",
+      "contractId": "ui.spec.steps",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.tabs.calibration.positive",
+      "contractId": "ui.spec.tabs",
+      "class": "positive",
+      "input": {
+        "automatic": true,
+        "localLightPanelAndFocusPolicy": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.tabs.calibration.negative",
+      "contractId": "ui.spec.tabs",
+      "class": "negative",
+      "input": {
+        "automatic": true,
+        "localLightPanelAndFocusPolicy": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.tabs.calibration.boundary",
+      "contractId": "ui.spec.tabs",
+      "class": "boundary",
+      "input": {
+        "automatic": false,
+        "localLightPanelAndFocusPolicy": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.tabs.calibration.missing",
+      "contractId": "ui.spec.tabs",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.tree.calibration.positive",
+      "contractId": "ui.spec.tree",
+      "class": "positive",
+      "input": {
+        "unknownChildren": true,
+        "notClassifiedLeaf": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.tree.calibration.negative",
+      "contractId": "ui.spec.tree",
+      "class": "negative",
+      "input": {
+        "unknownChildren": true,
+        "notClassifiedLeaf": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.tree.calibration.boundary",
+      "contractId": "ui.spec.tree",
+      "class": "boundary",
+      "input": {
+        "unknownChildren": false,
+        "notClassifiedLeaf": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.tree.calibration.missing",
+      "contractId": "ui.spec.tree",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.commandpalette.calibration.positive",
+      "contractId": "ui.spec.commandpalette",
+      "class": "positive",
+      "input": {
+        "destructiveChosen": true,
+        "confirmationWithoutExecution": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.commandpalette.calibration.negative",
+      "contractId": "ui.spec.commandpalette",
+      "class": "negative",
+      "input": {
+        "destructiveChosen": true,
+        "confirmationWithoutExecution": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.commandpalette.calibration.boundary",
+      "contractId": "ui.spec.commandpalette",
+      "class": "boundary",
+      "input": {
+        "destructiveChosen": false,
+        "confirmationWithoutExecution": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.commandpalette.calibration.missing",
+      "contractId": "ui.spec.commandpalette",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.contextmenu.calibration.positive",
+      "contractId": "ui.spec.contextmenu",
+      "class": "positive",
+      "input": {
+        "targetInvalidated": true,
+        "closedWithSafeReturn": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.contextmenu.calibration.negative",
+      "contractId": "ui.spec.contextmenu",
+      "class": "negative",
+      "input": {
+        "targetInvalidated": true,
+        "closedWithSafeReturn": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.contextmenu.calibration.boundary",
+      "contractId": "ui.spec.contextmenu",
+      "class": "boundary",
+      "input": {
+        "targetInvalidated": false,
+        "closedWithSafeReturn": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.contextmenu.calibration.missing",
+      "contractId": "ui.spec.contextmenu",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.dropdownmenu.calibration.positive",
+      "contractId": "ui.spec.dropdownmenu",
+      "class": "positive",
+      "input": {
+        "menuOpened": true,
+        "noDefaultCommandDispatched": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.dropdownmenu.calibration.negative",
+      "contractId": "ui.spec.dropdownmenu",
+      "class": "negative",
+      "input": {
+        "menuOpened": true,
+        "noDefaultCommandDispatched": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.dropdownmenu.calibration.boundary",
+      "contractId": "ui.spec.dropdownmenu",
+      "class": "boundary",
+      "input": {
+        "menuOpened": false,
+        "noDefaultCommandDispatched": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.dropdownmenu.calibration.missing",
+      "contractId": "ui.spec.dropdownmenu",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.popover.calibration.positive",
+      "contractId": "ui.spec.popover",
+      "class": "positive",
+      "input": {
+        "nonmodalPointer": true,
+        "noTrapOrFocusSteal": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.popover.calibration.negative",
+      "contractId": "ui.spec.popover",
+      "class": "negative",
+      "input": {
+        "nonmodalPointer": true,
+        "noTrapOrFocusSteal": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.popover.calibration.boundary",
+      "contractId": "ui.spec.popover",
+      "class": "boundary",
+      "input": {
+        "nonmodalPointer": false,
+        "noTrapOrFocusSteal": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.popover.calibration.missing",
+      "contractId": "ui.spec.popover",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.tooltip.calibration.positive",
+      "contractId": "ui.spec.tooltip",
+      "class": "positive",
+      "input": {
+        "passiveWithTouchAlternative": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.tooltip.calibration.negative",
+      "contractId": "ui.spec.tooltip",
+      "class": "negative",
+      "input": {
+        "passiveWithTouchAlternative": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.tooltip.calibration.boundary",
+      "contractId": "ui.spec.tooltip",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.tooltip.calibration.missing",
+      "contractId": "ui.spec.tooltip",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.modal.calibration.positive",
+      "contractId": "ui.spec.modal",
+      "class": "positive",
+      "input": {
+        "decisionDialog": true,
+        "safeFocusNoDefaultApproval": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.modal.calibration.negative",
+      "contractId": "ui.spec.modal",
+      "class": "negative",
+      "input": {
+        "decisionDialog": true,
+        "safeFocusNoDefaultApproval": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.modal.calibration.boundary",
+      "contractId": "ui.spec.modal",
+      "class": "boundary",
+      "input": {
+        "decisionDialog": false,
+        "safeFocusNoDefaultApproval": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.modal.calibration.missing",
+      "contractId": "ui.spec.modal",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.drawer.calibration.positive",
+      "contractId": "ui.spec.drawer",
+      "class": "positive",
+      "input": {
+        "objectChangesWhileDirty": true,
+        "ownerResolutionBeforeReplace": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.drawer.calibration.negative",
+      "contractId": "ui.spec.drawer",
+      "class": "negative",
+      "input": {
+        "objectChangesWhileDirty": true,
+        "ownerResolutionBeforeReplace": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.drawer.calibration.boundary",
+      "contractId": "ui.spec.drawer",
+      "class": "boundary",
+      "input": {
+        "objectChangesWhileDirty": false,
+        "ownerResolutionBeforeReplace": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.drawer.calibration.missing",
+      "contractId": "ui.spec.drawer",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.floatingsheet.calibration.positive",
+      "contractId": "ui.spec.floatingsheet",
+      "class": "positive",
+      "input": {
+        "gestureClose": true,
+        "dirtyGuardAndExplicitAlternative": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.floatingsheet.calibration.negative",
+      "contractId": "ui.spec.floatingsheet",
+      "class": "negative",
+      "input": {
+        "gestureClose": true,
+        "dirtyGuardAndExplicitAlternative": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.floatingsheet.calibration.boundary",
+      "contractId": "ui.spec.floatingsheet",
+      "class": "boundary",
+      "input": {
+        "gestureClose": false,
+        "dirtyGuardAndExplicitAlternative": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.floatingsheet.calibration.missing",
+      "contractId": "ui.spec.floatingsheet",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.floatingpanel.calibration.positive",
+      "contractId": "ui.spec.floatingpanel",
+      "class": "positive",
+      "input": {
+        "viewClosed": true,
+        "backgroundTaskPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.floatingpanel.calibration.negative",
+      "contractId": "ui.spec.floatingpanel",
+      "class": "negative",
+      "input": {
+        "viewClosed": true,
+        "backgroundTaskPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.floatingpanel.calibration.boundary",
+      "contractId": "ui.spec.floatingpanel",
+      "class": "boundary",
+      "input": {
+        "viewClosed": false,
+        "backgroundTaskPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.floatingpanel.calibration.missing",
+      "contractId": "ui.spec.floatingpanel",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.carousel.calibration.positive",
+      "contractId": "ui.spec.carousel",
+      "class": "positive",
+      "input": {
+        "autoPlaying": true,
+        "explicitOptInAndPausePolicy": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.carousel.calibration.negative",
+      "contractId": "ui.spec.carousel",
+      "class": "negative",
+      "input": {
+        "autoPlaying": true,
+        "explicitOptInAndPausePolicy": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.carousel.calibration.boundary",
+      "contractId": "ui.spec.carousel",
+      "class": "boundary",
+      "input": {
+        "autoPlaying": false,
+        "explicitOptInAndPausePolicy": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.carousel.calibration.missing",
+      "contractId": "ui.spec.carousel",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.image.calibration.positive",
+      "contractId": "ui.spec.image",
+      "class": "positive",
+      "input": {
+        "saveInvoked": true,
+        "resourceSaveAuthorized": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.image.calibration.negative",
+      "contractId": "ui.spec.image",
+      "class": "negative",
+      "input": {
+        "saveInvoked": true,
+        "resourceSaveAuthorized": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.image.calibration.boundary",
+      "contractId": "ui.spec.image",
+      "class": "boundary",
+      "input": {
+        "saveInvoked": false,
+        "resourceSaveAuthorized": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.image.calibration.missing",
+      "contractId": "ui.spec.image",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.htmlpreview.calibration.positive",
+      "contractId": "ui.spec.htmlpreview",
+      "class": "positive",
+      "input": {
+        "isolatedNoImplicitHostAuthority": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.htmlpreview.calibration.negative",
+      "contractId": "ui.spec.htmlpreview",
+      "class": "negative",
+      "input": {
+        "isolatedNoImplicitHostAuthority": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.htmlpreview.calibration.boundary",
+      "contractId": "ui.spec.htmlpreview",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.htmlpreview.calibration.missing",
+      "contractId": "ui.spec.htmlpreview",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.qrcode.calibration.positive",
+      "contractId": "ui.spec.qrcode",
+      "class": "positive",
+      "input": {
+        "showsConfirmed": true,
+        "ownerConfirmationNoPayloadLeak": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.qrcode.calibration.negative",
+      "contractId": "ui.spec.qrcode",
+      "class": "negative",
+      "input": {
+        "showsConfirmed": true,
+        "ownerConfirmationNoPayloadLeak": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.qrcode.calibration.boundary",
+      "contractId": "ui.spec.qrcode",
+      "class": "boundary",
+      "input": {
+        "showsConfirmed": false,
+        "ownerConfirmationNoPayloadLeak": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.qrcode.calibration.missing",
+      "contractId": "ui.spec.qrcode",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.video.calibration.positive",
+      "contractId": "ui.spec.video",
+      "class": "positive",
+      "input": {
+        "playing": true,
+        "userIntentAndMediaClock": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.video.calibration.negative",
+      "contractId": "ui.spec.video",
+      "class": "negative",
+      "input": {
+        "playing": true,
+        "userIntentAndMediaClock": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.video.calibration.boundary",
+      "contractId": "ui.spec.video",
+      "class": "boundary",
+      "input": {
+        "playing": false,
+        "userIntentAndMediaClock": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.video.calibration.missing",
+      "contractId": "ui.spec.video",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.audioplayer.calibration.positive",
+      "contractId": "ui.spec.audioplayer",
+      "class": "positive",
+      "input": {
+        "playing": true,
+        "mediaOwnerAndClockBound": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.audioplayer.calibration.negative",
+      "contractId": "ui.spec.audioplayer",
+      "class": "negative",
+      "input": {
+        "playing": true,
+        "mediaOwnerAndClockBound": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.audioplayer.calibration.boundary",
+      "contractId": "ui.spec.audioplayer",
+      "class": "boundary",
+      "input": {
+        "playing": false,
+        "mediaOwnerAndClockBound": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.audioplayer.calibration.missing",
+      "contractId": "ui.spec.audioplayer",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.highlighter.calibration.positive",
+      "contractId": "ui.spec.highlighter",
+      "class": "positive",
+      "input": {
+        "languageUnknown": true,
+        "plainFallbackNoExecution": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.highlighter.calibration.negative",
+      "contractId": "ui.spec.highlighter",
+      "class": "negative",
+      "input": {
+        "languageUnknown": true,
+        "plainFallbackNoExecution": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.highlighter.calibration.boundary",
+      "contractId": "ui.spec.highlighter",
+      "class": "boundary",
+      "input": {
+        "languageUnknown": false,
+        "plainFallbackNoExecution": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.highlighter.calibration.missing",
+      "contractId": "ui.spec.highlighter",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.snippet.calibration.positive",
+      "contractId": "ui.spec.snippet",
+      "class": "positive",
+      "input": {
+        "copyInvoked": true,
+        "payloadOnlyNoExecution": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.snippet.calibration.negative",
+      "contractId": "ui.spec.snippet",
+      "class": "negative",
+      "input": {
+        "copyInvoked": true,
+        "payloadOnlyNoExecution": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.snippet.calibration.boundary",
+      "contractId": "ui.spec.snippet",
+      "class": "boundary",
+      "input": {
+        "copyInvoked": false,
+        "payloadOnlyNoExecution": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.snippet.calibration.missing",
+      "contractId": "ui.spec.snippet",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.codeeditor.calibration.positive",
+      "contractId": "ui.spec.codeeditor",
+      "class": "positive",
+      "input": {
+        "conflict": true,
+        "draftAndEscapePolicyPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.codeeditor.calibration.negative",
+      "contractId": "ui.spec.codeeditor",
+      "class": "negative",
+      "input": {
+        "conflict": true,
+        "draftAndEscapePolicyPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.codeeditor.calibration.boundary",
+      "contractId": "ui.spec.codeeditor",
+      "class": "boundary",
+      "input": {
+        "conflict": false,
+        "draftAndEscapePolicyPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.codeeditor.calibration.missing",
+      "contractId": "ui.spec.codeeditor",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.codediff.calibration.positive",
+      "contractId": "ui.spec.codediff",
+      "class": "positive",
+      "input": {
+        "versionBoundNonexecutingDiff": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.codediff.calibration.negative",
+      "contractId": "ui.spec.codediff",
+      "class": "negative",
+      "input": {
+        "versionBoundNonexecutingDiff": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.codediff.calibration.boundary",
+      "contractId": "ui.spec.codediff",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.codediff.calibration.missing",
+      "contractId": "ui.spec.codediff",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.mermaid.calibration.positive",
+      "contractId": "ui.spec.mermaid",
+      "class": "positive",
+      "input": {
+        "renderFailed": true,
+        "sourceFallbackAvailable": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.mermaid.calibration.negative",
+      "contractId": "ui.spec.mermaid",
+      "class": "negative",
+      "input": {
+        "renderFailed": true,
+        "sourceFallbackAvailable": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.mermaid.calibration.boundary",
+      "contractId": "ui.spec.mermaid",
+      "class": "boundary",
+      "input": {
+        "renderFailed": false,
+        "sourceFallbackAvailable": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.mermaid.calibration.missing",
+      "contractId": "ui.spec.mermaid",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.configprovider.calibration.positive",
+      "contractId": "ui.spec.configprovider",
+      "class": "positive",
+      "input": {
+        "singleContextExplicitPorts": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.configprovider.calibration.negative",
+      "contractId": "ui.spec.configprovider",
+      "class": "negative",
+      "input": {
+        "singleContextExplicitPorts": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.configprovider.calibration.boundary",
+      "contractId": "ui.spec.configprovider",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.configprovider.calibration.missing",
+      "contractId": "ui.spec.configprovider",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.focusscope.calibration.positive",
+      "contractId": "ui.spec.focusscope",
+      "class": "positive",
+      "input": {
+        "trap": true,
+        "modalAndSafeFallback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.focusscope.calibration.negative",
+      "contractId": "ui.spec.focusscope",
+      "class": "negative",
+      "input": {
+        "trap": true,
+        "modalAndSafeFallback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.focusscope.calibration.boundary",
+      "contractId": "ui.spec.focusscope",
+      "class": "boundary",
+      "input": {
+        "trap": false,
+        "modalAndSafeFallback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.focusscope.calibration.missing",
+      "contractId": "ui.spec.focusscope",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.fontloader.calibration.positive",
+      "contractId": "ui.spec.fontloader",
+      "class": "positive",
+      "input": {
+        "readableFallbackNonblocking": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.fontloader.calibration.negative",
+      "contractId": "ui.spec.fontloader",
+      "class": "negative",
+      "input": {
+        "readableFallbackNonblocking": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.fontloader.calibration.boundary",
+      "contractId": "ui.spec.fontloader",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.fontloader.calibration.missing",
+      "contractId": "ui.spec.fontloader",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.freeze.calibration.positive",
+      "contractId": "ui.spec.freeze",
+      "class": "positive",
+      "input": {
+        "suspended": true,
+        "pageHostEligibleBusinessContinues": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.freeze.calibration.negative",
+      "contractId": "ui.spec.freeze",
+      "class": "negative",
+      "input": {
+        "suspended": true,
+        "pageHostEligibleBusinessContinues": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.freeze.calibration.boundary",
+      "contractId": "ui.spec.freeze",
+      "class": "boundary",
+      "input": {
+        "suspended": false,
+        "pageHostEligibleBusinessContinues": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.freeze.calibration.missing",
+      "contractId": "ui.spec.freeze",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.motionprovider.calibration.positive",
+      "contractId": "ui.spec.motionprovider",
+      "class": "positive",
+      "input": {
+        "reduced": true,
+        "stateMeaningPreserved": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.motionprovider.calibration.negative",
+      "contractId": "ui.spec.motionprovider",
+      "class": "negative",
+      "input": {
+        "reduced": true,
+        "stateMeaningPreserved": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.motionprovider.calibration.boundary",
+      "contractId": "ui.spec.motionprovider",
+      "class": "boundary",
+      "input": {
+        "reduced": false,
+        "stateMeaningPreserved": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.motionprovider.calibration.missing",
+      "contractId": "ui.spec.motionprovider",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.react-error-boundary.calibration.positive",
+      "contractId": "ui.spec.react-error-boundary",
+      "class": "positive",
+      "input": {
+        "renderFailed": true,
+        "boundedLocalFallback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.react-error-boundary.calibration.negative",
+      "contractId": "ui.spec.react-error-boundary",
+      "class": "negative",
+      "input": {
+        "renderFailed": true,
+        "boundedLocalFallback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.react-error-boundary.calibration.boundary",
+      "contractId": "ui.spec.react-error-boundary",
+      "class": "boundary",
+      "input": {
+        "renderFailed": false,
+        "boundedLocalFallback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.react-error-boundary.calibration.missing",
+      "contractId": "ui.spec.react-error-boundary",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.styles.calibration.positive",
+      "contractId": "ui.spec.styles",
+      "class": "positive",
+      "input": {
+        "singleTokenSourceNarrowing": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.styles.calibration.negative",
+      "contractId": "ui.spec.styles",
+      "class": "negative",
+      "input": {
+        "singleTokenSourceNarrowing": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.styles.calibration.boundary",
+      "contractId": "ui.spec.styles",
+      "class": "boundary",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.styles.calibration.missing",
+      "contractId": "ui.spec.styles",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.relationshiprequestitem.calibration.positive",
+      "contractId": "ui.spec.relationshiprequestitem",
+      "class": "positive",
+      "input": {
+        "decisionEnabled": true,
+        "incomingPendingSameEntityComponent": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.relationshiprequestitem.calibration.negative",
+      "contractId": "ui.spec.relationshiprequestitem",
+      "class": "negative",
+      "input": {
+        "decisionEnabled": true,
+        "incomingPendingSameEntityComponent": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.relationshiprequestitem.calibration.boundary",
+      "contractId": "ui.spec.relationshiprequestitem",
+      "class": "boundary",
+      "input": {
+        "decisionEnabled": false,
+        "incomingPendingSameEntityComponent": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.relationshiprequestitem.calibration.missing",
+      "contractId": "ui.spec.relationshiprequestitem",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.contactitem.calibration.positive",
+      "contractId": "ui.spec.contactitem",
+      "class": "positive",
+      "input": {
+        "startChat": true,
+        "existingAuthorizedConversationOwner": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.contactitem.calibration.negative",
+      "contractId": "ui.spec.contactitem",
+      "class": "negative",
+      "input": {
+        "startChat": true,
+        "existingAuthorizedConversationOwner": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.contactitem.calibration.boundary",
+      "contractId": "ui.spec.contactitem",
+      "class": "boundary",
+      "input": {
+        "startChat": false,
+        "existingAuthorizedConversationOwner": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.contactitem.calibration.missing",
+      "contractId": "ui.spec.contactitem",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.conversationitem.calibration.positive",
+      "contractId": "ui.spec.conversationitem",
+      "class": "positive",
+      "input": {
+        "claimsRead": true,
+        "messagingReadPolicyBound": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.conversationitem.calibration.negative",
+      "contractId": "ui.spec.conversationitem",
+      "class": "negative",
+      "input": {
+        "claimsRead": true,
+        "messagingReadPolicyBound": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.conversationitem.calibration.boundary",
+      "contractId": "ui.spec.conversationitem",
+      "class": "boundary",
+      "input": {
+        "claimsRead": false,
+        "messagingReadPolicyBound": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.conversationitem.calibration.missing",
+      "contractId": "ui.spec.conversationitem",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.messagebubble.calibration.positive",
+      "contractId": "ui.spec.messagebubble",
+      "class": "positive",
+      "input": {
+        "showsRead": true,
+        "readReceiptBound": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.messagebubble.calibration.negative",
+      "contractId": "ui.spec.messagebubble",
+      "class": "negative",
+      "input": {
+        "showsRead": true,
+        "readReceiptBound": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.messagebubble.calibration.boundary",
+      "contractId": "ui.spec.messagebubble",
+      "class": "boundary",
+      "input": {
+        "showsRead": false,
+        "readReceiptBound": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.messagebubble.calibration.missing",
+      "contractId": "ui.spec.messagebubble",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.messagecomposer.calibration.positive",
+      "contractId": "ui.spec.messagecomposer",
+      "class": "positive",
+      "input": {
+        "failedOrConversationChanged": true,
+        "draftIdentityAndImeGuard": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.messagecomposer.calibration.negative",
+      "contractId": "ui.spec.messagecomposer",
+      "class": "negative",
+      "input": {
+        "failedOrConversationChanged": true,
+        "draftIdentityAndImeGuard": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.messagecomposer.calibration.boundary",
+      "contractId": "ui.spec.messagecomposer",
+      "class": "boundary",
+      "input": {
+        "failedOrConversationChanged": false,
+        "draftIdentityAndImeGuard": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.messagecomposer.calibration.missing",
+      "contractId": "ui.spec.messagecomposer",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.attachmentitem.calibration.positive",
+      "contractId": "ui.spec.attachmentitem",
+      "class": "positive",
+      "input": {
+        "showsReady": true,
+        "resourceReadyReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.attachmentitem.calibration.negative",
+      "contractId": "ui.spec.attachmentitem",
+      "class": "negative",
+      "input": {
+        "showsReady": true,
+        "resourceReadyReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.attachmentitem.calibration.boundary",
+      "contractId": "ui.spec.attachmentitem",
+      "class": "boundary",
+      "input": {
+        "showsReady": false,
+        "resourceReadyReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.attachmentitem.calibration.missing",
+      "contractId": "ui.spec.attachmentitem",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.attachmentviewer.calibration.positive",
+      "contractId": "ui.spec.attachmentviewer",
+      "class": "positive",
+      "input": {
+        "previewOpened": true,
+        "authorizedDisplayHandle": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.attachmentviewer.calibration.negative",
+      "contractId": "ui.spec.attachmentviewer",
+      "class": "negative",
+      "input": {
+        "previewOpened": true,
+        "authorizedDisplayHandle": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.attachmentviewer.calibration.boundary",
+      "contractId": "ui.spec.attachmentviewer",
+      "class": "boundary",
+      "input": {
+        "previewOpened": false,
+        "authorizedDisplayHandle": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.attachmentviewer.calibration.missing",
+      "contractId": "ui.spec.attachmentviewer",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.reactionchip.calibration.positive",
+      "contractId": "ui.spec.reactionchip",
+      "class": "positive",
+      "input": {
+        "writeFailed": true,
+        "confirmedCountRestored": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.reactionchip.calibration.negative",
+      "contractId": "ui.spec.reactionchip",
+      "class": "negative",
+      "input": {
+        "writeFailed": true,
+        "confirmedCountRestored": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.reactionchip.calibration.boundary",
+      "contractId": "ui.spec.reactionchip",
+      "class": "boundary",
+      "input": {
+        "writeFailed": false,
+        "confirmedCountRestored": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.reactionchip.calibration.missing",
+      "contractId": "ui.spec.reactionchip",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.identityblock.calibration.positive",
+      "contractId": "ui.spec.identityblock",
+      "class": "positive",
+      "input": {
+        "identityShown": true,
+        "canonicalIdentityProjection": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.identityblock.calibration.negative",
+      "contractId": "ui.spec.identityblock",
+      "class": "negative",
+      "input": {
+        "identityShown": true,
+        "canonicalIdentityProjection": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.identityblock.calibration.boundary",
+      "contractId": "ui.spec.identityblock",
+      "class": "boundary",
+      "input": {
+        "identityShown": false,
+        "canonicalIdentityProjection": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.identityblock.calibration.missing",
+      "contractId": "ui.spec.identityblock",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.trustindicator.calibration.positive",
+      "contractId": "ui.spec.trustindicator",
+      "class": "positive",
+      "input": {
+        "claimsCapabilityReady": true,
+        "scopeCapabilityReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.trustindicator.calibration.negative",
+      "contractId": "ui.spec.trustindicator",
+      "class": "negative",
+      "input": {
+        "claimsCapabilityReady": true,
+        "scopeCapabilityReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.trustindicator.calibration.boundary",
+      "contractId": "ui.spec.trustindicator",
+      "class": "boundary",
+      "input": {
+        "claimsCapabilityReady": false,
+        "scopeCapabilityReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.trustindicator.calibration.missing",
+      "contractId": "ui.spec.trustindicator",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.permissiondecision.calibration.positive",
+      "contractId": "ui.spec.permissiondecision",
+      "class": "positive",
+      "input": {
+        "showsApproved": true,
+        "scopeDeadlineOwnerReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.permissiondecision.calibration.negative",
+      "contractId": "ui.spec.permissiondecision",
+      "class": "negative",
+      "input": {
+        "showsApproved": true,
+        "scopeDeadlineOwnerReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.permissiondecision.calibration.boundary",
+      "contractId": "ui.spec.permissiondecision",
+      "class": "boundary",
+      "input": {
+        "showsApproved": false,
+        "scopeDeadlineOwnerReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.permissiondecision.calibration.missing",
+      "contractId": "ui.spec.permissiondecision",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.agenttaskcard.calibration.positive",
+      "contractId": "ui.spec.agenttaskcard",
+      "class": "positive",
+      "input": {
+        "showsStopped": true,
+        "stopOwnerConfirmed": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.agenttaskcard.calibration.negative",
+      "contractId": "ui.spec.agenttaskcard",
+      "class": "negative",
+      "input": {
+        "showsStopped": true,
+        "stopOwnerConfirmed": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.agenttaskcard.calibration.boundary",
+      "contractId": "ui.spec.agenttaskcard",
+      "class": "boundary",
+      "input": {
+        "showsStopped": false,
+        "stopOwnerConfirmed": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.agenttaskcard.calibration.missing",
+      "contractId": "ui.spec.agenttaskcard",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.toolcallcard.calibration.positive",
+      "contractId": "ui.spec.toolcallcard",
+      "class": "positive",
+      "input": {
+        "retryEnabled": true,
+        "effectPolicyAndCallIdentity": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.toolcallcard.calibration.negative",
+      "contractId": "ui.spec.toolcallcard",
+      "class": "negative",
+      "input": {
+        "retryEnabled": true,
+        "effectPolicyAndCallIdentity": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.toolcallcard.calibration.boundary",
+      "contractId": "ui.spec.toolcallcard",
+      "class": "boundary",
+      "input": {
+        "retryEnabled": false,
+        "effectPolicyAndCallIdentity": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.toolcallcard.calibration.missing",
+      "contractId": "ui.spec.toolcallcard",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.devicelinkcard.calibration.positive",
+      "contractId": "ui.spec.devicelinkcard",
+      "class": "positive",
+      "input": {
+        "showsConfirmed": true,
+        "sameSessionDeviceReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.devicelinkcard.calibration.negative",
+      "contractId": "ui.spec.devicelinkcard",
+      "class": "negative",
+      "input": {
+        "showsConfirmed": true,
+        "sameSessionDeviceReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.devicelinkcard.calibration.boundary",
+      "contractId": "ui.spec.devicelinkcard",
+      "class": "boundary",
+      "input": {
+        "showsConfirmed": false,
+        "sameSessionDeviceReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.devicelinkcard.calibration.missing",
+      "contractId": "ui.spec.devicelinkcard",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.connectionrecovery.calibration.positive",
+      "contractId": "ui.spec.connectionrecovery",
+      "class": "positive",
+      "input": {
+        "automaticRetry": true,
+        "scopeBoundBudgetAndDraft": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.connectionrecovery.calibration.negative",
+      "contractId": "ui.spec.connectionrecovery",
+      "class": "negative",
+      "input": {
+        "automaticRetry": true,
+        "scopeBoundBudgetAndDraft": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.connectionrecovery.calibration.boundary",
+      "contractId": "ui.spec.connectionrecovery",
+      "class": "boundary",
+      "input": {
+        "automaticRetry": false,
+        "scopeBoundBudgetAndDraft": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.connectionrecovery.calibration.missing",
+      "contractId": "ui.spec.connectionrecovery",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.notificationitem.calibration.positive",
+      "contractId": "ui.spec.notificationitem",
+      "class": "positive",
+      "input": {
+        "marksRead": true,
+        "doesNotResolveBusinessDecision": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.notificationitem.calibration.negative",
+      "contractId": "ui.spec.notificationitem",
+      "class": "negative",
+      "input": {
+        "marksRead": true,
+        "doesNotResolveBusinessDecision": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.notificationitem.calibration.boundary",
+      "contractId": "ui.spec.notificationitem",
+      "class": "boundary",
+      "input": {
+        "marksRead": false,
+        "doesNotResolveBusinessDecision": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.notificationitem.calibration.missing",
+      "contractId": "ui.spec.notificationitem",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.navigationshell.calibration.positive",
+      "contractId": "ui.spec.navigationshell",
+      "class": "positive",
+      "input": {
+        "accountChanged": true,
+        "projectionReboundGlobalSettings": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.navigationshell.calibration.negative",
+      "contractId": "ui.spec.navigationshell",
+      "class": "negative",
+      "input": {
+        "accountChanged": true,
+        "projectionReboundGlobalSettings": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.navigationshell.calibration.boundary",
+      "contractId": "ui.spec.navigationshell",
+      "class": "boundary",
+      "input": {
+        "accountChanged": false,
+        "projectionReboundGlobalSettings": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.navigationshell.calibration.missing",
+      "contractId": "ui.spec.navigationshell",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.applettile.calibration.positive",
+      "contractId": "ui.spec.applettile",
+      "class": "positive",
+      "input": {
+        "showsReady": true,
+        "hostServiceReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.applettile.calibration.negative",
+      "contractId": "ui.spec.applettile",
+      "class": "negative",
+      "input": {
+        "showsReady": true,
+        "hostServiceReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.applettile.calibration.boundary",
+      "contractId": "ui.spec.applettile",
+      "class": "boundary",
+      "input": {
+        "showsReady": false,
+        "hostServiceReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.applettile.calibration.missing",
+      "contractId": "ui.spec.applettile",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.resourceusage.calibration.positive",
+      "contractId": "ui.spec.resourceusage",
+      "class": "positive",
+      "input": {
+        "nonActualData": true,
+        "classificationAndAsOfVisible": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.resourceusage.calibration.negative",
+      "contractId": "ui.spec.resourceusage",
+      "class": "negative",
+      "input": {
+        "nonActualData": true,
+        "classificationAndAsOfVisible": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.resourceusage.calibration.boundary",
+      "contractId": "ui.spec.resourceusage",
+      "class": "boundary",
+      "input": {
+        "nonActualData": false,
+        "classificationAndAsOfVisible": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.resourceusage.calibration.missing",
+      "contractId": "ui.spec.resourceusage",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.onboardingflow.calibration.positive",
+      "contractId": "ui.spec.onboardingflow",
+      "class": "positive",
+      "input": {
+        "showsFinished": true,
+        "durablePrerequisitesReadback": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.onboardingflow.calibration.negative",
+      "contractId": "ui.spec.onboardingflow",
+      "class": "negative",
+      "input": {
+        "showsFinished": true,
+        "durablePrerequisitesReadback": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.onboardingflow.calibration.boundary",
+      "contractId": "ui.spec.onboardingflow",
+      "class": "boundary",
+      "input": {
+        "showsFinished": false,
+        "durablePrerequisitesReadback": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.onboardingflow.calibration.missing",
+      "contractId": "ui.spec.onboardingflow",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    },
+    {
+      "id": "ui.spec.settingrow.calibration.positive",
+      "contractId": "ui.spec.settingrow",
+      "class": "positive",
+      "input": {
+        "immediate": true,
+        "immediateOwnerRollbackSingleFrame": true
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.settingrow.calibration.negative",
+      "contractId": "ui.spec.settingrow",
+      "class": "negative",
+      "input": {
+        "immediate": true,
+        "immediateOwnerRollbackSingleFrame": false
+      },
+      "expected": "VIOLATED"
+    },
+    {
+      "id": "ui.spec.settingrow.calibration.boundary",
+      "contractId": "ui.spec.settingrow",
+      "class": "boundary",
+      "input": {
+        "immediate": false,
+        "immediateOwnerRollbackSingleFrame": false
+      },
+      "expected": "SATISFIED"
+    },
+    {
+      "id": "ui.spec.settingrow.calibration.missing",
+      "contractId": "ui.spec.settingrow",
+      "class": "missing-input",
+      "input": {},
+      "expected": "UNPROVEN"
+    }
+  ]
+}

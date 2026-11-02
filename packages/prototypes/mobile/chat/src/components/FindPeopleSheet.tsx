@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type Dispatch, type KeyboardEvent } from 'react';
-import { Button, Input, Radio, Typography } from 'antd';
-import { X } from 'lucide-react';
+import { useEffect, useRef, useState, type Dispatch } from 'react';
+import { Button, Icon, RadioGroup, Text, TextField } from '@peers-touch/ui';
 import copy from '../../../../../locales/en/common.json';
 import { demoContacts } from '../data';
 import { demoPeopleHandle, type SocialDemoAction, type SocialDemoState } from '../socialDemo';
@@ -36,7 +35,7 @@ export function FindPeopleSheet({
     };
   }, []);
 
-  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>) {
     if (event.key === 'Escape') {
       event.stopPropagation();
       onClose();
@@ -58,7 +57,9 @@ export function FindPeopleSheet({
   }
 
   return (
-    <div className="mp-action-sheet-backdrop" onClick={onClose}>
+    <div className="mp-action-sheet-backdrop" onPointerDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
       <section
         ref={sheetRef}
         className="mp-action-sheet mp-find-people-sheet"
@@ -67,42 +68,41 @@ export function FindPeopleSheet({
         aria-labelledby="find-people-title"
         tabIndex={-1}
         onKeyDown={handleKeyDown}
-        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
       >
         <div className="mp-action-sheet-handle" />
-        <header className="mp-detail-header">
-          <h2 className="mp-detail-header-title" id="find-people-title">
-            {copy['mobile.contacts.findPeople']}
-          </h2>
-          <Button type="text" icon={<X size={20} />} onClick={onClose}
-            aria-label={copy['common.action.close']} />
+        <header className="mp-social-sheet-header">
+          <span className="mp-social-sheet-spacer" />
+          <h2 id="find-people-title">{copy['mobile.contacts.findPeople']}</h2>
+          <Button actionId="find-people.close" emphasis="quiet" leading={<Icon iconId="close" size={18} />}
+            aria-label={copy['common.action.close']} onActivate={onClose} />
         </header>
         <div className="mp-people-content">
-          <Input.Search
-            aria-label={copy['mobile.contacts.findPeoplePlaceholder']}
-            placeholder={copy['mobile.contacts.findPeoplePlaceholder']}
-            enterButton={copy['mobile.contacts.search']}
-            value={query}
-            allowClear
-            onChange={(event) => {
-              setQuery(event.target.value);
-              if (!event.target.value.trim()) setSearchedQuery('');
-            }}
-            onSearch={(value) => setSearchedQuery(value)}
-          />
+          <form onSubmit={(event) => { event.preventDefault(); setSearchedQuery(query); }}>
+            <TextField
+              aria-label={copy['mobile.contacts.findPeoplePlaceholder']}
+              placeholder={copy['mobile.contacts.findPeoplePlaceholder']}
+              value={query}
+              clearable
+              leading={<Icon iconId="user-round" size={16} />}
+              trailing={<Button actionId="find-people.search" emphasis="primary" density="compact"
+                behavior="submit">{copy['mobile.contacts.search']}</Button>}
+              onValueChange={(value) => {
+                setQuery(value);
+                if (!value.trim()) setSearchedQuery('');
+              }}
+            />
+          </form>
           <fieldset className="mp-federation-field" disabled={state.request !== null}>
             <legend>{copy['mobile.contacts.federation']}</legend>
             {state.federations.length > 0 ? (
-              <Radio.Group value={federationId} disabled={state.request !== null}
-                onChange={(event) => setFederationId(String(event.target.value))}>
-                {state.federations.map((federation) => (
-                  <Radio key={federation.id} value={federation.id}>{federation.name}</Radio>
-                ))}
-              </Radio.Group>
+              <RadioGroup value={federationId} disabled={state.request !== null}
+                onValueChange={(value) => setFederationId(String(value))}
+                options={state.federations.map((federation) => ({ value: federation.id, label: federation.name }))} />
             ) : (
-              <Typography.Text id="people-membership-state" role="status">
+              <Text id="people-membership-state" role="status" tone="secondary">
                 {copy['mobile.contacts.noFederation']}
-              </Typography.Text>
+              </Text>
             )}
           </fieldset>
           <RequestRecoveryNotice request={state.request}
@@ -116,21 +116,23 @@ export function FindPeopleSheet({
                 <div className="mp-people-result" key={contact.key}>
                   <div className="mp-request-item">
                     <IdentityAvatar name={contact.name} initials={contact.avatar}
-                      src={contact.avatarUrl} size={44} />
+                      src={contact.avatarUrl} size={40} />
                     <div className="mp-request-info">
-                      <Typography.Text strong>{contact.name}</Typography.Text>
-                      <Typography.Text type="secondary" className="mp-people-handle">
+                      <Text strong>{contact.name}</Text>
+                      <Text tone="secondary" className="mp-people-handle">
                         {`@${contact.key}@local.station`}
-                      </Typography.Text>
+                      </Text>
                     </div>
                   </div>
-                  <Button
-                    type="primary"
-                    block
-                    loading={pending}
-                    disabled={friend || state.request !== null || !validFederation || queryChanged}
+                  <Button actionId={`find-people.request.${contact.key}`} emphasis="primary" fullWidth
+                    execution={pending ? 'pending' : 'idle'}
+                    availability={(friend || state.request !== null || !validFederation || queryChanged)
+                      ? { kind: 'disabled', reason: friend
+                        ? copy['mobile.contacts.alreadyFriend']
+                        : !validFederation ? copy['mobile.contacts.noFederation'] : 'Outcome pending' }
+                      : undefined}
                     aria-describedby={!validFederation ? 'people-membership-state' : undefined}
-                    onClick={() => dispatch({ type: 'send-request', contactKey: contact.key, federationId })}
+                    onActivate={() => dispatch({ type: 'send-request', contactKey: contact.key, federationId })}
                   >
                     {friend ? copy['mobile.contacts.alreadyFriend']
                       : request?.status === 'sent' ? copy['mobile.contacts.requestSent']
@@ -140,9 +142,9 @@ export function FindPeopleSheet({
                 </div>
               );
             }) : (
-              <Typography.Text type="secondary" role="status">
+              <Text tone="secondary" role="status">
                 {copy[searchedQuery ? 'mobile.contacts.noPeopleResults' : 'mobile.contacts.findPeopleHint']}
-              </Typography.Text>
+              </Text>
             )}
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
-import { CloudCog, Maximize2, Minimize2, Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
+import { CloudCog, Layers, Maximize2, Minimize2, Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
 import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
@@ -30,10 +30,15 @@ const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: 
     subtitle: 'Bootstrap catalog, releases, publication, and recovery',
     icon: <CloudCog size={18} />,
   },
+  'frontend-eles': {
+    title: 'Frontend Eles',
+    subtitle: '元素与组件全集 · 先基础，再高级，最后逐项交互',
+    icon: <Layers size={18} />,
+  },
 };
 
 function normalizeSite(value: unknown): PrototypeSite {
-  return value === 'mobile' || value === 'dashboard' || value === 'control' || value === 'desktop'
+  return value === 'mobile' || value === 'dashboard' || value === 'control' || value === 'desktop' || value === 'frontend-eles'
     ? value
     : 'desktop';
 }

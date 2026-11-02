@@ -133,7 +133,7 @@ export function socialDemoReducer(state: SocialDemoState, action: SocialDemoActi
         key: `demo-direct-${contact.key}`,
         name: contact.name,
         avatar: contact.avatar,
-        avatarGradient: contact.avatarGradient,
+        avatarUrl: contact.avatarUrl,
         online: contact.online,
         lastMessage: '',
         time: '',

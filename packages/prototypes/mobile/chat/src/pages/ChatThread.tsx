@@ -1,12 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { Input, Typography } from 'antd';
-import {
-  AlertCircle, ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
-  Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
-  Image as ImageIcon, Laugh, ListChecks, LockKeyhole,
-  MessageSquare, MoreVertical, Pencil, Phone, Pin, Plus,
-  RefreshCw, RotateCcw, Send, ShieldX, Video, X,
-} from 'lucide-react';
+import { Icon, IconButton, Switch, Text, TextArea } from '@peers-touch/ui';
 import type { Conversation, Message, MessageStatus, MobileUiEvidence, ReactionKind } from '../types';
 import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
 import { demoSelfIdentity } from '../data';
@@ -30,7 +23,6 @@ import {
   ThreadSkeleton,
 } from '../components/MobileSurfaceState';
 
-const { Text } = Typography;
 const messageKey = (message: Message) => message.id;
 
 export function ChatThread({ conversation, onBack, onStartCall, messages, onMessagesChange: setMessages, listMemory, uiEvidence, onSearch, messageId, threadRootMessageId }: {
@@ -143,8 +135,6 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
   }
 
   function handleRetry(messageId: string) {
-    // A recalled/moderated/failed row keeps status 'failed', but retry must
-    // neither resurrect its content nor flip it to delivered.
     const targetLive = (list: Message[]) => {
       const target = list.find((message) => message.id === messageId);
       return Boolean(target && !target.recalled && !target.moderated);
@@ -158,7 +148,6 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
     const timer = window.setTimeout(() => {
       retryTimers.current.delete(timer);
       setMessages((prev) => {
-        // Hide-for-me (or Clear) during the retry window removes the row.
         if (!targetLive(prev)) return prev;
         const next = prev.map((message) => (
           message.id === messageId ? { ...message, status: 'delivered' as const } : message
@@ -282,7 +271,6 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
       const existing = m.reactions ?? [];
       const found = existing.find((r) => r.kind === kind);
       if (found && found.byMe) {
-        // Remove my reaction
         const updated = existing
           .map((r) => r.kind === kind ? { ...r, byMe: false, count: r.count - 1 } : r)
           .filter((r) => r.count > 0);
@@ -303,14 +291,14 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
     handleReaction(msgId, kind);
   }
 
-  function renderReceipt(status?: MessageStatus) {
-    if (status === 'failed') return <AlertCircle size={14} className="mp-receipt mp-receipt--failed" aria-label={journeyCopy.deliveryFailed} />;
-    if (status === 'unknown') return <AlertCircle size={14} className="mp-receipt mp-receipt--unknown" aria-label="Delivery outcome unknown" />;
-    if (status === 'sending') return <RefreshCw size={13} className="mp-receipt mp-receipt--pending" aria-label={journeyCopy.retrying} />;
-    if (status === 'read') return <CheckCheck size={14} className="mp-receipt mp-receipt--read" />;
-    if (status === 'delivered') return <CheckCheck size={14} className="mp-receipt" />;
-    if (status === 'sent') return <Check size={14} className="mp-receipt" />;
-    return <Clock size={13} className="mp-receipt mp-receipt--pending" />;
+  function receiptIcon(status?: MessageStatus) {
+    if (status === 'failed') return <Icon iconId="error" size={14} className="mp-receipt mp-receipt--failed" label={journeyCopy.deliveryFailed} />;
+    if (status === 'unknown') return <Icon iconId="attention" size={14} className="mp-receipt mp-receipt--unknown" label="Delivery outcome unknown" />;
+    if (status === 'sending') return <Icon iconId="refresh-ccw" size={13} className="mp-receipt mp-receipt--pending" label={journeyCopy.retrying} />;
+    if (status === 'read') return <Icon iconId="check-check" size={14} className="mp-receipt mp-receipt--read" label="Read" />;
+    if (status === 'delivered') return <Icon iconId="check-check" size={14} className="mp-receipt" label="Delivered" />;
+    if (status === 'sent') return <Icon iconId="check" size={14} className="mp-receipt" label="Sent" />;
+    return <Icon iconId="clock" size={13} className="mp-receipt mp-receipt--pending" label="Pending" />;
   }
 
   const pinnedMessage = messages.find((m) => m.pinned && !m.dateLabel && !m.recalled && !m.moderated);
@@ -322,7 +310,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
         <>
       <header className="mp-thread-header">
         <button type="button" className="mp-thread-back" onClick={onBack} aria-label="Back">
-          <ArrowLeft size={22} />
+          <Icon iconId="arrow-left" size={22} />
         </button>
         <div className="mp-thread-contact">
           <IdentityAvatar
@@ -330,7 +318,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
             initials={conversation.avatar}
             src={conversation.avatarUrl}
             kind={conversation.isGroup ? 'group' : 'person'}
-            size={36}
+            size={32}
             renderState={uiEvidence.avatarState}
           />
           <div className="mp-thread-contact-info">
@@ -339,29 +327,14 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
         </div>
         {!conversation.isGroup && onStartCall ? (
           <>
-            <button
-              type="button"
-              className="mp-thread-action"
-              aria-label="Start audio call"
-              title="Start audio call"
-              onClick={() => onStartCall('audio')}
-            >
-              <Phone size={19} />
-            </button>
-            <button
-              type="button"
-              className="mp-thread-action"
-              aria-label="Start video call"
-              title="Start video call"
-              onClick={() => onStartCall('video')}
-            >
-              <Video size={19} />
-            </button>
+            <IconButton actionId="thread.call-audio" iconId="phone" label="Start audio call" emphasis="quiet"
+              iconSize={19} onActivate={() => onStartCall('audio')} />
+            <IconButton actionId="thread.call-video" iconId="video" label="Start video call" emphasis="quiet"
+              iconSize={19} onActivate={() => onStartCall('video')} />
           </>
         ) : null}
-        <button type="button" className="mp-thread-action" aria-label="More" onClick={() => setShowChatDetails(true)}>
-          <MoreVertical size={19} />
-        </button>
+        <IconButton actionId="thread.more" iconId="more-vertical" label="More" emphasis="quiet"
+          iconSize={19} onActivate={() => setShowChatDetails(true)} />
       </header>
 
       {failedMessages.length > 1 && (
@@ -374,12 +347,12 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
 
       {pinnedMessage && threadState !== 'route-error' && (
         <button type="button" className="mp-pinned-banner" onClick={() => setShowPinnedMessages(true)}>
-          <Pin size={14} />
+          <Icon iconId="pin" size={14} />
           <span className="mp-pinned-banner-content">
-            <Text type="secondary" className="mp-pinned-banner-label">Pinned message</Text>
-            <Text className="mp-pinned-banner-text" ellipsis>{pinnedMessage.text || '[Media]'}</Text>
+            <Text tone="muted" className="mp-pinned-banner-label">Pinned message</Text>
+            <Text className="mp-pinned-banner-text" truncate>{pinnedMessage.text || '[Media]'}</Text>
           </span>
-          <ChevronRight size={16} />
+          <Icon iconId="chevron-right" size={16} />
         </button>
       )}
 
@@ -404,7 +377,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                   />
                 )}
                 {targetUnavailable && (
-                  <Text type="secondary" role="status">{copy['mobile.chat.messageUnavailable']}</Text>
+                  <Text tone="secondary" role="status">{copy['mobile.chat.messageUnavailable']}</Text>
                 )}
                 {messages.length === 0 && (
                   <RouteSurfaceState
@@ -428,7 +401,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                       <div key={msg.id} className={`mp-message-row ${msg.mine ? 'mine' : 'peer'} cluster-start cluster-end`}
                         data-scroll-anchor-id={msg.id}>
                         <div className="mp-recalled-notice">
-                          {msg.moderated ? <ShieldX size={12} /> : <RotateCcw size={12} />}
+                          <Icon iconId={msg.moderated ? 'shield-x' : 'rotate-ccw'} size={12} />
                           <span>
                             {msg.moderated
                               ? copy['mobile.chat.moderatedMessage']
@@ -457,7 +430,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                             initials={msg.mine ? demoSelfIdentity.initials : conversation.avatar}
                             src={msg.mine ? demoSelfIdentity.avatarUrl : conversation.avatarUrl}
                             kind={!msg.mine && conversation.isGroup ? 'group' : 'person'}
-                            size={34}
+                            size={30}
                             renderState={uiEvidence.avatarState}
                           />
                         )}
@@ -465,7 +438,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                       <div className="mp-message-content" data-ui-column="body" data-ui-column-align={msg.mine ? 'end' : 'start'}>
                         {msg.flagged && (
                           <span className="mp-message-flag" title="Flagged on this device">
-                            <FlagIcon size={12} fill="currentColor" />
+                            <Icon iconId="flag" size={12} />
                           </span>
                         )}
                         {msg.reply && (
@@ -476,7 +449,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                         )}
                         {msg.image && (
                           <div className="mp-message-image" style={{ background: msg.image }}>
-                            <ImageIcon size={28} aria-hidden="true" />
+                            <Icon iconId="image" size={28} />
                           </div>
                         )}
                         {msg.file && (
@@ -490,13 +463,13 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                               setActionSheetMessage(msg);
                             }}
                           >
-                            {msg.pinned && <Pin size={11} className="mp-bubble-pin" />}
+                            {msg.pinned && <Icon iconId="pin" size={11} className="mp-bubble-pin" />}
                             {msg.text}
                           </div>
                         )}
                         {msg.threadCount && msg.threadCount > 0 && (
                           <button type="button" className="mp-thread-badge" onClick={() => setThreadMessage(msg)}>
-                            <MessageSquare size={12} />
+                            <Icon iconId="message-square" size={12} />
                             <span>{copy['mobile.chat.threadReplyCount'].replace('{{count}}', String(msg.threadCount))}</span>
                           </button>
                         )}
@@ -508,6 +481,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                                 type="button"
                                 className={`mp-reaction-chip ${reaction.byMe ? 'mine' : ''}`}
                                 onClick={() => handleReaction(msg.id, reaction.kind)}
+                                aria-pressed={reaction.byMe}
                               >
                                 <span>{REACTION_EMOJI[reaction.kind]}</span>
                                 <span className="mp-reaction-count">{reaction.count}</span>
@@ -519,14 +493,14 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                               onClick={() => setActionSheetMessage(msg)}
                               aria-label="Add reaction"
                             >
-                              <Laugh size={15} />
+                              <Icon iconId="smile-plus" size={15} />
                             </button>
                           </div>
                         )}
                         {(cluster.end || msg.status === 'failed' || msg.status === 'unknown') && (
                           <div className={`mp-message-meta ${msg.mine ? 'mine' : 'peer'}`}>
                             <span className="mp-message-time">{msg.time}</span>
-                            {msg.mine && renderReceipt(msg.status)}
+                            {msg.mine && receiptIcon(msg.status)}
                           </div>
                         )}
                         {msg.status === 'failed' && (
@@ -535,7 +509,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                             className="mp-message-retry"
                             onClick={() => handleRetry(msg.id)}
                           >
-                            <RotateCcw size={12} />
+                            <Icon iconId="rotate-ccw" size={12} />
                             {journeyCopy.retry}
                           </button>
                         )}
@@ -546,7 +520,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                             disabled={checking}
                             onClick={() => handleCheckStatus(msg.id)}
                           >
-                            <RefreshCw size={12} />
+                            <Icon iconId="refresh-ccw" size={12} />
                             {checking ? 'Checking status...' : 'Check status'}
                           </button>
                         )}
@@ -564,7 +538,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                         initials={conversation.avatar}
                         src={conversation.avatarUrl}
                         kind={conversation.isGroup ? 'group' : 'person'}
-                        size={34}
+                        size={30}
                         renderState={uiEvidence.avatarState}
                       />
                     </span>
@@ -579,42 +553,44 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
 
           {replyTo && (
             <div className="mp-reply-banner">
-              <CornerUpLeft size={16} className="mp-reply-banner-icon" />
+              <Icon iconId="corner-up-left" size={16} className="mp-reply-banner-icon" />
               <div className="mp-reply-banner-content">
                 <Text strong className="mp-reply-banner-name">Replying to {replyTo.mine ? 'yourself' : conversation.name}</Text>
-                <Text type="secondary" className="mp-reply-banner-text">{replyTo.text || (replyTo.image ? '[Photo]' : '[File]')}</Text>
+                <Text tone="secondary" className="mp-reply-banner-text">{replyTo.text || (replyTo.image ? '[Photo]' : '[File]')}</Text>
               </div>
               <button type="button" className="mp-reply-banner-close" onClick={() => setReplyTo(null)} aria-label="Cancel reply">
-                <X size={16} />
+                <Icon iconId="close" size={16} />
               </button>
             </div>
           )}
 
           {editingMessage && (
             <div className="mp-reply-banner">
-              <Pencil size={16} className="mp-reply-banner-icon" />
+              <Icon iconId="edit-note" size={16} className="mp-reply-banner-icon" />
               <div className="mp-reply-banner-content">
                 <Text strong className="mp-reply-banner-name">Editing message</Text>
-                <Text type="secondary" className="mp-reply-banner-text">{editingMessage.text}</Text>
+                <Text tone="secondary" className="mp-reply-banner-text">{editingMessage.text}</Text>
               </div>
               <button type="button" className="mp-reply-banner-close" onClick={() => { setEditingMessage(null); setInputValue(''); }} aria-label="Cancel edit">
-                <X size={16} />
+                <Icon iconId="close" size={16} />
               </button>
             </div>
           )}
 
           <div className="mp-composer" data-thread-state={threadState}>
-            <button type="button" className="mp-composer-attach" aria-label="Attach"><Plus size={22} /></button>
-            <Input.TextArea
+            <button type="button" className="mp-composer-attach" aria-label="Attach"><Icon iconId="plus" size={22} /></button>
+            <TextArea
               className="mp-composer-input"
               value={inputValue}
               placeholder="Message"
-              autoSize={{ minRows: 1, maxRows: 4 }}
-              onChange={(e) => setInputValue(e.target.value)}
-              onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              minimumRows={1}
+              maximumRows={4}
+              framing="embedded"
+              onValueChange={setInputValue}
+              onEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); handleSend(); } }}
             />
-            <button type="button" className={`mp-composer-send ${inputValue.trim() ? 'active' : ''}`} onClick={handleSend} aria-label="Send">
-              <Send size={18} />
+            <button type="button" className={`mp-composer-send ${inputValue.trim() ? 'active' : ''}`} onClick={handleSend} aria-label="Send" disabled={!inputValue.trim()}>
+              <Icon iconId="send" size={18} />
             </button>
           </div>
         </>
@@ -622,43 +598,38 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
         </>
       )}
 
-      {/* Toast notification */}
       {toastMessage && <div key={toastKey} className="mp-toast">{toastMessage}</div>}
 
-      {/* Feishu-style action sheet */}
       {actionSheetMessage && (
         <div className="mp-action-sheet-backdrop" onClick={() => { setActionSheetMessage(null); setShowEmojiGrid(false); }}>
           <div className="mp-action-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="mp-action-sheet-handle" />
 
-            {/* Reaction row */}
             {!actionSheetMessage.recalled && !actionSheetMessage.moderated && (
               <div className="mp-reaction-bar-wrapper">
                 <div className="mp-reaction-bar">
-                  {REACTION_EMOJI_EXTENDED.map((emoji, idx) => {
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        className="mp-reaction-bar-btn"
-                        onClick={() => handleEmojiReaction(actionSheetMessage.id, emoji)}
-                      >
-                        {emoji}
-                      </button>
-                    );
-                  })}
+                  {REACTION_EMOJI_EXTENDED.map((emoji, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className="mp-reaction-bar-btn"
+                      onClick={() => handleEmojiReaction(actionSheetMessage.id, emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
                 </div>
                 <button
                   type="button"
                   className="mp-reaction-more-btn"
                   onClick={() => setShowEmojiGrid(!showEmojiGrid)}
+                  aria-label="All reactions"
                 >
                   ···
                 </button>
               </div>
             )}
 
-            {/* Full emoji grid */}
             {showEmojiGrid && (
               <div className="mp-emoji-grid">
                 {FULL_EMOJI_GRID.map((emoji, idx) => (
@@ -673,69 +644,66 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
               </div>
             )}
 
-            {/* Quick action grid: Reply, Forward, Reply in Thread, Copy */}
             <div className="mp-quick-actions-grid">
               <button type="button" className="mp-quick-action-btn" onClick={() => handleAction('reply')}>
-                <CornerUpLeft size={20} />
+                <Icon iconId="corner-up-left" size={20} />
                 <span>Reply</span>
               </button>
               <button type="button" className="mp-quick-action-btn" onClick={() => handleAction('forward')}>
-                <Forward size={20} />
+                <Icon iconId="forward" size={20} />
                 <span>Forward</span>
               </button>
               <button type="button" className="mp-quick-action-btn" onClick={() => handleAction('thread')}>
-                <MessageSquare size={20} />
+                <Icon iconId="message-square" size={20} />
                 <span>Thread</span>
               </button>
               <button type="button" className="mp-quick-action-btn" onClick={() => handleAction('copy')}>
-                <Copy size={20} />
+                <Icon iconId="copy" size={20} />
                 <span>Copy</span>
               </button>
             </div>
 
-            {/* List action groups */}
             {actionSheetMessage.mine && !actionSheetMessage.moderated && (
               <div className="mp-action-group">
                 <button type="button" className="mp-action-item" onClick={() => handleAction('recall')}>
-                  <RotateCcw size={19} /><span>Recall</span>
+                  <Icon iconId="rotate-ccw" size={19} /><span>Recall</span>
                 </button>
                 <button type="button" className="mp-action-item" onClick={() => handleAction('edit')}>
-                  <Pencil size={19} /><span>Edit Message</span>
+                  <Icon iconId="edit-note" size={19} /><span>Edit Message</span>
                 </button>
               </div>
             )}
 
             <div className="mp-action-group">
               <button type="button" className="mp-action-item" onClick={() => handleAction('multiselect')}>
-                <ListChecks size={19} /><span>Multiselect</span>
+                <Icon iconId="list-checks" size={19} /><span>Multiselect</span>
               </button>
               <button type="button" className="mp-action-item" onClick={() => handleAction('flag')}>
-                <FlagIcon size={19} />
+                <Icon iconId="flag" size={19} />
                 <span>{actionSheetMessage.flagged ? 'Unflag on this device' : 'Flag on this device'}</span>
               </button>
             </div>
 
             <div className="mp-action-group">
               <button type="button" className="mp-action-item" onClick={() => handleAction('pin')}>
-                <Pin size={19} /><span>{actionSheetMessage.pinned ? 'Unpin' : 'Pin'}</span>
+                <Icon iconId="pin" size={19} /><span>{actionSheetMessage.pinned ? 'Unpin' : 'Pin'}</span>
               </button>
             </div>
 
             <div className="mp-action-group">
               {conversation.canModerate && !actionSheetMessage.moderated && (
                 <button type="button" className="mp-action-item danger" onClick={() => handleAction('moderate')}>
-                  <ShieldX size={19} /><span>{copy['mobile.chat.moderate']}</span>
+                  <Icon iconId="shield-x" size={19} /><span>{copy['mobile.chat.moderate']}</span>
                 </button>
               )}
               <button type="button" className="mp-action-item danger" onClick={() => handleAction('hide-for-me')}>
-                <EyeOff size={19} /><span>{copy['mobile.chat.deleteForMe']}</span>
+                <Icon iconId="eye-off" size={19} /><span>{copy['mobile.chat.deleteForMe']}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Forward Picker Modal */}
       {forwardMessage && (
         <ForwardPicker
           onSelect={(name) => {
@@ -751,7 +719,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
           <header className="mp-chat-details-header">
             <button type="button" className="mp-thread-back"
               onClick={() => setShowPinnedMessages(false)} aria-label="Back">
-              <ArrowLeft size={22} />
+              <Icon iconId="arrow-left" size={22} />
             </button>
             <span className="mp-chat-details-title">Pinned messages</span>
           </header>
@@ -778,7 +746,6 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
         </div>
       )}
 
-      {/* Chat Details Panel */}
       {showChatDetails && (
         <div className="mp-chat-details">
           <header className="mp-chat-details-header">
@@ -786,7 +753,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
               if (detailsView !== 'main') { setDetailsView('main'); }
               else { setShowChatDetails(false); }
             }} aria-label="Back">
-              <ArrowLeft size={22} />
+              <Icon iconId="arrow-left" size={22} />
             </button>
             <span className="mp-chat-details-title">
               {detailsView === 'main' && 'Details'}
@@ -794,50 +761,45 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
             </span>
           </header>
 
-          {/* Main Details View */}
           {detailsView === 'main' && (
             <div className="mp-chat-details-body">
               <div className="mp-chat-details-profile">
                 <IdentityAvatar name={conversation.name} initials={conversation.avatar}
                   src={conversation.avatarUrl} kind={conversation.isGroup ? 'group' : 'person'}
                   size={56} renderState={uiEvidence.avatarState} />
-                <Text strong style={{ fontSize: 16, marginTop: 8 }}>{conversation.name}</Text>
-                {conversation.isGroup && <Text type="secondary">{conversation.memberCount} members</Text>}
+                <Text strong>{conversation.name}</Text>
+                {conversation.isGroup && <Text tone="secondary">{conversation.memberCount} members</Text>}
               </div>
 
               <div className="mp-chat-details-section">
                 <button type="button" className="mp-chat-details-item" onClick={onSearch}>
                   <span>Search Chat History</span>
-                  <ChevronRight size={16} className="mp-row-chevron" />
+                  <Icon iconId="chevron-right" size={16} />
                 </button>
               </div>
 
               <div className="mp-chat-details-section">
-                <button type="button" className="mp-chat-details-item" onClick={() => setIsMuted(!isMuted)}>
+                <div className="mp-chat-details-item">
                   <span>Mute Notifications</span>
-                  <div className={`mp-toggle ${isMuted ? 'active' : ''}`}>
-                    <div className="mp-toggle-thumb" />
-                  </div>
-                </button>
-                <button type="button" className="mp-chat-details-item" onClick={() => setIsStickyTop(!isStickyTop)}>
+                  <Switch checked={isMuted} onCheckedChange={setIsMuted} aria-label="Mute notifications" />
+                </div>
+                <div className="mp-chat-details-item">
                   <span>Sticky on Top</span>
-                  <div className={`mp-toggle ${isStickyTop ? 'active' : ''}`}>
-                    <div className="mp-toggle-thumb" />
-                  </div>
-                </button>
+                  <Switch checked={isStickyTop} onCheckedChange={setIsStickyTop} aria-label="Sticky on top" />
+                </div>
               </div>
 
               <div className="mp-chat-details-section">
-              <button type="button" className="mp-chat-details-item" onClick={() => setDetailsView('media')}>
-                <span>Shared Media</span>
-                <ChevronRight size={16} className="mp-row-chevron" />
-              </button>
-            </div>
+                <button type="button" className="mp-chat-details-item" onClick={() => setDetailsView('media')}>
+                  <span>Shared Media</span>
+                  <Icon iconId="chevron-right" size={16} />
+                </button>
+              </div>
 
               <div className="mp-chat-details-section">
                 <div className="mp-chat-details-item">
                   <span>Encryption</span>
-                  <span className="mp-chat-details-meta"><LockKeyhole size={13} /> End-to-end encrypted</span>
+                  <span className="mp-chat-details-meta"><Icon iconId="lock-keyhole" size={13} /> End-to-end encrypted</span>
                 </div>
                 <div className="mp-chat-details-item">
                   <span>Identity source</span>
@@ -858,7 +820,7 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
                 <button type="button" className="mp-chat-details-item danger" onClick={() => setConfirmAction('block')}>
                   <span>{isBlocked ? 'Unblock Contact' : 'Block Contact'}</span>
                 </button>
-                <button type="button" className="mp-chat-details-item report-danger" onClick={() => setConfirmAction('report')}>
+                <button type="button" className="mp-chat-details-item" style={{ color: 'var(--pt-secondary)' }} onClick={() => setConfirmAction('report')}>
                   <span>Report</span>
                   <span className="mp-chat-details-meta">Send to safety review</span>
                 </button>
@@ -866,7 +828,6 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
             </div>
           )}
 
-          {/* Shared Media Sub-view */}
           {detailsView === 'media' && (
             <div className="mp-chat-details-body">
               <div className="mp-details-media-grid">
@@ -881,7 +842,6 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
             </div>
           )}
 
-          {/* Confirm Dialog */}
           {confirmAction && (
             <div className="mp-confirm-backdrop" onClick={() => setConfirmAction(null)}>
               <div className="mp-confirm-dialog" onClick={(e) => e.stopPropagation()}>
@@ -920,7 +880,6 @@ export function ChatThread({ conversation, onBack, onStartCall, messages, onMess
         </div>
       )}
 
-      {/* Thread View overlay */}
       {threadMessage && (
         <ThreadView message={messages.find(message => message.id === threadMessage.id) ?? threadMessage}
           conversation={conversation} targetId={messageId}

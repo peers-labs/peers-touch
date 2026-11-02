@@ -1,5 +1,5 @@
 import { useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
-import { ArrowDown, ArrowUp, ChevronsDown } from 'lucide-react';
+import { Icon } from '@peers-touch/ui';
 import copy from '../../../../../locales/en/common.json';
 import { findListRow, listScrollOwner, PrototypeListMemory, readViewport, restoreViewport } from '../listPresentation';
 
@@ -121,14 +121,14 @@ function ListWindowSurface<T>({
       data-window-start={start} data-window-total={items.length} data-window-size={size}>
       {start > 0 && (
         <button type="button" className="mp-list-control" onClick={() => move(-1)}>
-          <ArrowUp size={16} /><span>{copy['mobile.list.previous']}</span>
+          <Icon iconId="arrow-up" size={16} /><span>{copy['mobile.list.previous']}</span>
         </button>
       )}
       <div className="mp-list-window-content">{children(items.slice(start, end))}</div>
       {end < items.length && (
         <div className="mp-list-controls">
           <button type="button" className="mp-list-control" onClick={() => move(1)}>
-            <ArrowDown size={16} /><span>{copy['mobile.list.next']}</span>
+            <Icon iconId="arrow-down" size={16} /><span>{copy['mobile.list.next']}</span>
           </button>
           {initial === 'end' && (
             <button type="button" className="mp-list-control" onClick={() => {
@@ -136,7 +136,7 @@ function ListWindowSurface<T>({
               setFirstAnchor(undefined);
               setRevision((value) => value + 1);
             }}>
-              <ChevronsDown size={16} /><span>{copy['mobile.chat.latestMessage']}</span>
+              <Icon iconId="chevrons-down" size={16} /><span>{copy['mobile.chat.latestMessage']}</span>
             </button>
           )}
         </div>

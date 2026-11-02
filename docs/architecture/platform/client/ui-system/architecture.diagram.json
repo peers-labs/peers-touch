@@ -1,0 +1,57 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "ui-system.design-architecture",
+  "module": "ui-system",
+  "viewpoint": "logical-layer",
+  "layout": "layers",
+  "output": "architecture.svg",
+  "title": "Peers UI Design Architecture — Proposal",
+  "canvas": { "width": 1440, "height": 840 },
+  "edgeMeaning": "Position = dependency; contract expansion is proposed.",
+  "scene": {
+    "bands": [
+      {
+        "id": "product-surfaces", "title": "PRODUCT SURFACES", "y": 100, "height": 150, "tone": "muted",
+        "modules": [
+          {"id":"clients","role":"module","x":70,"y":156,"width":300,"height":78,"title":"Desktop / Mobile","caption":"existing product hosts","tone":"neutral"},
+          {"id":"applets","role":"module","x":388,"y":156,"width":300,"height":78,"title":"Applet Surfaces","caption":"existing host-owned experience","tone":"neutral"},
+          {"id":"prototypes","role":"module","x":706,"y":156,"width":300,"height":78,"title":"Prototype Portal","caption":"existing specimen host","tone":"neutral"}
+        ]
+      },
+      {
+        "id": "composition-contracts", "title": "COMPOSITION CONTRACTS", "y": 275, "height": 150, "tone": "secondary",
+        "modules": [
+          {"id":"pages","role":"module","x":70,"y":331,"width":300,"height":78,"title":"Page / Pattern","caption":"contract binding · proposed","tone":"neutral"},
+          {"id":"components","role":"module","x":388,"y":331,"width":300,"height":78,"title":"Component Design","caption":"anatomy and slots · proposed","tone":"neutral"},
+          {"id":"platform","role":"module","x":706,"y":331,"width":300,"height":78,"title":"Platform Policy","caption":"shared meaning · adaptation","tone":"neutral"}
+        ]
+      },
+      {
+        "id": "ui-runtime", "title": "SHARED UI RUNTIME", "y": 450, "height": 150, "tone": "primary",
+        "modules": [
+          {"id":"web","role":"module","x":70,"y":506,"width":300,"height":78,"title":"Web Renderer","caption":"existing linked library","tone":"neutral"},
+          {"id":"semantics","role":"module","x":388,"y":506,"width":300,"height":78,"title":"UI Semantics","caption":"transient interaction state","tone":"neutral"},
+          {"id":"provider","role":"module","x":706,"y":506,"width":300,"height":78,"title":"Provider / Overlays","caption":"context and document scope","tone":"neutral"}
+        ]
+      },
+      {
+        "id": "design-foundations", "title": "DESIGN FOUNDATIONS", "y": 625, "height": 150, "tone": "external",
+        "modules": [
+          {"id":"identity","role":"module","x":70,"y":681,"width":300,"height":78,"title":"UI Identity","caption":"foundation meanings and grammar","tone":"neutral"},
+          {"id":"catalogue","role":"module","x":388,"y":681,"width":300,"height":78,"title":"Capability Catalogue","caption":"finite semantic source","tone":"neutral"},
+          {"id":"values-assets","role":"module","x":706,"y":681,"width":300,"height":78,"title":"Tokens / Assets","caption":"owned values and resources","tone":"neutral"}
+        ]
+      }
+    ],
+    "rail": {
+      "id":"edx","title":"EXISTING EDX","x":1090,"y":100,"width":306,"height":675,"tone":"muted",
+      "items":[
+        {"id":"edx-contract","role":"rail-item","x":1120,"y":156,"width":246,"height":98,"title":"EDX Contracts","caption":"case and trace validation","tone":"neutral"},
+        {"id":"edx-evidence","role":"rail-item","x":1120,"y":350,"width":246,"height":98,"title":"Findings / Evidence","caption":"source-bound observations","tone":"neutral"},
+        {"id":"edx-review","role":"rail-item","x":1120,"y":544,"width":246,"height":98,"title":"Review / CER","caption":"independent judgment","tone":"neutral"}
+      ]
+    },
+    "relations": []
+  }
+}

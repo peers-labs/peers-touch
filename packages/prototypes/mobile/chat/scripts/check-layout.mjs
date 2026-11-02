@@ -4,20 +4,23 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkMessageLayout } from './message-layout.mjs';
+import { checkEmojiActionSheet } from './emoji-action-sheet.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
 const { chromium } = require('@playwright/test');
-const url = process.env.PROTOTYPE_URL ?? 'http://localhost:3200';
+const url = process.env.PROTOTYPE_URL ?? 'http://localhost:3108';
 const output = resolve(
   repoRoot,
   process.env.PROTOTYPE_EVIDENCE_DIR ??
     'apps/mobile/src-tauri/target/prototype-layout',
 );
+// Grammar radii: 4 / 6 / 8 / 11 / 12 / 16 / 20 / 999 (computed px tolerance).
+const RADIUS_FAMILY = [4, 5, 6, 8, 10, 11, 12, 16, 20, 999];
 const viewports = [
-  { width: 1440, height: 1100 },
-  { width: 554, height: 954 },
   { width: 390, height: 844 },
+  { width: 554, height: 954 },
+  { width: 1440, height: 1100 },
 ];
 await mkdir(output, { recursive: true });
 const captures = [];
@@ -25,804 +28,317 @@ const browser = await chromium.launch({
   headless: true,
   ...(process.env.PROTOTYPE_BROWSER_CHANNEL ? { channel: process.env.PROTOTYPE_BROWSER_CHANNEL } : {}),
 });
+
 try {
   if (process.env.PROTOTYPE_MESSAGE_LAYOUT_ONLY === '1') {
     await checkMessageLayout({ browser, url, output, viewports });
+  } else if (process.env.PROTOTYPE_EMOJI_ACTION_SHEET_ONLY === '1') {
+    await checkEmojiActionSheet({ browser, url, output, viewports });
   } else {
-  for (const viewport of viewports) {
-    const page = await browser.newPage({ viewport, colorScheme: 'light' });
-    const errors = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    const device = page.getByRole('region', { name: 'Mobile device preview' });
-    async function open(scenario) {
-      await page.goto(`${url}/?scenario=${scenario}`);
-      const mobileSite = page.getByRole('button', {
-        name: 'mobile Mobile Prototypes',
-        exact: true,
+    for (const viewport of viewports) {
+      const page = await browser.newPage({ viewport, colorScheme: 'light' });
+      await page.addInitScript(() => {
+        window.__gram = {
+          family: [4, 5, 6, 8, 10, 11, 12, 16, 20, 999],
+          nearRadius(value) {
+            return this.family.some((r) => r === 999 ? value >= 999 : Math.abs(value - r) <= 1.2);
+          },
+          parseColor(value) {
+            const m = value.match(/rgba?\(([^)]+)\)/);
+            return m ? m[1].split(',').map((part) => parseFloat(part)) : null;
+          },
+          isInk(rgb) {
+            const [r, g, b] = rgb.map(Number);
+            return Math.max(r, g, b) < 90 && (Math.max(r, g, b) - Math.min(r, g, b)) < 28;
+          },
+        };
       });
-      if ((await mobileSite.getAttribute('aria-pressed')) !== 'true') {
-        await mobileSite.click();
+      const errors = [];
+      page.on('pageerror', (error) => errors.push(error.message));
+      const device = page.getByRole('region', { name: 'Mobile device preview' });
+
+      async function open(scenario) {
+        await page.goto(`${url}/?scenario=${scenario}`);
+        // Works both standalone (mobile own dev server) and inside the Portal harness.
+        const portalToggle = page.getByRole('button', { name: 'mobile Mobile Prototypes', exact: true });
+        if (await portalToggle.count().catch(() => 0)) {
+          if ((await portalToggle.getAttribute('aria-pressed')) !== 'true') {
+            await portalToggle.click();
+          }
+        }
+        await device.waitFor();
+        await page.waitForTimeout(450);
       }
-      await page.getByText('Live Preview', { exact: true }).waitFor();
-      await device.waitFor();
-    }
-    async function capture(state) {
-      await device.scrollIntoViewIfNeeded();
-      const filename = `${viewport.width}-${state}.png`;
+
+      async function measure(evaluateFn) {
+        return device.evaluate(evaluateFn);
+      }
+
+      const geometry = { width: 0, height: 0, defects: [], details: {} };
+      function record(name, value, meta = {}) {
+        if (!value) geometry.defects.push(typeof meta.id === 'string' ? meta.id : name);
+      }
+
+      // ── Launch ──
+      await open('journey');
+      geometry.details.launch = await measure(() => {
+        const out = { defects: [] };
+        const rect = (el) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { w: r.width, h: r.height, r: parseFloat(getComputedStyle(el).borderRadius) };
+        };
+        const logo = document.querySelector('.mp-launch-brand-logo');
+        const logoR = rect(logo);
+        if (!logoR || Math.abs(logoR.w - 44) > 1 || Math.abs(logoR.h - 44) > 1 || !__gram.nearRadius(logoR.r)) {
+          out.defects.push('launch-logo-geometry');
+        }
+        const continueBtn = document.querySelector('.mp-launch-actions .pt-button');
+        if (continueBtn && continueBtn.getBoundingClientRect().height < 43) out.defects.push('launch-continue-short');
+        const stationRows = [...document.querySelectorAll('.mp-station-entry-main, .mp-station-remove')];
+        if (stationRows.some((el) => el.getBoundingClientRect().height < 40)) out.defects.push('station-target-under-40');
+        // No antd residue anywhere in the surface.
+        if (document.querySelector('[class*="ant-"]')) out.defects.push('antd-residue');
+        out.logo = logoR;
+        return out;
+      });
+      record('launch', geometry.details.launch.defects.length === 0, { id: geometry.details.launch.defects[0] });
+
+      // ── Auth gate ──
+      await device.getByRole('button', { name: /^Open / }).click();
+      await page.waitForTimeout(300);
+      geometry.details.auth = await measure(() => {
+        const out = { defects: [] };
+        const cards = document.querySelectorAll('.mp-auth-card');
+        if (cards.length !== 1) out.defects.push('auth-card-count');
+        const logo = document.querySelector('.mp-auth-logo, .mp-auth-logo-placeholder');
+        if (logo) {
+          const r = logo.getBoundingClientRect();
+          const radius = parseFloat(getComputedStyle(logo).borderRadius);
+          if (Math.abs(r.width - 44) > 1 || !__gram.nearRadius(radius)) out.defects.push('auth-logo-geometry');
+        }
+        const panels = [...document.querySelectorAll('.mp-auth-tab-content > *')];
+        const visibleInactive = panels.filter((panel) =>
+          !panel.classList.contains('active') && getComputedStyle(panel).display !== 'none');
+        if (visibleInactive.length) out.defects.push('auth-inactive-panel-visible');
+        const oauth = document.querySelector('.mp-oauth-btn');
+        if (oauth && getComputedStyle(oauth).backgroundImage.includes('linear-gradient')) {
+          out.defects.push('auth-gradient-cta');
+        }
+        return out;
+      });
+      record('auth', geometry.details.auth.defects.length === 0, { id: geometry.details.auth.defects[0] });
+
+      // ── Chat list ──
+      await open('chat-default');
+      geometry.details.chatList = await measure(() => {
+        const out = { defects: [], rows: [], avatars: [] };
+        const rows = [...document.querySelectorAll('.mp-conversation-item')];
+        rows.slice(0, 8).forEach((row) => {
+          const r = row.getBoundingClientRect();
+          if (r.height < 60) out.defects.push('conversation-row-under-60');
+        });
+        // Unified mobile input grammar: 16px frame, no legacy native wells.
+        if (document.querySelector('.mp-filter-field')) out.defects.push('legacy-filter-well');
+        const searchFrame = document.querySelector('.mp-search-well .pt-field-frame');
+        if (searchFrame) {
+          const radius = parseFloat(getComputedStyle(searchFrame).borderRadius);
+          if (!__gram.nearRadius(radius)) out.defects.push('search-frame-radius');
+        }
+        out.rowCount = rows.length;
+        const avatars = [...document.querySelectorAll('.mp-conversation-item .mp-identity-avatar')];
+        avatars.slice(0, 8).forEach((el) => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          const radius = parseFloat(cs.borderRadius);
+          if (Math.abs(r.width - r.height) > 1) out.defects.push('avatar-not-square');
+          if (radius >= r.width / 2 - 0.5) out.defects.push('avatar-circular');
+          if (!__gram.nearRadius(radius)) out.defects.push('avatar-radius-family');
+          if (cs.backgroundImage.includes('linear-gradient')) out.defects.push('avatar-gradient-fill');
+        });
+        // Unread badge = neutral ink, never semantic red/blue.
+        const badge = document.querySelector('.mp-conv-badge .pt-badge-count, .mp-tabbar .pt-badge-count');
+        if (badge) {
+          const rgb = __gram.parseColor(getComputedStyle(badge).backgroundColor);
+          if (rgb && !__gram.isInk(rgb)) out.defects.push('badge-not-ink');
+        }
+        // No verbose "N member group · Pinned · Muted" sentence.
+        if ([...document.querySelectorAll('.mp-conv-relationship')].length) out.defects.push('verbose-relationship-text');
+        return out;
+      });
+      record('chat-list', geometry.details.chatList.defects.length === 0, { id: geometry.details.chatList.defects[0] });
+
+      // ── Thread ──
+      await page.locator('.mp-conversation-item').first().click();
+      await page.waitForTimeout(400);
+      geometry.details.thread = await measure(() => {
+        const out = { defects: [] };
+        const viewport = document.querySelector('.mp-thread-messages');
+        if (!viewport) { out.defects.push('no-thread-viewport'); return out; }
+        if (viewport.scrollWidth > viewport.clientWidth + 1) out.defects.push('thread-horizontal-overflow');
+        const padL = parseFloat(getComputedStyle(viewport).paddingLeft);
+        const padR = parseFloat(getComputedStyle(viewport).paddingRight);
+        if (Math.abs(padL - padR) > 0.1) out.defects.push('thread-padding-asymmetric');
+        const own = [...document.querySelectorAll('.mp-message-row.mine .mp-bubble')];
+        const peer = [...document.querySelectorAll('.mp-message-row.peer .mp-bubble')];
+        const darkEnough = (rgb) => rgb && (rgb[0] + rgb[1] + rgb[2]) < 240;
+        if (own.length) {
+          const bg = __gram.parseColor(getComputedStyle(own[0]).backgroundColor);
+          if (!darkEnough(bg)) out.defects.push('own-bubble-not-ink');
+        }
+        if (peer.length) {
+          const radius = parseFloat(getComputedStyle(peer[0]).borderRadius);
+          if (!__gram.nearRadius(radius)) out.defects.push('peer-bubble-radius');
+        }
+        // Own avatars render on the right edge.
+        const mineRow = document.querySelector('.mp-message-row.mine');
+        if (mineRow) {
+          const dir = getComputedStyle(mineRow).flexDirection;
+          if (dir !== 'row-reverse') out.defects.push('own-avatar-not-right');
+        }
+        const slot = document.querySelector('.mp-message-avatar-slot');
+        if (slot) {
+          const w = slot.getBoundingClientRect().width;
+          if (Math.abs(w - 28) > 1) out.defects.push('avatar-slot-width');
+        }
+        // Long title must stay one line and never overlap the banner.
+        return out;
+      });
+      record('thread', geometry.details.thread.defects.length === 0, { id: geometry.details.thread.defects[0] });
+
+      // ── Long content: single-line header title ──
+      await open('long-content');
+      await page.locator('.mp-conversation-item').first().click();
+      await page.waitForTimeout(400);
+      geometry.details.longTitle = await measure(() => {
+        const out = { defects: [] };
+        const name = document.querySelector('.mp-thread-name');
+        if (name) {
+          if (name.getBoundingClientRect().height > 28) out.defects.push('thread-title-wraps');
+          if (name.scrollWidth > name.clientWidth + 1) {
+            // ellipsis expected, no second line
+            if (name.getBoundingClientRect().height > 28) out.defects.push('thread-title-clips-ugly');
+          }
+        }
+        return out;
+      });
+      record('long-title', geometry.details.longTitle.defects.length === 0, { id: geometry.details.longTitle.defects[0] });
+
+      // ── Contacts ──
+      await open('chat-default');
+      await page.locator('.mp-tabbar-item').nth(2).click();
+      await page.waitForTimeout(300);
+      geometry.details.contacts = await measure(() => {
+        const out = { defects: [] };
+        const rows = [...document.querySelectorAll('.mp-contact-item, .mp-group-item')];
+        if (rows.some((r) => r.getBoundingClientRect().height < 56)) out.defects.push('contact-row-under-56');
+        if (document.querySelector('.mp-search-well .pt-field-frame') === null) out.defects.push('contacts-missing-filter');
+        // Letter separators stay compact.
+        const letters = [...document.querySelectorAll('.mp-contact-letter')];
+        if (letters.some((l) => l.getBoundingClientRect().height > 24)) out.defects.push('letter-index-tall');
+        return out;
+      });
+      record('contacts', geometry.details.contacts.defects.length === 0, { id: geometry.details.contacts.defects[0] });
+
+      // ── Moments ──
+      await page.locator('.mp-tabbar-item').nth(1).click();
+      await page.waitForTimeout(300);
+      geometry.details.moments = await measure(() => {
+        const out = { defects: [] };
+        const cards = [...document.querySelectorAll('.mp-social-moment')];
+        cards.slice(0, 3).forEach((card) => {
+          const radius = parseFloat(getComputedStyle(card).borderRadius);
+          if (!__gram.nearRadius(radius)) out.defects.push('moment-card-radius');
+          if (card.scrollWidth > card.clientWidth + 1) out.defects.push('moment-card-overflow');
+        });
+        // No gradient avatar tiles anywhere on this surface.
+        if ([...document.querySelectorAll('.mp-social-moment [style*="linear-gradient"]')].length) {
+          out.defects.push('moment-gradient-art');
+        }
+        // Comment send / reaction controls stay within card.
+        return out;
+      });
+      record('moments', geometry.details.moments.defects.length === 0, { id: geometry.details.moments.defects[0] });
+
+      // Composer sheet
+      await page.getByRole('button', { name: 'New post' }).click();
+      await page.waitForTimeout(300);
+      geometry.details.composer = await measure(() => {
+        const out = { defects: [] };
+        const ta = document.querySelector('.mp-social-composer-sheet textarea');
+        if (!ta || ta.getBoundingClientRect().height < 96) out.defects.push('composer-textarea-short');
+        const audience = document.querySelector('.mp-social-audience-row');
+        if (audience && audience.getBoundingClientRect().height < 40) out.defects.push('audience-row-short');
+        return out;
+      });
+      record('composer', geometry.details.composer.defects.length === 0, { id: geometry.details.composer.defects[0] });
+      await page.locator('.mp-action-sheet-backdrop').first().click({ position: { x: 5, y: 5 } }).catch(() => {});
+
+      // ── Me / settings ──
+      await page.locator('.mp-tabbar-item').nth(3).click();
+      await page.waitForTimeout(300);
+      // ── Account form: textarea resize grip must be gone, frames on grammar ──
+      await page.locator('.mp-setting-row').first().click();
+      await page.waitForTimeout(300);
+      geometry.details.accountForm = await measure(() => {
+        const out = { defects: [] };
+        const frames = [...document.querySelectorAll('.mp-setting-detail-content .pt-field-frame')];
+        if (!frames.length) out.defects.push('account-form-no-frames');
+        frames.forEach((frame) => {
+          const cs = getComputedStyle(frame);
+          if (!__gram.nearRadius(parseFloat(cs.borderRadius))) out.defects.push('account-frame-radius');
+          if (cs.minHeight.replace('px', '') < 45) out.defects.push('account-frame-short');
+        });
+        const textarea = document.querySelector('.mp-setting-detail-content textarea');
+        if (textarea && getComputedStyle(textarea).resize !== 'none') out.defects.push('textarea-resize-grip');
+        return out;
+      });
+      record('account-form', geometry.details.accountForm.defects.length === 0, { id: geometry.details.accountForm.defects[0] });
+      await page.getByRole('button', { name: 'Back' }).first().click();
+      await page.waitForTimeout(200);
+
+      geometry.details.me = await measure(() => {
+        const out = { defects: [] };
+        const rows = [...document.querySelectorAll('.mp-setting-row')];
+        if (rows.some((r) => r.getBoundingClientRect().height < 44)) out.defects.push('setting-row-under-44');
+        // Vanity stat strip was removed.
+        if (document.querySelector('.mp-profile-stats')) out.defects.push('vanity-stats-present');
+        // Rows carry quiet icons, never pastel tint tiles.
+        const icons = [...document.querySelectorAll('.mp-setting-icon')];
+        if (icons.some((i) => {
+          const bg = getComputedStyle(i).backgroundColor;
+          return bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+        })) out.defects.push('pastel-setting-tiles');
+        return out;
+      });
+      record('me', geometry.details.me.defects.length === 0, { id: geometry.details.me.defects[0] });
+
+      const deviceRect = await device.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return { width: r.width, height: r.height, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+      });
+      geometry.width = deviceRect.width;
+      geometry.height = deviceRect.height;
+      geometry.pageOverflow = deviceRect.scrollWidth > deviceRect.clientWidth + 1;
+      record('overflow', !geometry.pageOverflow, { id: 'horizontal-overflow' });
+
       await device.screenshot({
-        path: resolve(output, filename),
+        path: resolve(output, `${viewport.width}-grammar.png`),
         animations: 'disabled',
       });
-      const geometry = await device.evaluate((element) => {
-        const rect = (target) => {
-          const bounds = target?.getBoundingClientRect();
-          return bounds
-            ? {
-                top: bounds.top,
-                right: bounds.right,
-                bottom: bounds.bottom,
-                left: bounds.left,
-                width: bounds.width,
-                height: bounds.height,
-              }
-            : null;
-        };
-        const authScreen = element.querySelector('.mp-auth-screen');
-        const authCard = authScreen?.querySelector('.mp-auth-card');
-        const authBrand = authScreen?.querySelector('.mp-auth-brand');
-        const authLogo = authScreen?.querySelector('.mp-auth-logo');
-        const runtimeNotice = element.querySelector('.mp-runtime-notice');
-        const tabbar = element.querySelector('.mp-tabbar');
-        const authCardRect = authCard?.getBoundingClientRect();
-        const authBrandRect = authBrand?.getBoundingClientRect();
-        const authLogoStyle = authLogo ? getComputedStyle(authLogo) : null;
-        const authPanels = authScreen
-          ? [...authScreen.querySelectorAll('.mp-auth-tab-content > *')]
-          : [];
-        const inactiveAuthPanels = authPanels.filter(
-          (panel) => !panel.classList.contains('active'),
-        );
-        const launchScreen = element.querySelector('.mp-launch-screen');
-        const launchLogo = launchScreen?.querySelector('.mp-launch-brand-logo');
-        const launchPanel = launchScreen?.querySelector('.mp-launch-panel');
-        const launchOffline = launchScreen?.querySelector('.mp-launch-offline');
-        const launchLogoRect = rect(launchLogo);
-        const launchPanelRect = rect(launchPanel);
-        const launchOfflineRect = rect(launchOffline);
-        const composer = element.querySelector('.mp-social-composer-sheet');
-        const composerRect = rect(composer);
-        const composerInputRect = rect(
-          composer?.querySelector(':scope > textarea'),
-        );
-        const composerMedia = composer?.querySelector(
-          ':scope > .mp-social-media-preview, :scope > .mp-social-media-add',
-        );
-        const composerMediaRect = rect(composerMedia);
-        const composerAudienceRect = rect(
-          composer?.querySelector(':scope > .mp-social-audience-row'),
-        );
-        const composerHeaderRect = rect(
-          composer?.querySelector(':scope > .mp-social-sheet-header'),
-        );
-        const composerPublishRect = rect(
-          composer?.querySelector('.mp-social-sheet-header > .primary'),
-        );
-        const tabbarRect = rect(element.querySelector('.mp-tabbar'));
-        const socialAvatars = [
-          ...element.querySelectorAll('.mp-user-square-avatar'),
-        ].map((avatar) => {
-          const avatarRect = rect(avatar);
-          const avatarStyle = getComputedStyle(avatar);
-          return {
-            width: avatarRect.width,
-            height: avatarRect.height,
-            borderRadius: Number.parseFloat(avatarStyle.borderRadius),
-            fallbackLength: avatar.querySelector('img')
-              ? 0
-              : String(avatar.textContent || '').trim().length,
-          };
-        });
-        const inlineCommentComposer = element.querySelector(
-          '.mp-social-comment-composer-inline',
-        );
-        const inlineCommentInput =
-          inlineCommentComposer?.querySelector('input');
-        const inlineCommentSend =
-          inlineCommentComposer?.querySelector('button');
-        const firstMoment = element.querySelector('.mp-social-moment');
-        const momentAuthorRow = firstMoment?.querySelector(
-          '.mp-social-author-row',
-        );
-        const momentActionRow = firstMoment?.querySelector('.mp-moment-actions');
-        const momentReactionRail = firstMoment?.querySelector(
-          '.mp-moment-reaction-summary',
-        );
-        const momentActionGroup = firstMoment?.querySelector(
-          '.mp-moment-action-group',
-        );
-        const momentMoreAction = momentAuthorRow?.querySelector(
-          ':scope > .mp-social-more',
-        );
-        const momentAuthorRowRect = rect(momentAuthorRow);
-        const momentActionRowRect = rect(momentActionRow);
-        const momentReactionRailRect = rect(momentReactionRail);
-        const momentActionGroupRect = rect(momentActionGroup);
-        const momentMoreActionRect = rect(momentMoreAction);
-        const runtimeNoticeRect = rect(runtimeNotice);
-        const deviceRect = rect(element);
-        return {
-          width: deviceRect.width,
-          height: deviceRect.height,
-          scrollWidth: element.scrollWidth,
-          clientWidth: element.clientWidth,
-          pageOverflow:
-            document.documentElement.scrollWidth > window.innerWidth,
-          scenarioOverlaps: [
-            ...document.querySelectorAll('.mp-scene-label'),
-          ].some((label) => {
-            const scene = label.getBoundingClientRect();
-            const device = element.getBoundingClientRect();
-            return (
-              scene.right > device.left &&
-              scene.left < device.right &&
-              scene.bottom > device.top &&
-              scene.top < device.bottom
-            );
-          }),
-          sections: [...element.querySelectorAll('.mp-detail-section')].map(
-            (section) => ({
-              clientHeight: section.clientHeight,
-              scrollHeight: section.scrollHeight,
-            }),
-          ),
-          touchTargets: [
-            ...element.querySelectorAll(
-              '.mp-header-action, .mp-search-bar .ant-input-affix-wrapper, ' +
-                '.mp-thread-back, .mp-thread-action, .mp-runtime-notice .ant-btn, ' +
-                '.mp-profile-trigger, .mp-setting-row, .mp-sign-out, ' +
-                '.mp-setting-detail-content .ant-btn, ' +
-                '.mp-setting-detail-content .ant-switch, .mp-confirm-btn',
-            ),
-          ].map((target) => {
-            const style = getComputedStyle(target);
-            return {
-              className: target.className,
-              width: Number.parseFloat(style.width),
-              height: Number.parseFloat(style.height),
-            };
-          }),
-          runtimeNotice:
-            runtimeNotice && runtimeNoticeRect
-              ? {
-                  blocksUnrelatedContent:
-                    runtimeNotice.getAttribute(
-                      'data-blocks-unrelated-content',
-                    ) !== 'false',
-                  overlapsTabbar: Boolean(
-                    tabbarRect && runtimeNoticeRect.bottom > tabbarRect.top + 1,
-                  ),
-                }
-              : null,
-          auth:
-            authScreen && authCard && authBrand && authLogoStyle
-              ? {
-                  cardCount:
-                    authScreen.querySelectorAll('.mp-auth-card').length,
-                  brandInsideCard: authCard.contains(authBrand),
-                  cardHeight: authCardRect.height,
-                  logoWidth: Number.parseFloat(authLogoStyle.width),
-                  logoHeight: Number.parseFloat(authLogoStyle.height),
-                  blankGap: Math.max(
-                    0,
-                    authCardRect.top - authBrandRect.bottom,
-                  ),
-                  recoveryCount: element.querySelectorAll(
-                    '.mp-recovery-panel, .mp-recovery-sheet',
-                  ).length,
-                  hasMobileKicker: String(
-                    authScreen.textContent || '',
-                  ).includes('PEERS TOUCH MOBILE'),
-                  hasRawStationAddress:
-                    /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}:\d+/.test(
-                      String(authScreen.textContent || ''),
-                    ),
-                  activeTab:
-                    authScreen
-                      .querySelector('.mp-auth-tab.active')
-                      ?.textContent?.trim() ?? null,
-                  inactivePanelInLayout: inactiveAuthPanels.some((panel) => {
-                    const panelRect = panel.getBoundingClientRect();
-                    return (
-                      getComputedStyle(panel).display !== 'none' &&
-                      panelRect.width > 0 &&
-                      panelRect.height > 0
-                    );
-                  }),
-                  clientHeight: authScreen.clientHeight,
-                  scrollHeight: authScreen.scrollHeight,
-                  verticallyScrollable:
-                    authScreen.scrollHeight > authScreen.clientHeight + 1,
-                }
-              : null,
-          launch:
-            launchScreen && launchLogoRect && launchPanelRect
-              ? {
-                  cardCount: launchScreen.querySelectorAll('.ant-card').length,
-                  logoWidth: launchLogoRect.width,
-                  logoHeight: launchLogoRect.height,
-                  panelWidth: launchPanelRect.width,
-                  panelBottom: launchPanelRect.bottom,
-                  screenBottom: rect(launchScreen).bottom,
-                  offlineHeight: launchOfflineRect?.height ?? 0,
-                  offlineGap: launchOfflineRect
-                    ? launchOfflineRect.top - launchPanelRect.bottom
-                    : null,
-                }
-              : null,
-          composer:
-            composerRect &&
-            composerInputRect &&
-            composerMediaRect &&
-            composerAudienceRect &&
-            composerHeaderRect &&
-            composerPublishRect &&
-            tabbarRect
-              ? {
-                  sheetHeight: composerRect.height,
-                  inputHeight: composerInputRect.height,
-                  mediaGap: composerMediaRect.top - composerInputRect.bottom,
-                  mediaKind: composerMedia.classList.contains(
-                    'mp-social-media-add',
-                  )
-                    ? 'add'
-                    : 'preview',
-                  audienceHeight: composerAudienceRect.height,
-                  headerHeight: composerHeaderRect.height,
-                  publishHeight: composerPublishRect.height,
-                  bottomClearance: deviceRect.bottom - composerRect.bottom,
-                  tabbarGap: tabbarRect.top - composerRect.bottom,
-                }
-              : null,
-          socialAvatars,
-          inlineCommentComposer:
-            inlineCommentInput && inlineCommentSend
-              ? {
-                  inputHeight: rect(inlineCommentInput).height,
-                  inputRadius: Number.parseFloat(
-                    getComputedStyle(inlineCommentInput).borderRadius,
-                  ),
-                  sendWidth: rect(inlineCommentSend).width,
-                  sendHeight: rect(inlineCommentSend).height,
-                  sendRadius: Number.parseFloat(
-                    getComputedStyle(inlineCommentSend).borderRadius,
-                  ),
-                }
-              : null,
-          momentAction:
-            momentAuthorRowRect &&
-            momentActionRowRect &&
-            momentReactionRailRect &&
-            momentActionGroupRect &&
-            momentMoreActionRect
-              ? {
-                  railRatio:
-                    momentReactionRailRect.width / momentActionRowRect.width,
-                  railClientWidth: momentReactionRail.clientWidth,
-                  railScrollWidth: momentReactionRail.scrollWidth,
-                  railOverflowX:
-                    getComputedStyle(momentReactionRail).overflowX,
-                  railActionGap:
-                    momentActionRowRect.top - momentReactionRailRect.bottom,
-                  actionButtonCount: momentActionGroup.children.length,
-                  actionButtonWidths: [...momentActionGroup.children].map(
-                    (action) => action.getBoundingClientRect().width,
-                  ),
-                  actionButtonHeights: [...momentActionGroup.children].map(
-                    (action) => action.getBoundingClientRect().height,
-                  ),
-                  moreAuthorCenterDelta: Math.abs(
-                    momentMoreActionRect.top +
-                      momentMoreActionRect.height / 2 -
-                      (momentAuthorRowRect.top + momentAuthorRowRect.height / 2),
-                  ),
-                  moreActionRightDelta: Math.abs(
-                    momentMoreActionRect.right - momentActionGroupRect.right,
-                  ),
-                  moreIsLast:
-                    momentAuthorRow.lastElementChild === momentMoreAction,
-                  actionCenterSpread: Math.max(
-                    ...[...momentActionGroup.children].map(
-                      (action) => {
-                        const bounds = action.getBoundingClientRect();
-                        return bounds.top + bounds.height / 2;
-                      },
-                    ),
-                  ) -
-                    Math.min(
-                      ...[...momentActionGroup.children].map(
-                        (action) => {
-                          const bounds = action.getBoundingClientRect();
-                          return bounds.top + bounds.height / 2;
-                        },
-                      ),
-                    ),
-                }
-              : null,
-        };
-      });
-      captures.push({
-        state,
-        viewport,
-        filename,
-        theme: 'light-only',
-        geometry,
-      });
+      captures.push({ viewport, geometry, errors: [...errors] });
+      assert.deepEqual(errors, [], `Runtime errors at ${viewport.width}`);
+      await page.close();
     }
 
-    await open('journey');
-    await capture('default');
-    await device.getByRole('button', { name: /^Open / }).click();
-    await device.locator('.mp-auth-screen').waitFor();
-    await capture('auth-normal-quick');
-    await device
-      .getByRole('button', { name: 'Email Login', exact: true })
-      .click();
-    await capture('auth-normal-email');
-    await open('station-offline');
-    await capture('station-offline');
-    await open('long-lists');
-    await device.getByRole('button', { name: 'Me', exact: true }).click();
-    await capture('settings-summary');
-    const settingsDetails = [
-      ['Account Info', 'account-info'],
-      ['Notifications', 'notifications'],
-      ['Privacy & Security', 'privacy-security'],
-      ['Safety Number', 'safety-number'],
-      ['Blocked Users', 'blocked-users'],
-      ['Chat Settings', 'chat-settings'],
-      ['Chat Background', 'chat-background'],
-      ['Station Connection', 'station-connection'],
-      ['Encryption', 'encryption'],
-      ['Language', 'language'],
-      ['About Peers Touch', 'about'],
-    ];
-    for (const [label, id] of settingsDetails) {
-      await device
-        .getByRole('button', { name: new RegExp(label) })
-        .first()
-        .click();
-      await capture(`settings-${id}`);
-      if (id === 'account-info') {
-        await device
-          .locator('input[value="Alice Chen"]')
-          .fill('Alice Chen Updated');
-        await capture('settings-account-dirty');
-        await device
-          .getByRole('button', { name: 'Save Changes', exact: true })
-          .click();
-        await capture('settings-account-saved');
-      }
-      if (id === 'station-connection') {
-        await device
-          .getByRole('button', { name: 'Change Station', exact: true })
-          .click();
-        await device
-          .getByRole('dialog', { name: 'Change Station', exact: true })
-          .waitFor();
-        await capture('settings-station-change');
-        await device
-          .getByRole('button', { name: 'Cancel', exact: true })
-          .click();
-        await device
-          .getByRole('button', { name: 'Log Out', exact: true })
-          .click();
-        await device
-          .getByRole('dialog', { name: 'Log Out?', exact: true })
-          .waitFor();
-        await capture('settings-logout-confirm');
-        await device
-          .getByRole('button', { name: 'Cancel', exact: true })
-          .click();
-      }
-      await device.getByRole('button', { name: 'Back', exact: true }).click();
-    }
-    await open('session-revoked');
-    await capture('auth-expired-quick');
-    await device
-      .getByRole('button', { name: 'Email Login', exact: true })
-      .click();
-    await capture('auth-expired-email');
-    await open('social-unavailable');
-    const initial = await device.boundingBox();
-    assert.equal(await device.locator('[data-demo-recovery-owner="lifecycle"]').count(), 1);
-    assert.equal(await device.locator('.mp-runtime-notice').count(), 0);
-    await capture('unavailable');
-    await device.getByRole('button', { name: 'Me', exact: true }).click();
-    const me = await device.boundingBox();
-    assert.equal(initial.width, me.width);
-    assert.equal(initial.height, me.height);
-    await capture('me-unavailable');
-    await device.getByRole('button', { name: 'Chats', exact: true }).click();
-    await device.getByRole('button', { name: 'Retry', exact: true }).click();
-    await capture('retry-pending');
-    await page
-      .getByRole('button', { name: 'Retry fails', exact: true })
-      .click();
-    await capture('retry-failed');
-
-    await open('social-detail-unavailable');
-    assert(await device.getByRole('heading', { name: 'Conversation', exact: true }).isVisible());
-    assert(await device.getByText('Conversation unavailable', { exact: true }).isVisible());
-    assert(await device.getByRole('button', { name: 'Back', exact: true }).isVisible());
-    assert.equal(await device.locator('[data-demo-recovery-owner="lifecycle"]').count(), 1);
-    assert.equal(await device.locator('.mp-runtime-notice').count(), 0);
-    await capture('conversation-unavailable');
-
-    await open('find-people-no-membership');
-    const noMembership = page.getByRole('dialog', {
-      name: 'Find People',
-      exact: true,
-    });
-    assert(
-      await noMembership
-        .getByRole('button', { name: 'Send Request', exact: true })
-        .isDisabled(),
-    );
-    await capture('no-membership');
-    await page.keyboard.press('Shift+Tab');
-    assert(
-      await noMembership.evaluate((element) =>
-        element.contains(document.activeElement),
-      ),
-    );
-    await page.keyboard.press('Tab');
-    assert(
-      await noMembership.evaluate((element) =>
-        element.contains(document.activeElement),
-      ),
-    );
-    await page.keyboard.press('Escape');
-    assert.equal(await page.getByRole('dialog').count(), 0);
-
-    await open('find-people-member');
-    const sheet = page.getByRole('dialog', {
-      name: 'Find People',
-      exact: true,
-    });
-    await capture('member');
-    await sheet
-      .getByRole('button', { name: 'Send Request', exact: true })
-      .click();
-    await capture('request-pending');
-    await page
-      .getByRole('button', { name: 'Request outcome unknown', exact: true })
-      .click();
-    const intent = await page.locator('.mp-evidence-intent').innerText();
-    await capture('request-unknown');
-    await sheet.getByRole('button', { name: /^Check Status \(\d+\)$/ }).click();
-    assert.equal(
-      (await page.locator('.mp-evidence-intent').innerText())
-        .split(' / ')
-        .slice(0, 2)
-        .join(' / '),
-      intent.split(' / ').slice(0, 2).join(' / '),
-    );
-    await capture('request-checking');
-    await page
-      .getByRole('button', { name: 'Request confirmed pending', exact: true })
-      .click();
-    await page
-      .getByRole('button', { name: 'Relationship accepted', exact: true })
-      .click();
-    assert(
-      await sheet
-        .getByRole('button', { name: 'Friends', exact: true })
-        .isDisabled(),
-    );
-    await capture('request-accepted');
-    await sheet.getByRole('button', { name: 'Close', exact: true }).click();
-    await device.getByRole('button', { name: /Frank/ }).click();
-    await capture('contact');
-    await device.getByRole('button', { name: 'Message', exact: true }).click();
-    await capture('direct-preparing');
-    await page
-      .getByRole('button', { name: 'Direct fails', exact: true })
-      .click();
-    await capture('direct-failed');
-    const lastInfo = device
-      .locator('.mp-detail-section')
-      .getByText('End-to-end encrypted', { exact: true });
-    await lastInfo.scrollIntoViewIfNeeded();
-    const infoBounds = await lastInfo.evaluate((element) => {
-      const row = element.getBoundingClientRect();
-      const owner = element.closest('.mp-detail-page')?.getBoundingClientRect();
-      return {
-        top: row.top,
-        bottom: row.bottom,
-        ownerTop: owner?.top,
-        ownerBottom: owner?.bottom,
-      };
-    });
-    assert(
-      infoBounds.top >= infoBounds.ownerTop - 1 &&
-        infoBounds.bottom <= infoBounds.ownerBottom + 1,
-      JSON.stringify(infoBounds),
-    );
-    await capture('direct-info-scrolled');
-    await device.getByRole('button', { name: 'Retry', exact: true }).click();
-    await page
-      .getByRole('button', { name: 'Direct ready', exact: true })
-      .click();
-    await device.getByText('No messages yet', { exact: true }).waitFor();
-    await capture('direct-empty');
-
-    await open('social-parity');
-    await device.getByRole('button', { name: 'Moments', exact: true }).click();
-    const firstMoment = device.locator('.mp-social-moment').first();
-    const reactionButton = firstMoment.getByRole('button', {
-      name: 'Add reaction',
-      exact: true,
-    });
-    await reactionButton.click();
-    const reactionPicker = firstMoment.locator('[data-reaction-picker]');
-    const reactionChoices = reactionPicker.locator(
-      '[data-reaction-picker-item]',
-    );
-    assert.equal(await reactionPicker.count(), 1);
-    assert.equal(await reactionChoices.count(), 5);
-    assert.deepEqual(
-      await reactionChoices.evaluateAll((items) =>
-        items.map((item) => {
-          const bounds = item.getBoundingClientRect();
-          return [bounds.width, bounds.height];
-        }),
-      ),
-      Array.from({ length: 5 }, () => [44, 44]),
-    );
-    for (let index = 0; index < 5; index += 1) {
-      await reactionChoices.nth(index).click();
-      assert.equal(await reactionPicker.count(), 1);
-    }
-    assert.equal(
-      await firstMoment.locator('[data-moment-reaction]').count(),
-      5,
-    );
-    assert.equal(
-      await firstMoment
-        .locator('[data-moment-reaction="love"]')
-        .getAttribute('aria-pressed'),
-      'false',
-    );
-    assert.equal(
-      await firstMoment
-        .locator('[data-moment-reaction="celebrate"]')
-        .getAttribute('aria-pressed'),
-      'true',
-    );
-    await capture('social-five-reactions');
-    const momentAction = captures.at(-1).geometry.momentAction;
-    assert(momentAction, 'Moment action geometry');
-    assert(
-      momentAction.railRatio >= 0.95 && momentAction.railRatio <= 1.01,
-      JSON.stringify(momentAction),
-    );
-    assert.equal(momentAction.railOverflowX, 'visible');
-    assert(
-      momentAction.railActionGap >= 0 && momentAction.railActionGap <= 12,
-      JSON.stringify(momentAction),
-    );
-    assert(
-      momentAction.railScrollWidth <= momentAction.railClientWidth + 1,
-      JSON.stringify(momentAction),
-    );
-    assert.equal(momentAction.actionButtonCount, 3);
-    assert.deepEqual(momentAction.actionButtonWidths, [44, 44, 44]);
-    assert.deepEqual(momentAction.actionButtonHeights, [44, 44, 44]);
-    assert(momentAction.moreAuthorCenterDelta <= 1, JSON.stringify(momentAction));
-    assert(momentAction.moreActionRightDelta <= 1, JSON.stringify(momentAction));
-    assert.equal(momentAction.moreIsLast, true);
-    assert(momentAction.actionCenterSpread <= 1, JSON.stringify(momentAction));
-    await device
-      .getByRole('button', { name: 'Add comment', exact: true })
-      .first()
-      .click();
-    await device
-      .getByRole('textbox', { name: 'Add a comment', exact: true })
-      .waitFor();
-    assert.equal(
-      await firstMoment.getByText(/No comments yet/).count(),
-      0,
-    );
-    await capture('social-comment-composer');
-    const inlineCommentComposer =
-      captures.at(-1).geometry.inlineCommentComposer;
-    assert.deepEqual(inlineCommentComposer, {
-      inputHeight: 38,
-      inputRadius: 10,
-      sendWidth: 38,
-      sendHeight: 38,
-      sendRadius: 10,
-    });
-    assert(
-      captures
-        .at(-1)
-        .geometry.socialAvatars.every(
-          (avatar) =>
-            avatar.borderRadius ===
-              Math.max(8, Math.floor(avatar.width * 0.25)) &&
-            (avatar.fallbackLength === 0 || avatar.fallbackLength === 1),
-        ),
-      JSON.stringify(captures.at(-1).geometry.socialAvatars),
-    );
-    await device
-      .getByRole('button', { name: 'Hide comment composer', exact: true })
-      .first()
-      .click();
-    await device.getByRole('button', { name: 'New post', exact: true }).click();
-    await device
-      .getByRole('dialog', { name: 'New Moment', exact: true })
-      .waitFor();
-    await capture('social-composer');
-    const composer = captures.at(-1).geometry.composer;
-    assert(composer, 'Social composer geometry');
-    assert(
-      composer.sheetHeight >= 378 && composer.sheetHeight <= 402,
-      JSON.stringify(composer),
-    );
-    assert(
-      composer.inputHeight >= 96 && composer.inputHeight <= 120,
-      JSON.stringify(composer),
-    );
-    assert(
-      composer.mediaGap >= 4 && composer.mediaGap <= 12,
-      JSON.stringify(composer),
-    );
-    assert.equal(composer.mediaKind, 'add', JSON.stringify(composer));
-    assert(
-      composer.audienceHeight >= 40 && composer.audienceHeight <= 44,
-      JSON.stringify(composer),
-    );
-    assert(
-      composer.headerHeight >= 42 && composer.headerHeight <= 46,
-      JSON.stringify(composer),
-    );
-    assert(
-      composer.publishHeight >= 30 && composer.publishHeight <= 34,
-      JSON.stringify(composer),
-    );
-    assert(Math.abs(composer.tabbarGap) <= 2, JSON.stringify(composer));
-    assert(
-      composer.bottomClearance >= 50 && composer.bottomClearance <= 72,
-      JSON.stringify(composer),
-    );
-    assert(
-      captures
-        .at(-1)
-        .geometry.socialAvatars.every(
-          (avatar) =>
-            avatar.borderRadius ===
-              Math.max(8, Math.floor(avatar.width * 0.25)) &&
-            (avatar.fallbackLength === 0 || avatar.fallbackLength === 1),
-        ),
-      JSON.stringify(captures.at(-1).geometry.socialAvatars),
-    );
-    await device
-      .getByRole('button', { name: 'Add image', exact: true })
-      .click();
-    await device.getByLabel('Selected image', { exact: true }).waitFor();
-    await capture('social-composer-media');
-    assert.equal(
-      captures.at(-1).geometry.composer?.mediaKind,
-      'preview',
-      JSON.stringify(captures.at(-1).geometry.composer),
-    );
-    assert.deepEqual(errors, []);
-    await page.close();
-  }
-  const defects = captures.filter(
-    ({ geometry }) =>
-      geometry.width < 320 ||
-      geometry.pageOverflow ||
-      geometry.scenarioOverlaps ||
-      geometry.scrollWidth > geometry.clientWidth ||
-      geometry.touchTargets.some(
-        (target) => target.width < 44 || target.height < 44,
-      ) ||
-      (geometry.runtimeNotice &&
-        (geometry.runtimeNotice.blocksUnrelatedContent ||
-          geometry.runtimeNotice.overlapsTabbar)) ||
-      geometry.sections.some(
-        (section) => section.scrollHeight > section.clientHeight + 1,
-      ) ||
-      (geometry.launch &&
-        (geometry.launch.cardCount !== 0 ||
-          geometry.launch.logoWidth !== 52 ||
-          geometry.launch.logoHeight !== 52 ||
-          geometry.launch.panelWidth < 240 ||
-          geometry.launch.panelBottom > geometry.launch.screenBottom + 1 ||
-          geometry.launch.offlineHeight > 112 ||
-          (geometry.launch.offlineGap !== null &&
-            geometry.launch.offlineGap < 8))) ||
-      (geometry.auth &&
-        (geometry.auth.cardCount !== 1 ||
-          !geometry.auth.brandInsideCard ||
-          geometry.auth.cardHeight > geometry.auth.clientHeight * 0.76 ||
-          geometry.auth.logoWidth !== 44 ||
-          geometry.auth.logoHeight !== 44 ||
-          geometry.auth.blankGap !== 0 ||
-          geometry.auth.recoveryCount !== 0 ||
-          geometry.auth.hasMobileKicker ||
-          geometry.auth.hasRawStationAddress ||
-          geometry.auth.inactivePanelInLayout ||
-          geometry.auth.verticallyScrollable)) ||
-      geometry.socialAvatars.some(
-        (avatar) =>
-          avatar.borderRadius !==
-            Math.max(8, Math.floor(avatar.width * 0.25)) ||
-          (avatar.fallbackLength !== 0 && avatar.fallbackLength !== 1),
-      ) ||
-      (geometry.inlineCommentComposer &&
-        (geometry.inlineCommentComposer.inputHeight !== 38 ||
-          geometry.inlineCommentComposer.inputRadius !== 10 ||
-          geometry.inlineCommentComposer.sendWidth !== 38 ||
-          geometry.inlineCommentComposer.sendHeight !== 38 ||
-          geometry.inlineCommentComposer.sendRadius !== 10)) ||
-      (geometry.momentAction &&
-        (geometry.momentAction.railRatio < 0.95 ||
-          geometry.momentAction.railRatio > 1.01 ||
-          geometry.momentAction.railActionGap < 0 ||
-          geometry.momentAction.railActionGap > 12 ||
-          geometry.momentAction.actionButtonCount !== 3 ||
-          geometry.momentAction.actionButtonWidths
-            .some((width) => width !== 44) ||
-          geometry.momentAction.actionButtonHeights
-            .some((height) => height !== 44) ||
-          geometry.momentAction.moreAuthorCenterDelta > 1 ||
-          geometry.momentAction.moreActionRightDelta > 1 ||
-          !geometry.momentAction.moreIsLast ||
-          geometry.momentAction.actionCenterSpread > 1 ||
-          (geometry.momentAction.expanded &&
-            (geometry.momentAction.railOverflowX !== 'auto' ||
-              geometry.momentAction.railScrollWidth <=
-                geometry.momentAction.railClientWidth)))) ||
-      (geometry.composer &&
-        (geometry.composer.sheetHeight < 378 ||
-          geometry.composer.sheetHeight > 402 ||
-          geometry.composer.inputHeight < 96 ||
-          geometry.composer.inputHeight > 120 ||
-          geometry.composer.mediaGap < 4 ||
-          geometry.composer.mediaGap > 12 ||
-          !['add', 'preview'].includes(geometry.composer.mediaKind) ||
-          geometry.composer.audienceHeight < 40 ||
-          geometry.composer.audienceHeight > 44 ||
-          geometry.composer.headerHeight < 42 ||
-          geometry.composer.headerHeight > 46 ||
-          geometry.composer.publishHeight < 30 ||
-          geometry.composer.publishHeight > 34 ||
-          Math.abs(geometry.composer.tabbarGap) > 2 ||
-          geometry.composer.bottomClearance < 50 ||
-          geometry.composer.bottomClearance > 72)),
-  );
-  await writeFile(
-    resolve(output, 'captures.json'),
-    JSON.stringify(
-      {
-        evidenceType: 'prototype-only',
-        captures,
-        defects,
-      },
-      null,
-      2,
-    ),
-  );
-  process.stdout.write(
-    `${JSON.stringify({ captures: captures.length, defects }, null, 2)}\n`,
-  );
-  assert.equal(
-    defects.length,
-    0,
-    'usable preview width and unclipped detail sections',
-  );
+    const defects = captures.flatMap((c) => c.geometry.defects.map((d) => `${c.viewport.width}: ${d}`));
+    await writeFile(resolve(output, 'captures.json'), JSON.stringify({
+      evidenceType: 'prototype-only',
+      grammar: 'pine-mobile-2026',
+      captures: captures.map(({ viewport, geometry, errors }) => ({ viewport, defects: geometry.defects, details: geometry.details, errors })),
+    }, null, 2));
+    process.stdout.write(`${JSON.stringify({ captures: captures.length, defects }, null, 2)}\n`);
+    assert.equal(defects.length, 0, 'Mobile pine grammar geometry');
   }
 } finally {
   await browser.close();

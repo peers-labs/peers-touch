@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "发送准入与送达判定",
+    "subtitle": "一次用户发送只准入一条持久消息。权威 Accepted 不等于送达；回执提供事实，视野给出诚实的本地判断，且不停止重试。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261101/journey-send-verdict.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "composer",
+      "type": "frontend",
+      "label": "输入框",
+      "sublabel": "一个动作一个发送意图",
+      "sources": [
+        {
+          "path": "apps/desktop/src/utils/messagingSendIntent.ts",
+          "label": "messagingSendIntent.ts",
+          "line": 1,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "bff",
+      "type": "backend",
+      "label": "Tauri BFF",
+      "sublabel": "已准入 / 已拒绝",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "label": "messaging.rs",
+          "line": 2170,
+          "end_line": 2290
+        }
+      ]
+    },
+    {
+      "id": "ledger",
+      "type": "database",
+      "label": "本地存储",
+      "sublabel": "持久草稿 + 意图台账",
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/messaging/store.rs",
+          "label": "store.rs",
+          "line": 5880,
+          "end_line": 5990
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Outbox Worker",
+      "sublabel": "封顶退避，持续重试",
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/outbox/dispatch.rs",
+          "label": "dispatch.rs",
+          "line": 100,
+          "end_line": 205
+        }
+      ]
+    },
+    {
+      "id": "authority",
+      "type": "backend",
+      "label": "会话权威",
+      "sublabel": "Accepted 是事实，不是送达",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/conversation/application/interaction/service.go",
+          "label": "service.go",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "receipts",
+      "type": "database",
+      "label": "回执 / 判定 UI",
+      "sublabel": "事实高于本地视野",
+      "sources": [
+        {
+          "path": "apps/desktop/src/components/chat/message/ChatMessageRow.tsx",
+          "label": "ChatMessageRow.tsx",
+          "line": 590,
+          "end_line": 610
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 330,
+      "label": "幂等准入"
+    },
+    {
+      "from": 340,
+      "to": 590,
+      "label": "派发与精确重试"
+    },
+    {
+      "from": 600,
+      "to": 790,
+      "label": "事实与视野"
+    }
+  ],
+  "messages": [
+    {
+      "id": "intent",
+      "from": "composer",
+      "to": "bff",
+      "y": 170,
+      "label": "携带设备作用域 send-intent ULID 发送",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dedupe",
+      "from": "bff",
+      "to": "ledger",
+      "y": 220,
+      "label": "任何写入前先查（设备，意图）",
+      "variant": "return"
+    },
+    {
+      "id": "admit",
+      "from": "bff",
+      "to": "ledger",
+      "y": 270,
+      "label": "草稿与意图台账在同一次准入落库",
+      "variant": "emphasis"
+    },
+    {
+      "id": "accepted-response",
+      "from": "bff",
+      "to": "composer",
+      "y": 320,
+      "label": "admitted（draft 或 pending）；输入框清空，绝不自动重发",
+      "variant": "return"
+    },
+    {
+      "id": "dispatch",
+      "from": "worker",
+      "to": "authority",
+      "y": 380,
+      "label": "提交精确命令字节",
+      "variant": "emphasis"
+    },
+    {
+      "id": "retry",
+      "from": "worker",
+      "to": "authority",
+      "y": 430,
+      "label": "网络/路由失败：封顶退避，无限重试",
+      "variant": "dashed"
+    },
+    {
+      "id": "terminal",
+      "from": "authority",
+      "to": "worker",
+      "y": 480,
+      "label": "类型化终局拒绝：failed 带原因，用户显式重试",
+      "variant": "return"
+    },
+    {
+      "id": "accepted",
+      "from": "authority",
+      "to": "receipts",
+      "y": 530,
+      "label": "命令已接受事实",
+      "variant": "emphasis"
+    },
+    {
+      "id": "delivered",
+      "from": "authority",
+      "to": "receipts",
+      "y": 580,
+      "label": "逐设备回执 → N 设备已送达 / 全部送达",
+      "variant": "emphasis"
+    },
+    {
+      "id": "submit-horizon",
+      "from": "worker",
+      "to": "receipts",
+      "y": 640,
+      "label": "60 秒仍排队：提交中·重试中（本地判断）",
+      "variant": "dashed"
+    },
+    {
+      "id": "delivery-horizon",
+      "from": "ledger",
+      "to": "receipts",
+      "y": 700,
+      "label": "24 小时无回执：送达未确认，展示原因分类（本地判断）",
+      "variant": "dashed"
+    },
+    {
+      "id": "upgrade",
+      "from": "authority",
+      "to": "receipts",
+      "y": 760,
+      "label": "迟到回执随时升级判断；重试从未停止",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "一个动作，一条消息",
+      "items": [
+        "双击、IPC 应答丢失或失败后重试，只要意图相同，就解析到同一消息与同一批附件。",
+        "延迟 draft 也是准入成功；worker 唤醒不确定不再被报成发送失败。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "事实优先于判断",
+      "items": [
+        "排队、已提交、已送达、全部送达、已读、终局失败来自持久事实。",
+        "60 秒/24 小时视野只是投影层本地判断：迟到回执始终可以将其升级。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "无法证明“未送达”",
+      "items": [
+        "不可达的对端 Home Station 可能数小时后恢复，网络无法给出否定证明；精确字节重试持续进行。"
+      ]
+    }
+  ]
+}
