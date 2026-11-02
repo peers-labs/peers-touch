@@ -12,13 +12,21 @@ use crate::model;
 use crate::state::AppState;
 use reqwest::Method;
 use serde_json::{json, Map, Value};
-use tauri::{State, Window};
+use tauri::{Manager, State, Window};
 
 fn token_from_state(
     state: &State<'_, Arc<AppState>>,
     window: &Window,
 ) -> Result<String, AppResult<StubPayload>> {
-    let token = session_resolver::token_for_window(state.inner(), window).unwrap_or_default();
+    token_from_arc(state.inner(), window)
+}
+
+/// Token extraction for async commands holding an owned `Arc<AppState>`.
+fn token_from_arc(
+    state: &Arc<AppState>,
+    window: &Window,
+) -> Result<String, AppResult<StubPayload>> {
+    let token = session_resolver::token_for_window(state, window).unwrap_or_default();
     if token.trim().is_empty() {
         return Err(AppResult::fail(
             ErrorCode::Unauthorized,
@@ -226,25 +234,40 @@ pub fn notification_list(
 }
 
 #[tauri::command]
-pub fn notification_unread_counts(
-    state: State<'_, Arc<AppState>>,
+pub async fn notification_unread_counts(
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = match token_from_state(&state, &window) {
+    // Run the Station round-trip on the blocking pool so a slow notification
+    // fetch does not freeze the wry IPC main thread on tab entry.
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = match token_from_arc(&state, &window) {
         Ok(t) => t,
         Err(e) => return e,
     };
+    let client = state.station.client().clone();
+    tokio::task::spawn_blocking(move || notification_unread_counts_blocking(client, token))
+        .await
+        .unwrap_or_else(|_| {
+            AppResult::fail(
+                ErrorCode::Unavailable,
+                "notification_unread_counts task panicked",
+                None,
+            )
+        })
+}
 
-    let resp = match state
-        .station
-        .client()
-        .request_proto::<(), model::notification::GetUnreadCountsResponse>(
-            Method::GET,
-            "/notification/unread-counts",
-            &token,
-            None,
-            None::<&()>,
-        ) {
+fn notification_unread_counts_blocking(
+    client: crate::application::station_runtime::client::StationClient,
+    token: String,
+) -> AppResult<StubPayload> {
+    let resp = match client.request_proto::<(), model::notification::GetUnreadCountsResponse>(
+        Method::GET,
+        "/notification/unread-counts",
+        &token,
+        None,
+        None::<&()>,
+    ) {
         Ok(response) => response,
         Err(e) => return e.into_app_result("Failed to get unread notification counts"),
     };
