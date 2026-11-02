@@ -77,13 +77,24 @@ def park(client: TauriSession) -> None:
 
 
 def set_muted(client: TauriSession, conversation_id: str, muted: bool) -> None:
-    result = async_harness(
-        client,
-        "setConversationMuted",
-        {"conversationId": conversation_id, "muted": muted},
+    # Cross-Station group membership converges on the actor's Station
+    # authority snapshot slightly after the local projection already lists the
+    # member. member/settings rejects with "actor is not an active member"
+    # until that snapshot lands, so retry the mute instead of firing once.
+    def attempt() -> bool:
+        result = async_harness(
+            client,
+            "setConversationMuted",
+            {"conversationId": conversation_id, "muted": muted},
+        )
+        return isinstance(result, dict) and result.get("muted") == muted
+
+    wait_until(
+        lambda: True if attempt() else None,
+        f"member settings muted={muted} settled",
+        STEP_TIMEOUT,
+        1,
     )
-    if not isinstance(result, dict) or result.get("muted") != muted:
-        raise GateError(f"mute projection did not settle to {muted}")
 
 
 def mention_flag(client: TauriSession, conversation_id: str) -> dict[str, Any]:
