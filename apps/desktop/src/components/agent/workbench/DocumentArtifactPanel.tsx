@@ -324,7 +324,7 @@ export function DocumentArtifactPanel() {
           <>
             <Button
               size="small"
-              disabled={!selection || busy}
+              disabled={busy}
               onClick={() => void handleQuoteSelection()}
               data-pt-artifact-quote-selection
             >
