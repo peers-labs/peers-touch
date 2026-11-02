@@ -284,10 +284,12 @@
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
 .sk-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
-.sk-chat-head-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.sk-chat-head-name strong { font-size: 15px; font-weight: 650; color: var(--sk-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Title and subtitle share one baseline row: the member count / presence is
+   a trailing inline annotation, never a second line under the title. */
+.sk-chat-head-name { display: flex; flex-direction: row; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
+.sk-chat-head-name strong { font-size: 15px; font-weight: 650; color: var(--sk-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; }
 .sk-chat-head-name span {
-  font-size: 11.5px; color: var(--sk-text-3);
+  flex-shrink: 0; font-size: 12px; color: var(--sk-text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sk-chat-head-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }

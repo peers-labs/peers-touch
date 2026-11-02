@@ -20,6 +20,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import type { Conversation } from './chat-data';
+import { VIEWER_NAME } from './chat-data';
 
 export type CallKind = 'audio' | 'video';
 export type CallDirection = 'out' | 'in';
@@ -85,11 +86,15 @@ export function CallOverlay({ conversation, kind, direction, multi = false, onEn
 
   const [participants, setParticipants] = useState<Participant[]>(() => [
     { name: '我', tone: conversation.tone, local: true, joined: true, micOn: true, camOn: kind === 'video', speaking: false },
-    ...(conversation.members ?? []).map((member, index) => ({
-      name: member.name, tone: member.tone, local: false,
-      joined: !isGroup ? true : index === 0,
-      micOn: true, camOn: false, speaking: false,
-    })),
+    // The viewer is already the local participant; members now include the
+    // viewer in the seed, so exclude them here to avoid a duplicate self tile.
+    ...(conversation.members ?? [])
+      .filter(member => member.name !== VIEWER_NAME)
+      .map((member, index) => ({
+        name: member.name, tone: member.tone, local: false,
+        joined: !isGroup ? true : index === 0,
+        micOn: true, camOn: false, speaking: false,
+      })),
   ]);
 
   // Ringing only applies to outgoing calls; connecting -> active runs for
@@ -196,7 +201,7 @@ export function CallOverlay({ conversation, kind, direction, multi = false, onEn
           <div className="sk-call-incoming-avatar">
             {isGroup ? (
               <span className="sk-call-incoming-group">
-                {(conversation.members ?? []).slice(0, 3).map(m => (
+                {(conversation.members ?? []).filter(m => m.name !== VIEWER_NAME).slice(0, 3).map(m => (
                   <span key={m.name} style={{ background: m.tone }}>{m.name.slice(0, 1)}</span>
                 ))}
               </span>

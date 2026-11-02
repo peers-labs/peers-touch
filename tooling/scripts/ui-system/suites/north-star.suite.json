@@ -2009,6 +2009,15 @@
           "contains": "位成员"
         },
         {
+          "id": "subtitle-inline-with-title",
+          "type": "anchoredTo",
+          "target": ".sk-chat-head-name [data-head-subtitle]",
+          "owner": ".sk-chat-head-name strong",
+          "side": "right",
+          "align": "top",
+          "tolerance": 4
+        },
+        {
           "id": "craft-clean",
           "type": "craftBattery"
         }
