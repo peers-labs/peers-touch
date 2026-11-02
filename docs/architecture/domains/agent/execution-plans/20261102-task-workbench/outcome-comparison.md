@@ -124,20 +124,20 @@
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "TW-20261102",
-  "sourceIdentity": null,
+  "sourceIdentity": "10613862a38262022a1258ba05b226e6a7105513",
   "items": [
-    { "id": "TW-O01", "status": "UNPROVEN", "actualEffect": "切片尚未实施；无当前源码 Journey 证据。", "evidenceRefs": [], "deviation": "未开始；禁止以原型点击或旧基线行为回填。" },
-    { "id": "TW-O02", "status": "UNPROVEN", "actualEffect": "切片尚未实施；delivery 回执与 steer 语义未在当前源码证明。", "evidenceRefs": [], "deviation": "未开始；既有 FIFO/恢复实现不等于本结果已证。" },
-    { "id": "TW-O03", "status": "UNPROVEN", "actualEffect": "切片尚未实施；canonical 合同显式化与 watermark 重建未完成。", "evidenceRefs": [], "deviation": "未开始。" },
+    { "id": "TW-O01", "status": "PARTIAL", "actualEffect": "D1 后 canonical 合同在 proto 显式声明（Conversation.task_id；TaskRun.canonical_conversation_id/goal/labels），Station 按会话唯一任务投影 task_id，Desktop Session/会话读取携带 Station 任务身份；一个任务一条连续对话在源码与单测层成立。", "evidenceRefs": ["model/domain/agent/agent.proto", "model/domain/agent/orchestration.proto", "apps/station/app/subserver/agent/service/chat_task_identity_test.go", "commit 10613862a"], "deviation": "缺少 make-desktop Native Journey（任务连续线、跨任务切换的人工/自动验证）；TW-D2 队列面尚未实施。" },
+    { "id": "TW-O02", "status": "PARTIAL", "actualEffect": "D1 关闭了 admission 前重复提交手势：发送在途去重（同会话同内容同附件共享幂等键，第二次手势被抑制），Station admission 后释放，错误后可重试；Stop 沿用既有 Station 回读投影（仅匹配 turn_id+status=cancelled 才置终态）。", "evidenceRefs": ["apps/desktop/src/store/chat.ts", "apps/desktop/src/store/chat.sendDedupe.test.ts", "apps/station/app/subserver/agent/service/turn_admission_service.go", "vitest store+runtimes 518 passed @10613862a"], "deviation": "started/amended/queued/rejected delivery 回执与安全 amendment 边界属于 TW-D2；Native Journey 未运行。" },
+    { "id": "TW-O03", "status": "PARTIAL", "actualEffect": "D1 源码审计确认业务面仅由 durable turn stream（snapshot/catchup_done/terminal + after_sequence）经 chatRuntime watermark replay 后接 live 重建，身份去重与 generation fencing 已存在；D1 未发现需要移除的本地乐观终态路径，停止终态以 Station 回读为准。", "evidenceRefs": ["apps/desktop/src/runtimes/chatRuntime.ts", "apps/desktop/src/store/agentTurnRecovery.ts", "apps/desktop/src-tauri/src/application/agent_event_stream.rs", "apps/desktop/src/store/agentTurnRecovery.test.ts"], "deviation": "审计结论未经 Native Journey 复核；刷新不重复/不回退的自动旅程待可运行环境。" },
     { "id": "TW-O04", "status": "UNPROVEN", "actualEffect": "切片尚未实施；逻辑成果版本闭环未建立。", "evidenceRefs": [], "deviation": "未开始；TurnArtifact 文件定位不充当前期证据。" },
     { "id": "TW-O05", "status": "UNPROVEN", "actualEffect": "切片尚未实施；Diff/字节/回执旅程未串验。", "evidenceRefs": [], "deviation": "未开始。" },
     { "id": "TW-O06", "status": "UNPROVEN", "actualEffect": "切片尚未实施；生产 TerminalSession 不存在。", "evidenceRefs": [], "deviation": "未开始；一次性 shell 不构成证据。" },
     { "id": "TW-O07", "status": "UNPROVEN", "actualEffect": "切片尚未实施；生产 BrowserSession 不存在。", "evidenceRefs": [], "deviation": "未开始；验收用 Playwright 与原型模拟均不构成证据。" },
     { "id": "TW-O08", "status": "UNPROVEN", "actualEffect": "切片尚未实施；版本冻结/召回/撤权/ready 旅程未串验。", "evidenceRefs": [], "deviation": "未开始。" },
-    { "id": "TW-O09", "status": "UNPROVEN", "actualEffect": "切片尚未实施；Desktop 选择面与 provider-runtime-strategy 的对齐未在当前源码核对完成。", "evidenceRefs": [], "deviation": "未开始。" },
-    { "id": "TW-O10", "status": "UNPROVEN", "actualEffect": "尚无任何切片交付；fail-closed 纪律待逐日用当前源码证明。", "evidenceRefs": [], "deviation": "未开始。" },
-    { "id": "TW-O11", "status": "UNPROVEN", "actualEffect": "切片尚未实施；无新增 proto 与生成代码证据。", "evidenceRefs": [], "deviation": "未开始。" },
-    { "id": "TW-O12", "status": "UNPROVEN", "actualEffect": "两条 Native Journey 未在当前源码运行。", "evidenceRefs": [], "deviation": "未开始；仅当 Owner 在场在当前源码重跑并留下可引用证据后才允许回填 FUNCTIONAL_PASS。" }
+    { "id": "TW-O09", "status": "UNPROVEN", "actualEffect": "切片尚未在 D1 处理；Desktop 选择面与 provider-runtime-strategy 的对齐留待 TW-D7 核对。", "evidenceRefs": [], "deviation": "未开始。" },
+    { "id": "TW-O10", "status": "PARTIAL", "actualEffect": "D1 纵向切片完成 proto→Station→Desktop→测试链路，无 mock/原型状态进入生产；聚焦检查全绿（go test agent 全包、desktop pnpm run check、vitest 518）。", "evidenceRefs": ["commit 10613862a", "go test ./app/subserver/agent/... pass", "apps/desktop pnpm run check pass"], "deviation": "当日 Native Journey 因主机缺 webkit2gtk-4.1/libsoup-3 无法运行；TW-D2–D7 未开始。" },
+    { "id": "TW-O11", "status": "PASS", "actualEffect": "新增语义先改 model/domain proto 并经 ./model/build.sh 生成 Go/TS；未引入手写并行 DTO，canonical 身份复用既有唯一索引/admission/outbox，Desktop 复用既有 streamTurn/会话投影。", "evidenceRefs": ["model/domain/agent/agent.proto", "model/domain/agent/orchestration.proto", "apps/station/app/subserver/agent/model/*.pb.go", "apps/desktop/src/gen/proto/domain/agent/*_pb.ts", "./model/build.sh pass @10613862a"], "deviation": "无。" },
+    { "id": "TW-O12", "status": "UNPROVEN", "actualEffect": "两条 Native Journey 未在当前源码运行。", "evidenceRefs": [], "deviation": "BLOCKED：主机缺 webkit2gtk-4.1 与 libsoup-3，make desktop 无法构建；安装系统依赖或提供 acceptance runtime cell 后，由 Owner 在场在当前源码重跑并留下可引用证据才能回填 FUNCTIONAL_PASS。" }
   ]
 }
 ```
