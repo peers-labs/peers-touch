@@ -70,28 +70,42 @@ func TestParseModelCapabilityFlagsRejectsMalformedAuthority(t *testing.T) {
 
 func openAdmissionTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
-	t.Setenv("PT_SECRET_KEK", "provider-focused-test-key-material")
-	t.Setenv("PT_SECRET_KEK_FILE", "")
 	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open admission test database: %v", err)
 	}
 	if err := db.AutoMigrate(
 		&persistence.AgentProvider{},
-		&persistence.CLIProfileDefault{},
 		&persistence.AgentModel{},
 		&persistence.Credential{},
-		&persistence.ProviderPolicy{},
-		&persistence.ProviderAccessGrant{},
 		&persistence.TurnAttempt{},
 	); err != nil {
 		t.Fatalf("migrate admission test database: %v", err)
 	}
+	ensureProviderAuthorityTestSchema(t, db)
 	injectOrchestrationServiceTestStore(t, db)
+	return db
+}
+
+// ensureProviderAuthorityTestSchema brings an older fixture database up to
+// the schema the Station-centralized provider control plane requires: KEK
+// environment for credential sealing, the policy/grant/profile tables, and
+// the permissive personal-provider policy row. Fixtures predating the
+// control-plane migration call this instead of duplicating the setup.
+func ensureProviderAuthorityTestSchema(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	t.Setenv("PT_SECRET_KEK", "provider-focused-test-key-material")
+	t.Setenv("PT_SECRET_KEK_FILE", "")
+	if err := db.AutoMigrate(
+		&persistence.CLIProfileDefault{},
+		&persistence.ProviderPolicy{},
+		&persistence.ProviderAccessGrant{},
+	); err != nil {
+		t.Fatalf("migrate provider authority test schema: %v", err)
+	}
 	if err := db.Create(&persistence.ProviderPolicy{ID: "station", PersonalProvidersEnabled: true}).Error; err != nil {
 		t.Fatal(err)
 	}
-	return db
 }
 
 func setupTestCatalog() func() {
