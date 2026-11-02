@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/conversationview"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
@@ -36,11 +37,17 @@ func (s *Service) UpdateMemberSettings(
 ) (repository.MemberSettings, error) {
 	var updated repository.MemberSettings
 	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
-		snapshot, err := transaction.Repositories.Authority.LoadForUpdate(ctx, conversationID)
+		// Member settings (mute/pin/nickname/background) are actor-local
+		// preferences persisted on the actor's Home Station; they never enter
+		// the conversation authority event stream. Membership is authorized
+		// against the authority aggregate on the authority Station, or the
+		// follower read projection on a non-authority (cross-Station) Home
+		// Station; the follower projection carries the same active member set.
+		view, err := conversationview.Load(ctx, transaction.Repositories, conversationID)
 		if err != nil {
 			return err
 		}
-		if !activeMember(snapshot, actor) {
+		if !conversationview.HasActiveMember(view.Conversation, actor) {
 			return unauthorized("application.update_member_settings", "actor is not an active member")
 		}
 		current, err := transaction.Repositories.MemberSettings.Get(ctx, conversationID, actor)
@@ -1142,13 +1149,4 @@ func conversationMemberRoutes(conversation *aggregate.Conversation) []ports.Endp
 		})
 	}
 	return routes
-}
-
-func activeMember(snapshot aggregate.Snapshot, actor valueobject.PTID) bool {
-	for _, member := range snapshot.Members {
-		if member.Actor == actor && member.Active() {
-			return true
-		}
-	}
-	return false
 }
