@@ -156,9 +156,21 @@ function psql(query: string): string {
   ).trim();
 }
 
-const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
-  'base64',
+// Material is a text document: the acceptance model (qwen2.5:0.5b) has no
+// vision capability, and the composer correctly fail-closes image sends for
+// it (image_input_unsupported). Text material is the real consumable type
+// here; the unique token lets us prove the model actually read the bytes.
+const MATERIAL_TOKEN = 'ZXQ-4417-D3-MATERIAL-TOKEN';
+const MATERIAL_BYTES = Buffer.from(
+  [
+    '# TW-D3 Material Note',
+    '',
+    `Material token: ${MATERIAL_TOKEN}`,
+    'Scope note: the venue booking scope was checked against the city register.',
+    'Conclusion seed: the site is suitable for a weekday afternoon event.',
+    '',
+  ].join('\n'),
+  'utf-8',
 );
 
 tauriTest.describe.configure({ mode: 'serial' });
@@ -172,25 +184,45 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   await beginNewTopic(page);
 
   const marker = `TWD3${Date.now().toString(36)}`;
-  // Stage a material, then ask for a structured report (deterministic content).
-  await page.setInputFiles('[data-pt-agent-attachment-input]', [{
-    name: 'tw-d3-material.png',
-    mimeType: 'image/png',
-    buffer: PNG_1X1,
-  }]);
-  await poll(page,
-    "document.querySelector('[data-pt-agent-composer-attachment-status=\"ready\"]') ? 1 : null",
-    60_000);
-  const objectRef = await page.evaluate<string>(
-    "document.querySelector('[data-pt-agent-composer-attachment-status=\"ready\"]').getAttribute('data-pt-agent-composer-attachment-object-ref') || ''",
-  );
+  // Stage the material; the first cold OSS upload can fail in this cell, so
+  // remove and reselect once on failure (same contract as the TW-D2 journey).
+  let objectRef = '';
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.setInputFiles('[data-pt-agent-attachment-input]', [{
+      name: 'tw-d3-material.md',
+      mimeType: 'text/markdown',
+      buffer: MATERIAL_BYTES,
+    }]);
+    try {
+      objectRef = await poll<string>(page,
+        `(() => {
+          const ready = document.querySelector('[data-pt-agent-composer-attachment-status="ready"]');
+          return ready?.getAttribute('data-pt-agent-composer-attachment-object-ref') || null;
+        })()`,
+        60_000);
+      break;
+    } catch {
+      const failedId = await page.evaluate<string>(
+        "document.querySelector('[data-pt-agent-composer-attachment-status=\"failed\"],[data-pt-agent-composer-attachment-status=\"rejected\"]')?.getAttribute('data-pt-agent-composer-attachment') || ''",
+      );
+      if (!failedId || attempt === 1) throw new Error('material attachment never became ready');
+      await page.click(`[data-pt-agent-composer-attachment-remove="${failedId}"]`);
+      await poll(page,
+        `document.querySelectorAll('[data-pt-agent-composer-attachment-status]').length === 0 ? 1 : null`,
+        15_000);
+    }
+  }
+  if (!objectRef) throw new Error('material attachment never became ready');
 
   await sendPrompt(page,
-    `${marker} Write a markdown report titled exactly "${marker} Report" with a line "Scope: checked" and a line "Conclusion: ok". Use the attached material.`);
+    `${marker} Read the attached material and write a markdown report titled exactly "${marker} Report". It must contain the material token ${MATERIAL_TOKEN} verbatim, a line "Scope: checked" and a line "Conclusion: ok".`);
   const status = await settleLatest(page);
   expect(['completed', 'failed']).toContain(status);
   const assistantText = await latestAssistantText(page);
   expect(assistantTextHasContent(assistantText)).toBe(true);
+  // The unique material token proves the turn actually consumed the bytes
+  // instead of merely completing a chat round trip.
+  expect(assistantText).toContain(MATERIAL_TOKEN);
 
   // ── 1. Claim v1 ────────────────────────────────────────────────────────
   await poll(page,
@@ -212,8 +244,14 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   const v1BodyFromStation = psql(
     `SELECT b.body FROM agent_artifact_version_bodies b JOIN agent_artifact_versions v ON v.id=b.version_id WHERE v.id='${v1.id}'`,
   );
+  const v1BodyText = psql(
+    `SELECT convert_from(b.body,'UTF8') FROM agent_artifact_version_bodies b JOIN agent_artifact_versions v ON v.id=b.version_id WHERE v.id='${v1.id}'`,
+  );
   expect(v1.body.length).toBeGreaterThan(0);
   expect(v1BodyFromStation.length).toBeGreaterThan(0);
+  // The claimed Station bytes themselves carry the material token: the
+  // artifact preserves proof that the producing turn consumed the material.
+  expect(v1BodyText).toContain(MATERIAL_TOKEN);
 
   // ── 2. Structural check, human review, accept v1 ───────────────────────
   await page.click('[data-pt-artifact-check-structural]');
@@ -389,7 +427,13 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   fs.writeFileSync(path.join(REPORT_DIR, 'tw-d3-journey.png'), screenshot);
   writeEvidence('tw-d3-journey', {
     status: 'passed',
-    turn: { terminalStatus: status, materialObjectRef: objectRef },
+    turn: {
+      terminalStatus: status,
+      materialObjectRef: objectRef,
+      materialMimeType: 'text/markdown',
+      materialToken: MATERIAL_TOKEN,
+      tokenInClaimedBytes: true,
+    },
     v1: { id: v1.id, seq: seqv1, bodyBytes: v1BodyFromStation.length, name: v1.name },
     reload: {
       sameVersionId: v1.id,
