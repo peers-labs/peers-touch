@@ -458,6 +458,8 @@ export const STRINGS = {
     'group.namePlaceholder': '群名称，如：夜跑小队',
     'group.createdLast': '群聊已创建',
     'group.createdService': '群聊「{name}」已创建',
+    'group.memberJoined': '{name} 通过 {by} 的邀请加入了群聊',
+    'group.memberRemoved': '你将 {name} 移出了群聊',
     // composer attachment drafts
     'draft.image': '图片',
     'draft.uploading': '上传中 {n}%',
@@ -1411,6 +1413,8 @@ export const STRINGS = {
     'group.namePlaceholder': 'Group name, e.g. Night Runners',
     'group.createdLast': 'Group created',
     'group.createdService': 'Group “{name}” created',
+    'group.memberJoined': '{name} joined the group via {by}’s invitation',
+    'group.memberRemoved': 'You removed {name} from the group',
     // composer attachment drafts
     'draft.image': 'Image',
     'draft.uploading': 'Uploading {n}%',

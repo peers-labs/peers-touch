@@ -87,7 +87,7 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
               onClick={() => onSelect(c.id)}>
               <span className="sk-conv-avatar">
                 {c.kind === 'group'
-                  ? <GroupAvatarComposite members={c.members ?? []} label={c.name} size={40} />
+                  ? <GroupAvatarComposite members={c.members ?? []} label={c.name} size={40} imageUrl={c.avatarImage} />
                   : <Avatar name={c.name} background={c.tone} size={40}
                       style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={c.name} />}
                 {c.kind === 'person' && (
@@ -305,7 +305,7 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
         className={`sk-conv-row${selectedContactId === group.id ? ' is-selected' : ''}`}
         onActivate={() => onOpenGroup(group.id)}>
         <GroupAvatarComposite members={(group.members ?? []).map(m => ({ name: m.name, tone: m.tone }))}
-          label={group.name} size={38} />
+          label={group.name} size={38} imageUrl={group.avatarImage} />
         <span className="sk-conv-meta">
           <span className="sk-conv-name-line"><strong>{group.name}</strong></span>
           <span className="sk-conv-preview"><span className="sk-conv-last">

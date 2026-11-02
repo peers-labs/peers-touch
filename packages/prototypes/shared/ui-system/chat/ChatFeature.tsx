@@ -139,17 +139,38 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
   const setMyNickname = (id: string, myNickname: string) => patchConversation(id, { myNickname: myNickname.trim() || undefined });
   const setChatBackground = (id: string, background: string, backgroundImage?: string) =>
     patchConversation(id, { background, backgroundImage });
-  const addGroupMembers = (id: string, added: { name: string; tone: string }[]) =>
-    setSessions(list => list.map(c => {
-      if (c.id !== id || c.kind !== 'group') return c;
-      const existing = new Set((c.members ?? []).map(m => m.name));
-      const fresh = added.filter(m => !existing.has(m.name)).map(m => ({ ...m, role: 'member' as const }));
-      return fresh.length ? { ...c, members: [...(c.members ?? []), ...fresh] } : c;
-    }));
-  const removeGroupMember = (id: string, name: string) =>
+  // Service messages are the group's birth/death ledger: every membership
+  // change enters the message stream (the seed already authors join
+  // notices the same way), so member lifecycle is never silent.
+  const appendService = (conversationId: string, text: string) =>
+    setMessagesByConv(map => ({ ...map, [conversationId]: [
+      ...(map[conversationId] ?? []),
+      { id: `local-svc-${Date.now()}-${Math.round(Math.random() * 1e4)}`,
+        from: 'peer' as const, kind: 'service' as const, text,
+        at: new Date().toLocaleTimeString(locTag(prefs.locale), { hour: '2-digit', minute: '2-digit' }), ts: Date.now() },
+    ] }));
+
+  const addGroupMembers = (id: string, added: { name: string; tone: string }[]) => {
+    // Resolve genuinely-new members from the current render state first;
+    // never run side effects inside a setState updater (StrictMode double
+    // invocation would duplicate the service notices).
+    const group = sessions.find(c => c.id === id);
+    if (!group || group.kind !== 'group') return;
+    const existing = new Set((group.members ?? []).map(m => m.name));
+    const fresh = added
+      .filter(m => !existing.has(m.name))
+      .map(m => ({ ...m, role: 'member' as const }));
+    if (!fresh.length) return;
+    setSessions(list => list.map(c =>
+      c.id === id ? { ...c, members: [...(c.members ?? []), ...fresh] } : c));
+    fresh.forEach(m => appendService(id, t('group.memberJoined', { name: m.name, by: VIEWER_NAME })));
+  };
+  const removeGroupMember = (id: string, name: string) => {
     setSessions(list => list.map(c => c.id === id
       ? { ...c, members: (c.members ?? []).filter(m => m.name !== name) }
       : c));
+    appendService(id, t('group.memberRemoved', { name }));
+  };
   const setGroupMemberRole = (id: string, name: string, role: 'owner' | 'admin' | 'member') =>
     setSessions(list => list.map(c => {
       if (c.id !== id) return c;
@@ -161,13 +182,12 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
       });
       return { ...c, members };
     }));
-  // Owner dissolves; every other role leaves. Both converge on removing the
-  // local conversation in this prototype (desktop: dissolve/leave commands).
+  // Leaving/dissolving both end the viewer's relationship with the group:
+  // the conversation leaves the local list (and closes if open), so a
+  // non-member can never keep managing a group they quit. Dissolve is the
+  // owner command (all members lose access); leave is a member command.
   const dissolveGroup = (id: string) => deleteConversation(id);
-  const leaveGroup = (id: string) =>
-    setSessions(list => list.map(c => c.id === id
-      ? { ...c, members: (c.members ?? []).filter(m => m.name !== VIEWER_NAME) }
-      : c));
+  const leaveGroup = (id: string) => deleteConversation(id);
 
   const sendMessage = (payload: {
     text: string;

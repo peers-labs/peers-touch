@@ -3826,6 +3826,18 @@
           "type": "count",
           "target": "[data-profile-members] .sk-profile-member",
           "equals": 6
+        },
+        {
+          "id": "rail-avatar-composite-up",
+          "type": "count",
+          "target": ".sk-conv-list li:first-child .sk-group-avatar-tile",
+          "equals": 6
+        },
+        {
+          "id": "join-service-message",
+          "type": "textContains",
+          "target": ".sk-msg-stream",
+          "contains": "老周 通过 林野 的邀请加入了群聊"
         }
       ],
       "finalizers": [
@@ -3833,6 +3845,38 @@
           "op": "click",
           "target": "[data-action-id='chat.info-close']"
         }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.profile-avatar-upload",
+      "title": "增量47：换群头像后资料卡与轨行/联系人列表同一合成像同步",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        { "op": "wait", "ms": 200 },
+        {
+          "op": "setFiles",
+          "target": "[data-file-input]",
+          "files": [{ "name": "avatar.png", "mime": "image/png" }]
+        },
+        { "op": "wait", "ms": 300 }
+      ],
+      "oracles": [
+        {
+          "id": "hero-uses-uploaded-image",
+          "type": "exists",
+          "target": "[data-profile-identity] .sk-group-avatar-image img"
+        },
+        {
+          "id": "rail-uses-uploaded-image",
+          "type": "exists",
+          "target": ".sk-conv-list li:first-child .sk-group-avatar-image img"
+        }
+      ],
+      "finalizers": [
+        { "op": "click", "target": "[data-action-id='chat.info-close']" }
       ]
     },
     {
@@ -3942,6 +3986,12 @@
           "target": "[data-detail-panel]",
           "attr": "data-my-role",
           "equals": "owner"
+        },
+        {
+          "id": "remove-service-message",
+          "type": "textContains",
+          "target": ".sk-msg-stream",
+          "contains": "将 周禾 移出了群聊"
         }
       ],
       "finalizers": [
@@ -4065,6 +4115,58 @@
           "op": "wait",
           "ms": 250
         }
+      ],
+      "oracles": [
+        {
+          "id": "panel-closed",
+          "type": "missing",
+          "target": "[data-detail-panel]"
+        },
+        {
+          "id": "session-removed",
+          "type": "count",
+          "target": ".sk-conv-rail .sk-conv-list .sk-conv-row",
+          "equals": 6
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.profile-leave-group",
+      "title": "增量47：转让群主后危险区变退出，两段确认退出后会话从列表移除（成员身份消亡闭合）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        { "op": "click", "target": "[data-action-id='profile.manage-members']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='profile.member-transfer.苏禾']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "clickGlobal", "target": "[data-action-id='profile.member-confirm-ok']" },
+        { "op": "wait", "ms": 250 },
+        { "op": "clickGlobal", "target": "[data-action-id='profile.manage-done']" },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "leave-entry-replaces-dissolve",
+            "type": "exists",
+            "target": "[data-action-id='profile.leave-group']"
+          }
+        },
+        { "op": "click", "target": "[data-action-id='profile.leave-group']" },
+        { "op": "wait", "ms": 150 },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "leave-confirm-open",
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-profile-confirm=\"leave\"]"
+          }
+        },
+        { "op": "clickGlobal", "target": "[data-action-id='profile.confirm-ok']" },
+        { "op": "wait", "ms": 250 }
       ],
       "oracles": [
         {
