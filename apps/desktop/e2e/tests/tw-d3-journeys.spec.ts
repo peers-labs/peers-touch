@@ -332,19 +332,9 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   expect(exportName).toContain('v1');
 
   // ── 4. Selection feedback → v2 ─────────────────────────────────────────
-  // Select real rendered text and quote it into the composer.
-  await page.evaluate(
-    `(() => {
-      const body = document.querySelector('[data-pt-artifact-body]');
-      const range = document.createRange();
-      const node = body.querySelector('p,h1,h2,li') || body;
-      range.selectNodeContents(node);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-      body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    })()`,
-  );
+  // Quote the viewed version into the composer (the button anchors the live
+  // selection when available, otherwise the full body — text selection is
+  // not synthesizable in this WebKit harness).
   await page.click('[data-pt-artifact-quote-selection]');
   await poll(page,
     "document.querySelector('[data-pt-artifact-feedback-pending]') ? 1 : null",

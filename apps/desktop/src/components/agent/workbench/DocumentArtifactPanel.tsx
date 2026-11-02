@@ -98,7 +98,12 @@ export function DocumentArtifactPanel() {
   }, []);
 
   const handleQuoteSelection = useCallback(async () => {
-    if (!openArtifactId || !selectedVersionId || !selection) return;
+    if (!openArtifactId || !selectedVersionId) return;
+    // Prefer the user's live selection; fall back to the full rendered
+    // body so revision feedback is still startable without a selection
+    // (the quoted anchor is inserted into the composer and editable).
+    const anchor = selection.trim() || body.trim().slice(0, 2_000);
+    if (!anchor) return;
     setBusy(true);
     setError(null);
     try {
@@ -106,7 +111,7 @@ export function DocumentArtifactPanel() {
         conversationId: conversationKey,
         artifactId: openArtifactId,
         baseVersionId: selectedVersionId,
-        anchorText: selection,
+        anchorText: anchor,
         kind: 'selection',
         composerSeed: (text) => setComposerDraft(conversationKey, text),
       });
@@ -119,8 +124,9 @@ export function DocumentArtifactPanel() {
     openArtifactId,
     selectedVersionId,
     selection,
-    conversationKey,
+    body,
     quoteSelectionToComposer,
+    conversationKey,
     setComposerDraft,
   ]);
 
