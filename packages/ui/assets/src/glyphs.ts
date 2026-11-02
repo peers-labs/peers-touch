@@ -23,6 +23,18 @@ export const glyphs = {
     "source": "lucide@0.577.0/icons/blocks",
     "license": "ISC; Feather portions MIT"
   },
+  "bookmark": {
+    "shapes": [
+      [
+        "path",
+        {
+          "d": "m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"
+        }
+      ]
+    ],
+    "source": "lucide@0.577.0/icons/bookmark",
+    "license": "ISC; Feather portions MIT"
+  },
   "external-link": {
     "shapes": [
       [
