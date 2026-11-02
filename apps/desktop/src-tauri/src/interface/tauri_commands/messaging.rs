@@ -54,6 +54,23 @@ pub struct MessagingSendMessageInput {
     /// mint a fresh ULID.
     #[serde(default)]
     pub send_intent_id: String,
+    /// @-mention targets carried inside the ciphertext. Renderer-computed
+    /// UTF-16 offsets into `plaintext`; validated again by the shared codec.
+    #[serde(default)]
+    pub mentions: Vec<MessagingMentionInput>,
+    /// @ everyone (sender authority is re-checked by recipients against the
+    /// local group member snapshot).
+    #[serde(default)]
+    pub mention_all: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MessagingMentionInput {
+    pub actor_ptid: String,
+    pub offset: u32,
+    pub length: u32,
+    #[serde(default)]
+    pub display: String,
 }
 
 #[derive(Debug, Deserialize)]
