@@ -3460,6 +3460,38 @@
       ]
     },
     {
+      "id": "ui.prototype.north-star.detail-panel-dismiss-outside",
+      "title": "增量48：资料侧拉页点作用域外关闭，点内部不关，信息钮可再次切换",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "click", "target": "[data-profile-members]" },
+        {
+          "op": "expect",
+          "oracle": { "id": "stays-on-inside-press", "type": "exists", "target": "[data-detail-panel]" }
+        },
+        { "op": "click", "target": ".sk-msg-stream" },
+        {
+          "op": "expect",
+          "oracle": { "id": "hides-on-outside-press", "type": "missing", "target": "[data-detail-panel]" }
+        },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        {
+          "op": "expect",
+          "oracle": { "id": "reopens-via-trigger", "type": "exists", "target": "[data-detail-panel]" }
+        }
+      ],
+      "oracles": [
+        { "id": "lifecycle-passes", "type": "exists", "target": "[data-detail-panel]" }
+      ],
+      "finalizers": [
+        { "op": "click", "target": "[data-action-id='chat.info-close']" }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.detail-panel",
       "title": "增量44：群资料对齐真身——共线标题/纯图标行/成员含自己/权限卡/无群公告/添加与管理/解散",
       "level": "L3_DYNAMIC",
@@ -4539,6 +4571,39 @@
           "op": "click",
           "target": "[data-action-id='thread.close']"
         }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.thread-dismiss-outside",
+      "title": "增量48：话题侧拉页点作用域外关闭，话题入口再点可重开",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "click", "target": ".sk-conv-row:first-child" },
+        { "op": "click", "target": "[data-thread-for='m1']" },
+        { "op": "wait", "ms": 200 },
+        {
+          "op": "expect",
+          "oracle": { "id": "thread-open", "type": "exists", "target": "[data-thread-panel]" }
+        },
+        { "op": "click", "target": ".sk-composer" },
+        { "op": "wait", "ms": 150 },
+        {
+          "op": "expect",
+          "oracle": { "id": "thread-hides-outside", "type": "missing", "target": "[data-thread-panel]" }
+        },
+        { "op": "click", "target": "[data-thread-for='m1']" },
+        { "op": "wait", "ms": 150 },
+        {
+          "op": "expect",
+          "oracle": { "id": "thread-reopens", "type": "exists", "target": "[data-thread-panel]" }
+        }
+      ],
+      "oracles": [
+        { "id": "lifecycle-passes", "type": "exists", "target": "[data-thread-panel]" }
+      ],
+      "finalizers": [
+        { "op": "click", "target": "[data-action-id='thread.close']" }
       ]
     },
     {

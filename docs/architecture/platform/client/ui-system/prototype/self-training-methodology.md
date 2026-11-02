@@ -268,3 +268,12 @@ Frontend Eles 不是组件陈列室，而是一台**自训练机器**：桌面/�
     `setFiles` op 打真实文件，断言 hero 与 rail 双 `<img>`。
   - **交付前自己跑一遍全生命周期 Playwright**：建群→加人→改名/换头像→设/撤管理员→转让→
     移除→（新成员视角）退出→解散，每步读 DOM 真值，闭环后再交用户试；不要把集成验证留给用户。
+- 48 临时浮层必须遵守「点作用域外即隐藏」的平台约定。规则：
+  - **库浮层（Popover/Menu/Select/Dialog）已自带外部关闭**：pointerdown capture 判定不在
+    浮层与锚点内即 dismiss，模态层点 scrim 关闭。新增交互优先用库组件，不重造。
+  - **自绘的非模态内联浮层（资料侧拉页、话题侧拉页）必须补同一个语义**：抽 `useDismissOutside`
+    hook（pointerdown capture、ownerDocument 作用域、active 门控），触发钮列入 ignore
+    选择器——capture 阶段先于 click，不排除触发钮会「关了又开」形成假死。
+  - **子弹窗与父浮层的作用域关系**：从侧拉页内打开的 Dialog 走 portal，落在父浮层 DOM 之外，
+    必须把 `.pt-modal-layer` 加入 ignore；点子弹窗遮罩只关子弹窗，不连坐关闭背后的资料页。
+  - 点内部不关、点外部关、触发钮切换、子弹窗遮罩独立——四态都要建门禁，不只测「能打开」。

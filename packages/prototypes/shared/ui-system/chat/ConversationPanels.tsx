@@ -11,6 +11,7 @@
  * actions are dissolve/leave for groups.
  */
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useDismissOutside } from '../use-dismiss-outside';
 import {
   BellOff, ChevronLeft, ChevronRight, Eraser, File as FileIcon,
   Image as ImageIcon, LogOut, Phone, Pin, Search, Smartphone, Trash2,
@@ -120,9 +121,19 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
   const [showAll, setShowAll] = useState(false);
   const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
   const [memberConfirm, setMemberConfirm] = useState<MemberConfirm>(null);
+  const sheetRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filePickTarget = useRef<'avatar' | 'background'>('avatar');
   const { t } = useT();
+
+  // Non-modal side sheet: press anywhere outside its scope to hide, like a
+  // popover. The info ⓘ trigger is excluded so toggling never reopens it,
+  // and portaled dialogs launched from the sheet are part of its scope
+  // (their scrim must close the dialog only, not the sheet behind it).
+  useDismissOutside(sheetRef, true, onClose, [
+    "[data-action-id='chat.open-info']",
+    '.pt-modal-layer',
+  ]);
 
   const isGroup = conversation.kind === 'group';
   const members = useMemo(() => {
@@ -206,7 +217,7 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
   const permission = permissionKeys(myRole);
 
   return (
-    <aside className="sk-side-sheet sk-profile-sheet" aria-label={t('conv.info')} data-detail-panel="true"
+    <aside ref={sheetRef} className="sk-side-sheet sk-profile-sheet" aria-label={t('conv.info')} data-detail-panel="true"
       data-my-role={myRole}>
       <div className="sk-side-head">
         <strong>{isGroup ? t('profile.titleGroup') : t('profile.titlePerson')}</strong>
@@ -644,6 +655,11 @@ export function ThreadSheet({ root, peerName, initialReplies, onClose, onReply }
   const { t, locale } = useT();
   const [replies, setReplies] = useState<ThreadReply[]>(initialReplies);
   const [draft, setDraft] = useState('');
+  const sheetRef = useRef<HTMLElement>(null);
+
+  // Outside-scope press hides the thread sheet; the "查看话题" entry that
+  // opens it is ignored so it acts as a plain toggle.
+  useDismissOutside(sheetRef, true, onClose, '[data-thread-for]');
 
   const send = () => {
     const text = draft.trim();
@@ -662,7 +678,7 @@ export function ThreadSheet({ root, peerName, initialReplies, onClose, onReply }
   };
 
   return (
-    <aside className="sk-side-sheet sk-thread-sheet" aria-label={t('thread.aria')} data-thread-panel="true">
+    <aside ref={sheetRef} className="sk-side-sheet sk-thread-sheet" aria-label={t('thread.aria')} data-thread-panel="true">
       <div className="sk-side-head">
         <strong>{t('thread.title', { n: replies.length })}</strong>
         <IconButton iconId="close" iconSize={15} label={t('thread.close')} actionId="thread.close"
