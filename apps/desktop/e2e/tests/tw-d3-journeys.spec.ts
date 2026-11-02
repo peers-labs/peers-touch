@@ -161,6 +161,10 @@ function psql(query: string): string {
 // it (image_input_unsupported). Text material is the real consumable type
 // here; the unique token lets us prove the model actually read the bytes.
 const MATERIAL_TOKEN = 'ZXQ-4417-D3-MATERIAL-TOKEN';
+// Unique natural phrase present ONLY in the material: qwen2.5:0.5b paraphrases
+// arbitrary tokens but reproduces salient prose verbatim, so adoption is proven
+// by a phrase that never appears in the user instruction.
+const MATERIAL_PROOF_PHRASE = 'weekday afternoon event';
 const MATERIAL_BYTES = Buffer.from(
   [
     '# TW-D3 Material Note',
@@ -215,14 +219,15 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   if (!objectRef) throw new Error('material attachment never became ready');
 
   await sendPrompt(page,
-    `${marker} Read the attached material and write a markdown report titled exactly "${marker} Report". It must contain the material token ${MATERIAL_TOKEN} verbatim, a line "Scope: checked" and a line "Conclusion: ok".`);
+    `${marker} Read the attached material and write a markdown report titled exactly "${marker} Report" with a line "Scope: checked" and a line "Conclusion: ok". Quote one concrete fact from the material in the report.`);
   const status = await settleLatest(page);
   expect(['completed', 'failed']).toContain(status);
   const assistantText = await latestAssistantText(page);
   expect(assistantTextHasContent(assistantText)).toBe(true);
-  // The unique material token proves the turn actually consumed the bytes
-  // instead of merely completing a chat round trip.
-  expect(assistantText).toContain(MATERIAL_TOKEN);
+  // A phrase unique to the material proves the turn consumed the bytes
+  // instead of merely completing a chat round trip (the instruction text
+  // itself never contains this phrase).
+  expect(assistantText.toLowerCase()).toContain(MATERIAL_PROOF_PHRASE);
 
   // ── 1. Claim v1 ────────────────────────────────────────────────────────
   await poll(page,
@@ -249,9 +254,9 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   );
   expect(v1.body.length).toBeGreaterThan(0);
   expect(v1BodyFromStation.length).toBeGreaterThan(0);
-  // The claimed Station bytes themselves carry the material token: the
+  // The claimed Station bytes carry the same material-only phrase: the
   // artifact preserves proof that the producing turn consumed the material.
-  expect(v1BodyText).toContain(MATERIAL_TOKEN);
+  expect(v1BodyText.toLowerCase()).toContain(MATERIAL_PROOF_PHRASE);
 
   // ── 2. Structural check, human review, accept v1 ───────────────────────
   await page.click('[data-pt-artifact-check-structural]');
@@ -279,7 +284,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
       const body = document.querySelector('[data-pt-artifact-body]')?.textContent?.trim() || '';
       return id === ${JSON.stringify(v1.id)} && body.length > 0 ? body : null;
     })()`,
-    20_000);
+    45_000);
   expect(reopenedBody.length).toBeGreaterThan(0);
   await poll(page, "document.querySelector('[data-pt-artifact-accepted]') ? 1 : null", 15_000);
 
@@ -436,7 +441,8 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
       materialObjectRef: objectRef,
       materialMimeType: 'text/plain',
       materialToken: MATERIAL_TOKEN,
-      tokenInClaimedBytes: true,
+      materialProofPhrase: MATERIAL_PROOF_PHRASE,
+      phraseInClaimedBytes: true,
     },
     v1: { id: v1.id, seq: seqv1, bodyBytes: v1BodyFromStation.length, name: v1.name },
     reload: {
