@@ -407,7 +407,7 @@ pub fn upload_agent_attachment(
             None,
         );
     }
-    if mime_type != "image/png" && mime_type != "application/pdf" {
+    if mime_type != "image/png" && mime_type != "application/pdf" && mime_type != "text/plain" {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
             "agent.errors.attachmentRejected",
@@ -541,6 +541,9 @@ fn agent_attachment_content_matches(file_path: &str, mime_type: &str) -> bool {
     match mime_type {
         "image/png" => read >= signature.len() && signature == [137, 80, 78, 71, 13, 10, 26, 10],
         "application/pdf" => read >= 5 && &signature[..5] == b"%PDF-",
+        // text/plain has no magic header; the non-empty size bound above is
+        // the full content contract, matching Station admission.
+        "text/plain" => read >= 1,
         _ => false,
     }
 }
