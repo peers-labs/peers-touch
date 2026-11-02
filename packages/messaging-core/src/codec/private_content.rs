@@ -1,6 +1,7 @@
 use crate::attachment::validate_chat_encrypted_object_descriptor;
 use crate::proto::chat::{
-    AttachmentContentKind, AttachmentPlaintextMetadata, MessagePrivateContent, VoiceNoteMetadata,
+    AttachmentContentKind, AttachmentPlaintextMetadata, MessageMention, MessagePrivateContent,
+    VoiceNoteMetadata,
 };
 use prost::Message;
 use secure_content_core::object::OBJECT_MAX_PLAINTEXT_SIZE;
@@ -12,15 +13,44 @@ pub const MESSAGE_MAX_VOICE_NOTE_DURATION_MS: u32 = 60 * 60 * 1000;
 pub const MESSAGE_MAX_VOICE_NOTE_CODEC_BYTES: usize = 127;
 pub const MESSAGE_MAX_VOICE_NOTE_WAVEFORM_SAMPLES: usize = 256;
 pub const MESSAGE_MAX_VOICE_NOTE_WAVEFORM_VALUE: u32 = 255;
+/// Upper bound on distinct @-mentions per message.
+pub const MESSAGE_MAX_MENTIONS: usize = 50;
+
+/// Mention payload carried in the ciphertext (see model/domain/chat/attachment.proto).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MessageMentions {
+    pub mentions: Vec<MessageMention>,
+    pub mention_all: bool,
+}
+
+impl MessageMentions {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
 
 pub fn encode_message_private_content(
     text: &str,
     attachments: &[AttachmentPlaintextMetadata],
 ) -> Result<Vec<u8>, String> {
+    encode_message_private_content_with_mentions(
+        text,
+        attachments,
+        &MessageMentions::empty(),
+    )
+}
+
+pub fn encode_message_private_content_with_mentions(
+    text: &str,
+    attachments: &[AttachmentPlaintextMetadata],
+    extra: &MessageMentions,
+) -> Result<Vec<u8>, String> {
     let content = MessagePrivateContent {
         format_version: MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
         text: text.to_string(),
         attachments: attachments.to_vec(),
+        mentions: extra.mentions.to_vec(),
+        mention_all: extra.mention_all,
     };
     validate_message_private_content(&content)?;
     Ok(content.encode_to_vec())
@@ -69,6 +99,42 @@ pub fn validate_message_private_content(content: &MessagePrivateContent) -> Resu
     }
     if total_plaintext_size > OBJECT_MAX_PLAINTEXT_SIZE {
         return Err("messaging attachment aggregate size exceeds policy".to_string());
+    }
+    validate_mentions(content)?;
+    Ok(())
+}
+
+/// Validate @-mentions: bounded count, unique targets, in-bounds non-overlapping
+/// UTF-16 offsets into `text`, and a non-empty display snapshot.
+fn validate_mentions(content: &MessagePrivateContent) -> Result<(), String> {
+    let mentions = &content.mentions;
+    if mentions.len() > MESSAGE_MAX_MENTIONS {
+        return Err("messaging private content mention count exceeds policy".to_string());
+    }
+    // Mention offsets index the text, so a non-text message cannot carry them.
+    if !mentions.is_empty() && content.text.is_empty() {
+        return Err("messaging private content mentions require text".to_string());
+    }
+    let text_units = content.text.encode_utf16().count() as u64;
+    let mut mentioned_actors = HashSet::with_capacity(mentions.len());
+    let mut previous_end: u64 = 0;
+    for mention in mentions {
+        let actor = mention.actor_ptid.trim();
+        if actor.is_empty() || !actor.starts_with("ptid:") {
+            return Err("messaging private content mention actor is invalid".to_string());
+        }
+        if mention.display.trim().is_empty() || mention.display.chars().count() > 256 {
+            return Err("messaging private content mention display is invalid".to_string());
+        }
+        if !mentioned_actors.insert(actor) {
+            return Err("messaging private content has duplicate mention target".to_string());
+        }
+        let start = u64::from(mention.offset);
+        let length = u64::from(mention.length);
+        if length == 0 || start < previous_end || start + length > text_units {
+            return Err("messaging private content mention range is invalid".to_string());
+        }
+        previous_end = start + length;
     }
     Ok(())
 }
@@ -192,6 +258,8 @@ mod tests {
             format_version: MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
             text: "exact plaintext".to_string(),
             attachments: vec![test_attachment_metadata("attachment-1")],
+            mentions: vec![],
+            mention_all: false,
         };
         let encoded =
             encode_message_private_content(&expected.text, &expected.attachments).unwrap();
@@ -209,6 +277,8 @@ mod tests {
                 test_attachment_metadata("attachment-1"),
                 test_attachment_metadata("attachment-1"),
             ],
+            mentions: vec![],
+            mention_all: false,
         };
         assert!(validate_message_private_content(&duplicate).is_err());
 
@@ -226,7 +296,88 @@ mod tests {
             format_version: MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
             text: String::new(),
             attachments: vec![invalid_voice],
+            mentions: vec![],
+            mention_all: false,
         })
+        .is_err());
+    }
+
+    #[test]
+    fn mention_round_trips_and_rejects_invalid_ranges() {
+        use crate::proto::chat::MessageMention;
+
+        let text = "hi @bob and @carol";
+        // "@bob" starts at UTF-16 offset 3, length 4.
+        let mentions = vec![
+            MessageMention {
+                actor_ptid: "ptid:peer:bob".to_string(),
+                offset: 3,
+                length: 4,
+                display: "bob".to_string(),
+            },
+            MessageMention {
+                actor_ptid: "ptid:peer:carol".to_string(),
+                offset: 12,
+                length: 6,
+                display: "carol".to_string(),
+            },
+        ];
+        let encoded = encode_message_private_content_with_mentions(
+            text,
+            &[],
+            &MessageMentions { mentions: mentions.clone(), mention_all: false },
+        )
+        .unwrap();
+        let decoded = decode_message_private_content(&encoded).unwrap();
+        assert_eq!(decoded.mentions, mentions);
+        assert!(!decoded.mention_all);
+
+        // Out-of-bounds offset is rejected.
+        let bad_range = MessageMentions {
+            mentions: vec![MessageMention {
+                actor_ptid: "ptid:peer:bob".to_string(),
+                offset: 100,
+                length: 4,
+                display: "bob".to_string(),
+            }],
+            mention_all: false,
+        };
+        assert!(encode_message_private_content_with_mentions(text, &[], &bad_range).is_err());
+
+        // Duplicate target is rejected.
+        let duplicate = MessageMentions {
+            mentions: vec![
+                MessageMention {
+                    actor_ptid: "ptid:peer:bob".to_string(),
+                    offset: 3,
+                    length: 4,
+                    display: "bob".to_string(),
+                },
+                MessageMention {
+                    actor_ptid: "ptid:peer:bob".to_string(),
+                    offset: 12,
+                    length: 6,
+                    display: "bob".to_string(),
+                },
+            ],
+            mention_all: false,
+        };
+        assert!(encode_message_private_content_with_mentions(text, &[], &duplicate).is_err());
+
+        // Mention without text is rejected.
+        assert!(encode_message_private_content_with_mentions(
+            "",
+            &[],
+            &MessageMentions {
+                mentions: vec![MessageMention {
+                    actor_ptid: "ptid:peer:bob".to_string(),
+                    offset: 0,
+                    length: 1,
+                    display: "bob".to_string(),
+                }],
+                mention_all: false,
+            }
+        )
         .is_err());
     }
 

@@ -115,6 +115,28 @@ message MessagePrivateContent {
   uint32 format_version = 1;
   string text = 2;
   repeated AttachmentPlaintextMetadata attachments = 3;
+  // @-mentions carried inside the ciphertext so only recipients can resolve
+  // who was mentioned. Offsets/length index into `text` (UTF-16 code units,
+  // matching renderer text selection) so chips render without regex parsing.
+  repeated MessageMention mentions = 4;
+  // @ everyone in the conversation. Sender authorization (owner/admin) is
+  // enforced by the sending client and re-validated by each recipient against
+  // the local member snapshot; it never lives on the Station.
+  bool mention_all = 5;
+}
+
+// One @-mention target inside MessagePrivateContent. The display string is a
+// snapshot: member names/nicknames can change, and recipients must still be
+// able to render the historical message without re-resolving every actor.
+message MessageMention {
+  // Canonical actor PTID of the mentioned member.
+  string actor_ptid = 1;
+  // Start offset of the mention token inside `text` (UTF-16 code units).
+  uint32 offset = 2;
+  // Length of the mention token including the leading "@" (UTF-16 units).
+  uint32 length = 3;
+  // Display label rendered at send time (e.g. nickname or display name).
+  string display = 4;
 }
 
 message BeginAttachmentUploadRequest {
