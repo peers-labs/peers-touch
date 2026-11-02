@@ -270,7 +270,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   await sleep(4_000);
   await poll(page, "document.querySelectorAll('[data-pt-primary-nav]').length > 0 ? 1 : null", 60_000);
   await gotoAgent(page);
-  await poll(page, "[data-pt-artifact-open] ? 1 : null", 30_000);
+  await poll(page, "document.querySelector('[data-pt-artifact-open]') ? 1 : null", 30_000);
   await page.click('[data-pt-artifact-open]');
   await poll(page, "document.querySelector('[data-pt-artifact-panel]') ? 1 : null", 20_000);
   const reopenedBody = await poll<string>(page,
