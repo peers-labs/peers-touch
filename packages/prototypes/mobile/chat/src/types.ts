@@ -1,6 +1,9 @@
 /**
  * Types, interfaces, and constants for the Mobile Prototype.
  */
+import type { Icon } from '@peers-touch/ui';
+
+export type IconName = Parameters<typeof Icon>[0]['iconId'];
 
 // ── Types ──────────────────────────────────────────────────────
 export type LaunchState = 'station-selection' | 'access-gate-chain' | 'shell';
@@ -28,7 +31,6 @@ export interface Conversation {
   name: string;
   avatar: string;
   avatarUrl?: string;
-  avatarGradient: string;
   lastMessage: string;
   time: string;
   unread: number;
@@ -78,7 +80,6 @@ export interface MomentComment {
   name: string;
   avatar: string;
   avatarUrl?: string;
-  avatarGradient: string;
   text: string;
   time: string;
   replyTo?: string;
@@ -89,7 +90,6 @@ export interface Moment {
   name: string;
   avatar: string;
   avatarUrl?: string;
-  avatarGradient: string;
   time: string;
   text: string;
   source?: string;
@@ -115,7 +115,6 @@ export interface Contact {
   name: string;
   avatar: string;
   avatarUrl?: string;
-  avatarGradient: string;
   note: string;
   online?: boolean;
 }
@@ -124,7 +123,6 @@ export interface GroupItem {
   key: string;
   name: string;
   avatar: string;
-  avatarGradient: string;
   memberCount: number;
 }
 
@@ -145,26 +143,13 @@ export interface SettingEntry {
   id: SettingId;
   label: string;
   value?: string;
-  icon: React.ComponentType<{ size?: number }>;
-  tint: 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
+  iconId: IconName;
 }
 
 export interface SettingGroup {
   title: string;
   items: SettingEntry[];
 }
-
-// ── Gradient helpers ───────────────────────────────────────────
-export const GRADIENTS = [
-  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-  'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-  'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-  'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-  'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
-  'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
-  'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
-];
 
 // ── Reaction emoji map ─────────────────────────────────────────
 export const REACTION_EMOJI: Record<ReactionKind, string> = {

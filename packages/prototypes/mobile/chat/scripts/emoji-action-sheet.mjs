@@ -63,8 +63,9 @@ export async function checkEmojiActionSheet({ browser, url, output, viewports })
         if (m.type() === 'error') errors.push(m.text());
       });
       const device = page.getByRole('region', { name: 'Mobile device preview' });
-      await page.goto(`${url}/?site=mobile&scenario=chat-delivery-recovery`);
+      await page.goto(`${url}/?scenario=chat-default`);
       await device.waitFor();
+      await page.locator('.mp-conversation-item').first().click();
       await device.locator('.mp-thread-messages').waitFor();
       // Open the message action sheet (contextmenu = long-press parity).
       await device.locator('.mp-message-row:not(.mine) .mp-bubble').first().click({ button: 'right' });

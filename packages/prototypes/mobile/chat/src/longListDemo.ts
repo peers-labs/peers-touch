@@ -1,6 +1,6 @@
 import copy from '../../../../locales/en/common.json';
 import { demoGroups } from './data';
-import { GRADIENTS, type Contact, type Conversation, type Message } from './types';
+import type { Contact, Conversation, Message } from './types';
 
 const ordinal = (index: number) => String(index + 1).padStart(3, '0');
 
@@ -9,7 +9,6 @@ export const longListConversations: Conversation[] = Array.from({ length: 240 },
   key: `long-chat-${ordinal(index)}`,
   name: `${copy['mobile.chat.thread']} ${ordinal(index)}`,
   avatar: ordinal(index),
-  avatarGradient: GRADIENTS[index % GRADIENTS.length],
   lastMessage: `${copy['mobile.chat.threadReplyPlaceholder']} ${ordinal(index)}`,
   time: '09:41',
   unread: 0,
@@ -19,7 +18,6 @@ export const longListContacts: Contact[] = Array.from({ length: 240 }, (_, index
   key: `long-contact-${ordinal(index)}`,
   name: `${copy['mobile.contacts.profile']} ${ordinal(index)}`,
   avatar: ordinal(index),
-  avatarGradient: GRADIENTS[index % GRADIENTS.length],
   note: copy['mobile.contacts.alreadyFriend'],
 }));
 
@@ -36,7 +34,6 @@ export const longListRequests: RequestRowSample[] = Array.from({ length: 240 }, 
     key: `long-request-peer-${ordinal(index)}`,
     name: `${copy['mobile.contacts.profile']} R${ordinal(index)}`,
     avatar: ordinal(index),
-    avatarGradient: GRADIENTS[index % GRADIENTS.length],
     note: copy['mobile.contacts.requestPending'],
   },
   direction: index % 2 === 0 ? 'incoming' : 'outgoing',
@@ -47,7 +44,6 @@ export const longListMembers: Contact[] = Array.from({ length: 240 }, (_, index)
   key: `long-member-${ordinal(index)}`,
   name: `${copy['mobile.group.roleMember']} ${ordinal(index)}`,
   avatar: ordinal(index),
-  avatarGradient: GRADIENTS[index % GRADIENTS.length],
   note: copy['mobile.group.roleMember'],
 }));
 

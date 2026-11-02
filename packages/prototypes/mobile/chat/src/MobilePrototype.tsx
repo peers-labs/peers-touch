@@ -1,13 +1,14 @@
 /**
- * Mobile Prototype — polished IM prototype for Peers-Touch.
+ * Mobile Prototype — pine-glass mobile grammar.
  *
  * Entry state machine: station-selection → access-gate-chain → shell.
  * Shell tabs: Chats / Moments / Contacts / Me.
- * Chat supports full-screen thread with composer, reply, action sheet.
+ * The UIProvider carries the same north-star candidate theme as the desktop
+ * prototype; evidence controls live outside the device.
  */
 
-import { useMemo, useReducer, useState, type CSSProperties } from 'react';
-import { ConfigProvider, Segmented, Select, Typography, theme as antdTheme } from 'antd';
+import { useMemo, useReducer, useState } from 'react';
+import { northStarVariables, Segmented, Select, UIProvider } from '@peers-touch/ui';
 import type { LaunchState, MobileUiEvidence, StationEntry } from './types';
 import { demoStations } from './data';
 import {
@@ -33,14 +34,7 @@ import {
   isPrototypeCallScenario,
   type PrototypeCallScenario,
 } from './callPrototype';
-import {
-  createAntdTokenTheme,
-  createDesignTokenCssVariables,
-  type DesignThemeMode,
-} from '../../../shared/design-tokens';
 import './mobilePrototype.css';
-
-const { Text } = Typography;
 
 type EvidenceScenario =
   | 'journey'
@@ -181,7 +175,7 @@ export function MobilePrototype() {
   const [evidenceScenario, setEvidenceScenario] = useState<EvidenceScenario>(
     getInitialEvidenceScenario,
   );
-  const [themeMode, setThemeMode] = useState<DesignThemeMode>('light');
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
   const [socialDemo, dispatchSocialDemo] = useReducer(socialDemoReducer, evidenceScenario, createSocialDemo);
   const [searchState, dispatchSearch] = useReducer(searchDemoReducer, emptySearchDemo);
   const socialScenario = socialEvidenceScenarios.find((scenario) => scenario === evidenceScenario);
@@ -198,14 +192,6 @@ export function MobilePrototype() {
     [evidenceScenario],
   );
   const isMobileUiScenario = mobileUiScenarios.includes(evidenceScenario as MobileUiScenario);
-  const theme = useMemo(() => ({
-    ...createAntdTokenTheme(themeMode),
-    algorithm: themeMode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-  }), [themeMode]);
-  const cssVariables = useMemo(
-    () => createDesignTokenCssVariables(themeMode) as CSSProperties,
-    [themeMode],
-  );
 
   const activeStation = useMemo(
     () => stations.find((s) => s.url === activeUrl),
@@ -243,11 +229,11 @@ export function MobilePrototype() {
   }
 
   function handleRemoveStation(url: string) {
-    setStations((prev) => prev.filter((s) => s.url !== url));
-    if (activeUrl === url) {
-      const remaining = stations.filter((s) => s.url !== url);
-      setActiveUrl(remaining.length > 0 ? remaining[0].url : '');
-    }
+    setStations((prev) => {
+      const remaining = prev.filter((s) => s.url !== url);
+      if (activeUrl === url) setActiveUrl(remaining.length > 0 ? remaining[0]!.url : '');
+      return remaining;
+    });
   }
 
   function handleAddStation(newUrl: string) {
@@ -314,7 +300,8 @@ export function MobilePrototype() {
           deliveryRecovery={evidenceScenario === 'chat-delivery-recovery'}
           callScenario={callScenario}
           searchDemo={evidenceScenario === 'search-controlled'
-            ? { state: searchState, dispatch: dispatchSearch } : undefined}
+            ? { state: searchState, dispatch: dispatchSearch }
+            : undefined}
           socialScenario={socialScenario}
           momentsScenario={momentsScenario}
           socialDemo={socialDemo}
@@ -357,65 +344,64 @@ export function MobilePrototype() {
   }
 
   return (
-    <ConfigProvider theme={theme}>
-      <div
-        className="mobile-prototype-scope"
-        data-theme={themeMode}
-        style={cssVariables}
-      >
-        <div className="mp-workbench">
-          <div className="mp-evidence-toolbar">
-            <Text strong>Evidence scenario</Text>
-            <Select
-              aria-label="Evidence scenario"
-              value={evidenceScenario}
-              options={evidenceScenarioOptions}
-              onChange={selectEvidenceScenario}
-            />
-            <Text strong>Theme</Text>
-            <Segmented
-              aria-label="Preview theme"
-              value={themeMode}
-              options={[
-                { label: 'Light', value: 'light' },
-                { label: 'Dark', value: 'dark' },
-              ]}
-              onChange={(value) => setThemeMode(value as DesignThemeMode)}
-            />
+    <UIProvider
+      theme={themeMode}
+      className="mobile-prototype-scope"
+      style={northStarVariables(themeMode)}
+    >
+      <div className="mp-workbench">
+        <div className="mp-evidence-toolbar">
+          <span>Scenario</span>
+          <Select
+            aria-label="Evidence scenario"
+            label="Evidence scenario"
+            value={evidenceScenario}
+            options={evidenceScenarioOptions}
+            onValueChange={(value) => selectEvidenceScenario(value as EvidenceScenario)}
+          />
+          <Segmented
+            aria-label="Preview theme"
+            label="Preview theme"
+            value={themeMode}
+            options={[
+              { label: 'Light', value: 'light' },
+              { label: 'Dark', value: 'dark' },
+            ]}
+            onValueChange={(value) => setThemeMode(value as 'light' | 'dark')}
+          />
+        </div>
+        {longLists && (
+          <div className="mp-evidence-controls" role="note">
+            Sample only: 240 conversations / 240 contacts / 240 pending requests / 240 members / 480 messages. No backend or native proof.
           </div>
-          {longLists && (
-            <div className="mp-evidence-controls" role="note">
-              <Text>Sample only: 240 conversations / 240 contacts / 240 pending requests / 240 members / 480 messages. No backend or native proof.</Text>
-            </div>
+        )}
+        {evidenceScenario === 'search-controlled' && (
+          <SearchEvidenceControls state={searchState} dispatch={dispatchSearch} />
+        )}
+        {!longLists && (socialScenario || launchState === 'shell') && (
+          <SocialEvidenceControls state={socialDemo} dispatch={dispatchSocialDemo} />
+        )}
+        <div className="mp-scene-label">
+          {(evidenceScenario === 'journey' ? scenes : ['Evidence', evidenceScenario]).map(
+            (scene, index) => (<span key={scene}>{index + 1}. {scene}</span>),
           )}
-          {evidenceScenario === 'search-controlled' && (
-            <SearchEvidenceControls state={searchState} dispatch={dispatchSearch} />
-          )}
-          {!longLists && (socialScenario || launchState === 'shell') && (
-            <SocialEvidenceControls state={socialDemo} dispatch={dispatchSocialDemo} />
-          )}
-          <div className="mp-scene-label">
-            {(evidenceScenario === 'journey' ? scenes : ['Evidence', evidenceScenario]).map(
-              (scene, index) => (<span key={scene}>{index + 1}. {scene}</span>),
-            )}
+        </div>
+
+        <div className="mp-device" role="region" aria-label="Mobile device preview">
+          <div className="mp-status-bar">
+            <span>9:41</span>
+            <span className="mp-status-right">
+              <span className="mp-status-text">5G</span>
+              <span className="mp-status-text">100%</span>
+            </span>
           </div>
 
-          <div className="mp-device" role="region" aria-label="Mobile device preview">
-            <div className="mp-status-bar">
-              <span>9:41</span>
-              <span className="mp-status-right">
-                <span className="mp-status-text">5G</span>
-                <span className="mp-status-text">100%</span>
-              </span>
-            </div>
-
-            <div className="mp-app-shell">
-              {renderSurface()}
-            </div>
+          <div className="mp-app-shell">
+            {renderSurface()}
           </div>
         </div>
       </div>
-    </ConfigProvider>
+    </UIProvider>
   );
 }
 

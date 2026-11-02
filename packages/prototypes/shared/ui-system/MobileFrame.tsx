@@ -37,10 +37,10 @@ export function MobileFrame() {
           <section className="nb-section">
             <header className="nb-section-head"><h2>回迁状态</h2></header>
             <div className="nb-section-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <span className="nb-status" data-status="gap">基础件债务 · antd</span>
+              <span className="nb-status" data-status="ok">pine 语法 · peers-ui</span>
               <p className="nb-card-note" style={{ margin: 0 }}>
-                回迁顺序按面的复用价值：Segmented/Switch/TextField 等已验收组件先行，
-                手机特有组合件（动作面板、全屏线程）先入套件再替换。
+                与桌面北极星共用同一套 @peers-touch/ui 与 northStarVariables；
+                呈现层禁止 antd/lucide 直引，手机组合件（底部动作面板、全屏线程、64px 列表密度）由 scripts/check-layout.mjs 机器门守护。
               </p>
             </div>
           </section>

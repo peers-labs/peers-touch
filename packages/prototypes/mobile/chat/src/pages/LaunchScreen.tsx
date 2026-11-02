@@ -1,5 +1,4 @@
-import { Button } from 'antd';
-import { RefreshCw, WifiOff } from 'lucide-react';
+import { Button, Icon } from '@peers-touch/ui';
 import type { StationEntry } from '../types';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { StationSelector } from '../components/StationSelector';
@@ -32,7 +31,7 @@ export function LaunchScreen({
           <div className="mp-launch-brand-copy">
             <span>Peers</span>
             <h1 id="mp-launch-title">Connect Your Station</h1>
-            <p>Choose Station</p>
+            <p>Choose a recent Station to continue</p>
           </div>
         </header>
 
@@ -46,7 +45,9 @@ export function LaunchScreen({
             showRemovalConfirmation={showRemovalConfirmation}
           />
           <div className="mp-launch-actions">
-            <Button block size="large" type="primary" disabled={!activeUrl} onClick={onContinue}>
+            <Button actionId="launch.continue" emphasis="primary" fullWidth
+              availability={!activeUrl ? { kind: 'disabled', reason: 'Choose a Station first' } : undefined}
+              onActivate={onContinue}>
               {activeStation ? `Open ${activeStation.label}` : 'Continue'}
             </Button>
           </div>
@@ -55,13 +56,14 @@ export function LaunchScreen({
 
       {offline && (
         <section className="mp-launch-offline" role="status">
-          <WifiOff size={17} aria-hidden="true" />
+          <Icon iconId="wifi-off" size={17} />
           <div>
             <strong>Offline mode</strong>
             <span>No network connection. Retry or choose another Station.</span>
             <div className="mp-launch-offline-actions">
-              <Button type="primary" size="small" icon={<RefreshCw size={14} />}>Retry</Button>
-              <Button size="small">Change Station</Button>
+              <Button actionId="launch.retry" emphasis="primary" density="compact"
+                leading={<Icon iconId="refresh-ccw" size={14} />}>Retry</Button>
+              <Button actionId="launch.change" density="compact">Change Station</Button>
             </div>
           </div>
         </section>

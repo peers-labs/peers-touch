@@ -1,4 +1,4 @@
-import { AlertCircle, MessageCircle, RefreshCw } from 'lucide-react';
+import { Icon } from '@peers-touch/ui';
 import type { ReactNode } from 'react';
 
 export function ConversationListSkeleton() {
@@ -44,10 +44,9 @@ export function InlineSurfaceNotice({
   actionLabel?: string;
   onAction?: () => void;
 }) {
-  const Icon = tone === 'error' ? AlertCircle : RefreshCw;
   return (
     <div className={`mp-inline-surface-notice ${tone}`} role="status" aria-live="polite">
-      <Icon size={15} aria-hidden="true" />
+      <Icon iconId={tone === 'error' ? 'error' : 'refresh-ccw'} size={15} />
       <span className="mp-inline-surface-copy">
         <strong>{title}</strong>
         {detail && <span>{detail}</span>}
@@ -75,13 +74,13 @@ export function RouteSurfaceState({
   return (
     <div className="mp-route-surface-state" role="status">
       <span className="mp-route-surface-icon" aria-hidden="true">
-        {icon ?? <MessageCircle size={22} />}
+        {icon ?? <Icon iconId="message-circle" size={22} />}
       </span>
       <strong>{title}</strong>
       <span>{detail}</span>
       {actionLabel && onAction && (
         <button type="button" onClick={onAction}>
-          <RefreshCw size={16} aria-hidden="true" />
+          <Icon iconId="refresh-ccw" size={16} />
           {actionLabel}
         </button>
       )}
