@@ -199,6 +199,17 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
             [artifactId]: acceptances.acceptances,
           },
         }));
+        // Guarantee a body for the selected version or the head. Doing the
+        // fetch here (instead of relying on openPanel sequencing) means the
+        // panel can never render open without its bytes during bootstrap.
+        const wantedId = get().selectedVersionId
+          ?? versions.versions[versions.versions.length - 1]?.versionId;
+        if (wantedId && get().bodyByVersion[wantedId] === undefined) {
+          const bodyResponse = await api.getTaskArtifactVersionBody(wantedId);
+          set((state) => ({
+            bodyByVersion: { ...state.bodyByVersion, [wantedId]: bodyResponse.body },
+          }));
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         log.warn('taskArtifacts', 'loadDetail failed', { artifactId, error: message });
