@@ -54,9 +54,29 @@ export type Conversation = {
   online?: boolean;
   pinned?: boolean;
   muted?: boolean;
-  members?: { name: string; tone: string; role?: 'owner' | 'admin' | 'member' }[];
-  notice?: string;
+  members?: GroupMemberSeed[];
+  /** Viewer's nickname inside this group (desktop updateMemberSettings). */
+  myNickname?: string;
+  /** Per-conversation chat background preset id ('default' = none). */
+  background?: string;
+  /** Locally uploaded background data URL (prototype transport; real = cid). */
+  backgroundImage?: string;
+  /** Locally uploaded group avatar data URL (prototype transport; real = avatarObjectId). */
+  avatarImage?: string;
 };
+
+export type GroupMemberSeed = { name: string; tone: string; role?: 'owner' | 'admin' | 'member' };
+
+/** Chat background presets mirror the desktop detail panel selector. */
+export const CHAT_BACKGROUND_PRESETS: { id: string; gradient: string }[] = [
+  { id: 'dusk', gradient: 'linear-gradient(135deg,#f6d8b8,#e7a98e 45%,#b08bb8)' },
+  { id: 'mint', gradient: 'linear-gradient(135deg,#cdeede,#a7d7cf 50%,#bcd0f2)' },
+  { id: 'night', gradient: 'radial-gradient(120% 120% at 20% 0%,#3a4a63,#1c2536 70%)' },
+];
+
+/** Local viewer identity (seeds are frozen local data). Tone matches the moments viewer ink. */
+export const VIEWER_NAME = '林野';
+export const VIEWER_TONE = '#22302a';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -64,10 +84,10 @@ const MIN = 60_000;
 export const CONVERSATIONS: Conversation[] = [
   { id: 'cv-qun', name: '小区生活群', last: '周禾：周末书架见', lastAt: '09:32', lastTs: NOW - 32 * MIN, unread: 4, tone: '#a1824b', kind: 'group',
     pinned: true,
-    notice: '周末 16:00 在共享书架交换书种，记得带想交换的书与环保袋。',
     members: [
-      { name: '周禾', tone: '#3f6550', role: 'owner' },
+      { name: VIEWER_NAME, tone: VIEWER_TONE, role: 'owner' },
       { name: '苏禾', tone: '#5d5a44', role: 'admin' },
+      { name: '周禾', tone: '#3f6550' },
       { name: '林晚', tone: '#c98a5a' },
       { name: '陈屿', tone: '#3f6550' },
     ] },
@@ -75,9 +95,9 @@ export const CONVERSATIONS: Conversation[] = [
   { id: 'cv-linwan', name: '林晚', last: '诗集散会我帮你留了位置', lastAt: '08:40', lastTs: NOW - 84 * MIN, unread: 2, tone: '#4a6170', kind: 'person', online: true },
   { id: 'cv-suhe', name: '苏禾', last: '薄荷分盆成功了，谢谢你', lastAt: '昨天', lastTs: NOW - 26 * 3600_000, unread: 0, tone: '#5d5a44', kind: 'person', muted: true, online: false },
   { id: 'cv-seed', name: '种子交换群', last: '本周日种子交换，记得来', lastAt: '昨天', lastTs: NOW - 30 * 3600_000, unread: 0, tone: '#7d8c4a', kind: 'group',
-    notice: '本周日种子交换，地点在社区小花园，雨天顺延。',
     members: [
-      { name: '苏禾', tone: '#5d5a44', role: 'owner' },
+      { name: VIEWER_NAME, tone: VIEWER_TONE, role: 'owner' },
+      { name: '苏禾', tone: '#5d5a44', role: 'admin' },
       { name: '老周', tone: '#8a7a55' },
       { name: '陈屿', tone: '#3f6550' },
     ] },
@@ -134,10 +154,6 @@ export type FriendRequest = {
   /** Outgoing requests were sent by the local user; they render as "sent". */
   direction?: 'in' | 'out';
 };
-
-/** Local viewer identity (seeds are frozen local data). Tone matches the moments viewer ink. */
-export const VIEWER_NAME = '林野';
-export const VIEWER_TONE = '#22302a';
 
 export const FRIEND_REQUESTS: FriendRequest[] = [
   { id: 'fr-1', name: '阿砚', tone: '#7a6a92', station: '松绿书屋站', greeting: '在植物医院帖里聊过，想加个邻居', state: 'pending' },

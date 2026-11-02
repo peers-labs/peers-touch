@@ -131,6 +131,44 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
     setSessions(list => list.map(c => (c.id === id ? { ...c, name: next } : c)));
   };
 
+  // Detail-panel group administration (desktop ChatDetailPanel parity; all
+  // mutations are local prototype state).
+  const patchConversation = (id: string, patch: Partial<Conversation>) =>
+    setSessions(list => list.map(c => (c.id === id ? { ...c, ...patch } : c)));
+  const setGroupAvatarImage = (id: string, avatarImage: string) => patchConversation(id, { avatarImage });
+  const setMyNickname = (id: string, myNickname: string) => patchConversation(id, { myNickname: myNickname.trim() || undefined });
+  const setChatBackground = (id: string, background: string, backgroundImage?: string) =>
+    patchConversation(id, { background, backgroundImage });
+  const addGroupMembers = (id: string, added: { name: string; tone: string }[]) =>
+    setSessions(list => list.map(c => {
+      if (c.id !== id || c.kind !== 'group') return c;
+      const existing = new Set((c.members ?? []).map(m => m.name));
+      const fresh = added.filter(m => !existing.has(m.name)).map(m => ({ ...m, role: 'member' as const }));
+      return fresh.length ? { ...c, members: [...(c.members ?? []), ...fresh] } : c;
+    }));
+  const removeGroupMember = (id: string, name: string) =>
+    setSessions(list => list.map(c => c.id === id
+      ? { ...c, members: (c.members ?? []).filter(m => m.name !== name) }
+      : c));
+  const setGroupMemberRole = (id: string, name: string, role: 'owner' | 'admin' | 'member') =>
+    setSessions(list => list.map(c => {
+      if (c.id !== id) return c;
+      // Owner is unique: promoting/transferring demotes the current owner to member.
+      const members = (c.members ?? []).map(m => {
+        if (m.name === name) return { ...m, role };
+        if (role === 'owner' && m.role === 'owner') return { ...m, role: 'member' as const };
+        return m;
+      });
+      return { ...c, members };
+    }));
+  // Owner dissolves; every other role leaves. Both converge on removing the
+  // local conversation in this prototype (desktop: dissolve/leave commands).
+  const dissolveGroup = (id: string) => deleteConversation(id);
+  const leaveGroup = (id: string) =>
+    setSessions(list => list.map(c => c.id === id
+      ? { ...c, members: (c.members ?? []).filter(m => m.name !== VIEWER_NAME) }
+      : c));
+
   const sendMessage = (payload: {
     text: string;
     attachments: ChatMessage['attachments'];
@@ -338,6 +376,7 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
             conversation={selectedConversation}
             messages={messagesByConv[selectedConversation.id] ?? []}
             conversations={sessions}
+            people={friends}
             call={call && call.conversationId === selectedConversation.id ? call : null}
             peerTyping={typingConvId === selectedConversation.id}
             onEndCall={() => setCall(null)}
@@ -355,6 +394,14 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
             onClearHistory={clearMessages}
             onDeleteConversation={deleteConversation}
             onRenameConversation={renameConversation}
+            onSetGroupAvatar={setGroupAvatarImage}
+            onSetMyNickname={setMyNickname}
+            onSetChatBackground={setChatBackground}
+            onAddGroupMembers={addGroupMembers}
+            onRemoveGroupMember={removeGroupMember}
+            onSetGroupMemberRole={setGroupMemberRole}
+            onDissolveGroup={dissolveGroup}
+            onLeaveGroup={leaveGroup}
             onForward={forwardMessage}
             onStartCall={kind => setCall({ conversationId: selectedConversation.id, kind, direction: 'out' })} />
         ) : (

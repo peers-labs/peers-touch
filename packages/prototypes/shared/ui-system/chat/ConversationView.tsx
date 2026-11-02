@@ -5,7 +5,7 @@
  * action bar, and the rich composer. Thread/detail/search sheets and the
  * call overlay stay one level up in this file.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link as LinkIcon, Pin, Undo2 } from 'lucide-react';
 import { Avatar, Empty } from '@peers-touch/ui';
 import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
@@ -32,8 +32,11 @@ function renderRichText(text: string) {
 
 export function ConversationView({ conversation, messages, call, peerTyping, onEndCall, onSimulateIncoming,
   onSend, onTogglePin, onToggleMute, onReact, onEditMessage, onRecallMessage, onPinMessage,
-  onRetryMessage, onDelete, onForward, onStartCall, onBack, conversations,
-  onClearHistory, onDeleteConversation, onRenameConversation }: {
+  onRetryMessage, onDelete, onForward, onStartCall, onBack, conversations, people,
+  onClearHistory, onDeleteConversation, onRenameConversation,
+  onSetGroupAvatar, onSetMyNickname, onSetChatBackground,
+  onAddGroupMembers, onRemoveGroupMember, onSetGroupMemberRole,
+  onDissolveGroup, onLeaveGroup }: {
   conversation: Conversation;
   messages: ChatMessage[];
   call: { conversationId: string; kind: CallKind; direction: 'in' | 'out'; multi?: boolean } | null;
@@ -53,9 +56,19 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onStartCall: (kind: CallKind) => void;
   onBack: () => void;
   conversations: Conversation[];
+  /** Station-local friend candidates for the group add-member dialog. */
+  people: { id?: string; name: string; tone: string }[];
   onClearHistory: (conversationId: string) => void;
   onDeleteConversation: (conversationId: string) => void;
   onRenameConversation: (conversationId: string, name: string) => void;
+  onSetGroupAvatar: (conversationId: string, avatarImage: string) => void;
+  onSetMyNickname: (conversationId: string, nickname: string) => void;
+  onSetChatBackground: (conversationId: string, background: string, backgroundImage?: string) => void;
+  onAddGroupMembers: (conversationId: string, members: { name: string; tone: string }[]) => void;
+  onRemoveGroupMember: (conversationId: string, name: string) => void;
+  onSetGroupMemberRole: (conversationId: string, name: string, role: 'owner' | 'admin' | 'member') => void;
+  onDissolveGroup: (conversationId: string) => void;
+  onLeaveGroup: (conversationId: string) => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -128,7 +141,11 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   };
 
   return (
-    <section className="sk-conv-view" aria-label={t('conv.aria', { name: conversation.name })}>
+    <section className="sk-conv-view" aria-label={t('conv.aria', { name: conversation.name })}
+      data-chat-background={conversation.backgroundImage ? 'image' : (conversation.background ?? 'default')}
+      style={conversation.backgroundImage
+        ? { '--sk-chat-bg-image': `url("${conversation.backgroundImage}")` } as CSSProperties
+        : undefined}>
       <ConversationHeader conversation={conversation}
         infoOpen={infoOpen}
         onBack={onBack}
@@ -277,7 +294,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
       {toast && <div className="sk-chat-toast" role="status">{toast}</div>}
 
       {infoOpen && (
-        <DetailSheet conversation={conversation} messages={messages}
+        <DetailSheet conversation={conversation} messages={messages} people={people}
           onClose={() => setInfoOpen(false)}
           onTogglePin={() => onTogglePin(conversation.id)}
           onToggleMute={() => onToggleMute(conversation.id)}
@@ -285,6 +302,14 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
           onClearHistory={() => onClearHistory(conversation.id)}
           onDeleteConversation={() => onDeleteConversation(conversation.id)}
           onRenameConversation={name => onRenameConversation(conversation.id, name)}
+          onSetGroupAvatar={url => onSetGroupAvatar(conversation.id, url)}
+          onSetMyNickname={name => onSetMyNickname(conversation.id, name)}
+          onSetChatBackground={(background, image) => onSetChatBackground(conversation.id, background, image)}
+          onAddGroupMembers={members => onAddGroupMembers(conversation.id, members)}
+          onRemoveGroupMember={name => onRemoveGroupMember(conversation.id, name)}
+          onSetGroupMemberRole={(name, role) => onSetGroupMemberRole(conversation.id, name, role)}
+          onDissolve={() => onDissolveGroup(conversation.id)}
+          onLeave={() => onLeaveGroup(conversation.id)}
           onSimulateIncoming={conversation.kind === 'person' ? onSimulateIncoming : undefined} />
       )}
       {threadId && threadMessage && (

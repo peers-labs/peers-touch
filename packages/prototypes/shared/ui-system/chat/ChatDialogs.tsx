@@ -199,7 +199,7 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
       onCreate({
         id: `local-${Date.now()}`, name: name.trim(), last: t('group.createdLast'), lastAt: t('time.justNow'),
         lastTs: Date.now(), unread: 0, tone: '#7d8c4a', kind: 'group',
-        members: [{ name: '林野', tone: '#22302a' }, ...members],
+        members: [{ name: '林野', tone: '#22302a', role: 'owner' }, ...members],
       });
       close();
     }, 600);

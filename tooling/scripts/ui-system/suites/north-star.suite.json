@@ -3426,7 +3426,7 @@
     },
     {
       "id": "ui.prototype.north-star.detail-panel",
-      "title": "增量29：群资料卡——统一群像/无角色角标/群名群公告行/开关/媒体文件/危险区",
+      "title": "增量44：群资料对齐真身——共线标题/纯图标行/成员含自己/权限卡/无群公告/添加与管理/解散",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -3443,7 +3443,53 @@
         },
         {
           "op": "click",
-          "target": "[data-detail-panel] .pt-switch:first-child"
+          "target": "[data-profile-muted]"
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "head-lines-collinear",
+            "type": "anchoredTo",
+            "target": ".sk-side-head",
+            "owner": ".sk-chat-head",
+            "align": "bottom",
+            "tolerance": 2
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "viewer-is-member",
+            "type": "count",
+            "target": "[data-profile-members] [data-self='true']",
+            "equals": 1
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "no-icon-tiles",
+            "type": "count",
+            "target": "[data-detail-panel] .sk-setting-icon",
+            "equals": 0
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "plain-icons",
+            "type": "count",
+            "target": "[data-detail-panel] .sk-detail-icon",
+            "gte": 7
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "no-announcement-row",
+            "type": "missing",
+            "target": "[data-profile-notice]"
+          }
         }
       ],
       "oracles": [
@@ -3458,10 +3504,20 @@
           "target": "[data-profile-identity]"
         },
         {
+          "id": "hero-composite",
+          "type": "exists",
+          "target": "[data-profile-identity] .sk-group-avatar"
+        },
+        {
+          "id": "hero-camera",
+          "type": "exists",
+          "target": "[data-action-id='profile.avatar-edit']"
+        },
+        {
           "id": "member-cells",
           "type": "count",
           "target": "[data-profile-members] .sk-profile-member",
-          "equals": 4
+          "equals": 5
         },
         {
           "id": "no-role-badges",
@@ -3469,24 +3525,43 @@
           "target": ".sk-role-badge"
         },
         {
-          "id": "hero-composite",
+          "id": "permission-card",
           "type": "exists",
-          "target": "[data-profile-identity] .sk-group-avatar"
+          "target": "[data-profile-permission]"
         },
         {
-          "id": "list-composite",
-          "type": "exists",
-          "target": ".sk-conv-row:first-child .sk-group-avatar"
+          "id": "owner-tag",
+          "type": "attr",
+          "target": "[data-profile-permission] .sk-profile-role-tag",
+          "attr": "data-role",
+          "equals": "owner"
         },
         {
-          "id": "group-name-row",
-          "type": "exists",
-          "target": "[data-profile-edit-name]"
+          "id": "hero-name-editable",
+          "type": "attr",
+          "target": "[data-profile-edit-name]",
+          "attr": "data-profile-edit-name",
+          "equals": "true"
         },
         {
-          "id": "group-notice-row",
+          "id": "add-member-entry",
           "type": "exists",
-          "target": "[data-profile-notice]"
+          "target": "[data-action-id='profile.add-member-open']"
+        },
+        {
+          "id": "manage-entry",
+          "type": "exists",
+          "target": "[data-action-id='profile.manage-members']"
+        },
+        {
+          "id": "nickname-row",
+          "type": "exists",
+          "target": "[data-profile-nickname]"
+        },
+        {
+          "id": "background-row",
+          "type": "exists",
+          "target": "[data-profile-background]"
         },
         {
           "id": "two-switches",
@@ -3508,9 +3583,9 @@
           "target": "[data-profile-media] .sk-profile-empty"
         },
         {
-          "id": "danger-zone",
+          "id": "dissolve-entry",
           "type": "exists",
-          "target": "[data-profile-danger] [data-action-id='profile.delete-conversation']"
+          "target": "[data-action-id='profile.dissolve-group']"
         },
         {
           "id": "muted-synced",
@@ -3529,7 +3604,7 @@
     },
     {
       "id": "ui.prototype.north-star.profile-group-rename",
-      "title": "增量29：资料卡可改群名，保存后头部、列表、资料卡同步更新",
+      "title": "增量44：Hero 群名内联编辑（非弹窗），Enter 后头部/资料/列表同步",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -3559,18 +3634,17 @@
           "value": "小区生活圈（新书架）"
         },
         {
-          "op": "click",
-          "scope": "global",
-          "target": "[data-action-id='profile.name-save']"
+          "op": "press",
+          "key": "Enter"
         },
         {
           "op": "wait",
-          "ms": 150
+          "ms": 200
         }
       ],
       "oracles": [
         {
-          "id": "dialog-closed",
+          "id": "inline-editor-closed",
           "type": "missing",
           "scope": "global",
           "target": "input[data-group-name-input]"
@@ -3582,9 +3656,9 @@
           "contains": "新书架"
         },
         {
-          "id": "profile-row-updated",
+          "id": "hero-updated",
           "type": "textContains",
-          "target": "[data-profile-edit-name] .sk-setting-value",
+          "target": "[data-profile-edit-name]",
           "contains": "新书架"
         },
         {
@@ -3597,8 +3671,8 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.profile-group-notice",
-      "title": "增量29：群公告行打开公告内容（来自种子，不发明业务文本）",
+      "id": "ui.prototype.north-star.profile-nickname",
+      "title": "增量44：我在本群的昵称行内编辑，成员格同步显示",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -3615,7 +3689,279 @@
         },
         {
           "op": "click",
-          "target": "[data-profile-notice]"
+          "target": "[data-action-id='profile.edit-nickname']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "type",
+          "scope": "global",
+          "target": "input[data-nickname-input]",
+          "value": "野哥"
+        },
+        {
+          "op": "press",
+          "key": "Enter"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "self-cell-renamed",
+          "type": "textContains",
+          "target": "[data-profile-members] [data-self='true'] .sk-profile-member-name",
+          "contains": "野哥"
+        },
+        {
+          "id": "row-value-saved",
+          "type": "textContains",
+          "target": "[data-profile-nickname] .sk-setting-value",
+          "contains": "野哥"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.info-close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.profile-add-member",
+      "title": "增量44：添加成员弹层勾选本站联系人，确认后群成员格增加",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='profile.add-member-open']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "candidate-listed",
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-add-member-list] [data-contact-name=\"老周\"]"
+          }
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-add-member-list] [data-contact-name=\"老周\"]"
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='profile.add-ok']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "dialog-closed",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-add-member-list]"
+        },
+        {
+          "id": "member-count-up",
+          "type": "count",
+          "target": "[data-profile-members] .sk-profile-member",
+          "equals": 6
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.info-close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.profile-manage-members",
+      "title": "增量44：管理成员——取消管理员即时降级；移除两段确认后人数-1（owner 操作）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='profile.manage-members']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-action-id='profile.member-role.苏禾']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "admin-demoted",
+            "type": "attr",
+            "scope": "global",
+            "target": "[data-manage-member=\"苏禾\"]",
+            "attr": "data-manage-role",
+            "equals": "member"
+          }
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-action-id='profile.member-remove.周禾']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "remove-confirm-open",
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-member-confirm=\"remove\"]"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='profile.member-confirm-ok']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "member-row-gone",
+            "type": "missing",
+            "scope": "global",
+            "target": "[data-manage-member=\"周禾\"]"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='profile.manage-done']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "member-count-down",
+          "type": "count",
+          "target": "[data-profile-members] .sk-profile-member",
+          "equals": 4
+        },
+        {
+          "id": "suhe-no-role-label",
+          "type": "missing",
+          "target": "[data-profile-members] [data-role='admin']"
+        },
+        {
+          "id": "still-owner",
+          "type": "attr",
+          "target": "[data-detail-panel]",
+          "attr": "data-my-role",
+          "equals": "owner"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.info-close']"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.profile-chat-background",
+      "title": "增量44：聊天背景预设写入会话，恢复默认后属性归零",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='profile.background']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-bg-preset=\"mint\"]"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "bg-applied",
+            "type": "attr",
+            "target": ".sk-conv-view",
+            "attr": "data-chat-background",
+            "equals": "mint"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='profile.bg-clear']"
         },
         {
           "op": "wait",
@@ -3624,25 +3970,81 @@
       ],
       "oracles": [
         {
-          "id": "notice-dialog",
-          "type": "exists",
-          "scope": "global",
-          "target": "[data-profile-notice-body]"
-        },
-        {
-          "id": "notice-content",
-          "type": "textContains",
-          "scope": "global",
-          "target": "[data-profile-notice-body]",
-          "contains": "书种"
+          "id": "bg-reset",
+          "type": "attr",
+          "target": ".sk-conv-view",
+          "attr": "data-chat-background",
+          "equals": "default"
         }
       ],
       "finalizers": [
         {
           "op": "clickGlobal",
-          "target": "[data-action-id='profile.notice-close']"
+          "target": "[data-action-id='profile.bg-done']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.info-close']"
         }
       ]
+    },
+    {
+      "id": "ui.prototype.north-star.profile-dissolve-group",
+      "title": "增量44：群主危险区为解散群聊，两段确认后会话从列表移除",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-conv-row:first-child"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='chat.open-info']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='profile.dissolve-group']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "confirm-open",
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-profile-confirm=\"dissolve\"]"
+          }
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[data-action-id='profile.confirm-ok']"
+        },
+        {
+          "op": "wait",
+          "ms": 250
+        }
+      ],
+      "oracles": [
+        {
+          "id": "panel-closed",
+          "type": "missing",
+          "target": "[data-detail-panel]"
+        },
+        {
+          "id": "session-removed",
+          "type": "count",
+          "target": ".sk-conv-rail .sk-conv-list .sk-conv-row",
+          "equals": 6
+        }
+      ],
+      "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.message-menu-flat-disabled",

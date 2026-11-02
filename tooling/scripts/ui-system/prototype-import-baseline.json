@@ -17,7 +17,7 @@
     "button": 2
   },
   "packages/prototypes/shared/ui-system/chat/ConversationPanels.tsx": {
-    "button": 6,
+    "button": 3,
     "input": 1
   },
   "packages/prototypes/shared/ui-system/chat/ConversationView.tsx": {
