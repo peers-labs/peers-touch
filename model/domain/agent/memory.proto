@@ -15,6 +15,17 @@ enum MemoryLayer {
   MEMORY_LAYER_ACTIVITY = 5;
 }
 
+// Lifecycle gate for durable memory. Heuristically extracted entries are born
+// CANDIDATE and must be human-confirmed before they can influence a Turn.
+// CONFIRMED entries are the only state consumed by retrieval; REJECTED entries
+// are retained for audit but never injected.
+enum MemoryStatus {
+  MEMORY_STATUS_UNSPECIFIED = 0;
+  MEMORY_STATUS_CANDIDATE = 1;
+  MEMORY_STATUS_CONFIRMED = 2;
+  MEMORY_STATUS_REJECTED = 3;
+}
+
 message MemoryItem {
   string memory_id = 1;
   string agent_id = 2;
@@ -34,6 +45,7 @@ message MemoryItem {
   int32 helpful_count = 16;
   int32 harmful_count = 17;
   bool is_frozen = 18;
+  MemoryStatus status = 19;
 }
 
 message MemorySnapshot {
@@ -43,6 +55,8 @@ message MemorySnapshot {
   google.protobuf.Timestamp captured_at = 4;
   string persona_content = 5;
   repeated MemoryItem relevant_items = 6;
+  // True when retrieval failed and no memory was intentionally injected.
+  bool degraded = 7;
 }
 
 message ListMemoriesRequest {
@@ -55,6 +69,9 @@ message ListMemoriesRequest {
   string since = 7;
   string until = 8;
   string period = 9;
+  // When unspecified the management list returns every lifecycle state;
+  // retrieval/consumption always reads CONFIRMED regardless of this filter.
+  MemoryStatus status = 10;
 }
 
 message ListMemoriesResponse {
@@ -237,4 +254,16 @@ message MemoryFeedbackResponse {
   string memory_id = 1;
   double trust_score = 2;
   bool helpful = 3;
+}
+
+// Human review of a heuristically extracted memory candidate. Only CONFIRMED
+// or REJECTED target states are accepted.
+message ReviewMemoryRequest {
+  string memory_id = 1;
+  string agent_id = 2;
+  MemoryStatus status = 3;
+}
+
+message ReviewMemoryResponse {
+  MemoryItem item = 1;
 }
