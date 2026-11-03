@@ -61,18 +61,12 @@ func init() {
 	accessgate.RegisterOAuthAvailability(configuredOAuthProviderAvailable)
 }
 
-// configuredOAuthProviderAvailable reports whether the reviewed OAuth
-// configuration contains at least one enabled provider with credentials. The
-// access gate advertises third-party sign-in only while this holds.
+// configuredOAuthProviderAvailable reports whether at least one enabled,
+// active provider has usable client credentials in the Station environment.
+// The access gate advertises third-party sign-in only while this holds.
 func configuredOAuthProviderAvailable(_ context.Context) bool {
-	oauthConfig := oauthOptions.Peers.Node.Server.Subserver.OAuth
-	if !oauthConfig.Enabled {
+	if !oauthOptions.Peers.Node.Server.Subserver.OAuth.Enabled {
 		return false
 	}
-	for _, provider := range oauthConfig.Providers {
-		if provider.Enabled && provider.HasCredentials {
-			return true
-		}
-	}
-	return false
+	return runtimeCredentialsAvailable()
 }
