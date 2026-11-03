@@ -39,6 +39,8 @@ pub struct ClaimVersionInput {
     pub adopted_attachment_refs: Vec<String>,
     #[serde(default)]
     pub client_idempotency_key: String,
+    #[serde(default)]
+    pub source_tool_call_id: String,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +81,14 @@ pub struct RecordCheckInput {
     #[serde(default)]
     pub environment: String,
     pub client_idempotency_key: String,
+    #[serde(default)]
+    pub source_tool_call_id: String,
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub command_exit_code: i32,
+    #[serde(default)]
+    pub command_output_sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -124,6 +134,7 @@ pub fn agent_task_artifact_claim_version(
         feedback_id: input.feedback_id,
         adopted_attachment_refs: input.adopted_attachment_refs,
         client_idempotency_key: input.client_idempotency_key,
+        source_tool_call_id: input.source_tool_call_id,
     };
     app::claim_version(state.station.client(), &token, &request)
 }
@@ -216,6 +227,10 @@ pub fn agent_task_artifact_check_record(
         detail: input.detail,
         environment: input.environment,
         client_idempotency_key: input.client_idempotency_key,
+        source_tool_call_id: input.source_tool_call_id,
+        command_exit_code: input.command_exit_code,
+        command_output_sha256: input.command_output_sha256,
+        command: input.command,
     };
     app::record_check(state.station.client(), &token, &request)
 }

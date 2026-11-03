@@ -341,7 +341,12 @@ fn execute_builtin(
         Some(allowed_roots),
         Some(tool_call_id),
     )
-    .map_err(|_| "CLIENT_CAPABILITY_EXECUTION_FAILED".to_string())
+    .map_err(|error| {
+        // Surface the typed device code (path/command/timeout) while keeping
+        // the human-readable detail in the worker log.
+        tracing::warn!(code = error.code, error = %error.message, "local capability tool failed");
+        error.code.to_string()
+    })
 }
 
 fn execute_mcp_capability(

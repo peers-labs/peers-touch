@@ -416,6 +416,28 @@ impl<'a> FencedExecutor<'a> {
                 "client_local_ref".to_string(),
                 serde_json::Value::String(artifact_id.clone()),
             );
+            // TW-D4 change facts: the device tool is the authoritative source
+            // of before/after digests and the unified diff; Station validates
+            // them again against the persisted artifact.
+            let change_type = artifact_string(object, "change_type").unwrap_or_default();
+            let before_sha256 = object
+                .get("before_sha256")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let before_size = object
+                .get("before_size")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            let unified_diff = object
+                .get("unified_diff")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let diff_truncated = object
+                .get("diff_truncated")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
             artifacts.push(TurnArtifact {
                 artifact_id,
                 turn_id: envelope.turn_id.clone(),
@@ -425,6 +447,11 @@ impl<'a> FencedExecutor<'a> {
                 name,
                 size: claimed_size,
                 sha256,
+                change_type,
+                before_sha256,
+                before_size,
+                unified_diff,
+                diff_truncated,
                 locator: Some(TurnArtifactLocator {
                     client_local_ref: local.artifact_ref,
                     client_device_id: self.lease.device_id.clone(),
