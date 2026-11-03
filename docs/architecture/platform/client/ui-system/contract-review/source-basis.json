@@ -1,0 +1,248 @@
+{
+  "kind": "peers-ui-contract-review-source-basis",
+  "status": "FROZEN_REVIEW_INPUT",
+  "canonicalCommit": "879e4d51133b7372272b2cba0037f04d63e73913",
+  "inventoryIdentity": {
+    "worktree": "peers-touch-show",
+    "peersCommit": "a82d313c964ebaf96d9ffec199d4cf3d9bb4a054",
+    "canonicalMasterCommit": "b6e481c69b718c40644fe3c922a1a73daa38ca16",
+    "canonicalMasterScannedSourceDigest": "sha256:6633de594a7da9ae44f7cb13a074cd6f3f100045690152c19e3884db9d908c50",
+    "scannedSourceDigest": "sha256:e7a681baa0e3ff0e20db81de2cacd7817418411370415c6c6106f5644cbe0a43",
+    "lobeUICommit": "a5441425c589bb5ff6b1a971acc209b6d66abda3",
+    "lobeHubCommit": "1aeb26ae2c7458325e241e2b377417b2404a754f",
+    "peersInstalledLobeUI": "5.25.0",
+    "installedLobeUIManifestDigest": "sha256:0a81cb993f6f46eeedf5f4f1d91256cd3cfcc4b04c445c2897560a27a62399f0",
+    "installedLobeUIRootDeclarationDigest": "sha256:9d331910622a15c8603e591d6990506c24deb316098b7c120420767c610ba7cc",
+    "latestLobeUI": "6.9.0",
+    "lobeHub": "2.2.20",
+    "typescript": "5.9.3"
+  },
+  "inventoryIsHistorical": true,
+  "authorityOrder": [
+    "explicit user scope",
+    "accepted Product/Client semantics",
+    "UI Identity grammar and values",
+    "platform refinements",
+    "operational knowledge",
+    "Skills as dispatch guidance",
+    "drafts and upstream references"
+  ],
+  "sources": [
+    {
+      "id": "basis.identity",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ui-identity/README.md",
+      "snapshotRef": "sources/identity.md",
+      "digest": "sha256:d3314670c5bfa6dd55e83b4de4efb36107a126a9d0437c34fd148482ca604082",
+      "lines": 181
+    },
+    {
+      "id": "basis.components",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ui-identity/components.md",
+      "snapshotRef": "sources/components.md",
+      "digest": "sha256:193d16a65db5a2b8dfd2efe49f1cac4cbb19d3eaa3312c8606bf31a90a6b698e",
+      "lines": 228
+    },
+    {
+      "id": "basis.tokens",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ui-identity/tokens.md",
+      "snapshotRef": "sources/tokens.md",
+      "digest": "sha256:30daa86978cfe9d57084bfe01f25f0e3e632c13a1e95565c7f501b16ee6b1525",
+      "lines": 190
+    },
+    {
+      "id": "basis.accessibility",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ui-identity/accessibility.md",
+      "snapshotRef": "sources/accessibility.md",
+      "digest": "sha256:e4ff3ec70ad7c160db54642f99781a901660560422ca3dedab3f1fe36757eee4",
+      "lines": 95
+    },
+    {
+      "id": "basis.interaction",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ui-identity/interaction.md",
+      "snapshotRef": "sources/interaction.md",
+      "digest": "sha256:ae712b2127d98469bc77933a0d18ff1ae1b7688ef686aeec0f787d05cce6db1b",
+      "lines": 131
+    },
+    {
+      "id": "basis.optimistic",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ui-identity/patterns/optimistic-commit.md",
+      "snapshotRef": "sources/optimistic.md",
+      "digest": "sha256:2cc752dbbdd226a13e690591541e8b73e5cb5643651ff02ebef293421d2ac98e",
+      "lines": 96
+    },
+    {
+      "id": "basis.componentMap",
+      "sourceClass": "DRAFT_INVENTORY",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ui-identity/component-spec-map.md",
+      "snapshotRef": "sources/componentMap.md",
+      "digest": "sha256:539082c6fae4877988c2d059913f287fdb0ff877d8536323b328a3606dd30733",
+      "lines": 103
+    },
+    {
+      "id": "basis.form",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/form-control-ux-contract.md",
+      "snapshotRef": "sources/form.md",
+      "digest": "sha256:0859782ae56a2e4ffc65f463a12ecfe5974bf8dce99ecbf99d6b0da60544b526",
+      "lines": 273
+    },
+    {
+      "id": "basis.ux",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ux-design-methodology.md",
+      "snapshotRef": "sources/ux.md",
+      "digest": "sha256:c4ec33bb18b9a06b6ac749b5b00b33b433ccb0b6f8fe1958ba7cb140b443d261",
+      "lines": 581
+    },
+    {
+      "id": "basis.edx",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/architecture/engineering/experience-design/design.md",
+      "snapshotRef": "sources/edx.md",
+      "digest": "sha256:809818b85e8dfe3e6aa9713b137c8a0ddea99c5ec8b8f4a27176338695ce6da2",
+      "lines": 359
+    },
+    {
+      "id": "basis.reasoning",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/architecture/engineering/experience-design/reasoning-kernel.md",
+      "snapshotRef": "sources/reasoning.md",
+      "digest": "sha256:39fa51a1dfdfca461e34c7f5a8f11f95fc0a68810d16576e73b78a9f02d1a15e",
+      "lines": 302
+    },
+    {
+      "id": "basis.comparative",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/architecture/engineering/experience-design/comparative-experience-review.md",
+      "snapshotRef": "sources/comparative.md",
+      "digest": "sha256:fff92d790373829b0cd4055fe5755462294c5cfaa4a733d11b7f5cecb19baa9b",
+      "lines": 1028
+    },
+    {
+      "id": "basis.grammar",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/client/common/ui-identity/grammar-bindings.json",
+      "snapshotRef": "sources/grammar.json",
+      "digest": "sha256:9c11ad2f0ecbd9bf8dfd273d390e0971dd7e02042028e5751de53f7ec5747f65",
+      "lines": 544
+    },
+    {
+      "id": "basis.edxRules",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/architecture/engineering/experience-design/rules.json",
+      "snapshotRef": "sources/edxRules.json",
+      "digest": "sha256:a7087898518625b6597971fa7dc27e3f7f02d7dfb38b4b12b5c019a32a7dbf77",
+      "lines": 94
+    },
+    {
+      "id": "basis.compositeInvariant",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/knowledge/invariants/composite-form-control-boundaries.md",
+      "snapshotRef": "sources/compositeInvariant.md",
+      "digest": "sha256:693d4d33f66d89f5494a1144d366c0bc3af39fff821f070a281b137e5e82f81a",
+      "lines": 53
+    },
+    {
+      "id": "basis.identityInvariant",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/knowledge/invariants/client-ui-identity-before-edit.md",
+      "snapshotRef": "sources/identityInvariant.md",
+      "digest": "sha256:37c6f5e849b2fd58afa2dfdfc2a1ee8db789ca0189c1514cf07dd870906e1b3a",
+      "lines": 60
+    },
+    {
+      "id": "basis.qr",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/knowledge/pitfalls/qr-transform-measurement-density-budget.md",
+      "snapshotRef": "sources/qr.md",
+      "digest": "sha256:d6b66ad2e9ce856af372998604de0c1a7c0c0eeb04f0e29e111c4bc8ccdb88ba",
+      "lines": 91
+    },
+    {
+      "id": "basis.nativeAsset",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/knowledge/pitfalls/native-selected-file-preview-requires-asset-authorization.md",
+      "snapshotRef": "sources/nativeAsset.md",
+      "digest": "sha256:c4c6eb9cd4d3aaba9f199d399779f8fe0c102df9503c5997542c0a88c76045c8",
+      "lines": 52
+    },
+    {
+      "id": "basis.reviewBinding",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "docs/knowledge/pitfalls/experience-review-binding-and-graph-closure.md",
+      "snapshotRef": "sources/reviewBinding.md",
+      "digest": "sha256:1de658a8e7c8de751561a88376b7f78a9e53897114d16e3fbae5feef105c46c5",
+      "lines": 57
+    },
+    {
+      "id": "basis.prototype",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "tooling/skills/pt-prototype-design/SKILL.md",
+      "snapshotRef": "sources/prototype.md",
+      "digest": "sha256:c6b7cb9dadc8e2dc23e6f562ffce729c237d679c401e5cc89a836763fd4d8da4",
+      "lines": 459
+    },
+    {
+      "id": "basis.workflow",
+      "sourceClass": "ACTIVE_CONTRACT_OR_KNOWLEDGE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "tooling/skills/pt-dev-workflow/SKILL.md",
+      "snapshotRef": "sources/workflow.md",
+      "digest": "sha256:57e0306a980bc6c3bec02e81ff2988ca9aaf2403c4a9282db44d85bcc36c34a6",
+      "lines": 289
+    },
+    {
+      "id": "basis.comparativeSchema",
+      "sourceClass": "SOURCE_INTERFACE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "tooling/scripts/experience-design/comparative-schema.mjs",
+      "snapshotRef": "sources/comparativeSchema.mjs",
+      "digest": "sha256:85e0b5c2eb4dd4cfbc9c6aea4f9a64fe8765fd02ef3e0b7f64acfac1741ed24c",
+      "lines": 1408
+    },
+    {
+      "id": "basis.reviewSchema",
+      "sourceClass": "SOURCE_INTERFACE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "tooling/scripts/experience-design/review-result-schema.mjs",
+      "snapshotRef": "sources/reviewSchema.mjs",
+      "digest": "sha256:a6035af5b9dc61028dc4430098704e3faaf52f2278bacba5de29e751a47239d0",
+      "lines": 287
+    },
+    {
+      "id": "basis.holdout",
+      "sourceClass": "SOURCE_INTERFACE",
+      "commit": "879e4d51133b7372272b2cba0037f04d63e73913",
+      "path": "tooling/scripts/experience-design/holdout.mjs",
+      "snapshotRef": "sources/holdout.mjs",
+      "digest": "sha256:9a3dc7eefaa00632a2edf3815579fb09dffa8c0bdeae3f8b5cb7a0c0f9726261",
+      "lines": 451
+    }
+  ]
+}

@@ -232,7 +232,10 @@ while IFS= read -r file; do
   fi
 
   if is_documentation_file "$file"; then
-    if rg --pcre2 -n '(/Users/(?!Shared(?:/|$))[^/[:space:]`]+(?:/|$)|/home/[^/[:space:]`]+(?:/|$)|[A-Za-z]:\\Users\\[^\\[:space:]`]+(?:\\|$))' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
+    # Home anchors require at least two path segments so ordinary repository
+    # paths containing a route or directory named "home" (e.g.
+    # "src/routes/(main)/home/index.tsx") are not mistaken for a home dir.
+    if rg --pcre2 -n '(/Users/(?!Shared(?:/|$))[^/[:space:]`]+/[^/[:space:]`]+|/home/[^/[:space:]`]+/[^/[:space:]`]+|[A-Za-z]:\\Users\\[^\\[:space:]`]+\\[^\\[:space:]`]+)' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
       while IFS= read -r line; do
         report_failure "user-home-absolute-path" "$file:$line"
       done < /tmp/pt-review-match.$$
@@ -267,7 +270,10 @@ while IFS= read -r file; do
   esac
 
   if is_documentation_file "$file"; then
-    if rg --pcre2 -n '(/Users/(?!Shared(?:/|$))[^/[:space:]`]+(?:/|$)|/home/[^/[:space:]`]+(?:/|$)|[A-Za-z]:\\Users\\[^\\[:space:]`]+(?:\\|$))' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
+    # Home anchors require at least two path segments so ordinary repository
+    # paths containing a route or directory named "home" (e.g.
+    # "src/routes/(main)/home/index.tsx") are not mistaken for a home dir.
+    if rg --pcre2 -n '(/Users/(?!Shared(?:/|$))[^/[:space:]`]+/[^/[:space:]`]+|/home/[^/[:space:]`]+/[^/[:space:]`]+|[A-Za-z]:\\Users\\[^\\[:space:]`]+\\[^\\[:space:]`]+)' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
       while IFS= read -r line; do
         report_failure "user-home-absolute-path" "$file:$line"
       done < /tmp/pt-review-match.$$
@@ -310,7 +316,10 @@ while IFS= read -r file; do
   esac
 
   if is_ui_file "$file"; then
-    if rg -n '<[^>]*>[[:space:]]*[A-Za-z\u4e00-\u9fff][^<{]*[[:space:]]*</|title=["'\''][A-Za-z\u4e00-\u9fff]|placeholder=["'\''][A-Za-z\u4e00-\u9fff]' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
+    # Text-node detection must not let inline arrows ("=>") split a tag:
+    # the visible body cannot contain "<", ">", or braces (JSX expressions),
+    # and the closing token must be a real named tag.
+    if rg -n '<[^>]*>[[:space:]]*[A-Za-z\u4e00-\u9fff][^<>{}]*[[:space:]]*</[A-Za-z]|title=["'\''][A-Za-z\u4e00-\u9fff]|placeholder=["'\''][A-Za-z\u4e00-\u9fff]' "$file" >/tmp/pt-review-match.$$ 2>/dev/null; then
       while IFS= read -r line; do
         report_failure "hardcoded-ui-string" "$file:$line"
       done < /tmp/pt-review-match.$$

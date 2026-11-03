@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-29
-covered_docs_hash: ad7ec5f80737b3c6ec83847fea4aa296d7150b9c80409b5420cd3ef453372e53
+last_verified_at: 2026-11-02
+covered_docs_hash: acadb637816413ee6cae0931f9080e92c6c72cd8acc5fad2f3512ff444d73e54
 
 covered_docs:
   - AGENTS.md
@@ -1937,3 +1937,16 @@ the desktop/mobile coding guides describe the L2 owner. The change is
 documentation-only, aligned with the already-reviewed settings contract and
 the 22/22 exact-source Desktop journey; no SKILL.md rule, fixture, or review
 policy changes.
+
+## 2026-11-02 North-Star Prototype Line Merge
+
+Reviewed the two covered-doc deltas carried by the long-lived north-star
+prototype branch. `docs/README.md` adds the `docs/architecture/platform/
+client/ui-system/` catalog entry under the directory index while preserving
+the master `GETTING_STARTED.md` onboarding entries.
+`docs/architecture/engineering/experience-design/integration.md` adds a
+pointer to the Quiet Internet north-star draft V2 with its evidence boundary
+(design input only; no active-token or production-consumer changes before
+user confirmation). Both changes are documentation-only index/pointer
+additions; no review rule, fixture, or policy semantics changed, so only the
+`covered_docs_hash` is re-pinned.

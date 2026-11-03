@@ -370,6 +370,25 @@ Craft evidence:
 This amendment is `pending-review`. Earlier confirmed prototype history does
 not confer confirmation on the changed Chat Journey.
 
+### 2026-11-01 Reaction Emoji Action Sheet Fit (increment 36)
+
+The message action-sheet reaction surfaces had a clipping defect: the quick
+reaction row used fixed 40px cells inside a hidden horizontal scroll, so the
+last quick emoji was pushed under the more (···) button and the eighth sat
+off-sheet; the full grid's internal `max-height: 200px` scroll cap also hid
+rows. Contract after the fix:
+
+- Quick row: eight reactions + the fixed ··· button all visible at every
+  device width. Cells `flex: 1 1 0; min-width: 0` (no fixed width, no internal
+  scroll); the ··· tile keeps its fixed 40px. Cells never overlap ··· and stay
+  at or above the 24px touch floor.
+- Full grid (`···`): all 40 emojis lay out in 8 columns × 5 rows with no
+  internal scroll — the action sheet (`max-height: 85vh`) remains the only
+  scroll container.
+- Gate: `PROTOTYPE_EMOJI_ACTION_SHEET_ONLY=1 node packages/prototypes/mobile/chat/scripts/check-layout.mjs`
+  (`emoji-action-sheet.mjs`), three viewports (1440/554/390), zero defects;
+  evidence `emoji-action-sheet.json`.
+
 ### 2026-09-19 Message Action Semantics
 
 The confirmed Mobile Chat action sheet now keeps the four MS-D20 actions

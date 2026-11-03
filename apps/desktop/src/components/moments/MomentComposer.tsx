@@ -62,7 +62,7 @@ const TAG = 'moment-composer';
 // in the feed pages and from the page-header CTAs.
 //
 // Why a modal (vs. an always-open in-page composer):
-//   - Real estate: feed pages already feel busy; adding a 200px-tall
+//   - Vertical space: feed pages already feel busy; adding a 200px-tall
 //     composer at the top would push the first post below the fold.
 //   - Draft persistence: when the modal closes WITHOUT publishing,
 //     we save the text + audience into `useMomentsStore.composerDraft`

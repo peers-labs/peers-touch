@@ -1,0 +1,61 @@
+{
+  "kind": "peers-ui-usefulness-validation-protocol",
+  "status": "FROZEN_PROPOSED_PROTOCOL",
+  "executionStatus": "NOT_RUN",
+  "framework": "EXISTING_EDX_REASONING_AND_CER",
+  "purpose": "Test whether access to the full component contract improves correct selection, material defect detection, and real user outcomes at bounded cost.",
+  "comparisonArms": [
+    {"id":"baseline","context":"current canonical UI Identity and Skills; no new contract review package"},
+    {"id":"contract-assisted","context":"same canonical sources plus accepted component registry/navigation; no answer keys"}
+  ],
+  "controlledVariables": ["model snapshot","system/task prompt apart from contract access","model parameters","tools","platform","input mode","locale","viewport","identity/permissions","data fixture","network","capability flags","token and wall-time budget"],
+  "sourceComparisonPolicy": {
+    "selectionAndReview": "Both arms receive the identical frozen source/runtime task; contract access is the only treatment.",
+    "realJourney": "Baseline and target implementations each have their own frozen source/runtime digest. Freeze the same Outcome Oracle and equivalent platform/data/account/network context; the intentional implementation delta is declared before observation.",
+    "causality": "Real Journey deltas prove tested product outcomes and may support an observed mechanism. They do not establish that documentation alone caused improvement; intervention-confirmed requires a separately frozen controlled intervention."
+  },
+  "unitOfComparison": "independently authored bounded task under one frozen Outcome Oracle",
+  "roles": {
+    "contractAuthor": "writes proposal; cannot author independent keys or accept usefulness",
+    "qualityCaseAuthor": "fresh principal disjoint from contract/candidate/evidence authors",
+    "executor": "isolated same-model baseline and assisted runs; cannot read key",
+    "legReviewer": "disjoint from contract/task/Oracle/key/candidate/evidence authors; independently reviews each frozen leg",
+    "blindDeltaReviewer": "review before identity/arm reveal",
+    "productDispositionOwner": "accepts adopt/adapt/reject/defer after blind review"
+  },
+  "freshHoldout": {
+    "status": "NOT_AUTHORED_NOT_SEALED",
+    "sealedCaseRefs": [],
+    "answerKeyRefs": [],
+    "caseContentPolicy": "Do not write visible scenarios here and later call them blind; all 547 existing scenarios and 520 calibration inputs are exposed training material.",
+    "exposurePolicy": "Reuse existing Quality sealing/exposure ledger. Admit a case once; exposure burns it even on timeout/failure. Subsequent use is regression/calibration only."
+  },
+  "experiments": [
+    {"id":"UI-USE-SELECT","unit":"selection task","minimumPairs":24,"strata":["actions/navigation/persistent choice","typed fields/query","overlay/focus","content/media/resource","domain projection","runtime/lifetime"],"requiredClasses":["positive","negative","boundary"],"hardFailures":["unsafe/destructive icon-only","fabricated business success","wrong state owner","lost draft or wrong identity"],"qualityMeasures":["oracle-valid selection fraction","invalid combination leakage","missing-contract escalation correctness","semantic explanation source support"]},
+    {"id":"UI-USE-REVIEW","unit":"material defect review","minimumPairs":24,"strata":["intent/scope/IA","action representation","state/recovery/authority","platform/resource/lifetime","component grammar/value"],"requiredClasses":["seeded material defect","clean negative","ambiguous boundary"],"hardFailures":["missed safety/authority violation","unsupported primary finding","contract/rubric conflict treated as fact"],"qualityMeasures":["material defect recall","clean-case false positive rate","primary finding correctness","owner routing correctness","unproven calibration"]},
+    {"id":"UI-USE-JOURNEY","unit":"real user journey","minimumPairs":6,"strata":["Settings draft/save/failure","message+attachment/send/recovery","relationship request cross-surface/other-device decision","permission/tool waiting/expiry","device-link scan/approval/expiry","shell/global Settings/context restore"],"requiredClasses":["success","contract-required failure/recovery","identity or lifecycle boundary"],"hardFailures":["data loss","wrong-account effect","authority spoof","receiver outcome not established"],"qualityMeasures":["promised outcome met","commitments","contextSwitches","decisionLoad","interruptions","recoveryDebt","input/focus preservation","platform accessibility","current-source receiver readback"]}
+  ],
+  "costVector": ["input tokens","output tokens","tool calls","wall time","runtime provisioning count","cleanup time"],
+  "thresholdProposal": {
+    "safety": "zero hard failures in assisted arm; mandatory safety/authority assertions are observed and evaluated in both legs. A baseline not-met outcome remains a valid differential, not a context mismatch.",
+    "selection": "assisted oracle-valid fraction at least 0.90 and at least 0.15 absolute above baseline; baseline ceiling handled separately",
+    "review": "assisted material recall at least 0.90, clean-case false positives at most 0.10, unsupported primary findings zero",
+    "journey": "all required outcome/recovery assertions met; no material path vector component regresses",
+    "cost": "assisted median tokens and wall time no more than 1.25 times baseline per stratum; violations are findings, never hidden in scalar score",
+    "ceiling": "if baseline already meets absolute thresholds, require noninferiority on outcomes plus at least 0.15 proportional cost reduction; otherwise no incremental-value claim",
+    "statistics": "show paired raw outcomes, denominators, Wilson intervals for proportions and paired bootstrap intervals for deltas/cost; bootstrap is exploratory with these small samples",
+    "generalization": "minimum sample is screening evidence only; a generalized usefulness claim needs a second fresh cohort and non-overlapping authors before promotion",
+    "status": "PROPOSED_PRE_REGISTERED_NOT_ACCEPTED_NOT_MEASURED"
+  },
+  "stopPolicy": {
+    "timeout": "freeze partial report with remaining scope UNPROVEN, burn exposed case, do not raise budget",
+    "sourceDrift": "invalidate current comparison; new envelope and fresh identity required",
+    "unmatchedContext": "not-comparable; do not output win/loss",
+    "budgetSecondsPerSelectionOrReviewArm": 180,
+    "budgetSecondsPerJourneyArm": 900,
+    "cleanupReserveSeconds": 120
+  },
+  "outcomeStates": ["NOT_RUN","UNPROVEN","CHANGES_REQUIRED","READY_FOR_INDEPENDENT_REVIEW","INCREMENTAL_VALUE_SUPPORTED_FOR_TESTED_SCOPE"],
+  "forbiddenSubstitutes": ["inventory counts","self-authored visible calibration","file/schema validation","Gallery mock for business/receiver readback","screenshot for dynamic or accessibility proof","single weighted quality score"],
+  "artifactOrder": ["independent fresh task/key and Oracle/context freeze","sealing and exposure ledger","randomized isolated arm runs","source-bound leg evidence/results","independent leg reviews","blind paired delta review","identity reveal and product disposition","tested-scope report and frozen hashes"]
+}

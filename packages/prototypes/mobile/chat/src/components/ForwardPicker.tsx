@@ -1,12 +1,14 @@
+import { useT } from '../i18n';
 import { demoConversations } from '../data';
 import { IdentityAvatar } from './IdentityAvatar';
 
 export function ForwardPicker({ onSelect, onClose }: { onSelect: (name: string) => void; onClose: () => void }) {
+  const t = useT();
   return (
     <div className="mp-action-sheet-backdrop" onClick={onClose}>
       <div className="mp-action-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="mp-action-sheet-handle" />
-        <div style={{ padding: '12px 16px', fontWeight: 600, fontSize: 15 }}>Forward to...</div>
+        <div style={{ padding: '12px 16px', fontWeight: 600, fontSize: 15 }}>{t('mobile.chat.forwardTitle')}</div>
         <div style={{ maxHeight: 320, overflowY: 'auto' }}>
           {demoConversations.map((conv) => (
             <button
@@ -24,7 +26,7 @@ export function ForwardPicker({ onSelect, onClose }: { onSelect: (name: string) 
         </div>
         <div style={{ padding: '8px 16px' }}>
           <button type="button" className="mp-action-item mp-action-cancel" onClick={onClose}>
-            <span>Cancel</span>
+            <span>{t('mobile.chat.cancel')}</span>
           </button>
         </div>
       </div>

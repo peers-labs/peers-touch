@@ -1,0 +1,343 @@
+/* DesignDirections — desktop-prototype NORTH STAR frame.
+   Skin variables live on .sk-shell[data-skin]; only the inside of the app
+   frame is themed. The frame hosts the real product surfaces (moments,
+   chat, settings) and the GlobalSearchOverlay command surface. */
+
+/* ---- external page: always neutral, never themed ---- */
+.sk-page {
+  min-height: 100vh; box-sizing: border-box; padding: 22px 26px;
+  background: #eceef1;
+  color: #1d2420;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+.sk-page * { box-sizing: border-box; }
+:where(.sk-shell) button { font-family: inherit; }
+
+/* ---- skin switcher (outside frame, neutral) ---- */
+.sk-switcher {
+  max-width: 1180px; margin: 0 auto 16px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.sk-switcher-label { display: flex; flex-direction: column; gap: 2px; }
+.sk-switcher-label strong { font-size: 14px; }
+.sk-switcher-label span { font-size: 11.5px; color: #6b7279; }
+.sk-tabs {
+  display: inline-flex; padding: 4px; gap: 2px;
+  background: #e2e5e9; border-radius: 12px; border: 1px solid rgba(16,20,18,.12);
+}
+.sk-tab {
+  height: 32px; padding: 0 16px; border: 0; border-radius: 9px; cursor: pointer;
+  background: transparent; color: #5b6460; font-size: 13px; font-weight: 500;
+  font-family: inherit; white-space: nowrap;
+}
+.sk-tab.is-active {
+  background: #fff; color: #1d2420; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(20,25,20,.12);
+}
+.sk-skin-desc { width: 100%; margin: 0; font-size: 12px; color: #6b7279; }
+
+.sk-wall { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sk-wall-label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #3f4742; }
+.sk-wall-presets { display: inline-flex; gap: 4px; }
+.sk-wall-chip {
+  height: 28px; padding: 0 11px; border: 1px solid rgba(16,20,18,.14);
+  border-radius: 8px; background: #fff; color: #4a524d; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.sk-wall-chip.is-active { outline: 2px solid #1d2420; outline-offset: -1px; font-weight: 600; }
+.sk-wall-upload {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
+  border: 1px dashed rgba(16,20,18,.28); border-radius: 8px;
+  color: #4a524d; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.sk-wall-current { font-size: 11px; color: #8a918b; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- shell tokens: baseline + component roles ---- */
+/* Skin tokens live on the UIProvider root (.sk-theme) so both the frame and
+   portaled overlays (Dialog/Popover) inherit the active skin. */
+.sk-theme {
+  --sk-canvas: #f4efe6;
+  --sk-surface: #fbf8f1;
+  --sk-subtle: #f0e9dc;
+  --sk-tile: #f0e9dc;
+  --sk-text: #2a251d;
+  --sk-text-2: #635b4d;
+  --sk-text-3: #9a9080;
+  --sk-primary: #3f5a4a;
+  --sk-primary-ink: #fbf8f1;
+  --sk-accent: #d98e5b;
+  --sk-on-accent: #43260f;
+  --sk-rail-bg: #efe8da;
+  --sk-r-card: 18px;
+  --sk-radius-soft: 16px;
+  --sk-radius-control: 10px;
+  --sk-avatar-radius: 11px;
+  --sk-font: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sk-display-font: "SF Pro Display", "Inter", -apple-system, "PingFang SC", sans-serif;
+  --sk-glass-blur: 0px;
+  --sk-glass-border: rgba(42, 37, 29, .12);
+  --sk-btn-primary-bg: var(--sk-primary);
+  --sk-btn-primary-ink: var(--sk-primary-ink);
+  --sk-btn-primary-shadow: 0 8px 20px -12px rgba(58,46,28,.5);
+  --sk-btn-quiet-bg: transparent;
+  --sk-btn-quiet-ink: var(--sk-text-2);
+  --sk-btn-quiet-bg-hover: color-mix(in srgb, var(--sk-text) 7%, transparent);
+  --sk-focus-ring: color-mix(in srgb, var(--sk-primary) 34%, transparent);
+  --sk-shell-bg: var(--sk-canvas);
+  --sk-card-bg: #fdfaf4;
+  /* Opaque surface for floating overlays (side sheets, hover bars) that must
+     never let the stream show through, even on translucent glass cards. */
+  --sk-overlay: #fdfaf4;
+  --sk-card-border: rgba(58, 46, 28, .09);
+  --sk-card-shadow: 0 1px 2px rgba(58, 46, 28, .04), 0 8px 24px -16px rgba(58, 46, 28, .14);
+  --sk-head-bg: transparent;
+  --sk-shell-glow:
+    radial-gradient(720px 420px at 96% -8%, color-mix(in srgb, var(--sk-accent) 14%, transparent), transparent 60%);
+
+  /* Raised surface used by the peers-ui token bridge (PT_BRIDGE in TSX). */
+  --sk-raised: var(--sk-card-bg);
+}
+
+.sk-shell {
+  position: relative;
+  max-width: 1180px; margin: 0 auto;
+  display: flex; height: calc(100vh - 150px); min-height: 620px;
+  border-radius: var(--sk-radius-soft); overflow: hidden;
+  background: var(--sk-shell-bg);
+  border: 1px solid var(--sk-glass-border);
+  box-shadow: 0 18px 44px rgba(35, 30, 18, .12);
+  color: var(--sk-text);
+  font-family: var(--sk-font);
+}
+
+.sk-shell-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+.sk-shell-glow { position: absolute; inset: 0; background: var(--sk-shell-glow); }
+.sk-shell-wall { position: absolute; inset: 0; background: var(--sk-wallpaper, none); background-color: transparent; }
+.sk-rail, .sk-feed { position: relative; z-index: 1; }
+
+/* skins */
+.sk-theme.sk-skin-default {
+  --sk-canvas: #f7f8fa; --sk-surface: #ffffff; --sk-subtle: #f2f4f7; --sk-tile: #f2f4f7;
+  --sk-text: #1f2329; --sk-text-2: #5a616b; --sk-text-3: #8a9099;
+  --sk-primary: #6b5bd6; --sk-primary-ink: #ffffff;
+  --sk-accent: #f4a63b; --sk-on-accent: #4a3200;
+  --sk-rail-bg: #f2f4f7; --sk-r-card: 16px; --sk-radius-soft: 12px;
+  --sk-radius-control: 9px; --sk-avatar-radius: 10px;
+  --sk-btn-primary-shadow: 0 8px 20px -12px rgba(16,24,40,.5);
+  --sk-font: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sk-display-font: "Inter", -apple-system, "PingFang SC", sans-serif;
+  --sk-glass-blur: 0px; --sk-glass-border: rgba(20,26,33,.10);
+  --sk-shell-bg: var(--sk-canvas); --sk-card-bg: #ffffff;
+  --sk-overlay: #ffffff;
+  --sk-card-border: rgba(16, 24, 40, .08);
+  --sk-card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px -16px rgba(16, 24, 40, .12);
+  --sk-shell-glow: none;
+}
+.sk-theme.sk-skin-glass {
+  --sk-canvas: #dceade; --sk-surface: rgba(255,255,255,.62); --sk-subtle: rgba(255,255,255,.5);
+  --sk-tile: rgba(255,255,255,.52);
+  --sk-text: #11201a; --sk-text-2: #52605a; --sk-text-3: #7e8d85;
+  --sk-primary: #0d100d; --sk-primary-ink: #f3f8f4;
+  --sk-accent: #e8a117; --sk-on-accent: #3a2a02;
+  --sk-rail-bg: rgba(255,255,255,.45); --sk-r-card: 20px; --sk-radius-soft: 22px;
+  --sk-radius-control: 12px; --sk-avatar-radius: 11px;
+  --sk-btn-primary-shadow: 0 10px 24px -14px rgba(10,30,24,.7);
+  --sk-font: Manrope, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+  --sk-display-font: Manrope, -apple-system, "PingFang SC", sans-serif;
+  --sk-glass-blur: 22px; --sk-glass-border: rgba(255,255,255,.7);
+  --sk-shell-bg: var(--sk-canvas); --sk-card-bg: rgba(255,255,255,.66);
+  /* white .66 composited over the glass canvas #dceade */
+  --sk-overlay: #f2f4f2;
+  --sk-card-border: rgba(255,255,255,.75);
+  --sk-card-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 10px 30px -18px rgba(28,60,48,.35);
+  --sk-shell-glow:
+    radial-gradient(700px 460px at 8% -8%, color-mix(in srgb, var(--sk-accent) 26%, transparent), transparent 62%),
+    radial-gradient(880px 580px at 100% 6%, rgba(122,196,178,.5), transparent 62%),
+    radial-gradient(720px 600px at 56% 112%, rgba(127,180,171,.35), transparent 60%);
+}
+.sk-shell[data-wallpaper="image"] .sk-shell-wall::after {
+  content: ""; position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--sk-shell-bg) 28%, transparent);
+}
+
+/* rail — material zone, no hairline borders against other chrome */
+.sk-rail {
+  width: 60px; flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; padding: 14px 0;
+  background: var(--sk-rail-bg);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+.sk-rail-avatar {
+  /* Identity anchors the rail one step above the 38px nav targets. */
+  width: 44px; height: 44px; border-radius: 12px; margin-bottom: 20px;
+  display: grid; place-items: center; font-size: 17px; font-weight: 700;
+  color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
+  box-shadow: 0 10px 22px -12px rgba(16,52,44,.55);
+}
+.sk-rail-group { display: flex; flex-direction: column; gap: 4px; }
+.sk-rail-spacer { flex: 1; }
+/* The higher-specificity descendant selector is required: the peers-ui
+   `.pt-icon-button[data-density=compact]` rule (specificity 0,2,0) otherwise
+   overrides width and renders the rail tile as a 28×38 vertical rectangle,
+   which shifts the corner badge off the tile. Rail tiles are fixed squares. */
+.sk-rail .sk-rail-group .sk-rail-icon,
+.sk-rail .sk-rail-entry .sk-rail-icon {
+  width: 38px; height: 38px; min-height: 38px; padding: 0; border: 0;
+  border-radius: var(--sk-radius-control);
+  display: grid; place-items: center; cursor: pointer;
+  color: var(--sk-btn-quiet-ink); background: var(--sk-btn-quiet-bg);
+  transition: background .15s, color .15s;
+}
+.sk-rail-icon:hover { color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover); }
+.sk-rail-icon.is-active {
+  color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
+  box-shadow: var(--sk-btn-primary-shadow);
+}
+
+/* feed */
+.sk-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Surface panes stay mounted (live cross-surface state); only the active one shows. */
+.sk-feed-pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.sk-feed-pane[data-pane-active='true'] { display: flex; }
+.sk-feed-pane[data-pane-active='true'] > * { flex: 1; min-height: 0; }
+.sk-feed-head {
+  height: 62px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 0 22px;
+  background: var(--sk-head-bg);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+.sk-head-title { display: flex; flex-direction: column; gap: 1px; }
+.sk-feed-head h1 { margin: 0; font-size: 19px; font-family: var(--sk-display-font); letter-spacing: -.01em; }
+.sk-eyebrow { font-size: 9.5px; font-weight: 600; letter-spacing: .05em; color: var(--sk-text-3); }
+
+/* ---- Increment 1: ConversationRail (peers-ui composed) ---- */
+.sk-conv-rail {
+  position: relative; z-index: 1;
+  width: 296px; flex-shrink: 0; padding: 14px;
+  display: flex; flex-direction: column; overflow: auto;
+  background: var(--sk-chat-bg, transparent);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+}
+/* Rail header layout (compact expanding search + icon-only new button)
+   lives in chat.css as .sk-rail-header. */
+.sk-conv-title { margin: 8px 4px; font-size: 13px; color: var(--sk-text-2); font-weight: 600; }
+.sk-conv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sk-conv-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px;
+  border: 0; border-radius: var(--sk-radius-control); cursor: pointer;
+  background: transparent; font-family: inherit; text-align: left;
+}
+.sk-conv-row:hover { background: color-mix(in srgb, var(--sk-surface) 60%, transparent); }
+.sk-conv-row.is-selected {
+  background: color-mix(in srgb, var(--sk-surface) 85%, transparent);
+  box-shadow: inset 2.5px 0 0 var(--sk-accent);
+}
+.sk-conv-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sk-conv-meta strong { font-size: 13px; color: var(--sk-text); }
+.sk-conv-meta span {
+  font-size: 11.5px; color: var(--sk-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* peers-ui Badge count must read as the single accent, not the primary pill */
+.sk-conv-row .pt-badge-count { background: var(--sk-accent); color: var(--sk-on-accent); }
+.sk-conv-empty .pt-empty { padding: 24px 8px; color: var(--sk-text-3); font-size: 12px; }
+
+.sk-conversation { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px; }
+.sk-conversation-empty { text-align: center; color: var(--sk-text-3); }
+.sk-conversation-empty .pt-empty > div { font-size: 13px; }
+
+/* Increment 2: ConversationView */
+.sk-conv-view {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  padding: 18px 22px 16px; gap: 12px;
+}
+.sk-msg-stream { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
+/* Avatar top-aligns with the bubble (desktop ChatArea parity): the avatar
+   and the content column share flex-start, so in 1:1 chats avatar and bubble
+   begin on the same line; in groups the avatar aligns with the sender name.
+   Emoji-only rows bottom-align (large glyph, desktop parity). */
+.sk-msg { display: flex; align-items: flex-start; gap: 9px; max-width: 78%; }
+.sk-msg.is-emoji-only { align-items: flex-end; }
+.sk-msg-peer { align-self: flex-start; }
+.sk-msg-me { align-self: flex-end; flex-direction: row-reverse; }
+.sk-msg-avatar { flex-shrink: 0; }
+.sk-msg-bubble { padding: 10px 14px; border-radius: 16px; }
+.sk-msg-peer .sk-msg-bubble {
+  background: var(--sk-tile); color: var(--sk-text);
+  border-bottom-left-radius: 6px;
+}
+.sk-msg-me .sk-msg-bubble {
+  background: var(--sk-primary); color: var(--sk-primary-ink);
+  border-bottom-right-radius: 6px;
+}
+.sk-msg-bubble p { margin: 0; font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+/* Timestamp lives in the meta row BELOW the bubble (desktop MessageBubble
+   metaRow), never inside the bubble. */
+.sk-msg-time { font-size: 10.5px; color: var(--sk-text-3); font-variant-numeric: tabular-nums; }
+.sk-msg-me .sk-msg-time { color: color-mix(in srgb, var(--sk-text-2) 80%, transparent); }
+
+.sk-composer {
+  flex-shrink: 0; display: flex; align-items: flex-end; gap: 10px;
+  padding: 8px 8px 8px 14px; border-radius: 16px;
+  background: var(--sk-tile);
+}
+.sk-composer:focus-within { box-shadow: 0 0 0 2px var(--sk-focus-ring); }
+/* The textarea must NOT flex-grow inside the column FieldFrame: flex:1 sets
+   main-size basis to 0 and makes the box ignore its explicit height (it
+   collapses to one row and expand/auto-grow can never work). Horizontal fill
+   is owned by .sk-composer-input-wrap; here just span the frame width. */
+.sk-composer-input { flex: none; width: 100%; min-width: 0; background: transparent; }
+/* peers-ui embedded FieldFrame: remove its own frame; the rounded host owns it */
+.sk-composer .pt-field-frame { background: transparent; border: 0; box-shadow: none; padding: 0; }
+.sk-composer .pt-field-frame:focus-within { box-shadow: none; }
+/* Height is owned by the composer's auto-grow logic (rows clamp), not the
+   primitive's 80px textarea floor or a static max-height. Horizontal padding
+   stays at the primitive's 12px. */
+.sk-composer .pt-textarea {
+  background: transparent; border: 0; outline: 0; resize: none;
+  font-family: inherit; font-size: 13.5px; line-height: 1.55; color: var(--sk-text);
+  min-height: 0; max-height: none; height: auto;
+}
+.sk-theme .sk-composer textarea:focus-visible { outline: none; }
+/* Send is a squircle in the pine radius family, never a circle — circles are
+   reserved for the small composer tool glyphs beside the input. */
+.sk-composer .pt-icon-button {
+  flex-shrink: 0; align-self: flex-end;
+  width: 36px; height: 36px; border-radius: var(--sk-radius-control);
+}
+
+/* Increment 3: contact picker dialog (portaled, inherits .sk-theme tokens) */
+/* Pick-person dialog layout lives in chat/chat.css (inc 35 headless picker). */
+.sk-picker-list {
+  list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sk-picker-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px;
+  border: 0; border-radius: var(--sk-radius-control); cursor: pointer;
+  background: transparent; font-family: inherit; text-align: left;
+}
+.sk-picker-row:hover { background: var(--sk-tile); }
+.pt-dialog { border-radius: var(--sk-r-card); }
+
+/* Persistent two-pane down to tablet; chat.css owns the <720 swap. */
+@media (max-width: 720px) {
+  .sk-conv-rail { display: none; }
+}
+
+@media (max-width: 760px) {
+  .sk-page { padding: 0; }
+  .sk-shell { height: auto; min-height: 100vh; border-radius: 0; border: 0; box-shadow: none; flex-direction: column; }
+  .sk-rail {
+    width: 100%; flex-direction: row; justify-content: center; gap: 6px; padding: 8px;
+  }
+  .sk-rail-avatar { margin: 0 8px 0 0; }
+  .sk-rail-spacer { display: none; }
+  .sk-rail-group { flex-direction: row; }
+  .sk-feed-head { padding: 0 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk-shell *, .sk-switcher * { animation: none !important; transition: none !important; }
+}

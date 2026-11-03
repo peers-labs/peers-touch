@@ -491,3 +491,4 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 - 扩展索引：`meta/INDEX.md`
 - 术语表：`meta/GLOSSARY.md`
 - 文档变更记录：`meta/CHANGELOG.md`
+- Peers 自有 UI 系统：`architecture/platform/client/ui-system/README.md`（语义合同、资产、Web 渲染、风格北极星与证明边界）。

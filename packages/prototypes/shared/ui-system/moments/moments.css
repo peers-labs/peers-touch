@@ -1,0 +1,276 @@
+/* MomentsFeature — north-star social surface.
+   Material language follows the frame grammar (floating cards, skin tokens);
+   peers-ui primitives own the controls, this file owns layout/material only. */
+
+.sk-moments { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* Scope sub-bar: segmented scope + hint + scope-local search + primary CTA
+   (one rhythm group). Search carries the auto margin so it anchors the right
+   cluster regardless of whether the scope has a CTA. */
+.sk-moments-subbar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 12px;
+  padding: 8px 22px 10px; flex-wrap: wrap;
+}
+.sk-moments-hint { font-size: 12px; color: var(--sk-text-3); }
+.sk-moments-subbar .pt-field-frame:has(> .sk-scope-search) {
+  margin-left: auto; width: 248px; max-width: 100%; min-width: 0;
+}
+.sk-compose-open,
+.sk-circle-open { flex-shrink: 0; }
+
+.sk-moments-scroll {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 6px 22px 24px; display: flex; flex-direction: column; gap: 14px;
+}
+
+/* Post card — same material contract as the workbench .sk-card. */
+.sk-post {
+  background: var(--sk-card-bg);
+  border: 1px solid var(--sk-card-border);
+  border-radius: var(--sk-r-card);
+  box-shadow: var(--sk-card-shadow);
+  backdrop-filter: blur(var(--sk-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+  padding: 16px 18px;
+}
+
+.sk-post-head { display: flex; align-items: flex-start; gap: 12px; }
+.sk-post-author {
+  display: flex; align-items: center; gap: 11px; min-width: 0;
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  font-family: inherit; text-align: left;
+}
+.sk-post-idcol { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sk-post-name {
+  font-size: 14.5px; font-weight: 650; color: var(--sk-text);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.sk-post-time { font-size: 11.5px; color: var(--sk-text-3); }
+.sk-post-menu { margin-left: auto; flex-shrink: 0; line-height: 0; }
+
+/* source · reason · audience trust line */
+.sk-post-meta { margin-top: 7px; }
+.sk-trust { display: flex; flex-wrap: wrap; align-items: center; gap: 0; }
+.sk-trust-seg { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--sk-text-3); }
+.sk-trust-dot { margin-right: 8px; }
+
+.sk-post-body { margin-top: 8px; }
+.sk-post-body > p {
+  margin: 0; font-size: 15px; line-height: 1.72; color: var(--sk-text);
+  white-space: pre-wrap; word-break: break-word;
+}
+.sk-post-expand {
+  border: 0; background: transparent; padding: 4px 0 0; margin: 0;
+  cursor: pointer; color: var(--sk-primary); font-size: 13px; font-family: inherit;
+}
+
+.sk-post-images {
+  margin-top: 10px; display: grid; gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 520px;
+}
+.sk-grid-1 { grid-template-columns: minmax(0, 1fr); max-width: 380px; }
+.sk-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 430px; }
+.sk-img-tile {
+  border: 0; padding: 0; border-radius: 12px; overflow: hidden;
+  aspect-ratio: 1; background: var(--sk-tile); cursor: pointer;
+}
+.sk-grid-1 .sk-img-tile { aspect-ratio: 16 / 10; }
+.sk-img-tile img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.sk-lightbox { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.sk-lightbox img { display: block; max-width: 100%; border-radius: 12px; }
+.sk-lightbox-count { font-size: 12px; color: var(--sk-text-3); }
+
+/* Inline comment tile: comments stay inside the post card. All comments
+   show by default; beyond 10 the card folds behind an explicit toggle. */
+.sk-comments {
+  margin-top: 10px; padding: 12px; border-radius: 12px;
+  background: var(--sk-tile); display: flex; flex-direction: column; gap: 12px;
+}
+.sk-comment-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.sk-comment-item { display: flex; gap: 8px; }
+.sk-comment-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.sk-comment-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.sk-comment-text { font-size: 13.5px; line-height: 1.6; color: var(--sk-text); min-width: 0; }
+.sk-comment-meta {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 11px; color: var(--sk-text-3);
+}
+.sk-comment-author {
+  border: 0; background: transparent; padding: 0; cursor: pointer; flex-shrink: 0;
+  color: var(--sk-text); font-weight: 650; font-size: 13.5px; font-family: inherit;
+}
+.sk-comment-author:hover { color: var(--sk-primary); }
+.sk-comment-action {
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 11px; color: var(--sk-text-3);
+}
+.sk-comment-action:hover { color: var(--sk-text); }
+.sk-comment-action.is-liked { color: var(--sk-primary); font-weight: 600; }
+.sk-comment-action.is-danger:hover { color: #b0413a; }
+/* Nested replies: tinted rounded block hugging the root comment. */
+.sk-reply-list {
+  list-style: none; margin: 4px 0 0; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 8px;
+  border-radius: 10px; background: color-mix(in srgb, var(--sk-text) 4%, transparent);
+}
+.sk-reply-list .sk-comment-item .pt-avatar { width: 24px !important; height: 24px !important; border-radius: 7px !important; }
+.sk-comment-fold {
+  align-self: flex-start; border: 0; background: transparent; padding: 0;
+  cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 500;
+  color: var(--sk-text-3);
+}
+.sk-comment-fold:hover { color: var(--sk-primary); }
+
+/* Compact single-line composer: one field row + inline send tile. The
+   library TextArea carries an 80px min-height by design, so inline comment
+   inputs always use TextField (single line, Enter submits). */
+.sk-inline-composer { display: flex; align-items: center; gap: 6px; }
+.sk-inline-composer .pt-field-frame {
+  flex: 1; min-width: 0; min-height: 36px;
+  background: var(--sk-card-bg); border-color: var(--sk-card-border);
+  border-radius: 10px; padding: 0 12px;
+}
+.sk-inline-composer .pt-input { min-height: 36px; font-size: 13px; }
+.sk-inline-composer .pt-icon-button { flex-shrink: 0; }
+.sk-reply-composer { margin-top: 6px; }
+
+/* Feedback bar — directly under the body, above the comments tile, so the
+   reaction/comment counts are visible without scrolling through comments.
+   Reactions are multi-select: every chosen kind shows its own chip. */
+.sk-post-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+/* Multi-select can pile several kinds into one post; chips wrap on their own
+   row instead of scrolling, so narrow frames never hide chosen reactions
+   behind a horizontal scroller. */
+.sk-react-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.sk-react-summary:empty { display: none; }
+/* Smile/comment tiles keep one stable right-aligned row under the chips. */
+.sk-post-action-buttons { display: flex; justify-content: flex-end; gap: 4px; }
+.sk-react-summary .sk-react-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.sk-react-count { font-size: 12.5px; font-weight: 500; line-height: 1; }
+.sk-post-actions .pt-button.is-liked {
+  color: var(--sk-accent);
+  background: color-mix(in srgb, var(--sk-accent) 12%, transparent);
+  border-color: transparent;
+}
+.sk-react-emoji { display: inline-flex; font-size: 15px; line-height: 1; }
+.sk-react-popover { padding: 6px; border-radius: var(--sk-radius-soft); }
+.sk-react-picker { display: grid; grid-template-columns: repeat(8, 30px); gap: 2px; }
+.sk-react-picker .pt-button {
+  width: 30px; min-width: 30px; height: 30px; padding: 0;
+  font-size: 16px; border-radius: 8px;
+}
+.sk-react-picker .pt-button.is-liked {
+  background: color-mix(in srgb, var(--sk-accent) 14%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--sk-accent) 45%, transparent);
+}
+
+.sk-feed-end { text-align: center; font-size: 11.5px; color: var(--sk-text-3); padding: 6px 0 2px; }
+.sk-loadmore { margin: 2px 0; }
+
+/* Profile */
+.sk-profile-view { display: flex; flex-direction: column; gap: 14px; }
+.sk-detail-back { align-self: flex-start; }
+.sk-profile { display: flex; gap: 16px; align-items: flex-start; }
+.sk-profile-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sk-profile-id h2 { margin: 0; font-size: 19px; color: var(--sk-text); }
+.sk-profile-id p { margin: 3px 0 0; font-size: 13px; color: var(--sk-text-2); }
+.sk-profile-stats { display: flex; gap: 14px; margin-top: 6px; font-size: 12.5px; color: var(--sk-text-3); }
+.sk-profile-stats strong { color: var(--sk-text); font-size: 14px; }
+.sk-profile-follow { flex-shrink: 0; }
+.sk-profile-posts { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+
+/* Circles */
+.sk-circles {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 6px 22px 24px; display: flex; flex-direction: column; gap: 12px;
+}
+.sk-circle-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+/* Whole card is one peers Button opening the management dialog; neutralise
+   library chrome so it keeps the .sk-post tile surface. */
+.pt-button.sk-circle-card {
+  justify-content: flex-start; width: 100%; min-height: 0;
+  padding: 16px 18px; text-align: left; font-weight: 400; color: var(--sk-text);
+  flex-shrink: 1;
+}
+.pt-button.sk-circle-card:hover:not([aria-disabled='true']) {
+  background: var(--sk-card-bg); border-color: color-mix(in srgb, var(--sk-text) 14%, transparent);
+}
+.pt-button.sk-circle-card > .pt-button-content {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%;
+}
+.sk-circle-id { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; }
+.sk-circle-name { font-size: 14.5px; font-weight: 650; color: var(--sk-text); }
+.sk-circle-desc { font-size: 12.5px; color: var(--sk-text-2); }
+.sk-circle-tail { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.sk-circle-chevron { color: var(--sk-text-3); }
+.sk-circle-avatars { flex-shrink: 0; }
+.sk-circle-avatars .pt-avatar {
+  margin-left: -8px;
+  box-shadow: 0 0 0 2px var(--sk-card-bg);
+}
+.sk-circle-avatars .pt-avatar:first-child { margin-left: 0; }
+
+/* Composer dialog — embedded TextArea is frameless by library contract, so the
+   rounded tile surface belongs to its field frame host. */
+.sk-compose { display: flex; flex-direction: column; gap: 12px; }
+.sk-compose .pt-field-frame {
+  background: var(--sk-tile);
+  border: 1px solid var(--sk-card-border);
+  border-radius: var(--sk-radius-control);
+  padding: 4px 8px;
+  align-items: flex-start;
+}
+.sk-compose-audience { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.sk-circle-missing { font-size: 12.5px; color: var(--sk-text-3); align-self: center; }
+
+/* Circle management dialog */
+.sk-circle-manage { display: flex; flex-direction: column; gap: 12px; }
+.sk-circle-manage .sk-circle-desc-edit { margin-top: -4px; }
+.sk-circle-manage-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  color: var(--sk-text-3); text-transform: uppercase;
+}
+.sk-circle-manage-members, .sk-circle-candidates { display: flex; flex-direction: column; gap: 6px; }
+.sk-circle-member-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sk-circle-member-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 4px 6px; border-radius: 10px;
+}
+.sk-circle-member-row:hover { background: var(--sk-tile); }
+.sk-circle-member-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sk-circle-member-name { font-size: 13.5px; font-weight: 600; color: var(--sk-text); }
+.sk-circle-member-row .sk-post-time { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-circle-member-row .pt-icon-button { margin-left: auto; flex-shrink: 0; }
+.sk-circle-member-self {
+  margin-left: auto; font-size: 10.5px; font-weight: 600;
+  color: var(--sk-text-3); border: 1px solid var(--sk-card-border);
+  border-radius: 999px; padding: 1px 8px;
+}
+.sk-circle-candidates-empty { font-size: 12.5px; color: var(--sk-text-3); }
+.sk-circle-manage-footer { display: flex; align-items: center; gap: 8px; width: 100%; }
+.sk-circle-footer-spacer { flex: 1; }
+
+@media (max-width: 760px) {
+  .sk-moments-subbar { padding: 8px 12px; gap: 8px; }
+  .sk-moments-scroll, .sk-circles { padding: 4px 12px 20px; }
+  .sk-moments-subbar .pt-field-frame:has(> .sk-scope-search) { width: 100%; margin-left: 0; order: 3; }
+  .pt-button.sk-circle-card > .pt-button-content { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .pt-button.sk-circle-card .sk-circle-tail { align-self: flex-end; }
+  .sk-react-picker { grid-template-columns: repeat(8, 28px); }
+  .sk-react-picker .pt-button { width: 28px; min-width: 28px; height: 28px; }
+}

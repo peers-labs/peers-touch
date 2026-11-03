@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 
-export type PrototypeSite = 'desktop' | 'mobile' | 'dashboard' | 'control';
+export type PrototypeSite = 'desktop' | 'mobile' | 'dashboard' | 'control' | 'frontend-eles';
 
 export type PrototypeKind = 'shell' | 'applet' | 'feature';
 

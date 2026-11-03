@@ -1,0 +1,115 @@
+/* NotificationBell — outer-rail tile + right-anchored panel.
+   The trigger reuses the .sk-rail-icon geometry from design-directions.css;
+   only the unread badge and open wash live here. */
+
+/* Any rail icon tile that carries a corner badge (bell, chat total).
+   Fixed 38px square so the badge anchors to the tile's actual corner even
+   though the trigger itself is a compact-density icon button. */
+.sk-rail-entry,
+.sk-rail-notif {
+  position: relative; display: inline-flex;
+  width: 38px; height: 38px; align-items: center; justify-content: center;
+}
+.sk-rail-notif.is-open .sk-rail-icon {
+  color: var(--sk-text);
+  background: var(--sk-btn-quiet-bg-hover);
+}
+.sk-rail-badge {
+  position: absolute; top: -6px; right: -6px; z-index: 1;
+  min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+  /* Flex centers the glyph on the circle; a 13px line-height inside a 16px
+     badge left the digit sitting above the vertical center. */
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; background: #c0453b; color: #fff;
+  border: 1.5px solid var(--sk-rail-bg);
+  font-size: 9.5px; font-weight: 650; line-height: 1;
+}
+
+/* Popover layer: flush panel, fixed width, internal scroll. */
+.sk-notif-popover { padding: 0; width: 340px; max-width: calc(100vw - 84px); }
+.sk-notif-panel {
+  display: flex; flex-direction: column;
+  max-height: min(440px, calc(100dvh - 24px));
+}
+.sk-notif-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; flex-shrink: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
+  font-size: 13.5px;
+}
+/* The list owns scrolling; rows never get hard-clipped by the panel edge —
+   a soft fade over the last row signals more content below. */
+.sk-notif-list {
+  display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.sk-notif-list[data-can-scroll='true'] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+}
+/* "Show earlier" pager: pinned at the bottom of the list, always reachable. */
+.sk-notif-more {
+  position: sticky; bottom: 0; flex-shrink: 0;
+  display: flex; justify-content: center;
+  padding: 8px 12px;
+  background: var(--pt-raised, #fff);
+  border-top: 1px solid color-mix(in srgb, var(--sk-text) 6%, transparent);
+}
+.sk-notif-more .pt-button { width: 100%; justify-content: center; color: var(--sk-text-2); }
+.sk-notif-item {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 6%, transparent);
+}
+.sk-notif-item:last-child { border-bottom: 0; }
+.sk-notif-item.is-unread { background: color-mix(in srgb, var(--sk-primary) 6%, transparent); }
+
+.sk-notif-icon {
+  flex-shrink: 0; width: 28px; height: 28px; margin-top: 1px;
+  display: grid; place-items: center;
+  border-radius: 9px;
+  color: var(--sk-text-3);
+  background: color-mix(in srgb, var(--sk-text) 7%, transparent);
+}
+.sk-notif-item.is-unread .sk-notif-icon {
+  color: var(--sk-primary);
+  background: color-mix(in srgb, var(--sk-primary) 14%, transparent);
+}
+
+.sk-notif-content { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.sk-notif-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.sk-notif-name {
+  font-size: 12.5px; font-weight: 600; color: var(--sk-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1;
+}
+.sk-notif-item:not(.is-unread) .sk-notif-name { font-weight: 400; }
+.sk-notif-line time { font-size: 10.5px; color: var(--sk-text-3); flex-shrink: 0; }
+.sk-notif-body {
+  font-size: 11.5px; color: var(--sk-text-2); line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Non-interactive category label (desktop parity: quiet grey chip). */
+.sk-notif-chip {
+  align-self: flex-start; margin-top: 2px;
+  font-size: 10px; line-height: 1; color: var(--sk-text-3);
+  background: color-mix(in srgb, var(--sk-text) 7%, transparent);
+  border-radius: 4px; padding: 3px 6px;
+  pointer-events: none;
+}
+
+.sk-notif-actions {
+  display: flex; gap: 2px; flex-shrink: 0;
+  opacity: 0; transition: opacity .12s ease;
+}
+.sk-notif-item:hover .sk-notif-actions,
+.sk-notif-item:focus-within .sk-notif-actions { opacity: 1; }
+.sk-notif-actions .pt-icon-button.is-danger:hover {
+  color: #b0413a;
+  background: color-mix(in srgb, #b0413a 10%, transparent);
+}
+
+.sk-notif-empty { padding: 28px 0; }
+
+@media (hover: none) {
+  .sk-notif-actions { opacity: 1; }
+}

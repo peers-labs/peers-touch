@@ -373,3 +373,238 @@ Owner-confirmed under
 `USER-DECISION-20261012-MOBILE-PROTOTYPE-CONFIRMED`. The remaining
 `UNPROVEN` cells stay explicit and production work may proceed only through its
 mounted Plan.
+
+## 2026-11-02 Pine grammar rebuild (antd dept closed)
+
+Status change: the entire presentation layer of
+`packages/prototypes/mobile/chat` was rebuilt on `@peers-touch/ui` +
+`northStarVariables` (the same candidate theme as the desktop prototype).
+`antd` and direct `lucide-react` usage are removed from the package; all
+icons resolve through the registered glyph set and all controls through the
+library primitives.
+
+Accepted mobile density and grammar contract:
+
+- conversation/contact rows 64px with 40px squared avatars (radius 11);
+- group avatars carry the registered `users` glyph, no per-person gradient;
+- own bubbles use neutral ink (`--pt-ownBubble`), peers use surface, own
+  avatars render on the right (`row-reverse`);
+- unread count badges are neutral ink, never semantic red/blue;
+- relationship state renders as quiet pin/mute icons, not prose sentences;
+- radius family restricted to 5 / 8 / 11 / 16 / 20 and full pills;
+- primary action is single neutral ink; hue is reserved for trust/state.
+
+Structural removals: Me vanity statistics, dead `Safety Number` /
+`Chat Background` rows, the dead compose pencil, duplicated search entry
+points, avatar gradient data (`avatarGradient`/`GRADIENTS`), and the iOS-green
+custom toggle (replaced by the library `Switch`). Photos use the existing
+`tool_text_to_image` media helper instead of CSS gradients.
+
+Gates (all runnable against the standalone dev server):
+
+- `scripts/check-layout.mjs` — pine grammar geometry over 390/554/1440:
+  radius family, square non-circular avatars, ink badges, row heights, no
+  horizontal overflow, no antd residue, no pastel tiles, no verbose
+  relationship prose;
+- `scripts/message-layout.mjs` — 28px avatar track, symmetric gutters,
+  own-row reversal, 8/16 cluster rhythm, bubble containment;
+- `scripts/emoji-action-sheet.mjs` — quick reaction row and full grid;
+- `scripts/check-call-states.py` — seven call states plus header-start flow.
+
+Verdict: the mobile prototype now speaks one design language with the desktop
+prototype. Re-introducing antd/lucide, gradient avatar tiles, ad-hoc radii,
+or semantic-color CTAs is a regression and fails `check-layout.mjs`.
+
+## 2026-11-02 Mobile input grammar unification
+
+Input surfaces were still a mixed population (native inset-filled wells in
+contacts/global search, peers `TextField` in sheets, browser-default textarea
+focus boxes with resize grips) and read as a dated admin form kit.
+
+One mobile input grammar now covers every editable surface:
+
+- surface fill, one-level hairline (`--pt-border`), **16px** corners;
+- 46px touch height, 14px horizontal padding, 15px text;
+- hover lifts the hairline one level; focus is a 1px ink hairline plus a
+  4px neutral ink-tinted halo (no hard black 2px box, no admin outline);
+- search rows carry a leading glyph and a circular clear action;
+- textareas lose the native resize grip;
+- embedded thread composer stays borderless (its container owns the surface).
+
+Applied to: chat/contact list search wells, global search, find people,
+create group, account/station forms, moments composer and circle pickers.
+The chat list search entry moved back into the list header (the header
+magnifier duplicate was removed). `check-layout.mjs` asserts the frame
+radius family, 45px+ frame height, absence of legacy native wells, and
+`resize: none` on textareas.
+
+## 2026-11-02 Desktop message menu: density defect + protocol action parity
+
+The message overflow menu rendered at 502px wide — nearly three times its
+content — with only five sparse rows. Root cause was a peers-ui primitive
+defect, not a skin issue: `.pt-menu-item` was an inline-level (`inline-flex`)
+row, so the shrink-to-fit popup computed max-content as if every row sat on
+one unbreakable line and summed all rows, instead of taking the widest one.
+
+Primitive fix (`packages/ui`):
+
+- menu rows are block-level (`display:flex`), so the popup width tracks the
+  widest command (min-width 180px);
+- new `--pt-control-menu: 32` geometry token — menu rows are 32px / 13px,
+  the compact command-list density (Feishu parity), distinct from the 28px
+  compact button and 36px normal control;
+- `.pt-menu-separator` now paints a full-bleed hairline (previously an
+  unstyled zero-height div), enabling real command groups.
+
+Action parity with the real protocol vocabulary (`model/domain/chat`
+`ChatCommand` oneof):
+
+- added **hide-for-me** (`HideMessageForActorIntent`) — local-only removal
+  available on every message, replacing the own-only "delete" entry;
+  retract (everyone, windowed) stays separate as 撤回;
+- added **report** (`ModerateMessageIntent`, reason-coded) on peer
+  messages with a four-reason dialog (spam / abuse / misinfo / other);
+- added **multiselect** — a pure client bulk mode (no protocol command of
+  its own): row checkboxes and a bulk bar for forward / copy / hide.
+
+Explicitly not added: favorite, translate, copy-message-link (no protocol
+objects today) and Feishu-suite Add Task / Export to Docs / Shortcut Apps
+(no peers-touch counterpart). Menus are grouped per ownership:
+peer = thread / copy, multiselect / report, hide; own = thread / pin, copy,
+multiselect / edit, recall (windowed, disabled-with-reason after) / hide.
+
+Gates in `north-star.suite.json`: menu width/row/font geometry, peer and own
+group structure, windowed disabled state, single hide, multiselect bulk
+hide, and the report submit-enable flow.
+
+## 2026-11-02 Desktop composer expand + send button grammar
+
+Two defects in the desktop chat composer:
+
+1. **Expand/collapse did nothing.** The toggle only changed the textarea's
+   `max-height` cap, but the box was a native `rows=1` textarea with no
+   auto-grow: its height never followed content (8 lines still rendered one
+   row, 80px floor). Worse, `.sk-composer-input` carried `flex:1` inside the
+   column-oriented FieldFrame, giving the textarea a zero flex-basis so even
+   inline/!important heights were ignored. Fix: the textarea is `flex:none`
+   and a layout effect auto-sizes it from scrollHeight clamped between
+   row floors — collapsed 1–4 rows, expanded 6–12 rows — so expanding lifts
+   the writing area immediately even when empty, and typing grows it
+   naturally (scroll after the cap).
+2. **Send was a circle.** `.sk-composer .pt-icon-button` forced
+   `border-radius:50%`; the pine grammar sends on a squircle. It is now a
+   36px control at `--sk-radius-control` (12px), bottom-aligned in the
+   composer. Circles remain reserved for the small tool glyphs.
+
+Gate: `composer-expand-grow` scenario asserts pressed-state on toggle and
+the 12px send radius; full north-star suite (152) OBSERVED.
+
+## 2026-11-02 Rail tile square + notification paging
+
+Two outer-rail defects:
+
+1. **Bell badge sat off the tile corner.** The peers-ui rule
+   `.pt-icon-button[data-density=compact]` (specificity 0,2,0) overrode the
+   rail tile width, rendering every rail tile as a 28×38 vertical rectangle
+   while `.sk-rail-icon` declared 38×38 (0,1,0). The badge anchored to the
+   38px wrapper so its center floated beside the button. Fixed by a
+   higher-specificity rail rule (0,3,0) forcing 38×38 squares, and the badge
+   wrapper is now a fixed 38px square with the badge at top/right -6px,
+   straddling the corner consistently with conversation unread badges.
+2. **More notifications had nowhere to go.** The 440px panel hard-clipped
+   the last row with no overflow affordance. Seeds expanded to 10; the panel
+   now shows one page of 5 with a sticky "show N earlier" pager, list-owned
+   scrolling, a bottom edge fade while rows remain below the fold, and a
+   viewport-aware max-height. Reopening resets to the first page (the bell is
+   an at-a-glance surface).
+
+Gates: bell tile 38×38 geometry, pager remaining-count / 5→10 expansion /
+pager dismissal, and the all-deleted empty state; north-star suite 152
+OBSERVED.
+
+## 2026-11-02 Compact conversation header (WeChat parity)
+
+The conversation header read as a thick, unbalanced toolbar: 60px tall with
+three 36×36 chip buttons (resting fills, 16px glyphs, 4px gaps), so the bar
+dominated the message surface and the right cluster looked arbitrary next to
+the WeChat-style flat header.
+
+Rebuilt as a slim one-line bar in `chat.css`:
+
+- bar height 60 → **52px**, title 15.5px on the left baseline;
+- the three actions (audio / video / info) are **borderless line glyphs** —
+  transparent resting background, 19px icons on a fixed 34px hit target,
+  even 6px rhythm, subtle ink wash on hover (no button chips, no arbitrary
+  tiles);
+- the detail side-sheet title tracks the new header so its hairline stays
+  collinear (18px inset + 52px band), measured diff 0.
+
+Gates: `chat-header` now asserts the 52px band, transparent action
+backgrounds, and 19px glyph width; `detail-panel` keeps the collinear-title
+assertion. North-star suite 152 OBSERVED.
+
+## 2026-11-03 Mobile/Desktop semantic alignment (shared chat domain)
+
+Mobile and Desktop Chat had drifted into two private interaction contracts:
+the mobile prototype carried a 5-kind local reaction vocabulary, a 40-cell
+emoji grid with a silent unknown-emoji fallback, a private local flag,
+decorative i18n (every surface statically imported the English bundle), and
+its own window/search/demo state semantics that no longer matched the gate
+suite after the peers-ui rebuild. The alignment puts one headless contract
+under both surfaces:
+
+- **Shared domain** — `packages/prototypes/shared/chat-domain/` now owns the
+  16-kind reaction catalog (`QUICK_REACTION_KINDS` = 8), strict
+  emoji↔kind mapping (unknown emoji never silently falls back), viewer
+  reaction operations (multi-select toggle, viewer-first ordering), and the
+  message action catalog/group resolver (primary / organize / mutate /
+  safety, ownership, mutation-window, danger). Desktop menu, mobile action
+  sheet, and both reaction strips derive from it.
+- **Reactions** — quick row of 8 with an expand toggle to all 16 on both
+  surfaces; selecting a reaction no longer closes the popover/sheet, so
+  multiple kinds are one gesture apart; reaction chips are toggle buttons
+  with a viewer-selected state.
+- **Mark for later replaces flag** — the personal local flag is now
+  "mark for later" (`mark-later`, bookmark glyph): a chip on the message and
+  a marked-messages list in conversation details on Desktop and mobile. It
+  stays local-only; nothing about it is visible to peers.
+- **Mobile message safety and bulk operations** — long-press / right-click
+  action sheet groups come from the shared catalog; multiselect mode has
+  real row checkboxes, a bulk bar (forward / copy / hide), a reason-coded
+  message-level report sheet (spam / abuse / misinfo / other), bulk hide
+  confirmation, and bulk forward through a real picker.
+- **Real i18n runtime** — `src/i18n.ts` resolves `?lang` then navigator
+  language, merges common/chat/search namespaces, re-renders the whole shell
+  live on toggle, and syncs `document.documentElement.lang`. All interface
+  chrome is keyed (including the tab bar); seeded narrative content stays
+  untranslated by design. The search field, composer, thread More entry, and
+  related locale values match the English the gate suite encodes.
+- **Touch geometry** — `100dvh` shell, `viewport-fit=cover`,
+  `interactive-widget=resizes-content`, safe-area insets, a
+  visual-viewport keyboard-height variable that pads the composer, 44px
+  reaction targets, and full-bleed layout under 540px.
+
+Navigation-state defects surfaced while reactivating the long-list gates were
+fixed at the shell level, not in the gates:
+
+- conversation surface keys encode the active filter query (contacts/search
+  already did), so filtering resets the window through remount while an empty
+  query keeps the prior browsing position;
+- list queries persist in shell-owned memory across thread/detail
+  round-trips;
+- search targets are one-shot intents (cleared after reveal), and a thread
+  opened from a result returns to the search overlay on its first Back;
+- the controlled search lifecycle now binds its owner on open, so submit
+  tickets transition through loading;
+- social evidence scenarios reopen on the contacts surface and the
+  find-people sheet opens for `request-unknown`;
+- a resolved direct conversation switches to the chat surface before the
+  thread renders.
+
+Gates: `check-long-lists.mjs` and `check-residual-parity.mjs` green on the
+Make Portal; `check-layout.mjs` (static touch contract + dynamic emoji sheet +
+message geometry) and `check-call-states.py` green on the standalone mobile
+server; north-star suite updated to quick-8/16 + `data-react-kind`, 6-row
+peer / 8-row own menu groups, the `mark-later` entry, and a new
+`message-mark-later-toggle` scenario — full suite OBSERVED. Evidence remains
+prototype-only; native and Station behavior stay unproven.

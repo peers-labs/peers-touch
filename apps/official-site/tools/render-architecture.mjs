@@ -41,6 +41,7 @@ const SLUGS = [
   'journey-device-messaging',
   'journey-federation-governance',
   'journey-cross-station',
+  'journey-send-verdict',
   'journey-agent-execution',
   'journey-realtime-call',
   'journey-group-call',
@@ -118,6 +119,6 @@ try {
   rmSync(tmpDir, { recursive: true, force: true });
 }
 
-console.log(
-  `rendered ${rendered} architecture readers -> public/architecture-assets`,
+process.stdout.write(
+  `rendered ${rendered} architecture readers -> public/architecture-assets\n`,
 );

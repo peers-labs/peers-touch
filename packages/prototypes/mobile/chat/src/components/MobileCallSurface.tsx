@@ -1,14 +1,5 @@
-import {
-  Camera,
-  CameraOff,
-  Laptop,
-  Mic,
-  MicOff,
-  Phone,
-  PhoneOff,
-  Video,
-  X,
-} from 'lucide-react';
+import { useT } from '../i18n';
+import { Icon } from '@peers-touch/ui';
 import type { PrototypeCallSnapshot } from '../callPrototype';
 
 export function MobileCallSurface({
@@ -17,9 +8,10 @@ export function MobileCallSurface({
   onDismiss,
 }: {
   snapshot: PrototypeCallSnapshot;
-  onChange: (snapshot: PrototypeCallSnapshot) => void;
+  onChange: (s: PrototypeCallSnapshot) => void;
   onDismiss: () => void;
 }) {
+  const t = useT();
   const incoming = snapshot.state === 'incoming'
     || snapshot.state === 'ringing_all_devices';
   const active = snapshot.state === 'active_here'
@@ -49,7 +41,7 @@ export function MobileCallSurface({
             <span className="mp-call-video-initials">{snapshot.peerInitials}</span>
             <span className="mp-call-video-name">{snapshot.peerName}</span>
           </div>
-          <div className="mp-call-local-video" aria-label="Your local video">
+          <div className="mp-call-local-video" aria-label={t('mobile.call.localVideo')}>
             <span>YC</span>
           </div>
         </div>
@@ -65,7 +57,7 @@ export function MobileCallSurface({
         <span role="status" aria-live="polite">{status}</span>
         {snapshot.state === 'handled_elsewhere' ? (
           <span className="mp-call-resolution">
-            <Laptop size={14} />
+            <Icon iconId="monitor-smartphone" size={14} />
             {snapshot.winningDeviceLabel}
           </span>
         ) : null}
@@ -74,12 +66,12 @@ export function MobileCallSurface({
       <div className="mp-call-actions">
         {incoming ? (
           <>
-            <CallControl label="Decline" tone="danger" onClick={end}>
-              <PhoneOff size={22} />
+            <CallControl label={t('mobile.call.decline')} tone="danger" onClick={end}>
+              <Icon iconId="phone-off" size={22} />
             </CallControl>
             <CallControl
               autoFocus
-              label="Accept"
+              label={t('mobile.call.accept')}
               tone="accept"
               onClick={() => onChange({
                 ...snapshot,
@@ -88,7 +80,7 @@ export function MobileCallSurface({
                 cameraOff: false,
               })}
             >
-              {snapshot.mediaKind === 'video' ? <Video size={22} /> : <Phone size={22} />}
+              <Icon iconId={snapshot.mediaKind === 'video' ? 'video' : 'phone'} size={22} />
             </CallControl>
           </>
         ) : null}
@@ -101,7 +93,7 @@ export function MobileCallSurface({
               selected={snapshot.micMuted}
               onClick={() => onChange({ ...snapshot, micMuted: !snapshot.micMuted })}
             >
-              {snapshot.micMuted ? <MicOff size={22} /> : <Mic size={22} />}
+              <Icon iconId={snapshot.micMuted ? 'mic-off' : 'mic'} size={22} />
             </CallControl>
             {snapshot.mediaKind === 'video' ? (
               <CallControl
@@ -109,24 +101,24 @@ export function MobileCallSurface({
                 selected={snapshot.cameraOff}
                 onClick={() => onChange({ ...snapshot, cameraOff: !snapshot.cameraOff })}
               >
-                {snapshot.cameraOff ? <CameraOff size={22} /> : <Camera size={22} />}
+                <Icon iconId={snapshot.cameraOff ? 'camera-off' : 'camera'} size={22} />
               </CallControl>
             ) : null}
-            <CallControl label="End call" tone="danger" onClick={end}>
-              <PhoneOff size={22} />
+            <CallControl label={t('mobile.call.end')} tone="danger" onClick={end}>
+              <Icon iconId="phone-off" size={22} />
             </CallControl>
           </>
         ) : null}
 
         {snapshot.state === 'outgoing' ? (
-          <CallControl autoFocus label="Cancel" tone="danger" onClick={end}>
-            <PhoneOff size={22} />
+          <CallControl autoFocus label={t('mobile.call.cancel')} tone="danger" onClick={end}>
+            <Icon iconId="phone-off" size={22} />
           </CallControl>
         ) : null}
 
         {terminal ? (
-          <CallControl autoFocus label="Close" onClick={onDismiss}>
-            <X size={22} />
+          <CallControl autoFocus label={t('mobile.call.close')} onClick={onDismiss}>
+            <Icon iconId="close" size={22} />
           </CallControl>
         ) : null}
       </div>

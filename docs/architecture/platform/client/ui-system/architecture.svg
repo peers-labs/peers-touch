@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1440 840" width="1440" height="840"
+  role="img" aria-labelledby="title-ui-system.design-architecture">
+<style>
+  .canvas { fill: #111418; }
+  .headerRule { stroke: #30363d; stroke-width: 1; }
+  .title { fill: #f4f7fa; font: 600 30px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .viewpoint { fill: #8c98a4; font: 600 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .boundary { fill: none; stroke: #69737d; stroke-width: 1.5; stroke-dasharray: 7 6; }
+  .boundaryTitle { fill: #aeb7c0; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .zone { fill: #171b20; stroke: #343b43; stroke-width: 1.4; }
+  .zone-primary { fill: #152019; stroke: #55d98d; }
+  .zone-secondary { fill: #141d25; stroke: #65b8ff; }
+  .zone-state { fill: #211d14; stroke: #e0b35a; }
+  .zone-external { fill: #191b1e; stroke: #7c8792; stroke-dasharray: 6 5; }
+  .zone-muted { fill: #14171b; stroke: #2c3239; }
+  .zoneTitle { fill: #aeb7c0; font: 600 15px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .node { fill: #1b2026; stroke: #49525c; stroke-width: 1.4; }
+  .node-primary { fill: #17231b; stroke: #55d98d; stroke-width: 1.8; }
+  .node-secondary { fill: #16212b; stroke: #65b8ff; }
+  .node-state { fill: #252116; stroke: #e0b35a; }
+  .node-external { fill: #1a1d21; stroke: #7c8792; }
+  .node-muted { fill: #161a1f; stroke: #343b43; }
+  .nodeTitle { fill: #f0f3f6; font: 600 18px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .nodeCaption { fill: #9da8b3; font: 400 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .edge { fill: none; stroke: #55d98d; stroke-width: 2; stroke-linejoin: round; }
+  .edge-secondary { stroke: #65b8ff; }
+  .edge-return { stroke: #a6b0ba; stroke-dasharray: 6 5; }
+  .edge-event { stroke: #e0b35a; stroke-dasharray: 3 4; }
+  .edge-feedback { stroke: #d48787; stroke-dasharray: 7 5; }
+  .edgeLabelBox { fill: #111418; stroke: #30363d; stroke-width: 1; }
+  .edgeLabel { fill: #d7dde3; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .band { fill: #171b20; }
+  .band-primary { fill: #142019; }
+  .band-secondary { fill: #141d25; }
+  .band-state { fill: #201c14; }
+  .band-muted { fill: #14171b; }
+  .bandRule { stroke: #30363d; stroke-width: 1; }
+  .bandTitle { fill: #8f9aa5; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .lifeline { stroke: #48515a; stroke-width: 1.3; stroke-dasharray: 5 6; }
+  .fragment { fill: #151a1f; stroke: #3b444d; stroke-width: 1; }
+  .fragment-primary { fill: #142019; stroke: #3d7555; }
+  .fragment-secondary { fill: #141d25; stroke: #416884; }
+  .fragmentLabel { fill: #aeb7c0; font: 600 12px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .matrixHead { fill: #181d22; stroke: #343b43; stroke-width: 1; }
+  .matrixCell { fill: #14181d; stroke: #2d343c; stroke-width: 1; }
+  .matrixOwner { fill: #17301f; stroke: #55d98d; stroke-width: 1.4; }
+  .matrixText { fill: #d8dee4; font: 500 14px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .matrixOwnerText { fill: #7fe7a8; font: 700 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .guard { fill: #151a1f; stroke: #59636e; stroke-width: 1; }
+  .guard-primary { stroke: #55d98d; }
+  .guard-secondary { stroke: #65b8ff; }
+  .guard-state { stroke: #e0b35a; }
+  .guardLine { stroke: #59636e; stroke-width: 1; stroke-dasharray: 3 4; }
+  .guardText { fill: #b4bec8; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+</style>
+<defs>
+  <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#55d98d"/>
+  </marker>
+  <marker id="arrow-secondary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#65b8ff"/>
+  </marker>
+  <marker id="arrow-return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#a6b0ba"/>
+  </marker>
+  <marker id="arrow-event" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#e0b35a"/>
+  </marker>
+  <marker id="arrow-feedback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#d48787"/>
+  </marker>
+</defs>
+<title id="title-ui-system.design-architecture">Peers UI Design Architecture — Proposal</title>
+<rect class="canvas" width="1440" height="840"/>
+<text class="title" x="44" y="48">Peers UI Design Architecture — Proposal</text>
+<text class="viewpoint" x="1396" y="46" text-anchor="end">LOGICAL-LAYER</text>
+<line class="headerRule" x1="44" y1="72" x2="1396" y2="72"/>
+<rect class="band band-muted" x="44" y="100" width="1022" height="150"/>
+<line class="bandRule" x1="44" y1="100" x2="1066" y2="100"/>
+<text class="bandTitle" x="62" y="128">PRODUCT SURFACES</text>
+<rect class="node node-neutral" x="70" y="156" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="84" y="187">Desktop / Mobile</text>
+<text class="nodeCaption" x="84" y="217">existing product hosts</text>
+<rect class="node node-neutral" x="388" y="156" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="402" y="187">Applet Surfaces</text>
+<text class="nodeCaption" x="402" y="217">existing host-owned experience</text>
+<rect class="node node-neutral" x="706" y="156" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="720" y="187">Prototype Portal</text>
+<text class="nodeCaption" x="720" y="217">existing specimen host</text>
+<rect class="band band-secondary" x="44" y="275" width="1022" height="150"/>
+<line class="bandRule" x1="44" y1="275" x2="1066" y2="275"/>
+<text class="bandTitle" x="62" y="303">COMPOSITION CONTRACTS</text>
+<rect class="node node-neutral" x="70" y="331" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="84" y="362">Page / Pattern</text>
+<text class="nodeCaption" x="84" y="392">contract binding · proposed</text>
+<rect class="node node-neutral" x="388" y="331" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="402" y="362">Component Design</text>
+<text class="nodeCaption" x="402" y="392">anatomy and slots · proposed</text>
+<rect class="node node-neutral" x="706" y="331" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="720" y="362">Platform Policy</text>
+<text class="nodeCaption" x="720" y="392">shared meaning · adaptation</text>
+<rect class="band band-primary" x="44" y="450" width="1022" height="150"/>
+<line class="bandRule" x1="44" y1="450" x2="1066" y2="450"/>
+<text class="bandTitle" x="62" y="478">SHARED UI RUNTIME</text>
+<rect class="node node-neutral" x="70" y="506" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="84" y="537">Web Renderer</text>
+<text class="nodeCaption" x="84" y="567">existing linked library</text>
+<rect class="node node-neutral" x="388" y="506" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="402" y="537">UI Semantics</text>
+<text class="nodeCaption" x="402" y="567">transient interaction state</text>
+<rect class="node node-neutral" x="706" y="506" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="720" y="537">Provider / Overlays</text>
+<text class="nodeCaption" x="720" y="567">context and document scope</text>
+<rect class="band band-external" x="44" y="625" width="1022" height="150"/>
+<line class="bandRule" x1="44" y1="625" x2="1066" y2="625"/>
+<text class="bandTitle" x="62" y="653">DESIGN FOUNDATIONS</text>
+<rect class="node node-neutral" x="70" y="681" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="84" y="712">UI Identity</text>
+<text class="nodeCaption" x="84" y="742">foundation meanings and grammar</text>
+<rect class="node node-neutral" x="388" y="681" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="402" y="712">Capability Catalogue</text>
+<text class="nodeCaption" x="402" y="742">finite semantic source</text>
+<rect class="node node-neutral" x="706" y="681" width="300" height="78" rx="6"/>
+<text class="nodeTitle" x="720" y="712">Tokens / Assets</text>
+<text class="nodeCaption" x="720" y="742">owned values and resources</text>
+<rect class="zone zone-muted" x="1090" y="100" width="306" height="675" rx="6"/>
+<text class="zoneTitle" x="1104" y="128">EXISTING EDX</text>
+<rect class="node node-neutral" x="1120" y="156" width="246" height="98" rx="6"/>
+<text class="nodeTitle" x="1134" y="187">EDX Contracts</text>
+<text class="nodeCaption" x="1134" y="237">case and trace validation</text>
+<rect class="node node-neutral" x="1120" y="350" width="246" height="98" rx="6"/>
+<text class="nodeTitle" x="1134" y="381">Findings / Evidence</text>
+<text class="nodeCaption" x="1134" y="431">source-bound observations</text>
+<rect class="node node-neutral" x="1120" y="544" width="246" height="98" rx="6"/>
+<text class="nodeTitle" x="1134" y="575">Review / CER</text>
+<text class="nodeCaption" x="1134" y="625">independent judgment</text>
+</svg>

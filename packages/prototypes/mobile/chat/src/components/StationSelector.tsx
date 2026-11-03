@@ -1,16 +1,7 @@
 import { useState } from 'react';
-import { Button, Modal, Typography } from 'antd';
-import {
-  AlertTriangle,
-  Check,
-  Plus,
-  Server,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { useT } from '../i18n';
+import { Button, Icon, Text } from '@peers-touch/ui';
 import type { StationEntry } from '../types';
-
-const { Text } = Typography;
 
 export function StationSelector({
   entries, activeUrl, onSelect, onRemove, onAdd, showRemovalConfirmation = false,
@@ -22,6 +13,7 @@ export function StationSelector({
   onAdd: (url: string) => void;
   showRemovalConfirmation?: boolean;
 }) {
+  const t = useT();
   const [stationUrl, setStationUrl] = useState('');
   const [addingStation, setAddingStation] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<StationEntry | null>(
@@ -54,8 +46,8 @@ export function StationSelector({
     <section className="mp-station-selector">
       <div className="mp-station-selector-header">
         <div>
-          <Text strong>Your Station</Text>
-          <Text className="mp-station-helper">
+          <Text strong>{t('mobile.station.your')}</Text>
+          <Text className="mp-station-helper" tone="secondary">
             Tap a recent Station to change the target
           </Text>
         </div>
@@ -84,37 +76,32 @@ export function StationSelector({
             <button
               type="button"
               className="mp-station-submit"
-              aria-label="Add Station"
+              aria-label={t('mobile.station.add')}
               disabled={!canAdd}
               onClick={handleAdd}
             >
-              <Plus size={17} aria-hidden="true" />
+              <Icon iconId="plus" size={17} />
             </button>
           </div>
           {hasEntries && (
-            <Button
-              type="text"
-              className="mp-station-cancel-btn"
-              aria-label="Cancel adding Station"
-              icon={<X size={16} />}
-              onClick={closeStationInput}
-            />
+            <Button actionId="station.cancel-add" emphasis="quiet" aria-label={t('mobile.station.cancelAdd')}
+              leading={<Icon iconId="close" size={16} />} onActivate={closeStationInput} />
           )}
         </div>
       )}
 
       {showStationInput && stationUrl.trim().toLowerCase().startsWith('http://') && (
-        <Text className="mp-station-field-helper">
-          <AlertTriangle size={12} aria-hidden="true" />
-          <span>HTTP is unencrypted. Trusted networks only.</span>
+        <Text className="mp-station-field-helper" tone="warning">
+          <Icon iconId="attention" size={12} />
+          <span>{t('mobile.station.httpWarning')}</span>
         </Text>
       )}
 
       <div className="mp-station-list">
         {entries.length === 0 ? (
           <div className="mp-station-empty">
-            <Server size={18} />
-            <Text type="secondary">No stations configured</Text>
+            <Icon iconId="server" size={18} />
+            <Text tone="secondary">{t('mobile.station.none')}</Text>
           </div>
         ) : (
           entries.map((entry) => {
@@ -127,22 +114,23 @@ export function StationSelector({
                   className="mp-station-entry-main"
                   onClick={() => onSelect(entry.url)}
                 >
-                  <span className="mp-station-entry-icon"><Server size={18} /></span>
+                  <span className="mp-station-entry-icon"><Icon iconId="server" size={18} /></span>
                   <span className="mp-station-entry-copy">
-                    <Text strong={isActive} className="mp-truncate">{entry.label}</Text>
+                    <Text strong={isActive} truncate>{entry.label}</Text>
                   </span>
                   <span className={`mp-station-entry-status ${status.className}`}>{status.label}</span>
                   <span className="mp-station-check-slot">
-                    {isActive && <Check size={16} className="mp-station-check" />}
+                    {isActive && <Icon iconId="check" size={16} className="mp-station-check" />}
                   </span>
                 </button>
-                <Button
-                  type="text"
+                <button
+                  type="button"
                   className="mp-station-remove"
                   aria-label={`Remove ${entry.label}`}
-                  icon={<Trash2 size={15} />}
                   onClick={() => setPendingRemoval(entry)}
-                />
+                >
+                  <Icon iconId="delete" size={15} />
+                </button>
               </div>
             );
           })
@@ -150,31 +138,38 @@ export function StationSelector({
       </div>
 
       {hasEntries && !addingStation && (
-        <Button type="text" className="mp-station-add-btn" icon={<Plus size={14} />} onClick={() => setAddingStation(true)}>
+        <Button actionId="station.add" emphasis="quiet" density="compact"
+          leading={<Icon iconId="plus" size={14} />}
+          onActivate={() => setAddingStation(true)}>
           Add Station
         </Button>
       )}
 
       {pendingRemoval && (
-        <div className="mp-station-remove-boundary" role="region" aria-label="Station removal confirmation">
-          <Modal
-            open
-            getContainer={false}
-            rootClassName="mp-station-remove-modal"
-            title="Remove Station?"
-            okText="Remove"
-            okButtonProps={{ danger: true }}
-            cancelText="Keep Station"
-            onCancel={() => setPendingRemoval(null)}
-            onOk={() => {
-              onRemove(pendingRemoval.url);
-              setPendingRemoval(null);
-            }}
-          >
-            <Text>
-              This removes the saved connection from this device. Data on the Station is not deleted.
-            </Text>
-          </Modal>
+        <div className="mp-station-remove-boundary" role="region" aria-label={t('mobile.station.removeConfirmAria')}>
+          <div className="mp-confirm-backdrop" onClick={() => setPendingRemoval(null)}>
+            <div className="mp-confirm-dialog" onClick={(event) => event.stopPropagation()}>
+              <div className="mp-confirm-title">{t('mobile.station.removeTitle')}</div>
+              <div className="mp-confirm-desc">
+                This removes the saved connection from this device. Data on the Station is not deleted.
+              </div>
+              <div className="mp-confirm-actions">
+                <button type="button" className="mp-confirm-btn" onClick={() => setPendingRemoval(null)}>
+                  Keep Station
+                </button>
+                <button
+                  type="button"
+                  className="mp-confirm-btn mp-confirm-btn--danger"
+                  onClick={() => {
+                    onRemove(pendingRemoval.url);
+                    setPendingRemoval(null);
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </section>
