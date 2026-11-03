@@ -292,6 +292,38 @@ export class AvatarAssetsStore {
     if (!identity) return;
     // Explicit session binding always bypasses failure backoff.
     this.request(query, { force: true });
+    // Entries can reach `ready` before the authenticated session is bound
+    // (initial conversation/profile hydrate races session restore). The
+    // ready short-circuit in `request` never re-enters `recordReady`, so the
+    // one-shot persist there would be skipped for the whole process and every
+    // relaunch would paint placeholders until live resolution lands again.
+    // Backfill cross-process last-good for any already-ready attributed peer
+    // avatars now that the owner session is known.
+    this.persistReadyEntriesForSession(binding.actorPtid);
+  }
+
+  /**
+   * Re-run cross-process persistence for every `ready` entry attributed to an
+   * actor (self or peer) under the newly bound session owner. Idempotent:
+   * entries without an owner PTID or without a paint-ready src are skipped,
+   * and the persistent map write happens at most once per actor per owner.
+   */
+  private persistReadyEntriesForSession(ownerPtid: string): void {
+    const owner = ownerPtid.trim();
+    if (!owner || !this.persistLastGood) return;
+    for (const entry of this.entries.values()) {
+      if (entry.phase !== 'ready' || !entry.src) continue;
+      const actorPtid = entry.actorKey.split('|')[1]?.trim();
+      // Entries without an owner PTID and the authenticated session must
+      // never share a last-good bucket.
+      if (!actorPtid) continue;
+      this.rememberLastGood(entry.actorKey, actorPtid, {
+        identity: entry.identity,
+        src: entry.src,
+        localPath: entry.localPath,
+        revision: entry.revision,
+      });
+    }
   }
 
   /**
@@ -363,6 +395,24 @@ export class AvatarAssetsStore {
     if (classifyAvatarSource(query.identity) === 'retired') {
       return this.recordTerminal(query, 'absent').snapshot;
     }
+    // Key-churn adoption. The same avatar identity can be requested under a
+    // different key within seconds for two distinct reasons:
+    //   1. attribution: a row paints before the friend/profile hydrate
+    //      supplies peerPtid, then re-renders WITH the PTID;
+    //   2. revision: the row first carries the friend-request snapshot
+    //      (no profile revision) and later the authoritative profile revision.
+    // Without adoption each churn starts a second native flight and re-shows
+    // the neutral placeholder. Exact identity+revision matches reuse the
+    // decoded pixels outright; revision drift paints the previous image as
+    // degraded last-good while the canonical flight still refreshes it.
+    if (!existing) {
+      const adoption = this.adoptReadyIdentity(key, query);
+      if (adoption?.exact) return adoption.snapshot;
+      if (adoption) {
+        if (!this.flights.has(key)) this.startFlight(key, query);
+        return adoption.snapshot;
+      }
+    }
     if (!this.flights.has(key)) {
       // Seed the new entry with the same-actor last-good image before the
       // flight starts. Avatar identities can rotate (ephemeral
@@ -405,6 +455,66 @@ export class AvatarAssetsStore {
     });
     this.enforceEntryBound();
     return fallback;
+  }
+
+  /**
+   * Reuse an already-ready entry whose canonical identity matches a request
+   * that arrives under a new key (attribution or profile-revision churn).
+   *
+   * Safety contract: identity strings must match exactly, and an attributed
+   * source image is never moved onto a *different* attributed owner. Two
+   * actors declaring the same public URL resolve identically, but a peer's
+   * attributed image still never crosses an owner boundary.
+   *
+   * - Exact revision match: the pixels are authoritative for the query, so
+   *   the result is adopted as `ready` with no new flight.
+   * - Revision drift: the previous image is only last-good; the caller must
+   *   still start the canonical flight. The image is registered on the
+   *   actor's last-good buckets (so it seeds a degraded entry and
+   *   cross-process persistence is backfilled) before `seedLastGood` runs.
+   */
+  private adoptReadyIdentity(
+    key: string,
+    query: AvatarAssetQuery,
+  ): { snapshot: AvatarAssetSnapshot; exact: boolean } | null {
+    if (this.entries.has(key)) return null;
+    const identity = query.identity.trim();
+    if (!identity) return null;
+    const targetActor = query.actorPtid?.trim() ?? '';
+    const wantedRevision = query.profileRevision ?? null;
+
+    let exact: AvatarEntry | null = null;
+    let drifted: AvatarEntry | null = null;
+    for (const entry of this.entries.values()) {
+      if (entry.phase !== 'ready' || !entry.src || entry.identity !== identity) continue;
+      const sourceActor = entry.actorKey.split('|')[1]?.trim() ?? '';
+      if (targetActor && sourceActor && sourceActor !== targetActor) continue;
+      if (entry.revision === wantedRevision) {
+        exact = entry;
+        break;
+      }
+      drifted ??= entry;
+    }
+
+    const source = exact ?? drifted;
+    if (!source || !source.src) return null;
+
+    if (exact) {
+      // The decoded buffer may already have been released by the LRU; the
+      // paint-ready src survives and a future <img> re-decodes from cache.
+      const entry = this.recordReady(query, source.src, source.localPath, source.image);
+      return { exact: true, snapshot: entry.snapshot };
+    }
+
+    if (!targetActor) return null;
+    this.rememberLastGood(actorKeyFor(query), targetActor, {
+      identity: source.identity,
+      src: source.src,
+      localPath: source.localPath,
+      revision: source.revision,
+    });
+    const seeded = this.seedLastGood(key, query);
+    return seeded ? { exact: false, snapshot: seeded } : null;
   }
 
   /**
@@ -654,7 +764,7 @@ export class AvatarAssetsStore {
     query: AvatarAssetQuery,
     src: string,
     localPath: string | null,
-    image: HTMLImageElement,
+    image: HTMLImageElement | null,
   ): AvatarEntry {
     const key = avatarAssetKey(query);
     const entry: AvatarEntry = {
@@ -677,30 +787,37 @@ export class AvatarAssetsStore {
     // Last-good is only usable when the owner is known. Peer avatars without
     // an actor PTID and the authenticated session must never share a bucket.
     if (query.actorPtid) {
-      const lastGood = {
+      this.rememberLastGood(entry.actorKey, query.actorPtid, {
         identity: entry.identity,
         src,
         localPath,
         revision: entry.revision,
-      };
-      this.lastGoodByActor.set(entry.actorKey, lastGood);
-      // Cross-process last-good for first-frame paint after restart.
-      this.persistentLastGood.set(query.actorPtid, lastGood);
-      const ownerPtid = this.session?.actorPtid;
-      if (this.persistLastGood && ownerPtid) {
-        this.persistLastGood(ownerPtid, {
-          actorPtid: query.actorPtid,
-          identity: entry.identity,
-          src,
-          localPath,
-          revision: entry.revision,
-        });
-      }
+      });
     }
     this.enforceEntryBound();
     this.enforceImageBound();
     this.emit();
     return entry;
+  }
+
+  /**
+   * Record an image as the in-process and cross-process last-good for one
+   * attributed actor. The cross-process sink only fires once the owner
+   * session is bound; `persistReadyEntriesForSession` backfills entries that
+   * went ready before the bind landed.
+   */
+  private rememberLastGood(
+    actorKey: string,
+    actorPtid: string,
+    good: LastGood,
+  ): void {
+    this.lastGoodByActor.set(actorKey, good);
+    // Cross-process last-good for first-frame paint after restart.
+    this.persistentLastGood.set(actorPtid, good);
+    const ownerPtid = this.session?.actorPtid;
+    if (this.persistLastGood && ownerPtid) {
+      this.persistLastGood(ownerPtid, { actorPtid, ...good });
+    }
   }
 
   private recordTerminal(query: AvatarAssetQuery, phase: 'absent' | 'failed'): AvatarEntry {

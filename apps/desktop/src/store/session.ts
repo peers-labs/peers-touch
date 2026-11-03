@@ -105,6 +105,21 @@ function commitAuthenticatedSession(
   set((state) => {
     const sessionEpoch = state.sessionEpoch + 1;
     if (user) {
+      // Prime cross-process avatar last-good (self + previously seen peers)
+      // BEFORE binding the session, so bindSession seeds a paint-ready image
+      // and the first authenticated frame — conversation rows included —
+      // never shows the neutral placeholder. Applies to every authenticated
+      // edge (restore, password, OAuth), not only restore. The live
+      // resolution replaces each degraded image atomically.
+      avatarAssets.primePersistentLastGood(
+        readPersistedAvatarLastGood(user.actorPtid).map((entry) => ({
+          actorPtid: entry.actorPtid,
+          identity: entry.identity,
+          src: entry.src,
+          localPath: entry.localPath,
+          revision: entry.revision,
+        })),
+      );
       avatarAssets.bindSession({
         epoch: sessionEpoch,
         actorPtid: user.actorPtid,
@@ -259,21 +274,6 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       const method = resp.login_method || 'password';
       const isOAuth = method !== 'password';
       const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);
-      if (user) {
-        // Prime cross-process avatar last-good (self + previously seen
-        // peers) BEFORE committing the session, so bindSession seeds a
-        // paint-ready image and the first shell frame never shows the
-        // neutral placeholder. The live resolution replaces it atomically.
-        avatarAssets.primePersistentLastGood(
-          readPersistedAvatarLastGood(user.actorPtid).map((entry) => ({
-            actorPtid: entry.actorPtid,
-            identity: entry.identity,
-            src: entry.src,
-            localPath: entry.localPath,
-            revision: entry.revision,
-          })),
-        );
-      }
       commitAuthenticatedSession(set, user, false, stationPeerId);
     } catch (error) {
       if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {

@@ -401,4 +401,110 @@ describe('avatarAssets persistent last-good', () => {
       localPath: '/cache/self.png',
     });
   });
+
+  it('backfills owner persistence for a peer avatar that went ready before session bind', async () => {
+    const persist = vi.fn();
+    const store = new AvatarAssetsStore({
+      resolveLocal: vi.fn(async (identity: string) => ({
+        state: 'ready' as const,
+        identity,
+        local_path: `/cache/${identity.replace(/\W/g, '')}`,
+      })),
+      fileSrc: (path) => `asset://${path}`,
+      imageFactory: () => new FakeImage() as unknown as HTMLImageElement,
+    }, persist);
+
+    // Initial hydrate resolves the peer avatar before the owner session binds.
+    const peerQuery: AvatarAssetQuery = { identity: '/peer.png', actorPtid: 'ptid:peer', epoch: 0 };
+    store.request(peerQuery);
+    await vi.waitFor(() => {
+      expect(store.getSnapshot(avatarAssetKey(peerQuery))?.phase).toBe('ready');
+    });
+    expect(persist).not.toHaveBeenCalled();
+
+    // Binding the owner session synchronously backfills the ready peer entry.
+    store.bindSession({ epoch: 1, actorPtid: 'ptid:owner', identity: '/self.png' });
+    expect(persist.mock.calls.some(([owner, entry]) => (
+      owner === 'ptid:owner'
+      && entry.actorPtid === 'ptid:peer'
+      && entry.src === 'asset:///cache/peerpng'
+    ))).toBe(true);
+  });
+
+  it('adopts an already-ready image when attribution arrives, without a second flight', async () => {
+    const resolveLocal = vi.fn(async (identity: string) => ({
+      state: 'ready' as const,
+      identity,
+      local_path: `/cache/${identity.replace(/\W/g, '')}`,
+    }));
+    const persist = vi.fn();
+    const store = new AvatarAssetsStore({
+      resolveLocal,
+      fileSrc: (path) => `asset://${path}`,
+      imageFactory: () => new FakeImage() as unknown as HTMLImageElement,
+    }, persist);
+    store.bindSession({ epoch: 1, actorPtid: 'ptid:owner', identity: '/self.png' });
+    await vi.waitFor(() => expect(persist).toHaveBeenCalled());
+    persist.mockClear();
+
+    // The row paints before the friend/profile hydrate supplies peerPtid.
+    const unattributed: AvatarAssetQuery = { identity: '/peer.png', epoch: 0 };
+    store.request(unattributed);
+    await vi.waitFor(() => {
+      expect(store.getSnapshot(avatarAssetKey(unattributed))?.phase).toBe('ready');
+    });
+
+    // Attribution arrives under a new key: pixels are adopted immediately.
+    const attributed: AvatarAssetQuery = { identity: '/peer.png', actorPtid: 'ptid:peer', epoch: 0 };
+    const adopted = store.request(attributed);
+    expect(adopted?.src).toBe('asset:///cache/peerpng');
+    expect(adopted?.degraded).toBe(false);
+    expect(resolveLocal.mock.calls.filter(([identity]) => identity === '/peer.png')).toHaveLength(1);
+    expect(persist.mock.calls.some(([owner, entry]) => (
+      owner === 'ptid:owner'
+      && entry.actorPtid === 'ptid:peer'
+      && entry.src === 'asset:///cache/peerpng'
+    ))).toBe(true);
+  });
+
+  it('paints the previous image degraded across revision churn while the live flight refreshes', async () => {
+    const resolveLocal = vi.fn(async (identity: string) => ({
+      state: 'ready' as const,
+      identity,
+      local_path: `/cache/${identity.replace(/\W/g, '')}`,
+    }));
+    const store = new AvatarAssetsStore({
+      resolveLocal,
+      fileSrc: (path) => `asset://${path}`,
+      imageFactory: () => new FakeImage() as unknown as HTMLImageElement,
+    }, vi.fn());
+    store.bindSession({ epoch: 1, actorPtid: 'ptid:owner', identity: '/self.png' });
+
+    // First wave: friend-request snapshot identity carries no revision.
+    const revisionless: AvatarAssetQuery = {
+      identity: '/peer.png',
+      actorPtid: 'ptid:peer',
+      epoch: 0,
+      profileRevision: null,
+    };
+    store.request(revisionless);
+    await vi.waitFor(() => {
+      expect(store.getSnapshot(avatarAssetKey(revisionless))?.phase).toBe('ready');
+    });
+
+    // Second wave: authoritative profile revision arrives under a new key.
+    const revisioned: AvatarAssetQuery = {
+      identity: '/peer.png',
+      actorPtid: 'ptid:peer',
+      epoch: 0,
+      profileRevision: 7,
+    };
+    const adopted = store.request(revisioned);
+    expect(adopted?.src).toBe('asset:///cache/peerpng');
+    expect(adopted?.degraded).toBe(true);
+    await vi.waitFor(() => {
+      expect(store.getSnapshot(avatarAssetKey(revisioned))?.phase).toBe('ready');
+    });
+    expect(resolveLocal.mock.calls.filter(([identity]) => identity === '/peer.png')).toHaveLength(2);
+  });
 });

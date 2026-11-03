@@ -722,6 +722,13 @@ interface SocialChatState {
   reset: () => void;
   /** Clear only the Messaging-owned projection before a scope handoff. */
   resetMessagingProjection: () => void;
+  /**
+   * Synchronously seed peer identities (display name + avatar identity) from
+   * the actor-scoped persistent last-good so the first authenticated frame
+   * paints conversation rows without a profile round-trip. The first member
+   * sweep reconciles every seeded entry over the network.
+   */
+  seedPresentationLastGood: (actorPtid: string) => void;
   hydrate: (actorPtid: string) => Promise<void>;
 }
 
@@ -1171,22 +1178,29 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       openThreadRootUlid: null,
     })),
 
+  seedPresentationLastGood: (actorPtid) => {
+    const did = actorPtid.trim();
+    if (!did || currentAuthenticatedActorPtid() !== did) return;
+    // One seed per authenticated actor; the member sweep consumes the
+    // reconciliation marker. A newer actor's reset() clears the prior one.
+    if (cachedProfileHydration?.actorPtid === did) return;
+    // Presentation last-good only: live reconciliation in the first
+    // loadSessions sweep overwrites every seeded entry.
+    const cachedProfiles = readCachedPeerProfiles(did);
+    const cachedPtids = Object.keys(cachedProfiles);
+    if (cachedPtids.length === 0) return;
+    cachedProfileHydration = { actorPtid: did, ptids: new Set(cachedPtids) };
+    set((prev) => ({ peerProfiles: { ...cachedProfiles, ...prev.peerProfiles } }));
+  },
+
   hydrate: async (actorPtid: string) => {
     const did = actorPtid.trim();
     if (!did) return;
     if (currentAuthenticatedActorPtid() !== did) return;
     set({ currentUserPtid: did });
-    // Seed first-frame identities from the persistent last-good cache so
-    // conversation rows, group avatar tiles and profile cards paint real
-    // avatars before the per-member network reads land. Live reconciliation
-    // in loadSessions overwrites every seeded entry (see
-    // cachedProfileHydration); the cache is presentation last-good only.
-    const cachedProfiles = readCachedPeerProfiles(did);
-    const cachedPtids = Object.keys(cachedProfiles);
-    if (cachedPtids.length > 0) {
-      cachedProfileHydration = { actorPtid: did, ptids: new Set(cachedPtids) };
-      set((prev) => ({ peerProfiles: { ...cachedProfiles, ...prev.peerProfiles } }));
-    }
+    // Seed first-frame identities so conversation rows, group avatar tiles
+    // and profile cards paint real avatars before per-member network reads.
+    get().seedPresentationLastGood(did);
     const { loadCurrentUserProfile, loadSessions, loadGroups } = get();
     await loadCurrentUserProfile();
     await Promise.all([loadSessions(), loadGroups()]);
