@@ -415,6 +415,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnQueueHandlers := handler.NewTurnQueueHandlers(turnAdmissionSvc)
 	logicalArtifactSvc := service.NewLogicalArtifactService()
 	logicalArtifactHandlers := handler.NewLogicalArtifactHandlers(logicalArtifactSvc)
+	terminalSessionSvc := service.NewTerminalSessionService()
+	terminalSessionHandlers := handler.NewTerminalSessionHandlers(terminalSessionSvc)
 	convHandlers := handler.NewConversationHandlers(
 		convSvc,
 		turnSvc,
@@ -648,6 +650,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-task-artifact-check-list", "/agent/task/artifact/check/list", server.POST, logicalArtifactHandlers.HandleListArtifactChecks, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-task-artifact-accept", "/agent/task/artifact/accept", server.POST, logicalArtifactHandlers.HandleAcceptArtifactVersion, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-task-artifact-acceptance-list", "/agent/task/artifact/acceptance/list", server.POST, logicalArtifactHandlers.HandleListArtifactAcceptances, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-create", "/agent/terminal-session/create", server.POST, terminalSessionHandlers.HandleCreateTerminalSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-update", "/agent/terminal-session/update", server.POST, terminalSessionHandlers.HandleUpdateTerminalSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-list", "/agent/terminal-session/list", server.POST, terminalSessionHandlers.HandleListTerminalSessions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-reconcile", "/agent/terminal-session/reconcile", server.POST, terminalSessionHandlers.HandleReconcileTerminalSessions, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-terminal-session-remove", "/agent/terminal-session/remove", server.POST, terminalSessionHandlers.HandleRemoveTerminalSession, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-diagnostics-export", "/agent/turn/diagnostics/export", server.POST, turnHandlers.HandleExportTurnDiagnostics, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-conversation-list", "/agent/conversation/list", server.POST, convHandlers.HandleListConversations, logIDWrapper, jwtWrapper),

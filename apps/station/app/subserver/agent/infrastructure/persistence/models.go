@@ -93,6 +93,7 @@ func AllModels() []interface{} {
 		&ArtifactFeedback{},
 		&ArtifactCheck{},
 		&ArtifactAcceptance{},
+		&TerminalSession{},
 		&TurnTrace{},
 		&ScheduledJob{},
 		&ScheduledJobRun{},
