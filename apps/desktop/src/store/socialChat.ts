@@ -2272,10 +2272,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   loadFriendRequests: async (status, limit, offset) => {
     if (!hasAuthenticatedActor()) return;
-    set({
-      friendRequestsLoading: true,
-      friendRequestsError: null,
-    });
+    // The periodic realtime reconcile (and mutation-triggered refreshes) call
+    // this action continuously. Only the actor's first load drives the
+    // loading surface: flipping it on every background sweep replaced the
+    // whole contacts section with a spinner each cycle (visible periodic
+    // "refresh"). Later swaps land in place, and a background failure keeps
+    // the previous projection instead of an error panel.
+    const initialLoad = !get().friendRequestsLoadedAt;
+    if (initialLoad) {
+      set({
+        friendRequestsLoading: true,
+        friendRequestsError: null,
+      });
+    }
     try {
       const data = await api.socialFriendRequestList(status, limit, offset);
       const requests = normalizeFriendRequests(
@@ -2292,11 +2301,15 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
           .map((did) => get().loadPeerProfile(did)),
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      set({
-        friendRequestsLoading: false,
-        friendRequestsError: message,
-      });
+      if (initialLoad) {
+        const message = error instanceof Error ? error.message : String(error);
+        set({
+          friendRequestsLoading: false,
+          friendRequestsError: message,
+        });
+      } else {
+        log.warn('socialChat', 'background friend requests refresh failed', { error });
+      }
       throw error;
     }
   },
