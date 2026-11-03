@@ -20,6 +20,7 @@ pub mod device_link;
 pub mod evaluation;
 pub mod federation;
 pub mod frontend_log;
+pub mod browser;
 pub mod terminal;
 pub mod frontend_telemetry;
 pub mod home;
