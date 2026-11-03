@@ -357,6 +357,203 @@ func TestLogicalArtifactOwnershipAndList(t *testing.T) {
 	}
 }
 
+func seedCommandCheckFixture(t *testing.T, db *gorm.DB, conversationID string, exitCode int) (*persistence.ToolCall, []byte) {
+	t.Helper()
+	now := time.Now().UTC()
+	batch := &persistence.ToolBatch{
+		ID:             "batch-" + conversationID,
+		ActorID:        "ptid:actor-1",
+		TurnID:         "turn-shell-" + conversationID,
+		ConversationID: conversationID,
+		AgentID:        "agent-1",
+		Status:         "settled",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := db.Create(batch).Error; err != nil {
+		t.Fatalf("seed batch: %v", err)
+	}
+	envelope := []byte(
+		`{"ok":true,"output":{"command":"ls","exit_code":` +
+			map[bool]string{true: "0", false: "1"}[exitCode == 0] +
+			`,"stdout":""}}`,
+	)
+	if exitCode != 0 {
+		envelope = []byte(`{"ok":true,"output":{"command":"ls","exit_code":1,"stderr":"missing"}}`)
+	}
+	call := &persistence.ToolCall{
+		ID:               "call-" + conversationID,
+		ActorID:          "ptid:actor-1",
+		ToolBatchID:      batch.ID,
+		ToolName:         "local_shell_exec",
+		ToolCallID:       "llm-call-" + conversationID,
+		BoundedArguments: []byte(`{"command":"ls"}`),
+		ResourceRefs:     []byte("[]"),
+		Status:           "succeeded",
+		TurnID:           "turn-shell-" + conversationID,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if err := db.Create(call).Error; err != nil {
+		t.Fatalf("seed call: %v", err)
+	}
+	result := &persistence.ToolResult{
+		ID:            "result-" + conversationID,
+		ToolCallID:    call.ToolCallID,
+		MessageID:     "msg-tool-" + conversationID,
+		ToolBatchID:   batch.ID,
+		TurnID:        "turn-shell-" + conversationID,
+		Status:        "applied",
+		BoundedResult: envelope,
+		CreatedAt:     now,
+	}
+	if err := db.Create(result).Error; err != nil {
+		t.Fatalf("seed result: %v", err)
+	}
+	return call, envelope
+}
+
+func TestLogicalArtifactCommandCheckBindsRealToolResult(t *testing.T) {
+	db := openLogicalArtifactDB(t, "logical_artifact_command_check")
+	if err := db.AutoMigrate(
+		&persistence.ToolBatch{},
+		&persistence.ToolCall{},
+		&persistence.ToolResult{},
+	); err != nil {
+		t.Fatalf("migrate tool tables: %v", err)
+	}
+	seedArtifactConversation(t, db)
+	_, envelope := seedCommandCheckFixture(t, db, "conv-art", 0)
+	svc := newLogicalArtifactSvc(db)
+	ctx := context.Background()
+
+	_, version, err := svc.ClaimVersion(ctx, "ptid:actor-1", &model.ClaimArtifactVersionRequest{
+		ConversationId:       "conv-art",
+		Name:                 "Code result",
+		Origin:               model.ArtifactVersionOrigin_ARTIFACT_VERSION_ORIGIN_AGENT_OUTPUT,
+		SourceTurnId:         "turn-v1",
+		SourceMessageId:      "msg-v1",
+		ClientIdempotencyKey: "claim-cmd-1",
+	})
+	if err != nil {
+		t.Fatalf("claim version: %v", err)
+	}
+	outputSHA := artifactBodySHA256(envelope)
+	check, err := svc.RecordCheck(ctx, "ptid:actor-1", &model.RecordArtifactCheckRequest{
+		ArtifactId:          version.ArtifactID,
+		VersionId:           version.ID,
+		CheckType:           model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND,
+		Result:              model.ArtifactCheckResult_ARTIFACT_CHECK_RESULT_PASSED,
+		SourceToolCallId:    "call-conv-art",
+		CommandExitCode:     0,
+		CommandOutputSha256: outputSHA,
+		Command:             "ls",
+	})
+	if err != nil {
+		t.Fatalf("record command check: %v", err)
+	}
+	if check.SourceToolCallID != "call-conv-art" || check.Command != "ls" ||
+		check.CommandExitCode != 0 || check.CommandOutputSHA != outputSHA {
+		t.Fatalf("command evidence not persisted: %+v", check)
+	}
+
+	// A fabricated digest must be rejected.
+	if _, err := svc.RecordCheck(ctx, "ptid:actor-1", &model.RecordArtifactCheckRequest{
+		ArtifactId:          version.ArtifactID,
+		VersionId:           version.ID,
+		CheckType:           model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND,
+		Result:              model.ArtifactCheckResult_ARTIFACT_CHECK_RESULT_PASSED,
+		SourceToolCallId:    "call-conv-art",
+		CommandExitCode:     0,
+		CommandOutputSha256: "00",
+		Command:             "ls",
+	}); err == nil {
+		t.Fatal("fabricated output digest accepted")
+	}
+
+	// Missing tool call id is a bad request.
+	if _, err := svc.RecordCheck(ctx, "ptid:actor-1", &model.RecordArtifactCheckRequest{
+		ArtifactId: version.ArtifactID,
+		VersionId:  version.ID,
+		CheckType:  model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND,
+		Result:     model.ArtifactCheckResult_ARTIFACT_CHECK_RESULT_PASSED,
+	}); err == nil {
+		t.Fatal("command check without tool call accepted")
+	}
+
+	// A tool call from a different conversation cannot evidence the check.
+	otherNow := time.Now().UTC()
+	if err := db.Create(&persistence.Conversation{
+		ID: "conv-other", AgentID: "agent-1", ActorPTID: "ptid:actor-1",
+		Title: "other", Version: 1, Status: "active",
+		CreatedAt: otherNow, UpdatedAt: otherNow,
+	}).Error; err != nil {
+		t.Fatalf("seed other conversation: %v", err)
+	}
+	_, otherEnvelope := seedCommandCheckFixture(t, db, "conv-other", 0)
+	if _, err := svc.RecordCheck(ctx, "ptid:actor-1", &model.RecordArtifactCheckRequest{
+		ArtifactId:          version.ArtifactID,
+		VersionId:           version.ID,
+		CheckType:           model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND,
+		Result:              model.ArtifactCheckResult_ARTIFACT_CHECK_RESULT_PASSED,
+		SourceToolCallId:    "call-conv-other",
+		CommandExitCode:     0,
+		CommandOutputSha256: artifactBodySHA256(otherEnvelope),
+		Command:             "ls",
+	}); err == nil {
+		t.Fatal("cross-conversation tool call accepted as evidence")
+	}
+
+	// A failed command on the same conversation can be recorded as a
+	// FAILED check, but never as a passed one.
+	failedEnvelope := []byte(`{"ok":true,"output":{"command":"ls","exit_code":1,"stderr":"missing"}}`)
+	failedCall := &persistence.ToolCall{
+		ID: "call-conv-art-failed", ActorID: "ptid:actor-1", TurnID: "turn-shell-conv-art",
+		ToolBatchID: "batch-conv-art", ToolName: "local_shell_exec",
+		ToolCallID: "llm-call-failed", BoundedArguments: []byte(`{"command":"ls"}`),
+		ResourceRefs: []byte("[]"), Status: "succeeded",
+		CreatedAt: otherNow, UpdatedAt: otherNow,
+	}
+	if err := db.Create(failedCall).Error; err != nil {
+		t.Fatalf("seed failed call: %v", err)
+	}
+	if err := db.Create(&persistence.ToolResult{
+		ID: "result-failed", ToolCallID: failedCall.ToolCallID, MessageID: "msg-failed",
+		ToolBatchID: "batch-conv-art", TurnID: "turn-shell-conv-art",
+		Status: "applied", BoundedResult: failedEnvelope, CreatedAt: otherNow,
+	}).Error; err != nil {
+		t.Fatalf("seed failed result: %v", err)
+	}
+	if _, err := svc.RecordCheck(ctx, "ptid:actor-1", &model.RecordArtifactCheckRequest{
+		ArtifactId:          version.ArtifactID,
+		VersionId:           version.ID,
+		CheckType:           model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND,
+		Result:              model.ArtifactCheckResult_ARTIFACT_CHECK_RESULT_PASSED,
+		SourceToolCallId:    "call-conv-art-failed",
+		CommandExitCode:     1,
+		CommandOutputSha256: artifactBodySHA256(failedEnvelope),
+		Command:             "ls",
+	}); err == nil {
+		t.Fatal("non-zero command recorded as passed")
+	}
+	failedCheck, err := svc.RecordCheck(ctx, "ptid:actor-1", &model.RecordArtifactCheckRequest{
+		ArtifactId:          version.ArtifactID,
+		VersionId:           version.ID,
+		CheckType:           model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND,
+		Result:              model.ArtifactCheckResult_ARTIFACT_CHECK_RESULT_FAILED,
+		SourceToolCallId:    "call-conv-art-failed",
+		CommandExitCode:     1,
+		CommandOutputSha256: artifactBodySHA256(failedEnvelope),
+		Command:             "ls",
+	})
+	if err != nil {
+		t.Fatalf("record failed command check: %v", err)
+	}
+	if failedCheck.Result != "failed" {
+		t.Fatalf("expected failed check result, got %q", failedCheck.Result)
+	}
+}
+
 func hasHTTPStatus(err error, status int) bool {
 	if err == nil {
 		return false

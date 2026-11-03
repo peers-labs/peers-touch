@@ -5667,6 +5667,12 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		}
 		return true, err
 	}
+	if err := s.publishClientToolResultEvents(ctx, config, batch.TurnID, batch.ID); err != nil {
+		if settled, settleErr := settleExpiredContinuation(err); settled {
+			return true, settleErr
+		}
+		return true, err
+	}
 	if err := s.toolDispatch.MarkContinuationEmitted(
 		ctx,
 		continuation.ID,
@@ -6026,6 +6032,60 @@ func (s *TurnService) appendClientToolResultsToTrace(
 			Arguments: string(calls[i].BoundedArguments),
 			Result:    calls[i].ResultRef,
 		})
+	}
+	return nil
+}
+
+// publishClientToolResultEvents emits one persisted "tool_result" live event
+// per terminal client-tool result in the batch. Renderers use it to surface
+// the real device output envelope (shell exit code/stdout, file change facts)
+// immediately; persisted events also rebuild the projection on reconnect. The
+// projection reducer is idempotent by tool call id, so a re-claimed
+// continuation can republish safely.
+func (s *TurnService) publishClientToolResultEvents(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	toolBatchID string,
+) error {
+	var rows []struct {
+		ToolCallID    string
+		ToolName      string
+		Status        string
+		BoundedResult []byte
+		ErrorCode     string
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	if err := db.WithContext(ctx).Raw(`
+		SELECT c.tool_call_id AS tool_call_id,
+		       c.tool_name   AS tool_name,
+		       r.status      AS status,
+		       r.bounded_result AS bounded_result,
+		       r.error_code  AS error_code
+		FROM agent_tool_calls c
+		JOIN agent_tool_results r ON r.tool_call_id = c.tool_call_id
+		WHERE c.tool_batch_id = ?
+		ORDER BY c.dispatch_sequence ASC, c.created_at ASC`, toolBatchID).Scan(&rows).Error; err != nil {
+		return internalToolError("load client tool results for events", err)
+	}
+	for _, row := range rows {
+		event := TurnEvent{
+			Type:       "tool_result",
+			ToolCallID: row.ToolCallID,
+			ToolName:   row.ToolName,
+		}
+		errorCode := strings.TrimSpace(row.ErrorCode)
+		if errorCode != "" && len(row.BoundedResult) == 0 {
+			event.Error = errorCode
+		} else {
+			event.Result = truncateResult(string(row.BoundedResult))
+		}
+		if err := s.emitTurnEvent(ctx, config, turnID, event); err != nil {
+			return err
+		}
 	}
 	return nil
 }

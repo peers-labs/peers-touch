@@ -111,6 +111,11 @@ func turnArtifactToProto(row *persistence.TurnArtifact) *model.TurnArtifact {
 			ClientDeviceId:   row.ClientDeviceID,
 			StationObjectRef: row.StationObjectRef,
 		},
-		CreatedAt: timestamppb.New(row.CreatedAt),
+		ChangeType:    row.ChangeType,
+		BeforeSha256:  row.BeforeSHA256,
+		BeforeSize:    row.BeforeSize,
+		UnifiedDiff:   row.UnifiedDiff,
+		DiffTruncated: row.DiffTruncated,
+		CreatedAt:     timestamppb.New(row.CreatedAt),
 	}
 }

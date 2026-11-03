@@ -498,6 +498,18 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 		writeTurnReplayFailure(resp, "snapshot_failed", err)
 		return nil
 	}
+	if isTerminalTurnStatus(snapshot.Status) {
+		// The turn is already terminal at the snapshot fence, but the
+		// terminal status can become visible before every event row is.
+		// Drain through the snapshot's last sequence BEFORE emitting the
+		// terminal snapshot, so late-committed facts (e.g. a client
+		// tool_result sharing the completion transaction) are never skipped.
+		if _, err := replay(snapshot.LastSequence); err != nil {
+			writeTurnReplayFailure(resp, "drain_failed", err)
+			return nil
+		}
+		terminal = true
+	}
 	if err := writeSSEEventChecked(resp, "snapshot", map[string]any{
 		"type":            "snapshot",
 		"turnId":          snapshot.TurnID,
@@ -505,7 +517,7 @@ func (h *ConversationHandlers) HandleStreamConversationEvents(ctx context.Contex
 		"agentId":         snapshot.AgentID,
 		"status":          snapshot.Status,
 		"text":            snapshot.Text,
-		"seq":             snapshot.LastSequence,
+		"seq":             lastSequence,
 		"terminal_reason": snapshot.TerminalReason,
 		"updated_at":      snapshot.UpdatedAt,
 	}); err != nil {

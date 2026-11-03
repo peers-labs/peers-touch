@@ -32,6 +32,7 @@ const (
 	artifactFeedbackComment    = "comment"
 	artifactCheckStructural    = "structural"
 	artifactCheckHumanReview   = "human_review"
+	artifactCheckCommand       = "command"
 	artifactResultPassed       = "passed"
 	artifactResultFailed       = "failed"
 	defaultArtifactContentType = "text/markdown"
@@ -137,6 +138,8 @@ func artifactCheckTypeToString(kind model.ArtifactCheckType) string {
 		return artifactCheckStructural
 	case model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_HUMAN_REVIEW:
 		return artifactCheckHumanReview
+	case model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND:
+		return artifactCheckCommand
 	}
 	return ""
 }
@@ -147,6 +150,8 @@ func artifactCheckTypeFromString(kind string) model.ArtifactCheckType {
 		return model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_STRUCTURAL
 	case artifactCheckHumanReview:
 		return model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_HUMAN_REVIEW
+	case artifactCheckCommand:
+		return model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND
 	}
 	return model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_UNSPECIFIED
 }
@@ -428,6 +433,7 @@ func (s *LogicalArtifactService) ClaimVersion(
 			FeedbackID:            strings.TrimSpace(req.GetFeedbackId()),
 			AdoptedAttachmentRefs: encodeAttachmentRefs(req.GetAdoptedAttachmentRefs()),
 			IdempotencyKey:        idempotencyKey,
+			SourceToolCallID:      strings.TrimSpace(req.GetSourceToolCallId()),
 			CreatedBy:             actorID,
 			CreatedAt:             now,
 		}
@@ -550,8 +556,104 @@ func (s *LogicalArtifactService) SubmitFeedback(
 	return &saved, nil
 }
 
-// RecordCheck records a structural or human-review check against exact
-// version bytes. It never mutates or auto-flips prior checks.
+type commandCheckEvidence struct {
+	sourceToolCallID string
+	command          string
+	exitCode         int32
+	outputSHA        string
+}
+
+func invalidCheck(message string) error {
+	return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, message, nil)
+}
+
+// verifyCommandCheckEvidenceTx binds a COMMAND check to a real, succeeded
+// shell tool call in the same conversation. It verifies the persisted
+// bounded result digest and the echoed exit code, so a check can never be
+// backed by a fabricated, cross-conversation or failed command.
+func verifyCommandCheckEvidenceTx(
+	tx *gorm.DB,
+	actorID string,
+	version *persistence.ArtifactVersion,
+	req *model.RecordArtifactCheckRequest,
+) (*commandCheckEvidence, error) {
+	toolCallID := strings.TrimSpace(req.GetSourceToolCallId())
+	if toolCallID == "" {
+		return nil, invalidCheck("source_tool_call_id is required for command checks")
+	}
+	var call persistence.ToolCall
+	findErr := tx.Where("id = ? AND actor_id = ?", toolCallID, actorID).First(&call).Error
+	if errors.Is(findErr, gorm.ErrRecordNotFound) {
+		findErr = tx.
+			Where("tool_call_id = ? AND actor_id = ?", toolCallID, actorID).
+			First(&call).Error
+	}
+	if findErr != nil {
+		if errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return nil, invalidCheck("source tool call not found")
+		}
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load source tool call", findErr)
+	}
+	if call.ToolName != "local_shell_exec" {
+		return nil, invalidCheck("source tool call is not a shell command")
+	}
+	if call.Status != "succeeded" {
+		return nil, invalidCheck("source tool call is not succeeded")
+	}
+	var batch persistence.ToolBatch
+	if err := tx.Where("id = ?", call.ToolBatchID).First(&batch).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load tool batch", err)
+	}
+	var artifact persistence.LogicalArtifact
+	if err := tx.Where("id = ?", version.ArtifactID).First(&artifact).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load artifact for command check", err)
+	}
+	if batch.ConversationID != artifact.ConversationID {
+		return nil, invalidCheck("tool call belongs to a different conversation")
+	}
+	var result persistence.ToolResult
+	if err := tx.Where("tool_call_id = ?", call.ToolCallID).First(&result).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, invalidCheck("tool call result is missing")
+		}
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load tool result", err)
+	}
+	resultSHA := artifactBodySHA256(result.BoundedResult)
+	if supplied := strings.ToLower(strings.TrimSpace(req.GetCommandOutputSha256())); supplied != resultSHA {
+		return nil, invalidCheck("command output digest does not match the persisted bounded result")
+	}
+	// The bounded result is the device worker JSON envelope; its output
+	// object carries the echoed command and exit code facts.
+	var envelope struct {
+		Output struct {
+			Command  string `json:"command"`
+			ExitCode int32  `json:"exit_code"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(result.BoundedResult, &envelope); err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "decode command result", err)
+	}
+	if suppliedCommand := strings.TrimSpace(req.GetCommand()); suppliedCommand != "" &&
+		suppliedCommand != envelope.Output.Command {
+		return nil, invalidCheck("command echo does not match the persisted tool result")
+	}
+	if req.GetCommandExitCode() != envelope.Output.ExitCode {
+		return nil, invalidCheck("command exit code does not match the persisted tool result")
+	}
+	if req.GetResult() == model.ArtifactCheckResult_ARTIFACT_CHECK_RESULT_PASSED &&
+		envelope.Output.ExitCode != 0 {
+		return nil, invalidCheck("a passed command check requires exit code 0")
+	}
+	return &commandCheckEvidence{
+		sourceToolCallID: call.ID,
+		command:          envelope.Output.Command,
+		exitCode:         envelope.Output.ExitCode,
+		outputSHA:        resultSHA,
+	}, nil
+}
+
+// RecordCheck records a structural, human-review or command check against
+// exact version bytes. It never mutates or auto-flips prior checks.
 func (s *LogicalArtifactService) RecordCheck(
 	ctx context.Context,
 	actorID string,
@@ -592,7 +694,7 @@ func (s *LogicalArtifactService) RecordCheck(
 				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "resolve check idempotency", findErr)
 			}
 		}
-		saved = persistence.ArtifactCheck{
+		checkRow := persistence.ArtifactCheck{
 			ID:             generateID("artchk"),
 			ArtifactID:     version.ArtifactID,
 			VersionID:      version.ID,
@@ -605,6 +707,22 @@ func (s *LogicalArtifactService) RecordCheck(
 			CreatedBy:      actorID,
 			CreatedAt:      now,
 		}
+		if req.GetCheckType() == model.ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND {
+			evidence, evidenceErr := verifyCommandCheckEvidenceTx(
+				tx,
+				actorID,
+				version,
+				req,
+			)
+			if evidenceErr != nil {
+				return evidenceErr
+			}
+			checkRow.SourceToolCallID = evidence.sourceToolCallID
+			checkRow.Command = evidence.command
+			checkRow.CommandExitCode = evidence.exitCode
+			checkRow.CommandOutputSHA = evidence.outputSHA
+		}
+		saved = checkRow
 		if err := tx.Create(&saved).Error; err != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "create artifact check", err)
 		}
@@ -945,6 +1063,7 @@ func artifactVersionToProto(row *persistence.ArtifactVersion) *model.ArtifactVer
 		SourceMessageId:       row.SourceMessageID,
 		FeedbackId:            row.FeedbackID,
 		AdoptedAttachmentRefs: decodeAttachmentRefs(row.AdoptedAttachmentRefs),
+		SourceToolCallId:      row.SourceToolCallID,
 		CreatedBy:             row.CreatedBy,
 		CreatedAt:             timestamppb.New(row.CreatedAt),
 	}
@@ -979,18 +1098,22 @@ func artifactCheckToProto(row *persistence.ArtifactCheck, currentVersionID strin
 		return nil
 	}
 	return &model.ArtifactCheck{
-		CheckId:          row.ID,
-		ArtifactId:       row.ArtifactID,
-		VersionId:        row.VersionID,
-		Sha256:           row.SHA256,
-		CheckType:        artifactCheckTypeFromString(row.CheckType),
-		Result:           artifactCheckResultFromString(row.Result),
-		Detail:           row.Detail,
-		CriteriaRevision: row.CriteriaRevision,
-		MaterialRevision: row.MaterialRevision,
-		Environment:      row.Environment,
-		CreatedBy:        row.CreatedBy,
-		CreatedAt:        timestamppb.New(row.CreatedAt),
+		CheckId:             row.ID,
+		ArtifactId:          row.ArtifactID,
+		VersionId:           row.VersionID,
+		Sha256:              row.SHA256,
+		CheckType:           artifactCheckTypeFromString(row.CheckType),
+		Result:              artifactCheckResultFromString(row.Result),
+		Detail:              row.Detail,
+		CriteriaRevision:    row.CriteriaRevision,
+		MaterialRevision:    row.MaterialRevision,
+		Environment:         row.Environment,
+		SourceToolCallId:    row.SourceToolCallID,
+		Command:             row.Command,
+		CommandExitCode:     row.CommandExitCode,
+		CommandOutputSha256: row.CommandOutputSHA,
+		CreatedBy:           row.CreatedBy,
+		CreatedAt:           timestamppb.New(row.CreatedAt),
 	}
 }
 

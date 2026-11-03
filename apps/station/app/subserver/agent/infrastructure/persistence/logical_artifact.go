@@ -38,6 +38,7 @@ type ArtifactVersion struct {
 	FeedbackID            string    `gorm:"not null;type:varchar(36);default:'';index"`
 	AdoptedAttachmentRefs string    `gorm:"not null;type:text;default:''"`
 	IdempotencyKey        string    `gorm:"not null;type:varchar(100);default:'';index"`
+	SourceToolCallID      string    `gorm:"not null;type:varchar(100);default:'';index"`
 	CreatedBy             string    `gorm:"not null;type:text"`
 	CreatedAt             time.Time `gorm:"not null;autoCreateTime;index"`
 }
@@ -76,17 +77,22 @@ func (ArtifactFeedback) TableName() string { return "agent_artifact_feedback" }
 // ArtifactCheck is an immutable fact recorded against exact version bytes.
 // Command/E2E checks are added in TW-D4.
 type ArtifactCheck struct {
-	ID               string    `gorm:"primaryKey;type:varchar(36)"`
-	ArtifactID       string    `gorm:"not null;type:varchar(36);index:idx_artifact_check_artifact"`
-	VersionID        string    `gorm:"not null;type:varchar(36);index"`
-	SHA256           string    `gorm:"not null;type:varchar(64)"`
-	CheckType        string    `gorm:"not null;type:varchar(32)"`
-	Result           string    `gorm:"not null;type:varchar(20)"`
-	Detail           string    `gorm:"not null;type:text;default:''"`
-	CriteriaRevision string    `gorm:"not null;type:varchar(64);default:''"`
-	MaterialRevision string    `gorm:"not null;type:varchar(64);default:''"`
-	Environment      string    `gorm:"not null;type:varchar(100);default:''"`
-	IdempotencyKey   string    `gorm:"not null;type:varchar(100);default:'';index"`
+	ID               string `gorm:"primaryKey;type:varchar(36)"`
+	ArtifactID       string `gorm:"not null;type:varchar(36);index:idx_artifact_check_artifact"`
+	VersionID        string `gorm:"not null;type:varchar(36);index"`
+	SHA256           string `gorm:"not null;type:varchar(64)"`
+	CheckType        string `gorm:"not null;type:varchar(32)"`
+	Result           string `gorm:"not null;type:varchar(20)"`
+	Detail           string `gorm:"not null;type:text;default:''"`
+	CriteriaRevision string `gorm:"not null;type:varchar(64);default:''"`
+	MaterialRevision string `gorm:"not null;type:varchar(64);default:''"`
+	Environment      string `gorm:"not null;type:varchar(100);default:''"`
+	IdempotencyKey   string `gorm:"not null;type:varchar(100);default:'';index"`
+	// TW-D4 command check provenance.
+	SourceToolCallID string    `gorm:"not null;type:varchar(100);default:'';index"`
+	Command          string    `gorm:"not null;type:text;default:''"`
+	CommandExitCode  int32     `gorm:"not null;default:0"`
+	CommandOutputSHA string    `gorm:"not null;type:varchar(64);default:''"`
 	CreatedBy        string    `gorm:"not null;type:text"`
 	CreatedAt        time.Time `gorm:"not null;autoCreateTime;index"`
 }

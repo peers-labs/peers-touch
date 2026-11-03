@@ -4410,6 +4410,28 @@ func persistTurnArtifactsTx(
 		if _, err := hex.DecodeString(sha); err != nil {
 			return invalidToolRequest("turn artifact sha256 is invalid")
 		}
+		changeType := strings.TrimSpace(artifact.GetChangeType())
+		if changeType != "" && changeType != "created" && changeType != "modified" {
+			return invalidToolRequest("turn artifact change_type is invalid")
+		}
+		beforeSHA := strings.ToLower(strings.TrimSpace(artifact.GetBeforeSha256()))
+		if beforeSHA != "" {
+			if len(beforeSHA) != 64 {
+				return invalidToolRequest("turn artifact before_sha256 is invalid")
+			}
+			if _, err := hex.DecodeString(beforeSHA); err != nil {
+				return invalidToolRequest("turn artifact before_sha256 is invalid")
+			}
+		}
+		if changeType == "created" && beforeSHA != "" {
+			return invalidToolRequest("created artifacts must not carry a before digest")
+		}
+		if changeType == "modified" && beforeSHA == "" {
+			return invalidToolRequest("modified artifacts must carry the before digest")
+		}
+		if len(artifact.GetUnifiedDiff()) > 64*1024 {
+			return invalidToolRequest("turn artifact unified diff exceeds bounds")
+		}
 		createdAt := now
 		if artifact.GetCreatedAt() != nil && artifact.GetCreatedAt().IsValid() {
 			createdAt = artifact.GetCreatedAt().AsTime().UTC()
@@ -4427,6 +4449,11 @@ func persistTurnArtifactsTx(
 			SHA256:         sha,
 			ClientLocalRef: localRef,
 			ClientDeviceID: call.TargetDeviceID,
+			ChangeType:     changeType,
+			BeforeSHA256:   beforeSHA,
+			BeforeSize:     artifact.GetBeforeSize(),
+			UnifiedDiff:    artifact.GetUnifiedDiff(),
+			DiffTruncated:  artifact.GetDiffTruncated(),
 			CreatedAt:      createdAt,
 			UpdatedAt:      now,
 		}
