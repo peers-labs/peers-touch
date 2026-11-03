@@ -1147,5 +1147,11 @@
   "chat.browser.status.closed": "closed",
   "chat.browser.status.unknown": "unverified",
   "chat.browser.lease.agent": "agent control",
-  "chat.browser.lease.human": "human control"
+  "chat.browser.lease.human": "human control",
+  "chat.memory.dock.title": "Memory review",
+  "chat.memory.panel.title": "Memory candidates",
+  "chat.memory.refresh": "Refresh",
+  "chat.memory.empty": "No memory candidates waiting for review.",
+  "chat.memory.confirm": "Confirm",
+  "chat.memory.reject": "Reject"
 }

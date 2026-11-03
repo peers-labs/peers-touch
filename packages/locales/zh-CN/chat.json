@@ -1147,5 +1147,11 @@
   "chat.browser.status.closed": "已关闭",
   "chat.browser.status.unknown": "未证实",
   "chat.browser.lease.agent": "Agent 控制",
-  "chat.browser.lease.human": "人工控制"
+  "chat.browser.lease.human": "人工控制",
+  "chat.memory.dock.title": "记忆复核",
+  "chat.memory.panel.title": "待确认记忆",
+  "chat.memory.refresh": "刷新",
+  "chat.memory.empty": "暂无待确认的记忆候选。",
+  "chat.memory.confirm": "确认",
+  "chat.memory.reject": "拒绝"
 }

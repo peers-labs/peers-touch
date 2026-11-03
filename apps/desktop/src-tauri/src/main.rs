@@ -1293,6 +1293,7 @@ fn main() {
             social_commands::social_friend_request_list,
             agent_growth::agent_growth_snapshot,
             agent_growth::agent_memory_list,
+            agent_growth::agent_memory_review,
             agent_growth::agent_skill_list,
             agent_growth::agent_submit_feedback,
             agent_growth::agent_list_turn_feedback,

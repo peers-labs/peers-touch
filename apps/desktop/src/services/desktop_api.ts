@@ -9957,6 +9957,11 @@ export interface GrowthSnapshot {
   window_end: string;
 }
 
+export type AgentMemoryStatus = 'candidate' | 'confirmed' | 'rejected';
+
+// Legacy shape referenced by the growth debug tab. New code should use
+// AgentMemoryEntry, which matches the camelCase JSON actually returned by the
+// station memory proxy.
 export interface MemoryItem {
   id: string;
   agent_id: string;
@@ -9970,7 +9975,27 @@ export interface MemoryItem {
   harmful_count: number;
   created_at: string;
   updated_at: string;
+  status?: AgentMemoryStatus;
 }
+
+// Accurate station-proxy shape for the candidate review lifecycle.
+export interface AgentMemoryEntry {
+  memoryId: string;
+  agentId: string;
+  target: string;
+  layer?: string;
+  content: string;
+  source?: string;
+  isFrozen?: boolean;
+  status?: AgentMemoryStatus;
+  sourceTurnId?: string;
+  createdAt: number | string | null;
+  updatedAt: number | string | null;
+}
+
+export const AGENT_MEMORY_STATUS_CANDIDATE = 1;
+export const AGENT_MEMORY_STATUS_CONFIRMED = 2;
+export const AGENT_MEMORY_STATUS_REJECTED = 3;
 
 export interface SkillItem {
   id: string;
@@ -10003,6 +10028,36 @@ export async function getAgentMemories(agentId: string): Promise<MemoryItem[]> {
     { agent_id: agentId },
   );
   return result;
+}
+
+/**
+ * List memory entries with an optional lifecycle status filter. Pass
+ * AGENT_MEMORY_STATUS_CANDIDATE to load the human review queue.
+ */
+export async function listAgentMemories(
+  agentId: string,
+  statusCode: number = 0,
+): Promise<AgentMemoryEntry[]> {
+  const result = await invokeRustDataFromStatus<
+    { agent_id: string; status: number },
+    { items?: AgentMemoryEntry[] }
+  >('agent_memory_list', { agent_id: agentId, status: statusCode });
+  return result?.items ?? [];
+}
+
+/** Apply a human confirm/reject decision to a memory candidate. */
+export async function reviewAgentMemory(
+  agentId: string,
+  memoryId: string,
+  statusCode:
+    | typeof AGENT_MEMORY_STATUS_CONFIRMED
+    | typeof AGENT_MEMORY_STATUS_REJECTED,
+): Promise<AgentMemoryEntry | null> {
+  const result = await invokeRustDataFromStatus<
+    { agent_id: string; memory_id: string; status: number },
+    { item?: AgentMemoryEntry | null }
+  >('agent_memory_review', { agent_id: agentId, memory_id: memoryId, status: statusCode });
+  return result?.item ?? null;
 }
 
 export async function getAgentSkills(agentId: string): Promise<SkillItem[]> {

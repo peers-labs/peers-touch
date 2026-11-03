@@ -15,6 +15,16 @@ pub struct AgentGrowthInput {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AgentMemoryListInput {
     pub agent_id: String,
+    #[serde(default)]
+    pub status: i32,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AgentMemoryReviewInput {
+    pub memory_id: String,
+    pub agent_id: String,
+    // 2 = confirmed, 3 = rejected (model::agent::MemoryStatus).
+    pub status: i32,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -51,12 +61,28 @@ fn ts_millis(ts: &Option<prost_types::Timestamp>) -> Value {
         .unwrap_or(Value::Null)
 }
 
+fn memory_layer_name(value: i32) -> &'static str {
+    model::agent::MemoryLayer::try_from(value)
+        .map(|layer| layer.as_str_name())
+        .unwrap_or("MEMORY_LAYER_UNSPECIFIED")
+}
+
+fn memory_status_name(value: i32) -> &'static str {
+    model::agent::MemoryStatus::try_from(value)
+        .map(|status| status.as_str_name())
+        .unwrap_or("MEMORY_STATUS_UNSPECIFIED")
+}
+
 fn memory_item_to_json(m: &model::agent::MemoryItem) -> Value {
     json!({
         "memoryId": m.memory_id,
         "agentId": m.agent_id,
         "target": m.target,
+        "layer": memory_layer_name(m.layer),
         "content": m.content,
+        "source": m.source,
+        "isFrozen": m.is_frozen,
+        "status": memory_status_name(m.status),
         "sourceTurnId": m.source_turn_id,
         "createdAt": ts_millis(&m.created_at),
         "updatedAt": ts_millis(&m.updated_at),
@@ -161,6 +187,7 @@ pub fn agent_memory_list(
         since: String::new(),
         until: String::new(),
         period: String::new(),
+        status: input.status,
     };
 
     match station_client
@@ -188,6 +215,41 @@ pub fn agent_memory_list(
         Err(err) => {
             tracing::error!(command = "agent_memory_list", error = %err);
             err.into_app_result("Failed to list agent memories")
+        }
+    }
+}
+
+pub fn agent_memory_review(
+    station_client: &StationClient,
+    input: AgentMemoryReviewInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let req = model::agent::ReviewMemoryRequest {
+        memory_id: input.memory_id,
+        agent_id: input.agent_id,
+        status: input.status,
+    };
+
+    match station_client
+        .request_proto::<model::agent::ReviewMemoryRequest, model::agent::ReviewMemoryResponse>(
+            Method::POST,
+            "/sub-agent/agent/memory/review",
+            token,
+            None,
+            Some(&req),
+        ) {
+        Ok(resp) => {
+            let item = resp.item.as_ref().map(memory_item_to_json).unwrap_or(Value::Null);
+            let status = serde_json::to_string(&json!({ "item": item }))
+                .unwrap_or_else(|_| r#"{"item":null}"#.to_string());
+            AppResult::success(StubPayload {
+                command: "agent_memory_review".to_string(),
+                status,
+            })
+        }
+        Err(err) => {
+            tracing::error!(command = "agent_memory_review", error = %err);
+            err.into_app_result("Failed to review agent memory candidate")
         }
     }
 }
