@@ -195,10 +195,19 @@
     },
     {
       "id": "TW-O06",
-      "status": "UNPROVEN",
-      "actualEffect": "切片尚未实施；生产 TerminalSession 不存在。",
-      "evidenceRefs": [],
-      "deviation": "未开始；一次性 shell 不构成证据。"
+      "status": "PASS",
+      "actualEffect": "TW-D5 在当前源码 Station（compose pt-tw-d1，:18092）+ acceptance cell（ubuntu-24.04 WebKit）上以 9.7s 通过 exact-source Native Journey（合并当日 shared-base 82f02dde6 后复测）：Rust portable-pty worker 在授权 actor 工作区内启动 python3 http.server，Station 行与 worker handle 使用同一 terms-<ULID> 资源 id，pid 319/status=running 实时一致；cell 内 curl 服务返回 200；关闭 viewer 面板只取消订阅，进程继续服务 200；重开面板重连同一 session/pid 且从有界 ring cursor 0 回放历史并重新派生 URL 动作；kill 后 UI 转 killed、回读 exit code、服务下线，Station 行更新为 killed|pid=319|output_bytes=211|cwd 位于 agent-workspaces，并 JOIN 到真实持久 conversation；remove 后 Station 行删除。诚实性：worker/Station 双侧以 live handle 为存活唯一证据，Reconcile 将无法证明的 RUNNING 行降级 UNKNOWN；输出仅存设备侧 256KiB ring（绝对 cursor + resync 边界，Rust 单测覆盖），Station 不存输出与环境。复测中修复三个真实缺陷：worker/Station ID 双脑导致 reconcile 永久误降级与 update/remove 错配（改为 worker id 全局唯一 + Station 幂等创建）、面板会话快照不随话题切换（改为跟随 chat 当前会话）、output_bytes 以字符串上送被 serde 拒绝导致 Station 停留 running（改为 u64 数值）。",
+      "evidenceRefs": [
+        "tooling/acceptance/reports/task-workbench/tw-d5-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d5-acceptance-note.md",
+        "apps/desktop/e2e/tests/tw-d5-journeys.spec.ts",
+        "model/domain/agent/terminal_session.proto",
+        "apps/station/app/subserver/agent/service/terminal_session_service.go",
+        "apps/desktop/src-tauri/src/application/terminal/mod.rs",
+        "apps/desktop/src/store/terminalSessions.ts",
+        "commits 847303777,864790ee3,8857b2ae4,d2910e167,912e30932,55c89353a"
+      ],
+      "deviation": "不实现跨 app/系统重启存活的持久 daemon，worker 换代后无证明会话显示 unknown；draft 话题启动的会话存为未绑定行，绑定持久对话的 rebind 流程不在本切片；stdin 交互与 resize 已在 worker 实现但 Native 旅程只验证 create/重放/kill/remove，未编排交互式 shell 场景。"
     },
     {
       "id": "TW-O07",
@@ -229,12 +238,13 @@
         "tooling/acceptance/reports/task-workbench/tw-d1-journey.png",
         "tooling/acceptance/reports/task-workbench/tw-d3-journey.json",
         "tooling/acceptance/reports/task-workbench/tw-d4-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d5-journey.json",
         "go test agent pass",
-        "vitest 469 pass (store/streaming/workbench targeted)",
-        "cargo test desktop_executor_worker 39 pass (1 keystore env failure, baseline reproduced)"
+        "vitest 1588 pass (merged shared-base tree)",
+        "cargo test terminal 22 pass; desktop_executor_worker 39 pass (1 keystore env failure, baseline reproduced)"
       ],
-      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。",
-      "deviation": "TW-D5–D7 未开始；完整两条业务旅程待 TW-D7。"
+      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。D5 合并当日 agent-usability-shared-base（8 个冲突逐一手动解决，检查全绿）后以 9.7s 通过长服务→viewer 关闭存活→重连同 pid/回放→kill/exit code/Station 事实→remove 的设备 TerminalSession 旅程，并修复 ID 双脑、面板会话陈旧、生命周期字节上送三处真实缺陷。",
+      "deviation": "TW-D6–D7 未开始；完整两条业务旅程待 TW-D7。"
     },
     {
       "id": "TW-O11",
