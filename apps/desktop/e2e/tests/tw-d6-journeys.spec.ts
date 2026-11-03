@@ -123,6 +123,9 @@ test('agent observes, hands control over and re-observes a real browser', async 
   // Deterministic cell: remove browsers left by earlier failed runs so the
   // takeover window stack contains only this session.
   dockerExec(`sh -c "pkill -f '[c]hrome/chrome' 2>/dev/null || true; sleep 1; rm -rf /workspace/run/actor-home/.local/share/peers-touch/browser-sessions/brows-* 2>/dev/null; true"`);
+  // The dedicated cell DB is owned by this journey alone; drop rows from any
+  // earlier interrupted run so the dock renders its start form.
+  await psql(`DELETE FROM agent_browser_sessions;`);
 
   // ── Serve a real local site inside the cell ──────────────────────────
   const marker = `d6${Date.now().toString(36).slice(-6)}`;
@@ -157,7 +160,13 @@ test('agent observes, hands control over and re-observes a real browser', async 
   expect(dockerExec(`curl -s -o /dev/null -w '%{http_code}' --max-time 3 ${url}`)).toBe('200');
 
   // ── Start the browser session from the dock ──────────────────────────
-  await page.click('[data-pt-browser-toggle]');
+  // Dock open-state is global and persists across reruns in one app process;
+  // open the panel deterministically instead of blindly toggling it shut.
+  await page.evaluate(`(() => {
+    if (!document.querySelector('[data-pt-browser-panel]')) {
+      document.querySelector('[data-pt-browser-toggle]').click();
+    }
+  })()`);
   await poll(page, `!!document.querySelector('[data-pt-browser-start-form]')`, 10_000);
   // Host availability is verified on the real device binary.
   expect(await page.evaluate(`!!document.querySelector('[data-pt-browser-unavailable]')`)).toBe(false);
