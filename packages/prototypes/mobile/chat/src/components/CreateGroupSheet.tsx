@@ -1,6 +1,6 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useT } from '../i18n';
 import { Button, Checkbox, Icon, Text, TextArea, TextField } from '@peers-touch/ui';
-import copy from '../../../../../locales/en/common.json';
 import type { Contact } from '../types';
 import { IdentityAvatar } from './IdentityAvatar';
 
@@ -14,6 +14,7 @@ export function CreateGroupSheet({
   onClose2?: never;
   onCreate: (name: string, memberKeys: readonly string[]) => void;
 }) {
+  const t = useT();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selected, setSelected] = useState<readonly string[]>([]);
@@ -38,26 +39,26 @@ export function CreateGroupSheet({
         <div className="mp-action-sheet-handle" />
         <header className="mp-social-sheet-header">
           <span className="mp-social-sheet-spacer" />
-          <h2 id="create-group-title">{copy['mobile.group.create']}</h2>
+          <h2 id="create-group-title">{t('mobile.group.create')}</h2>
           <Button actionId="create-group.close" emphasis="quiet" leading={<Icon iconId="close" size={18} />}
-            aria-label={copy['common.action.close']} onActivate={onClose} />
+            aria-label={t('common.action.close')} onActivate={onClose} />
         </header>
         <div className="mp-create-group-content">
           <TextField
             value={name}
-            placeholder={copy['mobile.group.namePlaceholder']}
+            placeholder={t('mobile.group.namePlaceholder')}
             onValueChange={setName}
           />
           <TextArea
             value={description}
-            placeholder={copy['mobile.group.descriptionPlaceholder']}
+            placeholder={t('mobile.group.descriptionPlaceholder')}
             minimumRows={2}
             maximumRows={4}
             framing="embedded"
             onValueChange={setDescription}
           />
           <div className="mp-section-header">
-            <span>{copy['mobile.group.initialMembers']}</span>
+            <span>{t('mobile.group.initialMembers')}</span>
             <Text tone="secondary">{selected.length}</Text>
           </div>
           <div className="mp-create-group-members">
@@ -83,14 +84,14 @@ export function CreateGroupSheet({
           </div>
           <div className="mp-create-group-actions">
             <Button actionId="create-group.cancel" onActivate={onClose}>
-              {copy['common.action.cancel']}
+              {t('common.action.cancel')}
             </Button>
             <Button actionId="create-group.submit" emphasis="primary"
               availability={!name.trim() || selected.length === 0
                 ? { kind: 'disabled', reason: 'Name and members required' }
                 : undefined}
               onActivate={() => onCreate(name.trim(), selected)}>
-              {copy['mobile.group.create']}
+              {t('mobile.group.create')}
             </Button>
           </div>
         </div>

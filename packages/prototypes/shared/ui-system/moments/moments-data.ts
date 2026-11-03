@@ -8,34 +8,20 @@
  * Identity tones stand in for remote avatars/artwork via deterministic SVG.
  */
 
-export type ReactionKind =
-  | 'like' | 'love' | 'laugh' | 'celebrate' | 'wow' | 'clap' | 'fire'
-  | 'heartHands' | 'thanks' | 'sad' | 'angry' | 'thinking' | 'hundred'
-  | 'eyes' | 'strong' | 'check';
-
-export interface ReactionMeta { readonly kind: ReactionKind; readonly emoji: string; readonly label: string }
-
-export const REACTION_CATALOG: readonly ReactionMeta[] = [
-  { kind: 'like', emoji: '\u{1F44D}', label: '赞' },
-  { kind: 'love', emoji: '\u{2764}\u{FE0F}', label: '喜欢' },
-  { kind: 'laugh', emoji: '\u{1F602}', label: '大笑' },
-  { kind: 'celebrate', emoji: '\u{1F389}', label: '庆祝' },
-  { kind: 'wow', emoji: '\u{1F62E}', label: '惊讶' },
-  { kind: 'clap', emoji: '\u{1F44F}', label: '鼓掌' },
-  { kind: 'fire', emoji: '\u{1F525}', label: '火热' },
-  { kind: 'heartHands', emoji: '\u{1FAF6}', label: '比心' },
-  { kind: 'thanks', emoji: '\u{1F64F}', label: '感谢' },
-  { kind: 'sad', emoji: '\u{1F622}', label: '难过' },
-  { kind: 'angry', emoji: '\u{1F621}', label: '生气' },
-  { kind: 'thinking', emoji: '\u{1F914}', label: '想想' },
-  { kind: 'hundred', emoji: '\u{1F4AF}', label: '满分' },
-  { kind: 'eyes', emoji: '\u{1F440}', label: '围观' },
-  { kind: 'strong', emoji: '\u{1F4AA}', label: '给力' },
-  { kind: 'check', emoji: '\u{2705}', label: '参加' },
-];
-
-export const REACTION_BY_KIND: ReadonlyMap<ReactionKind, ReactionMeta> =
-  new Map(REACTION_CATALOG.map(meta => [meta.kind, meta]));
+// Reaction vocabulary is owned by the headless chat domain so chat and
+// moments (desktop + mobile) share one kind list and emoji mapping.
+export {
+  REACTION_CATALOG,
+  REACTION_BY_KIND,
+  QUICK_REACTION_KINDS,
+  REACTION_LABELS,
+  reactionLabel,
+  emojiForKind,
+  kindForEmoji,
+  type ReactionKind,
+  type ReactionMeta,
+} from '../../chat-domain';
+import type { ReactionKind } from '../../chat-domain';
 
 export type AudienceKind = 'public' | 'followers' | 'friends' | 'circle' | 'self';
 export type TrustReason = 'self' | 'following' | 'mutual' | 'circle' | 'public';

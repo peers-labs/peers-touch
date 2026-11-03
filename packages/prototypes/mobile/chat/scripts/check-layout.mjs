@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +28,19 @@ const browser = await chromium.launch({
   headless: true,
   ...(process.env.PROTOTYPE_BROWSER_CHANNEL ? { channel: process.env.PROTOTYPE_BROWSER_CHANNEL } : {}),
 });
+
+// Static touch-geometry contract: dynamic viewport, safe-area cover and
+// 44px quick reaction targets must exist in the sources.
+const [cssSource, htmlSource] = await Promise.all([
+  readFile(resolve(repoRoot, 'packages/prototypes/mobile/chat/src/mobilePrototype.css'), 'utf8'),
+  readFile(resolve(repoRoot, 'packages/prototypes/mobile/chat/index.html'), 'utf8'),
+]);
+assert.ok(cssSource.includes('100dvh'), 'shell must use 100dvh for real-device height');
+assert.ok(htmlSource.includes('viewport-fit=cover'), 'viewport meta must cover safe areas');
+assert.ok(htmlSource.includes('interactive-widget=resizes-content'), 'keyboard must resize content');
+assert.ok(cssSource.includes('env(safe-area-inset-bottom)'), 'bottom safe-area inset required');
+assert.ok(cssSource.includes('--mp-keyboard-height'), 'composer must offset the soft keyboard');
+assert.match(cssSource, /\.mp-reaction-bar-btn \{[^}]*height: 44px/, 'quick reactions need 44px touch targets');
 
 try {
   if (process.env.PROTOTYPE_MESSAGE_LAYOUT_ONLY === '1') {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { useT } from '../i18n';
 import { Icon } from '@peers-touch/ui';
 import type { SettingEntry, SettingGroup } from '../types';
-import copy from '../../../../../locales/en/common.json';
 import type { AvatarRenderState } from '../types';
 import { demoSelfIdentity } from '../data';
 import { IdentityAvatar } from '../components/IdentityAvatar';
@@ -11,6 +11,7 @@ export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
   onChangeStation: () => void;
   onSettingClick: (s: SettingEntry) => void;
 }) {
+  const t = useT();
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const settingGroups: SettingGroup[] = [
     {
@@ -47,7 +48,7 @@ export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
   return (
     <div className="mp-page">
       <header className="mp-header">
-        <h1 className="mp-header-title">Me</h1>
+        <h1 className="mp-header-title">{t('common.me')}</h1>
         <span style={{ width: 36 }} />
       </header>
 
@@ -92,7 +93,7 @@ export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
         ))}
 
         <button type="button" className="mp-sign-out" onClick={() => setLogoutConfirmOpen(true)}>
-          {copy['mobile.settings.logout']}
+          {t('mobile.settings.logout')}
         </button>
       </div>
       {logoutConfirmOpen ? (
@@ -105,17 +106,17 @@ export function ProfilePage({ avatarState, onChangeStation, onSettingClick }: {
             onClick={(event) => event.stopPropagation()}
           >
             <h2 className="mp-confirm-title" id="profile-logout-title">
-              {copy['mobile.settings.station.logoutConfirmTitle']}
+              {t('mobile.settings.station.logoutConfirmTitle')}
             </h2>
             <p className="mp-confirm-desc">
-              {copy['mobile.settings.station.logoutConfirmBody']}
+              {t('mobile.settings.station.logoutConfirmBody')}
             </p>
             <div className="mp-confirm-actions">
               <button type="button" className="mp-confirm-btn" onClick={() => setLogoutConfirmOpen(false)}>
-                {copy['common.action.cancel']}
+                {t('common.action.cancel')}
               </button>
               <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={onChangeStation}>
-                {copy['mobile.settings.logout']}
+                {t('mobile.settings.logout')}
               </button>
             </div>
           </section>

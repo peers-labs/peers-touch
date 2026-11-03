@@ -6,7 +6,7 @@
  * call overlay stay one level up in this file.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, Copy, CornerUpRight, EyeOff, Link as LinkIcon, Pin, Undo2, X } from 'lucide-react';
+import { Bookmark, Check, Copy, CornerUpRight, EyeOff, Link as LinkIcon, Pin, Undo2, X } from 'lucide-react';
 import { Avatar, Button, Empty } from '@peers-touch/ui';
 import type { ChatMessage, Conversation, ThreadReply } from './chat-data';
 import { SEED_THREADS, VIEWER_NAME, VIEWER_TONE } from './chat-data';
@@ -20,6 +20,7 @@ import { VoicePlayer } from './VoiceNote';
 import { ChatComposer, type ComposerPayload } from './ChatComposer';
 import { CallOverlay, type CallKind } from './CallOverlay';
 import { useT } from '../prefs';
+import type { ReactionKind } from '../../chat-domain';
 
 const MENTION_RE = new RegExp('(@[\\u4e00-\\u9fa5\\w·]+)', 'g');
 
@@ -32,6 +33,7 @@ function renderRichText(text: string) {
 
 export function ConversationView({ conversation, messages, call, peerTyping, onEndCall, onSimulateIncoming,
   onSend, onTogglePin, onToggleMute, onReact, onEditMessage, onRecallMessage, onPinMessage,
+  onMarkMessageForLater: markForLater,
   onRetryMessage, onHideMessages, onForwardMessages, onStartCall, onBack, conversations, people,
   onClearHistory, onDeleteConversation, onRenameConversation,
   onSetGroupAvatar, onSetMyNickname, onSetChatBackground,
@@ -46,10 +48,11 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onSend: (payload: ComposerPayload) => void;
   onTogglePin: (id: string) => void;
   onToggleMute: (id: string) => void;
-  onReact: (messageId: string, emoji: string) => void;
+  onReact: (messageId: string, kind: ReactionKind) => void;
   onEditMessage: (conversationId: string, messageId: string, text: string) => void;
   onRecallMessage: (conversationId: string, messageId: string) => void;
   onPinMessage: (conversationId: string, messageId: string) => void;
+  onMarkMessageForLater: (conversationId: string, messageId: string) => void;
   onRetryMessage: (conversationId: string, messageId: string) => void;
   /** HideMessageForActorIntent: remove from this viewer's local view only. */
   onHideMessages: (messageIds: string[]) => void;
@@ -156,6 +159,10 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
       case 'edit': setReplyTarget(null); setEditTarget(message); break;
       case 'recall': onRecallMessage(conversation.id, message.id); flash(t('msg.recalled')); break;
       case 'report': setReportTarget(message); break;
+      case 'mark-later':
+        markForLater(conversation.id, message.id);
+        flash(message.markedForLater ? t('action.markLaterRemoved') : t('action.markLaterDone'));
+        break;
       case 'hide': setHideTargetIds([message.id]); break;
     }
   };
@@ -288,7 +295,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                     <MessageActionBar
                       message={m}
                       copied={copiedId === m.id}
-                      onReact={emoji => onReact(m.id, emoji)}
+                      onReact={kind => onReact(m.id, kind)}
                       onReply={() => { setEditTarget(null); setReplyTarget(m); }}
                       onThread={() => setThreadId(m.id)}
                       onCopy={() => {
@@ -302,10 +309,13 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                 </div>
                 <div className="sk-msg-under">
                   <time className="sk-msg-time">{m.at}</time>
-                  <MessageReactions message={m} />
+                  <MessageReactions message={m} onToggle={kind => onReact(m.id, kind)} />
                   {m.edited && <span className="sk-msg-edited" data-msg-edited>{t('msg.edited')}</span>}
                   {m.pinned && (
                     <span className="sk-msg-pinned-chip" data-msg-pinned><Pin size={10} /> {t('msg.pinned')}</span>
+                  )}
+                  {m.markedForLater && (
+                    <span className="sk-msg-marked-chip" data-msg-marked><Bookmark size={10} /> {t('action.markLater')}</span>
                   )}
                   {m.threadCount ? (
                     <button type="button" className="sk-thread-entry"
@@ -375,6 +385,14 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
       {infoOpen && (
         <DetailSheet conversation={conversation} messages={messages} people={people}
           onClose={() => setInfoOpen(false)}
+          onLocateMessage={(id) => {
+            setInfoOpen(false);
+            requestAnimationFrame(() => {
+              document.querySelector<HTMLElement>(`[data-message-id="${id}"]`)?.scrollIntoView({
+                behavior: 'smooth', block: 'center',
+              });
+            });
+          }}
           onTogglePin={() => onTogglePin(conversation.id)}
           onToggleMute={() => onToggleMute(conversation.id)}
           onSearchMessages={() => { setInfoOpen(false); setSearchOpen(true); }}

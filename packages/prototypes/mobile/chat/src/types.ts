@@ -2,6 +2,15 @@
  * Types, interfaces, and constants for the Mobile Prototype.
  */
 import type { Icon } from '@peers-touch/ui';
+import {
+  QUICK_REACTION_KINDS, REACTION_CATALOG, REACTION_LABELS, emojiForKind, kindForEmoji,
+} from '../../../shared/chat-domain';
+
+export { QUICK_REACTION_KINDS, REACTION_CATALOG, REACTION_LABELS, kindForEmoji };
+export type { ReactionKind } from '../../../shared/chat-domain';
+import type { ReactionKind as DomainReactionKind } from '../../../shared/chat-domain';
+
+type ReactionKind = DomainReactionKind;
 
 export type IconName = Parameters<typeof Icon>[0]['iconId'];
 
@@ -48,8 +57,6 @@ export interface MessageReply {
   text: string;
 }
 
-export type ReactionKind = 'like' | 'love' | 'laugh' | 'wow' | 'celebrate';
-
 export interface MessageReaction {
   kind: ReactionKind;
   byMe: boolean;
@@ -72,7 +79,8 @@ export interface Message {
   pinned?: boolean;
   threadReplies?: Message[];
   threadCount?: number;
-  flagged?: boolean;
+  /** Local-only personal bookmark ("mark for later"); never leaves this device. */
+  markedForLater?: boolean;
 }
 
 export interface MomentComment {
@@ -151,29 +159,14 @@ export interface SettingGroup {
   items: SettingEntry[];
 }
 
-// ── Reaction emoji map ─────────────────────────────────────────
-export const REACTION_EMOJI: Record<ReactionKind, string> = {
-  like: '\u{1F44D}',
-  love: '\u{2764}\u{FE0F}',
-  laugh: '\u{1F604}',
-  wow: '\u{1F62E}',
-  celebrate: '\u{1F389}',
-};
+// ── Reaction vocabulary ────────────────────────────────────────
+// All reaction constants come from the headless shared chat domain; mobile
+// only presents them in touch geometry. Kind list and emoji map are the
+// single source of truth shared with desktop chat and moments.
+export const REACTION_EMOJI: Record<ReactionKind, string> = Object.fromEntries(
+  REACTION_CATALOG.map(meta => [meta.kind, emojiForKind(meta.kind)]),
+) as Record<ReactionKind, string>;
 
-export const REACTION_KINDS: ReactionKind[] = [
-  'like',
-  'love',
-  'laugh',
-  'wow',
-  'celebrate',
-];
+/** Full kind list in catalog order (16). */
+export const REACTION_KINDS: ReactionKind[] = REACTION_CATALOG.map(meta => meta.kind);
 
-export const REACTION_EMOJI_EXTENDED: string[] = ['\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}'];
-
-export const FULL_EMOJI_GRID = [
-  '\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}',
-  '\u{1F44F}', '\u{1F64F}', '\u{1F4AA}', '\u{1F91D}', '\u{1FAE1}', '\u{1F62E}', '\u{1F605}', '\u{1F972}',
-  '\u{1F60D}', '\u{1F923}', '\u{1F60E}', '\u{1F929}', '\u{1F973}', '\u{1F624}', '\u{1F62D}', '\u{1FAE0}',
-  '\u{1F525}', '\u{1F4AF}', '\u{2B50}', '\u{1F31F}', '\u{2728}', '\u{1F4AB}', '\u{1F38A}', '\u{1F3AF}',
-  '\u{1F440}', '\u{1F64C}', '\u{1F4AA}', '\u{1F919}', '\u{270C}\u{FE0F}', '\u{1FAF6}', '\u{1F49B}', '\u{1F49A}',
-];

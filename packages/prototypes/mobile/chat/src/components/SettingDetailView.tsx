@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from '../i18n';
 import {
   Button,
   Empty,
@@ -12,7 +13,6 @@ import {
 } from '@peers-touch/ui';
 import type { IconName, SettingEntry } from '../types';
 import { demoAvatarUrls } from '../data';
-import copy from '../../../../../locales/en/common.json';
 import { IdentityAvatar } from './IdentityAvatar';
 
 export function SettingDetailView({
@@ -24,6 +24,7 @@ export function SettingDetailView({
   onBack: () => void;
   onChangeStation: () => void;
 }) {
+  const t = useT();
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [displayName, setDisplayName] = useState('Alice Chen');
@@ -58,7 +59,7 @@ export function SettingDetailView({
     switch (setting.id) {
       case 'account-info':
         return (
-          <SettingCard iconId="circle-user" title={copy['mobile.settings.section.profile']}>
+          <SettingCard iconId="circle-user" title={t('mobile.settings.section.profile')}>
             <div className="mp-setting-profile-summary">
               <IdentityAvatar
                 name="Alice Chen"
@@ -72,14 +73,14 @@ export function SettingDetailView({
               </span>
             </div>
             <label className="mp-setting-field">
-              <Text tone="secondary">{copy['mobile.settings.profile.displayName']}</Text>
+              <Text tone="secondary">{t('mobile.settings.profile.displayName')}</Text>
               <TextField
                 value={displayName}
                 onValueChange={(value) => { setDisplayName(value); markDirty(); }}
               />
             </label>
             <label className="mp-setting-field">
-              <Text tone="secondary">{copy['mobile.settings.profile.bio']}</Text>
+              <Text tone="secondary">{t('mobile.settings.profile.bio')}</Text>
               <TextArea
                 value={bio}
                 minimumRows={2}
@@ -92,11 +93,11 @@ export function SettingDetailView({
 
       case 'notifications':
         return (
-          <SettingCard iconId="bell" title={copy['mobile.settings.section.notifications']}>
+          <SettingCard iconId="bell" title={t('mobile.settings.section.notifications')}>
             {([
-              ['enabled', copy['mobile.settings.notifications.enabled']],
-              ['push', copy['mobile.settings.notifications.push']],
-              ['sound', copy['mobile.settings.notifications.sound']],
+              ['enabled', t('mobile.settings.notifications.enabled')],
+              ['push', t('mobile.settings.notifications.push')],
+              ['sound', t('mobile.settings.notifications.sound')],
             ] as const).map(([field, label]) => (
               <div className="mp-setting-detail-row" key={field}>
                 <span className="mp-setting-detail-label">{label}</span>
@@ -112,7 +113,7 @@ export function SettingDetailView({
             ))}
             <div className="mp-setting-owner-note">
               <Icon iconId="shield-check" size={15} />
-              <span>Category preferences are saved by this Station. Device permission is currently allowed.</span>
+              <span>{t('mobile.settings.categorySaved')}</span>
             </div>
           </SettingCard>
         );
@@ -120,55 +121,55 @@ export function SettingDetailView({
       case 'privacy-security':
         return (
           <>
-            <SettingCard iconId="shield-check" title={copy['mobile.settings.section.privacy']}>
+            <SettingCard iconId="shield-check" title={t('mobile.settings.section.privacy')}>
               <div className="mp-setting-detail-row">
                 <span className="mp-setting-detail-label">
-                  {copy['mobile.settings.privacy.defaultVisibility']}
+                  {t('mobile.settings.privacy.defaultVisibility')}
                 </span>
                 <Select
                   value={defaultVisibility}
                   density="compact"
                   onValueChange={(value) => { setDefaultVisibility(String(value)); markDirty(); }}
                   options={[
-                    { value: 'public', label: copy['mobile.settings.privacy.visibility.public'] },
-                    { value: 'followers', label: copy['mobile.settings.privacy.visibility.followers'] },
-                    { value: 'private', label: copy['mobile.settings.privacy.visibility.private'] },
+                    { value: 'public', label: t('mobile.settings.privacy.visibility.public') },
+                    { value: 'followers', label: t('mobile.settings.privacy.visibility.followers') },
+                    { value: 'private', label: t('mobile.settings.privacy.visibility.private') },
                   ]}
                 />
               </div>
               <div className="mp-setting-detail-row">
                 <span className="mp-setting-detail-label">
-                  {copy['mobile.settings.privacy.manuallyApprovesFollowers']}
+                  {t('mobile.settings.privacy.manuallyApprovesFollowers')}
                 </span>
                 <Switch
                   checked={manuallyApprovesFollowers}
-                  aria-label={copy['mobile.settings.privacy.manuallyApprovesFollowers']}
+                  aria-label={t('mobile.settings.privacy.manuallyApprovesFollowers')}
                   onCheckedChange={(checked) => { setManuallyApprovesFollowers(checked); markDirty(); }}
                 />
               </div>
               <div className="mp-setting-detail-row">
                 <span className="mp-setting-detail-label">
-                  {copy['mobile.settings.privacy.messagePermission']}
+                  {t('mobile.settings.privacy.messagePermission')}
                 </span>
                 <Select
                   value={messagePermission}
                   density="compact"
                   onValueChange={(value) => { setMessagePermission(String(value)); markDirty(); }}
                   options={[
-                    { value: 'everyone', label: copy['mobile.settings.privacy.message.everyone'] },
-                    { value: 'friends', label: copy['mobile.settings.privacy.message.friends'] },
-                    { value: 'none', label: copy['mobile.settings.privacy.message.none'] },
+                    { value: 'everyone', label: t('mobile.settings.privacy.message.everyone') },
+                    { value: 'friends', label: t('mobile.settings.privacy.message.friends') },
+                    { value: 'none', label: t('mobile.settings.privacy.message.none') },
                   ]}
                 />
               </div>
               <div className="mp-setting-detail-row">
                 <span className="mp-setting-detail-label">
-                  {copy['mobile.settings.privacy.autoExpire']}
+                  {t('mobile.settings.privacy.autoExpire')}
                 </span>
                 <TextField
                   type="number"
                   value={String(autoExpireDays)}
-                  aria-label="Auto-expire days"
+                  aria-label={t('mobile.settings.autoExpireDays')}
                   style={{ width: 96 }}
                   onValueChange={(value) => {
                     const parsed = Number(value);
@@ -180,15 +181,15 @@ export function SettingDetailView({
                 />
               </div>
             </SettingCard>
-            <SettingCard iconId="shield-check" title={copy['mobile.settings.section.permissions']}>
+            <SettingCard iconId="shield-check" title={t('mobile.settings.section.permissions')}>
               {[
-                copy['mobile.settings.permissions.camera'],
-                copy['mobile.settings.permissions.microphone'],
-                copy['mobile.settings.section.notifications'],
+                t('mobile.settings.permissions.camera'),
+                t('mobile.settings.permissions.microphone'),
+                t('mobile.settings.section.notifications'),
               ].map((label) => (
                 <div className="mp-setting-detail-row" key={label}>
                   <span className="mp-setting-detail-label">{label}</span>
-                  <Tag tone="success">{copy['mobile.settings.permissions.status.granted']}</Tag>
+                  <Tag tone="success">{t('mobile.settings.permissions.status.granted')}</Tag>
                 </div>
               ))}
             </SettingCard>
@@ -197,9 +198,9 @@ export function SettingDetailView({
 
       case 'blocked-users':
         return (
-          <SettingCard iconId="ban" title={copy['mobile.settings.section.blocked']}>
+          <SettingCard iconId="ban" title={t('mobile.settings.section.blocked')}>
             {blockedUsers.length === 0 ? (
-              <Empty description={copy['mobile.settings.noBlockedUsers']} />
+              <Empty description={t('mobile.settings.noBlockedUsers')} />
             ) : blockedUsers.map((user) => (
               <div className="mp-setting-detail-row mp-blocked-user-row" key={user.handle}>
                 <IdentityAvatar name={user.name} initials={user.initials} size={40} />
@@ -211,7 +212,7 @@ export function SettingDetailView({
                   onActivate={() => setBlockedUsers((current) => (
                     current.filter((item) => item.handle !== user.handle)
                   ))}>
-                  {copy['mobile.contacts.unblock']}
+                  {t('mobile.contacts.unblock')}
                 </Button>
               </div>
             ))}
@@ -221,64 +222,64 @@ export function SettingDetailView({
       case 'chat-settings':
         return (
           <>
-            <SettingCard iconId="sliders-horizontal" title={copy['mobile.settings.section.devicePrefs']}>
+            <SettingCard iconId="sliders-horizontal" title={t('mobile.settings.section.devicePrefs')}>
               <div className="mp-setting-detail-row">
-                <span className="mp-setting-detail-label">{copy['mobile.settings.device.theme']}</span>
+                <span className="mp-setting-detail-label">{t('mobile.settings.device.theme')}</span>
                 <Select
                   value={theme}
                   density="compact"
                   onValueChange={(value) => { setTheme(String(value)); markDirty(); }}
                   options={[
-                    { value: 'system', label: copy['mobile.settings.device.theme.system'] },
-                    { value: 'light', label: copy['mobile.settings.device.theme.light'] },
-                    { value: 'dark', label: copy['mobile.settings.device.theme.dark'] },
+                    { value: 'system', label: t('mobile.settings.device.theme.system') },
+                    { value: 'light', label: t('mobile.settings.device.theme.light') },
+                    { value: 'dark', label: t('mobile.settings.device.theme.dark') },
                   ]}
                 />
               </div>
               <div className="mp-setting-detail-row">
-                <span className="mp-setting-detail-label">{copy['mobile.settings.device.fontSize']}</span>
+                <span className="mp-setting-detail-label">{t('mobile.settings.device.fontSize')}</span>
                 <Select
                   value={fontSize}
                   density="compact"
                   onValueChange={(value) => { setFontSize(String(value)); markDirty(); }}
                   options={[
-                    { value: 'small', label: copy['mobile.settings.device.fontSize.small'] },
-                    { value: 'medium', label: copy['mobile.settings.device.fontSize.medium'] },
-                    { value: 'large', label: copy['mobile.settings.device.fontSize.large'] },
+                    { value: 'small', label: t('mobile.settings.device.fontSize.small') },
+                    { value: 'medium', label: t('mobile.settings.device.fontSize.medium') },
+                    { value: 'large', label: t('mobile.settings.device.fontSize.large') },
                   ]}
                 />
               </div>
               <div className="mp-setting-detail-row">
-                <span className="mp-setting-detail-label">{copy['mobile.settings.device.compactMode']}</span>
-                <Switch checked={compactMode} aria-label={copy['mobile.settings.device.compactMode']}
+                <span className="mp-setting-detail-label">{t('mobile.settings.device.compactMode')}</span>
+                <Switch checked={compactMode} aria-label={t('mobile.settings.device.compactMode')}
                   onCheckedChange={(checked) => { setCompactMode(checked); markDirty(); }} />
               </div>
             </SettingCard>
-            <SettingCard iconId="hard-drive" title={copy['mobile.settings.section.storage']}>
+            <SettingCard iconId="hard-drive" title={t('mobile.settings.section.storage')}>
               <div className="mp-setting-detail-row">
                 <span>
-                  <span className="mp-setting-detail-label">{copy['mobile.settings.storage.total']}</span>
+                  <span className="mp-setting-detail-label">{t('mobile.settings.storage.total')}</span>
                   <span className="mp-setting-detail-value">128 MB on this device</span>
                 </span>
                 <Button actionId="storage.batch-manage" density="compact">
-                  {copy['mobile.settings.storage.batchManage']}
+                  {t('mobile.settings.storage.batchManage')}
                 </Button>
               </div>
               <div className="mp-setting-detail-row">
-                <span className="mp-setting-detail-label">{copy['mobile.settings.storage.retentionTitle']}</span>
+                <span className="mp-setting-detail-label">{t('mobile.settings.storage.retentionTitle')}</span>
                 <Select
                   value="forever"
                   density="compact"
                   options={[
-                    { value: 'forever', label: copy['mobile.settings.storage.retentionForever'] },
-                    { value: '90', label: copy['mobile.settings.storage.retention90Days'] },
+                    { value: 'forever', label: t('mobile.settings.storage.retentionForever') },
+                    { value: '90', label: t('mobile.settings.storage.retention90Days') },
                   ]}
                 />
               </div>
               <Button actionId="storage.clear-cache"
                 leading={<Icon iconId="delete" size={15} />}
                 onActivate={() => setCacheConfirmOpen(true)}>
-                {copy['mobile.settings.storage.clearChatCacheAction']}
+                {t('mobile.settings.storage.clearChatCacheAction')}
               </Button>
             </SettingCard>
           </>
@@ -286,27 +287,27 @@ export function SettingDetailView({
 
       case 'station-connection':
         return (
-          <SettingCard iconId="server" title={copy['mobile.settings.section.station']}>
+          <SettingCard iconId="server" title={t('mobile.settings.section.station')}>
             <div className="mp-station-summary">
               <span>
                 <Text strong>Product Station</Text>
-                <Text tone="secondary">{copy['mobile.settings.connected']}</Text>
+                <Text tone="secondary">{t('mobile.settings.connected')}</Text>
               </span>
-              <Tag tone="success">{copy['mobile.launch.verified']}</Tag>
+              <Tag tone="success">{t('mobile.launch.verified')}</Tag>
             </div>
             <Button actionId="station.change" onActivate={() => setStationConfirmOpen(true)}>
-              {copy['mobile.settings.station.changeStation']}
+              {t('mobile.settings.station.changeStation')}
             </Button>
             <Button actionId="station.logout" tone="danger"
               onActivate={() => setLogoutConfirmOpen(true)}>
-              {copy['mobile.settings.logout']}
+              {t('mobile.settings.logout')}
             </Button>
           </SettingCard>
         );
 
       case 'language':
         return (
-          <SettingCard iconId="languages" title={copy['mobile.settings.section.language']}>
+          <SettingCard iconId="languages" title={t('mobile.settings.section.language')}>
             <Select
               value={language}
               onValueChange={(value) => { setLanguage(String(value)); markDirty(); }}
@@ -320,9 +321,9 @@ export function SettingDetailView({
 
       case 'about':
         return (
-          <SettingCard iconId="info" title={copy['mobile.settings.aboutApp']}>
+          <SettingCard iconId="info" title={t('mobile.settings.aboutApp')}>
             <div className="mp-setting-detail-row">
-              <span className="mp-setting-detail-label">{copy['mobile.settings.aboutApp']}</span>
+              <span className="mp-setting-detail-label">{t('mobile.settings.aboutApp')}</span>
               <span className="mp-setting-detail-value">1.0.0</span>
             </div>
           </SettingCard>
@@ -330,14 +331,14 @@ export function SettingDetailView({
 
       case 'encryption':
         return (
-          <SettingCard iconId="lock-keyhole" title="Encryption">
+          <SettingCard iconId="lock-keyhole" title={t('mobile.contact.encryption')}>
             <div className="mp-setting-detail-row">
-              <span className="mp-setting-detail-label">Message encryption</span>
+              <span className="mp-setting-detail-label">{t('mobile.settings.messageEncryption')}</span>
               <Tag tone="success">End-to-end encrypted</Tag>
             </div>
             <Text tone="secondary" className="mp-setting-owner-note">
               <Icon iconId="shield-check" size={15} />
-              <span>Messages are encrypted on this Station and its trusted devices.</span>
+              <span>{t('mobile.settings.encryptedNote')}</span>
             </Text>
           </SettingCard>
         );
@@ -351,7 +352,7 @@ export function SettingDetailView({
   return (
     <div className="mp-detail-page">
       <header className="mp-detail-header">
-        <button type="button" className="mp-thread-back" onClick={onBack} aria-label="Back">
+        <button type="button" className="mp-thread-back" onClick={onBack} aria-label={t('mobile.chat.back')}>
           <Icon iconId="arrow-left" size={22} />
         </button>
         <h2 className="mp-detail-header-title">{setting.label}</h2>
@@ -360,20 +361,20 @@ export function SettingDetailView({
         {saved ? (
           <div className="mp-setting-saved">
             <Icon iconId="check" size={15} />
-            {copy['mobile.settings.dirty.saved']}
+            {t('mobile.settings.dirty.saved')}
           </div>
         ) : null}
         {dirty ? (
           <div className="mp-settings-dirty-bar">
-            <Text>{copy['mobile.settings.dirty.unsavedChanges']}</Text>
+            <Text>{t('mobile.settings.dirty.unsavedChanges')}</Text>
             <span style={{ display: 'flex', gap: 8 }}>
               <Button actionId="settings.discard" density="compact"
                 onActivate={() => setDirty(false)}>
-                {copy['mobile.settings.dirty.discardChanges']}
+                {t('mobile.settings.dirty.discardChanges')}
               </Button>
               <Button actionId="settings.save" emphasis="primary" density="compact"
                 onActivate={() => { setDirty(false); setSaved(true); }}>
-                {copy['mobile.settings.dirty.saveChanges']}
+                {t('mobile.settings.dirty.saveChanges')}
               </Button>
             </span>
           </div>
@@ -381,22 +382,22 @@ export function SettingDetailView({
         {renderContent()}
       </div>
       <ConfirmState open={cacheConfirmOpen}
-        title={copy['mobile.settings.storage.clearChatCacheAction']}
-        description={copy['mobile.settings.storage.clearChatCacheConfirm']}
-        confirmLabel={copy['mobile.settings.storage.clearChatCacheConfirmAction']}
+        title={t('mobile.settings.storage.clearChatCacheAction')}
+        description={t('mobile.settings.storage.clearChatCacheConfirm')}
+        confirmLabel={t('mobile.settings.storage.clearChatCacheConfirmAction')}
         danger
         onCancel={() => setCacheConfirmOpen(false)}
         onConfirm={() => setCacheConfirmOpen(false)} />
       <ConfirmState open={stationConfirmOpen}
-        title={copy['mobile.settings.station.changeStation']}
+        title={t('mobile.settings.station.changeStation')}
         description="Product Station is the active verified Station. Changing it ends the current account scope."
-        confirmLabel={copy['mobile.settings.station.changeStation']}
+        confirmLabel={t('mobile.settings.station.changeStation')}
         onCancel={() => setStationConfirmOpen(false)}
         onConfirm={onChangeStation} />
       <ConfirmState open={logoutConfirmOpen}
-        title={copy['mobile.settings.station.logoutConfirmTitle']}
-        description={copy['mobile.settings.station.logoutConfirmBody']}
-        confirmLabel={copy['mobile.settings.logout']}
+        title={t('mobile.settings.station.logoutConfirmTitle')}
+        description={t('mobile.settings.station.logoutConfirmBody')}
+        confirmLabel={t('mobile.settings.logout')}
         danger
         onCancel={() => setLogoutConfirmOpen(false)}
         onConfirm={onChangeStation} />
@@ -413,6 +414,7 @@ function SettingCard({
   title: string;
   children: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <section className="mp-setting-detail-card">
       <header className="mp-setting-section-header">
@@ -441,6 +443,7 @@ function ConfirmState({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useT();
   if (!open) return null;
   return (
     <div className="mp-confirm-backdrop" onClick={onCancel}>
@@ -454,7 +457,7 @@ function ConfirmState({
         <p className="mp-confirm-desc">{description}</p>
         <div className="mp-confirm-actions">
           <button type="button" className="mp-confirm-btn" onClick={onCancel}>
-            {copy['common.action.cancel']}
+            {t('common.action.cancel')}
           </button>
           <button
             type="button"

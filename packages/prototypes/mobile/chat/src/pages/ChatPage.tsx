@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../i18n';
 import { Badge, Icon, IconButton, Text, TextField } from '@peers-touch/ui';
 import type { ChatListEvidenceState, Conversation, MobileUiEvidence } from '../types';
 import { demoConversations } from '../data';
-import copy from '../../../../../locales/en/common.json';
 import { PrototypeListWindow } from '../components/PrototypeListWindow';
 import type { PrototypeListMemory } from '../listPresentation';
 import { IdentityAvatar } from '../components/IdentityAvatar';
@@ -21,8 +21,16 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
   onConversationClick: (conv: Conversation) => void;
   onCompose?: () => void;
 }) {
+  const t = useT();
   const [localState, setLocalState] = useState<ChatListEvidenceState>(uiEvidence.chatListState);
-  const [query, setQuery] = useState('');
+  // The list unmounts while a conversation is open; the query survives thread
+  // round-trips through the same shell-owned memory as window positions.
+  const queryKey = 'conversations-query';
+  const [query, setQueryState] = useState(() => listMemory.read(queryKey)?.query ?? '');
+  const setQuery = (value: string) => {
+    setQueryState(value);
+    listMemory.save(queryKey, { query: value });
+  };
   const recoveryTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -35,7 +43,7 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
 
   function getPreview(conv: Conversation): string {
     if (conv.isGroup && conv.lastSender) return `${conv.lastSender}: ${conv.lastMessage}`;
-    return conv.lastMessage || copy['mobile.chat.emptyThread'];
+    return conv.lastMessage || t('mobile.chat.emptyThread');
   }
 
   function handleRetry() {
@@ -55,17 +63,17 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
   return (
     <div className="mp-page" data-prototype-page="chats">
       <header className="mp-header">
-        <h1 className="mp-header-title">Chats</h1>
+        <h1 className="mp-header-title">{t('mobile.chat.title')}</h1>
         {onCompose && (
-          <IconButton actionId="chat.compose" iconId="message-square-plus" label="New chat" emphasis="quiet"
+          <IconButton actionId="chat.compose" iconId="message-square-plus" label={t('mobile.chat.newChat')} emphasis="quiet"
             onActivate={onCompose} />
         )}
       </header>
 
       <div className="mp-search-well">
         <TextField
-          aria-label="Search conversations"
-          placeholder={copy['mobile.contacts.searchPlaceholder'] === undefined ? 'Search' : 'Search conversations'}
+          aria-label={t('mobile.chat.searchPlaceholder')}
+          placeholder={t('mobile.chat.searchPlaceholder')}
           value={query}
           clearable
           onClear={() => setQuery('')}
@@ -78,14 +86,14 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
         {localState === 'initial-loading' && <ConversationListSkeleton />}
         {localState === 'refreshing' && (
           <InlineSurfaceNotice
-            title="Refreshing conversations"
+            title={t('mobile.chat.refreshing')}
             detail="Cached conversations stay available while Peers reconciles updates."
           />
         )}
         {localState === 'cached-error' && (
           <InlineSurfaceNotice
             tone="error"
-            title="Could not refresh conversations"
+            title={t('mobile.chat.refreshFailed')}
             detail="Showing the most recent conversations stored on this device."
             actionLabel="Retry"
             onAction={handleRetry}
@@ -94,13 +102,13 @@ export function ChatPage({ conversations = demoConversations, listMemory, uiEvid
         {localState === 'empty' && (
           <RouteSurfaceState
             icon={<Icon iconId="message-circle" size={22} />}
-            title={copy['mobile.chat.emptyTitle']}
-            detail={copy['mobile.chat.emptySubtitle']}
+            title={t('mobile.chat.emptyTitle')}
+            detail={t('mobile.chat.emptySubtitle')}
           />
         )}
         {localState !== 'initial-loading' && localState !== 'empty' && (
           <PrototypeListWindow items={visibleConversations} itemKey={conversationKey}
-            surfaceKey="conversations" memory={listMemory}>
+            surfaceKey={`conversations:${query.trim().toLowerCase()}`} memory={listMemory}>
             {(window) => window.map((conv) => (
               <div className="mp-conversation-item" key={conv.key} data-scroll-anchor-id={conv.key}
                 role="button" tabIndex={0} onClick={() => onConversationClick(conv)}

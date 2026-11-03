@@ -1,9 +1,11 @@
+import { useT } from '../i18n';
 import { Icon } from '@peers-touch/ui';
 import type { ReactNode } from 'react';
 
 export function ConversationListSkeleton() {
+  const t = useT();
   return (
-    <div className="mp-conversation-skeleton" role="status" aria-label="Loading conversations">
+    <div className="mp-conversation-skeleton" role="status" aria-label={t('mobile.ui.loadingConversations')}>
       {Array.from({ length: 7 }, (_, index) => (
         <div key={index} className="mp-conversation-skeleton-row">
           <span className="mp-skeleton-block mp-skeleton-avatar" />
@@ -19,8 +21,9 @@ export function ConversationListSkeleton() {
 }
 
 export function ThreadSkeleton() {
+  const t = useT();
   return (
-    <div className="mp-thread-skeleton" role="status" aria-label="Loading messages">
+    <div className="mp-thread-skeleton" role="status" aria-label={t('mobile.ui.loadingMessages')}>
       {['peer short', 'peer long', 'mine medium', 'peer medium', 'mine short'].map((shape) => (
         <div key={shape} className={`mp-thread-skeleton-row ${shape}`}>
           {shape.startsWith('peer') && <span className="mp-skeleton-block mp-skeleton-avatar" />}

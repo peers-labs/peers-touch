@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from '../i18n';
 import { Button, Icon, PasswordField, TextField } from '@peers-touch/ui';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 
@@ -19,6 +20,7 @@ export function AuthGateScreen({
   onBack: () => void;
   onLogin: () => void;
 }) {
+  const t = useT();
   const [loginTab, setLoginTab] = useState<'quick' | 'email'>('quick');
   const [email, setEmail] = useState('alice@peers.social');
   const [password, setPassword] = useState('password123');
@@ -58,7 +60,7 @@ export function AuthGateScreen({
             <Icon iconId="users-round" size={22} />
           </div>
           <div className="mp-auth-brand-copy">
-            <h1 className="mp-auth-title" id="auth-title">Sign In</h1>
+            <h1 className="mp-auth-title" id="auth-title">{t('mobile.auth.signIn')}</h1>
             <span className="mp-auth-subtitle">
               Log in before entering this Station
             </span>
@@ -77,10 +79,10 @@ export function AuthGateScreen({
           <span className="mp-auth-station-icon"><Icon iconId="server" size={18} /></span>
           <span className="mp-auth-station-copy">
             <strong>{stationLabel}</strong>
-            <span>Connected to this Station</span>
+            <span>{t('mobile.auth.connected')}</span>
           </span>
         </div>
-        <div className="mp-auth-tab-row" role="tablist" aria-label="Login method">
+        <div className="mp-auth-tab-row" role="tablist" aria-label={t('mobile.auth.loginMethod')}>
           <button type="button" className={`mp-auth-tab ${loginTab === 'quick' ? 'active' : ''}`}
             aria-selected={loginTab === 'quick'} onClick={() => setLoginTab('quick')}>
             Quick Login
@@ -108,7 +110,7 @@ export function AuthGateScreen({
           <div className={`mp-auth-fields ${loginTab === 'email' ? 'active' : ''}`}>
             {!expiredSession && rememberedAccounts.length > 0 && (
               <div className="mp-auth-account-history">
-                <TextMuted>Recent accounts</TextMuted>
+                <TextMuted>{t('mobile.auth.recentAccounts')}</TextMuted>
                 <div className="mp-auth-account-list">
                   {rememberedAccounts.map((account) => (
                     <button key={account.email} type="button" className="mp-auth-account-chip"
@@ -120,10 +122,10 @@ export function AuthGateScreen({
                 </div>
               </div>
             )}
-            <TextField type="email" aria-label="Email address" value={email}
+            <TextField type="email" aria-label={t('mobile.auth.emailAddress')} value={email}
               leading={<Icon iconId="mail" size={16} />}
               onValueChange={(v) => { setEmail(v); setCanLogin(v.trim().length > 0); }} />
-            <PasswordField aria-label="Password" value={password}
+            <PasswordField aria-label={t('mobile.auth.password')} value={password}
               leading={<Icon iconId="lock" size={16} />}
               onValueChange={(v) => { setPassword(v); setCanLogin(v.length >= 6); }} />
           </div>
@@ -148,8 +150,8 @@ export function AuthGateScreen({
         <div className="mp-oauth-overlay">
           <div className="mp-oauth-overlay-card">
             {oauthProvider === 'done' ? <Icon iconId="circle-check-big" size={32} /> : <Icon iconId="refresh-ccw" size={32} className="mp-oauth-icon-spin" />}
-            {oauthProvider === 'done' ? <strong>Login successful</strong> : <strong>Authenticating with GitHub...</strong>}
-            <span>Waiting for authorization...</span>
+            {oauthProvider === 'done' ? <strong>{t('mobile.auth.loginSuccess')}</strong> : <strong>{t('mobile.auth.authenticating')}</strong>}
+            <span>{t('mobile.auth.waitingAuth')}</span>
           </div>
         </div>
       )}

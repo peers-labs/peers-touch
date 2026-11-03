@@ -13,21 +13,30 @@
  */
 import { useState } from 'react';
 import {
-  Check, CheckCheck, Copy, CornerUpLeft, EyeOff, Flag, Forward, ListChecks, Loader2,
+  Bookmark, Check, CheckCheck, Copy, CornerUpLeft, EyeOff, Flag, Forward, ListChecks, Loader2,
   MessageCircle, MoreHorizontal, Pencil, Pin, RotateCcw, Smile, Undo2,
 } from 'lucide-react';
 import { Button, Dialog, Empty, Menu, Popover, Tag, type MenuEntry } from '@peers-touch/ui';
 import type { ChatMessage, Conversation, DeliveryStatus } from './chat-data';
-import { usePrefs, useT } from '../prefs';
-
-// 24 reactions, same order as the desktop prototype.
-export const REACTION_EMOJIS = [
-  '👍', '❤️', '😂', '😮', '😢', '🙏', '👏', '🎉',
-  '🔥', '💯', '🤔', '👀', '🙌', '✨', '✅', '💪',
-  '🤝', '🥳', '😍', '😊', '😅', '🤯', '😎', '💡',
-] as const;
+import { usePrefs, useT, type Translate } from '../prefs';
+import {
+  QUICK_REACTION_KINDS, REACTION_CATALOG, emojiForKind, messageActionGroups, orderedKinds,
+  type MessageActionId, type ReactionKind, type ResolvedAction,
+} from '../../chat-domain';
 
 const MUTATION_WINDOW_MS = 4 * 60_000 + 30_000;
+
+const ACTION_ICONS: Partial<Record<MessageActionId, React.ReactNode>> = {
+  thread: <MessageCircle size={14} />,
+  pin: <Pin size={14} />,
+  copy: <Copy size={14} />,
+  multiselect: <ListChecks size={14} />,
+  'mark-later': <Bookmark size={14} />,
+  edit: <Pencil size={14} />,
+  recall: <Undo2 size={14} />,
+  report: <Flag size={14} />,
+  hide: <EyeOff size={14} />,
+};
 
 export function withinMutationWindow(message: ChatMessage, now = Date.now()): boolean {
   return message.from === 'me' && !!message.ts && now - message.ts <= MUTATION_WINDOW_MS;
@@ -73,19 +82,28 @@ export function DeliveryMeta({ message, onRetry }: {
 
 /* ── Reaction pill + picker ───────────────────────────── */
 
-function ReactionControl({ onReact }: { onReact: (emoji: string) => void }) {
+function ReactionControl({ onReact }: { onReact: (kind: ReactionKind) => void }) {
   const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const kinds = expanded ? REACTION_CATALOG.map(meta => meta.kind) : QUICK_REACTION_KINDS;
   return (
-    <Popover placement="top"
+    <Popover placement="top" open={open} onOpenChange={setOpen}
       content={
-        <div className="sk-react-pop" data-message-react>
-          {REACTION_EMOJIS.map(emoji => (
-            <button key={emoji} type="button" className="sk-react-emoji"
-              data-react-emoji={emoji}
-              aria-label={t('action.reactEmoji', { emoji })} onClick={() => onReact(emoji)}>
-              {emoji}
+        <div className="sk-react-pop" data-message-react data-expanded={expanded ? 'true' : 'false'}>
+          {kinds.map(kind => (
+            <button key={kind} type="button" className="sk-react-emoji"
+              data-react-kind={kind}
+              aria-label={t('action.reactEmoji', { emoji: emojiForKind(kind) })}
+              onClick={() => onReact(kind)}>
+              {emojiForKind(kind)}
             </button>
           ))}
+          <button type="button" className="sk-react-all" data-react-all
+            aria-label={expanded ? t('composer.emojiRecent') : t('composer.emojiAll')}
+            onClick={() => setExpanded(value => !value)}>
+            {expanded ? <Smile size={15} /> : '···'}
+          </button>
         </div>
       }>
       <button type="button" className="sk-msg-action" data-action="react" aria-label={t('action.react')}><Smile size={14} /></button>
@@ -93,17 +111,27 @@ function ReactionControl({ onReact }: { onReact: (emoji: string) => void }) {
   );
 }
 
-export function MessageReactions({ message }: { message: ChatMessage }) {
-  const entries = Object.entries(message.reactions ?? {}).filter(([, who]) => (who ?? []).length > 0);
-  if (!entries.length) return null;
+export function MessageReactions({ message, onToggle }: {
+  message: ChatMessage;
+  onToggle?: (kind: ReactionKind) => void;
+}) {
+  const state = message.reactions;
+  const kinds = state ? orderedKinds(state) : [];
+  if (!kinds.length) return null;
   return (
     <div className="sk-msg-reactions">
-      {entries.map(([emoji, who]) => (
-        <span key={emoji} className="sk-msg-reaction"
-          data-reaction={emoji} data-mine={(who ?? []).includes('me') ? '1' : '0'}>
-          {emoji} {who?.length}
-        </span>
-      ))}
+      {kinds.map(kind => {
+        const selected = state?.viewer.includes(kind) ?? false;
+        return (
+          <button key={kind} type="button"
+            className="sk-msg-reaction"
+            data-reaction={emojiForKind(kind)} data-reaction-kind={kind}
+            data-mine={selected ? '1' : '0'} aria-pressed={selected}
+            onClick={onToggle ? () => onToggle(kind) : undefined}>
+            {emojiForKind(kind)} {state?.counts[kind] ?? 0}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -211,14 +239,33 @@ export function ReportDialog({ open, onCancel, onSubmit }: {
 
 /* ── Action bar: 4 quick actions + overflow menu ─────── */
 
-export type MessageActionTarget =
-  | 'thread' | 'pin' | 'copy' | 'multiselect' | 'edit' | 'recall' | 'report' | 'hide';
+export type MessageActionTarget = MessageActionId;
+
+type TKey = Parameters<Translate>[0];
+
+function toMenuEntry(t: Translate, message: ChatMessage, action: ResolvedAction): MenuEntry {
+  const label = action.id === 'pin' && message.pinned
+    ? t('session.unpin')
+    : t(action.labelKey as TKey);
+  return {
+    id: action.id,
+    label,
+    leading: ACTION_ICONS[action.id],
+    tone: action.danger ? ('danger' as const) : undefined,
+    availability: action.enabled
+      ? undefined
+      : {
+          kind: 'disabled' as const,
+          reason: action.disabledReasonKey ? t(action.disabledReasonKey as TKey) : '',
+        },
+  };
+}
 
 export function MessageActionBar({ message, copied, onReact, onReply, onThread,
   onCopy, onForwardOpen, onMenuAction }: {
   message: ChatMessage;
   copied: boolean;
-  onReact: (emoji: string) => void;
+  onReact: (kind: ReactionKind) => void;
   onReply: () => void;
   onThread: () => void;
   onCopy: () => void;
@@ -232,42 +279,20 @@ export function MessageActionBar({ message, copied, onReact, onReply, onThread,
   // preference, taking the bar to their right edge.
   const nearEdge: 'left' | 'right' =
     message.from === 'me' && messageLayout !== 'left' ? 'left' : 'right';
-  const own = message.from === 'me';
-  const inWindow = withinMutationWindow(message);
-  const hasText = !!message.text.trim();
-  const disabledReason = (kind: 'edit' | 'recall') =>
-    (!inWindow ? t('action.windowReason')
-      : kind === 'edit' && !hasText ? t('action.textOnly') : null);
 
-  const editReason = disabledReason('edit');
-  const recallReason = disabledReason('recall');
-
-  const actions: MenuEntry[] = own
-    ? [
-        { id: 'thread', label: t('action.thread'), leading: <MessageCircle size={14} /> },
-        { id: 'sep-actions', kind: 'separator' as const, label: '' },
-        { id: 'pin', label: message.pinned ? t('session.unpin') : t('action.pinMsg'), leading: <Pin size={14} /> },
-        { id: 'copy', label: t('action.copyText'), leading: <Copy size={14} />,
-          availability: hasText ? undefined : { kind: 'disabled', reason: t('action.noText') } },
-        { id: 'multiselect', label: t('action.multiselect'), leading: <ListChecks size={14} /> },
-        { id: 'sep-mutate', kind: 'separator' as const, label: '' },
-        { id: 'edit', label: t('action.edit'), leading: <Pencil size={14} />,
-          availability: editReason ? { kind: 'disabled', reason: editReason } : undefined },
-        { id: 'recall', label: t('action.recall'), leading: <Undo2 size={14} />,
-          availability: recallReason ? { kind: 'disabled', reason: recallReason } : undefined },
-        { id: 'sep-hide', kind: 'separator' as const, label: '' },
-        { id: 'hide', label: t('action.hideForMe'), tone: 'danger' as const, leading: <EyeOff size={14} /> },
-      ]
-    : [
-        { id: 'thread', label: t('action.thread'), leading: <MessageCircle size={14} /> },
-        { id: 'sep-actions', kind: 'separator' as const, label: '' },
-        { id: 'copy', label: t('action.copyText'), leading: <Copy size={14} />,
-          availability: hasText ? undefined : { kind: 'disabled', reason: t('action.noText') } },
-        { id: 'multiselect', label: t('action.multiselect'), leading: <ListChecks size={14} /> },
-        { id: 'sep-govern', kind: 'separator' as const, label: '' },
-        { id: 'report', label: t('action.report'), leading: <Flag size={14} /> },
-        { id: 'hide', label: t('action.hideForMe'), tone: 'danger' as const, leading: <EyeOff size={14} /> },
-      ];
+  // Both desktop and mobile derive their groups from the shared catalog so
+  // ownership/order cannot fork. Desktop surfaces have no moderator role.
+  const groups = messageActionGroups({
+    mine: message.from === 'me',
+    canModerate: false,
+    hasText: !!message.text.trim(),
+    inMutationWindow: withinMutationWindow(message),
+  });
+  const actions: MenuEntry[] = [];
+  groups.forEach((entry, groupIndex) => {
+    if (groupIndex > 0) actions.push({ id: `sep-${groupIndex}`, kind: 'separator' as const, label: '' });
+    entry.actions.forEach(action => actions.push(toMenuEntry(t, message, action)));
+  });
 
   return (
     <div className="sk-msg-actions-bar" data-message-actions data-bar-side={nearEdge}>

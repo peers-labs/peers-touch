@@ -1,4 +1,5 @@
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { useT } from './i18n';
 import { Badge, Icon, IconButton } from '@peers-touch/ui';
 import type {
   Contact,
@@ -56,7 +57,6 @@ import {
   type PrototypeCallScenario,
   type PrototypeCallSnapshot,
 } from './callPrototype';
-import copy from '../../../../locales/en/common.json';
 
 export function MobileShell({
   onChangeStation,
@@ -87,10 +87,17 @@ export function MobileShell({
   onRecoveryClose?: () => void;
   callScenario?: PrototypeCallScenario;
 }) {
+  const t = useT();
   const [listMemory] = useState(() => new PrototypeListMemory());
-  const [activeTab, setActiveTab] = useState<TabId>('chat');
+  // Social evidence scenarios open straight onto the contacts surface; only the
+  // chat-runtime failure scenario starts on the conversation list.
+  const [activeTab, setActiveTab] = useState<TabId>(
+    socialScenario && socialScenario !== 'social-unavailable' ? 'contacts' : 'chat',
+  );
   const [findPeopleOpen, setFindPeopleOpen] = useState(
-    socialScenario === 'find-people-member' || socialScenario === 'find-people-no-membership',
+    socialScenario === 'find-people-member'
+      || socialScenario === 'find-people-no-membership'
+      || socialScenario === 'request-unknown',
   );
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(
@@ -111,6 +118,9 @@ export function MobileShell({
   const [shellToastKey, setShellToastKey] = useState(0);
   const [conversationMessages, setConversationMessages] = useState<Record<string, Message[]>>({});
   const [searchTarget, setSearchTarget] = useState<SearchTarget | null>(null);
+  // One-shot back intent: a thread entered from a search result returns to the
+  // search overlay on its first Back, then follows normal list navigation.
+  const [threadReturnToSearch, setThreadReturnToSearch] = useState(false);
 
   const baseConversations = longLists ? longListConversations : socialDemo.conversations;
   const conversations = uiEvidence.longContent
@@ -157,13 +167,22 @@ export function MobileShell({
 
   function openSearch(conversationKey = '') {
     setSearchOrigin({ tab: activeTab, conversation: selectedConversation });
-    setSearchView({ query: '', filter: 'all', conversationKey, submitted: false });
+    // Reopening within the same conversation restores the last submitted query
+    // and its result surface; a different conversation starts a clean scope.
+    setSearchView((previous) => (previous.submitted && previous.conversationKey === conversationKey
+      ? previous
+      : { query: '', filter: 'all', conversationKey, submitted: false }));
+    // Bind the controlled search lifecycle to this surface so submit tickets
+    // are accepted while the page is open.
+    searchDemo?.dispatch({ type: 'open', owner: 'global-search' });
     setSearchOpen(true);
   }
 
   function leaveSearch() {
     searchDemo?.dispatch({ type: 'close', owner: 'global-search' });
     setSearchOpen(false);
+    setSearchTarget(null);
+    setSocialSearchTarget(null);
   }
 
   function handleStartCall(conversation: Conversation, mediaKind: PrototypeCallMediaKind) {
@@ -194,12 +213,16 @@ export function MobileShell({
     dispatchSocialDemo({ type: 'open-direct', contactKey: contact.key });
   }
 
-  // Direct lifecycle: open the prepared conversation when the demo resolves ready.
+  // Direct lifecycle: open the prepared conversation on the chat surface when
+  // the demo resolves ready.
   useEffect(() => {
     if (socialDemo.direct?.status !== 'ready' || !selectedContact) return;
     if (socialDemo.direct.contactKey !== selectedContact.key) return;
     const conv = socialDemo.direct.conversation;
-    if (conv) setSelectedConversation(conv);
+    if (conv) {
+      setActiveTab('chat');
+      setSelectedConversation(conv);
+    }
     setSelectedContact(null);
   }, [socialDemo.direct, selectedContact]);
 
@@ -239,6 +262,7 @@ export function MobileShell({
           demo={searchDemo}
           onBack={() => {
             leaveSearch();
+            setThreadReturnToSearch(false);
             setActiveTab(searchOrigin.tab);
           }}
           onOpen={(target) => {
@@ -246,6 +270,7 @@ export function MobileShell({
             setActiveTab('chat');
             setSelectedConversation(target.conversation);
             setSearchTarget(target);
+            setThreadReturnToSearch(true);
           }}
           onSetting={(setting) => {
             leaveSearch();
@@ -265,7 +290,7 @@ export function MobileShell({
       const conversationUnavailable = activeTab === 'chat' && selectedConversation;
       return (
         <SocialUnavailablePage
-          title={conversationUnavailable ? copy['mobile.chat.thread'] : copy['mobile.chat.title']}
+          title={conversationUnavailable ? t('mobile.chat.thread') : t('mobile.chat.title')}
           runtime={socialDemo.runtime}
           onRetry={() => dispatchSocialDemo({ type: 'retry-runtime' })}
           onBack={conversationUnavailable ? () => setSelectedConversation(null) : undefined}
@@ -286,7 +311,15 @@ export function MobileShell({
             messageId={searchTarget?.message.id}
             threadRootMessageId={searchTarget?.root?.id}
             onSearch={() => openSearch(selectedConversation.key)}
-            onBack={() => setSelectedConversation(null)}
+            onTargetConsumed={() => setSearchTarget(null)}
+            onBack={() => {
+              if (threadReturnToSearch) {
+                setThreadReturnToSearch(false);
+                openSearch(selectedConversation.key);
+              } else {
+                setSelectedConversation(null);
+              }
+            }}
             onStartCall={(mediaKind) => handleStartCall(selectedConversation, mediaKind)}
           />
         );
@@ -310,6 +343,7 @@ export function MobileShell({
             postId: socialSearchTarget.moment.id,
             commentId: socialSearchTarget.comment?.id,
           } : undefined}
+          onTargetConsumed={() => setSocialSearchTarget(null)}
           onImmersiveVisibilityChange={setMomentsImmersiveOpen}
         />
       );
@@ -324,7 +358,7 @@ export function MobileShell({
             contact={selectedContact}
             directStatus={direct?.status}
             canMessage={!longLists && socialDemo.federations.length > 0}
-            messageUnavailableText={longLists ? copy['mobile.launch.unavailable'] : undefined}
+            messageUnavailableText={longLists ? t('mobile.launch.unavailable') : undefined}
             onBack={() => {
               dispatchSocialDemo({ type: 'close-direct' });
               setSelectedContact(null);
@@ -383,10 +417,10 @@ export function MobileShell({
   }
 
   const tabItems: ReadonlyArray<{ id: TabId; label: string; iconId: IconName; badge?: number }> = [
-    { id: 'chat', label: 'Chats', iconId: 'message-circle', badge: unreadCount },
-    { id: 'moments', label: 'Moments', iconId: 'image' },
-    { id: 'contacts', label: 'Contacts', iconId: 'users-round' },
-    { id: 'profile', label: 'Me', iconId: 'circle-user' },
+    { id: 'chat', label: t('mobile.tab.chat'), iconId: 'message-circle', badge: unreadCount },
+    { id: 'moments', label: t('mobile.tab.moments'), iconId: 'image' },
+    { id: 'contacts', label: t('mobile.tab.contacts'), iconId: 'users-round' },
+    { id: 'profile', label: t('mobile.tab.settings'), iconId: 'circle-user' },
   ];
 
   return (
@@ -400,7 +434,7 @@ export function MobileShell({
         />
       )}
       {showTabBar && (
-        <nav className="mp-tabbar" aria-label="Primary navigation">
+        <nav className="mp-tabbar" aria-label={t('mobile.shell.primaryNav')}>
           {tabItems.map(({ id, label, iconId, badge }) => (
             <button
               key={id}
