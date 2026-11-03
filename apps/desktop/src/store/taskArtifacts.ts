@@ -75,6 +75,18 @@ interface TaskArtifactsState {
   }) => Promise<void>;
   recordStructuralCheck: (artifactId: string, versionId: string, body: string) => Promise<ArtifactCheck>;
   recordHumanReview: (artifactId: string, versionId: string, passed: boolean) => Promise<ArtifactCheck>;
+  recordCommandCheck: (
+    artifactId: string,
+    versionId: string,
+    evidence: {
+      sourceToolCallId: string;
+      passed: boolean;
+      exitCode: number;
+      outputSha256: string;
+      command: string;
+      detail?: string;
+    },
+  ) => Promise<ArtifactCheck>;
   acceptCurrent: (artifactId: string, versionId: string) => Promise<AcceptArtifactVersionResponse>;
   reset: () => void;
 }
@@ -367,6 +379,27 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
         detail: passed ? 'human review passed' : 'human review rejected',
         environment: 'desktop-native',
         clientIdempotencyKey: tempId(),
+      });
+      await get().loadDetail(artifactId);
+      return response.check!;
+    },
+
+    recordCommandCheck: async (artifactId, versionId, evidence) => {
+      const response: RecordArtifactCheckResponse = await api.recordTaskArtifactCheck({
+        artifactId,
+        versionId,
+        checkType: 'ARTIFACT_CHECK_TYPE_COMMAND',
+        result: evidence.passed
+          ? 'ARTIFACT_CHECK_RESULT_PASSED'
+          : 'ARTIFACT_CHECK_RESULT_FAILED',
+        detail: evidence.detail
+          ?? (evidence.passed ? 'command check passed' : 'command check failed'),
+        environment: 'desktop-native',
+        clientIdempotencyKey: tempId(),
+        sourceToolCallId: evidence.sourceToolCallId,
+        commandExitCode: evidence.exitCode,
+        commandOutputSha256: evidence.outputSha256,
+        command: evidence.command,
       });
       await get().loadDetail(artifactId);
       return response.check!;

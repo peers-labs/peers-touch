@@ -20,6 +20,37 @@ const EMPTY_VERSION_LIST: readonly ArtifactVersion[] = [];
 const EMPTY_CHECK_LIST: readonly ArtifactCheck[] = [];
 const EMPTY_ACCEPTANCE_LIST: readonly ArtifactAcceptance[] = [];
 
+type CommandEvidence = {
+  toolCallId: string;
+  command: string;
+  exitCode: number;
+  outputRaw: string;
+};
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function parseToolEnvelope(raw: string | undefined): { command?: string; exitCode?: number } {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as {
+      output?: { command?: string; exit_code?: number };
+    };
+    return {
+      command: parsed.output?.command,
+      exitCode: typeof parsed.output?.exit_code === 'number'
+        ? parsed.output.exit_code
+        : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 /**
  * TW-D3 document artifact work surface: immutable version reader,
  * selection feedback into the task composer, manual revision with
@@ -41,7 +72,18 @@ export function DocumentArtifactPanel() {
   const quoteSelectionToComposer = useTaskArtifactStore((s) => s.quoteSelectionToComposer);
   const recordStructuralCheck = useTaskArtifactStore((s) => s.recordStructuralCheck);
   const recordHumanReview = useTaskArtifactStore((s) => s.recordHumanReview);
+  const recordCommandCheck = useTaskArtifactStore((s) => s.recordCommandCheck);
   const acceptCurrent = useTaskArtifactStore((s) => s.acceptCurrent);
+  const openConversationId = useTaskArtifactStore((s) => s.openConversationId);
+  // Prefer the per-session buffer (covers backgrounded conversations);
+  // fall back to the live flat message list for the current session.
+  const sessionBuffers = useChatStore((s) => s.sessionBuffers);
+  const liveMessages = useChatStore((s) => s.messages);
+  const currentConversationKey = useChatStore((s) => s.currentSessionKey);
+  const conversationMessages = openConversationId
+    ? (sessionBuffers[openConversationId]
+      ?? (openConversationId === currentConversationKey ? liveMessages : []))
+    : [];
 
   const artifact = useTaskArtifactStore((s) =>
     openArtifactId
@@ -101,6 +143,27 @@ export function DocumentArtifactPanel() {
     if (!selectedVersionId || selectedBodyLoaded) return;
     void selectVersion(selectedVersionId);
   }, [selectedVersionId, selectedBodyLoaded, selectVersion]);
+
+  const commandEvidence = useMemo<CommandEvidence[]>(() => {
+    const seen = new Set<string>();
+    const evidence: CommandEvidence[] = [];
+    for (const message of conversationMessages) {
+      for (const toolCall of message.toolCalls ?? []) {
+        if (toolCall.name !== 'local_shell_exec' || toolCall.status !== 'success') continue;
+        const parsed = parseToolEnvelope(toolCall.result);
+        if (!toolCall.id || typeof parsed.exitCode !== 'number' || !parsed.command) continue;
+        if (seen.has(toolCall.id)) continue;
+        seen.add(toolCall.id);
+        evidence.push({
+          toolCallId: toolCall.id,
+          command: parsed.command,
+          exitCode: parsed.exitCode,
+          outputRaw: toolCall.result ?? '',
+        });
+      }
+    }
+    return evidence;
+  }, [conversationMessages]);
 
   const selectedVersion = useMemo(
     () => versions.find((version) => version.versionId === selectedVersionId),
@@ -202,6 +265,29 @@ export function DocumentArtifactPanel() {
       }
     },
     [openArtifactId, selectedVersionId, recordHumanReview],
+  );
+
+  const handleCommandCheck = useCallback(
+    async (evidence: CommandEvidence, passed: boolean) => {
+      if (!openArtifactId || !selectedVersionId) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const outputSha256 = await sha256Hex(evidence.outputRaw);
+        await recordCommandCheck(openArtifactId, selectedVersionId, {
+          sourceToolCallId: evidence.toolCallId,
+          passed,
+          exitCode: evidence.exitCode,
+          outputSha256,
+          command: evidence.command,
+        });
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [openArtifactId, selectedVersionId, recordCommandCheck],
   );
 
   const handleAccept = useCallback(async () => {
@@ -422,21 +508,74 @@ export function DocumentArtifactPanel() {
             {t('chat.artifact.accept')}
           </Button>
         </Flexbox>
+        {commandEvidence.length > 0 && (
+          <Flexbox gap={4} data-pt-command-check-candidates>
+            <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
+              {t('chat.artifact.check.commandEvidence')}
+            </span>
+            {commandEvidence.map((evidence) => (
+              <Flexbox
+                key={evidence.toolCallId}
+                horizontal
+                align="center"
+                gap={8}
+                wrap="wrap"
+                data-pt-command-check-item={evidence.toolCallId}
+              >
+                <code style={{ fontSize: 11 }}>{evidence.command}</code>
+                <Tag
+                  bordered={false}
+                  color={evidence.exitCode === 0 ? 'success' : 'error'}
+                  style={{ margin: 0, fontSize: 11 }}
+                  data-pt-command-exit={evidence.exitCode}
+                >
+                  {t('chat.message.toolCall.workspace.exit', { code: evidence.exitCode })}
+                </Tag>
+                <Button
+                  size="small"
+                  disabled={busy || evidence.exitCode !== 0}
+                  onClick={() => void handleCommandCheck(evidence, true)}
+                  data-pt-command-check-pass={evidence.toolCallId}
+                >
+                  {t('chat.artifact.check.commandPass')}
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  disabled={busy || evidence.exitCode === 0}
+                  onClick={() => void handleCommandCheck(evidence, false)}
+                  data-pt-command-check-fail={evidence.toolCallId}
+                >
+                  {t('chat.artifact.check.commandFail')}
+                </Button>
+              </Flexbox>
+            ))}
+          </Flexbox>
+        )}
         <Flexbox gap={4} data-pt-artifact-check-list>
-          {versionChecks.map((check) => (
-            <Tag
-              key={check.checkId}
-              data-pt-artifact-check={check.checkId}
-              data-pt-artifact-check-result={
-                check.result === 1 ? 'passed' : check.result === 2 ? 'failed' : 'unknown'
-              }
-              color={check.result === 1 ? 'green' : 'red'}
-              style={{ margin: 0 }}
-            >
-              {check.checkType === 1 ? t('chat.artifact.check.structural') : t('chat.artifact.check.humanReview')}
-              : {check.result === 1 ? t('chat.artifact.check.passed') : t('chat.artifact.check.failed')}
-            </Tag>
-          ))}
+          {versionChecks.map((check) => {
+            const typeLabel = check.checkType === 1
+              ? t('chat.artifact.check.structural')
+              : check.checkType === 2
+                ? t('chat.artifact.check.humanReview')
+                : t('chat.artifact.check.command');
+            return (
+              <Tag
+                key={check.checkId}
+                data-pt-artifact-check={check.checkId}
+                data-pt-artifact-check-type={check.checkType}
+                data-pt-artifact-check-result={
+                  check.result === 1 ? 'passed' : check.result === 2 ? 'failed' : 'unknown'
+                }
+                color={check.result === 1 ? 'green' : 'red'}
+                style={{ margin: 0 }}
+              >
+                {typeLabel}
+                {check.checkType === 3 && check.command ? ` · ${check.command} (${check.commandExitCode})` : ''}
+                : {check.result === 1 ? t('chat.artifact.check.passed') : t('chat.artifact.check.failed')}
+              </Tag>
+            );
+          })}
         </Flexbox>
       </Flexbox>
     </Flexbox>

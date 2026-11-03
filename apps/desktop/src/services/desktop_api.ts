@@ -5901,11 +5901,18 @@ export const api = {
   recordTaskArtifactCheck: (input: {
     artifactId: string;
     versionId: string;
-    checkType: 'ARTIFACT_CHECK_TYPE_STRUCTURAL' | 'ARTIFACT_CHECK_TYPE_HUMAN_REVIEW';
+    checkType:
+      | 'ARTIFACT_CHECK_TYPE_STRUCTURAL'
+      | 'ARTIFACT_CHECK_TYPE_HUMAN_REVIEW'
+      | 'ARTIFACT_CHECK_TYPE_COMMAND';
     result: 'ARTIFACT_CHECK_RESULT_PASSED' | 'ARTIFACT_CHECK_RESULT_FAILED';
     detail?: string;
     environment?: string;
     clientIdempotencyKey?: string;
+    sourceToolCallId?: string;
+    commandExitCode?: number;
+    commandOutputSha256?: string;
+    command?: string;
   }) =>
     invokeRustProto(
       'agent_task_artifact_check_record',
@@ -5918,6 +5925,10 @@ export const api = {
         detail: input.detail ?? '',
         environment: input.environment ?? '',
         client_idempotency_key: input.clientIdempotencyKey ?? '',
+        source_tool_call_id: input.sourceToolCallId ?? '',
+        command_exit_code: input.commandExitCode ?? 0,
+        command_output_sha256: input.commandOutputSha256 ?? '',
+        command: input.command ?? '',
       },
     ),
 
