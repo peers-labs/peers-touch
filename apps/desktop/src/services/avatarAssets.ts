@@ -178,6 +178,15 @@ export function avatarAssetKey(query: AvatarAssetQuery): string {
   return `${actorKeyFor(query)}|${query.profileRevision ?? 0}|${identity}`;
 }
 
+/**
+ * Flight dedupe bucket. Native materialization is keyed by the canonical
+ * identity (the same bytes return for every revision), so a single live
+ * flight serves every entry-key variant for the same actor+identity+scope.
+ */
+function flightIdentityKeyFor(query: AvatarAssetQuery): string {
+  return `${query.epoch ?? 0}|${query.actorPtid ?? ''}|${query.stationScope ?? ''}|${(query.identity ?? '').trim()}`;
+}
+
 interface DecodeController {
   settled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -239,6 +248,13 @@ export class AvatarAssetsStore {
    */
   private readonly persistentLastGood = new Map<string, LastGood>();
   private readonly flights = new Map<string, Promise<AvatarEntry>>();
+  /**
+   * Entry key owning the live flight for one identity bucket. The native
+   * avatar cache is identity-keyed, so concurrent requests whose key differs
+   * only by profile revision (row snapshot vs. authoritative profile) must
+   * chain onto the single flight instead of issuing duplicate resolves.
+   */
+  private readonly flightOwners = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
   private session: AvatarSessionBinding | null = null;
   private revisionCounter = 0;
@@ -395,23 +411,12 @@ export class AvatarAssetsStore {
     if (classifyAvatarSource(query.identity) === 'retired') {
       return this.recordTerminal(query, 'absent').snapshot;
     }
-    // Key-churn adoption. The same avatar identity can be requested under a
-    // different key within seconds for two distinct reasons:
-    //   1. attribution: a row paints before the friend/profile hydrate
-    //      supplies peerPtid, then re-renders WITH the PTID;
-    //   2. revision: the row first carries the friend-request snapshot
-    //      (no profile revision) and later the authoritative profile revision.
-    // Without adoption each churn starts a second native flight and re-shows
-    // the neutral placeholder. Exact identity+revision matches reuse the
-    // decoded pixels outright; revision drift paints the previous image as
-    // degraded last-good while the canonical flight still refreshes it.
+    // Sequential key churn (attribution arriving after the image is ready,
+    // or a later re-render under another revision): adopt the ready pixels
+    // outright with no second flight.
     if (!existing) {
-      const adoption = this.adoptReadyIdentity(key, query);
-      if (adoption?.exact) return adoption.snapshot;
-      if (adoption) {
-        if (!this.flights.has(key)) this.startFlight(key, query);
-        return adoption.snapshot;
-      }
+      const adopted = this.adoptReadyIdentity(key, query);
+      if (adopted) return adopted;
     }
     if (!this.flights.has(key)) {
       // Seed the new entry with the same-actor last-good image before the
@@ -422,6 +427,10 @@ export class AvatarAssetsStore {
       // The previous image stays painted (degraded) until the new one is
       // ready and replaces it atomically.
       const seeded = this.seedLastGood(key, query);
+      // Concurrent key churn (row snapshot vs. authoritative profile revision
+      // dispatch within the same window): chain onto the one live flight for
+      // this identity instead of issuing a duplicate native resolve.
+      if (this.chainIdenticalFlight(key, query)) return seeded ?? this.entries.get(key)?.snapshot ?? null;
       this.startFlight(key, query);
       if (seeded) return seeded;
     }
@@ -466,55 +475,56 @@ export class AvatarAssetsStore {
    * actors declaring the same public URL resolve identically, but a peer's
    * attributed image still never crosses an owner boundary.
    *
-   * - Exact revision match: the pixels are authoritative for the query, so
-   *   the result is adopted as `ready` with no new flight.
-   * - Revision drift: the previous image is only last-good; the caller must
-   *   still start the canonical flight. The image is registered on the
-   *   actor's last-good buckets (so it seeds a degraded entry and
-   *   cross-process persistence is backfilled) before `seedLastGood` runs.
+   * Revision is intentionally not part of the match: the native materializer
+   * keys bytes by canonical identity, so a revision bump without an identity
+   * change can never yield different pixels. Explicit refresh (self bind /
+   * force) still bypasses this path.
    */
-  private adoptReadyIdentity(
-    key: string,
-    query: AvatarAssetQuery,
-  ): { snapshot: AvatarAssetSnapshot; exact: boolean } | null {
+  private adoptReadyIdentity(key: string, query: AvatarAssetQuery): AvatarAssetSnapshot | null {
     if (this.entries.has(key)) return null;
     const identity = query.identity.trim();
     if (!identity) return null;
     const targetActor = query.actorPtid?.trim() ?? '';
-    const wantedRevision = query.profileRevision ?? null;
 
-    let exact: AvatarEntry | null = null;
-    let drifted: AvatarEntry | null = null;
+    let source: AvatarEntry | null = null;
     for (const entry of this.entries.values()) {
       if (entry.phase !== 'ready' || !entry.src || entry.identity !== identity) continue;
       const sourceActor = entry.actorKey.split('|')[1]?.trim() ?? '';
       if (targetActor && sourceActor && sourceActor !== targetActor) continue;
-      if (entry.revision === wantedRevision) {
-        exact = entry;
-        break;
-      }
-      drifted ??= entry;
+      source = entry;
+      break;
     }
-
-    const source = exact ?? drifted;
     if (!source || !source.src) return null;
+    // The decoded buffer may already have been released by the LRU; the
+    // paint-ready src survives and a future <img> re-decodes from cache.
+    return this.recordReady(query, source.src, source.localPath, source.image).snapshot;
+  }
 
-    if (exact) {
-      // The decoded buffer may already have been released by the LRU; the
-      // paint-ready src survives and a future <img> re-decodes from cache.
-      const entry = this.recordReady(query, source.src, source.localPath, source.image);
-      return { exact: true, snapshot: entry.snapshot };
-    }
+  /**
+   * Chain a request onto the live flight of another entry-key variant for the
+   * same identity (concurrent revision churn). When the owning flight lands,
+   * the ready pixels are adopted under this key with no duplicate native
+   * resolve. Returns false when no compatible flight exists.
+   */
+  private chainIdenticalFlight(key: string, query: AvatarAssetQuery): boolean {
+    const bucket = flightIdentityKeyFor(query);
+    const ownerKey = this.flightOwners.get(bucket);
+    if (!ownerKey || ownerKey === key) return false;
+    const flight = this.flights.get(ownerKey);
+    if (!flight) return false;
 
-    if (!targetActor) return null;
-    this.rememberLastGood(actorKeyFor(query), targetActor, {
-      identity: source.identity,
-      src: source.src,
-      localPath: source.localPath,
-      revision: source.revision,
+    if (!this.entries.has(key)) this.markPhase(key, query, 'resolving');
+    void flight.then((source) => {
+      if (this.isFenced(query)) return;
+      if (source.phase !== 'ready' || !source.src || source.identity !== query.identity.trim()) return;
+      // A newer dispatch may already have resolved or adopted this key.
+      if (this.entries.get(key)?.phase === 'ready') return;
+      this.recordReady(query, source.src, source.localPath, source.image);
+    }).catch(() => {
+      // The owning flight records its own terminal state; chained keys simply
+      // wait for their next explicit request and bounded retry.
     });
-    const seeded = this.seedLastGood(key, query);
-    return seeded ? { exact: false, snapshot: seeded } : null;
+    return true;
   }
 
   /**
@@ -591,6 +601,13 @@ export class AvatarAssetsStore {
       const epoch = Number(key.slice(0, key.indexOf('|')));
       if (Number.isFinite(epoch) && epoch > 0 && epoch !== keepEpoch) this.flights.delete(key);
     }
+    for (const [bucket, ownerKey] of this.flightOwners) {
+      const epoch = Number(bucket.slice(0, bucket.indexOf('|')));
+      if (Number.isFinite(epoch) && epoch > 0 && epoch !== keepEpoch) {
+        this.flightOwners.delete(bucket);
+        this.flights.delete(ownerKey);
+      }
+    }
     for (const actorKey of this.lastGoodByActor.keys()) {
       const epoch = Number(actorKey.slice(0, actorKey.indexOf('|')));
       if (Number.isFinite(epoch) && epoch > 0 && epoch !== keepEpoch) {
@@ -606,6 +623,7 @@ export class AvatarAssetsStore {
     this.entries.clear();
     this.lastGoodByActor.clear();
     this.flights.clear();
+    this.flightOwners.clear();
     this.session = null;
     this.revisionCounter = 0;
   }
@@ -613,10 +631,14 @@ export class AvatarAssetsStore {
   // ── internals ──
 
   private startFlight(key: string, query: AvatarAssetQuery): Promise<AvatarEntry> {
+    const bucket = flightIdentityKeyFor(query);
     const flight = this.runFlight(key, query).finally(() => {
       this.flights.delete(key);
+      if (this.flightOwners.get(bucket) === key) this.flightOwners.delete(bucket);
     });
     this.flights.set(key, flight);
+    // First live flight owns the identity bucket; later key variants chain.
+    if (!this.flightOwners.has(bucket)) this.flightOwners.set(bucket, key);
     return flight;
   }
 

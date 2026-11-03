@@ -467,7 +467,7 @@ describe('avatarAssets persistent last-good', () => {
     ))).toBe(true);
   });
 
-  it('paints the previous image degraded across revision churn while the live flight refreshes', async () => {
+  it('adopts ready pixels across revision churn without a second native resolve', async () => {
     const resolveLocal = vi.fn(async (identity: string) => ({
       state: 'ready' as const,
       identity,
@@ -493,6 +493,8 @@ describe('avatarAssets persistent last-good', () => {
     });
 
     // Second wave: authoritative profile revision arrives under a new key.
+    // The native cache is identity-keyed, so identical identity + revision
+    // drift must never trigger another resolve.
     const revisioned: AvatarAssetQuery = {
       identity: '/peer.png',
       actorPtid: 'ptid:peer',
@@ -501,10 +503,47 @@ describe('avatarAssets persistent last-good', () => {
     };
     const adopted = store.request(revisioned);
     expect(adopted?.src).toBe('asset:///cache/peerpng');
-    expect(adopted?.degraded).toBe(true);
+    expect(adopted?.degraded).toBe(false);
+    expect(store.getSnapshot(avatarAssetKey(revisioned))?.phase).toBe('ready');
+    expect(resolveLocal.mock.calls.filter(([identity]) => identity === '/peer.png')).toHaveLength(1);
+  });
+
+  it('shares one live flight across concurrently dispatched revision key variants', async () => {
+    const resolveLocal = vi.fn(async (identity: string) => ({
+      state: 'ready' as const,
+      identity,
+      local_path: `/cache/${identity.replace(/\W/g, '')}`,
+    }));
+    const store = new AvatarAssetsStore({
+      resolveLocal,
+      fileSrc: (path) => `asset://${path}`,
+      imageFactory: () => new FakeImage() as unknown as HTMLImageElement,
+    }, vi.fn());
+    store.bindSession({ epoch: 1, actorPtid: 'ptid:owner', identity: '/self.png' });
+
+    // Row (no revision) and authoritative warm (revision 7) dispatch within
+    // the same tick, before either flight lands.
+    const revisionless: AvatarAssetQuery = {
+      identity: '/peer.png',
+      actorPtid: 'ptid:peer',
+      epoch: 0,
+      profileRevision: null,
+    };
+    const revisioned: AvatarAssetQuery = {
+      identity: '/peer.png',
+      actorPtid: 'ptid:peer',
+      epoch: 0,
+      profileRevision: 7,
+    };
+    store.request(revisionless);
+    store.request(revisioned);
+
+    await vi.waitFor(() => {
+      expect(store.getSnapshot(avatarAssetKey(revisionless))?.phase).toBe('ready');
+    });
     await vi.waitFor(() => {
       expect(store.getSnapshot(avatarAssetKey(revisioned))?.phase).toBe('ready');
     });
-    expect(resolveLocal.mock.calls.filter(([identity]) => identity === '/peer.png')).toHaveLength(2);
+    expect(resolveLocal.mock.calls.filter(([identity]) => identity === '/peer.png')).toHaveLength(1);
   });
 });
