@@ -27,6 +27,9 @@ const STATION_URL = process.env.PT_STATION_URL || 'http://127.0.0.1:18092';
 const EMAIL = process.env.AGENT_TEST_EMAIL || 'agent-test-a@p.t';
 const PASSWORD = process.env.AGENT_TEST_PASSWORD || 'Test-1234';
 
+// Anchor evidence to the repo root regardless of the playwright invocation cwd.
+const REPORT_DIR = path.resolve(__dirname, '../../../../tooling/acceptance/reports/task-workbench');
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function psql(query: string): Promise<string> {
@@ -351,9 +354,9 @@ test('agent observes, hands control over and re-observes a real browser', async 
   const chromeProcs = dockerExec(`pgrep -f 'user-data-dir=.*/browser-sessions/${sessionId}' | wc -l`);
   expect(chromeProcs.trim()).toBe('0');
 
-  fs.mkdirSync(path.resolve('tooling/acceptance/reports/task-workbench'), { recursive: true });
+  fs.mkdirSync(REPORT_DIR, { recursive: true });
   fs.writeFileSync(
-    path.resolve('tooling/acceptance/reports/task-workbench/tw-d6-journey.json'),
+    path.join(REPORT_DIR, 'tw-d6-journey.json'),
     JSON.stringify({
       schemaVersion: 1,
       artifactKind: 'tw-d6-native-journey',
