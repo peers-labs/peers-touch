@@ -209,6 +209,36 @@ func TestMemoryRetrievalFailureDegradesWithoutFullSnapshot(t *testing.T) {
 	}
 }
 
+// Heuristic post-turn extraction creates gated candidates, never active
+// memory; confirmation is what makes them consumable.
+func TestExtractFromTurnCreatesGatedCandidates(t *testing.T) {
+	ctx := context.Background()
+	svc, db := newMemoryLifecycleService(t)
+	const agentID = "agent-extract"
+
+	svc.ExtractFromTurn(ctx, agentID, "conv-1", "turn-1",
+		"请记住 etaturn extraction marker 是我们项目的代号", "好的，我记住了")
+
+	var candidates []persistence.Memory
+	if err := db.Where("agent_id = ? AND status = ?", agentID, string(domain.MemoryStatusCandidate)).
+		Find(&candidates).Error; err != nil {
+		t.Fatalf("load extracted candidates: %v", err)
+	}
+	if len(candidates) == 0 {
+		t.Fatalf("turn extraction must create at least one candidate")
+	}
+	if got := searchMemoryContent(t, svc, agentID, "etaturn"); len(got) != 0 {
+		t.Fatalf("extracted candidates must not be consumed before confirmation, got %d", len(got))
+	}
+
+	if _, err := svc.ReviewMemory(ctx, agentID, candidates[0].ID, domain.MemoryStatusConfirmed); err != nil {
+		t.Fatalf("confirm extracted candidate: %v", err)
+	}
+	if got := searchMemoryContent(t, svc, agentID, "etaturn"); len(got) != 1 {
+		t.Fatalf("confirmed extracted memory must be retrievable, got %d", len(got))
+	}
+}
+
 // A frozen memory cannot be rejected (protected from non-admin loss).
 func TestMemoryRejectFrozenIsRefused(t *testing.T) {
 	ctx := context.Background()
