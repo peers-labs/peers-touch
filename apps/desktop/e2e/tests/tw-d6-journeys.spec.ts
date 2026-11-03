@@ -14,6 +14,7 @@
 import * as fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import type { TauriPage } from '@srsholmes/tauri-playwright';
 import { createTauriTest } from '@srsholmes/tauri-playwright';
@@ -28,7 +29,8 @@ const EMAIL = process.env.AGENT_TEST_EMAIL || 'agent-test-a@p.t';
 const PASSWORD = process.env.AGENT_TEST_PASSWORD || 'Test-1234';
 
 // Anchor evidence to the repo root regardless of the playwright invocation cwd.
-const REPORT_DIR = path.resolve(__dirname, '../../../../tooling/acceptance/reports/task-workbench');
+const specDir = path.dirname(fileURLToPath(import.meta.url));
+const REPORT_DIR = path.resolve(specDir, '../../../../tooling/acceptance/reports/task-workbench');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
