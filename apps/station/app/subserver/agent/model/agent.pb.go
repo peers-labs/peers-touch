@@ -291,6 +291,10 @@ const (
 	ArtifactCheckType_ARTIFACT_CHECK_TYPE_STRUCTURAL ArtifactCheckType = 1
 	// Explicit human review recorded against the exact version.
 	ArtifactCheckType_ARTIFACT_CHECK_TYPE_HUMAN_REVIEW ArtifactCheckType = 2
+	// TW-D4: a bounded one-shot command run against the version, bound to a
+	// real tool call (exit code + output digest). Exit 0 never implies pass by
+	// itself; the human records the check result against exact bytes.
+	ArtifactCheckType_ARTIFACT_CHECK_TYPE_COMMAND ArtifactCheckType = 3
 )
 
 // Enum value maps for ArtifactCheckType.
@@ -299,11 +303,13 @@ var (
 		0: "ARTIFACT_CHECK_TYPE_UNSPECIFIED",
 		1: "ARTIFACT_CHECK_TYPE_STRUCTURAL",
 		2: "ARTIFACT_CHECK_TYPE_HUMAN_REVIEW",
+		3: "ARTIFACT_CHECK_TYPE_COMMAND",
 	}
 	ArtifactCheckType_value = map[string]int32{
 		"ARTIFACT_CHECK_TYPE_UNSPECIFIED":  0,
 		"ARTIFACT_CHECK_TYPE_STRUCTURAL":   1,
 		"ARTIFACT_CHECK_TYPE_HUMAN_REVIEW": 2,
+		"ARTIFACT_CHECK_TYPE_COMMAND":      3,
 	}
 )
 
@@ -2170,6 +2176,10 @@ const (
 	ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_SIGNATURE_INVALID  ClientCapabilityReceiptErrorCode = 11
 	ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_DEVICE_KEY_REVOKED ClientCapabilityReceiptErrorCode = 12
 	ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_NONCE_CONFLICT     ClientCapabilityReceiptErrorCode = 13
+	// TW-D4 typed device execution failures.
+	ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_PATH_OUTSIDE_ROOT   ClientCapabilityReceiptErrorCode = 14
+	ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_COMMAND_NOT_ALLOWED ClientCapabilityReceiptErrorCode = 15
+	ClientCapabilityReceiptErrorCode_CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_COMMAND_TIMEOUT     ClientCapabilityReceiptErrorCode = 16
 )
 
 // Enum value maps for ClientCapabilityReceiptErrorCode.
@@ -2189,6 +2199,9 @@ var (
 		11: "CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_SIGNATURE_INVALID",
 		12: "CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_DEVICE_KEY_REVOKED",
 		13: "CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_NONCE_CONFLICT",
+		14: "CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_PATH_OUTSIDE_ROOT",
+		15: "CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_COMMAND_NOT_ALLOWED",
+		16: "CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_COMMAND_TIMEOUT",
 	}
 	ClientCapabilityReceiptErrorCode_value = map[string]int32{
 		"CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_UNSPECIFIED":                 0,
@@ -2205,6 +2218,9 @@ var (
 		"CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_SIGNATURE_INVALID":  11,
 		"CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_DEVICE_KEY_REVOKED": 12,
 		"CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_NONCE_CONFLICT":     13,
+		"CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_PATH_OUTSIDE_ROOT":           14,
+		"CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_COMMAND_NOT_ALLOWED":         15,
+		"CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_COMMAND_TIMEOUT":             16,
 	}
 )
 
@@ -2513,17 +2529,26 @@ func (x *TurnArtifactLocator) GetStationObjectRef() string {
 }
 
 type TurnArtifact struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ArtifactId    string                 `protobuf:"bytes,1,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
-	TurnId        string                 `protobuf:"bytes,2,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
-	AgentId       string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
-	ToolCallId    string                 `protobuf:"bytes,4,opt,name=tool_call_id,json=toolCallId,proto3" json:"tool_call_id,omitempty"`
-	Kind          TurnArtifactKind       `protobuf:"varint,5,opt,name=kind,proto3,enum=peers_touch.model.agent.v1.TurnArtifactKind" json:"kind,omitempty"`
-	Name          string                 `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
-	Size          uint64                 `protobuf:"varint,7,opt,name=size,proto3" json:"size,omitempty"`
-	Sha256        string                 `protobuf:"bytes,8,opt,name=sha256,proto3" json:"sha256,omitempty"`
-	Locator       *TurnArtifactLocator   `protobuf:"bytes,9,opt,name=locator,proto3" json:"locator,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ArtifactId string                 `protobuf:"bytes,1,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
+	TurnId     string                 `protobuf:"bytes,2,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
+	AgentId    string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	ToolCallId string                 `protobuf:"bytes,4,opt,name=tool_call_id,json=toolCallId,proto3" json:"tool_call_id,omitempty"`
+	Kind       TurnArtifactKind       `protobuf:"varint,5,opt,name=kind,proto3,enum=peers_touch.model.agent.v1.TurnArtifactKind" json:"kind,omitempty"`
+	Name       string                 `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	Size       uint64                 `protobuf:"varint,7,opt,name=size,proto3" json:"size,omitempty"`
+	Sha256     string                 `protobuf:"bytes,8,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	Locator    *TurnArtifactLocator   `protobuf:"bytes,9,opt,name=locator,proto3" json:"locator,omitempty"`
+	CreatedAt  *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// TW-D4: real byte-level change facts produced by the device worker.
+	// change_type is "created" or "modified"; empty for non-mutating artifacts.
+	ChangeType   string `protobuf:"bytes,11,opt,name=change_type,json=changeType,proto3" json:"change_type,omitempty"`
+	BeforeSha256 string `protobuf:"bytes,12,opt,name=before_sha256,json=beforeSha256,proto3" json:"before_sha256,omitempty"`
+	BeforeSize   uint64 `protobuf:"varint,13,opt,name=before_size,json=beforeSize,proto3" json:"before_size,omitempty"`
+	// Bounded unified diff generated by the device from real before/after
+	// bytes. Never derived from message text or code-block parsing.
+	UnifiedDiff   string `protobuf:"bytes,14,opt,name=unified_diff,json=unifiedDiff,proto3" json:"unified_diff,omitempty"`
+	DiffTruncated bool   `protobuf:"varint,15,opt,name=diff_truncated,json=diffTruncated,proto3" json:"diff_truncated,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2626,6 +2651,41 @@ func (x *TurnArtifact) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *TurnArtifact) GetChangeType() string {
+	if x != nil {
+		return x.ChangeType
+	}
+	return ""
+}
+
+func (x *TurnArtifact) GetBeforeSha256() string {
+	if x != nil {
+		return x.BeforeSha256
+	}
+	return ""
+}
+
+func (x *TurnArtifact) GetBeforeSize() uint64 {
+	if x != nil {
+		return x.BeforeSize
+	}
+	return 0
+}
+
+func (x *TurnArtifact) GetUnifiedDiff() string {
+	if x != nil {
+		return x.UnifiedDiff
+	}
+	return ""
+}
+
+func (x *TurnArtifact) GetDiffTruncated() bool {
+	if x != nil {
+		return x.DiffTruncated
+	}
+	return false
 }
 
 type ListTurnArtifactsRequest struct {
@@ -3257,8 +3317,11 @@ type ArtifactVersion struct {
 	AdoptedAttachmentRefs []string               `protobuf:"bytes,13,rep,name=adopted_attachment_refs,json=adoptedAttachmentRefs,proto3" json:"adopted_attachment_refs,omitempty"`
 	CreatedBy             string                 `protobuf:"bytes,14,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	CreatedAt             *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// TW-D4: tool call that produced the version bytes through a device
+	// capability, when applicable. Reachable key to the bound diff/checks.
+	SourceToolCallId string `protobuf:"bytes,16,opt,name=source_tool_call_id,json=sourceToolCallId,proto3" json:"source_tool_call_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ArtifactVersion) Reset() {
@@ -3396,6 +3459,13 @@ func (x *ArtifactVersion) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *ArtifactVersion) GetSourceToolCallId() string {
+	if x != nil {
+		return x.SourceToolCallId
+	}
+	return ""
+}
+
 type ArtifactFeedback struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FeedbackId    string                 `protobuf:"bytes,1,opt,name=feedback_id,json=feedbackId,proto3" json:"feedback_id,omitempty"`
@@ -3521,8 +3591,14 @@ type ArtifactCheck struct {
 	Environment      string                 `protobuf:"bytes,10,opt,name=environment,proto3" json:"environment,omitempty"`
 	CreatedBy        string                 `protobuf:"bytes,11,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
 	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// TW-D4 command check provenance: the exact tool call whose bounded
+	// result is evidence, with echoed command, exit code and output digest.
+	SourceToolCallId    string `protobuf:"bytes,13,opt,name=source_tool_call_id,json=sourceToolCallId,proto3" json:"source_tool_call_id,omitempty"`
+	Command             string `protobuf:"bytes,14,opt,name=command,proto3" json:"command,omitempty"`
+	CommandExitCode     int32  `protobuf:"varint,15,opt,name=command_exit_code,json=commandExitCode,proto3" json:"command_exit_code,omitempty"`
+	CommandOutputSha256 string `protobuf:"bytes,16,opt,name=command_output_sha256,json=commandOutputSha256,proto3" json:"command_output_sha256,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ArtifactCheck) Reset() {
@@ -3637,6 +3713,34 @@ func (x *ArtifactCheck) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *ArtifactCheck) GetSourceToolCallId() string {
+	if x != nil {
+		return x.SourceToolCallId
+	}
+	return ""
+}
+
+func (x *ArtifactCheck) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *ArtifactCheck) GetCommandExitCode() int32 {
+	if x != nil {
+		return x.CommandExitCode
+	}
+	return 0
+}
+
+func (x *ArtifactCheck) GetCommandOutputSha256() string {
+	if x != nil {
+		return x.CommandOutputSha256
+	}
+	return ""
 }
 
 // Acceptance belongs to one actor and one exact version. It is valid only
@@ -3764,8 +3868,10 @@ type ClaimArtifactVersionRequest struct {
 	FeedbackId            string   `protobuf:"bytes,12,opt,name=feedback_id,json=feedbackId,proto3" json:"feedback_id,omitempty"`
 	AdoptedAttachmentRefs []string `protobuf:"bytes,13,rep,name=adopted_attachment_refs,json=adoptedAttachmentRefs,proto3" json:"adopted_attachment_refs,omitempty"`
 	ClientIdempotencyKey  string   `protobuf:"bytes,14,opt,name=client_idempotency_key,json=clientIdempotencyKey,proto3" json:"client_idempotency_key,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// TW-D4: device tool call that produced the claimed bytes, when known.
+	SourceToolCallId string `protobuf:"bytes,15,opt,name=source_tool_call_id,json=sourceToolCallId,proto3" json:"source_tool_call_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ClaimArtifactVersionRequest) Reset() {
@@ -3892,6 +3998,13 @@ func (x *ClaimArtifactVersionRequest) GetAdoptedAttachmentRefs() []string {
 func (x *ClaimArtifactVersionRequest) GetClientIdempotencyKey() string {
 	if x != nil {
 		return x.ClientIdempotencyKey
+	}
+	return ""
+}
+
+func (x *ClaimArtifactVersionRequest) GetSourceToolCallId() string {
+	if x != nil {
+		return x.SourceToolCallId
 	}
 	return ""
 }
@@ -4445,8 +4558,15 @@ type RecordArtifactCheckRequest struct {
 	Detail               string                 `protobuf:"bytes,5,opt,name=detail,proto3" json:"detail,omitempty"`
 	Environment          string                 `protobuf:"bytes,6,opt,name=environment,proto3" json:"environment,omitempty"`
 	ClientIdempotencyKey string                 `protobuf:"bytes,7,opt,name=client_idempotency_key,json=clientIdempotencyKey,proto3" json:"client_idempotency_key,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// TW-D4 command check evidence. Required for COMMAND checks: must match a
+	// succeeded shell tool call from the same conversation; Station verifies
+	// the exit code and output digest against the persisted bounded result.
+	SourceToolCallId    string `protobuf:"bytes,8,opt,name=source_tool_call_id,json=sourceToolCallId,proto3" json:"source_tool_call_id,omitempty"`
+	CommandExitCode     int32  `protobuf:"varint,9,opt,name=command_exit_code,json=commandExitCode,proto3" json:"command_exit_code,omitempty"`
+	CommandOutputSha256 string `protobuf:"bytes,10,opt,name=command_output_sha256,json=commandOutputSha256,proto3" json:"command_output_sha256,omitempty"`
+	Command             string `protobuf:"bytes,11,opt,name=command,proto3" json:"command,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *RecordArtifactCheckRequest) Reset() {
@@ -4524,6 +4644,34 @@ func (x *RecordArtifactCheckRequest) GetEnvironment() string {
 func (x *RecordArtifactCheckRequest) GetClientIdempotencyKey() string {
 	if x != nil {
 		return x.ClientIdempotencyKey
+	}
+	return ""
+}
+
+func (x *RecordArtifactCheckRequest) GetSourceToolCallId() string {
+	if x != nil {
+		return x.SourceToolCallId
+	}
+	return ""
+}
+
+func (x *RecordArtifactCheckRequest) GetCommandExitCode() int32 {
+	if x != nil {
+		return x.CommandExitCode
+	}
+	return 0
+}
+
+func (x *RecordArtifactCheckRequest) GetCommandOutputSha256() string {
+	if x != nil {
+		return x.CommandOutputSha256
+	}
+	return ""
+}
+
+func (x *RecordArtifactCheckRequest) GetCommand() string {
+	if x != nil {
+		return x.Command
 	}
 	return ""
 }
@@ -14197,8 +14345,12 @@ type TurnDiagnosticToolFact struct {
 	StationReceiptStatus       string                 `protobuf:"bytes,35,opt,name=station_receipt_status,json=stationReceiptStatus,proto3" json:"station_receipt_status,omitempty"`
 	StationReceiptCommittedAt  *timestamppb.Timestamp `protobuf:"bytes,36,opt,name=station_receipt_committed_at,json=stationReceiptCommittedAt,proto3" json:"station_receipt_committed_at,omitempty"`
 	TerminalReceiptPayloadHash string                 `protobuf:"bytes,37,opt,name=terminal_receipt_payload_hash,json=terminalReceiptPayloadHash,proto3" json:"terminal_receipt_payload_hash,omitempty"`
-	unknownFields              protoimpl.UnknownFields
-	sizeCache                  protoimpl.SizeCache
+	// Bounded device result envelope (truncated), so renderers can hydrate
+	// auditable tool output (exit codes, stdout/stderr, change facts) even
+	// when a live/replayed turn event was missed.
+	Result        string `protobuf:"bytes,38,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TurnDiagnosticToolFact) Reset() {
@@ -14486,6 +14638,13 @@ func (x *TurnDiagnosticToolFact) GetStationReceiptCommittedAt() *timestamppb.Tim
 func (x *TurnDiagnosticToolFact) GetTerminalReceiptPayloadHash() string {
 	if x != nil {
 		return x.TerminalReceiptPayloadHash
+	}
+	return ""
+}
+
+func (x *TurnDiagnosticToolFact) GetResult() string {
+	if x != nil {
+		return x.Result
 	}
 	return ""
 }
@@ -18319,7 +18478,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x13TurnArtifactLocator\x12(\n" +
 	"\x10client_local_ref\x18\x01 \x01(\tR\x0eclientLocalRef\x12(\n" +
 	"\x10client_device_id\x18\x02 \x01(\tR\x0eclientDeviceId\x12,\n" +
-	"\x12station_object_ref\x18\x03 \x01(\tR\x10stationObjectRef\"\x8d\x03\n" +
+	"\x12station_object_ref\x18\x03 \x01(\tR\x10stationObjectRef\"\xbe\x04\n" +
 	"\fTurnArtifact\x12\x1f\n" +
 	"\vartifact_id\x18\x01 \x01(\tR\n" +
 	"artifactId\x12\x17\n" +
@@ -18334,7 +18493,14 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\alocator\x18\t \x01(\v2/.peers_touch.model.agent.v1.TurnArtifactLocatorR\alocator\x129\n" +
 	"\n" +
 	"created_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"^\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1f\n" +
+	"\vchange_type\x18\v \x01(\tR\n" +
+	"changeType\x12#\n" +
+	"\rbefore_sha256\x18\f \x01(\tR\fbeforeSha256\x12\x1f\n" +
+	"\vbefore_size\x18\r \x01(\x04R\n" +
+	"beforeSize\x12!\n" +
+	"\funified_diff\x18\x0e \x01(\tR\vunifiedDiff\x12%\n" +
+	"\x0ediff_truncated\x18\x0f \x01(\bR\rdiffTruncated\"^\n" +
 	"\x18ListTurnArtifactsRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bturn_ids\x18\x02 \x03(\tR\aturnIds\"c\n" +
@@ -18380,7 +18546,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xc8\x04\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xf7\x04\n" +
 	"\x0fArtifactVersion\x12\x1d\n" +
 	"\n" +
 	"version_id\x18\x01 \x01(\tR\tversionId\x12\x1f\n" +
@@ -18402,7 +18568,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x18\x0e \x01(\tR\tcreatedBy\x129\n" +
 	"\n" +
-	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x91\x03\n" +
+	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12-\n" +
+	"\x13source_tool_call_id\x18\x10 \x01(\tR\x10sourceToolCallId\"\x91\x03\n" +
 	"\x10ArtifactFeedback\x12\x1f\n" +
 	"\vfeedback_id\x18\x01 \x01(\tR\n" +
 	"feedbackId\x12\x1f\n" +
@@ -18417,7 +18584,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x18\b \x01(\tR\tcreatedBy\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x87\x04\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xb0\x05\n" +
 	"\rArtifactCheck\x12\x19\n" +
 	"\bcheck_id\x18\x01 \x01(\tR\acheckId\x12\x1f\n" +
 	"\vartifact_id\x18\x02 \x01(\tR\n" +
@@ -18436,7 +18603,11 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\n" +
 	"created_by\x18\v \x01(\tR\tcreatedBy\x129\n" +
 	"\n" +
-	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x99\x02\n" +
+	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12-\n" +
+	"\x13source_tool_call_id\x18\r \x01(\tR\x10sourceToolCallId\x12\x18\n" +
+	"\acommand\x18\x0e \x01(\tR\acommand\x12*\n" +
+	"\x11command_exit_code\x18\x0f \x01(\x05R\x0fcommandExitCode\x122\n" +
+	"\x15command_output_sha256\x18\x10 \x01(\tR\x13commandOutputSha256\"\x99\x02\n" +
 	"\x12ArtifactAcceptance\x12#\n" +
 	"\racceptance_id\x18\x01 \x01(\tR\facceptanceId\x12\x1f\n" +
 	"\vartifact_id\x18\x02 \x01(\tR\n" +
@@ -18448,7 +18619,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x05actor\x18\x06 \x01(\tR\x05actor\x129\n" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x18\n" +
-	"\acurrent\x18\b \x01(\bR\acurrent\"\xf6\x04\n" +
+	"\acurrent\x18\b \x01(\bR\acurrent\"\xa5\x05\n" +
 	"\x1bClaimArtifactVersionRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1f\n" +
 	"\vartifact_id\x18\x02 \x01(\tR\n" +
@@ -18466,7 +18637,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\vfeedback_id\x18\f \x01(\tR\n" +
 	"feedbackId\x126\n" +
 	"\x17adopted_attachment_refs\x18\r \x03(\tR\x15adoptedAttachmentRefs\x124\n" +
-	"\x16client_idempotency_key\x18\x0e \x01(\tR\x14clientIdempotencyKey\"\xae\x01\n" +
+	"\x16client_idempotency_key\x18\x0e \x01(\tR\x14clientIdempotencyKey\x12-\n" +
+	"\x13source_tool_call_id\x18\x0f \x01(\tR\x10sourceToolCallId\"\xae\x01\n" +
 	"\x1cClaimArtifactVersionResponse\x12G\n" +
 	"\bartifact\x18\x01 \x01(\v2+.peers_touch.model.agent.v1.LogicalArtifactR\bartifact\x12E\n" +
 	"\aversion\x18\x02 \x01(\v2+.peers_touch.model.agent.v1.ArtifactVersionR\aversion\"C\n" +
@@ -18500,7 +18672,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\vartifact_id\x18\x01 \x01(\tR\n" +
 	"artifactId\"h\n" +
 	"\x1cListArtifactFeedbackResponse\x12H\n" +
-	"\bfeedback\x18\x02 \x03(\v2,.peers_touch.model.agent.v1.ArtifactFeedbackR\bfeedback\"\xe3\x02\n" +
+	"\bfeedback\x18\x02 \x03(\v2,.peers_touch.model.agent.v1.ArtifactFeedbackR\bfeedback\"\x8c\x04\n" +
 	"\x1aRecordArtifactCheckRequest\x12\x1f\n" +
 	"\vartifact_id\x18\x01 \x01(\tR\n" +
 	"artifactId\x12\x1d\n" +
@@ -18511,7 +18683,12 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x06result\x18\x04 \x01(\x0e2/.peers_touch.model.agent.v1.ArtifactCheckResultR\x06result\x12\x16\n" +
 	"\x06detail\x18\x05 \x01(\tR\x06detail\x12 \n" +
 	"\venvironment\x18\x06 \x01(\tR\venvironment\x124\n" +
-	"\x16client_idempotency_key\x18\a \x01(\tR\x14clientIdempotencyKey\"^\n" +
+	"\x16client_idempotency_key\x18\a \x01(\tR\x14clientIdempotencyKey\x12-\n" +
+	"\x13source_tool_call_id\x18\b \x01(\tR\x10sourceToolCallId\x12*\n" +
+	"\x11command_exit_code\x18\t \x01(\x05R\x0fcommandExitCode\x122\n" +
+	"\x15command_output_sha256\x18\n" +
+	" \x01(\tR\x13commandOutputSha256\x12\x18\n" +
+	"\acommand\x18\v \x01(\tR\acommand\"^\n" +
 	"\x1bRecordArtifactCheckResponse\x12?\n" +
 	"\x05check\x18\x01 \x01(\v2).peers_touch.model.agent.v1.ArtifactCheckR\x05check\"<\n" +
 	"\x19ListArtifactChecksRequest\x12\x1f\n" +
@@ -19519,7 +19696,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x11parent_message_id\x18\x05 \x01(\tR\x0fparentMessageId\x12.\n" +
 	"\x13replaces_message_id\x18\x06 \x01(\tR\x11replacesMessageId\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x90\x0e\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xa8\x0e\n" +
 	"\x16TurnDiagnosticToolFact\x12 \n" +
 	"\ftool_call_id\x18\x01 \x01(\tR\n" +
 	"toolCallId\x12\x1d\n" +
@@ -19566,7 +19743,8 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x19station_effect_started_at\x18\" \x01(\v2\x1a.google.protobuf.TimestampR\x16stationEffectStartedAt\x124\n" +
 	"\x16station_receipt_status\x18# \x01(\tR\x14stationReceiptStatus\x12[\n" +
 	"\x1cstation_receipt_committed_at\x18$ \x01(\v2\x1a.google.protobuf.TimestampR\x19stationReceiptCommittedAt\x12A\n" +
-	"\x1dterminal_receipt_payload_hash\x18% \x01(\tR\x1aterminalReceiptPayloadHash\"\xaf\a\n" +
+	"\x1dterminal_receipt_payload_hash\x18% \x01(\tR\x1aterminalReceiptPayloadHash\x12\x16\n" +
+	"\x06result\x18& \x01(\tR\x06result\"\xaf\a\n" +
 	"\x14TurnDiagnosticReplay\x12\x17\n" +
 	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x19\n" +
@@ -19919,11 +20097,12 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x14ArtifactFeedbackKind\x12&\n" +
 	"\"ARTIFACT_FEEDBACK_KIND_UNSPECIFIED\x10\x00\x12$\n" +
 	" ARTIFACT_FEEDBACK_KIND_SELECTION\x10\x01\x12\"\n" +
-	"\x1eARTIFACT_FEEDBACK_KIND_COMMENT\x10\x02*\x82\x01\n" +
+	"\x1eARTIFACT_FEEDBACK_KIND_COMMENT\x10\x02*\xa3\x01\n" +
 	"\x11ArtifactCheckType\x12#\n" +
 	"\x1fARTIFACT_CHECK_TYPE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eARTIFACT_CHECK_TYPE_STRUCTURAL\x10\x01\x12$\n" +
-	" ARTIFACT_CHECK_TYPE_HUMAN_REVIEW\x10\x02*\x80\x01\n" +
+	" ARTIFACT_CHECK_TYPE_HUMAN_REVIEW\x10\x02\x12\x1f\n" +
+	"\x1bARTIFACT_CHECK_TYPE_COMMAND\x10\x03*\x80\x01\n" +
 	"\x13ArtifactCheckResult\x12%\n" +
 	"!ARTIFACT_CHECK_RESULT_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cARTIFACT_CHECK_RESULT_PASSED\x10\x01\x12 \n" +
@@ -20151,7 +20330,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"4CLIENT_CAPABILITY_LEASE_REVOKE_REASON_STATION_SWITCH\x10\x02\x129\n" +
 	"5CLIENT_CAPABILITY_LEASE_REVOKE_REASON_WORKER_SHUTDOWN\x10\x03\x12<\n" +
 	"8CLIENT_CAPABILITY_LEASE_REVOKE_REASON_DEVICE_KEY_REVOKED\x10\x04\x126\n" +
-	"2CLIENT_CAPABILITY_LEASE_REVOKE_REASON_ADMIN_POLICY\x10\x05*\xf2\x06\n" +
+	"2CLIENT_CAPABILITY_LEASE_REVOKE_REASON_ADMIN_POLICY\x10\x05*\xa6\b\n" +
 	" ClientCapabilityReceiptErrorCode\x124\n" +
 	"0CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_UNSPECIFIED\x10\x00\x122\n" +
 	".CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_NOT_FOUND\x10\x01\x12;\n" +
@@ -20167,7 +20346,10 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x12C\n" +
 	"?CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_SIGNATURE_INVALID\x10\v\x12D\n" +
 	"@CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_DEVICE_KEY_REVOKED\x10\f\x12@\n" +
-	"<CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_NONCE_CONFLICT\x10\r*\xbd\x01\n" +
+	"<CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_NONCE_CONFLICT\x10\r\x12:\n" +
+	"6CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_PATH_OUTSIDE_ROOT\x10\x0e\x12<\n" +
+	"8CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_COMMAND_NOT_ALLOWED\x10\x0f\x128\n" +
+	"4CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_COMMAND_TIMEOUT\x10\x10*\xbd\x01\n" +
 	"\x18ScheduledJobScheduleKind\x12+\n" +
 	"'SCHEDULED_JOB_SCHEDULE_KIND_UNSPECIFIED\x10\x00\x12$\n" +
 	" SCHEDULED_JOB_SCHEDULE_KIND_CRON\x10\x01\x12(\n" +
