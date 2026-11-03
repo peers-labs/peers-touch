@@ -124,7 +124,7 @@
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "TW-20261102",
-  "sourceIdentity": "c920a9b15",
+  "sourceIdentity": "92f14d79f",
   "items": [
     {
       "id": "TW-O01",
@@ -164,10 +164,18 @@
     },
     {
       "id": "TW-O04",
-      "status": "UNPROVEN",
-      "actualEffect": "切片尚未实施；逻辑成果版本闭环未建立。",
-      "evidenceRefs": [],
-      "deviation": "未开始；TurnArtifact 文件定位不充当前期证据。"
+      "status": "PARTIAL",
+      "actualEffect": "TW-D3 在当前源码 Station + acceptance cell（ubuntu-24.04 WebKit）+ 真实 Ollama qwen2.5:0.5b 上以 3.6m 一次通过 exact-source Native Journey：真实 text/plain 资料经 OSS 准入后被产出 Turn 实际采用（版本 adopted_attachment_refs 含该 object_ref，v1 声明字节含材料独有短语；反馈修订轮无新材料，v2 采用数为 0）；助手消息字节被认领为不可变 v1（seq=1），正文走独立大对象表、新字节产生 v2（seq=2，parent=v1，origin=feedback_revision 且 feedback.resulting_version_id 回填），两版 sha256 不同且 0 个畸形版本；结构检查/人工检查/接受分别建模并绑定具体版本，v1 被接受后接受行在 v2 产生后保留为 history-kept、current_version 指向 v2、v1 面板显示历史标签；renderer reload 后重开同一 artifact/version/正文/接受状态，导出文件名绑定 v1。Station Go 测试确定性覆盖版本序列不可变、乐观并发、检查/接受随依据变更失效与归属。",
+      "evidenceRefs": [
+        "tooling/acceptance/reports/task-workbench/tw-d3-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d3-journey.png",
+        "apps/desktop/e2e/tests/tw-d3-journeys.spec.ts",
+        "apps/station/app/subserver/agent/service/logical_artifact_service_test.go",
+        "apps/desktop/src/store/taskArtifacts.ts",
+        "apps/desktop/src/components/agent/workbench/DocumentArtifactPanel.tsx",
+        "commit 92f14d79f"
+      ],
+      "deviation": "PARTIAL：reader/Search/通知/消息卡片/Portal 尚未全部切到同一 artifact/version（本期仅交付工作台 reader、导出与消息认领入口，消息代码块解析保留为展示但已不作为版本真源）；旧消息一次性导入迁移未做；人工编辑乐观并发的 UI 旅程与拒绝/检查失败保持待处理未在 Native 旅程覆盖（Station 语义由 Go 测试覆盖）；验收模型无视觉能力，材料为 text/plain 而非 PNG；该 WebKit harness 无法合成真实选区，选区反馈以正文锚定兜底（产品保留实时选区优先）；exact-source 仅证明研究/文档闭环的版本环，完整消费者切换与旧结果导入在后续切片收口。"
     },
     {
       "id": "TW-O05",
@@ -207,14 +215,15 @@
     {
       "id": "TW-O10",
       "status": "PARTIAL",
-      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。",
       "evidenceRefs": [
         "commit 46dae9f9",
         "tooling/acceptance/reports/task-workbench/tw-d1-journey.png",
+        "tooling/acceptance/reports/task-workbench/tw-d3-journey.json",
         "go test agent pass",
-        "vitest 518 pass"
+        "vitest 1583 pass"
       ],
-      "deviation": "TW-D2–D7 未开始；完整两条业务旅程待 TW-D7。"
+      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。",
+      "deviation": "TW-D4–D7 未开始；完整两条业务旅程待 TW-D7。"
     },
     {
       "id": "TW-O11",
