@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "tw-d6-native-journey",
+  "journeyId": "tw-d6-journey",
+  "commit": "1e6e041274b16519a93caa2898c6b87605eeada5",
+  "stationUrl": "http://127.0.0.1:18092",
+  "recordedAt": "2026-11-03T21:17:06.231Z",
+  "marker": "d616uf3w",
+  "port": 18896,
+  "sessionId": "brows-01M6HMB5T0HCZ0244QNFTZXFFG",
+  "conversationId": "928053dd-53f1-4e4e-aea5-b73fc772b010",
+  "url": "http://127.0.0.1:18896/",
+  "humanState": "saved:human-d616uf3w:checked",
+  "screenshot": {
+    "bytes": 16206,
+    "sha256": "45d4ea89ef1f69223302db2bb6c24c0a6d514b103928730a3d049c297bb0633c"
+  },
+  "staleRefGate": "ui-only",
+  "dbRow": "active|agent|true|131|928053dd-53f1-4e4e-aea5-b73fc772b010"
+}
