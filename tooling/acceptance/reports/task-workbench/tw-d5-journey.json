@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "tw-d5-native-journey",
+  "journeyId": "tw-d5-journey",
+  "commit": "75d9425438a78b255abbcf84787f77e1768090f5",
+  "stationUrl": "http://127.0.0.1:18092",
+  "recordedAt": "2026-11-03T16:31:03.473Z",
+  "marker": "d50wms4g",
+  "port": 18556,
+  "sessionId": "terms-01M6H3ZNZRFS3NG950A01SY2GF",
+  "pid": "1015",
+  "httpStatus": "200",
+  "dbRow": "killed|1015|211|/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/0b6d15eda5d947d45c5787925945cb95"
+}
