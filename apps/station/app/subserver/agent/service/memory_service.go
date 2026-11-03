@@ -445,6 +445,7 @@ func memoryRowToDomain(r persistence.Memory) domain.MemoryItem {
 		LastAccessedAt: r.LastAccessedAt,
 		HelpfulCount:   r.HelpfulCount,
 		HarmfulCount:   r.HarmfulCount,
+		Status:         domain.NormalizeMemoryStatus(r.Status),
 		CreatedAt:      r.CreatedAt,
 		UpdatedAt:      r.UpdatedAt,
 	}
@@ -465,6 +466,9 @@ func applyMemoryFilters(query *gorm.DB, opts domain.MemoryListOptions) *gorm.DB 
 	}
 	if opts.Until != nil {
 		query = query.Where("created_at <= ?", *opts.Until)
+	}
+	if opts.Status != "" {
+		query = query.Where("status = ?", string(opts.Status))
 	}
 	return query
 }
@@ -588,8 +592,11 @@ func (s *MemoryService) AddMemory(ctx context.Context, item domain.MemoryItem) (
 		Relevance:  item.Relevance,
 		Source:     source,
 		TrustScore: domain.MemoryDefaultTrustScore,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		// Explicit writes are immediately consumable; only extraction creates
+		// gated candidates. Empty/unknown normalizes to confirmed.
+		Status:    string(domain.NormalizeMemoryStatus(string(item.Status))),
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 	if item.TrustScore > 0 {
 		record.TrustScore = item.TrustScore
@@ -949,7 +956,11 @@ func (s *MemoryService) Search(ctx context.Context, opts domain.MemorySearchOpti
 		Since:   opts.Since,
 		Until:   opts.Until,
 	}
-	dbQuery := applyMemoryFilters(db.Model(&persistence.Memory{}), listOpts)
+	// Consumption gate: regardless of caller filters, Turn retrieval may only
+	// read human-confirmed memory. Candidates and rejected entries never reach
+	// the prompt through this path.
+	dbQuery := applyMemoryFilters(db.Model(&persistence.Memory{}), listOpts).
+		Where("status = ?", string(domain.MemoryStatusConfirmed))
 	if len(opts.Layers) > 0 {
 		layers := make([]string, 0, len(opts.Layers))
 		for _, layer := range opts.Layers {
@@ -1025,7 +1036,7 @@ func (s *MemoryService) searchPostgresHybrid(ctx context.Context, db *gorm.DB, o
 	if !ok {
 		return nil, fmt.Errorf("embedding provider unavailable")
 	}
-	whereParts := []string{"1=1"}
+	whereParts := []string{"1=1", "status = '" + string(domain.MemoryStatusConfirmed) + "'"}
 	args := []any{}
 	if opts.AgentID != "" {
 		whereParts = append(whereParts, "agent_id = ?")
@@ -1304,6 +1315,7 @@ func (s *MemoryService) Stats(ctx context.Context, agentID string) (*domain.Memo
 func (s *MemoryService) GetPersona(ctx context.Context, agentID string) (*domain.MemoryPersona, error) {
 	items, _, err := s.ListWithOptions(ctx, domain.MemoryListOptions{
 		AgentID:  agentID,
+		Status:   domain.MemoryStatusConfirmed,
 		PageSize: 100,
 		OrderBy:  "created_at",
 	})
@@ -1367,7 +1379,21 @@ func (s *MemoryService) BuildRelevantSnapshot(ctx context.Context, agentID, quer
 		Effort:  "medium",
 	})
 	if err != nil {
-		return s.BuildSnapshot(ctx, agentID)
+		// R03/TW-O08: retrieval failure must degrade explicitly — never dump a
+		// full arbitrary snapshot that would inject unrelated memory into the
+		// Turn. We return an empty snapshot flagged degraded and record it.
+		logger.Warnf(ctx, "memory retrieval degraded (no memory injected): agent=%s err=%v", agentID, err)
+		s.emitMemoryEvent(ctx, domain.MemoryEvent{
+			Type:    domain.MemoryEventRetrievalDegraded,
+			AgentID: agentID,
+			Detail:  fmt.Sprintf(`{"query":%q}`, query),
+		})
+		return &domain.MemorySnapshot{
+			AgentID:       agentID,
+			RelevantItems: []domain.MemoryItem{},
+			CapturedAt:    time.Now(),
+			Degraded:      true,
+		}, nil
 	}
 	persona, _ := s.GetPersona(ctx, agentID)
 	relevant := make([]domain.MemoryItem, 0, len(searchResults))
@@ -1574,6 +1600,9 @@ func (s *MemoryService) ExtractFromTurn(ctx context.Context, agentID, conversati
 		candidate.SessionID = conversationID
 		candidate.SourceTurnID = turnID
 		candidate.Source = domain.MemorySourceReview
+		// Heuristic extraction never auto-promotes: the entry stays a candidate
+		// and cannot influence a Turn until a human confirms it (TW-O08/R03).
+		candidate.Status = domain.MemoryStatusCandidate
 		if s.hasDuplicateMemory(ctx, candidate.AgentID, candidate.Layer, candidate.Summary, candidate.Content) {
 			s.emitMemoryEvent(ctx, domain.MemoryEvent{
 				Type:    domain.MemoryEventDedupSkip,
@@ -1882,6 +1911,63 @@ func (s *MemoryService) DeleteMemoryByID(ctx context.Context, agentID, memoryID 
 		Detail:   `{"action":"manual_delete"}`,
 	})
 	return nil
+}
+
+// ReviewMemory applies a human lifecycle decision to a memory candidate.
+// Only transitions to confirmed or rejected are accepted; a confirmed entry
+// becomes retrievable by future Turns, a rejected entry never is. Rejecting a
+// frozen entry is refused (frozen memories are protected from non-admin loss).
+func (s *MemoryService) ReviewMemory(ctx context.Context, agentID, memoryID string, target domain.MemoryStatus) (*domain.MemoryItem, error) {
+	if target != domain.MemoryStatusConfirmed && target != domain.MemoryStatusRejected {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"review status must be confirmed or rejected", nil)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var row persistence.Memory
+	if err := db.Where("id = ? AND agent_id = ?", memoryID, agentID).First(&row).Error; err != nil {
+		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
+			fmt.Sprintf("memory not found: %s", memoryID), err)
+	}
+	if target == domain.MemoryStatusRejected && row.IsFrozen {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusForbidden,
+			"a frozen memory cannot be rejected; unfreeze it first", nil)
+	}
+	if domain.NormalizeMemoryStatus(row.Status) == target {
+		out := memoryRowToDomain(row)
+		return &out, nil
+	}
+
+	if err := db.Model(&persistence.Memory{}).
+		Where("id = ? AND agent_id = ?", memoryID, agentID).
+		Update("status", string(target)).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to review memory", err)
+	}
+
+	eventType := domain.MemoryEventCandidateConfirmed
+	if target == domain.MemoryStatusRejected {
+		eventType = domain.MemoryEventCandidateRejected
+	}
+	logger.Infof(ctx, "memory %s: agent=%s memory=%s", string(target), agentID, memoryID)
+	s.emitMemoryEvent(ctx, domain.MemoryEvent{
+		Type:     eventType,
+		MemoryID: memoryID,
+		AgentID:  agentID,
+		Layer:    domain.MemoryLayer(row.Layer),
+		Detail:   fmt.Sprintf(`{"status":%q}`, string(target)),
+	})
+
+	var updated persistence.Memory
+	if err := db.Where("id = ? AND agent_id = ?", memoryID, agentID).First(&updated).Error; err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"failed to reload reviewed memory", err)
+	}
+	out := memoryRowToDomain(updated)
+	return &out, nil
 }
 
 // FreezeMemory marks a specific memory as frozen (cannot be modified/deleted

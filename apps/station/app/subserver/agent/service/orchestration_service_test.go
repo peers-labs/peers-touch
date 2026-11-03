@@ -5048,6 +5048,7 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
 						last_accessed_at datetime,
 						helpful_count integer NOT NULL DEFAULT 0,
 						harmful_count integer NOT NULL DEFAULT 0,
+						status text NOT NULL DEFAULT 'confirmed',
 						created_at datetime NOT NULL,
 						updated_at datetime NOT NULL
 				)`,
