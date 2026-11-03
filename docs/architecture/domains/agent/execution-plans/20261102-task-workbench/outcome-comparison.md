@@ -212,7 +212,7 @@
     {
       "id": "TW-O07",
       "status": "PASS",
-      "actualEffect": "TW-D6 在当前源码 Station（compose pt-tw-d1，:18092）+ acceptance cell（ubuntu-24.04）真实 Google Chrome（CDP）上以 20.8s 通过 exact-source Native Journey：worker 用 chromiumoxide 启动设备侧真实有头 Chrome（非内嵌 webview、非 artifact reader），绑定 brows-<ULID> 全局资源 id；agent observe 本地站点读到真实页面文本，fill 搜索表单并 submit 进入结果页；human takeover 后租约转 human，agent observe 动作被拒（按钮 disabled），xdotool 在真实可见窗口物理勾选+Save，release 后旧 snapshot 引用按 generation 失效，agent 重新 observe 读到 saved:human-<marker>:checked；PNG 截图字节与 sha256 校验；Station 事实 active|agent|engine 非空|tabs_json=131 并 JOIN 真实 conversation；end session 后 Chrome 进程与 Station 行同时归零（count=0）。诚实性：host 二进制不可用即 fail-closed，页面文本一律按不可信数据读取，worker/Station 仅存元数据不存正文/截图。复测中修复三个真实缺陷：Station remove 代理误用 worker camelCase 入参导致 snake_case session_id 被静默丢弃、行永不删除（新增专用 AgentBrowserSessionInput）；journey 证据路径依赖调用 cwd（改为 ESM import.meta.url 锚定仓库根）；dock 开关为全局状态，跨重跑盲目 toggle 反而关闭面板（改为按面板存在幂等打开 + 开清独占 DB 残行）。",
+      "actualEffect": "TW-D6 在当前源码 Station（compose pt-tw-d1，:18092）+ acceptance cell（ubuntu-24.04）真实 Google Chrome（CDP）上以 20.8s 通过 exact-source Native Journey：worker 用 chromiumoxide 启动设备侧真实有头 Chrome（非内嵌 webview、非 artifact reader），绑定 brows-<ULID> 全局资源 id；agent observe 本地站点读到真实页面文本，fill 搜索表单并 submit 进入结果页；human takeover 后租约转 human，agent observe 动作被拒（按钮 disabled），xdotool 在真实可见窗口物理勾选+Save，release 后旧 snapshot 引用按 generation 失效，agent 重新 observe 读到 saved:human-<marker>:checked；PNG 截图字节与 sha256 校验；Station 事实 active|agent|engine 非空|tabs_json=131 并 JOIN 真实 conversation；end session 后 Chrome 进程与 Station 行同时归零（count=0）。诚实性：host 二进制不可用即 fail-closed，页面文本一律按不可信数据读取，worker/Station 仅存元数据不存正文/截图。复测中修复三个真实缺陷：Station remove 代理误用 worker camelCase 入参导致 snake_case session_id 被静默丢弃、行永不删除（新增专用 AgentBrowserSessionInput）；journey 证据路径依赖调用 cwd（改为 ESM import.meta.url 锚定仓库根）；dock 开关为全局状态，跨重跑盲目 toggle 反而关闭面板（改为按面板存在幂等打开 + 开清独占 DB 残行）。合并 origin/master（#178/#179，merge c01cf15ba，零冲突：delta 不触及 proto/station/rust/browser 路径）后，desktop pnpm check 与生产 build 全绿，并重嵌 dist 重建二进制，journey 在合并后当前源码以 24.7s 复测通过（证据 commit 绑定 c01cf15ba）。",
       "evidenceRefs": [
         "tooling/acceptance/reports/task-workbench/tw-d6-journey.json",
         "tooling/acceptance/reports/task-workbench/tw-d6-acceptance-note.md",
@@ -221,7 +221,7 @@
         "apps/station/app/subserver/agent/service/browser_session_service.go",
         "apps/desktop/src-tauri/src/application/browser/mod.rs",
         "apps/desktop/src/store/browserSessions.ts",
-        "commits b036c2dd8,2398e885c,b926cb2c7,3b8b80a0a,1e6e04127,21d6e9ce1"
+        "commits b036c2dd8,2398e885c,b926cb2c7,3b8b80a0a,1e6e04127,21d6e9ce1,c01cf15ba"
       ],
       "deviation": "不实现跨 app/系统重启存活的持久浏览器 daemon，worker 换代后无证明会话显示 unknown；多 tab open/close 与 back/forward/reload 已在 worker 实现但本旅程只编排单 tab submit 导航与 observe，未逐条编排负路径；network profiling、下载管理、复杂多 frame 未验证不广告。过期引用拒绝（BROWSER_SNAPSHOT_REF_STALE）与租约拒绝的服务端合同由 Rust 单测保证，journey 内 stale 直测走 UI-only 兜底（eval world 无 window.__TAURI__），不据此声称端到端验证了模型侧引用失效；Station 不保存页面正文与截图字节。"
     },
