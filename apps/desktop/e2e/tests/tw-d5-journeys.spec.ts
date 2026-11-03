@@ -74,7 +74,10 @@ const poll = async <T>(page: TauriPage, fn: string, timeoutMs = 120_000, tickMs 
   const deadline = Date.now() + timeoutMs;
   let last = '';
   while (Date.now() < deadline) {
-    const raw = await page.evaluate(`JSON.stringify((async()=>{try{return (${fn})()}catch(e){return {__error:String(e)}}})())`);
+    // The bridge evaluates synchronously: an async wrapper would make
+    // JSON.stringify see a pending Promise and always return "{}", which
+    // passes the truthy gate as a false positive. Keep fns synchronous.
+    const raw = await page.evaluate(`JSON.stringify((()=>{try{return (${fn})}catch(e){return {__error:String(e)}}})())`);
     const value = JSON.parse(raw) as T;
     if (value && typeof value === 'object' && '__error' in value) {
       last = String((value as { __error: string }).__error);
@@ -136,7 +139,9 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
       const id = el.getAttribute('data-pt-agent-topic-row') || '';
       return id && !id.startsWith('draft:');
     })`,
-    30_000,
+    // The sidebar hydrates persisted topics on its own Station poll after a
+    // cold identity restore; wait for the real list instead of a fixed guess.
+    120_000,
   );
   const conversationId = await page.evaluate(`(() => {
       const items = Array.from(document.querySelectorAll('[data-pt-agent-topic-row]'));
