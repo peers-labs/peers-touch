@@ -124,7 +124,7 @@
   "kind": "peers-touch-outcome-comparison-results",
   "schemaVersion": 1,
   "planId": "TW-20261102",
-  "sourceIdentity": "92f14d79f",
+  "sourceIdentity": "1ffd01f1b",
   "items": [
     {
       "id": "TW-O01",
@@ -179,10 +179,19 @@
     },
     {
       "id": "TW-O05",
-      "status": "UNPROVEN",
-      "actualEffect": "切片尚未实施；Diff/字节/回执旅程未串验。",
-      "evidenceRefs": [],
-      "deviation": "未开始。"
+      "status": "PASS",
+      "actualEffect": "TW-D4 在当前源码 Station（compose pt-tw-d1，:18092）+ acceptance cell（ubuntu-24.04 WebKit）+ 真实 Ollama qwen2.5:0.5b 上以 7.7m 一次通过 exact-source Native Journey：local_file_write 经人工批准在授权工作根创建文件；local_shell_exec 同一 grep 先以 exit 1 失败再以 exit 0 通过；local_file_edit 基于真实 before/after 字节产生 LCS unified diff（Station 事实 modified|before_sha256=64hex|diff=78 字符|diff_truncated=false，UI 呈现 -status=fail/+status=ok）；工具回执含 change_type、before 字节摘要、exit_code、duration_ms、cwd、stdout/stderr 与截断标记，shell 60s 超时杀死、单流 64KiB 有界。最终内容 leg 被认领为不可变 Artifact 版本（source_message_id 指向承载答案的最终 assistant leg，而非空 tool-call leg）；通过的 grep 运行绑定为该版本的 COMMAND 检查，Station 独立校验同会话 local_shell_exec 调用归属、命令回显、exit 0 且 sha256(bounded_result) 与证据一致（tool_call|grep|0|64，outputHashMatches=true）。命令成功、检查通过、用户接受仍是三种独立事实。确定性侧：Station Go 测试覆盖变更事实校验与命令证据验证（含错误退出码不得 PASSED），Rust 单测覆盖出根拒绝、命令策略拒绝、超时与 diff 生成。",
+      "evidenceRefs": [
+        "tooling/acceptance/reports/task-workbench/tw-d4-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d4-acceptance-note.md",
+        "apps/desktop/e2e/tests/tw-d4-journeys.spec.ts",
+        "apps/station/app/subserver/agent/service/logical_artifact_service.go",
+        "apps/station/app/subserver/agent/service/tool_dispatch_service.go",
+        "apps/desktop/src-tauri/src/application/tools/mod.rs",
+        "apps/desktop/src/store/chat.ts",
+        "commits 3d603eb8f,453a0ac82,a44d485bb,1bbf7f623,1ffd01f1b"
+      ],
+      "deviation": "仅覆盖有界一次性命令；可 attach/stdin/resize/kill 的持久 TerminalSession 属 TW-D5。出根写、命令白名单拒绝、60s 超时杀死等围栏负路径由 Rust 单测确定性证明，未在弱模型 Native 旅程中逐一实跑；未知副作用 inspect 语义沿用既有 receipt ledger 未单独编排旅程。0.5b 模型偶发跳过工具调用，旅程以新话题重试收敛，不作为能力证据。"
     },
     {
       "id": "TW-O06",
@@ -219,11 +228,13 @@
         "commit 46dae9f9",
         "tooling/acceptance/reports/task-workbench/tw-d1-journey.png",
         "tooling/acceptance/reports/task-workbench/tw-d3-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d4-journey.json",
         "go test agent pass",
-        "vitest 1583 pass"
+        "vitest 469 pass (store/streaming/workbench targeted)",
+        "cargo test desktop_executor_worker 39 pass (1 keystore env failure, baseline reproduced)"
       ],
-      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。",
-      "deviation": "TW-D4–D7 未开始；完整两条业务旅程待 TW-D7。"
+      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。",
+      "deviation": "TW-D5–D7 未开始；完整两条业务旅程待 TW-D7。"
     },
     {
       "id": "TW-O11",
