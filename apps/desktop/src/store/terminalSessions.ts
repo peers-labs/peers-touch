@@ -173,7 +173,7 @@ function reportTerminalStatus(meta: TerminalSessionMeta): void {
     sessionId: meta.sessionId,
     status: viewStatusToStation(meta.status),
     exitCode: meta.exitCode ?? 0,
-    outputBytes: String(meta.outputBytes),
+    outputBytes: meta.outputBytes,
   }).catch((error: unknown) => {
     log.warn('terminal', 'failed to report terminal status', {
       sessionId: meta.sessionId,

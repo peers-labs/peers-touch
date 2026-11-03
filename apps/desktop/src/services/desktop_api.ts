@@ -10175,7 +10175,7 @@ export async function terminalStationUpdate(input: {
   sessionId: string;
   status: 'TERMINAL_SESSION_STATUS_RUNNING' | 'TERMINAL_SESSION_STATUS_EXITED' | 'TERMINAL_SESSION_STATUS_KILLED' | 'TERMINAL_SESSION_STATUS_UNKNOWN';
   exitCode?: number;
-  outputBytes?: string;
+  outputBytes?: number;
 }): Promise<void> {
   await invokeRustProto(
     'agent_terminal_session_update',
@@ -10184,7 +10184,7 @@ export async function terminalStationUpdate(input: {
       session_id: input.sessionId,
       status: input.status,
       exit_code: input.exitCode ?? 0,
-      output_bytes: input.outputBytes ?? '0',
+      output_bytes: input.outputBytes ?? 0,
     },
   );
 }
