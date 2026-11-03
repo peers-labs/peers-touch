@@ -89,6 +89,13 @@ import {
   AcceptArtifactVersionResponseSchema,
   ListArtifactAcceptancesResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
+import {
+  CreateTerminalSessionResponseSchema,
+  UpdateTerminalSessionResponseSchema,
+  ListTerminalSessionsResponseSchema,
+  ReconcileTerminalSessionsResponseSchema,
+  RemoveTerminalSessionResponseSchema,
+} from '../gen/proto/domain/agent/terminal_session_pb';
 import type {
   AdvanceCapabilityAcceptanceScenarioClockRequest,
   AgentCommandCapabilitySnapshot,
@@ -10039,5 +10046,174 @@ export async function exportAgentTurnDiagnostics(turnId: string): Promise<Export
     'agent_turn_diagnostics_export',
     ExportTurnDiagnosticsResponseSchema,
     { turn_id: turnId },
+  );
+}
+
+// ── TW-D5 persistent terminal sessions ──────────────────────────────────
+
+export interface TerminalSessionMeta {
+  sessionId: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  pid: number;
+  status: 'running' | 'exited' | 'killed' | 'unknown';
+  exitCode?: number | null;
+  outputBytes: number;
+  startedAtMs: number;
+}
+
+export interface TerminalSessionRead {
+  meta: TerminalSessionMeta;
+  chunkB64: string;
+  nextCursor: number;
+  resync: boolean;
+}
+
+export interface TerminalStationSession {
+  sessionId: string;
+  conversationId: string;
+  turnId: string;
+  deviceId: string;
+  cwd: string;
+  command: string;
+  args: string[];
+  pid: number;
+  status:
+    | 'TERMINAL_SESSION_STATUS_UNSPECIFIED'
+    | 'TERMINAL_SESSION_STATUS_RUNNING'
+    | 'TERMINAL_SESSION_STATUS_EXITED'
+    | 'TERMINAL_SESSION_STATUS_KILLED'
+    | 'TERMINAL_SESSION_STATUS_UNKNOWN'
+    | string;
+  exitCode: number;
+  outputBytes: string;
+  createdAt?: { seconds?: string };
+  endedAt?: { seconds?: string };
+}
+
+export async function terminalDefaultWorkspace(deviceId: string): Promise<{ workspaceRoot: string }> {
+  return invokeRustData<{ device_id: string }, { workspaceRoot: string }>(
+    'terminal_default_workspace',
+    { device_id: deviceId },
+  );
+}
+
+export async function terminalWorkerCreate(input: {
+  command: string;
+  args: string[];
+  cwd?: string;
+  workspaceRoot: string;
+  allowedRoots?: string[];
+  cols?: number;
+  rows?: number;
+}): Promise<TerminalSessionMeta> {
+  return invokeRustData('terminal_session_create', {
+    command: input.command,
+    args: input.args,
+    cwd: input.cwd ?? null,
+    workspaceRoot: input.workspaceRoot,
+    allowedRoots: input.allowedRoots ?? [],
+    cols: input.cols ?? null,
+    rows: input.rows ?? null,
+  });
+}
+
+export async function terminalWorkerWrite(sessionId: string, data: Uint8Array): Promise<boolean> {
+  const chunkB64 = btoa(String.fromCharCode(...data));
+  return invokeRustData('terminal_session_write', { sessionId, dataB64: chunkB64 });
+}
+
+export async function terminalWorkerResize(sessionId: string, cols: number, rows: number): Promise<boolean> {
+  return invokeRustData('terminal_session_resize', { sessionId, cols, rows });
+}
+
+export async function terminalWorkerKill(sessionId: string): Promise<TerminalSessionMeta> {
+  return invokeRustData('terminal_session_kill', { sessionId });
+}
+
+export async function terminalWorkerRemove(sessionId: string): Promise<boolean> {
+  return invokeRustData('terminal_session_remove', { sessionId });
+}
+
+export async function terminalWorkerList(): Promise<TerminalSessionMeta[]> {
+  return invokeRustData('terminal_session_list');
+}
+
+export async function terminalWorkerRead(sessionId: string, cursor: number): Promise<TerminalSessionRead> {
+  return invokeRustData('terminal_session_read', { sessionId, cursor });
+}
+
+export async function terminalStationCreate(input: {
+  sessionId: string;
+  conversationId: string;
+  turnId?: string;
+  deviceId: string;
+  cwd: string;
+  command: string;
+  args: string[];
+  pid: number;
+}): Promise<TerminalStationSession> {
+  const response = await invokeRustProto(
+    'agent_terminal_session_create',
+    CreateTerminalSessionResponseSchema,
+    {
+      session_id: input.sessionId,
+      conversation_id: input.conversationId,
+      turn_id: input.turnId ?? '',
+      device_id: input.deviceId,
+      cwd: input.cwd,
+      command: input.command,
+      args: input.args,
+      pid: input.pid,
+    },
+  );
+  return response.session as unknown as TerminalStationSession;
+}
+
+export async function terminalStationUpdate(input: {
+  sessionId: string;
+  status: 'TERMINAL_SESSION_STATUS_RUNNING' | 'TERMINAL_SESSION_STATUS_EXITED' | 'TERMINAL_SESSION_STATUS_KILLED' | 'TERMINAL_SESSION_STATUS_UNKNOWN';
+  exitCode?: number;
+  outputBytes?: string;
+}): Promise<void> {
+  await invokeRustProto(
+    'agent_terminal_session_update',
+    UpdateTerminalSessionResponseSchema,
+    {
+      session_id: input.sessionId,
+      status: input.status,
+      exit_code: input.exitCode ?? 0,
+      output_bytes: input.outputBytes ?? '0',
+    },
+  );
+}
+
+export async function terminalStationList(conversationId: string): Promise<TerminalStationSession[]> {
+  const response = await invokeRustProto(
+    'agent_terminal_session_list',
+    ListTerminalSessionsResponseSchema,
+    { conversation_id: conversationId },
+  );
+  return response.sessions as unknown as TerminalStationSession[];
+}
+
+export async function terminalStationReconcile(
+  deviceId: string,
+  liveSessionIds: string[],
+): Promise<TerminalStationSession[]> {
+  const response = await invokeRustProto(
+    'agent_terminal_session_reconcile',
+    ReconcileTerminalSessionsResponseSchema,
+    { device_id: deviceId, live_session_ids: liveSessionIds },
+  );
+  return response.sessions as unknown as TerminalStationSession[];
+}
+
+export async function terminalStationRemove(sessionId: string): Promise<void> {
+  await invokeRustProto(
+    'agent_terminal_session_remove',
+    RemoveTerminalSessionResponseSchema,
+    { session_id: sessionId },
   );
 }
