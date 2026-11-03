@@ -528,8 +528,10 @@ class NativeMentionsGate(AcceptanceGate):
                 bool(named_message_id)
                 and any(
                     mention.get("actorPtid") == self.ptids["bob"]
-                    and int(mention.get("offset") or -1) == 0
-                    and int(mention.get("length") or 0) == 4
+                    # Offset zero is a valid mention start; an `or` default
+                    # would turn it into -1 and reject the projection.
+                    and int(mention.get("offset", -1)) == 0
+                    and int(mention.get("length", 0)) == 4
                     for mention in named_mentions
                 ),
                 f"projection={projection}",
