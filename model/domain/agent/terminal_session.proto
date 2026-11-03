@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+// TW-D5: a device-held persistent terminal session. The process/PTY is owned
+// by the Desktop Rust worker; Station only persists metadata and authorization
+// bindings. Raw output is never stored here (worker keeps a bounded ring).
+enum TerminalSessionStatus {
+  TERMINAL_SESSION_STATUS_UNSPECIFIED = 0;
+  TERMINAL_SESSION_STATUS_RUNNING = 1;
+  TERMINAL_SESSION_STATUS_EXITED = 2;
+  TERMINAL_SESSION_STATUS_KILLED = 3;
+  // Worker cannot currently prove the process (worker/app restarted). It must
+  // never be advertised as running without live proof.
+  TERMINAL_SESSION_STATUS_UNKNOWN = 4;
+}
+
+message TerminalSession {
+  string session_id = 1;
+  string conversation_id = 2;
+  // Producing turn when the session was spawned as part of an agent run.
+  string turn_id = 3;
+  string device_id = 4;
+  string cwd = 5;
+  string command = 6;
+  repeated string args = 7;
+  uint32 pid = 8;
+  TerminalSessionStatus status = 9;
+  // Process exit code; meaningful once status is EXITED/KILLED.
+  int32 exit_code = 10;
+  // Monotonic count of bytes the worker has emitted (the ring itself is
+  // bounded and stays on the device).
+  uint64 output_bytes = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp ended_at = 13;
+}
+
+message CreateTerminalSessionRequest {
+  // Worker-generated resource id ("terms-<ULID>"). It is the global identity
+  // of the session across worker and Station; Station never mints its own id.
+  string session_id = 8;
+  string conversation_id = 1;
+  string turn_id = 2;
+  string device_id = 3;
+  string cwd = 4;
+  string command = 5;
+  repeated string args = 6;
+  uint32 pid = 7;
+}
+
+message CreateTerminalSessionResponse {
+  TerminalSession session = 1;
+}
+
+message UpdateTerminalSessionRequest {
+  string session_id = 1;
+  TerminalSessionStatus status = 2;
+  int32 exit_code = 3;
+  uint64 output_bytes = 4;
+}
+
+message UpdateTerminalSessionResponse {
+  TerminalSession session = 1;
+}
+
+message ListTerminalSessionsRequest {
+  string conversation_id = 1;
+}
+
+message ListTerminalSessionsResponse {
+  repeated TerminalSession sessions = 1;
+}
+
+message ReconcileTerminalSessionsRequest {
+  string device_id = 1;
+  // Sessions the worker currently proves alive. Every other RUNNING row for
+  // this device is downgraded to UNKNOWN (no daemon survived the restart).
+  repeated string live_session_ids = 2;
+}
+
+message ReconcileTerminalSessionsResponse {
+  repeated TerminalSession sessions = 1;
+}
+
+message RemoveTerminalSessionRequest {
+  string session_id = 1;
+}
+
+message RemoveTerminalSessionResponse {
+  bool removed = 1;
+}
