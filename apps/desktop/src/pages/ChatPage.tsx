@@ -18,6 +18,7 @@ import { MessageList } from '../components/MessageList';
 import { TurnQueueTray } from '../components/chat/TurnQueueTray';
 import { DocumentArtifactPanel } from '../components/agent/workbench/DocumentArtifactPanel';
 import { TerminalDock } from '../components/agent/workbench/terminal/TerminalDock';
+import { BrowserDock } from '../components/agent/workbench/browser/BrowserDock';
 import { conversationContentWidth, CONVERSATION_DOCK_WIDTH } from './conversationLayout';
 import { resolveI18nValue } from '../i18n';
 import { useAgentStore } from '../store/agent';
@@ -427,6 +428,7 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
     </div>
     <DocumentArtifactPanel />
     <TerminalDock />
+    <BrowserDock />
     </>
   );
 }

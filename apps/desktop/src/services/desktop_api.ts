@@ -96,6 +96,13 @@ import {
   ReconcileTerminalSessionsResponseSchema,
   RemoveTerminalSessionResponseSchema,
 } from '../gen/proto/domain/agent/terminal_session_pb';
+import {
+  CreateBrowserSessionResponseSchema,
+  UpdateBrowserSessionResponseSchema,
+  ListBrowserSessionsResponseSchema,
+  ReconcileBrowserSessionsResponseSchema,
+  RemoveBrowserSessionResponseSchema,
+} from '../gen/proto/domain/agent/browser_session_pb';
 import type {
   AdvanceCapabilityAcceptanceScenarioClockRequest,
   AgentCommandCapabilitySnapshot,
@@ -10216,4 +10223,252 @@ export async function terminalStationRemove(sessionId: string): Promise<void> {
     RemoveTerminalSessionResponseSchema,
     { session_id: sessionId },
   );
+}
+
+// ── TW-D6 persistent browser sessions ──────────────────────────────────
+
+export interface BrowserHostInfo {
+  available: boolean;
+  engine: string;
+  version: string;
+  path: string;
+}
+
+export interface BrowserTabMeta {
+  tabId: string;
+  generation: number;
+  url: string;
+  title: string;
+}
+
+export type BrowserSessionStatus = 'active' | 'closed' | 'unknown';
+export type BrowserControlLease = 'agent' | 'human';
+
+export interface BrowserSessionMeta {
+  sessionId: string;
+  engine: string;
+  status: string;
+  lease: string;
+  tabs: BrowserTabMeta[];
+  startedAtMs: number;
+}
+
+export interface BrowserElementInfo {
+  ref: string;
+  tag: string;
+  inputType: string;
+  role: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BrowserViewportInfo {
+  innerWidth: number;
+  innerHeight: number;
+  outerWidth: number;
+  outerHeight: number;
+  screenX: number;
+  screenY: number;
+}
+
+export interface BrowserSnapshot {
+  tab: BrowserTabMeta;
+  lease: string;
+  text: string;
+  viewport: BrowserViewportInfo;
+  elements: BrowserElementInfo[];
+}
+
+export interface BrowserScreenshotResult {
+  mime: string;
+  dataB64: string;
+}
+
+export async function browserHostInfo(): Promise<BrowserHostInfo> {
+  return invokeRustData<Record<string, unknown>, BrowserHostInfo>('browser_host_info', {});
+}
+
+export async function browserWorkerCreate(sessionId: string): Promise<BrowserSessionMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserSessionMeta>('browser_session_create', { sessionId });
+}
+
+export async function browserWorkerOpenTab(sessionId: string, url: string): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_tab_open', { sessionId, url });
+}
+
+export async function browserWorkerCloseTab(sessionId: string, tabId: string): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_tab_close', { sessionId, tabId });
+}
+
+export async function browserWorkerTabList(sessionId: string): Promise<BrowserTabMeta[]> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta[]>('browser_tab_list', { sessionId });
+}
+
+export async function browserWorkerNavigate(
+  sessionId: string,
+  tabId: string,
+  url: string,
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_navigate', { sessionId, tabId, url });
+}
+
+export async function browserWorkerHistory(
+  sessionId: string,
+  tabId: string,
+  direction: 'back' | 'forward' | 'reload',
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_history', { sessionId, tabId, direction });
+}
+
+export async function browserWorkerSnapshot(
+  sessionId: string,
+  tabId: string,
+): Promise<BrowserSnapshot> {
+  return invokeRustData<Record<string, unknown>, BrowserSnapshot>('browser_snapshot', { sessionId, tabId });
+}
+
+export async function browserWorkerClick(
+  sessionId: string,
+  tabId: string,
+  elementRef: string,
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_click', { sessionId, tabId, elementRef });
+}
+
+export async function browserWorkerFill(
+  sessionId: string,
+  tabId: string,
+  elementRef: string,
+  value: string,
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_fill', { sessionId, tabId, elementRef, value });
+}
+
+export async function browserWorkerSubmit(
+  sessionId: string,
+  tabId: string,
+  elementRef: string,
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_submit', { sessionId, tabId, elementRef });
+}
+
+export async function browserWorkerScreenshot(
+  sessionId: string,
+  tabId: string,
+): Promise<BrowserScreenshotResult> {
+  return invokeRustData<Record<string, unknown>, BrowserScreenshotResult>('browser_screenshot', { sessionId, tabId });
+}
+
+export async function browserWorkerTakeover(sessionId: string): Promise<BrowserSessionMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserSessionMeta>('browser_takeover', { sessionId });
+}
+
+export async function browserWorkerRelease(sessionId: string): Promise<BrowserSessionMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserSessionMeta>('browser_release', { sessionId });
+}
+
+export async function browserWorkerInspect(sessionId: string): Promise<BrowserSessionMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserSessionMeta>('browser_inspect', { sessionId });
+}
+
+export async function browserWorkerRemove(sessionId: string): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_remove', { sessionId });
+}
+
+export async function browserWorkerList(): Promise<BrowserSessionMeta[]> {
+  return invokeRustData<Record<string, unknown>, BrowserSessionMeta[]>('browser_session_list', {});
+}
+
+// Station metadata (proto passthrough). Worker generation is the authority;
+// Station persists only session/tab/lease metadata.
+export interface BrowserStationSession {
+  sessionId: string;
+  conversationId: string;
+  turnId?: string;
+  deviceId: string;
+  engine: string;
+  status:
+    | 'BROWSER_SESSION_STATUS_UNSPECIFIED'
+    | 'BROWSER_SESSION_STATUS_ACTIVE'
+    | 'BROWSER_SESSION_STATUS_CLOSED'
+    | 'BROWSER_SESSION_STATUS_UNKNOWN'
+    | string;
+  lease:
+    | 'BROWSER_CONTROL_LEASE_UNSPECIFIED'
+    | 'BROWSER_CONTROL_LEASE_AGENT'
+    | 'BROWSER_CONTROL_LEASE_HUMAN'
+    | string;
+  tabs?: BrowserTabMeta[];
+  createdAt?: { seconds?: string };
+  endedAt?: { seconds?: string };
+}
+
+export async function browserStationCreate(input: {
+  sessionId: string;
+  conversationId: string;
+  turnId?: string;
+  deviceId: string;
+  engine: string;
+}): Promise<BrowserStationSession> {
+  const response = await invokeRustProto(
+    'agent_browser_session_create',
+    CreateBrowserSessionResponseSchema,
+    {
+      session_id: input.sessionId,
+      conversation_id: input.conversationId,
+      turn_id: input.turnId ?? '',
+      device_id: input.deviceId,
+      engine: input.engine,
+    },
+  );
+  return response.session as unknown as BrowserStationSession;
+}
+
+export async function browserStationUpdate(input: {
+  sessionId: string;
+  status: number;
+  lease: number;
+  tabs?: BrowserTabMeta[];
+}): Promise<void> {
+  await invokeRustProto('agent_browser_session_update', UpdateBrowserSessionResponseSchema, {
+    session_id: input.sessionId,
+    status: input.status,
+    lease: input.lease,
+    tabs: (input.tabs ?? []).map((tab) => ({
+      tab_id: tab.tabId,
+      generation: tab.generation,
+      url: tab.url,
+      title: tab.title,
+    })),
+  });
+}
+
+export async function browserStationList(conversationId: string): Promise<BrowserStationSession[]> {
+  const response = await invokeRustProto(
+    'agent_browser_session_list',
+    ListBrowserSessionsResponseSchema,
+    { conversation_id: conversationId },
+  );
+  return response.sessions as unknown as BrowserStationSession[];
+}
+
+export async function browserStationReconcile(
+  deviceId: string,
+  liveSessionIds: string[],
+): Promise<BrowserStationSession[]> {
+  const response = await invokeRustProto(
+    'agent_browser_session_reconcile',
+    ReconcileBrowserSessionsResponseSchema,
+    { device_id: deviceId, live_session_ids: liveSessionIds },
+  );
+  return response.sessions as unknown as BrowserStationSession[];
+}
+
+export async function browserStationRemove(sessionId: string): Promise<void> {
+  await invokeRustProto('agent_browser_session_remove', RemoveBrowserSessionResponseSchema, {
+    session_id: sessionId,
+  });
 }
