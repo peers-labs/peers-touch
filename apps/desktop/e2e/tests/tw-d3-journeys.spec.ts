@@ -374,12 +374,28 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
     "document.querySelector('[data-pt-agent-composer-input]').value",
   );
   expect(composerAfterQuote.length).toBeGreaterThan(0);
-  // Append the explicit revision instruction and send.
+  // Append the explicit revision instruction and send. The brevity bound
+  // matters: qwen2.5:0.5b occasionally copy-loops on a quoted full document
+  // until Station's wall-time budget fails the turn (fail-closed).
+  const revisionDirective = `${marker} revise: add a final line "Revision: applied". Output only the revised document, keep it under 15 lines, do not repeat the existing text.`;
   await setValue(page, '[data-pt-agent-composer-input]',
-    `${composerAfterQuote}\n${marker} revise: add a final line "Revision: applied".`);
+    `${composerAfterQuote}\n${revisionDirective}`);
   await page.click('[data-pt-artifact-panel] [data-pt-artifact-close]');
-  await page.click('[data-pt-agent-composer-send]');
-  await settleLatest(page);
+  let revisionStatus = '';
+  for (let revisionAttempt = 0; revisionAttempt < 2; revisionAttempt += 1) {
+    await page.click('[data-pt-agent-composer-send]');
+    revisionStatus = await settleLatest(page, 320_000);
+    if (revisionStatus === 'completed') break;
+    // A wall-time failure leaves the quoted feedback still pending; resend the
+    // bounded instruction as a fresh turn whose output is claimable as v2.
+    if (revisionAttempt === 0) {
+      await poll(page,
+        "(()=>{const c=document.querySelector('[data-pt-agent-composer-input]');return c instanceof HTMLTextAreaElement ? 1 : null;})()",
+        15_000);
+      await setValue(page, '[data-pt-agent-composer-input]', revisionDirective);
+    }
+  }
+  expect(revisionStatus).toBe('completed');
 
   // Claim the new assistant output as v2 of the same artifact.
   await poll(page, "document.querySelector('[data-pt-artifact-save-version]') ? 1 : null", 30_000);
@@ -476,6 +492,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
       parent: v2Parent,
       origin: v2Origin,
       feedbackLinked: Boolean(feedbackLinked),
+      terminalStatus: revisionStatus,
       composerQuoted: composerAfterQuote.slice(0, 200),
     },
     stationFacts: {
