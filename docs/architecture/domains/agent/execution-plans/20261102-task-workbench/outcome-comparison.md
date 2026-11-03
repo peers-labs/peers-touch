@@ -227,10 +227,18 @@
     },
     {
       "id": "TW-O08",
-      "status": "UNPROVEN",
-      "actualEffect": "切片尚未实施；版本冻结/召回/撤权/ready 旅程未串验。",
-      "evidenceRefs": [],
-      "deviation": "未开始。"
+      "status": "PARTIAL",
+      "actualEffect": "TW-D7 在当前源码 Station（compose pt-tw-d1）+ acceptance cell 上以 7.2s 通过 Memory 候选确认门 exact-source Native Journey，并以 6 个 Go 单测确定性证明：proto 新增 MemoryStatus(candidate/confirmed/rejected) 与 ReviewMemory；agent_memories 增 status 列（默认 confirmed，存量记忆不丢）；ExtractFromTurn 启发式提取只落 candidate；Search 的 postgres hybrid 与进程内两条路径及 persona 只消费 confirmed；ReviewMemory 支持 confirm/reject（frozen 拒绝 reject），reject 行保留审计但永不消费、delete 物理删除；BuildRelevantSnapshot 检索失败显式降级为空快照（degraded + 事件），不再回退全量快照注入无关记忆。Desktop 新增 TRAE 式记忆复核 dock（角标+确认/拒绝+轮询+fail-closed），经真实 Rust 代理 agent_memory_review 写 Station；journey 证明决策前 confirmed 检索计数为 0、确认后可检索、拒绝后不可检索，且确认记忆 session_id 为空（agent 维度，可用于后续任务）。",
+      "evidenceRefs": [
+        "tooling/acceptance/reports/task-workbench/tw-d7-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d7-acceptance-note.md",
+        "apps/desktop/e2e/tests/tw-d7-journeys.spec.ts",
+        "apps/station/app/subserver/agent/service/memory_lifecycle_test.go",
+        "model/domain/agent/memory.proto",
+        "apps/desktop/src/components/agent/workbench/memory/MemoryReviewDock.tsx",
+        "commits 4d0000d80,6fa903c09,f91e6f662,7b86b3146,512cf92ec,6272f189e,4619188f2"
+      ],
+      "deviation": "PARTIAL：Memory 候选门与检索降级已闭环；但 (1) Profile 规则/Skill/capability 版本按 Turn 冻结并写入 TurnAttribution 可回看本轮未新增字段与 journey 复核（既有 turn_attribution_service 已投影 prompt/附件/工具版本）；(2) 插件 installed/enabled/readiness→真实工具调用→撤权即时阻断新 admission 未单独编排 journey（文件/命令/Browser/Terminal 准入已由 D4–D6 证明，通用 MCP/插件 readiness 门待补）；(3) 第二任务由真实模型改写召回未在弱验收模型上主张，agent 维度可用性由 Station 检索谓词与行事实证明。"
     },
     {
       "id": "TW-O09",
@@ -250,14 +258,17 @@
         "tooling/acceptance/reports/task-workbench/tw-d5-journey.json",
         "tooling/acceptance/reports/task-workbench/tw-d6-journey.json",
         "tooling/acceptance/reports/task-workbench/tw-d6-acceptance-note.md",
+        "tooling/acceptance/reports/task-workbench/tw-d7-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d7-acceptance-note.md",
         "go test agent pass",
         "desktop pnpm run check pass (locales parity + social-wire + runtime-boundaries + tsc)",
         "vitest 1588 pass (merged shared-base tree)",
         "cargo test terminal 22 pass; desktop_executor_worker 39 pass (1 keystore env failure, baseline reproduced)",
-        "cargo test browser + acceptance-playwright build pass; tw-d6 native journey 20.8s pass"
+        "cargo test browser + acceptance-playwright build pass; tw-d6 native journey 20.8s pass",
+        "go test memory lifecycle 6 pass; tw-d7 memory gate native journey 7.2s pass"
       ],
-      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。D5 合并当日 agent-usability-shared-base（8 个冲突逐一手动解决，检查全绿）后以 9.7s 通过长服务→viewer 关闭存活→重连同 pid/回放→kill/exit code/Station 事实→remove 的设备 TerminalSession 旅程，并修复 ID 双脑、面板会话陈旧、生命周期字节上送三处真实缺陷。D6 以 20.8s 通过真实 Chrome(CDP) observe/fill/submit→人工接管物理输入→归还后重新 observe（旧引用失效）→截图→Station 事实→进程与行同时归零的设备 BrowserSession 纵向切片（proto/Station/Rust/UI/locales 全层），fail-closed host 探测，并修复 Station remove 代理 snake/camel 线序错配、证据 ESM 路径、dock 跨重跑开关三处真实缺陷。",
-      "deviation": "TW-D7 未开始；研究/文档与代码/服务/Browser 两条完整业务旅程待 TW-D7 收口。"
+      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。D5 合并当日 agent-usability-shared-base（8 个冲突逐一手动解决，检查全绿）后以 9.7s 通过长服务→viewer 关闭存活→重连同 pid/回放→kill/exit code/Station 事实→remove 的设备 TerminalSession 旅程，并修复 ID 双脑、面板会话陈旧、生命周期字节上送三处真实缺陷。D6 以 20.8s 通过真实 Chrome(CDP) observe/fill/submit→人工接管物理输入→归还后重新 observe（旧引用失效）→截图→Station 事实→进程与行同时归零的设备 BrowserSession 纵向切片（proto/Station/Rust/UI/locales 全层），fail-closed host 探测，并修复 Station remove 代理 snake/camel 线序错配、证据 ESM 路径、dock 跨重跑开关三处真实缺陷。D7 闭环 Memory 候选确认门（proto/Station/Rust/Desktop 全纵向 + 6 个 Go 单测 + 7.2s native journey），修复启发式提取自动升级长期记忆、检索失败全量快照回退两处真实缺陷。",
+      "deviation": "TW-D7 仅 Memory 支柱闭环：Per-Turn 上下文版本冻结回看、通用插件 readiness 门与两条完整业务旅程（研究/文档、代码/服务/Browser）尚未 FUNCTIONAL_PASS，留待收口。"
     },
     {
       "id": "TW-O11",
