@@ -211,10 +211,19 @@
     },
     {
       "id": "TW-O07",
-      "status": "UNPROVEN",
-      "actualEffect": "切片尚未实施；生产 BrowserSession 不存在。",
-      "evidenceRefs": [],
-      "deviation": "未开始；验收用 Playwright 与原型模拟均不构成证据。"
+      "status": "PASS",
+      "actualEffect": "TW-D6 在当前源码 Station（compose pt-tw-d1，:18092）+ acceptance cell（ubuntu-24.04）真实 Google Chrome（CDP）上以 20.8s 通过 exact-source Native Journey：worker 用 chromiumoxide 启动设备侧真实有头 Chrome（非内嵌 webview、非 artifact reader），绑定 brows-<ULID> 全局资源 id；agent observe 本地站点读到真实页面文本，fill 搜索表单并 submit 进入结果页；human takeover 后租约转 human，agent observe 动作被拒（按钮 disabled），xdotool 在真实可见窗口物理勾选+Save，release 后旧 snapshot 引用按 generation 失效，agent 重新 observe 读到 saved:human-<marker>:checked；PNG 截图字节与 sha256 校验；Station 事实 active|agent|engine 非空|tabs_json=131 并 JOIN 真实 conversation；end session 后 Chrome 进程与 Station 行同时归零（count=0）。诚实性：host 二进制不可用即 fail-closed，页面文本一律按不可信数据读取，worker/Station 仅存元数据不存正文/截图。复测中修复三个真实缺陷：Station remove 代理误用 worker camelCase 入参导致 snake_case session_id 被静默丢弃、行永不删除（新增专用 AgentBrowserSessionInput）；journey 证据路径依赖调用 cwd（改为 ESM import.meta.url 锚定仓库根）；dock 开关为全局状态，跨重跑盲目 toggle 反而关闭面板（改为按面板存在幂等打开 + 开清独占 DB 残行）。",
+      "evidenceRefs": [
+        "tooling/acceptance/reports/task-workbench/tw-d6-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d6-acceptance-note.md",
+        "apps/desktop/e2e/tests/tw-d6-journeys.spec.ts",
+        "model/domain/agent/browser_session.proto",
+        "apps/station/app/subserver/agent/service/browser_session_service.go",
+        "apps/desktop/src-tauri/src/application/browser/mod.rs",
+        "apps/desktop/src/store/browserSessions.ts",
+        "commits b036c2dd8,2398e885c,b926cb2c7,3b8b80a0a,1e6e04127,21d6e9ce1"
+      ],
+      "deviation": "不实现跨 app/系统重启存活的持久浏览器 daemon，worker 换代后无证明会话显示 unknown；多 tab open/close 与 back/forward/reload 已在 worker 实现但本旅程只编排单 tab submit 导航与 observe，未逐条编排负路径；network profiling、下载管理、复杂多 frame 未验证不广告。过期引用拒绝（BROWSER_SNAPSHOT_REF_STALE）与租约拒绝的服务端合同由 Rust 单测保证，journey 内 stale 直测走 UI-only 兜底（eval world 无 window.__TAURI__），不据此声称端到端验证了模型侧引用失效；Station 不保存页面正文与截图字节。"
     },
     {
       "id": "TW-O08",
@@ -239,12 +248,16 @@
         "tooling/acceptance/reports/task-workbench/tw-d3-journey.json",
         "tooling/acceptance/reports/task-workbench/tw-d4-journey.json",
         "tooling/acceptance/reports/task-workbench/tw-d5-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d6-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-d6-acceptance-note.md",
         "go test agent pass",
+        "desktop pnpm run check pass (locales parity + social-wire + runtime-boundaries + tsc)",
         "vitest 1588 pass (merged shared-base tree)",
-        "cargo test terminal 22 pass; desktop_executor_worker 39 pass (1 keystore env failure, baseline reproduced)"
+        "cargo test terminal 22 pass; desktop_executor_worker 39 pass (1 keystore env failure, baseline reproduced)",
+        "cargo test browser + acceptance-playwright build pass; tw-d6 native journey 20.8s pass"
       ],
-      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。D5 合并当日 agent-usability-shared-base（8 个冲突逐一手动解决，检查全绿）后以 9.7s 通过长服务→viewer 关闭存活→重连同 pid/回放→kill/exit code/Station 事实→remove 的设备 TerminalSession 旅程，并修复 ID 双脑、面板会话陈旧、生命周期字节上送三处真实缺陷。",
-      "deviation": "TW-D6–D7 未开始；完整两条业务旅程待 TW-D7。"
+      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。D5 合并当日 agent-usability-shared-base（8 个冲突逐一手动解决，检查全绿）后以 9.7s 通过长服务→viewer 关闭存活→重连同 pid/回放→kill/exit code/Station 事实→remove 的设备 TerminalSession 旅程，并修复 ID 双脑、面板会话陈旧、生命周期字节上送三处真实缺陷。D6 以 20.8s 通过真实 Chrome(CDP) observe/fill/submit→人工接管物理输入→归还后重新 observe（旧引用失效）→截图→Station 事实→进程与行同时归零的设备 BrowserSession 纵向切片（proto/Station/Rust/UI/locales 全层），fail-closed host 探测，并修复 Station remove 代理 snake/camel 线序错配、证据 ESM 路径、dock 跨重跑开关三处真实缺陷。",
+      "deviation": "TW-D7 未开始；研究/文档与代码/服务/Browser 两条完整业务旅程待 TW-D7 收口。"
     },
     {
       "id": "TW-O11",
