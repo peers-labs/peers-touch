@@ -68,9 +68,13 @@ fn memory_layer_name(value: i32) -> &'static str {
 }
 
 fn memory_status_name(value: i32) -> &'static str {
-    model::agent::MemoryStatus::try_from(value)
-        .map(|status| status.as_str_name())
-        .unwrap_or("MEMORY_STATUS_UNSPECIFIED")
+    // Wire contract consumed by Desktop: lowercase lifecycle state.
+    match model::agent::MemoryStatus::try_from(value) {
+        Ok(model::agent::MemoryStatus::Candidate) => "candidate",
+        Ok(model::agent::MemoryStatus::Confirmed) => "confirmed",
+        Ok(model::agent::MemoryStatus::Rejected) => "rejected",
+        _ => "unspecified",
+    }
 }
 
 fn memory_item_to_json(m: &model::agent::MemoryItem) -> Value {
