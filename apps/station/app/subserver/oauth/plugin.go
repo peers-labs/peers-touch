@@ -1,10 +1,13 @@
 package oauth
 
 import (
+	"context"
+
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/touch/accessgate"
 )
 
 type providerEnvironmentConfig struct {
@@ -55,4 +58,21 @@ func (p *oauthPlugin) New(opts ...option.Option) server.Subserver { return NewOA
 func init() {
 	config.RegisterOptions(&oauthOptions)
 	plugin.SubserverPlugins["oauth"] = &oauthPlugin{}
+	accessgate.RegisterOAuthAvailability(configuredOAuthProviderAvailable)
+}
+
+// configuredOAuthProviderAvailable reports whether the reviewed OAuth
+// configuration contains at least one enabled provider with credentials. The
+// access gate advertises third-party sign-in only while this holds.
+func configuredOAuthProviderAvailable(_ context.Context) bool {
+	oauthConfig := oauthOptions.Peers.Node.Server.Subserver.OAuth
+	if !oauthConfig.Enabled {
+		return false
+	}
+	for _, provider := range oauthConfig.Providers {
+		if provider.Enabled && provider.HasCredentials {
+			return true
+		}
+	}
+	return false
 }
