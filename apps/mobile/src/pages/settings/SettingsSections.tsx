@@ -399,10 +399,12 @@ export function PrivacySection({
 // Device preferences section (local-only)
 // ---------------------------------------------------------------------------
 
-const THEME_OPTIONS: { value: ThemeMode; labelKey: string }[] = [
+// Dark rendering is pinned off until mobile owns a complete dark color
+// contract (see RENDERED_COLOR_SCHEME in deviceSettingsRuntime). The stored
+// 'dark' preference is preserved, just not offered as a choice yet.
+const THEME_OPTIONS: { value: Exclude<ThemeMode, 'dark'>; labelKey: string }[] = [
   { value: 'system', labelKey: 'mobile.settings.device.theme.system' },
   { value: 'light', labelKey: 'mobile.settings.device.theme.light' },
-  { value: 'dark', labelKey: 'mobile.settings.device.theme.dark' },
 ];
 
 const FONT_SIZE_OPTIONS: { value: FontSizePreset; labelKey: string }[] = [
@@ -446,7 +448,7 @@ export function DevicePrefsSection({
             <Text>{t('mobile.settings.device.theme')}</Text>
             <Select
               size="small"
-              value={prefs.theme}
+              value={prefs.theme === 'dark' ? 'system' : prefs.theme}
               onChange={(value) => onPatch({ theme: value })}
               options={THEME_OPTIONS.map(({ value, labelKey }) => ({
                 value,

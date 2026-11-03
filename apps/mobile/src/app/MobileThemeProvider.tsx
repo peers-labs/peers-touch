@@ -1,18 +1,16 @@
-import { useSyncExternalStore, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { ThemeProvider } from '@lobehub/ui';
-import {
-  readDeviceSettingsRuntimeSnapshot,
-  subscribeDeviceSettingsRuntime,
-} from '../runtimes/deviceSettingsRuntime';
 
-/** Render the committed device preference through the existing UI theme owner. */
+/**
+ * Rendering is pinned to light while the mobile dark color contract is
+ * unfinished. LobeUI/antd must never enter dark mode independently, or its
+ * dark components clash with the light-only custom CSS. The persisted theme
+ * preference stays owned by the device settings runtime and is restored here
+ * together with the RENDERED_COLOR_SCHEME gate.
+ */
 export function MobileThemeProvider({ children }: { children: ReactNode }) {
-  const snapshot = useSyncExternalStore(
-    subscribeDeviceSettingsRuntime, readDeviceSettingsRuntimeSnapshot,
-  );
-  const preference = snapshot.preferences?.theme ?? 'system';
   return (
-    <ThemeProvider themeMode={preference === 'system' ? 'auto' : preference}>
+    <ThemeProvider themeMode="light">
       {children}
     </ThemeProvider>
   );

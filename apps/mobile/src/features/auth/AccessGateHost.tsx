@@ -11,7 +11,7 @@ import {
   ScanLine,
 } from 'lucide-react';
 
-import { useMobileI18n } from '../../app/mobileI18n';
+import { translateMobileError, useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import {
@@ -596,7 +596,7 @@ export function AccessGateHost({
 
         {error ? (
           <Text type="danger" className="auth-error">
-            {t(error) !== error ? t(error) : error}
+            {translateMobileError(t, error, 'mobile.auth.loginFailed')}
           </Text>
         ) : null}
         {!recoveryOnly ? (

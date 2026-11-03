@@ -265,21 +265,28 @@ export function createDeviceSettingsRuntime(
   };
 }
 
+// Dark rendering is intentionally unavailable until mobile owns a complete
+// semantic color contract (foreground tokens, not only the three background
+// variables today). The persisted theme preference is still recorded, but the
+// rendered color scheme is pinned to light so every surface stays readable.
+// Remove this gate when docs/client/common/ui-identity/modules/auth adds the
+// mobile dark contract and styles.css stops hard-coding light color values.
+const RENDERED_COLOR_SCHEME = 'light' as const;
+
 export function applyDevicePreferences(
   preferences: DevicePreferences,
   root: DeviceSettingsDocumentRoot | null =
     globalThis.document?.documentElement ?? null,
-  prefersDark = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false,
+  // Retained for the restored system-dark resolution once RENDERED_COLOR_SCHEME
+  // is lifted; unused while rendering is pinned to light.
+  _prefersDark = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false,
 ): void {
   if (!root) return;
-  const resolvedTheme = preferences.theme === 'system'
-    ? (prefersDark ? 'dark' : 'light')
-    : preferences.theme;
   root.dataset.mobileTheme = preferences.theme;
-  root.dataset.mobileColorScheme = resolvedTheme;
+  root.dataset.mobileColorScheme = RENDERED_COLOR_SCHEME;
   root.dataset.mobileFontSize = preferences.fontSize;
   root.dataset.mobileCompact = String(preferences.compactMode);
-  root.style.colorScheme = resolvedTheme;
+  root.style.colorScheme = RENDERED_COLOR_SCHEME;
 }
 
 const deviceSettingsRuntime = createDeviceSettingsRuntime();
