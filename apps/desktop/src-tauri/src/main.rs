@@ -48,7 +48,7 @@ use interface::tauri_commands::{
     i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_files,
     messaging_recovery, model_config, native_surface, notebook, notification, oauth2, oss,
     presence, profile, provider, realtime, runtime_evidence, search, skills,
-    skills_market, social as social_commands, station, system, tools, x_config,
+    skills_market, social as social_commands, station, system, terminal, tools, x_config,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1119,6 +1119,19 @@ fn main() {
             applets::applets_pick_import_directory,
             applets::applets_create_session,
             applets::applets_invoke,
+            terminal::terminal_session_create,
+            terminal::terminal_session_write,
+            terminal::terminal_session_resize,
+            terminal::terminal_session_kill,
+            terminal::terminal_session_remove,
+            terminal::terminal_session_list,
+            terminal::terminal_session_read,
+            terminal::terminal_default_workspace,
+            terminal::agent_terminal_session_create,
+            terminal::agent_terminal_session_update,
+            terminal::agent_terminal_session_list,
+            terminal::agent_terminal_session_reconcile,
+            terminal::agent_terminal_session_remove,
             mcp::mcp_list_servers,
             mcp::mcp_get_server,
             mcp::mcp_create_server,

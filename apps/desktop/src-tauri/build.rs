@@ -11,6 +11,7 @@ const AGENT_V2_PROTO_FILES: &[&str] = &[
     "domain/agent/capability.proto",
     "domain/agent/evaluation.proto",
     "domain/agent/package_catalog.proto",
+    "domain/agent/terminal_session.proto",
 ];
 
 fn main() {

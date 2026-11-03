@@ -1068,6 +1068,39 @@ fn approved_roots(base: &Path, allowed_roots: Option<&[String]>) -> Result<Vec<P
     Ok(roots)
 }
 
+/// Resolve the working directory for a persistent terminal session (TW-D5):
+/// it must live inside the granted workspace roots, defaulting to the
+/// workspace root itself. Terminal sessions are not allowed to anchor an
+/// interactive shell outside the approved roots.
+pub(crate) fn resolve_terminal_cwd(
+    workspace_root: Option<&str>,
+    cwd: Option<&str>,
+    allowed_roots: Option<&[String]>,
+) -> Result<PathBuf, ToolError> {
+    let base = workspace_base(workspace_root).map_err(ToolError::execution_failed)?;
+    let target = match cwd.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(raw) => {
+            let candidate = Path::new(raw);
+            if candidate.is_absolute() {
+                candidate.to_path_buf()
+            } else {
+                base.join(candidate)
+            }
+        }
+        None => base.clone(),
+    };
+    let normalized = target
+        .canonicalize()
+        .map_err(|error| ToolError::execution_failed(format!("failed to resolve cwd: {error}")))?;
+    let allowed = approved_roots(&base, allowed_roots).map_err(ToolError::execution_failed)?;
+    if !allowed.iter().any(|root| normalized.starts_with(root)) {
+        return Err(ToolError::outside_root(
+            "terminal cwd is outside the approved Agent access roots",
+        ));
+    }
+    Ok(normalized)
+}
+
 fn workspace_base(workspace_root: Option<&str>) -> Result<PathBuf, String> {
     let raw = workspace_root
         .map(str::trim)

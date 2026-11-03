@@ -45,6 +45,8 @@ pub mod skills_market;
 pub mod station_binding;
 pub mod station_runtime;
 pub mod system;
+pub mod agent_terminal_session;
+pub mod terminal;
 pub mod tools;
 pub mod tray;
 #[cfg(feature = "acceptance-webdriver")]
