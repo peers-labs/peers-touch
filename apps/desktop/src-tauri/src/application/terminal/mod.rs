@@ -446,7 +446,7 @@ pub(crate) fn read_session(session_id: &str, cursor: u64) -> Result<TerminalRead
 
 #[cfg(test)]
 mod tests {
-    use super::OutputRing;
+    use super::{OutputRing, RING_CAPACITY_BYTES};
 
     #[test]
     fn ring_reads_from_absolute_cursor_and_reports_total() {
@@ -473,18 +473,26 @@ mod tests {
     }
 
     #[test]
-    fn ring_evicts_oldest_and_clamps_to_oldest_cursor() {
+    fn ring_evicts_oldest_segments_and_clamps_to_oldest_cursor() {
         let mut ring = OutputRing::new();
-        let chunk = vec![b'x'; RING_CAPACITY_BYTES + 10];
-        let total = ring.append(&chunk);
-        assert_eq!(total as usize, RING_CAPACITY_BYTES + 10);
-        // Cursor 0 predates the retained window: resync boundary.
+        // The pump appends small reads; emulate 4KiB segments so eviction
+        // drops whole oldest segments instead of the current write.
+        const SEGMENT: usize = 4096;
+        let segment_count = RING_CAPACITY_BYTES / SEGMENT + 2;
+        let mut total = 0u64;
+        for _ in 0..segment_count {
+            total = ring.append(&[b'x'; SEGMENT]);
+        }
+        assert_eq!(total as usize, segment_count * SEGMENT);
+        // Cursor 0 predates the retained window: resync boundary, and the
+        // retained window never exceeds the bounded capacity.
         let (resync, bytes) = ring.read(0);
         assert!(resync);
         assert_eq!(bytes.len(), RING_CAPACITY_BYTES);
         // Reading at the oldest retained cursor returns the same window with
         // no resync flag: replay remains deterministic.
         let oldest = ring.oldest_cursor();
+        assert_eq!(oldest, (total as usize - RING_CAPACITY_BYTES) as u64);
         let (resyncAtOldest, atOldest) = ring.read(oldest);
         assert!(!resyncAtOldest);
         assert_eq!(atOldest.len(), RING_CAPACITY_BYTES);
