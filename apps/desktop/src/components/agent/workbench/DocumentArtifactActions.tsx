@@ -22,6 +22,10 @@ const EMPTY_STRING_LIST: readonly string[] = [];
  * Nothing is parsed from code blocks; bytes come from the Station message.
  */
 export function DocumentArtifactActions({ message }: DocumentArtifactActionsProps) {
+  // The folded bubble id is the turn's first assistant leg (often an empty
+  // tool-call leg); artifact provenance must reference the leg that actually
+  // carries the claimed bytes.
+  const sourceMessageId = message.contentMessageId ?? message.id;
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const conversationId = useChatStore((s) => s.currentSessionKey);
@@ -45,11 +49,11 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
       const ids = await claimedMessageIds(conversationId);
       // Find which artifact owns a version sourced from this message.
       let ownerId: string | null = null;
-      if (ids.has(message.id)) {
+      if (ids.has(sourceMessageId)) {
         const versions = useTaskArtifactStore.getState().versionsByArtifact;
         ownerId = list.find((artifact) =>
           (versions[artifact.artifactId] ?? []).some(
-            (version) => version.sourceMessageId === message.id,
+            (version) => version.sourceMessageId === sourceMessageId,
           ),
         )?.artifactId ?? null;
       }
@@ -61,7 +65,7 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
     return () => {
       cancelled = true;
     };
-  }, [conversationId, message.id, loadArtifacts, claimedMessageIds, claimedIds.length]);
+  }, [conversationId, sourceMessageId, loadArtifacts, claimedMessageIds, claimedIds.length]);
 
   const claim = useCallback(
     async (artifactId?: string, expectedBaseVersionId?: string) => {
@@ -82,7 +86,7 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
         const response = await claimFromMessage({
           conversationId,
           turnId: message.turnId,
-          messageId: message.id,
+          messageId: sourceMessageId,
           artifactId,
           expectedBaseVersionId,
           adoptedAttachmentRefs,
@@ -94,10 +98,14 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
         setBusyId(null);
       }
     },
-    [claimFromMessage, conversationId, message.id, message.turnId, messages, openPanel],
+    [claimFromMessage, conversationId, sourceMessageId, message.turnId, messages, openPanel],
   );
 
   if (message.loading || message.terminalStatus === 'failed') return null;
+
+  // An empty assistant leg (e.g. the tool-call leg of a turn) cannot back
+  // an artifact version; claiming it only yields an invalid empty body.
+  if (!claimedArtifactId && !String(message.content ?? '').trim()) return null;
 
   // A message already claimed as a version only gets an "open artifact" entry.
   if (claimedArtifactId) {

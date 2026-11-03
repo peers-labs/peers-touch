@@ -220,6 +220,12 @@ export interface ChatMessage {
   replacementOf?: string;
   replacedBy?: string;
   turnId?: string;
+  // Persisted id of the assistant leg that supplied the projected content.
+  // A Turn persists one assistant row per LLM leg: tool-call legs have empty
+  // content while the final leg carries the answer. The folded bubble keeps
+  // the first leg's id, so byte-provenance consumers (artifact version
+  // claiming) must use this id, never the bubble id when they differ.
+  contentMessageId?: string;
   // Client-generated correlation key for the owning send. It exists from the
   // optimistic row onward and keeps one turn projected as one message even
   // before the first turn-id-bearing event arrives.
@@ -458,6 +464,14 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
       // Malformed persisted tool-call payload; render message without tool calls.
     }
   }
+  // A completed assistant row that still carries tool calls is an
+  // intermediate LLM leg of a multi-leg Turn: its row status means the leg
+  // stream finished, not that the Turn terminated. The Turn only becomes
+  // terminal with the final content leg (or a turn-level lifecycle event).
+  // Failed/cancelled legs remain terminal regardless of tool calls.
+  if (chatMessage.terminalStatus === 'completed' && chatMessage.toolCalls?.length) {
+    chatMessage.terminalStatus = undefined;
+  }
   // Restore user-facing assistant projections persisted in message metadata.
   if (message.metadataJson) {
     try {
@@ -549,7 +563,11 @@ function mergeAssistantTurnLegs(
       ...leg.toolCalls.filter((toolCall) => !seen.has(toolCall.id)),
     ];
   }
-  if (leg.content) target.content = leg.content;
+  if (leg.content) {
+    target.content = leg.content;
+    // Record which persisted leg owns these bytes for provenance.
+    target.contentMessageId = leg.id;
+  }
   if (leg.thinking) target.thinking = leg.thinking;
   if (leg.thinkingDone != null) {
     target.thinkingDone = target.thinkingDone || leg.thinkingDone;
@@ -572,7 +590,13 @@ function mergeAssistantTurnLegs(
     target.errorDetail = leg.errorDetail ?? target.errorDetail;
     target.resolution = leg.resolution ?? target.resolution;
     target.error = leg.error ?? target.error;
-  } else if (leg.loading && !target.terminalStatus) {
+  } else if (leg.loading) {
+    // A later LLM leg of the same Turn is still streaming. An earlier
+    // leg's persisted "completed" row only means that leg finished — the
+    // Turn is not terminal until the final leg settles. Clear the early
+    // leg's terminal marker so the bubble and its actions stay gated.
+    target.terminalStatus = undefined;
+    target.cancelled = false;
     target.loading = true;
   }
   if (leg.typedError && !target.typedError) {
@@ -610,12 +634,20 @@ export function foldToolMessages(messages: ChatMessage[]): ChatMessage[] {
       }
     }
     if (message.role === 'assistant' && message.turnId) {
+      // Defense in depth: a completed tool-call leg cannot establish Turn
+      // terminality even when a list bypasses the persisted-row mapping.
+      if (message.terminalStatus === 'completed' && message.toolCalls?.length) {
+        message.terminalStatus = undefined;
+      }
       const existing = assistantByTurnId.get(message.turnId);
       if (existing) {
         mergeAssistantTurnLegs(existing, message);
         continue;
       }
       assistantByTurnId.set(message.turnId, message);
+      if (message.content && !message.contentMessageId) {
+        message.contentMessageId = message.id;
+      }
     }
     folded.push(message);
   }
