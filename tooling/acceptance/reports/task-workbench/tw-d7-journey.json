@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "tw-d7-native-journey",
+  "journeyId": "tw-d7-memory-candidate-gate",
+  "commit": "6272f189ec1e15ae1552a36a222abbafcb740725",
+  "stationUrl": "http://127.0.0.1:18092",
+  "recordedAt": "2026-11-03T22:58:52.412Z",
+  "agentName": "assistant",
+  "marker": "d71ahk91",
+  "confirmedId": "mem_d71ahk91_c",
+  "rejectedId": "mem_d71ahk91_r",
+  "confirmedStatus": "confirmed",
+  "rejectedStatus": "rejected",
+  "confirmedRetrievable": "1",
+  "rejectedRetrievable": "0",
+  "candidateGateBeforeDecision": "0"
+}
