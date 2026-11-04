@@ -242,6 +242,12 @@ pub struct AgentTerminalReconcileInput {
     pub device_id: String,
     #[serde(default)]
     pub live_session_ids: Vec<String>,
+    // WE-S6 sandbox reconcile. When execution_target == WORKSPACE_SANDBOX (2),
+    // device_id is ignored and rows are scoped by sandbox_ref.
+    #[serde(default)]
+    pub execution_target: i32,
+    #[serde(default)]
+    pub sandbox_ref: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -330,6 +336,8 @@ pub fn agent_terminal_session_reconcile(
     let request = agent::ReconcileTerminalSessionsRequest {
         device_id: input.device_id,
         live_session_ids: input.live_session_ids,
+        execution_target: input.execution_target,
+        sandbox_ref: input.sandbox_ref,
     };
     session_rpc::reconcile(state.station.client(), &token, &request)
 }

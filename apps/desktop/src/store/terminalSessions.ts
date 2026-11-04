@@ -207,6 +207,16 @@ function startSandboxPump(get: () => TerminalSessionState, set: TerminalSet, ses
         stopSandboxPump(sessionId);
         void get().initConversation(findConversationForSession(get, sessionId), get().deviceId)
           .catch(() => undefined);
+      } else if (read.status === 1) {
+        // A successful read is the sandbox liveness proof. After a cold-start
+        // reconcile downgraded the row to UNKNOWN, re-merge once so the panel
+        // flips back to running; later reads see a live view and stay quiet.
+        provenSandboxSessions.add(sessionId);
+        const view = findView(get, sessionId);
+        if (view?.placement === 'sandbox' && !view.live) {
+          void get().initConversation(findConversationForSession(get, sessionId), get().deviceId)
+            .catch(() => undefined);
+        }
       }
     } catch (error) {
       log.warn('terminal', 'sandbox pty poll failed', {
@@ -235,6 +245,7 @@ function stopSandboxPump(sessionId: string): void {
     clearInterval(handle);
     sandboxPollers.delete(sessionId);
   }
+  provenSandboxSessions.delete(sessionId);
 }
 
 function findConversationForSession(get: () => TerminalSessionState, sessionId: string): string {
@@ -286,6 +297,11 @@ const statusSubscribers = new Map<string, Set<StatusSubscriber>>();
 
 // WE-S6 poll handles for sandbox PTYs (no Rust worker/Tauri events).
 const sandboxPollers = new Map<string, ReturnType<typeof setInterval>>();
+// Session ids the poll pump has proven alive through a successful PTY read
+// since the last cold start. Boot-time sandbox reconcile passes these as live
+// ids (mirroring device worker handles); an in-memory reset means a fresh
+// client proves nothing until its first read.
+const provenSandboxSessions = new Set<string>();
 const SANDBOX_POLL_MS = 400;
 
 function subscribe<T>(map: Map<string, Set<T>>, key: string, fn: T): () => void {
@@ -402,6 +418,26 @@ function rowsForConversation(
   return rows.filter((row) => row.conversationId === conversationId);
 }
 
+// Reconcile a single sandbox_ref scope. Only sessions the pump has already
+// proven alive (successful PTY read since cold start) count as live; every
+// other RUNNING row in the ref downgrades to UNKNOWN. A failed reconcile falls
+// back to the listed rows for that ref so sandbox terminals never disappear.
+async function reconcileSandboxRef(
+  sandboxRef: string,
+  listed: TerminalStationSession[],
+  conversationId: string,
+): Promise<TerminalStationSession[]> {
+  const liveIds = [...provenSandboxSessions];
+  const reconciled = await terminalStationReconcile('', liveIds, { sandboxRef })
+    .catch(() => null);
+  const inRef = (row: TerminalStationSession): boolean =>
+    rowPlacement(row) === 'sandbox' && row.sandboxRef === sandboxRef;
+  if (reconciled) {
+    return rowsForConversation(reconciled, conversationId).filter(inRef);
+  }
+  return rowsForConversation(listed, conversationId).filter(inRef);
+}
+
 function commitConversation(
   set: TerminalSet,
   conversationId: string,
@@ -457,31 +493,46 @@ export const useTerminalSessionsStore = create<TerminalSessionState>()((set, get
       terminalStationList(conversationId).catch(() => [] as TerminalStationSession[]),
     ]);
     const liveMap = new Map(liveList.map((meta) => [meta.sessionId, meta]));
-    // Honesty gate: every RUNNING Station row this device cannot prove is
-    // downgraded to UNKNOWN on the Station as well.
+    const listed = rowsForConversation(stationRows, conversationId);
+
+    // DESKTOP_DEVICE honesty gate: device_id-scoped reconcile downgrades every
+    // RUNNING row this device cannot prove. Falls back to listed rows when the
+    // reconcile RPC is unavailable so the panel never loses its terminals.
+    let desktopRows = listed.filter((row) => rowPlacement(row) === 'desktop');
     if (provenDeviceId) {
       const liveIds = liveList.map((meta) => meta.sessionId);
       const reconciled = await terminalStationReconcile(provenDeviceId, liveIds)
         .catch(() => null);
       if (reconciled) {
-        const rows = rowsForConversation(reconciled, conversationId);
-        commitConversation(
-          set,
-          conversationId,
-          mergeTerminalSessions(rows, liveMap),
-          liveList,
-          provenDeviceId,
-        );
-        return;
+        desktopRows = rowsForConversation(reconciled, conversationId)
+          .filter((row) => rowPlacement(row) === 'desktop');
       }
     }
-    commitConversation(
-      set,
-      conversationId,
-      mergeTerminalSessions(stationRows, liveMap),
-      liveList,
-      provenDeviceId,
-    );
+
+    // WORKSPACE_SANDBOX honesty gate, independent of device liveness: one
+    // sandbox_ref-scoped reconcile per ref. On a cold start nothing is proven
+    // yet, so RUNNING rows collapse to UNKNOWN until the pump's first read
+    // re-proves them. Desktop reconcile never returns sandbox rows (device_id
+    // is empty for them), so without this merge they would vanish on reload.
+    const sandboxRefs = [...new Set(
+      listed.flatMap((row) => (
+        rowPlacement(row) === 'sandbox' && row.sandboxRef ? [row.sandboxRef] : []
+      )),
+    )];
+    const sandboxRows = (
+      await Promise.all(sandboxRefs.map((ref) => reconcileSandboxRef(ref, listed, conversationId)))
+    ).flat();
+
+    const views = mergeTerminalSessions([...desktopRows, ...sandboxRows], liveMap);
+    commitConversation(set, conversationId, views, liveList, provenDeviceId);
+
+    // Resume the poll pump for every non-terminal sandbox session so output
+    // and liveness continue across reloads. Idempotent per session id.
+    for (const view of views) {
+      if (view.placement === 'sandbox' && view.status !== 'exited' && view.status !== 'killed') {
+        startSandboxPump(get, set, view.sessionId);
+      }
+    }
   },
 
   createSession: async (input, deviceId) => {
@@ -556,6 +607,9 @@ export const useTerminalSessionsStore = create<TerminalSessionState>()((set, get
           [input.conversationId]: sessionId,
         },
       }));
+      // A successful create means the provisioner opened the PTY, so it is
+      // proven live: the reconcile inside init must not downgrade it.
+      provenSandboxSessions.add(sessionId);
       await get().initConversation(input.conversationId, get().deviceId);
       startSandboxPump(get, set, sessionId);
       const view = get()

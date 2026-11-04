@@ -191,6 +191,74 @@ func TestLegacyTerminalDefaultsToDesktopPlacement(t *testing.T) {
 	}
 }
 
+// Sandbox reconcile is scoped by sandbox_ref, never device_id: a fresh client
+// that cannot yet prove a sandbox PTY alive downgrades only sandbox rows in the
+// named sandbox, while desktop rows on another scope stay untouched.
+func TestSandboxReconcileScopesBySandboxRef(t *testing.T) {
+	db := openTerminalDB(t)
+	svc := NewTerminalSessionService()
+	svc.SetDB(db)
+	svc.SetSandboxPtyBridge(&fakePtyBridge{})
+
+	if _, err := svc.Create(context.Background(), "actor:1", sandboxCreateRequest()); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if err := db.Create(&persistence.TerminalSession{
+		ID: "terms-DESKTOPABCDEFGHIJKLMNOPQR", ActorPTID: "actor:1", ConversationID: "",
+		DeviceID: "dev-1", Command: "sh", Status: "running", ExecutionTarget: "desktop_device",
+	}).Error; err != nil {
+		t.Fatalf("seed desktop: %v", err)
+	}
+
+	// A sandbox reconcile without a sandbox_ref is an invalid request.
+	if _, err := svc.Reconcile(context.Background(), "actor:1", &model.ReconcileTerminalSessionsRequest{
+		ExecutionTarget: model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX,
+	}); err == nil {
+		t.Fatal("sandbox reconcile without sandbox_ref must be rejected")
+	}
+
+	// Boot proves nothing: empty live ids downgrade the sandbox row only.
+	rows, err := svc.Reconcile(context.Background(), "actor:1", &model.ReconcileTerminalSessionsRequest{
+		ExecutionTarget: model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX,
+		SandboxRef:      "wbox-1",
+	})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != "terms-ABCDEFGHIJKLMNOPQRSTUVWXYZ" || rows[0].Status != "unknown" {
+		t.Fatalf("sandbox rows=%+v", rows)
+	}
+	var desktop persistence.TerminalSession
+	db.Where("id = ?", "terms-DESKTOPABCDEFGHIJKLMNOPQR").First(&desktop)
+	if desktop.Status != "running" {
+		t.Fatalf("desktop row must stay running, got %s", desktop.Status)
+	}
+
+	// The first successful PTY read proves liveness and restores RUNNING.
+	if _, err := svc.SandboxPtyRead(context.Background(), "actor:1",
+		&model.SandboxPtyReadRequest{SessionId: "terms-ABCDEFGHIJKLMNOPQRSTUVWXYZ", Cursor: 0, MaxBytes: 256}); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var restored persistence.TerminalSession
+	db.Where("id = ?", "terms-ABCDEFGHIJKLMNOPQRSTUVWXYZ").First(&restored)
+	if restored.Status != "running" || restored.EndedAt != nil {
+		t.Fatalf("restored status=%s ended=%v", restored.Status, restored.EndedAt)
+	}
+
+	// A reconcile naming the live id keeps the row running.
+	proven, err := svc.Reconcile(context.Background(), "actor:1", &model.ReconcileTerminalSessionsRequest{
+		ExecutionTarget: model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX,
+		SandboxRef:      "wbox-1",
+		LiveSessionIds:  []string{"terms-ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
+	})
+	if err != nil {
+		t.Fatalf("proven reconcile: %v", err)
+	}
+	if len(proven) != 1 || proven[0].Status != "running" {
+		t.Fatalf("proven rows=%+v", proven)
+	}
+}
+
 // A sandbox create must refuse to carry a device id and require a sandbox ref,
 // keeping the two placements mutually exclusive server-side.
 func TestSandboxTerminalCreateRejectsMixedIdentity(t *testing.T) {

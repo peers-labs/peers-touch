@@ -382,17 +382,29 @@ func (s *TerminalSessionService) List(
 	return rows, nil
 }
 
-// Reconcile downgrades every RUNNING session of this device that the worker
-// cannot currently prove alive to UNKNOWN. A fresh worker proves nothing, so
-// boot-time reconciliation must never advertise stale sessions as running.
+// Reconcile downgrades every RUNNING session this client cannot currently
+// prove alive to UNKNOWN. A fresh client proves nothing, so boot-time
+// reconciliation must never advertise stale sessions as running.
+//
+// The reconcile key depends on execution placement:
+//   - DESKTOP_DEVICE (default): scoped by device_id, proof from the worker.
+//   - WORKSPACE_SANDBOX: scoped by sandbox_ref, proof from PTY reads the
+//     client successfully served against the provisioner.
 func (s *TerminalSessionService) Reconcile(
 	ctx context.Context,
 	actorID string,
 	req *model.ReconcileTerminalSessionsRequest,
 ) ([]persistence.TerminalSession, error) {
-	deviceID := strings.TrimSpace(req.GetDeviceId())
-	if deviceID == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "device_id is required", nil)
+	sandboxScope := req.GetExecutionTarget() == model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX
+	scopeID := strings.TrimSpace(req.GetDeviceId())
+	scopeColumn := "device_id"
+	if sandboxScope {
+		scopeID = strings.TrimSpace(req.GetSandboxRef())
+		scopeColumn = "sandbox_ref"
+	}
+	if scopeID == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"device_id (desktop) or sandbox_ref (sandbox) is required", nil)
 	}
 	live := make(map[string]struct{}, len(req.GetLiveSessionIds()))
 	for _, id := range req.GetLiveSessionIds() {
@@ -408,18 +420,18 @@ func (s *TerminalSessionService) Reconcile(
 	now := s.now()
 	var rows []persistence.TerminalSession
 	err = db.Transaction(func(tx *gorm.DB) error {
-		var deviceRows []persistence.TerminalSession
+		var scopedRows []persistence.TerminalSession
 		if findErr := tx.
-			Where("actor_ptid = ? AND device_id = ?", strings.TrimSpace(actorID), deviceID).
+			Where("actor_ptid = ? AND "+scopeColumn+" = ?", strings.TrimSpace(actorID), scopeID).
 			Order("created_at DESC").
-			Find(&deviceRows).Error; findErr != nil {
-			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load device terminal sessions", findErr)
+			Find(&scopedRows).Error; findErr != nil {
+			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load terminal sessions for reconcile", findErr)
 		}
 		staleIDs := make([]string, 0)
-		for i := range deviceRows {
-			if deviceRows[i].Status == terminalStatusRunning {
-				if _, proven := live[deviceRows[i].ID]; !proven {
-					staleIDs = append(staleIDs, deviceRows[i].ID)
+		for i := range scopedRows {
+			if scopedRows[i].Status == terminalStatusRunning {
+				if _, proven := live[scopedRows[i].ID]; !proven {
+					staleIDs = append(staleIDs, scopedRows[i].ID)
 				}
 			}
 		}
@@ -433,13 +445,13 @@ func (s *TerminalSessionService) Reconcile(
 				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "reconcile terminal sessions", updateErr)
 			}
 			if findErr := tx.
-				Where("actor_ptid = ? AND device_id = ?", strings.TrimSpace(actorID), deviceID).
+				Where("actor_ptid = ? AND "+scopeColumn+" = ?", strings.TrimSpace(actorID), scopeID).
 				Order("created_at DESC").
-				Find(&deviceRows).Error; findErr != nil {
+				Find(&scopedRows).Error; findErr != nil {
 				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "reload terminal sessions", findErr)
 			}
 		}
-		rows = deviceRows
+		rows = scopedRows
 		return nil
 	})
 	if err != nil {
@@ -544,16 +556,27 @@ func (s *TerminalSessionService) SandboxPtyRead(ctx context.Context, actorID str
 			errcode.AgentSandboxUnavailableLocaleKey, err)
 	}
 	status := ptyStateToStatus(read.State)
-	if (read.State == "exited" || read.State == "killed") && row.Status == terminalStatusRunning {
-		now := s.now()
-		mapped := terminalSessionStatusToString(status)
-		db, _ := s.getDB(ctx)
+	db, _ := s.getDB(ctx)
+	now := s.now()
+	switch {
+	case (read.State == "exited" || read.State == "killed") && row.Status != read.State:
+		// Persist the terminal transition exactly once.
 		_ = db.Model(&persistence.TerminalSession{}).Where("id = ?", row.ID).
 			Updates(map[string]interface{}{
-				"status":       mapped,
+				"status":       read.State,
 				"exit_code":    read.ExitCode,
 				"output_bytes": read.NextCursor,
 				"ended_at":     now,
+				"updated_at":   now,
+			}).Error
+	case read.State == "running" && row.Status == terminalStatusUnknown:
+		// After a cold-start reconcile downgraded the row to UNKNOWN, the first
+		// successful PTY read that proves the process is alive restores it.
+		_ = db.Model(&persistence.TerminalSession{}).Where("id = ?", row.ID).
+			Updates(map[string]interface{}{
+				"status":       terminalStatusRunning,
+				"output_bytes": read.NextCursor,
+				"ended_at":     nil,
 				"updated_at":   now,
 			}).Error
 	}

@@ -10281,14 +10281,28 @@ export async function terminalStationList(conversationId: string): Promise<Termi
   return response.sessions as unknown as TerminalStationSession[];
 }
 
+// WE-S6 sandbox reconcile scope. When set, Station scopes by sandbox_ref and
+// the caller proves liveness through successful PTY reads (not worker ids).
+export interface TerminalSandboxReconcileScope {
+  sandboxRef: string;
+}
+
 export async function terminalStationReconcile(
   deviceId: string,
   liveSessionIds: string[],
+  sandboxScope?: TerminalSandboxReconcileScope,
 ): Promise<TerminalStationSession[]> {
   const response = await invokeRustProto(
     'agent_terminal_session_reconcile',
     ReconcileTerminalSessionsResponseSchema,
-    { device_id: deviceId, live_session_ids: liveSessionIds },
+    sandboxScope
+      ? {
+          device_id: '',
+          live_session_ids: liveSessionIds,
+          execution_target: 2,
+          sandbox_ref: sandboxScope.sandboxRef,
+        }
+      : { device_id: deviceId, live_session_ids: liveSessionIds },
   );
   return response.sessions as unknown as TerminalStationSession[];
 }
