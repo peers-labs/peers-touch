@@ -39,6 +39,7 @@ func AllModels() []interface{} {
 		&CapabilityBindingCommand{},
 		&CapabilityReadinessSnapshot{},
 		&CapabilityBackfillRun{},
+		&AgentWorkspaceSandbox{},
 		&ConnectorResourceManifest{},
 		&ConnectorManifestCommand{},
 		&KnowledgeResourceHead{},
