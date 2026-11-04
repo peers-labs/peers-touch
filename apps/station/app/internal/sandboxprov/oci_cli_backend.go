@@ -2,10 +2,13 @@ package sandboxprov
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 const BackendOCILinux = "oci_linux"
@@ -127,6 +130,111 @@ func (b *OCICLIBBackend) Allocate(req AllocRequest) (*Handle, error) {
 	}
 	return &Handle{SandboxRef: req.SandboxRef, Container: containerName(req.SandboxRef),
 		BackendKind: BackendOCILinux, VolumeRef: vol}, nil
+}
+
+// execArgs builds `docker exec` flags. Workload stays unprivileged; cwd/env
+// are bounded and supplied explicitly rather than inherited from the host.
+func execArgs(req ExecRequest) []string {
+	args := []string{"exec", "-i"}
+	if req.Cwd != "" {
+		args = append(args, "-w", req.Cwd)
+	}
+	for _, e := range req.Env {
+		args = append(args, "-e", e)
+	}
+	args = append(args, containerName(req.SandboxRef), req.Command)
+	args = append(args, req.Args...)
+	return args
+}
+
+const defaultMaxExecOutput = 256 * 1024
+
+// Exec runs one bounded command inside the running container. A non-zero exit
+// or an OS refusal is returned as an ExecResult (not a Go error) so callers
+// persist honest bounded bytes/exit code. Infrastructure failures (container
+// gone, daemon error, timeout) are returned as errors and must fail closed.
+func (b *OCICLIBBackend) Exec(ctx context.Context, req ExecRequest) (*ExecResult, error) {
+	if strings.TrimSpace(req.SandboxRef) == "" || strings.TrimSpace(req.Command) == "" {
+		return nil, fmt.Errorf("%w: sandbox_ref and command are required", ErrPolicyRejected)
+	}
+	maxOut := req.MaxOutputBytes
+	if maxOut <= 0 {
+		maxOut = defaultMaxExecOutput
+	}
+
+	running, err := b.isRunning(ctx, req.SandboxRef)
+	if err != nil {
+		return nil, err
+	}
+	if !running {
+		return nil, fmt.Errorf("%w: %s", ErrNotRunning, req.SandboxRef)
+	}
+
+	cmd := exec.CommandContext(ctx, b.docker, execArgs(req)...)
+	var stdout, stderr boundedBuffer
+	stdout.limit = maxOut
+	stderr.limit = maxOut
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+
+	res := &ExecResult{
+		Stdout:    stdout.bytes(),
+		Stderr:    stderr.bytes(),
+		Truncated: stdout.truncated || stderr.truncated,
+	}
+	if runErr == nil {
+		res.ExitCode = 0
+		return res, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		res.ExitCode = exitErr.ExitCode()
+		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+			if status.Signaled() {
+				res.Signal = int(status.Signal())
+			}
+		}
+		res.OSErrno = inferErrno(res.Stderr)
+		return res, nil
+	}
+	// CLI/daemon/timeout failure, not a command result: fail closed.
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("sandbox exec timed out: %w", ctx.Err())
+	}
+	return nil, fmt.Errorf("docker exec: %w: %s", runErr, strings.TrimSpace(string(res.Stderr)))
+}
+
+func (b *OCICLIBBackend) isRunning(ctx context.Context, ref string) (bool, error) {
+	out, err := b.run(ctx, b.docker, "inspect", "-f", "{{.State.Running}}", containerName(ref))
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such container") {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect sandbox: %w", err)
+	}
+	return strings.TrimSpace(string(out)) == "true", nil
+}
+
+var (
+	errnoEACCES = regexp.MustCompile(`(?i)permission denied|operation not permitted`)
+	errnoENOENT = regexp.MustCompile(`(?i)no such file or directory`)
+	errnoEROFS  = regexp.MustCompile(`(?i)read-only file system`)
+)
+
+// inferErrno best-effort maps common OS refusal text. It never fabricates a
+// value: unknown text returns an empty errno and the raw stderr is preserved.
+func inferErrno(stderr []byte) string {
+	switch {
+	case errnoEROFS.Match(stderr):
+		return "EROFS"
+	case errnoEACCES.Match(stderr):
+		return "EACCES"
+	case errnoENOENT.Match(stderr):
+		return "ENOENT"
+	default:
+		return ""
+	}
 }
 
 func (b *OCICLIBBackend) Release(ref, volumeRef string, keepVolume bool) error {

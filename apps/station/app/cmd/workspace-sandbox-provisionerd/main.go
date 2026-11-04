@@ -117,6 +117,25 @@ func main() {
 		writeJSON(w, h)
 	})
 
+	// POST /v1/sandboxes/exec
+	mux.HandleFunc("/v1/sandboxes/exec", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in sandboxprov.ExecRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		res, err := backend.Exec(r.Context(), in)
+		if err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, res)
+	})
+
 	// POST /v1/sandboxes/release  {"sandbox_ref","volume_ref","keep_volume"}
 	mux.HandleFunc("/v1/sandboxes/release", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
