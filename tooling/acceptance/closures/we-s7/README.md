@@ -34,6 +34,7 @@ tooling/acceptance/reports/task-workbench/we-s7-isolation-gates.json
 | G9 | two sandboxes cannot open a connection to each other |
 | G10 | docker host config = `--cap-drop ALL`, `no-new-privileges`, read-only rootfs |
 | G11 | DORMANT stop → allocate cold-start retains the workspace volume contents |
+| G12 | control-plane isolation: a sandbox cannot reach the provisioner API while a management-network peer can |
 
 ## What this proves (and does not)
 

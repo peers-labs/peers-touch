@@ -338,9 +338,12 @@ services:
       SANDBOX_RUN_GID: "10001"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    # The provisioner is NOT attached to wbox-isolated: it places sandbox
+    # containers there through the daemon but joining the network itself would
+    # expose its control API to a compromised workload. The top-level network is
+    # created by compose even with no member service.
     networks:
       - default
-      - wbox-isolated
     healthcheck:
       test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:8090/healthz"]
       interval: 10s

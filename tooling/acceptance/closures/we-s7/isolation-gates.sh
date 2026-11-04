@@ -27,6 +27,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 NET="wbox-isolated"
+MGMT="wbox-mgmt"
 PROV="we-s7-provisioner"
 REF_A="we-s7-a"
 REF_B="we-s7-b"
@@ -57,6 +58,7 @@ record() { # record <id> <pass(0|1)> <evidence>
 cleanup() {
   docker rm -f "$PROV" "wbox-$REF_A" "wbox-$REF_B" >/dev/null 2>&1 || true
   docker volume rm "wbox-vol-$REF_A" "wbox-vol-$REF_B" >/dev/null 2>&1 || true
+  docker network rm "$MGMT" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -70,15 +72,24 @@ log "base image pinned id: $IMAGE_ID"
 docker build -q -t "$PROV_TAG" \
   -f "$ROOT/tooling/docker/sandbox/provisioner.Dockerfile" "$ROOT" >/dev/null
 
-# ── Network + provisioner ─────────────────────────────────────────────────
+# ── Networks + provisioner ────────────────────────────────────────────────
+# Workloads attach only to the INTERNAL wbox-isolated network. The provisioner
+# lives on a separate management network and is deliberately NOT a member of
+# wbox-isolated, so a compromised sandbox cannot reach its control API. It
+# places containers via the daemon socket, which does not require membership.
 docker network inspect "$NET" >/dev/null 2>&1 || docker network create --internal "$NET" >/dev/null
+docker network inspect "$MGMT" >/dev/null 2>&1 || docker network create "$MGMT" >/dev/null
 cleanup
+docker network inspect "$NET" >/dev/null 2>&1 || docker network create --internal "$NET" >/dev/null
+docker network inspect "$MGMT" >/dev/null 2>&1 || docker network create "$MGMT" >/dev/null
 docker run -d --name "$PROV" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e "SANDBOX_ALLOWED_IMAGE_IDS=$IMAGE_ID" \
   -e "SANDBOX_ISOLATED_NETWORK=$NET" \
-  --network "$NET" "$PROV_TAG" >/dev/null
+  --network "$MGMT" "$PROV_TAG" >/dev/null
 sleep 2
+# Recreate the internal workload network if an earlier (pre-fix) run left the
+# provisioner attached; a fresh dedicated network guarantees clean topology.
 
 # req <json> <path> ; prints raw body (works for non-2xx via --content-on-error)
 req() { docker exec "$PROV" wget -q --content-on-error -O- \
@@ -175,6 +186,25 @@ if [[ "$PARKED" == "false" && "$RESTARTED" == "true" && "$PERSIST_TXT" == "we-s7
   record G11 1 "stopped->cold-started, file survived"
 else
   record G11 0 "parked=$PARKED restarted=$RESTARTED file=$PERSIST_TXT"
+fi
+
+# G12 — control-plane isolation: a workload on wbox-isolated must NOT be able
+# to reach the provisioner API (which lives on the management network), while
+# a peer on the management network CAN (proving the denial is network
+# placement, not a dead API).
+PROV_MGMT_IP="$(docker inspect -f '{{(index .NetworkSettings.Networks "wbox-mgmt").IPAddress}}' "$PROV")"
+if [[ -z "$PROV_MGMT_IP" ]]; then
+  record G12 0 "could not resolve provisioner mgmt IP"
+else
+  CP_OUT="$(exec_raw "$REF_A" "{\"sandbox_ref\":\"$REF_A\",\"command\":\"curl\",\"args\":[\"-sS\",\"-m\",\"3\",\"-o\",\"/dev/null\",\"-w\",\"%{http_code}\",\"http://$PROV_MGMT_IP:8090/healthz\"]}")"
+  CP_CODE="$(stdout_of "$CP_OUT" | tr -d '[:space:]')"
+  CP_EXIT="$(exit_of "$CP_OUT")"
+  POSITIVE="$(docker run --rm --network "$MGMT" --entrypoint wget "$PROV_TAG" -qO- -T4 "http://$PROV:8090/healthz" 2>/dev/null)"
+  if [[ "$CP_CODE" == "000" || -z "$CP_CODE" ]] && [[ "$CP_EXIT" != "0" ]] && grep -q '"available":true' <<<"$POSITIVE"; then
+    record G12 1 "mgmt reachable, sandbox blocked (curl exit=$CP_EXIT)"
+  else
+    record G12 0 "sandbox code=$CP_CODE exit=$CP_EXIT mgmt-positive=${POSITIVE:-none}"
+  fi
 fi
 
 # ── Report ────────────────────────────────────────────────────────────────
