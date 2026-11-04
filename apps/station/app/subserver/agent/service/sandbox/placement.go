@@ -9,6 +9,7 @@ package sandbox
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -21,12 +22,45 @@ const (
 	SandboxExecuteCapability = "workspace.sandbox.execute"
 	SandboxPtyCapability     = "workspace.sandbox.pty"
 
+	// Per-tool sandbox capabilities keep the same approval granularity as the
+	// desktop local tools while routing execution to the Station executor.
+	SandboxCapabilityFilesystemRead  = "workspace.sandbox.filesystem.read"
+	SandboxCapabilityFilesystemWrite = "workspace.sandbox.filesystem.write"
+	SandboxCapabilityFilesystemEdit  = "workspace.sandbox.filesystem.edit"
+	SandboxCapabilityShellAllowlist  = "workspace.sandbox.shell.allowlist"
+
 	CapabilityFilesystemRead  = "filesystem.read"
 	CapabilityFilesystemList  = "filesystem.list"
 	CapabilityFilesystemWrite = "filesystem.write"
 	CapabilityFilesystemEdit  = "filesystem.edit"
 	CapabilityShellAllowlist  = "shell.allowlist"
 )
+
+// sandboxCapabilityPrefix is the WE-D04 execution-surface namespace. Every
+// capability id under it executes inside a provisioned workspace sandbox.
+const sandboxCapabilityPrefix = "workspace.sandbox."
+
+// SandboxWorkspaceRoot is the in-container mount point of the persistent
+// workspace volume and the confinement root for every sandbox tool call.
+const SandboxWorkspaceRoot = "/workspace"
+
+// SandboxCapabilityForTool maps a Station-routed local-* tool to its sandbox
+// execution-surface capability id. Only the tools the ToolRunner actually
+// implements are returned; anything else is not sandbox-routable.
+func SandboxCapabilityForTool(toolName string) (string, bool) {
+	switch toolName {
+	case "local_file_read":
+		return SandboxCapabilityFilesystemRead, true
+	case "local_file_write":
+		return SandboxCapabilityFilesystemWrite, true
+	case "local_file_edit":
+		return SandboxCapabilityFilesystemEdit, true
+	case "local_shell_exec", "local_shell_safe":
+		return SandboxCapabilityShellAllowlist, true
+	default:
+		return "", false
+	}
+}
 
 // ResolvedCapability is one authorized, already readiness-checked binding that
 // backs an executional tool call in the current turn.
@@ -41,9 +75,11 @@ type ResolvedCapability struct {
 	WorkspaceRoot string
 }
 
-// IsSandboxFamily reports whether a capability id executes in a sandbox.
+// IsSandboxFamily reports whether a capability id executes in a sandbox. The
+// whole workspace.sandbox.* execution surface (umbrella gate, PTY, and the
+// per-tool filesystem/shell capabilities) is sandbox-routed.
 func IsSandboxFamily(capabilityID string) bool {
-	return capabilityID == SandboxExecuteCapability || capabilityID == SandboxPtyCapability
+	return strings.HasPrefix(strings.TrimSpace(capabilityID), sandboxCapabilityPrefix)
 }
 
 // IsLocalDeviceFamily reports whether a capability id executes on the Desktop

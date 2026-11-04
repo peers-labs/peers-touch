@@ -58,7 +58,7 @@ func (r *ToolRunner) RunTool(ctx context.Context, actorPTID, agentID string, pla
 	}
 	root := strings.TrimSpace(placement.WorkspaceRoot)
 	if root == "" {
-		root = "/workspace"
+		root = SandboxWorkspaceRoot
 	}
 	switch toolName {
 	case "local_shell_exec", "local_shell_safe":
@@ -72,6 +72,72 @@ func (r *ToolRunner) RunTool(ctx context.Context, actorPTID, agentID string, pla
 	default:
 		return nil, newToolUnsupported(toolName)
 	}
+}
+
+// RunAgentTool is the Station tool-execution entry point for one authorized,
+// readiness-checked local-* call bound to a workspace.sandbox.* capability.
+// It lazily ensures the per-(actor, agent, workspace) sandbox is live, builds
+// the audited placement (sandbox_ref plus the exact capability/binding the
+// gate admitted), and runs the tool. It never executes locally and never falls
+// back to the desktop.
+func (r *ToolRunner) RunAgentTool(
+	ctx context.Context,
+	actorPTID, agentID string,
+	capabilityID, bindingID string,
+	bindingRevision uint64,
+	toolName string,
+	rawArgs json.RawMessage,
+) (*ToolResult, error) {
+	if _, ok := SandboxCapabilityForTool(toolName); !ok {
+		return nil, newToolUnsupported(toolName)
+	}
+	row, err := r.exec.EnsureSandbox(ctx, actorPTID, agentID, SandboxWorkspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	placement := &model.ExecutionPlacement{
+		Target:          model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX,
+		SandboxRef:      row.Ref,
+		WorkspaceRoot:   SandboxWorkspaceRoot,
+		CapabilityId:    capabilityID,
+		BindingId:       bindingID,
+		BindingRevision: bindingRevision,
+	}
+	return r.RunTool(ctx, actorPTID, agentID, placement, toolName, rawArgs)
+}
+
+// toolResultEnvelope is the stable, model-facing JSON rendering of one bounded
+// sandbox execution. It is the WORKSPACE_SANDBOX analogue of the desktop D4
+// bounded result: real exit code / errno / streams and file-change facts, with
+// no success fabrication (a non-zero exit is reported, not raised).
+type toolResultEnvelope struct {
+	ExitCode  int    `json:"exit_code"`
+	OSErrno   string `json:"os_errno,omitempty"`
+	Stdout    string `json:"stdout,omitempty"`
+	Stderr    string `json:"stderr,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+	BeforeSHA string `json:"before_sha,omitempty"`
+	AfterSHA  string `json:"after_sha,omitempty"`
+	Changed   bool   `json:"changed,omitempty"`
+}
+
+// ModelOutput renders the bounded result the model (and tool card) receives.
+func (r *ToolResult) ModelOutput() string {
+	envelope := toolResultEnvelope{
+		ExitCode:  r.ExitCode,
+		OSErrno:   r.OSErrno,
+		Stdout:    strings.ToValidUTF8(string(r.Stdout), ""),
+		Stderr:    strings.ToValidUTF8(string(r.Stderr), ""),
+		Truncated: r.Truncated,
+		BeforeSHA: r.BeforeSHA,
+		AfterSHA:  r.AfterSHA,
+		Changed:   r.Changed,
+	}
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 func (r *ToolRunner) runShell(ctx context.Context, actor, agent string, p *model.ExecutionPlacement, raw json.RawMessage) (*ToolResult, error) {

@@ -61,6 +61,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/sandbox"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -299,8 +300,25 @@ type TurnService struct {
 	turnAdmission        *TurnAdmissionService
 	attachmentAdmission  *AttachmentAdmissionService
 	externalRuntime      *ExternalRuntimeService
+	sandboxLocalTools    SandboxLocalToolRunner
 	resumeProviderCall   continuationProviderCall
 	providerCall         turnProviderCall
+}
+
+// SandboxLocalToolRunner executes an authorized local-* tool bound to a
+// workspace.sandbox.* capability inside its provisioned workspace sandbox
+// (WE-20261104). The implementation lazily ensures the sandbox and never falls
+// back to the desktop; infrastructure failures are returned as errors while
+// ordinary OS results (non-zero exit, EACCES/ENOENT) are bounded ToolResults.
+type SandboxLocalToolRunner interface {
+	RunAgentTool(
+		ctx context.Context,
+		actorPTID, agentID string,
+		capabilityID, bindingID string,
+		bindingRevision uint64,
+		toolName string,
+		rawArgs json.RawMessage,
+	) (*sandbox.ToolResult, error)
 }
 
 func (s *TurnService) SetAdmissionResolver(r *RuntimeAdmissionResolver) {
@@ -323,6 +341,13 @@ func (s *TurnService) SetAttachmentAdmissionService(admission *AttachmentAdmissi
 
 func (s *TurnService) SetExternalRuntimeService(runtime *ExternalRuntimeService) {
 	s.externalRuntime = runtime
+}
+
+// SetSandboxLocalToolRunner injects the WORKSPACE_SANDBOX executor used for
+// Station-owned local-* tools. When unset, such calls fail closed rather than
+// executing locally or on the desktop.
+func (s *TurnService) SetSandboxLocalToolRunner(runner SandboxLocalToolRunner) {
+	s.sandboxLocalTools = runner
 }
 
 func (s *TurnService) PreflightTurn(
@@ -4672,6 +4697,14 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 					call,
 					config,
 				)
+			case "local_shell_exec", "local_shell_safe",
+				"local_file_read", "local_file_write", "local_file_edit":
+				output, executionErr = s.executeSandboxLocalTool(
+					toolCtx,
+					claim,
+					batch.AgentID,
+					call,
+				)
 			default:
 				result := s.toolRegistry.Dispatch(
 					toolCtx,
@@ -6125,6 +6158,50 @@ func stableToolBatchID(turnID string, attemptID string, iteration int) string {
 func stableToolCallID(toolBatchID string, index int, call toolCallEntry) string {
 	value := hashString(fmt.Sprintf("%s\x00%d\x00%s\x00%s", toolBatchID, index, call.ToolName, call.Arguments))
 	return "tool_call_" + value[:24]
+}
+
+// executeSandboxLocalTool runs one authorized Station-owned local-* call inside
+// the agent's provisioned workspace sandbox. The capability gate has already
+// admitted (capabilityId, bindingId, revision) READY; this function only
+// performs the effect. Ordinary OS outcomes (non-zero exit, EACCES/ENOENT) are
+// returned as the bounded model output, not errors; infrastructure failures
+// fail closed and never fall back to the desktop.
+func (s *TurnService) executeSandboxLocalTool(
+	ctx context.Context,
+	claim *persistence.ToolCall,
+	agentID string,
+	call toolCallEntry,
+) (string, error) {
+	if s.sandboxLocalTools == nil {
+		return "", errcode.New(
+			errcode.AgentSandboxUnavailable,
+			http.StatusServiceUnavailable,
+			errcode.AgentSandboxUnavailableLocaleKey,
+			fmt.Errorf("workspace sandbox executor is not configured"),
+		).WithDetail("tool_name", call.ToolName)
+	}
+	if !sandbox.IsSandboxFamily(claim.CapabilityID) {
+		return "", errcode.New(
+			errcode.AgentSandboxExecutionTargetForbidden,
+			http.StatusUnprocessableEntity,
+			errcode.AgentSandboxExecutionTargetForbiddenLocaleKey,
+			fmt.Errorf("station executor received a non-sandbox capability"),
+		).WithDetail("capability_id", claim.CapabilityID)
+	}
+	result, err := s.sandboxLocalTools.RunAgentTool(
+		ctx,
+		claim.ActorID,
+		agentID,
+		claim.CapabilityID,
+		claim.BindingID,
+		claim.BindingRevision,
+		call.ToolName,
+		json.RawMessage(call.Arguments),
+	)
+	if err != nil {
+		return "", err
+	}
+	return result.ModelOutput(), nil
 }
 
 func (s *TurnService) executeStationHumanDecisionResumeTool(

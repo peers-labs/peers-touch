@@ -31,6 +31,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/sandbox"
 	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
@@ -540,6 +541,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnSvc.SetToolDispatch(toolDispatchSvc)
 	turnSvc.SetCapabilityReadiness(capabilityReadinessSvc)
 	turnSvc.SetChatTaskService(chatTaskSvc)
+	// WE-20261104: Station-side executor for WORKSPACE_SANDBOX-bound local-*
+	// tools. Station itself never runs the command; it dispatches to the
+	// independent provisioner and fails closed without a desktop fallback.
+	turnSvc.SetSandboxLocalToolRunner(sandbox.NewStationToolRunnerFromEnv(s.agentDB))
 	evaluationSvc := service.NewEvaluationService(
 		s.agentDB,
 		admissionResolver,

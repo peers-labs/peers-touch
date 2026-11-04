@@ -191,4 +191,72 @@ func TestToolRunnerUnknownTool(t *testing.T) {
 	}
 }
 
+func TestRunAgentToolEnsuresSandboxAndAuditsPlacement(t *testing.T) {
+	tr, fc := newToolRunnerFixture()
+	args, _ := json.Marshal(map[string]any{"command": "ls", "args": []string{"-la"}})
+	res, err := tr.RunAgentTool(
+		context.Background(), "actor-1", "agent-1",
+		SandboxCapabilityShellAllowlist, "binding-1", 3,
+		"local_shell_exec", args,
+	)
+	if err != nil {
+		t.Fatalf("run agent tool: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("exit=%d", res.ExitCode)
+	}
+	// The sandbox was lazily ensured and the exec addressed its ref.
+	var execCall ExecCall
+	for _, c := range fc.calls {
+		if c.Command == "ls" {
+			execCall = c
+		}
+	}
+	if execCall.SandboxRef != "wbox" || execCall.Cwd != SandboxWorkspaceRoot {
+		t.Fatalf("exec call placement wrong: %+v", execCall)
+	}
+	output := res.ModelOutput()
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(output), &envelope); err != nil {
+		t.Fatalf("model output is not JSON: %v (%s)", err, output)
+	}
+	if envelope["exit_code"].(float64) != 0 || envelope["stdout"] != "ok" {
+		t.Fatalf("envelope=%v", envelope)
+	}
+}
+
+func TestRunAgentToolRejectsUnroutableTool(t *testing.T) {
+	tr, _ := newToolRunnerFixture()
+	_, err := tr.RunAgentTool(context.Background(), "a", "g",
+		SandboxCapabilityFilesystemRead, "b", 1, "local_workspace_list", json.RawMessage(`{}`))
+	if bizErr(t, err).Code != errcode.AgentToolUnknown {
+		t.Fatalf("code=%v", bizErr(t, err).Code)
+	}
+}
+
+func TestSandboxCapabilityForTool(t *testing.T) {
+	cases := map[string]string{
+		"local_file_read":  SandboxCapabilityFilesystemRead,
+		"local_file_write": SandboxCapabilityFilesystemWrite,
+		"local_file_edit":  SandboxCapabilityFilesystemEdit,
+		"local_shell_exec": SandboxCapabilityShellAllowlist,
+		"local_shell_safe": SandboxCapabilityShellAllowlist,
+	}
+	for tool, want := range cases {
+		got, ok := SandboxCapabilityForTool(tool)
+		if !ok || got != want {
+			t.Fatalf("%s => %q,%v want %q", tool, got, ok, want)
+		}
+		if !IsSandboxFamily(got) {
+			t.Fatalf("%s capability %q not in sandbox family", tool, got)
+		}
+	}
+	if _, ok := SandboxCapabilityForTool("local_clipboard_read"); ok {
+		t.Fatalf("clipboard must not be sandbox-routable")
+	}
+	if IsSandboxFamily(CapabilityShellAllowlist) {
+		t.Fatalf("desktop capability must not be classified as sandbox")
+	}
+}
+
 var _ = errors.New
