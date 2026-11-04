@@ -43,6 +43,13 @@ func NewStationTerminalBridgeFromEnv(db *gorm.DB) *TerminalBridge {
 	return NewTerminalBridge(executor, client)
 }
 
+// NewStationResolverFromEnv builds the read-only allocation resolver used by
+// the terminal placement picker. It only opens the GORM store; no provisioner
+// client is constructed because resolution performs no backend side effects.
+func NewStationResolverFromEnv(db *gorm.DB) *Resolver {
+	return NewResolver(NewGormStore(db))
+}
+
 func newStationExecutorFromEnv(db *gorm.DB) (*Executor, *HTTPClient) {
 	provisionerURL := strings.TrimSpace(os.Getenv(envProvisionerURL))
 	if provisionerURL == "" {

@@ -40,6 +40,16 @@ type TerminalSessionService struct {
 	// Optional WORKSPACE_SANDBOX PTY proxy. When nil, sandbox-terminal RPCs
 	// fail closed (SANDBOX_UNAVAILABLE) instead of executing locally.
 	sandboxPTY SandboxPtyBridge
+	// Optional read-only allocation resolver for the terminal placement
+	// picker. When nil, active-sandbox resolution fails closed.
+	sandboxResolver SandboxResolver
+}
+
+// SandboxResolver is the read-only allocation view the terminal picker uses.
+// It must never allocate or cold-start; the implementation only reads the
+// allocation table.
+type SandboxResolver interface {
+	ActiveForActor(ctx context.Context, actorPTID string) ([]*sandbox.Sandbox, error)
 }
 
 // SandboxPtyBridge is the subset of the sandbox TerminalBridge the terminal
@@ -54,6 +64,8 @@ type SandboxPtyBridge interface {
 }
 
 func (s *TerminalSessionService) SetSandboxPtyBridge(b SandboxPtyBridge) { s.sandboxPTY = b }
+
+func (s *TerminalSessionService) SetSandboxResolver(r SandboxResolver) { s.sandboxResolver = r }
 
 func NewTerminalSessionService() *TerminalSessionService {
 	return &TerminalSessionService{now: func() time.Time { return time.Now().UTC() }}
@@ -526,6 +538,36 @@ func (s *TerminalSessionService) requireSandboxBridge() error {
 			errcode.AgentSandboxUnavailableLocaleKey, nil)
 	}
 	return nil
+}
+
+// ResolveActiveSandboxes returns the actor's non-released sandbox allocations
+// as a strictly read-only view. It never allocates or cold-starts; only
+// ALLOCATED/DORMANT sandboxes are marked usable (a DORMANT one is cold-started
+// later, at terminal Create, from its persisted volume).
+func (s *TerminalSessionService) ResolveActiveSandboxes(
+	ctx context.Context,
+	actorID string,
+) (*model.ResolveActiveSandboxesResponse, error) {
+	if s.sandboxResolver == nil {
+		return nil, errcode.New(errcode.AgentSandboxUnavailable, http.StatusServiceUnavailable,
+			errcode.AgentSandboxUnavailableLocaleKey, nil)
+	}
+	rows, err := s.sandboxResolver.ActiveForActor(ctx, strings.TrimSpace(actorID))
+	if err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"resolve active sandboxes", err)
+	}
+	out := make([]*model.ActiveSandbox, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &model.ActiveSandbox{
+			SandboxRef:    row.Ref,
+			AgentId:       row.AgentID,
+			WorkspaceRoot: row.WorkspaceRoot,
+			State:         string(row.State),
+			Usable:        row.State == sandbox.StateAllocated || row.State == sandbox.StateDormant,
+		})
+	}
+	return &model.ResolveActiveSandboxesResponse{Sandboxes: out}, nil
 }
 
 // SandboxPtyWrite forwards keystrokes to a provisioner-held PTY.

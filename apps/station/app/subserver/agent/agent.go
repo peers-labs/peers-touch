@@ -419,6 +419,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	terminalSessionSvc := service.NewTerminalSessionService()
 	// WE-S6: proxy interactive terminals into provisioner sandboxes.
 	terminalSessionSvc.SetSandboxPtyBridge(sandbox.NewStationTerminalBridgeFromEnv(s.agentDB))
+	// WE-S6: read-only allocation view for the terminal placement picker.
+	terminalSessionSvc.SetSandboxResolver(sandbox.NewStationResolverFromEnv(s.agentDB))
 	terminalSessionHandlers := handler.NewTerminalSessionHandlers(terminalSessionSvc)
 	browserSessionSvc := service.NewBrowserSessionService()
 	browserSessionHandlers := handler.NewBrowserSessionHandlers(browserSessionSvc)
@@ -664,6 +666,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-terminal-session-list", "/agent/terminal-session/list", server.POST, terminalSessionHandlers.HandleListTerminalSessions, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-terminal-session-reconcile", "/agent/terminal-session/reconcile", server.POST, terminalSessionHandlers.HandleReconcileTerminalSessions, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-terminal-session-remove", "/agent/terminal-session/remove", server.POST, terminalSessionHandlers.HandleRemoveTerminalSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-resolve-active", "/agent/sandboxes/active", server.POST, terminalSessionHandlers.HandleResolveActiveSandboxes, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-sandbox-pty-write", "/agent/sandbox-pty/write", server.POST, terminalSessionHandlers.HandleSandboxPtyWrite, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-sandbox-pty-read", "/agent/sandbox-pty/read", server.POST, terminalSessionHandlers.HandleSandboxPtyRead, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-sandbox-pty-resize", "/agent/sandbox-pty/resize", server.POST, terminalSessionHandlers.HandleSandboxPtyResize, logIDWrapper, jwtWrapper),

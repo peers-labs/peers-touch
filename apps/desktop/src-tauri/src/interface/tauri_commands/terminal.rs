@@ -342,6 +342,18 @@ pub fn agent_terminal_session_reconcile(
     session_rpc::reconcile(state.station.client(), &token, &request)
 }
 
+// WE-S6 read-only active-sandbox resolution. The request carries no fields;
+// the actor is derived from the window session token on Station.
+#[tauri::command]
+pub fn agent_sandbox_resolve_active(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match station_token(&state, &window) { Ok(token) => token, Err(error) => return error };
+    let request = agent::ResolveActiveSandboxesRequest {};
+    session_rpc::resolve_active_sandboxes(state.station.client(), &token, &request)
+}
+
 #[tauri::command]
 pub fn agent_terminal_session_remove(
     input: AgentTerminalSessionInput,

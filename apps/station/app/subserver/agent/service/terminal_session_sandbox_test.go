@@ -259,6 +259,53 @@ func TestSandboxReconcileScopesBySandboxRef(t *testing.T) {
 	}
 }
 
+type fakeSandboxResolver struct {
+	rows []*sandbox.Sandbox
+}
+
+func (f *fakeSandboxResolver) ActiveForActor(_ context.Context, _ string) ([]*sandbox.Sandbox, error) {
+	return f.rows, nil
+}
+
+// Read-only resolution marks only ALLOCATED/DORMANT sandboxes usable and
+// never fabricates a ref for REQUESTED/FAILED rows. With no resolver wired it
+// fails closed.
+func TestResolveActiveSandboxesReadonlyAndFailClosed(t *testing.T) {
+	svc := NewTerminalSessionService()
+	if _, err := svc.ResolveActiveSandboxes(context.Background(), "actor:1"); err == nil {
+		t.Fatal("resolve without a wired resolver must fail closed")
+	}
+
+	svc.SetSandboxResolver(&fakeSandboxResolver{rows: []*sandbox.Sandbox{
+		{Ref: "wbox-req", ActorPTID: "actor:1", State: sandbox.StateRequested},
+		{Ref: "wbox-live", ActorPTID: "actor:1", State: sandbox.StateAllocated},
+		{Ref: "wbox-sleep", ActorPTID: "actor:1", State: sandbox.StateDormant},
+		{Ref: "wbox-bad", ActorPTID: "actor:1", State: sandbox.StateFailed},
+	}})
+	resp, err := svc.ResolveActiveSandboxes(context.Background(), "actor:1")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(resp.Sandboxes) != 4 {
+		t.Fatalf("want 4 sandboxes, got %d", len(resp.Sandboxes))
+	}
+	usable := map[string]bool{}
+	states := map[string]string{}
+	for _, item := range resp.Sandboxes {
+		usable[item.SandboxRef] = item.Usable
+		states[item.SandboxRef] = item.State
+	}
+	if usable["wbox-live"] != true || usable["wbox-sleep"] != true {
+		t.Fatalf("allocated/dormant must be usable: %+v", usable)
+	}
+	if usable["wbox-req"] || usable["wbox-bad"] {
+		t.Fatalf("requested/failed must not be usable: %+v", usable)
+	}
+	if states["wbox-live"] != "allocated" || states["wbox-sleep"] != "dormant" {
+		t.Fatalf("state vocabulary wrong: %+v", states)
+	}
+}
+
 // A sandbox create must refuse to carry a device id and require a sandbox ref,
 // keeping the two placements mutually exclusive server-side.
 func TestSandboxTerminalCreateRejectsMixedIdentity(t *testing.T) {

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TerminalSquare, Play, X, Trash2, ExternalLink } from 'lucide-react';
-import { Button, Drawer, Input, Space, Tag, theme } from 'antd';
+import { Button, Drawer, Input, Select, Space, Tag, theme } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useTranslation } from 'react-i18next';
 import '@xterm/xterm/css/xterm.css';
 
-import { api } from '../../../../services/desktop_api';
+import { api, terminalResolveActiveSandboxes, type ActiveSandboxSession } from '../../../../services/desktop_api';
 import { useChatStore } from '../../../../store/chat';
 import {
   useTerminalSessionsStore,
@@ -178,12 +178,41 @@ function StartSessionForm({ conversationId }: { conversationId: string }) {
   const [command, setCommand] = useState('python3');
   const [args, setArgs] = useState('-m http.server 18099');
   const [inSandbox, setInSandbox] = useState(false);
+  // Sandbox placement is resolved read-only from existing allocations; the
+  // user never types a sandbox_ref. Only usable (ALLOCATED/DORMANT) rows are
+  // offered, honoring "only open explicitly-allocated sandboxes".
+  const [sandboxes, setSandboxes] = useState<ActiveSandboxSession[]>([]);
   const [sandboxRef, setSandboxRef] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [resolveNote, setResolveNote] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     void api.accountGetDeviceId().then(({ device_id }) => setDeviceId(device_id));
   }, []);
+
+  const resolveSandboxes = useCallback(async () => {
+    setResolving(true);
+    setResolveNote('');
+    try {
+      const all = await terminalResolveActiveSandboxes();
+      const usable = all.filter((item) => item.usable);
+      setSandboxes(usable);
+      setSandboxRef((previous) => (
+        usable.some((item) => item.sandboxRef === previous) ? previous : (usable[0]?.sandboxRef ?? '')
+      ));
+    } catch (resolveError) {
+      setSandboxes([]);
+      setSandboxRef('');
+      setResolveNote(resolveError instanceof Error ? resolveError.message : String(resolveError));
+    } finally {
+      setResolving(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (inSandbox) void resolveSandboxes();
+  }, [inSandbox, resolveSandboxes]);
 
   const start = useCallback(async () => {
     setError('');
@@ -206,6 +235,8 @@ function StartSessionForm({ conversationId }: { conversationId: string }) {
       setError(startError instanceof Error ? startError.message : String(startError));
     }
   }, [args, command, conversationId, createSession, createSandboxSession, deviceId, inSandbox, sandboxRef, t]);
+
+  const sandboxStartDisabled = resolving || (inSandbox && !sandboxRef);
 
   return (
     <div style={{ marginBottom: 10 }}>
@@ -230,13 +261,13 @@ function StartSessionForm({ conversationId }: { conversationId: string }) {
           type="primary"
           icon={<Play size={13} />}
           data-pt-terminal-start
-          disabled={!command.trim() || (!inSandbox && !deviceId)}
+          disabled={!command.trim() || (!inSandbox && !deviceId) || sandboxStartDisabled}
           onClick={() => void start()}
         >
           {t('chat.terminal.start')}
         </Button>
       </Space.Compact>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
         <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
           <input
             type="checkbox"
@@ -246,16 +277,34 @@ function StartSessionForm({ conversationId }: { conversationId: string }) {
           />
           {t('chat.terminal.placement.sandbox')}
         </label>
-        {inSandbox && (
-          <Input
+        {inSandbox && resolving && (
+          <span data-pt-terminal-sandbox-resolving style={{ fontSize: 12, color: token.colorTextTertiary }}>
+            {t('chat.terminal.sandboxResolving')}
+          </span>
+        )}
+        {inSandbox && !resolving && sandboxes.length > 1 && (
+          <Select
             aria-label={t('chat.terminal.sandboxRef')}
             data-pt-terminal-sandbox-ref
-            value={sandboxRef}
-            onChange={(event) => setSandboxRef(event.target.value)}
-            style={{ width: 220 }}
             size="small"
-            placeholder={t('chat.terminal.sandboxRef')}
+            style={{ width: 260 }}
+            value={sandboxRef || undefined}
+            onChange={(value) => setSandboxRef(value)}
+            options={sandboxes.map((item) => ({
+              value: item.sandboxRef,
+              label: `${item.sandboxRef} · ${item.state}`,
+            }))}
           />
+        )}
+        {inSandbox && !resolving && sandboxes.length === 1 && (
+          <Tag data-pt-terminal-sandbox-ref style={{ marginInlineEnd: 0 }}>
+            {sandboxes[0].sandboxRef}
+          </Tag>
+        )}
+        {inSandbox && !resolving && sandboxes.length === 0 && (
+          <span data-pt-terminal-sandbox-none role="status" style={{ fontSize: 12, color: token.colorTextTertiary }}>
+            {resolveNote ? `${t('chat.terminal.sandboxResolveFailed')}: ${resolveNote}` : t('chat.terminal.sandboxNone')}
+          </span>
         )}
         {error && (
           <span role="alert" style={{ color: token.colorErrorText, fontSize: 12 }}>

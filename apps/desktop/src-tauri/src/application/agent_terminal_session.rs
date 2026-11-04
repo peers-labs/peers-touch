@@ -90,6 +90,19 @@ pub fn remove(
 
 // ── WE-S6 WORKSPACE_SANDBOX PTY proxy ──────────────────────────────────────
 
+pub fn resolve_active_sandboxes(
+    client: &StationClient,
+    token: &str,
+    request: &agent::ResolveActiveSandboxesRequest,
+) -> AppResult<Vec<u8>> {
+    post::<_, agent::ResolveActiveSandboxesResponse>(
+        client,
+        "/sub-agent/agent/sandboxes/active",
+        token,
+        request,
+    )
+}
+
 pub fn sandbox_pty_write(
     client: &StationClient,
     token: &str,

@@ -1240,6 +1240,173 @@ func (*SandboxPtySignalResponse) Descriptor() ([]byte, []int) {
 	return file_domain_agent_terminal_session_proto_rawDescGZIP(), []int{18}
 }
 
+// ── WE-S6: read-only active-sandbox resolution (terminal placement picker) ──
+// Lets the Desktop resolve which already-allocated sandbox a terminal can
+// attach to, instead of typing a sandbox_ref. This is strictly read-only: it
+// never allocates, cold-starts, or contacts the provisioner, honoring the rule
+// that Station mode only opens explicitly-allocated sandboxes. The actor is
+// taken from the auth subject, never from the request body.
+type ResolveActiveSandboxesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveActiveSandboxesRequest) Reset() {
+	*x = ResolveActiveSandboxesRequest{}
+	mi := &file_domain_agent_terminal_session_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveActiveSandboxesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveActiveSandboxesRequest) ProtoMessage() {}
+
+func (x *ResolveActiveSandboxesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_terminal_session_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveActiveSandboxesRequest.ProtoReflect.Descriptor instead.
+func (*ResolveActiveSandboxesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_agent_terminal_session_proto_rawDescGZIP(), []int{19}
+}
+
+// ActiveSandbox is one non-released allocation owned by the actor. `usable`
+// is true only for ALLOCATED/DORMANT sandboxes, where opening a terminal is
+// allowed (a dormant sandbox is cold-started from its persisted volume at
+// create time). REQUESTED/FAILED rows are returned but not usable.
+type ActiveSandbox struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SandboxRef    string                 `protobuf:"bytes,1,opt,name=sandbox_ref,json=sandboxRef,proto3" json:"sandbox_ref,omitempty"`
+	AgentId       string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	WorkspaceRoot string                 `protobuf:"bytes,3,opt,name=workspace_root,json=workspaceRoot,proto3" json:"workspace_root,omitempty"`
+	// requested | allocated | dormant | failed
+	State         string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	Usable        bool   `protobuf:"varint,5,opt,name=usable,proto3" json:"usable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActiveSandbox) Reset() {
+	*x = ActiveSandbox{}
+	mi := &file_domain_agent_terminal_session_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActiveSandbox) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActiveSandbox) ProtoMessage() {}
+
+func (x *ActiveSandbox) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_terminal_session_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActiveSandbox.ProtoReflect.Descriptor instead.
+func (*ActiveSandbox) Descriptor() ([]byte, []int) {
+	return file_domain_agent_terminal_session_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ActiveSandbox) GetSandboxRef() string {
+	if x != nil {
+		return x.SandboxRef
+	}
+	return ""
+}
+
+func (x *ActiveSandbox) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *ActiveSandbox) GetWorkspaceRoot() string {
+	if x != nil {
+		return x.WorkspaceRoot
+	}
+	return ""
+}
+
+func (x *ActiveSandbox) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ActiveSandbox) GetUsable() bool {
+	if x != nil {
+		return x.Usable
+	}
+	return false
+}
+
+type ResolveActiveSandboxesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sandboxes     []*ActiveSandbox       `protobuf:"bytes,1,rep,name=sandboxes,proto3" json:"sandboxes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveActiveSandboxesResponse) Reset() {
+	*x = ResolveActiveSandboxesResponse{}
+	mi := &file_domain_agent_terminal_session_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveActiveSandboxesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveActiveSandboxesResponse) ProtoMessage() {}
+
+func (x *ResolveActiveSandboxesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_terminal_session_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveActiveSandboxesResponse.ProtoReflect.Descriptor instead.
+func (*ResolveActiveSandboxesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_agent_terminal_session_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ResolveActiveSandboxesResponse) GetSandboxes() []*ActiveSandbox {
+	if x != nil {
+		return x.Sandboxes
+	}
+	return nil
+}
+
 var File_domain_agent_terminal_session_proto protoreflect.FileDescriptor
 
 const file_domain_agent_terminal_session_proto_rawDesc = "" +
@@ -1335,7 +1502,17 @@ const file_domain_agent_terminal_session_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
 	"\x06signal\x18\x02 \x01(\x05R\x06signal\"\x1a\n" +
-	"\x18SandboxPtySignalResponse*\xd2\x01\n" +
+	"\x18SandboxPtySignalResponse\"\x1f\n" +
+	"\x1dResolveActiveSandboxesRequest\"\xa0\x01\n" +
+	"\rActiveSandbox\x12\x1f\n" +
+	"\vsandbox_ref\x18\x01 \x01(\tR\n" +
+	"sandboxRef\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12%\n" +
+	"\x0eworkspace_root\x18\x03 \x01(\tR\rworkspaceRoot\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12\x16\n" +
+	"\x06usable\x18\x05 \x01(\bR\x06usable\"i\n" +
+	"\x1eResolveActiveSandboxesResponse\x12G\n" +
+	"\tsandboxes\x18\x01 \x03(\v2).peers_touch.model.agent.v1.ActiveSandboxR\tsandboxes*\xd2\x01\n" +
 	"\x15TerminalSessionStatus\x12'\n" +
 	"#TERMINAL_SESSION_STATUS_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fTERMINAL_SESSION_STATUS_RUNNING\x10\x01\x12\"\n" +
@@ -1356,7 +1533,7 @@ func file_domain_agent_terminal_session_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_agent_terminal_session_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_agent_terminal_session_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_domain_agent_terminal_session_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_domain_agent_terminal_session_proto_goTypes = []any{
 	(TerminalSessionStatus)(0),                // 0: peers_touch.model.agent.v1.TerminalSessionStatus
 	(*TerminalSession)(nil),                   // 1: peers_touch.model.agent.v1.TerminalSession
@@ -1378,27 +1555,31 @@ var file_domain_agent_terminal_session_proto_goTypes = []any{
 	(*SandboxPtyResizeResponse)(nil),          // 17: peers_touch.model.agent.v1.SandboxPtyResizeResponse
 	(*SandboxPtySignalRequest)(nil),           // 18: peers_touch.model.agent.v1.SandboxPtySignalRequest
 	(*SandboxPtySignalResponse)(nil),          // 19: peers_touch.model.agent.v1.SandboxPtySignalResponse
-	(*timestamppb.Timestamp)(nil),             // 20: google.protobuf.Timestamp
-	(ExecutionTarget)(0),                      // 21: peers_touch.model.agent.v1.ExecutionTarget
+	(*ResolveActiveSandboxesRequest)(nil),     // 20: peers_touch.model.agent.v1.ResolveActiveSandboxesRequest
+	(*ActiveSandbox)(nil),                     // 21: peers_touch.model.agent.v1.ActiveSandbox
+	(*ResolveActiveSandboxesResponse)(nil),    // 22: peers_touch.model.agent.v1.ResolveActiveSandboxesResponse
+	(*timestamppb.Timestamp)(nil),             // 23: google.protobuf.Timestamp
+	(ExecutionTarget)(0),                      // 24: peers_touch.model.agent.v1.ExecutionTarget
 }
 var file_domain_agent_terminal_session_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.agent.v1.TerminalSession.status:type_name -> peers_touch.model.agent.v1.TerminalSessionStatus
-	20, // 1: peers_touch.model.agent.v1.TerminalSession.created_at:type_name -> google.protobuf.Timestamp
-	20, // 2: peers_touch.model.agent.v1.TerminalSession.ended_at:type_name -> google.protobuf.Timestamp
-	21, // 3: peers_touch.model.agent.v1.TerminalSession.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
-	21, // 4: peers_touch.model.agent.v1.CreateTerminalSessionRequest.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
+	23, // 1: peers_touch.model.agent.v1.TerminalSession.created_at:type_name -> google.protobuf.Timestamp
+	23, // 2: peers_touch.model.agent.v1.TerminalSession.ended_at:type_name -> google.protobuf.Timestamp
+	24, // 3: peers_touch.model.agent.v1.TerminalSession.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
+	24, // 4: peers_touch.model.agent.v1.CreateTerminalSessionRequest.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
 	1,  // 5: peers_touch.model.agent.v1.CreateTerminalSessionResponse.session:type_name -> peers_touch.model.agent.v1.TerminalSession
 	0,  // 6: peers_touch.model.agent.v1.UpdateTerminalSessionRequest.status:type_name -> peers_touch.model.agent.v1.TerminalSessionStatus
 	1,  // 7: peers_touch.model.agent.v1.UpdateTerminalSessionResponse.session:type_name -> peers_touch.model.agent.v1.TerminalSession
 	1,  // 8: peers_touch.model.agent.v1.ListTerminalSessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.TerminalSession
-	21, // 9: peers_touch.model.agent.v1.ReconcileTerminalSessionsRequest.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
+	24, // 9: peers_touch.model.agent.v1.ReconcileTerminalSessionsRequest.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
 	1,  // 10: peers_touch.model.agent.v1.ReconcileTerminalSessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.TerminalSession
 	0,  // 11: peers_touch.model.agent.v1.SandboxPtyReadResponse.status:type_name -> peers_touch.model.agent.v1.TerminalSessionStatus
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	21, // 12: peers_touch.model.agent.v1.ResolveActiveSandboxesResponse.sandboxes:type_name -> peers_touch.model.agent.v1.ActiveSandbox
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_terminal_session_proto_init() }
@@ -1413,7 +1594,7 @@ func file_domain_agent_terminal_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_terminal_session_proto_rawDesc), len(file_domain_agent_terminal_session_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   19,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

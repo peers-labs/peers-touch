@@ -151,3 +151,28 @@ message SandboxPtySignalRequest {
   int32 signal = 2;
 }
 message SandboxPtySignalResponse {}
+
+// ── WE-S6: read-only active-sandbox resolution (terminal placement picker) ──
+// Lets the Desktop resolve which already-allocated sandbox a terminal can
+// attach to, instead of typing a sandbox_ref. This is strictly read-only: it
+// never allocates, cold-starts, or contacts the provisioner, honoring the rule
+// that Station mode only opens explicitly-allocated sandboxes. The actor is
+// taken from the auth subject, never from the request body.
+message ResolveActiveSandboxesRequest {}
+
+// ActiveSandbox is one non-released allocation owned by the actor. `usable`
+// is true only for ALLOCATED/DORMANT sandboxes, where opening a terminal is
+// allowed (a dormant sandbox is cold-started from its persisted volume at
+// create time). REQUESTED/FAILED rows are returned but not usable.
+message ActiveSandbox {
+  string sandbox_ref = 1;
+  string agent_id = 2;
+  string workspace_root = 3;
+  // requested | allocated | dormant | failed
+  string state = 4;
+  bool usable = 5;
+}
+
+message ResolveActiveSandboxesResponse {
+  repeated ActiveSandbox sandboxes = 1;
+}

@@ -1155,6 +1155,7 @@ fn main() {
             terminal::agent_terminal_session_list,
             terminal::agent_terminal_session_reconcile,
             terminal::agent_terminal_session_remove,
+            terminal::agent_sandbox_resolve_active,
             terminal::agent_sandbox_pty_write,
             terminal::agent_sandbox_pty_read,
             terminal::agent_sandbox_pty_resize,

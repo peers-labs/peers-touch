@@ -79,6 +79,20 @@ func (h *TerminalSessionHandlers) HandleRemoveTerminalSession(
 	return &model.RemoveTerminalSessionResponse{Removed: true}, nil
 }
 
+// HandleResolveActiveSandboxes is read-only: it lists the actor's current
+// sandbox allocations so the Desktop can place a terminal without typing a
+// sandbox_ref. It never allocates or starts a container.
+func (h *TerminalSessionHandlers) HandleResolveActiveSandboxes(
+	ctx context.Context,
+	_ *model.ResolveActiveSandboxesRequest,
+) (*model.ResolveActiveSandboxesResponse, error) {
+	resp, err := h.sessions.ResolveActiveSandboxes(ctx, subjectActorID(ctx))
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return resp, nil
+}
+
 func (h *TerminalSessionHandlers) HandleSandboxPtyWrite(
 	ctx context.Context,
 	req *model.SandboxPtyWriteRequest,

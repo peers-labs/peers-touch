@@ -99,6 +99,7 @@ import {
   SandboxPtyReadResponseSchema,
   SandboxPtyResizeResponseSchema,
   SandboxPtySignalResponseSchema,
+  ResolveActiveSandboxesResponseSchema,
   TerminalSessionStatus,
 } from '../gen/proto/domain/agent/terminal_session_pb';
 import {
@@ -10305,6 +10306,27 @@ export async function terminalStationReconcile(
       : { device_id: deviceId, live_session_ids: liveSessionIds },
   );
   return response.sessions as unknown as TerminalStationSession[];
+}
+
+// WE-S6 read-only view of one actor allocation. `usable` means a terminal may
+// be opened against it (ALLOCATED/DORMANT); DORMANT cold-starts at create.
+export interface ActiveSandboxSession {
+  sandboxRef: string;
+  agentId: string;
+  workspaceRoot: string;
+  state: string;
+  usable: boolean;
+}
+
+// Resolve the actor's current sandbox allocations. Strictly read-only: it
+// never allocates or starts a container.
+export async function terminalResolveActiveSandboxes(): Promise<ActiveSandboxSession[]> {
+  const response = await invokeRustProto(
+    'agent_sandbox_resolve_active',
+    ResolveActiveSandboxesResponseSchema,
+    {},
+  );
+  return response.sandboxes as unknown as ActiveSandboxSession[];
 }
 
 export async function terminalStationRemove(sessionId: string): Promise<void> {
