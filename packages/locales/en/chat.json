@@ -295,6 +295,7 @@
   "chat.message.attribution.groupLabel": "{{kind}} · {{count}}",
   "chat.message.attribution.groupBadgeLabel": "{{kind}} · {{count}}. {{outcome}}",
   "chat.message.attribution.kind.skill": "Skill",
+  "chat.message.attribution.kind.profile": "Profile",
   "chat.message.attribution.kind.memory": "Memory",
   "chat.message.attribution.kind.knowledge": "Knowledge",
   "chat.message.attribution.kind.attachment": "Attachment",

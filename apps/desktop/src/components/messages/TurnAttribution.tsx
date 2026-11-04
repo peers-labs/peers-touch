@@ -4,6 +4,7 @@ import {
   Brain,
   ChevronDown,
   FileText,
+  IdCard,
   Paperclip,
   Sparkles,
   Wrench,
@@ -26,6 +27,7 @@ const KIND_META = new Map<
   { icon: LucideIcon; localeKey: string }
 >([
   [TurnAttributionKind.SKILL, { icon: Sparkles, localeKey: 'skill' }],
+  [TurnAttributionKind.PROFILE, { icon: IdCard, localeKey: 'profile' }],
   [TurnAttributionKind.MEMORY, { icon: Brain, localeKey: 'memory' }],
   [TurnAttributionKind.KNOWLEDGE, {
     icon: BookOpenText,

@@ -295,6 +295,7 @@
   "chat.message.attribution.groupLabel": "{{kind}} · {{count}}",
   "chat.message.attribution.groupBadgeLabel": "{{kind}} · {{count}}，{{outcome}}",
   "chat.message.attribution.kind.skill": "技能",
+  "chat.message.attribution.kind.profile": "档案",
   "chat.message.attribution.kind.memory": "记忆",
   "chat.message.attribution.kind.knowledge": "知识",
   "chat.message.attribution.kind.attachment": "附件",
