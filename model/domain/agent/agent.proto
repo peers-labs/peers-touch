@@ -1005,6 +1005,8 @@ enum TurnAttributionKind {
   TURN_ATTRIBUTION_KIND_KNOWLEDGE = 3;
   TURN_ATTRIBUTION_KIND_ATTACHMENT = 4;
   TURN_ATTRIBUTION_KIND_TOOL = 5;
+  // Agent profile/identity/behavioral-rules version frozen for the Turn.
+  TURN_ATTRIBUTION_KIND_PROFILE = 6;
 }
 
 enum TurnAttributionOutcome {

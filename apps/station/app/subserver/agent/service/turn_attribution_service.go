@@ -246,6 +246,9 @@ func attributionEntriesForSegment(
 		kind = model.TurnAttributionKind_TURN_ATTRIBUTION_KIND_KNOWLEDGE
 	case model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_ATTACHMENT:
 		kind = model.TurnAttributionKind_TURN_ATTRIBUTION_KIND_ATTACHMENT
+	case model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_IDENTITY,
+		model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MODEL_FACTS:
+		kind = model.TurnAttributionKind_TURN_ATTRIBUTION_KIND_PROFILE
 	default:
 		return nil, nil
 	}
@@ -437,6 +440,23 @@ func parseAttributionSourceRef(
 			return "", "", false
 		}
 		return safeProjectionText(value, 160), safeProjectionText(version, 64), true
+	case model.TurnAttributionKind_TURN_ATTRIBUTION_KIND_PROFILE:
+		// agent:<id>:version=<n>[:<field>]
+		value := strings.TrimPrefix(ref, "agent:")
+		marker := strings.Index(value, ":version=")
+		if marker < 0 {
+			return "", "", false
+		}
+		sourceID := strings.TrimSpace(value[:marker])
+		rest := value[marker+len(":version="):]
+		version := rest
+		if field := strings.Index(rest, ":"); field >= 0 {
+			version = rest[:field]
+		}
+		if sourceID == "" || strings.ContainsAny(sourceID, `/\`) {
+			return "", "", false
+		}
+		return safeProjectionText(sourceID, 160), safeProjectionText(strings.TrimSpace(version), 64), true
 	default:
 		return "", "", false
 	}

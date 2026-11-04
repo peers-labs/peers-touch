@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
-	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 )
 
@@ -98,10 +97,35 @@ func TestAttributionMemoryEntryResolvesNameAndVersion(t *testing.T) {
 	if entry.GetOutcome() != model.TurnAttributionOutcome_TURN_ATTRIBUTION_OUTCOME_INCLUDED {
 		t.Fatalf("adopted memory must be marked included, got %v", entry.GetOutcome())
 	}
+}
 
-	// Sanity: persistence.Memory is the table the name resolver reads.
-	var row persistence.Memory
-	if err := db.Where("id = ?", item.MemoryID).First(&row).Error; err != nil {
-		t.Fatalf("reload memory row: %v", err)
+// The agent profile/identity/rules version is frozen per turn and surfaced as a
+// PROFILE attribution entry (agent id + definition version), independent of
+// later profile edits.
+func TestAttributionProfileEntryFreezesAgentVersion(t *testing.T) {
+	ctx := context.Background()
+	_, db := newMemoryLifecycleService(t)
+
+	segment := &model.ContextSegment{
+		Type: model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_IDENTITY,
+		SourceRefs: []string{
+			"agent:assistant:version=7:identity",
+		},
+		ContentHash: "abc123",
+		Decision:    model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
+	}
+	entries, err := attributionEntriesForSegment(ctx, db, "ptid-x", segment, nil, nil)
+	if err != nil {
+		t.Fatalf("build profile attribution entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected one profile entry, got %d", len(entries))
+	}
+	entry := entries[0]
+	if entry.GetKind() != model.TurnAttributionKind_TURN_ATTRIBUTION_KIND_PROFILE {
+		t.Fatalf("kind = %v, want PROFILE", entry.GetKind())
+	}
+	if entry.GetSourceId() != "assistant" || entry.GetVersion() != "7" {
+		t.Fatalf("profile entry = (%q,%q), want (assistant,7)", entry.GetSourceId(), entry.GetVersion())
 	}
 }

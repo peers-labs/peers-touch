@@ -1420,6 +1420,8 @@ const (
 	TurnAttributionKind_TURN_ATTRIBUTION_KIND_KNOWLEDGE   TurnAttributionKind = 3
 	TurnAttributionKind_TURN_ATTRIBUTION_KIND_ATTACHMENT  TurnAttributionKind = 4
 	TurnAttributionKind_TURN_ATTRIBUTION_KIND_TOOL        TurnAttributionKind = 5
+	// Agent profile/identity/behavioral-rules version frozen for the Turn.
+	TurnAttributionKind_TURN_ATTRIBUTION_KIND_PROFILE TurnAttributionKind = 6
 )
 
 // Enum value maps for TurnAttributionKind.
@@ -1431,6 +1433,7 @@ var (
 		3: "TURN_ATTRIBUTION_KIND_KNOWLEDGE",
 		4: "TURN_ATTRIBUTION_KIND_ATTACHMENT",
 		5: "TURN_ATTRIBUTION_KIND_TOOL",
+		6: "TURN_ATTRIBUTION_KIND_PROFILE",
 	}
 	TurnAttributionKind_value = map[string]int32{
 		"TURN_ATTRIBUTION_KIND_UNSPECIFIED": 0,
@@ -1439,6 +1442,7 @@ var (
 		"TURN_ATTRIBUTION_KIND_KNOWLEDGE":   3,
 		"TURN_ATTRIBUTION_KIND_ATTACHMENT":  4,
 		"TURN_ATTRIBUTION_KIND_TOOL":        5,
+		"TURN_ATTRIBUTION_KIND_PROFILE":     6,
 	}
 )
 
@@ -20239,14 +20243,15 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"!CONTEXT_SEGMENT_DECISION_INCLUDED\x10\x01\x12&\n" +
 	"\"CONTEXT_SEGMENT_DECISION_TRUNCATED\x10\x02\x12'\n" +
 	"#CONTEXT_SEGMENT_DECISION_SUMMARIZED\x10\x03\x12%\n" +
-	"!CONTEXT_SEGMENT_DECISION_REJECTED\x10\x04*\xea\x01\n" +
+	"!CONTEXT_SEGMENT_DECISION_REJECTED\x10\x04*\x8d\x02\n" +
 	"\x13TurnAttributionKind\x12%\n" +
 	"!TURN_ATTRIBUTION_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bTURN_ATTRIBUTION_KIND_SKILL\x10\x01\x12 \n" +
 	"\x1cTURN_ATTRIBUTION_KIND_MEMORY\x10\x02\x12#\n" +
 	"\x1fTURN_ATTRIBUTION_KIND_KNOWLEDGE\x10\x03\x12$\n" +
 	" TURN_ATTRIBUTION_KIND_ATTACHMENT\x10\x04\x12\x1e\n" +
-	"\x1aTURN_ATTRIBUTION_KIND_TOOL\x10\x05*\xb7\x01\n" +
+	"\x1aTURN_ATTRIBUTION_KIND_TOOL\x10\x05\x12!\n" +
+	"\x1dTURN_ATTRIBUTION_KIND_PROFILE\x10\x06*\xb7\x01\n" +
 	"\x16TurnAttributionOutcome\x12(\n" +
 	"$TURN_ATTRIBUTION_OUTCOME_UNSPECIFIED\x10\x00\x12%\n" +
 	"!TURN_ATTRIBUTION_OUTCOME_INCLUDED\x10\x01\x12$\n" +
