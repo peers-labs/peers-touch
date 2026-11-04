@@ -110,3 +110,44 @@ message RemoveTerminalSessionRequest {
 message RemoveTerminalSessionResponse {
   bool removed = 1;
 }
+
+// ── WE-S6: WORKSPACE_SANDBOX PTY proxy (Station forwards to provisioner) ────
+// The Desktop never holds a sandbox process; these RPCs proxy the bounded
+// PTY stream through Station. DESKTOP_DEVICE sessions do not use them (their
+// PTY stays local in the Rust worker).
+
+message SandboxPtyWriteRequest {
+  string session_id = 1;
+  bytes data = 2;
+}
+message SandboxPtyWriteResponse {
+  uint64 bytes_written = 1;
+}
+
+message SandboxPtyReadRequest {
+  string session_id = 1;
+  uint64 cursor = 2;
+  uint32 max_bytes = 3;
+}
+message SandboxPtyReadResponse {
+  bytes data = 1;
+  uint64 next_cursor = 2;
+  bool truncated = 3;
+  // Honest current lifecycle of the proxied process.
+  TerminalSessionStatus status = 4;
+  int32 exit_code = 5;
+  uint64 output_bytes = 6;
+}
+
+message SandboxPtyResizeRequest {
+  string session_id = 1;
+  uint32 cols = 2;
+  uint32 rows = 3;
+}
+message SandboxPtyResizeResponse {}
+
+message SandboxPtySignalRequest {
+  string session_id = 1;
+  int32 signal = 2;
+}
+message SandboxPtySignalResponse {}

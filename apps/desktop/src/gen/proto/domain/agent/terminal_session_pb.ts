@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/agent/terminal_session.proto.
  */
 export const file_domain_agent_terminal_session: GenFile = /*@__PURE__*/
-  fileDesc("CiNkb21haW4vYWdlbnQvdGVybWluYWxfc2Vzc2lvbi5wcm90bxIacGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEiwQMKD1Rlcm1pbmFsU2Vzc2lvbhISCgpzZXNzaW9uX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIPCgd0dXJuX2lkGAMgASgJEhEKCWRldmljZV9pZBgEIAEoCRILCgNjd2QYBSABKAkSDwoHY29tbWFuZBgGIAEoCRIMCgRhcmdzGAcgAygJEgsKA3BpZBgIIAEoDRJBCgZzdGF0dXMYCSABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb25TdGF0dXMSEQoJZXhpdF9jb2RlGAogASgFEhQKDG91dHB1dF9ieXRlcxgLIAEoBBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASRQoQZXhlY3V0aW9uX3RhcmdldBgOIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV4ZWN1dGlvblRhcmdldBITCgtzYW5kYm94X3JlZhgPIAEoCSKEAgocQ3JlYXRlVGVybWluYWxTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAggASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIPCgd0dXJuX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRILCgNjd2QYBCABKAkSDwoHY29tbWFuZBgFIAEoCRIMCgRhcmdzGAYgAygJEgsKA3BpZBgHIAEoDRJFChBleGVjdXRpb25fdGFyZ2V0GAkgASgOMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXhlY3V0aW9uVGFyZ2V0EhMKC3NhbmRib3hfcmVmGAogASgJIl0KHUNyZWF0ZVRlcm1pbmFsU2Vzc2lvblJlc3BvbnNlEjwKB3Nlc3Npb24YASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb24ingEKHFVwZGF0ZVRlcm1pbmFsU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRJBCgZzdGF0dXMYAiABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb25TdGF0dXMSEQoJZXhpdF9jb2RlGAMgASgFEhQKDG91dHB1dF9ieXRlcxgEIAEoBCJdCh1VcGRhdGVUZXJtaW5hbFNlc3Npb25SZXNwb25zZRI8CgdzZXNzaW9uGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVGVybWluYWxTZXNzaW9uIjYKG0xpc3RUZXJtaW5hbFNlc3Npb25zUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiXQocTGlzdFRlcm1pbmFsU2Vzc2lvbnNSZXNwb25zZRI9CghzZXNzaW9ucxgBIAMoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRlcm1pbmFsU2Vzc2lvbiKrAQogUmVjb25jaWxlVGVybWluYWxTZXNzaW9uc1JlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJEhgKEGxpdmVfc2Vzc2lvbl9pZHMYAiADKAkSRQoQZXhlY3V0aW9uX3RhcmdldBgDIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV4ZWN1dGlvblRhcmdldBITCgtzYW5kYm94X3JlZhgEIAEoCSJiCiFSZWNvbmNpbGVUZXJtaW5hbFNlc3Npb25zUmVzcG9uc2USPQoIc2Vzc2lvbnMYASADKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb24iMgocUmVtb3ZlVGVybWluYWxTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIjAKHVJlbW92ZVRlcm1pbmFsU2Vzc2lvblJlc3BvbnNlEg8KB3JlbW92ZWQYASABKAgq0gEKFVRlcm1pbmFsU2Vzc2lvblN0YXR1cxInCiNURVJNSU5BTF9TRVNTSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEiMKH1RFUk1JTkFMX1NFU1NJT05fU1RBVFVTX1JVTk5JTkcQARIiCh5URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19FWElURUQQAhIiCh5URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19LSUxMRUQQAxIjCh9URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19VTktOT1dOEARCS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp, file_domain_agent_execution_target]);
+  fileDesc("CiNkb21haW4vYWdlbnQvdGVybWluYWxfc2Vzc2lvbi5wcm90bxIacGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEiwQMKD1Rlcm1pbmFsU2Vzc2lvbhISCgpzZXNzaW9uX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIPCgd0dXJuX2lkGAMgASgJEhEKCWRldmljZV9pZBgEIAEoCRILCgNjd2QYBSABKAkSDwoHY29tbWFuZBgGIAEoCRIMCgRhcmdzGAcgAygJEgsKA3BpZBgIIAEoDRJBCgZzdGF0dXMYCSABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb25TdGF0dXMSEQoJZXhpdF9jb2RlGAogASgFEhQKDG91dHB1dF9ieXRlcxgLIAEoBBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASRQoQZXhlY3V0aW9uX3RhcmdldBgOIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV4ZWN1dGlvblRhcmdldBITCgtzYW5kYm94X3JlZhgPIAEoCSKEAgocQ3JlYXRlVGVybWluYWxTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAggASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIPCgd0dXJuX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRILCgNjd2QYBCABKAkSDwoHY29tbWFuZBgFIAEoCRIMCgRhcmdzGAYgAygJEgsKA3BpZBgHIAEoDRJFChBleGVjdXRpb25fdGFyZ2V0GAkgASgOMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXhlY3V0aW9uVGFyZ2V0EhMKC3NhbmRib3hfcmVmGAogASgJIl0KHUNyZWF0ZVRlcm1pbmFsU2Vzc2lvblJlc3BvbnNlEjwKB3Nlc3Npb24YASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb24ingEKHFVwZGF0ZVRlcm1pbmFsU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRJBCgZzdGF0dXMYAiABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb25TdGF0dXMSEQoJZXhpdF9jb2RlGAMgASgFEhQKDG91dHB1dF9ieXRlcxgEIAEoBCJdCh1VcGRhdGVUZXJtaW5hbFNlc3Npb25SZXNwb25zZRI8CgdzZXNzaW9uGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVGVybWluYWxTZXNzaW9uIjYKG0xpc3RUZXJtaW5hbFNlc3Npb25zUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiXQocTGlzdFRlcm1pbmFsU2Vzc2lvbnNSZXNwb25zZRI9CghzZXNzaW9ucxgBIAMoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRlcm1pbmFsU2Vzc2lvbiKrAQogUmVjb25jaWxlVGVybWluYWxTZXNzaW9uc1JlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJEhgKEGxpdmVfc2Vzc2lvbl9pZHMYAiADKAkSRQoQZXhlY3V0aW9uX3RhcmdldBgDIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV4ZWN1dGlvblRhcmdldBITCgtzYW5kYm94X3JlZhgEIAEoCSJiCiFSZWNvbmNpbGVUZXJtaW5hbFNlc3Npb25zUmVzcG9uc2USPQoIc2Vzc2lvbnMYASADKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb24iMgocUmVtb3ZlVGVybWluYWxTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIjAKHVJlbW92ZVRlcm1pbmFsU2Vzc2lvblJlc3BvbnNlEg8KB3JlbW92ZWQYASABKAgiOgoWU2FuZGJveFB0eVdyaXRlUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEgwKBGRhdGEYAiABKAwiMAoXU2FuZGJveFB0eVdyaXRlUmVzcG9uc2USFQoNYnl0ZXNfd3JpdHRlbhgBIAEoBCJOChVTYW5kYm94UHR5UmVhZFJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRIOCgZjdXJzb3IYAiABKAQSEQoJbWF4X2J5dGVzGAMgASgNIroBChZTYW5kYm94UHR5UmVhZFJlc3BvbnNlEgwKBGRhdGEYASABKAwSEwoLbmV4dF9jdXJzb3IYAiABKAQSEQoJdHJ1bmNhdGVkGAMgASgIEkEKBnN0YXR1cxgEIAEoDjIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRlcm1pbmFsU2Vzc2lvblN0YXR1cxIRCglleGl0X2NvZGUYBSABKAUSFAoMb3V0cHV0X2J5dGVzGAYgASgEIkkKF1NhbmRib3hQdHlSZXNpemVSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSDAoEY29scxgCIAEoDRIMCgRyb3dzGAMgASgNIhoKGFNhbmRib3hQdHlSZXNpemVSZXNwb25zZSI9ChdTYW5kYm94UHR5U2lnbmFsUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEg4KBnNpZ25hbBgCIAEoBSIaChhTYW5kYm94UHR5U2lnbmFsUmVzcG9uc2Uq0gEKFVRlcm1pbmFsU2Vzc2lvblN0YXR1cxInCiNURVJNSU5BTF9TRVNTSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEiMKH1RFUk1JTkFMX1NFU1NJT05fU1RBVFVTX1JVTk5JTkcQARIiCh5URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19FWElURUQQAhIiCh5URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19LSUxMRUQQAxIjCh9URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19VTktOT1dOEARCS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp, file_domain_agent_execution_target]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.TerminalSession
@@ -373,6 +373,191 @@ export type RemoveTerminalSessionResponse = Message<"peers_touch.model.agent.v1.
  */
 export const RemoveTerminalSessionResponseSchema: GenMessage<RemoveTerminalSessionResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_terminal_session, 10);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SandboxPtyWriteRequest
+ */
+export type SandboxPtyWriteRequest = Message<"peers_touch.model.agent.v1.SandboxPtyWriteRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: bytes data = 2;
+   */
+  data: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SandboxPtyWriteRequest.
+ * Use `create(SandboxPtyWriteRequestSchema)` to create a new message.
+ */
+export const SandboxPtyWriteRequestSchema: GenMessage<SandboxPtyWriteRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_terminal_session, 11);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SandboxPtyWriteResponse
+ */
+export type SandboxPtyWriteResponse = Message<"peers_touch.model.agent.v1.SandboxPtyWriteResponse"> & {
+  /**
+   * @generated from field: uint64 bytes_written = 1;
+   */
+  bytesWritten: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SandboxPtyWriteResponse.
+ * Use `create(SandboxPtyWriteResponseSchema)` to create a new message.
+ */
+export const SandboxPtyWriteResponseSchema: GenMessage<SandboxPtyWriteResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_terminal_session, 12);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SandboxPtyReadRequest
+ */
+export type SandboxPtyReadRequest = Message<"peers_touch.model.agent.v1.SandboxPtyReadRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint64 cursor = 2;
+   */
+  cursor: bigint;
+
+  /**
+   * @generated from field: uint32 max_bytes = 3;
+   */
+  maxBytes: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SandboxPtyReadRequest.
+ * Use `create(SandboxPtyReadRequestSchema)` to create a new message.
+ */
+export const SandboxPtyReadRequestSchema: GenMessage<SandboxPtyReadRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_terminal_session, 13);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SandboxPtyReadResponse
+ */
+export type SandboxPtyReadResponse = Message<"peers_touch.model.agent.v1.SandboxPtyReadResponse"> & {
+  /**
+   * @generated from field: bytes data = 1;
+   */
+  data: Uint8Array;
+
+  /**
+   * @generated from field: uint64 next_cursor = 2;
+   */
+  nextCursor: bigint;
+
+  /**
+   * @generated from field: bool truncated = 3;
+   */
+  truncated: boolean;
+
+  /**
+   * Honest current lifecycle of the proxied process.
+   *
+   * @generated from field: peers_touch.model.agent.v1.TerminalSessionStatus status = 4;
+   */
+  status: TerminalSessionStatus;
+
+  /**
+   * @generated from field: int32 exit_code = 5;
+   */
+  exitCode: number;
+
+  /**
+   * @generated from field: uint64 output_bytes = 6;
+   */
+  outputBytes: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SandboxPtyReadResponse.
+ * Use `create(SandboxPtyReadResponseSchema)` to create a new message.
+ */
+export const SandboxPtyReadResponseSchema: GenMessage<SandboxPtyReadResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_terminal_session, 14);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SandboxPtyResizeRequest
+ */
+export type SandboxPtyResizeRequest = Message<"peers_touch.model.agent.v1.SandboxPtyResizeRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: uint32 cols = 2;
+   */
+  cols: number;
+
+  /**
+   * @generated from field: uint32 rows = 3;
+   */
+  rows: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SandboxPtyResizeRequest.
+ * Use `create(SandboxPtyResizeRequestSchema)` to create a new message.
+ */
+export const SandboxPtyResizeRequestSchema: GenMessage<SandboxPtyResizeRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_terminal_session, 15);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SandboxPtyResizeResponse
+ */
+export type SandboxPtyResizeResponse = Message<"peers_touch.model.agent.v1.SandboxPtyResizeResponse"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SandboxPtyResizeResponse.
+ * Use `create(SandboxPtyResizeResponseSchema)` to create a new message.
+ */
+export const SandboxPtyResizeResponseSchema: GenMessage<SandboxPtyResizeResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_terminal_session, 16);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SandboxPtySignalRequest
+ */
+export type SandboxPtySignalRequest = Message<"peers_touch.model.agent.v1.SandboxPtySignalRequest"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: int32 signal = 2;
+   */
+  signal: number;
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SandboxPtySignalRequest.
+ * Use `create(SandboxPtySignalRequestSchema)` to create a new message.
+ */
+export const SandboxPtySignalRequestSchema: GenMessage<SandboxPtySignalRequest> = /*@__PURE__*/
+  messageDesc(file_domain_agent_terminal_session, 17);
+
+/**
+ * @generated from message peers_touch.model.agent.v1.SandboxPtySignalResponse
+ */
+export type SandboxPtySignalResponse = Message<"peers_touch.model.agent.v1.SandboxPtySignalResponse"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.agent.v1.SandboxPtySignalResponse.
+ * Use `create(SandboxPtySignalResponseSchema)` to create a new message.
+ */
+export const SandboxPtySignalResponseSchema: GenMessage<SandboxPtySignalResponse> = /*@__PURE__*/
+  messageDesc(file_domain_agent_terminal_session, 18);
 
 /**
  * TW-D5: a device-held persistent terminal session. The process/PTY is owned

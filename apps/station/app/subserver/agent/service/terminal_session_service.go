@@ -16,6 +16,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/sandbox"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
@@ -36,7 +37,23 @@ const (
 type TerminalSessionService struct {
 	db  *gorm.DB
 	now func() time.Time
+	// Optional WORKSPACE_SANDBOX PTY proxy. When nil, sandbox-terminal RPCs
+	// fail closed (SANDBOX_UNAVAILABLE) instead of executing locally.
+	sandboxPTY SandboxPtyBridge
 }
+
+// SandboxPtyBridge is the subset of the sandbox TerminalBridge the terminal
+// service needs (open is triggered from Create).
+type SandboxPtyBridge interface {
+	Open(ctx context.Context, in sandbox.PtySessionOpen) error
+	Write(ctx context.Context, sandboxRef, ptyID string, data []byte) error
+	Read(ctx context.Context, sandboxRef, ptyID string, cursor uint64, maxBytes uint32) (*sandbox.PtyRead, error)
+	Resize(ctx context.Context, sandboxRef, ptyID string, cols, rows uint32) error
+	Signal(ctx context.Context, sandboxRef, ptyID string, signal int) error
+	Close(ctx context.Context, sandboxRef, ptyID string) error
+}
+
+func (s *TerminalSessionService) SetSandboxPtyBridge(b SandboxPtyBridge) { s.sandboxPTY = b }
 
 func NewTerminalSessionService() *TerminalSessionService {
 	return &TerminalSessionService{now: func() time.Time { return time.Now().UTC() }}
@@ -242,7 +259,40 @@ func (s *TerminalSessionService) Create(
 	if err != nil {
 		return nil, err
 	}
+	// For WORKSPACE_SANDBOX, Station owns the process: open the PTY in the
+	// provisioner right after persisting metadata. Failure fails closed and
+	// removes the half-created row; there is no desktop fallback.
+	if target == terminalTargetSandbox {
+		if s.sandboxPTY == nil {
+			_ = s.removeRow(ctx, actorID, sessionID)
+			return nil, errcode.New(errcode.AgentSandboxUnavailable, http.StatusServiceUnavailable,
+				errcode.AgentSandboxUnavailableLocaleKey, nil)
+		}
+		openErr := s.sandboxPTY.Open(ctx, sandbox.PtySessionOpen{
+			SandboxRef: sandboxRef,
+			PtyID:      sessionID,
+			Command:    command,
+			Args:       req.GetArgs(),
+			Cwd:        strings.TrimSpace(req.GetCwd()),
+		})
+		if openErr != nil {
+			_ = s.removeRow(ctx, actorID, sessionID)
+			return nil, errcode.New(errcode.AgentSandboxUnavailable, http.StatusServiceUnavailable,
+				errcode.AgentSandboxUnavailableLocaleKey, openErr)
+		}
+	}
 	return &row, nil
+}
+
+// removeRow hard-deletes one owned session row (cleanup after a failed
+// provisioner open). It is best-effort and returns the persistence error.
+func (s *TerminalSessionService) removeRow(ctx context.Context, actorID, sessionID string) error {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Where("id = ? AND actor_ptid = ?", strings.TrimSpace(sessionID), strings.TrimSpace(actorID)).
+		Delete(&persistence.TerminalSession{}).Error
 }
 
 func (s *TerminalSessionService) getOwnedTx(
@@ -414,9 +464,140 @@ func (s *TerminalSessionService) Remove(
 		if ownedErr != nil {
 			return ownedErr
 		}
+		// Sandbox PTYs are Station-owned processes: close the provisioner
+		// PTY before dropping the row. A provisioner failure must not silently
+		// leave a running process, so surface it rather than deleting anyway.
+		if row.ExecutionTarget == terminalTargetSandbox {
+			if s.sandboxPTY == nil {
+				return errcode.New(errcode.AgentSandboxUnavailable, http.StatusServiceUnavailable,
+					errcode.AgentSandboxUnavailableLocaleKey, nil)
+			}
+			if closeErr := s.sandboxPTY.Close(ctx, row.SandboxRef, row.ID); closeErr != nil {
+				return errcode.New(errcode.AgentSandboxUnavailable, http.StatusBadGateway,
+					errcode.AgentSandboxUnavailableLocaleKey, closeErr)
+			}
+		}
 		if deleteErr := tx.Delete(&persistence.TerminalSession{}, "id = ?", row.ID).Error; deleteErr != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "remove terminal session", deleteErr)
 		}
 		return nil
 	})
+}
+
+// ownedSandboxSession loads an owned row and asserts it is a sandbox session.
+func (s *TerminalSessionService) ownedSandboxSession(
+	ctx context.Context,
+	actorID, sessionID string,
+) (*persistence.TerminalSession, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var row persistence.TerminalSession
+	if err := db.Where("id = ? AND actor_ptid = ?",
+		strings.TrimSpace(sessionID), strings.TrimSpace(actorID)).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound, "terminal session not found", err)
+		}
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "load terminal session", err)
+	}
+	if row.ExecutionTarget != terminalTargetSandbox {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"sandbox PTY RPC used on a desktop-device session", nil)
+	}
+	return &row, nil
+}
+
+func (s *TerminalSessionService) requireSandboxBridge() error {
+	if s.sandboxPTY == nil {
+		return errcode.New(errcode.AgentSandboxUnavailable, http.StatusServiceUnavailable,
+			errcode.AgentSandboxUnavailableLocaleKey, nil)
+	}
+	return nil
+}
+
+// SandboxPtyWrite forwards keystrokes to a provisioner-held PTY.
+func (s *TerminalSessionService) SandboxPtyWrite(ctx context.Context, actorID string, req *model.SandboxPtyWriteRequest) error {
+	if err := s.requireSandboxBridge(); err != nil {
+		return err
+	}
+	row, err := s.ownedSandboxSession(ctx, actorID, req.GetSessionId())
+	if err != nil {
+		return err
+	}
+	return s.sandboxPTY.Write(ctx, row.SandboxRef, row.ID, req.GetData())
+}
+
+// SandboxPtyRead returns bounded scrollback and surfaces honest process state,
+// persisting a terminal transition when the proxied process has ended.
+func (s *TerminalSessionService) SandboxPtyRead(ctx context.Context, actorID string, req *model.SandboxPtyReadRequest) (*model.SandboxPtyReadResponse, error) {
+	if err := s.requireSandboxBridge(); err != nil {
+		return nil, err
+	}
+	row, err := s.ownedSandboxSession(ctx, actorID, req.GetSessionId())
+	if err != nil {
+		return nil, err
+	}
+	read, err := s.sandboxPTY.Read(ctx, row.SandboxRef, row.ID, req.GetCursor(), req.GetMaxBytes())
+	if err != nil {
+		return nil, errcode.New(errcode.AgentSandboxUnavailable, http.StatusBadGateway,
+			errcode.AgentSandboxUnavailableLocaleKey, err)
+	}
+	status := ptyStateToStatus(read.State)
+	if (read.State == "exited" || read.State == "killed") && row.Status == terminalStatusRunning {
+		now := s.now()
+		mapped := terminalSessionStatusToString(status)
+		db, _ := s.getDB(ctx)
+		_ = db.Model(&persistence.TerminalSession{}).Where("id = ?", row.ID).
+			Updates(map[string]interface{}{
+				"status":       mapped,
+				"exit_code":    read.ExitCode,
+				"output_bytes": read.NextCursor,
+				"ended_at":     now,
+				"updated_at":   now,
+			}).Error
+	}
+	return &model.SandboxPtyReadResponse{
+		Data:        read.Data,
+		NextCursor:  read.NextCursor,
+		Truncated:   read.Truncated,
+		Status:      status,
+		ExitCode:    int32(read.ExitCode),
+		OutputBytes: read.NextCursor,
+	}, nil
+}
+
+func (s *TerminalSessionService) SandboxPtyResize(ctx context.Context, actorID string, req *model.SandboxPtyResizeRequest) error {
+	if err := s.requireSandboxBridge(); err != nil {
+		return err
+	}
+	row, err := s.ownedSandboxSession(ctx, actorID, req.GetSessionId())
+	if err != nil {
+		return err
+	}
+	return s.sandboxPTY.Resize(ctx, row.SandboxRef, row.ID, req.GetCols(), req.GetRows())
+}
+
+func (s *TerminalSessionService) SandboxPtySignal(ctx context.Context, actorID string, req *model.SandboxPtySignalRequest) error {
+	if err := s.requireSandboxBridge(); err != nil {
+		return err
+	}
+	row, err := s.ownedSandboxSession(ctx, actorID, req.GetSessionId())
+	if err != nil {
+		return err
+	}
+	return s.sandboxPTY.Signal(ctx, row.SandboxRef, row.ID, int(req.GetSignal()))
+}
+
+func ptyStateToStatus(state string) model.TerminalSessionStatus {
+	switch state {
+	case "running":
+		return model.TerminalSessionStatus_TERMINAL_SESSION_STATUS_RUNNING
+	case "exited":
+		return model.TerminalSessionStatus_TERMINAL_SESSION_STATUS_EXITED
+	case "killed":
+		return model.TerminalSessionStatus_TERMINAL_SESSION_STATUS_KILLED
+	default:
+		return model.TerminalSessionStatus_TERMINAL_SESSION_STATUS_UNKNOWN
+	}
 }

@@ -32,6 +32,18 @@ const (
 // DefaultImage has no fallback: an unpinned deployment fails closed at the
 // provisioner image allowlist rather than silently running a mutable tag.
 func NewStationToolRunnerFromEnv(db *gorm.DB) *ToolRunner {
+	executor, _ := newStationExecutorFromEnv(db)
+	return NewToolRunner(executor)
+}
+
+// NewStationTerminalBridgeFromEnv builds the interactive PTY proxy sharing the
+// same provisioner client/lifecycle as the one-shot tool runner.
+func NewStationTerminalBridgeFromEnv(db *gorm.DB) *TerminalBridge {
+	executor, client := newStationExecutorFromEnv(db)
+	return NewTerminalBridge(executor, client)
+}
+
+func newStationExecutorFromEnv(db *gorm.DB) (*Executor, *HTTPClient) {
 	provisionerURL := strings.TrimSpace(os.Getenv(envProvisionerURL))
 	if provisionerURL == "" {
 		provisionerURL = defaultProvisionerURL
@@ -50,7 +62,7 @@ func NewStationToolRunnerFromEnv(db *gorm.DB) *ToolRunner {
 		Client:       client,
 		DefaultImage: strings.TrimSpace(os.Getenv(envDefaultImage)),
 	})
-	return NewToolRunner(executor)
+	return executor, client
 }
 
 // newSandboxRef returns an unpredictable sandbox identifier ("wbox-" + 32 hex

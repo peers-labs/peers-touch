@@ -40,6 +40,15 @@
 - 元数据、诚实状态（RUNNING/EXITED/KILLED/UNKNOWN）、bounded output 计数、cursor 回放、viewer 关闭不杀进程的语义在两模式一致。
 - reconcile 来源扩展为 {device_id} 与 {sandbox_ref}：换代后无 live proof 的一律 UNKNOWN。
 
+> WE-S6 落地状态：provisioner 侧 PTY 子系统（Docker Engine API hijacked TTY
+> 流、bounded monotonic ring、resize、进程组 signal、诚实
+> running/exited/killed）与 `/v1/ptys/*` HTTP API、Station `PtyClient`、
+> terminal 会话的双落点持久化字段已完成并在真实容器验证（交互回显、exit、
+> SIGKILL 进程组）。尚未完成的是 Station 面向客户端的 PTY 代理 RPC（Desktop
+> 不能本地持有沙盒进程，需经 Station 转发 read/write/resize/signal）与
+> Desktop 终端面板对沙盒会话的只读落点标注/交互接入；在该传输层打通前不向
+> UI 暴露不可交互的沙盒终端入口。
+
 ## 5. 与 Browser / 长服务验证的关系
 
 - 沙盒内启动的长服务（dev server）经 sandbox 端口暴露；Browser 验证（device 模式 Chrome/CDP，D6）与沙盒服务如何连通属于后续"browser check 绑定 artifact"能力，本模块只保证沙盒服务可受控启动/暴露/回收，不在本期定义跨域 browser 合同。

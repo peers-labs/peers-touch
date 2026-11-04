@@ -417,6 +417,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	logicalArtifactSvc := service.NewLogicalArtifactService()
 	logicalArtifactHandlers := handler.NewLogicalArtifactHandlers(logicalArtifactSvc)
 	terminalSessionSvc := service.NewTerminalSessionService()
+	// WE-S6: proxy interactive terminals into provisioner sandboxes.
+	terminalSessionSvc.SetSandboxPtyBridge(sandbox.NewStationTerminalBridgeFromEnv(s.agentDB))
 	terminalSessionHandlers := handler.NewTerminalSessionHandlers(terminalSessionSvc)
 	browserSessionSvc := service.NewBrowserSessionService()
 	browserSessionHandlers := handler.NewBrowserSessionHandlers(browserSessionSvc)
@@ -662,6 +664,10 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-terminal-session-list", "/agent/terminal-session/list", server.POST, terminalSessionHandlers.HandleListTerminalSessions, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-terminal-session-reconcile", "/agent/terminal-session/reconcile", server.POST, terminalSessionHandlers.HandleReconcileTerminalSessions, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-terminal-session-remove", "/agent/terminal-session/remove", server.POST, terminalSessionHandlers.HandleRemoveTerminalSession, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-pty-write", "/agent/sandbox-pty/write", server.POST, terminalSessionHandlers.HandleSandboxPtyWrite, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-pty-read", "/agent/sandbox-pty/read", server.POST, terminalSessionHandlers.HandleSandboxPtyRead, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-pty-resize", "/agent/sandbox-pty/resize", server.POST, terminalSessionHandlers.HandleSandboxPtyResize, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-sandbox-pty-signal", "/agent/sandbox-pty/signal", server.POST, terminalSessionHandlers.HandleSandboxPtySignal, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-browser-session-create", "/agent/browser-session/create", server.POST, browserSessionHandlers.HandleCreateBrowserSession, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-browser-session-update", "/agent/browser-session/update", server.POST, browserSessionHandlers.HandleUpdateBrowserSession, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-browser-session-list", "/agent/browser-session/list", server.POST, browserSessionHandlers.HandleListBrowserSessions, logIDWrapper, jwtWrapper),

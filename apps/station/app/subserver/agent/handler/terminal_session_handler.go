@@ -78,3 +78,40 @@ func (h *TerminalSessionHandlers) HandleRemoveTerminalSession(
 	}
 	return &model.RemoveTerminalSessionResponse{Removed: true}, nil
 }
+
+func (h *TerminalSessionHandlers) HandleSandboxPtyWrite(
+	ctx context.Context,
+	req *model.SandboxPtyWriteRequest,
+) (*model.SandboxPtyWriteResponse, error) {
+	if err := h.sessions.SandboxPtyWrite(ctx, subjectActorID(ctx), req); err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.SandboxPtyWriteResponse{BytesWritten: uint64(len(req.GetData()))}, nil
+}
+
+func (h *TerminalSessionHandlers) HandleSandboxPtyRead(
+	ctx context.Context,
+	req *model.SandboxPtyReadRequest,
+) (*model.SandboxPtyReadResponse, error) {
+	return h.sessions.SandboxPtyRead(ctx, subjectActorID(ctx), req)
+}
+
+func (h *TerminalSessionHandlers) HandleSandboxPtyResize(
+	ctx context.Context,
+	req *model.SandboxPtyResizeRequest,
+) (*model.SandboxPtyResizeResponse, error) {
+	if err := h.sessions.SandboxPtyResize(ctx, subjectActorID(ctx), req); err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.SandboxPtyResizeResponse{}, nil
+}
+
+func (h *TerminalSessionHandlers) HandleSandboxPtySignal(
+	ctx context.Context,
+	req *model.SandboxPtySignalRequest,
+) (*model.SandboxPtySignalResponse, error) {
+	if err := h.sessions.SandboxPtySignal(ctx, subjectActorID(ctx), req); err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.SandboxPtySignalResponse{}, nil
+}

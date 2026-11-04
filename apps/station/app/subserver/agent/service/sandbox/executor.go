@@ -69,6 +69,37 @@ func (e *Executor) EnsureSandbox(ctx context.Context, actorPTID, agentID, worksp
 	return e.alloc.MarkAllocated(ctx, row.Ref, volume)
 }
 
+// EnsureByRef cold-starts (or re-attaches) an already-allocated sandbox
+// addressed by its ref. The PTY proxy uses it when the client names an
+// explicitly allocated sandbox rather than a (actor, agent, workspace) key.
+func (e *Executor) EnsureByRef(ctx context.Context, ref string) (*Sandbox, error) {
+	available, _, reason, err := e.probe(ctx)
+	if err != nil || !available {
+		if err == nil {
+			err = errors.New(reason)
+		}
+		return nil, newUnavailable("provisioner probe failed: " + err.Error())
+	}
+	row, err := e.alloc.store.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, newNotReady("unknown sandbox_ref " + ref)
+	}
+	if row.State == StateFailed {
+		return nil, newUnavailable("sandbox is FAILED; requires out-of-band readiness reset")
+	}
+	volume, err := e.client.EnsureAllocated(ctx, row.Ref, row.ImageRef, row.VolumeRef)
+	if err != nil {
+		if _, fm := e.alloc.MarkFailed(ctx, row.Ref); fm != nil {
+			return nil, fm
+		}
+		return nil, newUnavailable("provisioner allocate failed: " + err.Error())
+	}
+	return e.alloc.MarkAllocated(ctx, row.Ref, volume)
+}
+
 // Run executes one command in the sandbox named by the already-authorized
 // placement. A command that exits non-zero or is refused by the OS is a normal
 // ExecOutcome; only infrastructure failures become errors.
