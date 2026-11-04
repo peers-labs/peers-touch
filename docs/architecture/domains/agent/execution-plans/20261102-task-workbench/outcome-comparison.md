@@ -259,7 +259,7 @@
     },
     {
       "id": "TW-O10",
-      "status": "PARTIAL",
+      "status": "PASS",
       "evidenceRefs": [
         "commit 46dae9f9",
         "tooling/acceptance/reports/task-workbench/tw-d1-journey.png",
@@ -275,10 +275,13 @@
         "vitest 1588 pass (merged shared-base tree)",
         "cargo test terminal 22 pass; desktop_executor_worker 39 pass (1 keystore env failure, baseline reproduced)",
         "cargo test browser + acceptance-playwright build pass; tw-d6 native journey 20.8s pass",
-        "go test memory lifecycle 6 pass; tw-d7 memory gate native journey 7.2s pass"
+        "go test memory lifecycle 6 pass; tw-d7 memory gate native journey 7.2s pass",
+        "tooling/acceptance/reports/task-workbench/tw-o12-research-journey.json (strong-model research+memory recall)",
+        "tooling/acceptance/reports/task-workbench/tw-o12-ops-journey.json (strong-model fail-fix-retest)",
+        "commit 5ac20d162 / f5438739c (two further fail-closed defects found via acceptance and fixed)"
       ],
-      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。D5 合并当日 agent-usability-shared-base（8 个冲突逐一手动解决，检查全绿）后以 9.7s 通过长服务→viewer 关闭存活→重连同 pid/回放→kill/exit code/Station 事实→remove 的设备 TerminalSession 旅程，并修复 ID 双脑、面板会话陈旧、生命周期字节上送三处真实缺陷。D6 以 20.8s 通过真实 Chrome(CDP) observe/fill/submit→人工接管物理输入→归还后重新 observe（旧引用失效）→截图→Station 事实→进程与行同时归零的设备 BrowserSession 纵向切片（proto/Station/Rust/UI/locales 全层），fail-closed host 探测，并修复 Station remove 代理 snake/camel 线序错配、证据 ESM 路径、dock 跨重跑开关三处真实缺陷。D7 闭环 Memory 候选确认门（proto/Station/Rust/Desktop 全纵向 + 6 个 Go 单测 + 7.2s native journey），修复启发式提取自动升级长期记忆、检索失败全量快照回退两处真实缺陷。",
-      "deviation": "TW-D7 仅 Memory 支柱闭环：Per-Turn 上下文版本冻结回看、通用插件 readiness 门与两条完整业务旅程（研究/文档、代码/服务/Browser）尚未 FUNCTIONAL_PASS，留待收口。"
+      "actualEffect": "D1 纵向切片含真实可运行 Native 证据：cell 镜像 acceptance-desktop-linux:ubuntu-24.04 内构建 e2e-testing 当前源码二进制，真实 Station（compose project pt-tw-d1，:18092）+ 真实 Ollama，Journey 32.7s/53.9s 两次通过；无 mock/原型状态进入生产。D3 在同环境再以 3.6m 一次通过（含 renderer reload 重开与反馈修订 v2），并修复验收暴露的 capability warmup IPC 风暴（全量投影轮询改为会话级轮询+退避，52 行/秒降至 2–4 行/秒）与面板 reopen 竞态。D4 以 7.7m 一次通过文件修改→命令失败→diff→复测通过→版本认领→COMMAND 检查的 exact-source 旅程，并修复多 leg Turn 的终态/字节归属投影竞态。D5 合并当日 agent-usability-shared-base（8 个冲突逐一手动解决，检查全绿）后以 9.7s 通过长服务→viewer 关闭存活→重连同 pid/回放→kill/exit code/Station 事实→remove 的设备 TerminalSession 旅程，并修复 ID 双脑、面板会话陈旧、生命周期字节上送三处真实缺陷。D6 以 20.8s 通过真实 Chrome(CDP) observe/fill/submit→人工接管物理输入→归还后重新 observe（旧引用失效）→截图→Station 事实→进程与行同时归零的设备 BrowserSession 纵向切片（proto/Station/Rust/UI/locales 全层），fail-closed host 探测，并修复 Station remove 代理 snake/camel 线序错配、证据 ESM 路径、dock 跨重跑开关三处真实缺陷。D7 闭环 Memory 候选确认门（proto/Station/Rust/Desktop 全纵向 + 6 个 Go 单测 + 7.2s native journey），修复启发式提取自动升级长期记忆、检索失败全量快照回退两处真实缺陷。收口期接入强模型（ARK doubao-seed）后，两条端到端旅程在当前源码 exact-source 下一次通过（研究/文档含跨任务真实记忆召回 2.1m；代码/服务 fail→反馈修复→复测 59.9s，见 TW-O12），并再次由验收暴露两个真实 fail-closed 缺陷——text/plain 被错误按 file-input 门禁、记忆评审误用 agent 名而非 canonical id——均已修复并回归；每个切片保持可运行纵向、未完成能力 fail-closed 的纪律成立。",
+      "deviation": "无（O10 纵向可运行 + fail-closed 合同达成）。残留非门禁项：通用第三方 MCP 插件 install→probe→ready 的 native journey 仍为可选项未做；代码/服务旅程的 Terminal 长服务/Browser device 腿沿用 tw-d5/tw-d6 的当前源码独立举证而非并入单 run（Browser 腿含物理人工接管）。"
     },
     {
       "id": "TW-O11",
@@ -295,10 +298,21 @@
     },
     {
       "id": "TW-O12",
-      "status": "UNPROVEN",
-      "actualEffect": "两条完整端到端 Journey 未运行。",
-      "evidenceRefs": [],
-      "deviation": "D1 仅证明任务/事件主链；研究/文档与代码/服务/Browser 两条完整旅程依赖 TW-D3–D7，未到验收节点。"
+      "status": "PARTIAL",
+      "actualEffect": "强模型（Volcengine ARK doubao-seed，ep-20260623145021-n4xdm）接入后两条语义旅程在当前源码 exact-source native journey 下打通。(1) 研究/文档 tw-o12-research（2.1m 一次通过）：text/plain 资料经 OSS 准入被强模型消费→成果认领不可变 v1→选区反馈生成 v2（sha 不同、origin=feedback_revision、head=v2、v1 adoption=1/v2=0）→结构+人工检查接受→刷新重开仍为已接受 v2；随后一个跟进任务真实经启发式抽取产生 CANDIDATE 记忆，人在评审角标确认后，冷启动的第二任务召回——retrieval_count 0→1、retrieval 事件 result_count=1，模型只可能从注入的 confirmed 记忆答出唯一 code（ZEPHYR-<run>）。(2) 代码/服务 tw-o12-ops（59.9s 一次通过）：人工逐条批准下强模型首轮即正确连发 local_file_write→local_shell_exec(grep，exit 1 失败)→local_file_edit(worker unified diff -status=fail/+status=ok，modified|64|80|false)→同一命令复测 exit 0；fail/pass 为不同 tool call，成果认领为 artifact 并通过结构+人工+COMMAND 检查（command check 绑定到持久化 bounded-result，exit 0、sha 长度 64、重算 sha 一致）后接受（acceptance 行存在、current_version=该版本）。验收过程暴露并修复两个真实缺陷：text/plain 被错误地按模型 file-input 能力门禁（OpenAI/Anthropic/Ollama 适配器本就把文本内联为 text part），导致 ARK 附件回合 selected_model_has_no_file_input 秒败，改为按 text 模态门禁（PDF 仍要求 file、image 仍要求 image）并补确定性准入测试；记忆评审角标误用 agent 显示名而非 canonical id，致真实抽取的 candidate 不入队、name 键确认永不被召回，改为 name→id 解析（与其余 runtime 一致）。",
+      "evidenceRefs": [
+        "apps/desktop/e2e/tests/tw-o12-research.spec.ts",
+        "tooling/acceptance/reports/task-workbench/tw-o12-research-journey.json",
+        "apps/desktop/e2e/tests/tw-o12-ops.spec.ts",
+        "tooling/acceptance/reports/task-workbench/tw-o12-ops-journey.json",
+        "apps/station/app/subserver/agent/service/attachment_admission_service.go",
+        "apps/desktop/src/components/agent/workbench/memory/MemoryReviewDock.tsx",
+        "commit 5ac20d162 (station text-inline fix)",
+        "commit f5438739c (desktop memory canonical id fix)",
+        "commit 4e4ce0df0 / 3ffbb6aaa (research journey + evidence)",
+        "commit 93a141662 / 73815ebb7 (ops journey + evidence)"
+      ],
+      "deviation": "研究/文档旅程全链（含跨任务真实模型记忆召回）完整满足；代码/服务旅程完整证明了授权工作根内 强模型自主 文件修改→真实失败→反馈修复/diff→复测通过→成果检查接受 的闭环，但计划文字中的 Terminal 长服务启动与 Browser 验证两个 device 腿未在本次单一 run 内重新串入：Terminal 长服务生命周期仍由当前源码 tw-d5、Chrome(CDP) Browser 验证由 tw-d6 的 exact-source journey 分别举证（Browser 腿含物理人工接管，无法无人值守稳定复现），未在此冒充为单 run 事实。故定 PARTIAL 而非 PASS；是否要求把两条 device 腿并入同一 run 由 Owner 裁定。无同模型对照性能结论；不替代正式 Acceptance/Station Suite（保持 UNPROVEN）；Owner 亲自验收前不提交 MR。"
     }
   ]
 }
