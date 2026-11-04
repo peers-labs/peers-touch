@@ -228,24 +228,34 @@
     {
       "id": "TW-O08",
       "status": "PARTIAL",
-      "actualEffect": "TW-D7 在当前源码 Station（compose pt-tw-d1）+ acceptance cell 上以 7.2s 通过 Memory 候选确认门 exact-source Native Journey，并以 6 个 Go 单测确定性证明：proto 新增 MemoryStatus(candidate/confirmed/rejected) 与 ReviewMemory；agent_memories 增 status 列（默认 confirmed，存量记忆不丢）；ExtractFromTurn 启发式提取只落 candidate；Search 的 postgres hybrid 与进程内两条路径及 persona 只消费 confirmed；ReviewMemory 支持 confirm/reject（frozen 拒绝 reject），reject 行保留审计但永不消费、delete 物理删除；BuildRelevantSnapshot 检索失败显式降级为空快照（degraded + 事件），不再回退全量快照注入无关记忆。Desktop 新增 TRAE 式记忆复核 dock（角标+确认/拒绝+轮询+fail-closed），经真实 Rust 代理 agent_memory_review 写 Station；journey 证明决策前 confirmed 检索计数为 0、确认后可检索、拒绝后不可检索，且确认记忆 session_id 为空（agent 维度，可用于后续任务）。",
+      "actualEffect": "TW-D7 在当前源码 Station（compose pt-tw-d1）+ acceptance cell 上以 7.2s 通过 Memory 候选确认门 exact-source Native Journey，并以 8 个 Go 单测确定性证明：proto 新增 MemoryStatus(candidate/confirmed/rejected) 与 ReviewMemory；agent_memories 增 status 列（默认 confirmed，存量记忆不丢）；ExtractFromTurn 启发式提取只落 candidate；Search 的 postgres hybrid 与进程内两条路径及 persona 只消费 confirmed；ReviewMemory 支持 confirm/reject（frozen 拒绝 reject），reject 行保留审计但永不消费、delete 物理删除；BuildRelevantSnapshot 检索失败显式降级为空快照（degraded + 事件），不再回退全量快照注入无关记忆。Per-Turn 冻结：memoryProcessor 现在为每个实际采用的 confirmed memory 冻结独立 source_ref（memory:<id>:version=<内容短hash>），经 parseAttributionSourceRef/historicalMemoryName 在 TurnAttribution 生成逐条 MEMORY 采用项（sourceId=记忆id、version=内容版本、name=summary），既有 messages/TurnAttribution.tsx 已按 MEMORY 类别渲染，零新增 UI；Skill 激活体（skill:<id>:version=n）、工具（manifest/schema version）、附件版本此前已逐采用项冻结，由 Go 单测证明。Desktop 新增 TRAE 式记忆复核 dock（角标+确认/拒绝+轮询+fail-closed），经真实 Rust 代理 agent_memory_review 写 Station；journey 证明决策前 confirmed 检索计数为 0、确认后可检索、拒绝后不可检索，且确认记忆 session_id 为空（agent 维度，可用于后续任务）。插件 readiness→admission 撤权门：tool_dispatch 要求 (capabilityId,version,bindingId,bindingRevision) 在不可变、哈希校验、未过期的 CapabilityReadinessSnapshot 中恰为 READY 才放行，否则 invalidToolState；撤权/升级使 binding revision 变化→旧快照失配→阻断新 admission，由 TestCapabilityAuthorityReadinessFailsClosedForStaleBinding、TestCapabilityReadinessSnapshotIsImmutable、TestCapabilityBindingMutationsPublishTypedInvalidationsOnce、TestCommandCapabilitySnapshotPinsBindingManifestAndReadiness 确定性证明（当前源码复跑全 PASS）。",
       "evidenceRefs": [
         "tooling/acceptance/reports/task-workbench/tw-d7-journey.json",
         "tooling/acceptance/reports/task-workbench/tw-d7-acceptance-note.md",
         "apps/desktop/e2e/tests/tw-d7-journeys.spec.ts",
         "apps/station/app/subserver/agent/service/memory_lifecycle_test.go",
+        "apps/station/app/subserver/agent/service/memory_attribution_test.go",
+        "apps/station/app/subserver/agent/service/prompt_assembly_service.go",
+        "apps/station/app/subserver/agent/service/tool_dispatch_service.go",
+        "apps/station/app/subserver/agent/service/capability_authority_service_test.go",
+        "apps/desktop/src/components/messages/TurnAttribution.tsx",
         "model/domain/agent/memory.proto",
         "apps/desktop/src/components/agent/workbench/memory/MemoryReviewDock.tsx",
-        "commits 4d0000d80,6fa903c09,f91e6f662,7b86b3146,512cf92ec,6272f189e,4619188f2"
+        "commits 4d0000d80,6fa903c09,f91e6f662,7b86b3146,512cf92ec,6272f189e,4619188f2,50187990c"
       ],
-      "deviation": "PARTIAL：Memory 候选门与检索降级已闭环；但 (1) Profile 规则/Skill/capability 版本按 Turn 冻结并写入 TurnAttribution 可回看本轮未新增字段与 journey 复核（既有 turn_attribution_service 已投影 prompt/附件/工具版本）；(2) 插件 installed/enabled/readiness→真实工具调用→撤权即时阻断新 admission 未单独编排 journey（文件/命令/Browser/Terminal 准入已由 D4–D6 证明，通用 MCP/插件 readiness 门待补）；(3) 第二任务由真实模型改写召回未在弱验收模型上主张，agent 维度可用性由 Station 检索谓词与行事实证明。"
+      "deviation": "PARTIAL（较前一轮显著收口）：Memory 候选门、检索显式降级、Per-Turn Memory 采用项冻结回看、插件 readiness→撤权即阻断新 admission 均有 current-source 证据。残留：(1) Profile/规则版本未作为独立字段冻结进 ContextLedger（Skill/Memory/Tool/Attachment 已冻结，规则目前并入 policy 段 content_hash）；(2) 第二任务由真实模型改写召回未在弱验收 0.5b 模型上跑 native journey，agent 维度可用性由 Station confirmed-only 检索谓词与行事实证明；(3) 通用第三方 MCP 插件 install→probe→ready 的 native app journey 未单独编排（本周真实使用的文件/命令/Browser/Terminal 工具已经同一 readiness 门由 D4–D6 native journey 证明）。"
     },
     {
       "id": "TW-O09",
-      "status": "UNPROVEN",
-      "actualEffect": "切片尚未在 D1 处理；Desktop 选择面与 provider-runtime-strategy 的对齐留待 TW-D7 核对。",
-      "evidenceRefs": [],
-      "deviation": "未开始。"
+      "status": "PARTIAL",
+      "actualEffect": "当前源码审计确认复杂 Provider/runtime 配置归 Station/Dashboard：Desktop Rust provider 层（application/provider/{mod,station_api,remote}.rs）是到 /sub-agent/agent/provider/* 的纯 HTTP 代理，无 std::process::Command、无本地 CLI 执行、无第二 registry；provider create/update/delete、凭据、模型发现（/model/available）均在 Station。Desktop 仅作消费端：runtime_default_get/set 选择默认，且 set 强制校验并发送完整 (provider_id, model_id) 并带 expected_revision 乐观并发；列出可用模型、回读 readiness。未发现客户端凭据回读或在 Desktop 解析 provider CLI 的第二业务 Owner。",
+      "evidenceRefs": [
+        "apps/desktop/src-tauri/src/application/provider/mod.rs",
+        "apps/desktop/src-tauri/src/application/provider/station_api.rs",
+        "apps/desktop/src/services/desktop_api.ts",
+        "apps/station/app/subserver/agent/service/provider_config_service.go"
+      ],
+      "deviation": "PARTIAL：归属合同（无第二 registry/CLI、完整 provider_id+model_id 选择、revision 并发）经静态源码审计成立；尚未在 native journey 单独跑一次 Desktop 选模型→真实回答→Station 侧撤权→Desktop 恢复深链的端到端切换，恢复深链 UI 也未逐一核对，故不升 PASS。"
     },
     {
       "id": "TW-O10",
