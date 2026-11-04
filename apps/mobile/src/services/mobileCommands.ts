@@ -574,6 +574,19 @@ export async function messagingStatus(): Promise<MessagingRuntimeStatus> {
   return invoke<MessagingRuntimeStatus>('messaging_status');
 }
 
+export interface MessagingRecoveryPreflightResult {
+  recoveryAvailable: boolean;
+}
+
+export async function messagingRecoveryPreflight(
+  input: MessagingIdentityRecoveryInput,
+): Promise<MessagingRecoveryPreflightResult> {
+  return invoke<MessagingRecoveryPreflightResult>(
+    'messaging_recovery_preflight',
+    { input },
+  );
+}
+
 export async function messagingRecoverIdentity(
   input: MessagingIdentityRecoveryInput,
 ): Promise<MessagingRuntimeStatus> {
@@ -1690,6 +1703,13 @@ export interface OAuthScopeInput {
   stationPeerId: string;
 }
 
+export interface OAuthProviderInfo {
+  id: string;
+  enabled: boolean;
+  status: string;
+  hasCredentials: boolean;
+}
+
 export interface OAuthCandidateProjection {
   candidateId: string;
   actorPtid: string;
@@ -1829,6 +1849,10 @@ export async function accessCancel(
 
 export async function oauthStart(input: OAuthStartInput): Promise<OAuthPublicProjection> {
   return invoke<OAuthPublicProjection>('oauth_start', { input });
+}
+
+export async function oauthProviders(input: OAuthScopeInput): Promise<OAuthProviderInfo[]> {
+  return invoke<OAuthProviderInfo[]>('oauth_providers', { input });
 }
 
 export async function oauthStatus(input: OAuthScopeInput): Promise<OAuthPublicProjection> {

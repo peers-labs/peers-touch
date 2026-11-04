@@ -251,6 +251,72 @@ describe('avatarAssets resolution', () => {
     expect(leaked.snapshot.degraded).toBe(false);
   });
 
+  it('holds a group avatar locally across empty-identity churn and failed refreshes', async () => {
+    // A group conversation avatar is owned by a non-actor stable key. It
+    // follows the same local → online rule as actor avatars: once resolved,
+    // a reconcile that transiently drops the avatar field, or a failed
+    // refresh of a rotated identity, must keep the local pixels (degraded)
+    // instead of swapping to the member-composite fallback.
+    const resolveLocal = vi.fn(async (identity: string): Promise<{
+      state: 'ready' | 'failed';
+      identity: string;
+      local_path?: string | null;
+    }> => {
+      if (identity === 'https://station.test/sub-oss/file?key=group') {
+        return { state: 'ready', identity, local_path: '/cache/group.png' };
+      }
+      return { state: 'failed', identity };
+    });
+    const store = makeStore(resolveLocal);
+    const ownerKey = 'group-avatar:01JGROUP';
+    const ownerQuery = (identity: string): AvatarAssetQuery => ({
+      identity,
+      actorPtid: ownerKey,
+      epoch: 0,
+    });
+
+    const first = await store.prepare(
+      ownerQuery('https://station.test/sub-oss/file?key=group'),
+      { budgetMs: 500 },
+    );
+    expect(first.status).toBe('ready');
+    expect(first.snapshot.src).toBe('asset:///cache/group.png');
+
+    // The owner last-good is exposed with a stable reference (required by
+    // useSyncExternalStore) while the identity is momentarily unknown.
+    const ownerFallback = store.getOwnerLastGood(ownerKey);
+    expect(ownerFallback).toMatchObject({
+      src: 'asset:///cache/group.png',
+      degraded: true,
+    });
+    expect(store.getOwnerLastGood(ownerKey)).toBe(ownerFallback);
+
+    // A reconcile that drops the avatar field: even with an empty identity
+    // the owned request seeds the local pixels (degraded) instead of a null
+    // placeholder, and the owner fallback stays available.
+    expect(store.request(ownerQuery(''))).toMatchObject({
+      phase: 'ready',
+      degraded: true,
+      src: 'asset:///cache/group.png',
+    });
+    expect(store.getOwnerLastGood(ownerKey)?.src).toBe('asset:///cache/group.png');
+
+    // A rotated identity whose refresh fails keeps the previous pixels.
+    resolveLocal.mockResolvedValueOnce({
+      state: 'failed',
+      identity: 'https://station.test/sub-oss/file?key=group-v2',
+    });
+    const degraded = await store.prepare(
+      ownerQuery('https://station.test/sub-oss/file?key=group-v2'),
+      { budgetMs: 500, force: true },
+    );
+    expect(degraded.status).toBe('degraded');
+    expect(degraded.snapshot.src).toBe('asset:///cache/group.png');
+
+    // The group bucket must never leak into an actor PTID bucket.
+    expect(store.getOwnerLastGood('ptid:peer')).toBeNull();
+  });
+
   it('local-only prepare never calls native resolve', async () => {
     const resolveLocal = vi.fn(async (_identity: string) => ({ state: 'failed' as const }));
     const store = makeStore(resolveLocal);

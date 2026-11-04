@@ -960,7 +960,9 @@ const messagingService: MessagingServiceContract = {
       {
         command_id: string
         message_id: string
-        state: 'pending' | 'retrying'
+        // pending: draft re-prepared · retrying: exact command re-queued ·
+        // redriving: authority already accepted it; re-checking delivery.
+        state: 'pending' | 'retrying' | 'redriving'
       }
     >('messaging_retry_message', {
       conversation_id: conversationId,

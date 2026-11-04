@@ -709,6 +709,7 @@
   "chat.social.messageArea.editFailed": "Edit failed",
   "chat.social.messageArea.recallFailed": "Recall failed",
   "chat.social.messageArea.retryFailed": "Retry failed",
+  "chat.social.messageArea.retryRedriving": "Message already accepted by the Station; rechecking delivery now",
   "chat.social.messageArea.stateQueued": "Queued",
   "chat.social.messageArea.stateRetrying": "Retrying",
   "chat.social.messageArea.stateSubmitted": "Sent",

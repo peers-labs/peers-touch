@@ -540,7 +540,7 @@ interface SocialChatState {
     ulid: string,
     messageUlid: string,
     kind?: 'friend' | 'group',
-  ) => Promise<void>;
+  ) => Promise<{ commandId?: string; messageId: string; state: string } | undefined>;
   loadThreadMessages: (
     ulid: string,
     rootUlid: string,
@@ -1771,8 +1771,9 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
 
   retryMessage: async (ulid, messageUlid, kind) => {
     const activeKind = kind ?? get().activeTab;
-    await imServiceV1.messaging.retryMessage(ulid, messageUlid);
+    const outcome = await imServiceV1.messaging.retryMessage(ulid, messageUlid);
     await get().loadMessages(ulid, activeKind);
+    return outcome;
   },
 
   loadThreadMessages: async (ulid, rootUlid, kind, options) => {

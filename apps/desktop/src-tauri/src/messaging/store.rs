@@ -274,6 +274,11 @@ pub struct ConversationMessagePage {
 pub enum MessageRetryDisposition {
     ExactCommand { command_id: String },
     DraftReady,
+    /// Command was already accepted by the authority and is still awaiting
+    /// delivery receipts. It must never be re-prepared (that would mint a
+    /// duplicate message); the retry only re-drives reconciliation/dispatch
+    /// on the next worker wake.
+    SubmittedRedrive { command_id: String },
 }
 
 pub struct DirectAuthorityCheckpoint<'a> {
@@ -6260,7 +6265,10 @@ impl MessagingStore {
                 Ok(MessageRetryDisposition::DraftReady)
             }
             "submitted" => {
-                Err("messaging submitted command is awaiting canonical reconciliation".to_string())
+                transaction.commit().map_err(|error| error.to_string())?;
+                Ok(MessageRetryDisposition::SubmittedRedrive {
+                    command_id: command.0,
+                })
             }
             "committed" => Err("messaging committed message cannot be retried".to_string()),
             state => Err(format!("messaging retry state is unsupported: {state}")),
@@ -18544,6 +18552,36 @@ mod tests {
                 .unwrap()
                 .state,
             "failed"
+        );
+
+        // An authority-accepted command is never re-prepared (that would
+        // duplicate the message): manual retry only re-drives its delivery
+        // reconciliation and keeps the exact outbox state/bytes.
+        let submitted_store = MessagingStore::in_memory().unwrap();
+        persist_direct_command(&submitted_store, "message-3", b"submitted bytes", 10).unwrap();
+        submitted_store
+            .mark_command_submitted("message-3", b"submitted bytes", 0)
+            .unwrap();
+        assert_eq!(
+            submitted_store
+                .prepare_message_retry("conversation-1", "message-3", 20)
+                .unwrap(),
+            MessageRetryDisposition::SubmittedRedrive {
+                command_id: "message-3".to_string(),
+            }
+        );
+        assert_eq!(
+            submitted_store.command_status("message-3").unwrap().unwrap().state,
+            "submitted"
+        );
+        assert_eq!(
+            submitted_store
+                .submitted_commands()
+                .unwrap()
+                .iter()
+                .filter(|command| command.command_id == "message-3")
+                .count(),
+            1
         );
     }
 

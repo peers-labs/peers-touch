@@ -1491,6 +1491,7 @@ export function ChatDetailPanel() {
                   }}
                 >
                   <GroupSquareAvatar
+                    conversationId={activeUlid || ''}
                     remoteUrl={groupAvatarUrl || undefined}
                     members={members.slice(0, 4).map((m) => {
                       const p = memberProfiles.get(m.ptid);

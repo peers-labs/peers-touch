@@ -29,6 +29,12 @@ export interface SquareAvatarProps {
   profileRevision?: number | string | null;
   /** Explicit owner PTID (peer avatars). Self avatars bind via the session. */
   actorPtid?: string | null;
+  /**
+   * Stable non-actor owner key (e.g. a group conversation) so the avatar
+   * keeps painting its locally resolved image across reloads, transient
+   * fetch failures and restarts instead of swapping to the fallback.
+   */
+  assetOwnerKey?: string | null;
   /** Localized accessibility title for the degraded (last-good) state. */
   degradedLabel?: string;
 }
@@ -45,6 +51,7 @@ export function SquareAvatar({
   avatarLocalPath,
   profileRevision,
   actorPtid,
+  assetOwnerKey,
   degradedLabel,
 }: SquareAvatarProps) {
   const rounded = radius ?? Math.max(8, Math.floor(size * 0.25));
@@ -54,6 +61,7 @@ export function SquareAvatar({
   const { snapshot: asset } = useAvatarAsset({
     identity: inlineSource ?? downloadableSource ?? '',
     actorPtid,
+    assetOwnerKey,
     profileRevision,
     localPath: avatarLocalPath,
   });

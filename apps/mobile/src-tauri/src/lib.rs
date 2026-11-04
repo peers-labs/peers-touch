@@ -75,13 +75,13 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            runtime::station_route::install_transport_identity(
-                app.state::<platform::secure_storage::SecureStorage>()
-                    .inner()
-                    .clone(),
-            )?;
-            platform::deep_link::install(app)
+            log::error!(target: "station-route", "SETUP CLOSURE ENTERED");
+            let storage = app.state::<platform::secure_storage::SecureStorage>();
+            runtime::station_route::install_transport_identity(storage.inner().clone())?;
+            log::error!(target: "station-route", "setup: transport identity install invoked");
+            Ok(())
         })
+        .setup(platform::deep_link::install)
         .invoke_handler(commands::handlers())
         .build(tauri::generate_context!())
         .expect("failed to build Peers")

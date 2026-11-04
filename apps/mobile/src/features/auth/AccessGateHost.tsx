@@ -17,6 +17,7 @@ import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import {
   cancelOAuth,
   oauthPhaseMessageKey,
+  refreshOAuthProviders,
   refreshOAuthStatus,
   retryOAuthBrowser,
   startOAuth,
@@ -66,6 +67,26 @@ const GoogleIcon = () => (
   </svg>
 );
 
+const OAUTH_PROVIDER_VIEWS: ReadonlyArray<{
+  id: MobileOAuthProvider;
+  className: string;
+  icon: ReactNode;
+  labelKey: string;
+}> = [
+  {
+    id: 'github',
+    className: 'auth-oauth-github',
+    icon: <GitHubIcon />,
+    labelKey: 'mobile.auth.oauthGithub',
+  },
+  {
+    id: 'google',
+    className: 'auth-oauth-google',
+    icon: <GoogleIcon />,
+    labelKey: 'mobile.auth.oauthGoogle',
+  },
+];
+
 function sessionExpiredState(
   snapshot: RecoveryProjectionSnapshot,
 ): DeviceLocalFlagState | null {
@@ -105,6 +126,7 @@ export function AccessGateHost({
   rememberedAccounts,
   oauthOverride,
   forceSessionExpired = false,
+  embedded = false,
   onScan,
   deviceLinkContext,
   onBack,
@@ -121,6 +143,10 @@ export function AccessGateHost({
   rememberedAccounts: RememberedLoginAccount[];
   oauthOverride?: Partial<AuthRuntimeSnapshot>;
   forceSessionExpired?: boolean;
+  // Embedded mode renders gate controls without page chrome (toolbar, card,
+  // brand, Station summary, bottom Change action) for the merged Entry screen,
+  // which owns Station context and inline Station switching itself.
+  embedded?: boolean;
   onScan?: () => void;
   deviceLinkContext?: ReactNode;
   onBack: () => Promise<void>;
@@ -142,6 +168,14 @@ export function AccessGateHost({
   const oauth = oauthOverride
     ? { ...runtimeOAuth, ...oauthOverride }
     : runtimeOAuth;
+  // Before the Station directory loads, fail open with every known
+  // provider. Once loaded with zero providers, the Station offers no OAuth
+  // sign-in: do not land on an empty Quick tab — show email login directly.
+  const providerDirectoryLoaded = Array.isArray(oauth.availableProviders);
+  const visibleOAuthProviders = providerDirectoryLoaded
+    ? OAUTH_PROVIDER_VIEWS.filter((view) => oauth.availableProviders?.includes(view.id))
+    : OAUTH_PROVIDER_VIEWS;
+  const oauthAvailable = !providerDirectoryLoaded || visibleOAuthProviders.length > 0;
 
   const ready = Boolean(decision);
   const blocked = isAccessBlocked(decision);
@@ -176,9 +210,11 @@ export function AccessGateHost({
   const inviteFieldLabel = gateFields[0]?.label;
   const invitePlaceholder = gateFields[0]?.placeholder;
 
-  const activeLoginTab: LoginTab = showOAuthLogin
-    ? (showEmailLogin ? loginTab : 'quick')
-    : 'email';
+  const activeLoginTab: LoginTab = showLogin ? (
+    showOAuthLogin && oauthAvailable
+      ? (showEmailLogin ? loginTab : 'quick')
+      : 'email'
+  ) : loginTab;
   const canLogin = Boolean(showEmailLogin && email.trim() && password);
   const canSubmitInvite = Boolean(showInviteCode && inviteCode.trim());
   const canSubmitSchema = showSchemaGate && gateFields.length > 0
@@ -209,6 +245,10 @@ export function AccessGateHost({
   useEffect(() => {
     setSchemaValues({});
   }, [currentGate?.gateId, currentGate?.schemaDigest]);
+
+  useEffect(() => {
+    if (showOAuthLogin) void refreshOAuthProviders();
+  }, [showOAuthLogin, stationUrl]);
 
   async function submitLogin() {
     if (!canLogin || loading || recoveryOnly) return;
@@ -290,16 +330,20 @@ export function AccessGateHost({
                     : 'entry.access-login';
 
 
-  return (
-    <main
-      className="auth-gate-screen"
-      data-session-expired={visibleExpiredSession ? 'true' : 'false'}
-      data-product-surface={productSurface}
-    >
-      <div className="auth-gate-toolbar">
-        <LanguageSwitcher />
-      </div>
-      <Card className="auth-gate-card" variant="borderless">
+  const gateBody = (
+    <>
+      {embedded ? (
+        <section className="auth-gate-brand auth-gate-brand-embedded">
+          <div className="auth-gate-brand-copy">
+            <Title level={2} className="auth-gate-title">
+              {deviceLinkContext ? t('mobile.deviceLink.title') : pageTitle}
+            </Title>
+            <Text type="secondary" className="auth-gate-subtitle">
+              {deviceLinkContext ? t('mobile.deviceLink.access') : pageSubtitle}
+            </Text>
+          </div>
+        </section>
+      ) : (
         <section className="auth-gate-brand">
           <img src={logo} alt="Peers" className="auth-gate-logo" />
           <div className="auth-gate-brand-copy">
@@ -311,30 +355,32 @@ export function AccessGateHost({
             </Text>
           </div>
         </section>
+      )}
 
-        {deviceLinkContext}
-        {onScan ? (
-          <Button block size="large" icon={<ScanLine size={18} />} disabled={loading} onClick={onScan}>
-            {t('mobile.deviceLink.scan')}
-          </Button>
-        ) : null}
+      {deviceLinkContext}
+      {!embedded && onScan ? (
+        <Button block size="large" icon={<ScanLine size={18} />} disabled={loading} onClick={onScan}>
+          {t('mobile.deviceLink.scan')}
+        </Button>
+      ) : null}
 
-        {visibleExpiredSession && showLogin ? (
-          <div
-            className="auth-session-notice"
-            data-acceptance-id="auth-session-expired"
-            role="status"
-          >
-            <AlertTriangle size={16} aria-hidden="true" />
-            <span className="auth-session-notice-copy">
-              <Text strong>{t('mobile.auth.sessionExpiredTitle')}</Text>
-              <Text type="secondary">
-                {rememberedAccount?.displayName || rememberedAccount?.email || t('mobile.auth.signInTitle')}
-              </Text>
-            </span>
-          </div>
-        ) : null}
+      {visibleExpiredSession && showLogin ? (
+        <div
+          className="auth-session-notice"
+          data-acceptance-id="auth-session-expired"
+          role="status"
+        >
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span className="auth-session-notice-copy">
+            <Text strong>{t('mobile.auth.sessionExpiredTitle')}</Text>
+            <Text type="secondary">
+              {rememberedAccount?.displayName || rememberedAccount?.email || t('mobile.auth.signInTitle')}
+            </Text>
+          </span>
+        </div>
+      ) : null}
 
+      {!embedded ? (
         <div className="auth-station-summary">
           <span className="auth-station-icon">
             <Server size={18} />
@@ -344,6 +390,7 @@ export function AccessGateHost({
             <Text type="secondary">{t('mobile.settings.connected')}</Text>
           </span>
         </div>
+      ) : null}
 
         {recoveryOnly ? (
           <div className="auth-gate-copy">
@@ -461,7 +508,7 @@ export function AccessGateHost({
 
         {showLogin ? (
           <>
-            {showEmailLogin && showOAuthLogin ? (
+            {showEmailLogin && showOAuthLogin && oauthAvailable ? (
               <div className="auth-tab-row">
                 <button
                   type="button"
@@ -477,30 +524,59 @@ export function AccessGateHost({
             ) : null}
 
             <div className="auth-tab-content">
-              {showOAuthLogin ? (
+              {showOAuthLogin && oauthAvailable ? (
                 <div className={`auth-tab-panel auth-oauth-panel ${activeLoginTab === 'quick' ? 'active' : ''}`}>
-                  <Button
-                    block
-                    size="large"
-                    className="auth-oauth-btn auth-oauth-github"
-                    icon={<GitHubIcon />}
-                    loading={oauthBusy && oauth.provider === 'github'}
-                    disabled={loading || oauthBusy}
-                    onClick={() => submitOAuth('github')}
-                  >
-                    {t('mobile.auth.oauthGithub')}
-                  </Button>
-                  <Button
-                    block
-                    size="large"
-                    className="auth-oauth-btn auth-oauth-google"
-                    icon={<GoogleIcon />}
-                    loading={oauthBusy && oauth.provider === 'google'}
-                    disabled={loading || oauthBusy}
-                    onClick={() => submitOAuth('google')}
-                  >
-                    {t('mobile.auth.oauthGoogle')}
-                  </Button>
+                  {visibleOAuthProviders.map((provider) => (
+                    <Button
+                      key={provider.id}
+                      block
+                      size="large"
+                      className={`auth-oauth-btn ${provider.className}`}
+                      icon={provider.icon}
+                      loading={oauthBusy && oauth.provider === provider.id}
+                      disabled={loading || oauthBusy}
+                      onClick={() => submitOAuth(provider.id)}
+                    >
+                      {t(provider.labelKey)}
+                    </Button>
+                  ))}
+                  {providerDirectoryLoaded && visibleOAuthProviders.length === 0 ? (
+                    <Text type="secondary" className="auth-oauth-providers-empty">
+                      {t('mobile.auth.oauthProvidersUnavailable')}
+                    </Text>
+                  ) : null}
+                  {oauthVisible ? (
+                    <div className={`auth-oauth-state auth-oauth-state-${oauth.phase}`} role={oauth.errorKey ? 'alert' : 'status'}>
+                      <Text type={oauth.errorKey ? 'danger' : 'secondary'}>{oauthMessage}</Text>
+                      <div className="auth-oauth-recovery">
+                        {oauth.recovery === 'retry-provider' ? (
+                          <Button size="small" onClick={() => void retryOAuthBrowser()}>
+                            {t('mobile.auth.oauthRetryProvider')}
+                          </Button>
+                        ) : null}
+                        {oauth.recovery === 'check-status' ? (
+                          <Button size="small" onClick={() => void refreshOAuthStatus()}>
+                            {t('mobile.auth.oauthCheckStatus')}
+                          </Button>
+                        ) : null}
+                        {oauth.recovery === 'restart' ? (
+                          <Button size="small" onClick={() => void cancelOAuth()}>
+                            {t('mobile.auth.oauthRestart')}
+                          </Button>
+                        ) : null}
+                        {oauth.recovery === 'change-station' ? (
+                          <Button size="small" onClick={() => void onBack()}>
+                            {t('mobile.auth.changeStation')}
+                          </Button>
+                        ) : null}
+                        {oauth.phase === 'awaiting_provider' ? (
+                          <Button size="small" onClick={() => void cancelOAuth()}>
+                            {t('mobile.auth.oauthCancel')}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -550,47 +626,16 @@ export function AccessGateHost({
           </>
         ) : null}
 
-        {oauthVisible ? (
-          <div className={`auth-oauth-state auth-oauth-state-${oauth.phase}`} role={oauth.errorKey ? 'alert' : 'status'}>
-            <Text type={oauth.errorKey ? 'danger' : 'secondary'}>{oauthMessage}</Text>
-            <div className="auth-oauth-recovery">
-              {oauth.recovery === 'retry-provider' ? (
-                <Button size="small" onClick={() => void retryOAuthBrowser()}>
-                  {t('mobile.auth.oauthRetryProvider')}
-                </Button>
-              ) : null}
-              {oauth.recovery === 'check-status' ? (
-                <Button size="small" onClick={() => void refreshOAuthStatus()}>
-                  {t('mobile.auth.oauthCheckStatus')}
-                </Button>
-              ) : null}
-              {oauth.recovery === 'restart' ? (
-                <Button size="small" onClick={() => void cancelOAuth()}>
-                  {t('mobile.auth.oauthRestart')}
-                </Button>
-              ) : null}
-              {oauth.recovery === 'change-station' ? (
-                <Button size="small" onClick={() => void onBack()}>
-                  {t('mobile.auth.changeStation')}
-                </Button>
-              ) : null}
-              {oauth.phase === 'awaiting_provider' ? (
-                <Button size="small" onClick={() => void cancelOAuth()}>
-                  {t('mobile.auth.oauthCancel')}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
         {recoveryOnly ? (
           <div className="auth-gate-recovery">
             <Button loading={loading} disabled={loading} onClick={() => void onRefresh()}>
               {t('mobile.auth.retryDecision')}
             </Button>
-            <Button danger disabled={loading} onClick={() => void onBack()}>
-              {t(deviceLinkContext ? 'common.action.cancel' : 'mobile.auth.changeStation')}
-            </Button>
+            {!embedded ? (
+              <Button danger disabled={loading} onClick={() => void onBack()}>
+                {t(deviceLinkContext ? 'common.action.cancel' : 'mobile.auth.changeStation')}
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
@@ -599,11 +644,13 @@ export function AccessGateHost({
             {translateMobileError(t, error, 'mobile.auth.loginFailed')}
           </Text>
         ) : null}
-        {!recoveryOnly ? (
+        {!recoveryOnly && (hasPrimaryAction || !embedded) ? (
           <div className={`auth-actions ${hasPrimaryAction ? '' : 'single'}`}>
-            <Button icon={<ArrowLeft size={16} />} disabled={loading} onClick={() => void onBack()}>
-              {t(deviceLinkContext ? 'common.action.cancel' : 'mobile.auth.changeStation')}
-            </Button>
+            {!embedded ? (
+              <Button icon={<ArrowLeft size={16} />} disabled={loading} onClick={() => void onBack()}>
+                {t(deviceLinkContext ? 'common.action.cancel' : 'mobile.auth.changeStation')}
+              </Button>
+            ) : null}
             {showInviteCode ? (
               <Button type="primary" loading={loading} disabled={!canSubmitInvite || loading} onClick={submitInvite}>
                 {t('mobile.auth.inviteCodeSubmit')}
@@ -626,6 +673,32 @@ export function AccessGateHost({
             ) : null}
           </div>
         ) : null}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        className="auth-gate-embedded"
+        data-session-expired={visibleExpiredSession ? 'true' : 'false'}
+        data-product-surface={productSurface}
+      >
+        {gateBody}
+      </div>
+    );
+  }
+
+  return (
+    <main
+      className="auth-gate-screen"
+      data-session-expired={visibleExpiredSession ? 'true' : 'false'}
+      data-product-surface={productSurface}
+    >
+      <div className="auth-gate-toolbar">
+        <LanguageSwitcher />
+      </div>
+      <Card className="auth-gate-card" variant="borderless">
+        {gateBody}
       </Card>
     </main>
   );

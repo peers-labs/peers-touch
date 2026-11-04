@@ -261,10 +261,143 @@ select,
   min-height: calc(var(--safe-area-top) + 46px);
 }
 
+.entry-topbar {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.entry-scan-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(31, 41, 55, 0.1);
+  border-radius: 12px;
+  background: #ffffff;
+  color: rgba(15, 23, 42, 0.72);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.entry-scan-button:active {
+  background: rgba(15, 23, 42, 0.05);
+  border-color: rgba(31, 41, 55, 0.18);
+}
+
+.entry-active-station {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(102, 126, 234, 0.18);
+  border-radius: 14px;
+  background: rgba(102, 126, 234, 0.06);
+}
+
+.entry-active-station-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.entry-active-station-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(15, 23, 42, 0.9);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.entry-active-station-status {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.entry-active-station-status.online {
+  color: #15803d;
+}
+
+.entry-active-station-status.offline {
+  color: #b45309;
+}
+
+.entry-active-station-status.validating,
+.entry-active-station-status.unknown {
+  color: rgba(15, 23, 42, 0.48);
+}
+
+.entry-change-station {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  border-radius: 10px;
+  background: #ffffff;
+  color: rgba(15, 23, 42, 0.72);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.entry-change-station:disabled {
+  opacity: 0.6;
+}
+
+.entry-handshake {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+  color: rgba(15, 23, 42, 0.6);
+  font-size: 14px;
+}
+
+.auth-gate-embedded {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.auth-gate-embedded .auth-gate-brand-embedded {
+  /* Embedded mode renders no logo cell; the shared .auth-gate-brand grid
+     would otherwise squeeze the copy into the 44px logo column and wrap
+     text one character per line. Use one full-width flex column. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.auth-gate-embedded .auth-gate-brand-embedded .auth-gate-brand-copy {
+  width: 100%;
+}
+
+.auth-gate-embedded .auth-gate-brand-embedded .auth-gate-title {
+  margin: 0 !important;
+  font-size: 20px;
+}
+
+.auth-gate-embedded .auth-actions {
+  margin-top: 2px;
+}
+
+.auth-gate-embedded .auth-actions .ant-btn {
+  margin-left: 0 !important;
+  width: 100%;
+}
+
 .launch-content {
   flex: 1;
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-direction: column;
   gap: 26px;
   width: min(100%, 480px);
@@ -296,12 +429,6 @@ select,
   gap: 2px;
 }
 
-.launch-brand-copy > span {
-  color: rgba(15, 23, 42, 0.48);
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .launch-brand-copy h1 {
   margin: 0;
   color: rgba(15, 23, 42, 0.94);
@@ -317,12 +444,40 @@ select,
   line-height: 1.4;
 }
 
+.launch-active-target {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.launch-active-target-name {
+  flex: 0 0 auto;
+  color: rgba(15, 23, 42, 0.78);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.launch-active-target-origin {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(15, 23, 42, 0.48);
+  font-size: 13px;
+}
+
 .launch-panel {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   gap: 18px;
   width: 100%;
+  /* Anchor the Station controls/CTA to the thumb zone (required by the
+     mobile entry layout gate) while the brand stays at the top. The free
+     space becomes an intentional brand-to-controls gap instead of a void
+     above a bottom-piled block. */
+  margin-top: auto;
 }
 
 .launch-heading {
@@ -856,6 +1011,14 @@ select,
   gap: 10px;
   font-size: 14px;
   font-weight: 500;
+}
+
+.auth-oauth-providers-empty {
+  display: block;
+  padding: 12px 8px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .auth-fields {

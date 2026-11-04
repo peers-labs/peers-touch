@@ -709,6 +709,7 @@
   "chat.social.messageArea.editFailed": "编辑失败",
   "chat.social.messageArea.recallFailed": "撤回失败",
   "chat.social.messageArea.retryFailed": "重试失败",
+  "chat.social.messageArea.retryRedriving": "消息已被 Station 接收，正在立即重新确认投递状态",
   "chat.social.messageArea.stateQueued": "已排队",
   "chat.social.messageArea.stateRetrying": "正在重试",
   "chat.social.messageArea.stateSubmitted": "已发送",

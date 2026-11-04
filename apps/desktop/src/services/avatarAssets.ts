@@ -255,6 +255,8 @@ export class AvatarAssetsStore {
    * chain onto the single flight instead of issuing duplicate resolves.
    */
   private readonly flightOwners = new Map<string, string>();
+  /** Cached owner last-good snapshots; invalidated when the owner updates. */
+  private readonly ownerLastGoodSnapshots = new Map<string, AvatarAssetSnapshot>();
   private readonly listeners = new Set<() => void>();
   private session: AvatarSessionBinding | null = null;
   private revisionCounter = 0;
@@ -274,6 +276,30 @@ export class AvatarAssetsStore {
   /** Stable snapshot for useSyncExternalStore selectors. */
   getSnapshot(key: string): AvatarAssetSnapshot | null {
     return this.entries.get(key)?.snapshot ?? null;
+  }
+
+  /**
+   * Paint-ready last-good for a stable non-session owner (group conversation),
+   * or null. Lets a surface keep its local image while the canonical identity
+   * is momentarily unknown (a reconcile transiently drops the field) instead
+   * of swapping to a generated fallback. Never starts a resolution.
+   */
+  getOwnerLastGood(ownerKey: string): AvatarAssetSnapshot | null {
+    const owner = ownerKey.trim();
+    if (!owner) return null;
+    const cached = this.ownerLastGoodSnapshots.get(owner);
+    if (cached) return cached;
+    const good = this.lastGoodByActor.get(actorKeyFor({ actorPtid: owner }))
+      ?? this.persistentLastGood.get(owner);
+    if (!good?.src) return null;
+    const snapshot: AvatarAssetSnapshot = {
+      phase: 'ready',
+      src: good.src,
+      degraded: true,
+      identity: good.identity,
+    };
+    this.ownerLastGoodSnapshots.set(owner, snapshot);
+    return snapshot;
   }
 
   /**
@@ -360,6 +386,7 @@ export class AvatarAssetsStore {
       const src = entry.src?.trim();
       if (!actorPtid || !src) continue;
       if (this.persistentLastGood.has(actorPtid)) continue;
+      this.ownerLastGoodSnapshots.delete(actorPtid);
       this.persistentLastGood.set(actorPtid, {
         identity: entry.identity ?? '',
         src,
@@ -372,9 +399,12 @@ export class AvatarAssetsStore {
   /** Forget primed last-good for one actor (logout/identity removal tests). */
   clearPersistentLastGood(actorPtid?: string): void {
     if (actorPtid) {
-      this.persistentLastGood.delete(actorPtid.trim());
+      const owner = actorPtid.trim();
+      this.persistentLastGood.delete(owner);
+      this.ownerLastGoodSnapshots.delete(owner);
     } else {
       this.persistentLastGood.clear();
+      this.ownerLastGoodSnapshots.clear();
     }
   }
 
@@ -580,13 +610,42 @@ export class AvatarAssetsStore {
     return outcome;
   }
 
-  /** Forget a broken src after an <img> error so the next mount can retry. */
+  /**
+   * Forget a broken src after an <img> error so the next mount can retry.
+   * For an attributed owner (actor or group conversation) the same-owner
+   * last-good stays painted as degraded rather than blanking to a
+   * placeholder: a transient image error must never flicker the tile.
+   */
   invalidateSrc(src: string): void {
     for (const entry of this.entries.values()) {
-      if (entry.src === src) {
+      if (entry.src !== src) continue;
+      entry.image = null;
+      if (!entry.identity) {
         entry.src = null;
-        entry.image = null;
-        entry.phase = entry.identity ? 'failed' : 'absent';
+        entry.degraded = false;
+        entry.phase = 'absent';
+        this.publish(entry);
+        continue;
+      }
+      const fallback = entry.actorKey ? this.lastGoodByActor.get(entry.actorKey) : null;
+      entry.failureCount += 1;
+      entry.notBefore = Date.now() + failureBackoffMs(entry.failureCount);
+      if (fallback?.src && fallback.src !== src) {
+        entry.src = fallback.src;
+        entry.localPath = fallback.localPath;
+        entry.degraded = true;
+        entry.phase = 'failed';
+        entry.snapshot = {
+          phase: 'failed',
+          src: fallback.src,
+          degraded: true,
+          identity: entry.identity,
+        };
+        this.emit();
+      } else {
+        entry.src = null;
+        entry.degraded = false;
+        entry.phase = 'failed';
         this.publish(entry);
       }
     }
@@ -624,6 +683,7 @@ export class AvatarAssetsStore {
     this.lastGoodByActor.clear();
     this.flights.clear();
     this.flightOwners.clear();
+    this.ownerLastGoodSnapshots.clear();
     this.session = null;
     this.revisionCounter = 0;
   }
@@ -836,6 +896,7 @@ export class AvatarAssetsStore {
     this.lastGoodByActor.set(actorKey, good);
     // Cross-process last-good for first-frame paint after restart.
     this.persistentLastGood.set(actorPtid, good);
+    this.ownerLastGoodSnapshots.delete(actorPtid);
     const ownerPtid = this.session?.actorPtid;
     if (this.persistLastGood && ownerPtid) {
       this.persistLastGood(ownerPtid, { actorPtid, ...good });

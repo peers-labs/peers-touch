@@ -713,6 +713,7 @@ export function ChatSessionList({
                       <>
                           {c.kind === 'group' ? (
                             <GroupSquareAvatar
+                              conversationId={c.id}
                               remoteUrl={c.avatar || undefined}
                               members={projectGroupAvatarSlots(
                                 groupMembers[c.id] || [],

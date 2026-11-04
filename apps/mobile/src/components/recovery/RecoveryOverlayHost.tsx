@@ -34,7 +34,10 @@ import {
   type RecoveryState,
   type SessionMismatchState,
 } from '../../runtimes/recoveryProjection';
-import { recoverActiveMessagingIdentity } from '../../runtimes/messagingRuntime';
+import {
+  preflightActiveMessagingIdentityRecovery,
+  recoverActiveMessagingIdentity,
+} from '../../runtimes/messagingRuntime';
 
 import { ActorIdentityRecoveryOverlay } from './ActorIdentityRecoveryOverlay';
 import { DraftRestoreOverlay } from './DraftRestoreOverlay';
@@ -182,6 +185,15 @@ export function RecoveryOverlayHost({
     await getMobileLifecycleKernel().restartRuntimeGraph('app-resume');
   }, []);
 
+  // Check whether the Station actually holds a recovery revision before
+  // offering the 24-word path. A missing revision means the original device
+  // never uploaded a backup, so the phrase dialog would lead nowhere.
+  const [actorIdentityBackup, setActorIdentityBackup] = useState<{
+    checking: boolean;
+    available: boolean | null;
+    error: boolean;
+  }>({ checking: false, available: null, error: false });
+
   const renderState = useCallback(
     (state: RecoveryState) => {
       const key = fixture.surfaceId
@@ -244,6 +256,9 @@ export function RecoveryOverlayHost({
               t={t}
               onRecover={recoverActorIdentity}
               onSwitchStation={onSwitchStation}
+              backupAvailable={actorIdentityBackup.available}
+              backupChecking={actorIdentityBackup.checking}
+              backupCheckError={actorIdentityBackup.error}
             />
           );
         case 'device-local-flag':
@@ -298,6 +313,33 @@ export function RecoveryOverlayHost({
         snapshot.states,
         lifecycle.launchState,
       );
+  const actorIdentityRecoveryVisible = visibleStates.some(
+    (state) => state.kind === 'actor-identity-recovery',
+  );
+
+  useEffect(() => {
+    // Fixture surfaces render without a native runtime; skip preflight there.
+    if (!actorIdentityRecoveryVisible || fixture.surfaceId) return;
+    let cancelled = false;
+    setActorIdentityBackup({ checking: true, available: null, error: false });
+    void preflightActiveMessagingIdentityRecovery()
+      .then((available) => {
+        if (!cancelled) {
+          setActorIdentityBackup({ checking: false, available, error: false });
+        }
+      })
+      .catch(() => {
+        // Network/scope failure: fail open to the phrase path so a transient
+        // Station error never permanently hides recovery.
+        if (!cancelled) {
+          setActorIdentityBackup({ checking: false, available: null, error: true });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [actorIdentityRecoveryVisible, fixture.surfaceId]);
+
   if (visibleStates.length === 0) return null;
 
   return (

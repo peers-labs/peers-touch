@@ -10,8 +10,8 @@ const source = readFileSync(
   new URL('./StationSelector.tsx', import.meta.url),
   'utf8',
 );
-const launchSource = readFileSync(
-  new URL('./StationLaunchScreen.tsx', import.meta.url),
+const entrySource = readFileSync(
+  new URL('../entry/EntryScreen.tsx', import.meta.url),
   'utf8',
 );
 const appSource = readFileSync(
@@ -87,10 +87,12 @@ describe('StationSelector reachability states', () => {
     expect(appSource).toContain(
       'verifiedStationKeysForSelection.current.clear()',
     );
-    expect(launchSource).toContain(
-      'disabled={!activeStation || !activeStationChecked}',
+    expect(entrySource).toContain(
+      "checkedUrls.includes(activeStation?.url ?? '')",
     );
-    expect(launchSource).toContain("'common.action.retry'");
+    expect(entrySource).toContain(
+      "verifyingUrls.includes(activeStation?.url ?? '')",
+    );
   });
 });
 
@@ -166,12 +168,13 @@ describe('StationSelector layout contract', () => {
 
   it('anchors the surface and preserves a useful one-line address field', () => {
     expect(styles).toMatch(
-      /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-end;/s,
+      /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-start;/s,
     );
     expect(styles).toMatch(
       /\.launch-content\s*\{[^}]*padding:\s*24px 22px calc\(var\(--safe-area-bottom\) \+ 12px\);/s,
     );
     expect(styles).toMatch(/\.launch-panel\s*\{[^}]*flex:\s*0 0 auto;/s);
+    expect(styles).toMatch(/\.launch-panel\s*\{[^}]*margin-top:\s*auto;/s);
     expect(styles).toMatch(
       /\.station-address-input\s*\{[^}]*height:\s*44px;[^}]*font-size:\s*16px;/s,
     );
@@ -192,18 +195,24 @@ describe('StationSelector layout contract', () => {
   });
 });
 
-describe('Station launch visual contract', () => {
+describe('Station entry visual contract', () => {
   it('keeps the entry task compact and unframed', () => {
-    expect(launchSource).toContain('className="launch-content"');
-    expect(launchSource).toContain('className="launch-brand-logo"');
-    expect(launchSource).toContain('className="launch-panel"');
-    expect(launchSource).not.toContain('<Card');
-    expect(launchSource).not.toContain('launch-hero');
+    expect(entrySource).toContain('className="launch-content"');
+    expect(entrySource).toContain('className="launch-brand-logo"');
+    expect(entrySource).toContain('className="launch-panel"');
+    expect(entrySource).not.toContain('<Card');
+    expect(entrySource).not.toContain('launch-hero');
   });
 
-  it('uses one contextual primary action', () => {
-    expect(launchSource).toContain("'common.action.retry'");
-    expect(launchSource).toContain('disabled={!activeStation || !activeStationChecked}');
+  it('exposes scan as a small icon action in the top bar', () => {
+    expect(entrySource).toContain('className="entry-scan-button"');
+    expect(entrySource).toContain("aria-label={t('mobile.deviceLink.scan')}");
+  });
+
+  it('embeds the access gate inline instead of navigating to a separate page', () => {
+    expect(entrySource).toContain('<AccessGateHost');
+    expect(entrySource).toContain('embedded');
+    expect(entrySource).toContain("data-entry-action=\"change-station\"");
   });
 
   it('renders Station address as one parent field frame', () => {

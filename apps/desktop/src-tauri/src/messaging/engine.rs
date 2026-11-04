@@ -2794,6 +2794,11 @@ impl MessagingEngine {
                 message_id: message_id.to_string(),
                 state: "retrying",
             }),
+            MessageRetryDisposition::SubmittedRedrive { command_id } => Ok(RetryMessageOutcome {
+                command_id: Some(command_id),
+                message_id: message_id.to_string(),
+                state: "redriving",
+            }),
             MessageRetryDisposition::DraftReady => {
                 let draft = self
                     .store

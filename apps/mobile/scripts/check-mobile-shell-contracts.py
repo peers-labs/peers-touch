@@ -521,10 +521,15 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         raise ValueError(
             f"Mobile Auth identity contract is incomplete: {missing_mobile_tokens}"
         )
-    if access_source.index('<Card className="auth-gate-card"') > access_source.index(
-        '<section className="auth-gate-brand">'
-    ):
-        raise ValueError("Mobile Auth brand must render inside the dominant card")
+    # The gate body (including the brand section) is composed once and the
+    # standalone return wraps that same body in the dominant card, so verify
+    # composition rather than raw source ordering.
+    if '<Card className="auth-gate-card" variant="borderless">' not in access_source:
+        raise ValueError("Mobile Auth standalone gate must keep the dominant card")
+    if '{gateBody}' not in access_source:
+        raise ValueError("Mobile Auth card must render the composed gate body")
+    if '<section className="auth-gate-brand"' not in access_source:
+        raise ValueError("Mobile Auth brand must render inside the composed gate body")
     if (
         "mobile.auth.brandKicker" in access_source
         or re.search(
@@ -594,7 +599,8 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         'data-demo-recovery-owner="lifecycle"',
         "data-demo-route-state={retrying ? 'preparing' : 'unavailable'}",
         "mobile.route.unavailableBody",
-        "onClick={onRetry}",
+        'actionId="route.retry"',
+        "onActivate={onRetry}",
     )
     if any(
         token not in prototype_recovery

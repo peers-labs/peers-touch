@@ -766,6 +766,40 @@ pub fn messaging_activate<R: Runtime>(
     )
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingRecoveryPreflightResult {
+    /// False when the Station holds no recovery revision for the actor:
+    /// prompting for a phrase would lead nowhere.
+    recovery_available: bool,
+}
+
+#[tauri::command]
+pub fn messaging_recovery_preflight(
+    storage: State<'_, SecureStorage>,
+    input: MessagingIdentityRecoveryInput,
+) -> MobileResult<MessagingRecoveryPreflightResult> {
+    let session = authenticated_native_session(
+        &storage,
+        &input.station_peer_id,
+        &input.actor_ptid,
+        &input.session_id,
+    )?;
+    // Blocking HTTP stays on the mobile IPC worker queue, never on the UI
+    // thread. This command must stay synchronous: on iOS a reply from an async
+    // command is evaluated in WKWebView from a detached worker thread, and on a
+    // static screen WebKit may not service that evaluation for minutes.
+    let available = crate::messaging::recovery::fetch_latest_revision(
+        session.station_origin(),
+        session.access_token(),
+    )
+    .map_err(MobileError::messaging)?
+    .is_some();
+    Ok(MessagingRecoveryPreflightResult {
+        recovery_available: available,
+    })
+}
+
 #[tauri::command]
 pub async fn messaging_recover_identity_with_native_input<R: Runtime>(
     app: AppHandle<R>,

@@ -944,14 +944,28 @@ export function ChatMessageArea({
     const conversationId = activeUlidRef.current;
     if (!conversationId) return;
     try {
-      await retryMessage(conversationId, message.ulid, activeKindRef.current);
+      const outcome = await retryMessage(conversationId, message.ulid, activeKindRef.current);
+      // The authority already holds this command; nothing can be re-sent
+      // without duplicating it. The native side only re-drives delivery
+      // reconciliation, so tell the user what is happening instead of
+      // implying a new send attempt succeeded.
+      if (outcome?.state === 'redriving') {
+        toast.info(t('chat.social.messageArea.retryRedriving'));
+      }
     } catch (error) {
       log.error('chat', 'message retry failed', {
         conversationId,
         messageId: message.ulid,
         error,
       });
-      toast.error(t('chat.social.messageArea.retryFailed'));
+      const detail = error instanceof Error && error.message
+        ? error.message.trim()
+        : '';
+      toast.error(
+        detail
+          ? `${t('chat.social.messageArea.retryFailed')}: ${detail}`
+          : t('chat.social.messageArea.retryFailed'),
+      );
     }
   }, [retryMessage, t]);
 

@@ -605,6 +605,7 @@ export function ChatContactsPanel({
                   }}
                 >
                   <GroupSquareAvatar
+                    conversationId={conversation.id}
                     remoteUrl={conversation.avatar || undefined}
                     members={projectGroupAvatarSlots(
                       groupMembers[conversation.id] || [],

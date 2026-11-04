@@ -55,7 +55,10 @@ export function GroupCompositeAvatar({ members, size = 36, gap = 1 }: GroupCompo
     <div style={{ width: size, height: size, position: 'relative', flexShrink: 0, borderRadius: Math.round(size * 0.25), overflow: 'hidden' }}>
       {slots.map((member, i) => (
         <div
-          key={i}
+          // Identity keys keep one slot mounted per member across reconciles;
+          // an index key would remount every slot when the member set changes,
+          // restarting image resolution and flashing placeholders.
+          key={member.ptid || `slot-${i}`}
           data-chat-group-avatar-slot={member.ptid || ''}
           data-chat-avatar-ptid={member.ptid || ''}
           data-chat-avatar-src={member.avatar}

@@ -139,7 +139,9 @@ export function StationSelector({
           <Text strong>{t('mobile.launch.station')}</Text>
           {hasEntries && !showStationInput ? (
             <Text className="station-helper-line">
-              {t('mobile.launch.changeTarget')}
+              {activeStationPeerId
+                ? t('mobile.launch.changeTarget')
+                : t('mobile.launch.chooseRecent')}
             </Text>
           ) : null}
         </div>

@@ -321,7 +321,7 @@ export interface MessagingServiceContract {
   retryMessage(
     conversationId: string,
     messageId: string,
-  ): Promise<{ commandId?: string; messageId: string; state: 'pending' | 'retrying' }>
+  ): Promise<{ commandId?: string; messageId: string; state: 'pending' | 'retrying' | 'redriving' }>
   listThreadMessages(
     conversationId: string,
     threadRootMessageId: string,

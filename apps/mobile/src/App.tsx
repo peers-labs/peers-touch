@@ -25,10 +25,11 @@ import {
   type RememberedLoginAccount,
   type StationLoginInput,
 } from './features/auth/authSession';
-import { AccessGateHost, authStationLabel } from './features/auth/AccessGateHost';
+import { authStationLabel } from './features/auth/AccessGateHost';
 import { useAuthStore } from './features/auth/authStore';
 import { DeviceLinkScreen } from './features/auth/DeviceLinkScreen';
 import { useDeviceLinkStore } from './features/auth/deviceLinkStore';
+import { EntryScreen, type EntryGateProps } from './features/entry/EntryScreen';
 import { startMobileDeviceLink } from './runtimes/deviceLinkRuntime';
 import {
   setEntrySurfaceFixture,
@@ -46,20 +47,21 @@ import {
   type StationIdentityResult,
 } from './features/station/stationConnection';
 import { EntryProgressScreen } from './features/station/EntryProgressScreen';
-import { StationLaunchScreen } from './features/station/StationLaunchScreen';
 import {
   discoverXConfigSuggestion,
   useXConfigProjection,
 } from './features/station/xConfig';
 import {
+  abandonAccessAttemptBestEffort,
   applyAccessGateRuntimeResult,
-  cancelAccessAttemptForActiveStation,
   refreshAccessDecisionForActiveStation,
   startAccessAttemptForActiveStation,
 } from './runtimes/accessRuntime';
+import { fenceAuthRuntimeProjection } from './runtimes/authRuntime';
 import {
   activateNativeSessionRuntime,
   logoutSessionRuntime,
+  purgeAllNativeSessionState,
 } from './runtimes/sessionRuntime';
 import {
   getRecoveryProjection,
@@ -99,6 +101,8 @@ import {
   openReliabilityAdmission,
   prepareReliabilityScopeExit,
   readReliabilityRuntimeStatus,
+  type ReliabilityRuntimeStatus,
+  type ReliabilityRuntimeStatusProjection,
 } from './runtimes/commandRuntime';
 import type { DraftDisposition } from './app/lifecycle/types';
 
@@ -135,6 +139,25 @@ interface PendingRouteChoice {
  * - Launch state transitions are driven by station and auth outcomes.
  * - The shell only renders when lifecyclePhase is ACTIVE.
  */
+const SCOPE_EXIT_PREPARE_TIMEOUT_MS = 6000;
+
+async function raceScopeExitPreparation(
+  preparation: Promise<ReliabilityRuntimeStatus>,
+  fallback: ReliabilityRuntimeStatusProjection,
+): Promise<ReliabilityRuntimeStatus> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      preparation,
+      new Promise<ReliabilityRuntimeStatus>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), SCOPE_EXIT_PREPARE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function MobileAppRoot() {
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
@@ -276,13 +299,20 @@ function MobileAppRoot() {
       throw new Error('mobile.reliability.scopeExitAlreadyPending');
     }
     const observed = await readReliabilityRuntimeStatus();
+    // Scope-exit preparation talks to the active reliability runtime. When a
+    // Station is unreachable this must not hang the only escape path
+    // (Switch Station): fall back to the observed projection after a bounded
+    // wait and let the local purge proceed.
     const status = observed.active
       && observed.stationPeerId
       && observed.actorPtid
-      ? await prepareReliabilityScopeExit(
-          observed.stationPeerId,
-          observed.actorPtid,
-          observed.runtimeGeneration,
+      ? await raceScopeExitPreparation(
+          prepareReliabilityScopeExit(
+            observed.stationPeerId,
+            observed.actorPtid,
+            observed.runtimeGeneration,
+          ),
+          observed,
         )
       : observed;
     const execute = async (draftDisposition: DraftDisposition) => {
@@ -636,14 +666,26 @@ function MobileAppRoot() {
   }
 
   async function leaveCurrentStationForSelection() {
-    const completed = await runUserScopeTransition(
-      'station-replace',
-      async () => {
-        await logoutSessionRuntime();
-      },
-    );
+    // Switching Station is a local-first escape hatch: never strand the user
+    // on a broken/unreachable Station because a remote revoke is slow or
+    // failing. Best-effort remote revocation runs through the normal scope
+    // transition; if it cannot complete, purge local session state directly
+    // and still return to the Station picker.
+    let completed = false;
+    try {
+      completed = await runUserScopeTransition(
+        'station-replace',
+        async () => {
+          await logoutSessionRuntime();
+        },
+      );
+    } catch {
+      await purgeAllNativeSessionState().catch(() => undefined);
+      completed = true;
+    }
     if (!completed) return;
     setAccessDecision(null);
+    fenceAuthRuntimeProjection();
     showStationSelection();
   }
 
@@ -783,11 +825,11 @@ function MobileAppRoot() {
   }
 
   async function cancelAccessGateAttemptAndChangeStation() {
-    try {
-      await cancelAccessAttemptForActiveStation();
-    } catch {
-      return;
-    }
+    // Local-first: clear the gate and return to the picker immediately. Remote
+    // attempt/OAuth cancellation is best effort and can never block or strand
+    // the user when the Station is slow or rejects the cancel RPC.
+    await abandonAccessAttemptBestEffort();
+    fenceAuthRuntimeProjection();
     showStationSelection();
   }
 
@@ -992,16 +1034,6 @@ function MobileAppRoot() {
     );
   }
 
-  if (renderedLaunchState === 'station-handshake') {
-    return renderWithRecovery(
-      <EntryProgressScreen
-        kind="station-handshake"
-        stationLabel={friendlyStationLabel}
-        onBack={showStationSelection}
-      />,
-    );
-  }
-
   if (renderedLaunchState === 'runtime-critical') {
     const runtimeFailed = entryFixture.surfaceId === 'entry.runtime-critical'
       || Array.from(lifecycle.runtimes.values()).some(
@@ -1020,31 +1052,31 @@ function MobileAppRoot() {
     );
   }
 
-  if (renderedLaunchState === 'access-gate-chain') {
-    return renderWithRecovery(
-      <AccessGateHost
-        decision={renderedAccessDecision}
-        stationLabel={activeStation?.label || t('mobile.launch.station')}
-        stationUrl={activeStation?.url || ''}
-        error={renderedAuthError}
-        loading={authLoading}
-        rememberedAccounts={rememberedAccounts}
-        oauthOverride={renderedOAuth ?? undefined}
-        forceSessionExpired={entryFixture.surfaceId === 'entry.session-expired'}
-        onBack={cancelAccessGateAttemptAndChangeStation}
-        onRefresh={refreshAccessGateDecision}
-        onLogin={login}
-        onInviteCode={submitInviteCode}
-        onSchemaSubmit={submitSchemaGate}
-        onScan={() => void scanDesktopLogin()}
-      />,
-    );
-  }
+  const entryGate: EntryGateProps | null = renderedLaunchState === 'access-gate-chain'
+    && renderedAccessDecision
+    ? {
+        decision: renderedAccessDecision,
+        stationLabel: activeStation?.label || t('mobile.launch.station'),
+        stationUrl: activeStation?.url || '',
+        error: renderedAuthError,
+        loading: authLoading,
+        rememberedAccounts,
+        oauthOverride: renderedOAuth ?? undefined,
+        forceSessionExpired: entryFixture.surfaceId === 'entry.session-expired',
+        onBack: cancelAccessGateAttemptAndChangeStation,
+        onRefresh: refreshAccessGateDecision,
+        onLogin: login,
+        onInviteCode: submitInviteCode,
+        onSchemaSubmit: submitSchemaGate,
+      }
+    : null;
 
   return renderWithRecovery(
-    <StationLaunchScreen
-      key={`station-launch-${entryFixture.revision}`}
+    <EntryScreen
+      key={`station-entry-${entryFixture.revision}`}
       registry={renderedStationRegistry}
+      handshake={renderedLaunchState === 'station-handshake'}
+      gate={entryGate}
       onScan={() => void scanDesktopLogin()}
       error={renderedStationError}
       checking={stationChecking}

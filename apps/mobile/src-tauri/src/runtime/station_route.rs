@@ -570,11 +570,19 @@ impl RouteRuntime {
         if transport.len() >= 16 {
             return Err(route_error("transportCapacity"));
         }
-        let storage = self
+        let mut storage_guard = self
             .identity_storage
-            .read()
+            .write()
             .map_err(|_| route_error("runtimeLock"))?;
-        let storage = storage
+        if storage_guard.is_none() {
+            // The builder setup hook that normally installs the platform
+            // secure store is not guaranteed to run before the first route
+            // use on every mobile entry path. Lazily materialize the default
+            // platform store here so transport identity never depends on
+            // startup ordering. Install is idempotent once a store is present.
+            *storage_guard = Some(SecureStorage::new());
+        }
+        let storage = storage_guard
             .as_ref()
             .ok_or_else(|| route_error("secureStorageUnavailable"))?;
         let keypair = crate::platform::transport_identity::keypair(storage, scope).map_err(|error| {
@@ -626,6 +634,7 @@ pub(crate) fn install_transport_identity(storage: SecureStorage) -> MobileResult
     if current.is_none() {
         *current = Some(storage);
     }
+    log::warn!(target: "station-route", "transport identity installed target_os={}", std::env::consts::OS);
     Ok(())
 }
 
@@ -1746,7 +1755,7 @@ fn serve_proxy(listener: TcpListener) {
 
 fn proxy_stage<T>(stage: &'static str, result: MobileResult<T>) -> MobileResult<T> {
     result.map_err(|error| {
-        log::warn!(target: "station-route", "proxy failed stage={stage}");
+        log::warn!(target: "station-route", "proxy failed stage={stage} error={error}");
         error
     })
 }
@@ -1820,6 +1829,7 @@ fn standard_route(route: &ActiveRoute) -> MobileResult<StandardRoute> {
 
 fn open_standard_response(route: &ActiveRoute, request: &[u8]) -> MobileResult<StandardResponse> {
     let route_spec = standard_route(route)?;
+    log::warn!(target: "station-route", "round_trip dial={} type={:?}", route_spec.dial_multiaddr, route.candidate.route_type);
     let transport = ROUTES.standard_transport(&route_transport_scope(&route.candidate)?)?;
     let parsed = parse_proxy_request(request)?;
     let mut standard_request = StandardRequest::new(
