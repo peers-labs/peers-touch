@@ -8,6 +8,11 @@ import {
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import {
+  machineWorkspacesPath,
+  workspaceIdForRoot,
+} from '../../../scripts/lib/machine-dev-paths.mjs';
+
 function parseArguments(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -144,7 +149,15 @@ export async function runHook({
     installationRoot: installationRoot(),
     ...workspace,
   });
-  const result = await kernel.evaluateWorkflowEvent(normalized);
+  // Per-worktree guard state root. SessionStart binds here; PreToolUse reads
+  // the same binding and blocks mutating tools that escape this worktree.
+  const worktreeStateRoot = path.join(
+    machineWorkspacesPath(),
+    workspaceIdForRoot(installationRoot()),
+  );
+  const result = await kernel.evaluateWorkflowEvent(normalized, {
+    worktreeStateRoot,
+  });
   await reportHookObservation(normalized, result.executionRoot, { report });
   const response = adapters.renderHostResponse(options.host, result, normalized);
   return response;
