@@ -36,6 +36,14 @@ Proves the provisioner PTY lifecycle (open/write/read/resize/signal), honest
 state, bounded scrollback, and per-PTY process-group isolation on real
 containers. The Station proxy RPCs (`/agent/sandbox-pty/*`) and metadata
 persistence are covered by Go tests in
-`apps/station/app/subserver/agent/service` (terminal sandbox suite). Desktop
-terminal-panel consumption of these proxy RPCs is the remaining presentation
-tail.
+`apps/station/app/subserver/agent/service` (terminal sandbox suite). The
+Go HTTP client's real wire contract against a live provisioner (allocate,
+exec, dormant/cold-start, reconcile and the PTY bridge) is covered by the
+docker-gated Go integration tests, run via:
+
+```bash
+bash tooling/acceptance/closures/we-s6/go-client-integration.sh
+```
+
+Desktop terminal-panel consumption of these proxy RPCs (polling pump +
+placement label) is covered by the desktop store tests and `pnpm run check`.
