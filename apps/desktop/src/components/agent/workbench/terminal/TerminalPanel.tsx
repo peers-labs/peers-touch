@@ -6,7 +6,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { useTranslation } from 'react-i18next';
 import '@xterm/xterm/css/xterm.css';
 
-import { api, terminalWorkerRead, terminalWorkerResize } from '../../../../services/desktop_api';
+import { api } from '../../../../services/desktop_api';
 import { useChatStore } from '../../../../store/chat';
 import {
   useTerminalSessionsStore,
@@ -52,6 +52,8 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
   const fitRef = useRef<FitAddon | null>(null);
   const attachOutput = useTerminalSessionsStore((state) => state.attachOutput);
   const attachStatus = useTerminalSessionsStore((state) => state.attachStatus);
+  const initialRead = useTerminalSessionsStore((state) => state.initialRead);
+  const resizeSession = useTerminalSessionsStore((state) => state.resize);
   const hydrateFromCursor = useTerminalSessionsStore((state) => state.hydrateFromCursor);
   const writeInput = useTerminalSessionsStore((state) => state.writeInput);
   const [resync, setResync] = useState(false);
@@ -81,13 +83,12 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
     let cancelled = false;
     let unsub: () => void = () => undefined;
     void (async () => {
-      // Replay retained history first, then subscribe.
-      const read = await terminalWorkerRead(session.sessionId, 0);
+      // Replay retained history first, then subscribe. Placement-aware:
+      // sandbox sessions replay store text fed by the poll pump.
+      const read = await initialRead(session);
       if (cancelled) return;
       if (read.resync) setResync(true);
-      const decoded = atob(read.chunkB64 || '');
-      const bytes = Uint8Array.from(decoded, (ch) => ch.charCodeAt(0));
-      const text = new TextDecoder().decode(bytes);
+      const text = read.text;
       textRef.current = text;
       xterm.write(text);
       setUrls(Array.from(new Set(text.match(URL_PATTERN) ?? [])));
@@ -109,7 +110,7 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
     const observer = new ResizeObserver(() => {
       try {
         fit.fit();
-        void terminalWorkerResize(session.sessionId, xterm.cols, xterm.rows);
+        void resizeSession(session, xterm.cols, xterm.rows);
       } catch {
         // Terminal may have been removed concurrently; ignore resize races.
       }
@@ -131,6 +132,12 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <Tag>{t(`chat.terminal.status.${session.status}`)}</Tag>
+        <Tag
+          data-pt-terminal-placement={session.placement}
+          color={session.placement === 'sandbox' ? 'geekblue' : 'default'}
+        >
+          {t(`chat.terminal.placement.${session.placement}`)}
+        </Tag>
         <span data-pt-terminal-pid style={{ color: token.colorTextSecondary, fontSize: 12 }}>
           {t('chat.terminal.pid')}: {session.pid}
         </span>
@@ -166,9 +173,12 @@ function StartSessionForm({ conversationId }: { conversationId: string }) {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const createSession = useTerminalSessionsStore((state) => state.createSession);
+  const createSandboxSession = useTerminalSessionsStore((state) => state.createSandboxSession);
   const [deviceId, setDeviceId] = useState('');
   const [command, setCommand] = useState('python3');
   const [args, setArgs] = useState('-m http.server 18099');
+  const [inSandbox, setInSandbox] = useState(false);
+  const [sandboxRef, setSandboxRef] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -178,49 +188,82 @@ function StartSessionForm({ conversationId }: { conversationId: string }) {
   const start = useCallback(async () => {
     setError('');
     try {
-      await createSession({
+      const input = {
         conversationId,
         command: command.trim(),
         args: tokenizeArgs(args),
-      }, deviceId);
+      };
+      if (inSandbox) {
+        if (!sandboxRef.trim()) {
+          setError(t('chat.terminal.sandboxRefRequired'));
+          return;
+        }
+        await createSandboxSession(input, sandboxRef.trim());
+      } else {
+        await createSession(input, deviceId);
+      }
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : String(startError));
     }
-  }, [args, command, conversationId, createSession, deviceId]);
+  }, [args, command, conversationId, createSession, createSandboxSession, deviceId, inSandbox, sandboxRef, t]);
 
   return (
-    <Space.Compact style={{ width: '100%', marginBottom: 10 }} data-pt-terminal-start-form>
-      <Input
-        aria-label={t('chat.terminal.command')}
-        data-pt-terminal-command
-        value={command}
-        onChange={(event) => setCommand(event.target.value)}
-        style={{ width: 140 }}
-        placeholder={t('chat.terminal.command')}
-      />
-      <Input
-        aria-label={t('chat.terminal.args')}
-        data-pt-terminal-args
-        value={args}
-        onChange={(event) => setArgs(event.target.value)}
-        style={{ width: 240 }}
-        placeholder={t('chat.terminal.args')}
-      />
-      <Button
-        type="primary"
-        icon={<Play size={13} />}
-        data-pt-terminal-start
-        disabled={!command.trim() || !deviceId}
-        onClick={() => void start()}
-      >
-        {t('chat.terminal.start')}
-      </Button>
-      {error && (
-        <span role="alert" style={{ color: token.colorErrorText, fontSize: 12, marginLeft: 8 }}>
-          {t('chat.terminal.startFailed')}: {error}
-        </span>
-      )}
-    </Space.Compact>
+    <div style={{ marginBottom: 10 }}>
+      <Space.Compact style={{ width: '100%' }} data-pt-terminal-start-form>
+        <Input
+          aria-label={t('chat.terminal.command')}
+          data-pt-terminal-command
+          value={command}
+          onChange={(event) => setCommand(event.target.value)}
+          style={{ width: 140 }}
+          placeholder={t('chat.terminal.command')}
+        />
+        <Input
+          aria-label={t('chat.terminal.args')}
+          data-pt-terminal-args
+          value={args}
+          onChange={(event) => setArgs(event.target.value)}
+          style={{ width: 240 }}
+          placeholder={t('chat.terminal.args')}
+        />
+        <Button
+          type="primary"
+          icon={<Play size={13} />}
+          data-pt-terminal-start
+          disabled={!command.trim() || (!inSandbox && !deviceId)}
+          onClick={() => void start()}
+        >
+          {t('chat.terminal.start')}
+        </Button>
+      </Space.Compact>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input
+            type="checkbox"
+            data-pt-terminal-use-sandbox
+            checked={inSandbox}
+            onChange={(event) => setInSandbox(event.target.checked)}
+          />
+          {t('chat.terminal.placement.sandbox')}
+        </label>
+        {inSandbox && (
+          <Input
+            aria-label={t('chat.terminal.sandboxRef')}
+            data-pt-terminal-sandbox-ref
+            value={sandboxRef}
+            onChange={(event) => setSandboxRef(event.target.value)}
+            style={{ width: 220 }}
+            size="small"
+            placeholder={t('chat.terminal.sandboxRef')}
+          />
+        )}
+        {error && (
+          <span role="alert" style={{ color: token.colorErrorText, fontSize: 12 }}>
+            {t('chat.terminal.startFailed')}: {error}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -294,6 +337,13 @@ export function TerminalPanel() {
                 <span style={{ fontSize: 12, fontFamily: 'monospace' }}>
                   {session.command} {session.args.join(' ')}
                 </span>
+                <Tag
+                  data-pt-terminal-list-placement={session.placement}
+                  color={session.placement === 'sandbox' ? 'geekblue' : 'default'}
+                  style={{ marginInlineEnd: 0 }}
+                >
+                  {t(`chat.terminal.placement.${session.placement}`)}
+                </Tag>
                 <div style={{ flex: 1 }} />
                 <Tag>{t(`chat.terminal.status.${session.status}`)}</Tag>
                 {session.status === 'running' && (

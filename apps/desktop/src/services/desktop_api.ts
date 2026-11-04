@@ -10157,6 +10157,14 @@ export interface TerminalStationSession {
   outputBytes: string;
   createdAt?: { seconds?: string };
   endedAt?: { seconds?: string };
+  // WE-S6 dual execution placement. Present on rows created after the
+  // sandbox work landed; legacy/desktop rows default to DESKTOP_DEVICE.
+  executionTarget?:
+    | 'EXECUTION_TARGET_UNSPECIFIED'
+    | 'EXECUTION_TARGET_DESKTOP_DEVICE'
+    | 'EXECUTION_TARGET_WORKSPACE_SANDBOX'
+    | number;
+  sandboxRef?: string;
 }
 
 export async function terminalDefaultWorkspace(deviceId: string): Promise<{ workspaceRoot: string }> {

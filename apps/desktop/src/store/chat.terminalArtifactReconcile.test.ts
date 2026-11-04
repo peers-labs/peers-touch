@@ -89,4 +89,42 @@ describe('terminal session reconciliation', () => {
     expect(views[0].status).toBe('exited');
     expect(views[0].exitCode).toBe(7);
   });
+
+  it('treats a RUNNING sandbox row as live without a device worker handle', () => {
+    const views = mergeTerminalSessions(
+      [stationRow('w1', 'TERMINAL_SESSION_STATUS_RUNNING', {
+        deviceId: '',
+        executionTarget: 2,
+        sandboxRef: 'wbox-1',
+      })],
+      new Map(),
+    );
+    expect(views[0].placement).toBe('sandbox');
+    expect(views[0].sandboxRef).toBe('wbox-1');
+    expect(views[0].status).toBe('running');
+    expect(views[0].live).toBe(true);
+  });
+
+  it('accepts the string enum form of the sandbox execution target', () => {
+    const views = mergeTerminalSessions(
+      [stationRow('w2', 'TERMINAL_SESSION_STATUS_EXITED', {
+        deviceId: '',
+        executionTarget: 'EXECUTION_TARGET_WORKSPACE_SANDBOX',
+        sandboxRef: 'wbox-2',
+      })],
+      new Map(),
+    );
+    expect(views[0].placement).toBe('sandbox');
+    expect(views[0].status).toBe('exited');
+    expect(views[0].live).toBe(false);
+  });
+
+  it('keeps device placement for legacy rows without an execution target', () => {
+    const views = mergeTerminalSessions(
+      [stationRow('d1', 'TERMINAL_SESSION_STATUS_RUNNING')],
+      new Map(),
+    );
+    expect(views[0].placement).toBe('desktop');
+    expect(views[0].status).toBe('unknown');
+  });
 });

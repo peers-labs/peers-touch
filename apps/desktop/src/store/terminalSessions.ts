@@ -3,6 +3,10 @@ import { listen } from '@tauri-apps/api/event';
 
 import {
   terminalDefaultWorkspace,
+  terminalSandboxPtyRead,
+  terminalSandboxPtyResize,
+  terminalSandboxPtySignal,
+  terminalSandboxPtyWrite,
   terminalStationCreate,
   terminalStationList,
   terminalStationReconcile,
@@ -13,6 +17,7 @@ import {
   terminalWorkerList,
   terminalWorkerRead,
   terminalWorkerRemove,
+  terminalWorkerResize,
   terminalWorkerWrite,
   type TerminalSessionMeta,
   type TerminalStationSession,
@@ -23,8 +28,26 @@ import { log } from '../utils/logger';
 // keeps subscription state (cursor + text) and merges Station metadata with
 // live worker proof. A Station row saying RUNNING without a live handle is
 // never displayed as running.
+//
+// WE-S6: WORKSPACE_SANDBOX sessions have no local Rust worker and no Tauri
+// event stream; Station proxies their PTY over HTTP, so the store polls
+// /agent/sandbox-pty/read on an interval instead of subscribing to worker
+// events. The two paths never mix: placement is read from the Station row.
 
 export type TerminalStatus = 'running' | 'exited' | 'killed' | 'unknown';
+
+export type ExecutionPlacement = 'desktop' | 'sandbox';
+
+// Sandbox PTY rows encode ExecutionTarget as the proto enum number (2) over
+// the JSON wire; tolerate the string form and proto-enum-name form.
+const SANDBOX_TARGET = 2;
+function rowPlacement(row: TerminalStationSession): ExecutionPlacement {
+  const target = row.executionTarget;
+  if (target === SANDBOX_TARGET || target === String(SANDBOX_TARGET) || target === 'EXECUTION_TARGET_WORKSPACE_SANDBOX') {
+    return 'sandbox';
+  }
+  return 'desktop';
+}
 
 export interface TerminalSessionView {
   sessionId: string;
@@ -38,6 +61,9 @@ export interface TerminalSessionView {
   outputBytes: number;
   live: boolean;
   startedAtMs: number;
+  // WE-S6: where the process actually lives. Desktop rows are unchanged.
+  placement: ExecutionPlacement;
+  sandboxRef: string;
 }
 
 type OutputSubscriber = (chunk: string, meta: TerminalSessionMeta) => void;
@@ -88,11 +114,18 @@ export function mergeTerminalSessions(
 ): TerminalSessionView[] {
   return stationRows.map((row) => {
     const live = liveMetas.get(row.sessionId);
-    const status: TerminalStatus = live
-      ? live.status
-      : row.status === STATION_RUNNING
-        ? 'unknown'
-        : stationStatusToView(row.status);
+    const placement = rowPlacement(row);
+    // Sandbox sessions are live as long as the Station row says RUNNING (the
+    // proxy poll provides liveness); device sessions require a worker handle.
+    const stationRunning = row.status === STATION_RUNNING;
+    const isLive = placement === 'sandbox' ? stationRunning : Boolean(live);
+    const status: TerminalStatus = placement === 'sandbox'
+      ? (stationRunning ? 'running' : stationStatusToView(row.status))
+      : live
+        ? live.status
+        : stationRunning
+          ? 'unknown'
+          : stationStatusToView(row.status);
     const outputBytes = live
       ? live.outputBytes
       : Number(row.outputBytes ?? 0) || 0;
@@ -106,8 +139,10 @@ export function mergeTerminalSessions(
       status,
       exitCode: live ? live.exitCode ?? null : row.exitCode ?? null,
       outputBytes,
-      live: Boolean(live),
+      live: isLive,
       startedAtMs: live?.startedAtMs ?? 0,
+      placement,
+      sandboxRef: row.sandboxRef ?? '',
     };
   }).sort((left, right) => right.startedAtMs - left.startedAtMs);
 }
@@ -117,6 +152,95 @@ function decodeBase64Utf8(b64: string): string {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return new TextDecoder('utf-8').decode(bytes);
+}
+
+// Station validates session ids as "terms-" + 26 Crockford-base32 chars.
+// Sandbox sessions are Station-minted (there is no local worker), so the
+// client generates the same ULID-shaped id.
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+function mintSessionId(): string {
+  let suffix = '';
+  const values = new Uint32Array(7);
+  crypto.getRandomValues(values);
+  for (const value of values) {
+    suffix += CROCKFORD[value % 32];
+    if (suffix.length === 26) break;
+  }
+  return `terms-${suffix.slice(0, 26)}`;
+}
+
+// Start polling a sandbox PTY and fan new bytes out through the same output
+// subscriber channel the device worker uses, so the viewer is placement
+// agnostic. Honors the bounded cursor; stops once the process exits/kills.
+function startSandboxPump(get: () => TerminalSessionState, set: TerminalSet, sessionId: string): void {
+  if (sandboxPollers.has(sessionId)) return;
+  const tick = async () => {
+    const cursor = get().cursors[sessionId] ?? 0;
+    try {
+      const read = await terminalSandboxPtyRead(sessionId, cursor, 64 * 1024);
+      const metaFor = (status: TerminalStatus): TerminalSessionMeta => {
+        const view = findView(get, sessionId);
+        return {
+          sessionId,
+          command: view?.command ?? '',
+          args: view?.args ?? [],
+          cwd: view?.cwd ?? '',
+          pid: view?.pid ?? 0,
+          status,
+          exitCode: read.exitCode ?? null,
+          outputBytes: read.outputBytes,
+          startedAtMs: view?.startedAtMs ?? 0,
+        };
+      };
+      if (read.data.length > 0) {
+        const text = new TextDecoder().decode(read.data);
+        set((state) => ({
+          cursors: { ...state.cursors, [sessionId]: read.nextCursor },
+          text: { ...state.text, [sessionId]: (state.text[sessionId] ?? '') + text },
+        }));
+        outputSubscribers.get(sessionId)?.forEach((fn) => fn(text, metaFor(mapProtoStatus(read.status))));
+      }
+      // Terminal states EXITED(2)/KILLED(3) end the poll; UNKNOWN(0/4) leaves
+      // it running so a transient gap can recover.
+      if (read.status === 2 || read.status === 3) {
+        statusSubscribers.get(sessionId)?.forEach((fn) => fn(metaFor(mapProtoStatus(read.status))));
+        stopSandboxPump(sessionId);
+        void get().initConversation(findConversationForSession(get, sessionId), get().deviceId)
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      log.warn('terminal', 'sandbox pty poll failed', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+  const handle = setInterval(() => { void tick(); }, SANDBOX_POLL_MS);
+  sandboxPollers.set(sessionId, handle);
+  void tick();
+}
+
+function mapProtoStatus(status: number): TerminalStatus {
+  switch (status) {
+    case 1: return 'running';
+    case 2: return 'exited';
+    case 3: return 'killed';
+    default: return 'unknown';
+  }
+}
+
+function stopSandboxPump(sessionId: string): void {
+  const handle = sandboxPollers.get(sessionId);
+  if (handle) {
+    clearInterval(handle);
+    sandboxPollers.delete(sessionId);
+  }
+}
+
+function findConversationForSession(get: () => TerminalSessionState, sessionId: string): string {
+  const found = Object.entries(get().sessionsByConversation)
+    .find(([, sessions]) => sessions.some((session) => session.sessionId === sessionId));
+  return found?.[0] ?? '';
 }
 
 export interface CreateTerminalInput {
@@ -144,16 +268,25 @@ interface TerminalSessionState {
   selectSession: (conversationId: string, sessionId: string) => void;
   initConversation: (conversationId: string, deviceId: string) => Promise<void>;
   createSession: (input: CreateTerminalInput, deviceId: string) => Promise<TerminalSessionView>;
+  // WE-S6: create a Station-proxied terminal inside an allocated sandbox.
+  createSandboxSession: (input: CreateTerminalInput, sandboxRef: string) => Promise<TerminalSessionView>;
   killSession: (conversationId: string, sessionId: string) => Promise<void>;
   removeSession: (conversationId: string, sessionId: string) => Promise<void>;
   attachOutput: (sessionId: string, subscriber: OutputSubscriber) => () => void;
   attachStatus: (sessionId: string, subscriber: StatusSubscriber) => () => void;
   hydrateFromCursor: (sessionId: string, cursor: number) => Promise<void>;
   writeInput: (sessionId: string, data: string) => Promise<void>;
+  // Placement-aware primitives used by the xterm viewer.
+  initialRead: (session: TerminalSessionView) => Promise<{ text: string; resync: boolean }>;
+  resize: (session: TerminalSessionView, cols: number, rows: number) => Promise<void>;
 }
 
 const outputSubscribers = new Map<string, Set<OutputSubscriber>>();
 const statusSubscribers = new Map<string, Set<StatusSubscriber>>();
+
+// WE-S6 poll handles for sandbox PTYs (no Rust worker/Tauri events).
+const sandboxPollers = new Map<string, ReturnType<typeof setInterval>>();
+const SANDBOX_POLL_MS = 400;
 
 function subscribe<T>(map: Map<string, Set<T>>, key: string, fn: T): () => void {
   let set = map.get(key);
@@ -397,14 +530,77 @@ export const useTerminalSessionsStore = create<TerminalSessionState>()((set, get
     }
   },
 
+  createSandboxSession: async (input, sandboxRef) => {
+    set({ creating: true });
+    const sessionId = mintSessionId();
+    try {
+      // Station create opens the provisioner PTY inside the live sandbox and
+      // fails closed if the sandbox/provisioner is unavailable.
+      const created = await terminalStationCreate({
+        sessionId,
+        conversationId: input.conversationId,
+        turnId: input.turnId,
+        deviceId: '',
+        cwd: input.cwd ?? '',
+        command: input.command,
+        args: input.args ?? [],
+        pid: 0,
+        executionTarget: 'EXECUTION_TARGET_WORKSPACE_SANDBOX',
+        sandboxRef,
+      });
+      set((state) => ({
+        cursors: { ...state.cursors, [sessionId]: 0 },
+        text: { ...state.text, [sessionId]: '' },
+        activeSessionByConversation: {
+          ...state.activeSessionByConversation,
+          [input.conversationId]: sessionId,
+        },
+      }));
+      await get().initConversation(input.conversationId, get().deviceId);
+      startSandboxPump(get, set, sessionId);
+      const view = get()
+        .sessionsByConversation[input.conversationId]
+        ?.find((session) => session.sessionId === sessionId);
+      if (view) return view;
+      return {
+        sessionId,
+        conversationId: input.conversationId,
+        command: input.command,
+        args: input.args ?? [],
+        cwd: input.cwd ?? '',
+        pid: 0,
+        status: 'running' as TerminalStatus,
+        exitCode: null,
+        outputBytes: 0,
+        live: true,
+        startedAtMs: 0,
+        placement: 'sandbox' as ExecutionPlacement,
+        sandboxRef: created.sandboxRef ?? sandboxRef,
+      };
+    } finally {
+      set({ creating: false });
+    }
+  },
+
   killSession: async (conversationId, sessionId) => {
-    const meta = await terminalWorkerKill(sessionId);
-    set((state) => ({ liveMetas: { ...state.liveMetas, [sessionId]: meta } }));
+    const session = findView(get, sessionId);
+    if (session?.placement === 'sandbox') {
+      await terminalSandboxPtySignal(sessionId, 9);
+    } else {
+      const meta = await terminalWorkerKill(sessionId);
+      set((state) => ({ liveMetas: { ...state.liveMetas, [sessionId]: meta } }));
+    }
     await get().initConversation(conversationId, get().deviceId).catch(() => undefined);
   },
 
   removeSession: async (conversationId, sessionId) => {
-    await terminalWorkerRemove(sessionId).catch(() => undefined);
+    const session = findView(get, sessionId);
+    if (session?.placement === 'sandbox') {
+      stopSandboxPump(sessionId);
+    } else {
+      await terminalWorkerRemove(sessionId).catch(() => undefined);
+    }
+    // Station remove closes the provisioner PTY for sandbox rows.
     await terminalStationRemove(sessionId).catch(() => undefined);
     await get().initConversation(conversationId, get().deviceId).catch(() => undefined);
   },
@@ -413,6 +609,11 @@ export const useTerminalSessionsStore = create<TerminalSessionState>()((set, get
   attachStatus: (sessionId, subscriber) => subscribe(statusSubscribers, sessionId, subscriber),
 
   hydrateFromCursor: async (sessionId, cursor) => {
+    const session = findView(get, sessionId);
+    if (session?.placement === 'sandbox') {
+      // Sandbox scrollback is delivered by the poller; nothing extra to fetch.
+      return;
+    }
     const read = await terminalWorkerRead(sessionId, cursor);
     if (!read.chunkB64) return;
     const text = decodeBase64Utf8(read.chunkB64);
@@ -423,8 +624,41 @@ export const useTerminalSessionsStore = create<TerminalSessionState>()((set, get
     }));
   },
 
+  initialRead: async (session) => {
+    if (session.placement === 'sandbox') {
+      // The poller streams from cursor 0; replay any text already captured.
+      const text = get().text[session.sessionId] ?? '';
+      return { text, resync: false };
+    }
+    const read = await terminalWorkerRead(session.sessionId, 0);
+    const text = decodeBase64Utf8(read.chunkB64 || '');
+    return { text, resync: Boolean(read.resync) };
+  },
+
+  resize: async (session, cols, rows) => {
+    if (session.placement === 'sandbox') {
+      await terminalSandboxPtyResize(session.sessionId, cols, rows);
+    } else {
+      await terminalWorkerResize(session.sessionId, cols, rows);
+    }
+  },
+
   writeInput: async (sessionId, data) => {
+    const session = findView(get, sessionId);
     const bytes = new TextEncoder().encode(data);
-    await terminalWorkerWrite(sessionId, bytes);
+    if (session?.placement === 'sandbox') {
+      await terminalSandboxPtyWrite(sessionId, bytes);
+    } else {
+      await terminalWorkerWrite(sessionId, bytes);
+    }
   },
 }));
+
+function findView(get: () => TerminalSessionState, sessionId: string): TerminalSessionView | undefined {
+  for (const sessions of Object.values(get().sessionsByConversation)) {
+    const found = sessions.find((session) => session.sessionId === sessionId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
