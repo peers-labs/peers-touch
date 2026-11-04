@@ -82,6 +82,100 @@ func TestAllocateIdempotentReattach(t *testing.T) {
 	}
 }
 
+func TestAllocateColdStartsStoppedContainer(t *testing.T) {
+	p := Policy{AllowedRepositories: []string{"r"}, IsolatedNetwork: "n"}
+	calls := []string{}
+	b := NewOCICLIBBackend(p).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, args[0])
+		// inspect reports an existing but STOPPED container.
+		if args[0] == "inspect" {
+			return []byte("false\n"), nil
+		}
+		return []byte("ok"), nil
+	})
+	_, err := b.Allocate(AllocRequest{
+		SandboxRef: "ref1", VolumeRef: "vol1",
+		ImageRef: "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+	})
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	joined := strings.Join(calls, ",")
+	if !strings.Contains(joined, "start") {
+		t.Fatalf("cold start must issue docker start, calls=%v", calls)
+	}
+	if strings.Contains(joined, "run") || strings.Contains(joined, "volume") {
+		t.Fatalf("cold start must not docker run or recreate volume, calls=%v", calls)
+	}
+}
+
+func TestAllocateRunsWhenContainerAbsent(t *testing.T) {
+	p := Policy{AllowedRepositories: []string{"r"}, IsolatedNetwork: "n"}
+	calls := []string{}
+	b := NewOCICLIBBackend(p).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, args[0])
+		if args[0] == "inspect" {
+			return []byte("Error: No such object: wbox-ref1"), errors.New("exit status 1")
+		}
+		return []byte("ok"), nil
+	})
+	_, err := b.Allocate(AllocRequest{
+		SandboxRef: "ref1", VolumeRef: "vol1",
+		ImageRef: "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+	})
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	joined := strings.Join(calls, ",")
+	if !strings.Contains(joined, "volume") || !strings.Contains(joined, "run") {
+		t.Fatalf("absent container must be volume-created then run, calls=%v", calls)
+	}
+}
+
+func TestDormantStopsContainer(t *testing.T) {
+	var got []string
+	b := NewOCICLIBBackend(Policy{}).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		got = args
+		return []byte("ok"), nil
+	})
+	if err := b.Dormant(context.Background(), "ref1"); err != nil {
+		t.Fatalf("dormant: %v", err)
+	}
+	if got[0] != "stop" || got[len(got)-1] != "wbox-ref1" {
+		t.Fatalf("dormant args=%v", got)
+	}
+}
+
+func TestInspectReportsTruth(t *testing.T) {
+	b := NewOCICLIBBackend(Policy{}).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) >= 4 && args[3] == "wbox-live" {
+			return []byte("true\n"), nil
+		}
+		if len(args) >= 4 && args[3] == "wbox-stopped" {
+			return []byte("false\n"), nil
+		}
+		return []byte("Error: No such object"), errors.New("exit status 1")
+	})
+	proofs, err := b.Inspect(context.Background(), []string{"live", "stopped", "gone"})
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	want := map[string]struct{ exists, running bool }{
+		"live":    {true, true},
+		"stopped": {true, false},
+		"gone":    {false, false},
+	}
+	if len(proofs) != 3 {
+		t.Fatalf("proofs=%+v", proofs)
+	}
+	for _, p := range proofs {
+		w := want[p.SandboxRef]
+		if p.Exists != w.exists || p.Running != w.running {
+			t.Fatalf("proof %+v want %+v", p, w)
+		}
+	}
+}
+
 func TestReleaseToleratesMissingAndDeletesVolume(t *testing.T) {
 	var ran [][]string
 	b := NewOCICLIBBackend(Policy{}).WithRunner(func(ctx context.Context, _ string, args ...string) ([]byte, error) {

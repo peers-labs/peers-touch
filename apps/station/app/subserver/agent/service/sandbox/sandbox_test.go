@@ -282,6 +282,19 @@ func (f *fakeStore) CountActive(_ context.Context, actor string) (int, error) {
 	return n, nil
 }
 
+func (f *fakeStore) ListActiveForActor(_ context.Context, actor string) ([]*Sandbox, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*Sandbox
+	for _, s := range f.rows {
+		if s.ActorPTID == actor && s.State != StateReleased && s.State != StateFailed {
+			cp := *s
+			out = append(out, &cp)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeStore) Insert(_ context.Context, s *Sandbox) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -58,6 +58,14 @@ func (c *scriptedClient) Exec(_ context.Context, in ExecCall) (*ExecOutcome, err
 	return nil, fmt.Errorf("unexpected command %q", in.Command)
 }
 func (c *scriptedClient) Release(context.Context, string, string, bool) error { return nil }
+func (c *scriptedClient) Dormant(context.Context, string) error               { return nil }
+func (c *scriptedClient) Reconcile(_ context.Context, refs []string) ([]LiveProof, error) {
+	proofs := make([]LiveProof, 0, len(refs))
+	for _, ref := range refs {
+		proofs = append(proofs, LiveProof{SandboxRef: ref, Exists: true, Running: true})
+	}
+	return proofs, nil
+}
 
 func isAllowlistBin(c string) bool {
 	_, ok := shellAllowlist[c]

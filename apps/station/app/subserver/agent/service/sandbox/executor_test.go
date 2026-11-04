@@ -19,6 +19,7 @@ type fakeClient struct {
 	allocCalls int
 	execCalls  int
 	gotVol     string
+	reconcile  func(refs []string) []LiveProof
 }
 
 func (f *fakeClient) Probe(context.Context) (bool, string, string, error) {
@@ -38,6 +39,17 @@ func (f *fakeClient) EnsureAllocated(_ context.Context, _, _, vol string) (strin
 func (f *fakeClient) Exec(_ context.Context, in ExecCall) (*ExecOutcome, error) {
 	f.execCalls++
 	return f.outcome, f.execErr
+}
+func (f *fakeClient) Dormant(_ context.Context, _ string) error { return f.allocErr }
+func (f *fakeClient) Reconcile(_ context.Context, refs []string) ([]LiveProof, error) {
+	if f.reconcile != nil {
+		return f.reconcile(refs), nil
+	}
+	proofs := make([]LiveProof, 0, len(refs))
+	for _, ref := range refs {
+		proofs = append(proofs, LiveProof{SandboxRef: ref, Exists: true, Running: true})
+	}
+	return proofs, nil
 }
 func (f *fakeClient) Release(context.Context, string, string, bool) error { return nil }
 
@@ -143,5 +155,68 @@ func TestExecutorRefMismatchRejected(t *testing.T) {
 	bad := placementFor(row.Ref + "-other")
 	if _, err := ex.EnsureAndRun(context.Background(), "a", "g", "/ws", bad, ExecCall{Command: "id"}); bizErr(t, err).Code != errcode.AgentSandboxExecutionTargetForbidden {
 		t.Fatalf("code=%v", bizErr(t, err).Code)
+	}
+}
+
+func TestExecutorReconcileMarksGoneFailed(t *testing.T) {
+	fc := &fakeClient{
+		probeOK: true, outcome: &ExecOutcome{ExitCode: 0},
+		reconcile: func([]string) []LiveProof { return nil }, // absent -> gone
+	}
+	ex, store := newTestExecutor(fc)
+	if _, err := ex.EnsureSandbox(context.Background(), "a", "g", "/ws"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if _, err := ex.ReconcileForActor(context.Background(), "a"); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	rows, _ := store.FindActive(context.Background(), "a", "g", "/ws")
+	if rows == nil || rows.State != StateFailed {
+		t.Fatalf("row=%v, want FAILED after backend reports gone", rows)
+	}
+}
+
+func TestExecutorReconcileMarksStoppedDormant(t *testing.T) {
+	fc := &fakeClient{
+		probeOK: true, outcome: &ExecOutcome{ExitCode: 0},
+		reconcile: func(refs []string) []LiveProof {
+			return []LiveProof{{SandboxRef: refs[0], Exists: true, Running: false}}
+		},
+	}
+	ex, store := newTestExecutor(fc)
+	row, err := ex.EnsureSandbox(context.Background(), "a", "g", "/ws")
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	out, err := ex.ReconcileForActor(context.Background(), "a")
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if len(out) != 1 || out[0].State != StateDormant {
+		t.Fatalf("reconciled=%+v", out)
+	}
+	stored, _ := store.Get(context.Background(), row.Ref)
+	if stored.State != StateDormant {
+		t.Fatalf("stored=%v", stored.State)
+	}
+}
+
+func TestExecutorParkKeepsVolume(t *testing.T) {
+	fc := &fakeClient{probeOK: true, outcome: &ExecOutcome{ExitCode: 0}}
+	ex, store := newTestExecutor(fc)
+	row, err := ex.EnsureSandbox(context.Background(), "a", "g", "/ws")
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	parked, err := ex.Park(context.Background(), "a", "g", "/ws")
+	if err != nil {
+		t.Fatalf("park: %v", err)
+	}
+	if parked.State != StateDormant {
+		t.Fatalf("parked=%v", parked.State)
+	}
+	stored, _ := store.Get(context.Background(), row.Ref)
+	if stored.State != StateDormant || stored.VolumeRef == "" {
+		t.Fatalf("stored=%+v must be dormant with volume retained", stored)
 	}
 }

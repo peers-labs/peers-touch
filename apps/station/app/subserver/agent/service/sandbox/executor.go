@@ -107,3 +107,91 @@ func (e *Executor) EnsureAndRun(ctx context.Context, actorPTID, agentID, workspa
 	}
 	return e.Run(ctx, placement, call)
 }
+
+// Park stops the sandbox container for one workspace while retaining its
+// volume (DORMANT). The next command cold-starts it with all data intact. It
+// never falls back: a provisioner that cannot stop the container is an error.
+func (e *Executor) Park(ctx context.Context, actorPTID, agentID, workspaceRoot string) (*Sandbox, error) {
+	available, _, reason, err := e.probe(ctx)
+	if err != nil || !available {
+		if err == nil {
+			err = errors.New(reason)
+		}
+		return nil, newUnavailable("provisioner probe failed: " + err.Error())
+	}
+	row, err := e.alloc.Active(ctx, actorPTID, agentID, workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, newNotReady("no active sandbox to park")
+	}
+	if row.State != StateAllocated {
+		// Already dormant/requested/failed: nothing live to stop.
+		return row, nil
+	}
+	if err := e.client.Dormant(ctx, row.Ref); err != nil {
+		return nil, newUnavailable("provisioner dormant failed: " + err.Error())
+	}
+	return e.alloc.MarkDormant(ctx, row.Ref)
+}
+
+// ReconcileForActor aligns the actor's allocation table with backend truth:
+//   - container gone        -> FAILED (REQUESTED/ALLOCATED/DORMANT)
+//   - exists but stopped    -> DORMANT (ALLOCATED only)
+//   - exists and running    -> ALLOCATED (REQUESTED/DORMANT cold-proven)
+//
+// A provisioner that cannot be reached returns an error and changes nothing,
+// so a transient outage cannot be misrecorded as FAILED.
+func (e *Executor) ReconcileForActor(ctx context.Context, actorPTID string) ([]*Sandbox, error) {
+	rows, err := e.alloc.store.ListActiveForActor(ctx, actorPTID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	refs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		refs = append(refs, row.Ref)
+	}
+	available, _, reason, err := e.probe(ctx)
+	if err != nil || !available {
+		if err == nil {
+			err = errors.New(reason)
+		}
+		return nil, newUnavailable("provisioner probe failed during reconcile: " + err.Error())
+	}
+	proofs, err := e.client.Reconcile(ctx, refs)
+	if err != nil {
+		return nil, newUnavailable("provisioner reconcile failed: " + err.Error())
+	}
+	proofByRef := make(map[string]LiveProof, len(proofs))
+	for _, proof := range proofs {
+		proofByRef[proof.SandboxRef] = proof
+	}
+	reconciled := make([]*Sandbox, 0, len(rows))
+	for _, row := range rows {
+		proof, known := proofByRef[row.Ref]
+		switch {
+		case !known || !proof.Exists:
+			if _, err := e.alloc.MarkFailed(ctx, row.Ref); err != nil {
+				return nil, err
+			}
+		case proof.Running && row.State != StateAllocated:
+			updated, err := e.alloc.MarkAllocated(ctx, row.Ref, row.VolumeRef)
+			if err != nil {
+				return nil, err
+			}
+			row = updated
+		case !proof.Running && row.State == StateAllocated:
+			updated, err := e.alloc.MarkDormant(ctx, row.Ref)
+			if err != nil {
+				return nil, err
+			}
+			row = updated
+		}
+		reconciled = append(reconciled, row)
+	}
+	return reconciled, nil
+}

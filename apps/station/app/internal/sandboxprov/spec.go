@@ -93,16 +93,32 @@ type ExecResult struct {
 	Truncated bool
 }
 
+// LiveProof is the backend truth for one sandbox ref during reconcile.
+type LiveProof struct {
+	SandboxRef string `json:"sandbox_ref"`
+	// Exists reports whether a container for the ref is present at all.
+	Exists bool `json:"exists"`
+	// Running reports a live, exec-able container. A stopped container exists
+	// but is not running (it is DORMANT, volume retained).
+	Running bool `json:"running"`
+}
+
 // Backend is the ExecutorBackend SPI. Host-OS variance lives only in
 // implementations of this interface.
 type Backend interface {
 	Kind() string
 	// Probe reports runtime availability without allocating anything.
 	Probe() (available bool, reason string)
-	// Allocate creates (or re-attaches) the sandbox container for a ref.
+	// Allocate creates, cold-starts, or re-attaches the sandbox container.
 	Allocate(req AllocRequest) (*Handle, error)
 	// Exec runs one bounded command inside the running sandbox.
 	Exec(ctx context.Context, req ExecRequest) (*ExecResult, error)
+	// Dormant stops the container but retains its workspace volume so a later
+	// Allocate cold-starts it with all data intact.
+	Dormant(ctx context.Context, ref string) error
+	// Inspect returns live truth for refs (missing refs report Exists=false
+	// rather than an error) so Station can reconcile its allocation table.
+	Inspect(ctx context.Context, refs []string) ([]LiveProof, error)
 	// Release removes the container; deleteVolume also removes the volume.
 	Release(ref, volumeRef string, keepVolume bool) error
 }

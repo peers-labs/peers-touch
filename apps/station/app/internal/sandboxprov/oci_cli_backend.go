@@ -113,12 +113,24 @@ func (b *OCICLIBBackend) Allocate(req AllocRequest) (*Handle, error) {
 	if vol == "" {
 		vol = volumeName(req.SandboxRef)
 	}
-	// Idempotent: if the container already exists and is running, re-attach.
-	inspectArgs := []string{"inspect", "-f", "{{.State.Running}}", containerName(req.SandboxRef)}
-	out, err := b.run(context.Background(), b.docker, inspectArgs...)
-	if err == nil && strings.TrimSpace(string(out)) == "true" {
-		return &Handle{SandboxRef: req.SandboxRef, Container: containerName(req.SandboxRef),
-			BackendKind: BackendOCILinux, VolumeRef: vol}, nil
+	name := containerName(req.SandboxRef)
+	handle := &Handle{SandboxRef: req.SandboxRef, Container: name,
+		BackendKind: BackendOCILinux, VolumeRef: vol}
+
+	exists, running, err := b.inspectState(context.Background(), req.SandboxRef)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		// Idempotent re-attach when live; cold-start (docker start) when the
+		// container was parked DORMANT. The workspace volume survives either
+		// way, so no `docker run` is attempted against an existing name.
+		if !running {
+			if out, err := b.run(context.Background(), b.docker, "start", name); err != nil {
+				return nil, fmt.Errorf("docker start (cold-start): %w: %s", err, strings.TrimSpace(string(out)))
+			}
+		}
+		return handle, nil
 	}
 
 	// Ensure the named volume exists (idempotent), then run.
@@ -129,8 +141,27 @@ func (b *OCICLIBBackend) Allocate(req AllocRequest) (*Handle, error) {
 	if out, err := b.run(context.Background(), b.docker, args...); err != nil {
 		return nil, fmt.Errorf("docker run: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	return &Handle{SandboxRef: req.SandboxRef, Container: containerName(req.SandboxRef),
-		BackendKind: BackendOCILinux, VolumeRef: vol}, nil
+	return handle, nil
+}
+
+// inspectState reports (exists, running) for a ref without treating a missing
+// container as an error. docker inspect prints "No such object/container" on
+// stderr with exit 1 when the name is absent.
+func (b *OCICLIBBackend) inspectState(ctx context.Context, ref string) (bool, bool, error) {
+	out, err := b.run(ctx, b.docker, "inspect", "-f", "{{.State.Running}}", containerName(ref))
+	if err == nil {
+		return true, strings.TrimSpace(string(out)) == "true", nil
+	}
+	if isNoSuchContainer(out) {
+		return false, false, nil
+	}
+	return false, false, fmt.Errorf("inspect sandbox: %w: %s", err, strings.TrimSpace(string(out)))
+}
+
+func isNoSuchContainer(out []byte) bool {
+	text := strings.ToLower(string(out))
+	return strings.Contains(text, "no such object") ||
+		strings.Contains(text, "no such container")
 }
 
 // execArgs builds `docker exec` flags. Workload stays unprivileged; cwd/env
@@ -163,7 +194,7 @@ func (b *OCICLIBBackend) Exec(ctx context.Context, req ExecRequest) (*ExecResult
 		maxOut = defaultMaxExecOutput
 	}
 
-	running, err := b.isRunning(ctx, req.SandboxRef)
+	_, running, err := b.inspectState(ctx, req.SandboxRef)
 	if err != nil {
 		return nil, err
 	}
@@ -209,15 +240,32 @@ func (b *OCICLIBBackend) Exec(ctx context.Context, req ExecRequest) (*ExecResult
 	return nil, fmt.Errorf("docker exec: %w: %s", runErr, strings.TrimSpace(string(res.Stderr)))
 }
 
-func (b *OCICLIBBackend) isRunning(ctx context.Context, ref string) (bool, error) {
-	out, err := b.run(ctx, b.docker, "inspect", "-f", "{{.State.Running}}", containerName(ref))
+// Dormant stops a live container while keeping its workspace volume. A missing
+// container is idempotent success (already gone); Station marks its row from
+// the returned reconcile truth rather than assuming the stop happened.
+func (b *OCICLIBBackend) Dormant(ctx context.Context, ref string) error {
+	name := containerName(ref)
+	out, err := b.run(ctx, b.docker, "stop", "--time", "5", name)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no such container") {
-			return false, nil
+		if isNoSuchContainer(out) {
+			return nil
 		}
-		return false, fmt.Errorf("inspect sandbox: %w", err)
+		return fmt.Errorf("docker stop: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	return strings.TrimSpace(string(out)) == "true", nil
+	return nil
+}
+
+// Inspect returns live truth per ref for reconciliation.
+func (b *OCICLIBBackend) Inspect(ctx context.Context, refs []string) ([]LiveProof, error) {
+	proofs := make([]LiveProof, 0, len(refs))
+	for _, ref := range refs {
+		exists, running, err := b.inspectState(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		proofs = append(proofs, LiveProof{SandboxRef: ref, Exists: exists, Running: running})
+	}
+	return proofs, nil
 }
 
 var (

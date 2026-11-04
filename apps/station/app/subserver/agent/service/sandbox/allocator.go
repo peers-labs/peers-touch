@@ -105,6 +105,9 @@ type Store interface {
 	FindActive(ctx context.Context, actor, agent, root string) (*Sandbox, error)
 	// CountActive counts REQUESTED/ALLOCATED/DORMANT sandboxes for an actor.
 	CountActive(ctx context.Context, actor string) (int, error)
+	// ListActiveForActor returns REQUESTED/ALLOCATED/DORMANT sandboxes owned by
+	// an actor, used for back-end reconciliation.
+	ListActiveForActor(ctx context.Context, actor string) ([]*Sandbox, error)
 	Insert(ctx context.Context, s *Sandbox) error
 	Update(ctx context.Context, ref string, mutate func(s *Sandbox) error) (*Sandbox, error)
 	Get(ctx context.Context, ref string) (*Sandbox, error)
@@ -168,6 +171,11 @@ func (a *Allocator) Allocate(ctx context.Context, in AllocateInput) (*Sandbox, e
 		return nil, err
 	}
 	return s, nil
+}
+
+// Active returns the current non-released sandbox for a workspace, or nil.
+func (a *Allocator) Active(ctx context.Context, actor, agent, root string) (*Sandbox, error) {
+	return a.store.FindActive(ctx, actor, agent, root)
 }
 
 // MarkAllocated moves REQUESTED -> ALLOCATED only after live provisioner proof.

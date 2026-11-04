@@ -147,6 +147,47 @@ func main() {
 		writeJSON(w, res)
 	})
 
+	// POST /v1/sandboxes/dormant  {"sandbox_ref"} — stop, keep volume.
+	mux.HandleFunc("/v1/sandboxes/dormant", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in struct {
+			SandboxRef string `json:"sandbox_ref"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if err := backend.Dormant(r.Context(), strings.TrimSpace(in.SandboxRef)); err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"dormant": true})
+	})
+
+	// POST /v1/sandboxes/reconcile  {"sandbox_refs":[...]} — per-ref truth.
+	mux.HandleFunc("/v1/sandboxes/reconcile", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in struct {
+			SandboxRefs []string `json:"sandbox_refs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		proofs, err := backend.Inspect(r.Context(), in.SandboxRefs)
+		if err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"proofs": proofs})
+	})
+
 	// POST /v1/sandboxes/release  {"sandbox_ref","volume_ref","keep_volume"}
 	mux.HandleFunc("/v1/sandboxes/release", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

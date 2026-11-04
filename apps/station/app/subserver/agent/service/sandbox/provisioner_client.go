@@ -17,7 +17,16 @@ type Client interface {
 	Probe(ctx context.Context) (available bool, backend string, reason string, err error)
 	EnsureAllocated(ctx context.Context, ref, imageRef, volumeRef string) (actualVolumeRef string, err error)
 	Exec(ctx context.Context, in ExecCall) (*ExecOutcome, error)
+	Dormant(ctx context.Context, ref string) error
+	Reconcile(ctx context.Context, refs []string) ([]LiveProof, error)
 	Release(ctx context.Context, ref, volumeRef string, keepVolume bool) error
+}
+
+// LiveProof is the provisioner truth for one sandbox during reconcile.
+type LiveProof struct {
+	SandboxRef string `json:"sandbox_ref"`
+	Exists     bool   `json:"exists"`
+	Running    bool   `json:"running"`
 }
 
 // ExecCall is one bounded command (mirrors provisionerd's ExecRequest).
@@ -133,4 +142,22 @@ func (c *HTTPClient) Release(ctx context.Context, ref, volumeRef string, keepVol
 	return c.postJSON(ctx, "/v1/sandboxes/release", map[string]any{
 		"sandbox_ref": ref, "volume_ref": volumeRef, "keep_volume": keepVolume,
 	}, nil)
+}
+
+func (c *HTTPClient) Dormant(ctx context.Context, ref string) error {
+	return c.postJSON(ctx, "/v1/sandboxes/dormant", map[string]string{
+		"sandbox_ref": ref,
+	}, nil)
+}
+
+func (c *HTTPClient) Reconcile(ctx context.Context, refs []string) ([]LiveProof, error) {
+	var resp struct {
+		Proofs []LiveProof `json:"proofs"`
+	}
+	if err := c.postJSON(ctx, "/v1/sandboxes/reconcile", map[string]any{
+		"sandbox_refs": refs,
+	}, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Proofs, nil
 }

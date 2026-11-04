@@ -44,6 +44,21 @@ func (s *GormStore) CountActive(ctx context.Context, actor string) (int, error) 
 	return int(n), err
 }
 
+func (s *GormStore) ListActiveForActor(ctx context.Context, actor string) ([]*Sandbox, error) {
+	var rows []persistence.AgentWorkspaceSandbox
+	if err := s.db.WithContext(ctx).
+		Where("actor_ptid = ? AND state IN ?", actor, activeStates).
+		Order("created_at ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]*Sandbox, 0, len(rows))
+	for i := range rows {
+		out = append(out, rowToSandbox(rows[i]))
+	}
+	return out, nil
+}
+
 func (s *GormStore) Insert(ctx context.Context, snd *Sandbox) error {
 	return s.db.WithContext(ctx).Create(sandboxToRow(snd)).Error
 }
