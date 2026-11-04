@@ -60,6 +60,24 @@ func (b *OCICLIBBackend) Probe() (bool, string) {
 func containerName(ref string) string { return "wbox-" + sanitize(ref) }
 func volumeName(ref string) string    { return "wbox-vol-" + sanitize(ref) }
 
+// ownedVolume is the only volume name the provisioner may create or delete for
+// a sandbox: deterministically derived from its ref. A request-supplied
+// volume_ref is never trusted, so the provisioner cannot touch a host volume
+// it does not own (WE-S5 ownership boundary).
+func ownedVolume(ref string) string { return volumeName(strings.TrimSpace(ref)) }
+
+// resolveOwnedVolume enforces the ownership boundary. An empty supplied volume
+// is the normal derived case. A non-empty value that does not equal the owned
+// name is rejected fail-closed instead of naming a foreign host volume.
+func resolveOwnedVolume(ref, supplied string) (string, error) {
+	owned := ownedVolume(ref)
+	if s := strings.TrimSpace(supplied); s != "" && s != owned {
+		return "", fmt.Errorf("%w: refusing foreign volume_ref %q for sandbox %q (owned %q)",
+			ErrPolicyRejected, s, strings.TrimSpace(ref), owned)
+	}
+	return owned, nil
+}
+
 func sanitize(ref string) string {
 	r := strings.NewReplacer(":", "-", "/", "-", "@", "-", " ", "-")
 	return r.Replace(strings.ToLower(ref))
@@ -109,9 +127,11 @@ func (b *OCICLIBBackend) Allocate(req AllocRequest) (*Handle, error) {
 	if err := b.policy.Validate(req); err != nil {
 		return nil, err
 	}
-	vol := req.VolumeRef
-	if vol == "" {
-		vol = volumeName(req.SandboxRef)
+	// The volume identity is backend-derived and ownership-checked; the
+	// request can confirm the owned name but never choose a different volume.
+	vol, err := resolveOwnedVolume(req.SandboxRef, req.VolumeRef)
+	if err != nil {
+		return nil, err
 	}
 	name := containerName(req.SandboxRef)
 	handle := &Handle{SandboxRef: req.SandboxRef, Container: name,
@@ -290,6 +310,11 @@ func inferErrno(stderr []byte) string {
 }
 
 func (b *OCICLIBBackend) Release(ref, volumeRef string, keepVolume bool) error {
+	// Never delete a caller-named foreign volume; the owned name is derived.
+	vol, err := resolveOwnedVolume(ref, volumeRef)
+	if err != nil {
+		return err
+	}
 	name := containerName(ref)
 	if _, err := b.run(context.Background(), b.docker, "rm", "-f", name); err != nil {
 		// A missing container is fine on release; the volume is the decision.
@@ -298,10 +323,6 @@ func (b *OCICLIBBackend) Release(ref, volumeRef string, keepVolume bool) error {
 		}
 	}
 	if !keepVolume {
-		vol := volumeRef
-		if vol == "" {
-			vol = volumeName(ref)
-		}
 		if _, err := b.run(context.Background(), b.docker, "volume", "rm", vol); err != nil {
 			if !strings.Contains(strings.ToLower(err.Error()), "no such volume") {
 				return fmt.Errorf("docker volume rm: %w", err)

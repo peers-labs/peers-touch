@@ -66,13 +66,13 @@ func TestAllocateIdempotentReattach(t *testing.T) {
 		return []byte("ok"), nil
 	})
 	h, err := b.Allocate(AllocRequest{
-		SandboxRef: "ref1", VolumeRef: "vol1",
-		ImageRef: "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+		SandboxRef: "ref1",
+		ImageRef:   "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
 	})
 	if err != nil {
 		t.Fatalf("allocate: %v", err)
 	}
-	if h.Container != "wbox-ref1" || h.VolumeRef != "vol1" {
+	if h.Container != "wbox-ref1" || h.VolumeRef != "wbox-vol-ref1" {
 		t.Fatalf("handle = %+v", h)
 	}
 	for _, c := range calls {
@@ -94,8 +94,8 @@ func TestAllocateColdStartsStoppedContainer(t *testing.T) {
 		return []byte("ok"), nil
 	})
 	_, err := b.Allocate(AllocRequest{
-		SandboxRef: "ref1", VolumeRef: "vol1",
-		ImageRef: "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+		SandboxRef: "ref1",
+		ImageRef:   "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
 	})
 	if err != nil {
 		t.Fatalf("allocate: %v", err)
@@ -120,8 +120,8 @@ func TestAllocateRunsWhenContainerAbsent(t *testing.T) {
 		return []byte("ok"), nil
 	})
 	_, err := b.Allocate(AllocRequest{
-		SandboxRef: "ref1", VolumeRef: "vol1",
-		ImageRef: "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+		SandboxRef: "ref1",
+		ImageRef:   "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
 	})
 	if err != nil {
 		t.Fatalf("allocate: %v", err)
@@ -190,6 +190,63 @@ func TestReleaseToleratesMissingAndDeletesVolume(t *testing.T) {
 	}
 	if len(ran) != 2 || ran[0][0] != "rm" || ran[1][0] != "volume" || ran[1][2] != "wbox-vol-x" {
 		t.Fatalf("unexpected calls: %v", ran)
+	}
+}
+
+// WE-S5 ownership boundary: a release that names a foreign volume must be
+// rejected and must never invoke docker at all, so the provisioner cannot
+// delete a host volume it does not own.
+func TestReleaseRejectsForeignVolumeWithoutRuntime(t *testing.T) {
+	var called bool
+	b := NewOCICLIBBackend(Policy{}).WithRunner(func(context.Context, string, ...string) ([]byte, error) {
+		called = true
+		return nil, nil
+	})
+	err := b.Release("ref1", "wbox-vol-other", false)
+	if !errors.Is(err, ErrPolicyRejected) {
+		t.Fatalf("want ErrPolicyRejected, got %v", err)
+	}
+	if called {
+		t.Fatal("foreign volume release must not invoke docker")
+	}
+}
+
+// Confirming the owned derived name is allowed; an empty value is derived.
+func TestReleaseAcceptsOwnedOrDerivedVolume(t *testing.T) {
+	for _, supplied := range []string{"", "wbox-vol-ref1"} {
+		var rmVol string
+		b := NewOCICLIBBackend(Policy{}).WithRunner(func(_ context.Context, _ string, args ...string) ([]byte, error) {
+			if args[0] == "volume" {
+				rmVol = args[2]
+			}
+			return []byte("ok"), nil
+		})
+		if err := b.Release("ref1", supplied, false); err != nil {
+			t.Fatalf("supplied=%q release: %v", supplied, err)
+		}
+		if rmVol != "wbox-vol-ref1" {
+			t.Fatalf("supplied=%q deleted %q, want owned volume", supplied, rmVol)
+		}
+	}
+}
+
+// Allocate must also refuse a foreign volume_ref before contacting docker.
+func TestAllocateRejectsForeignVolumeWithoutRuntime(t *testing.T) {
+	var called bool
+	p := Policy{AllowedRepositories: []string{"r"}, IsolatedNetwork: "n"}
+	b := NewOCICLIBBackend(p).WithRunner(func(context.Context, string, ...string) ([]byte, error) {
+		called = true
+		return nil, nil
+	})
+	_, err := b.Allocate(AllocRequest{
+		SandboxRef: "ref1", VolumeRef: "wbox-vol-other",
+		ImageRef: "r/u:1@sha256:" + strings.Repeat("d", 64), Security: validSpec(),
+	})
+	if !errors.Is(err, ErrPolicyRejected) {
+		t.Fatalf("want ErrPolicyRejected, got %v", err)
+	}
+	if called {
+		t.Fatal("foreign volume allocate must not invoke docker")
 	}
 }
 
