@@ -142,3 +142,76 @@ func TestSandboxPtyRejectedOnDesktopSession(t *testing.T) {
 		t.Fatalf("sandbox PTY write on a desktop session must be rejected")
 	}
 }
+
+// TestSandboxTerminalProtoRoundTripsPlacement guards the field the Desktop
+// panel relies on to choose its PTY path: a created sandbox row must come back
+// from List carrying WORKSPACE_SANDBOX + sandbox_ref, and a legacy row with no
+// target must surface as DESKTOP_DEVICE (not UNSPECIFIED).
+func TestSandboxTerminalProtoRoundTripsPlacement(t *testing.T) {
+	db := openTerminalDB(t)
+	svc := NewTerminalSessionService()
+	svc.SetDB(db)
+	svc.SetSandboxPtyBridge(&fakePtyBridge{})
+
+	if _, err := svc.Create(context.Background(), "actor:1", sandboxCreateRequest()); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	rows, err := svc.List(context.Background(), "actor:1", "")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %d", len(rows))
+	}
+	proto := TerminalSessionProto(&rows[0])
+	if proto.ExecutionTarget != model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX {
+		t.Fatalf("target=%v", proto.ExecutionTarget)
+	}
+	if proto.SandboxRef != "wbox-1" {
+		t.Fatalf("sandboxRef=%q", proto.SandboxRef)
+	}
+}
+
+func TestLegacyTerminalDefaultsToDesktopPlacement(t *testing.T) {
+	db := openTerminalDB(t)
+	if err := db.Create(&persistence.TerminalSession{
+		ID: "terms-LEGACYABCDEFGHIJKLMNOPQ", ActorPTID: "a", ConversationID: "",
+		DeviceID: "dev-1", Command: "sh", Status: "running",
+		// No execution_target: the column default is desktop_device.
+	}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	var row persistence.TerminalSession
+	if err := db.Where("id = ?", "terms-LEGACYABCDEFGHIJKLMNOPQ").First(&row).Error; err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	proto := TerminalSessionProto(&row)
+	if proto.ExecutionTarget != model.ExecutionTarget_EXECUTION_TARGET_DESKTOP_DEVICE {
+		t.Fatalf("legacy target=%v, want DESKTOP_DEVICE", proto.ExecutionTarget)
+	}
+}
+
+// A sandbox create must refuse to carry a device id and require a sandbox ref,
+// keeping the two placements mutually exclusive server-side.
+func TestSandboxTerminalCreateRejectsMixedIdentity(t *testing.T) {
+	db := openTerminalDB(t)
+	svc := NewTerminalSessionService()
+	svc.SetDB(db)
+	svc.SetSandboxPtyBridge(&fakePtyBridge{})
+
+	mixed := sandboxCreateRequest()
+	mixed.DeviceId = "dev-1"
+	if _, err := svc.Create(context.Background(), "actor:1", mixed); err == nil {
+		t.Fatal("sandbox create with device_id must be rejected")
+	}
+	noRef := sandboxCreateRequest()
+	noRef.SandboxRef = ""
+	if _, err := svc.Create(context.Background(), "actor:1", noRef); err == nil {
+		t.Fatal("sandbox create without sandbox_ref must be rejected")
+	}
+	var n int64
+	db.Model(&persistence.TerminalSession{}).Count(&n)
+	if n != 0 {
+		t.Fatalf("rejected creates must not persist rows, got %d", n)
+	}
+}
