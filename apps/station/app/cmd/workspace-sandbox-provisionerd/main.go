@@ -9,6 +9,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,9 +23,34 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/internal/sandboxprov"
 )
 
+// bearerAuth guards the mutating /v1 control surface. When SANDBOX_PROVISIONER
+// TOKEN is provisioned, every /v1/* request must present an exact
+// "Authorization: Bearer <token>"; /healthz stays open for liveness probes.
+// When no token is configured (dev cell) the surface is unauthenticated and a
+// prominent warning is logged — network placement is the only boundary there.
+func bearerAuth(want string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if want == "" || !strings.HasPrefix(r.URL.Path, "/v1/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 || got == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "provisioner: missing or invalid bearer token",
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type config struct {
 	listen        string
 	policy        sandboxprov.Policy
+	bearerToken   string
 	defaultRunUID int
 	defaultRunGID int
 	memBytes      int64
@@ -58,7 +84,8 @@ func envInt(key string, def int64) int64 {
 
 func loadConfig() config {
 	return config{
-		listen: env("PROVISIONER_LISTEN", ":8090"),
+		listen:      env("PROVISIONER_LISTEN", ":8090"),
+		bearerToken: strings.TrimSpace(os.Getenv("SANDBOX_PROVISIONER_TOKEN")),
 		policy: sandboxprov.Policy{
 			AllowedRepositories: splitNonEmpty(os.Getenv("SANDBOX_ALLOWED_REPOS")),
 			AllowedImageIDs:     splitNonEmpty(os.Getenv("SANDBOX_ALLOWED_IMAGE_IDS")),
@@ -349,8 +376,13 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.listen,
-		Handler:           mux,
+		Handler:           bearerAuth(cfg.bearerToken, mux),
 		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if cfg.bearerToken == "" {
+		log.Printf("WARNING: no SANDBOX_PROVISIONER_TOKEN set — /v1 control surface is UNAUTHENTICATED; network placement is the only boundary")
+	} else {
+		log.Printf("provisioner bearer auth ENABLED on /v1/* (healthz stays open)")
 	}
 	log.Printf("workspace-sandbox-provisionerd listening on %s (isolated_net=%s repos=%d)",
 		cfg.listen, cfg.policy.IsolatedNetwork, len(cfg.policy.AllowedRepositories))

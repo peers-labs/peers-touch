@@ -53,8 +53,9 @@ type ExecOutcome struct {
 
 // HTTPClient talks to an independent workspace-sandbox-provisionerd.
 type HTTPClient struct {
-	baseURL string
-	http    *http.Client
+	baseURL     string
+	bearerToken string
+	http        *http.Client
 }
 
 func NewHTTPClient(baseURL string, timeout time.Duration) *HTTPClient {
@@ -67,6 +68,15 @@ func NewHTTPClient(baseURL string, timeout time.Duration) *HTTPClient {
 	}
 }
 
+// WithBearerToken installs the shared Station↔provisioner secret. When the
+// provisioner is configured with SANDBOX_PROVISIONER_TOKEN it requires this on
+// every /v1 call; an empty token means the sidecar is running unauthenticated
+// (dev cell), so the client simply omits the header.
+func (c *HTTPClient) WithBearerToken(token string) *HTTPClient {
+	c.bearerToken = strings.TrimSpace(token)
+	return c
+}
+
 func (c *HTTPClient) postJSON(ctx context.Context, path string, in, out any) error {
 	body, err := json.Marshal(in)
 	if err != nil {
@@ -77,6 +87,9 @@ func (c *HTTPClient) postJSON(ctx context.Context, path string, in, out any) err
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("provisioner unreachable: %w", err)

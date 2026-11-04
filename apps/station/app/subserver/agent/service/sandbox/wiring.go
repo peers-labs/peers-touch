@@ -18,6 +18,9 @@ const (
 	envProvisionerURL = "PEERS_SANDBOX_PROVISIONER_URL"
 	envDefaultImage   = "PEERS_SANDBOX_DEFAULT_IMAGE"
 	envMaxActive      = "PEERS_SANDBOX_MAX_ACTIVE_PER_ACTOR"
+	// envProvisionerToken is the shared bearer secret for the provisioner
+	// control surface. Must match the sidecar's SANDBOX_PROVISIONER_TOKEN.
+	envProvisionerToken = "PEERS_SANDBOX_PROVISIONER_TOKEN"
 
 	defaultProvisionerURL    = "http://workspace-sandbox-provisioner:8090"
 	defaultMaxActivePerActor = 8
@@ -63,7 +66,8 @@ func newStationExecutorFromEnv(db *gorm.DB) (*Executor, *HTTPClient) {
 	}
 	store := NewGormStore(db)
 	allocator := NewAllocator(store, Quota{MaxActivePerActor: maxActive}, newSandboxRef, nil)
-	client := NewHTTPClient(provisionerURL, provisionerCallTimeout)
+	client := NewHTTPClient(provisionerURL, provisionerCallTimeout).
+		WithBearerToken(os.Getenv(envProvisionerToken))
 	executor := NewExecutor(ExecutorConfig{
 		Allocator:    allocator,
 		Client:       client,
