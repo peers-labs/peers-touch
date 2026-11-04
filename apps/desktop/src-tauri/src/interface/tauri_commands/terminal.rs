@@ -214,6 +214,12 @@ pub struct AgentTerminalCreateInput {
     pub args: Vec<String>,
     #[serde(default)]
     pub pid: u32,
+    // WE-S6 dual execution target. Default 0/DESKTOP_DEVICE is unchanged;
+    // callers set WORKSPACE_SANDBOX (2) with sandbox_ref for sandbox sessions.
+    #[serde(default)]
+    pub execution_target: i32,
+    #[serde(default)]
+    pub sandbox_ref: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -279,6 +285,8 @@ pub fn agent_terminal_session_create(
         command: input.command,
         args: input.args,
         pid: input.pid,
+        execution_target: input.execution_target,
+        sandbox_ref: input.sandbox_ref,
     };
     session_rpc::create(state.station.client(), &token, &request)
 }
@@ -337,4 +345,106 @@ pub fn agent_terminal_session_remove(
         session_id: input.session_id,
     };
     session_rpc::remove(state.station.client(), &token, &request)
+}
+
+// ── WE-S6 WORKSPACE_SANDBOX PTY proxy Tauri commands ───────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSandboxPtyWriteInput {
+    pub session_id: String,
+    pub data_b64: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSandboxPtyReadInput {
+    pub session_id: String,
+    #[serde(default)]
+    pub cursor: u64,
+    #[serde(default)]
+    pub max_bytes: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSandboxPtyResizeInput {
+    pub session_id: String,
+    pub cols: u32,
+    pub rows: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSandboxPtySignalInput {
+    pub session_id: String,
+    pub signal: i32,
+}
+
+#[tauri::command]
+pub fn agent_sandbox_pty_write(
+    input: AgentSandboxPtyWriteInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match station_token(&state, &window) { Ok(token) => token, Err(error) => return error };
+    let data = match base64::engine::general_purpose::STANDARD.decode(&input.data_b64) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid terminal data encoding: {error}"),
+                None,
+            );
+        }
+    };
+    let request = agent::SandboxPtyWriteRequest {
+        session_id: input.session_id,
+        data,
+    };
+    session_rpc::sandbox_pty_write(state.station.client(), &token, &request)
+}
+
+#[tauri::command]
+pub fn agent_sandbox_pty_read(
+    input: AgentSandboxPtyReadInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match station_token(&state, &window) { Ok(token) => token, Err(error) => return error };
+    let request = agent::SandboxPtyReadRequest {
+        session_id: input.session_id,
+        cursor: input.cursor,
+        max_bytes: input.max_bytes,
+    };
+    session_rpc::sandbox_pty_read(state.station.client(), &token, &request)
+}
+
+#[tauri::command]
+pub fn agent_sandbox_pty_resize(
+    input: AgentSandboxPtyResizeInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match station_token(&state, &window) { Ok(token) => token, Err(error) => return error };
+    let request = agent::SandboxPtyResizeRequest {
+        session_id: input.session_id,
+        cols: input.cols,
+        rows: input.rows,
+    };
+    session_rpc::sandbox_pty_resize(state.station.client(), &token, &request)
+}
+
+#[tauri::command]
+pub fn agent_sandbox_pty_signal(
+    input: AgentSandboxPtySignalInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match station_token(&state, &window) { Ok(token) => token, Err(error) => return error };
+    let request = agent::SandboxPtySignalRequest {
+        session_id: input.session_id,
+        signal: input.signal,
+    };
+    session_rpc::sandbox_pty_signal(state.station.client(), &token, &request)
 }

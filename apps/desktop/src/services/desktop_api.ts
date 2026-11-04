@@ -95,6 +95,11 @@ import {
   ListTerminalSessionsResponseSchema,
   ReconcileTerminalSessionsResponseSchema,
   RemoveTerminalSessionResponseSchema,
+  SandboxPtyWriteResponseSchema,
+  SandboxPtyReadResponseSchema,
+  SandboxPtyResizeResponseSchema,
+  SandboxPtySignalResponseSchema,
+  TerminalSessionStatus,
 } from '../gen/proto/domain/agent/terminal_session_pb';
 import {
   CreateBrowserSessionResponseSchema,
@@ -10215,6 +10220,9 @@ export async function terminalStationCreate(input: {
   command: string;
   args: string[];
   pid: number;
+  // WE-S6: WORKSPACE_SANDBOX sessions omit deviceId and carry sandboxRef.
+  executionTarget?: 'EXECUTION_TARGET_DESKTOP_DEVICE' | 'EXECUTION_TARGET_WORKSPACE_SANDBOX';
+  sandboxRef?: string;
 }): Promise<TerminalStationSession> {
   const response = await invokeRustProto(
     'agent_terminal_session_create',
@@ -10228,6 +10236,11 @@ export async function terminalStationCreate(input: {
       command: input.command,
       args: input.args,
       pid: input.pid,
+      execution_target:
+        input.executionTarget === 'EXECUTION_TARGET_WORKSPACE_SANDBOX'
+          ? 2
+          : 1,
+      sandbox_ref: input.sandboxRef ?? '',
     },
   );
   return response.session as unknown as TerminalStationSession;
@@ -10278,6 +10291,76 @@ export async function terminalStationRemove(sessionId: string): Promise<void> {
     RemoveTerminalSessionResponseSchema,
     { session_id: sessionId },
   );
+}
+
+// ── WE-S6 WORKSPACE_SANDBOX PTY proxy (Station forwards to provisioner) ──
+
+export interface SandboxPtyReadResult {
+  data: Uint8Array;
+  nextCursor: number;
+  truncated: boolean;
+  status: TerminalSessionStatus;
+  exitCode: number;
+  outputBytes: number;
+}
+
+export async function terminalSandboxPtyWrite(sessionId: string, data: Uint8Array): Promise<number> {
+  let binary = '';
+  data.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  const response = await invokeRustProto(
+    'agent_sandbox_pty_write',
+    SandboxPtyWriteResponseSchema,
+    { session_id: sessionId, data_b64: btoa(binary) },
+  );
+  return Number(response.bytesWritten ?? 0);
+}
+
+export async function terminalSandboxPtyRead(
+  sessionId: string,
+  cursor: number,
+  maxBytes: number,
+): Promise<SandboxPtyReadResult> {
+  const response = await invokeRustProto(
+    'agent_sandbox_pty_read',
+    SandboxPtyReadResponseSchema,
+    { session_id: sessionId, cursor, max_bytes: maxBytes },
+  );
+  return {
+    data: response.data ?? new Uint8Array(),
+    nextCursor: Number(response.nextCursor ?? 0),
+    truncated: Boolean(response.truncated),
+    status: response.status,
+    exitCode: response.exitCode ?? 0,
+    outputBytes: Number(response.outputBytes ?? 0),
+  };
+}
+
+export async function terminalSandboxPtyResize(
+  sessionId: string,
+  cols: number,
+  rows: number,
+): Promise<void> {
+  await invokeRustProto(
+    'agent_sandbox_pty_resize',
+    SandboxPtyResizeResponseSchema,
+    { session_id: sessionId, cols, rows },
+  );
+}
+
+export async function terminalSandboxPtySignal(sessionId: string, signal: number): Promise<void> {
+  await invokeRustProto(
+    'agent_sandbox_pty_signal',
+    SandboxPtySignalResponseSchema,
+    { session_id: sessionId, signal },
+  );
+}
+
+// Text-input convenience; the binary path (terminalSandboxPtyWrite) is the
+// primary one because PTY input carries arbitrary control bytes.
+export async function terminalSandboxPtyWriteText(sessionId: string, text: string): Promise<number> {
+  return terminalSandboxPtyWrite(sessionId, new TextEncoder().encode(text));
 }
 
 // ── TW-D6 persistent browser sessions ──────────────────────────────────

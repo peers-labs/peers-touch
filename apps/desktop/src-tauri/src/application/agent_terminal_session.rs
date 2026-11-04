@@ -87,3 +87,57 @@ pub fn remove(
         request,
     )
 }
+
+// ── WE-S6 WORKSPACE_SANDBOX PTY proxy ──────────────────────────────────────
+
+pub fn sandbox_pty_write(
+    client: &StationClient,
+    token: &str,
+    request: &agent::SandboxPtyWriteRequest,
+) -> AppResult<Vec<u8>> {
+    post::<_, agent::SandboxPtyWriteResponse>(
+        client,
+        "/sub-agent/agent/sandbox-pty/write",
+        token,
+        request,
+    )
+}
+
+pub fn sandbox_pty_read(
+    client: &StationClient,
+    token: &str,
+    request: &agent::SandboxPtyReadRequest,
+) -> AppResult<Vec<u8>> {
+    post::<_, agent::SandboxPtyReadResponse>(
+        client,
+        "/sub-agent/agent/sandbox-pty/read",
+        token,
+        request,
+    )
+}
+
+pub fn sandbox_pty_resize(
+    client: &StationClient,
+    token: &str,
+    request: &agent::SandboxPtyResizeRequest,
+) -> AppResult<Vec<u8>> {
+    post::<_, agent::SandboxPtyResizeResponse>(
+        client,
+        "/sub-agent/agent/sandbox-pty/resize",
+        token,
+        request,
+    )
+}
+
+pub fn sandbox_pty_signal(
+    client: &StationClient,
+    token: &str,
+    request: &agent::SandboxPtySignalRequest,
+) -> AppResult<Vec<u8>> {
+    post::<_, agent::SandboxPtySignalResponse>(
+        client,
+        "/sub-agent/agent/sandbox-pty/signal",
+        token,
+        request,
+    )
+}
