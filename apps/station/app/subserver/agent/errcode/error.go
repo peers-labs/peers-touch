@@ -144,6 +144,20 @@ func (e *BizError) Error() string {
 
 func (e *BizError) Unwrap() error { return e.Cause }
 
+// WithDetail attaches an audit detail key/value to the payload and returns the
+// same error (chainable). Used by services that construct a typed error
+// inline before they know context details.
+func (e *BizError) WithDetail(key, value string) *BizError {
+	if e.Payload == nil {
+		e.Payload = &model.ErrorPayload{ErrorType: string(e.Code)}
+	}
+	if e.Payload.Details == nil {
+		e.Payload.Details = map[string]string{}
+	}
+	e.Payload.Details[key] = value
+	return e
+}
+
 func New(code Code, httpStatus int, message string, cause error) *BizError {
 	return &BizError{Code: code, HTTPStatus: httpStatus, Message: message, Cause: cause}
 }

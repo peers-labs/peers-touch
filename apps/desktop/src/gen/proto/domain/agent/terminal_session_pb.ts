@@ -6,13 +6,15 @@ import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2"
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { ExecutionTarget } from "./execution_target_pb";
+import { file_domain_agent_execution_target } from "./execution_target_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/agent/terminal_session.proto.
  */
 export const file_domain_agent_terminal_session: GenFile = /*@__PURE__*/
-  fileDesc("CiNkb21haW4vYWdlbnQvdGVybWluYWxfc2Vzc2lvbi5wcm90bxIacGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEi5QIKD1Rlcm1pbmFsU2Vzc2lvbhISCgpzZXNzaW9uX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIPCgd0dXJuX2lkGAMgASgJEhEKCWRldmljZV9pZBgEIAEoCRILCgNjd2QYBSABKAkSDwoHY29tbWFuZBgGIAEoCRIMCgRhcmdzGAcgAygJEgsKA3BpZBgIIAEoDRJBCgZzdGF0dXMYCSABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb25TdGF0dXMSEQoJZXhpdF9jb2RlGAogASgFEhQKDG91dHB1dF9ieXRlcxgLIAEoBBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiqAEKHENyZWF0ZVRlcm1pbmFsU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgIIAEoCRIXCg9jb252ZXJzYXRpb25faWQYASABKAkSDwoHdHVybl9pZBgCIAEoCRIRCglkZXZpY2VfaWQYAyABKAkSCwoDY3dkGAQgASgJEg8KB2NvbW1hbmQYBSABKAkSDAoEYXJncxgGIAMoCRILCgNwaWQYByABKA0iXQodQ3JlYXRlVGVybWluYWxTZXNzaW9uUmVzcG9uc2USPAoHc2Vzc2lvbhgBIAEoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRlcm1pbmFsU2Vzc2lvbiKeAQocVXBkYXRlVGVybWluYWxTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJEkEKBnN0YXR1cxgCIAEoDjIxLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRlcm1pbmFsU2Vzc2lvblN0YXR1cxIRCglleGl0X2NvZGUYAyABKAUSFAoMb3V0cHV0X2J5dGVzGAQgASgEIl0KHVVwZGF0ZVRlcm1pbmFsU2Vzc2lvblJlc3BvbnNlEjwKB3Nlc3Npb24YASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb24iNgobTGlzdFRlcm1pbmFsU2Vzc2lvbnNSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCSJdChxMaXN0VGVybWluYWxTZXNzaW9uc1Jlc3BvbnNlEj0KCHNlc3Npb25zGAEgAygLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVGVybWluYWxTZXNzaW9uIk8KIFJlY29uY2lsZVRlcm1pbmFsU2Vzc2lvbnNSZXF1ZXN0EhEKCWRldmljZV9pZBgBIAEoCRIYChBsaXZlX3Nlc3Npb25faWRzGAIgAygJImIKIVJlY29uY2lsZVRlcm1pbmFsU2Vzc2lvbnNSZXNwb25zZRI9CghzZXNzaW9ucxgBIAMoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRlcm1pbmFsU2Vzc2lvbiIyChxSZW1vdmVUZXJtaW5hbFNlc3Npb25SZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkiMAodUmVtb3ZlVGVybWluYWxTZXNzaW9uUmVzcG9uc2USDwoHcmVtb3ZlZBgBIAEoCCrSAQoVVGVybWluYWxTZXNzaW9uU3RhdHVzEicKI1RFUk1JTkFMX1NFU1NJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASIwofVEVSTUlOQUxfU0VTU0lPTl9TVEFUVVNfUlVOTklORxABEiIKHlRFUk1JTkFMX1NFU1NJT05fU1RBVFVTX0VYSVRFRBACEiIKHlRFUk1JTkFMX1NFU1NJT05fU1RBVFVTX0tJTExFRBADEiMKH1RFUk1JTkFMX1NFU1NJT05fU1RBVFVTX1VOS05PV04QBEJLWklnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9hcHAvc3Vic2VydmVyL2FnZW50L21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("CiNkb21haW4vYWdlbnQvdGVybWluYWxfc2Vzc2lvbi5wcm90bxIacGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEiwQMKD1Rlcm1pbmFsU2Vzc2lvbhISCgpzZXNzaW9uX2lkGAEgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgCIAEoCRIPCgd0dXJuX2lkGAMgASgJEhEKCWRldmljZV9pZBgEIAEoCRILCgNjd2QYBSABKAkSDwoHY29tbWFuZBgGIAEoCRIMCgRhcmdzGAcgAygJEgsKA3BpZBgIIAEoDRJBCgZzdGF0dXMYCSABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb25TdGF0dXMSEQoJZXhpdF9jb2RlGAogASgFEhQKDG91dHB1dF9ieXRlcxgLIAEoBBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASRQoQZXhlY3V0aW9uX3RhcmdldBgOIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV4ZWN1dGlvblRhcmdldBITCgtzYW5kYm94X3JlZhgPIAEoCSKEAgocQ3JlYXRlVGVybWluYWxTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAggASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIPCgd0dXJuX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRILCgNjd2QYBCABKAkSDwoHY29tbWFuZBgFIAEoCRIMCgRhcmdzGAYgAygJEgsKA3BpZBgHIAEoDRJFChBleGVjdXRpb25fdGFyZ2V0GAkgASgOMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuRXhlY3V0aW9uVGFyZ2V0EhMKC3NhbmRib3hfcmVmGAogASgJIl0KHUNyZWF0ZVRlcm1pbmFsU2Vzc2lvblJlc3BvbnNlEjwKB3Nlc3Npb24YASABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb24ingEKHFVwZGF0ZVRlcm1pbmFsU2Vzc2lvblJlcXVlc3QSEgoKc2Vzc2lvbl9pZBgBIAEoCRJBCgZzdGF0dXMYAiABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb25TdGF0dXMSEQoJZXhpdF9jb2RlGAMgASgFEhQKDG91dHB1dF9ieXRlcxgEIAEoBCJdCh1VcGRhdGVUZXJtaW5hbFNlc3Npb25SZXNwb25zZRI8CgdzZXNzaW9uGAEgASgLMisucGVlcnNfdG91Y2gubW9kZWwuYWdlbnQudjEuVGVybWluYWxTZXNzaW9uIjYKG0xpc3RUZXJtaW5hbFNlc3Npb25zUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiXQocTGlzdFRlcm1pbmFsU2Vzc2lvbnNSZXNwb25zZRI9CghzZXNzaW9ucxgBIAMoCzIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLlRlcm1pbmFsU2Vzc2lvbiKrAQogUmVjb25jaWxlVGVybWluYWxTZXNzaW9uc1JlcXVlc3QSEQoJZGV2aWNlX2lkGAEgASgJEhgKEGxpdmVfc2Vzc2lvbl9pZHMYAiADKAkSRQoQZXhlY3V0aW9uX3RhcmdldBgDIAEoDjIrLnBlZXJzX3RvdWNoLm1vZGVsLmFnZW50LnYxLkV4ZWN1dGlvblRhcmdldBITCgtzYW5kYm94X3JlZhgEIAEoCSJiCiFSZWNvbmNpbGVUZXJtaW5hbFNlc3Npb25zUmVzcG9uc2USPQoIc2Vzc2lvbnMYASADKAsyKy5wZWVyc190b3VjaC5tb2RlbC5hZ2VudC52MS5UZXJtaW5hbFNlc3Npb24iMgocUmVtb3ZlVGVybWluYWxTZXNzaW9uUmVxdWVzdBISCgpzZXNzaW9uX2lkGAEgASgJIjAKHVJlbW92ZVRlcm1pbmFsU2Vzc2lvblJlc3BvbnNlEg8KB3JlbW92ZWQYASABKAgq0gEKFVRlcm1pbmFsU2Vzc2lvblN0YXR1cxInCiNURVJNSU5BTF9TRVNTSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEiMKH1RFUk1JTkFMX1NFU1NJT05fU1RBVFVTX1JVTk5JTkcQARIiCh5URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19FWElURUQQAhIiCh5URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19LSUxMRUQQAxIjCh9URVJNSU5BTF9TRVNTSU9OX1NUQVRVU19VTktOT1dOEARCS1pJZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9hZ2VudC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp, file_domain_agent_execution_target]);
 
 /**
  * @generated from message peers_touch.model.agent.v1.TerminalSession
@@ -89,6 +91,21 @@ export type TerminalSession = Message<"peers_touch.model.agent.v1.TerminalSessio
    * @generated from field: google.protobuf.Timestamp ended_at = 13;
    */
   endedAt?: Timestamp | undefined;
+
+  /**
+   * WE-S6: execution placement. DESKTOP_DEVICE owns the PTY on the worker
+   * (device_id set); WORKSPACE_SANDBOX owns it in the provisioner sandbox
+   * (sandbox_ref set). The two are mutually exclusive. Default/unset is
+   * treated as DESKTOP_DEVICE for backward compatibility.
+   *
+   * @generated from field: peers_touch.model.agent.v1.ExecutionTarget execution_target = 14;
+   */
+  executionTarget: ExecutionTarget;
+
+  /**
+   * @generated from field: string sandbox_ref = 15;
+   */
+  sandboxRef: string;
 };
 
 /**
@@ -144,6 +161,19 @@ export type CreateTerminalSessionRequest = Message<"peers_touch.model.agent.v1.C
    * @generated from field: uint32 pid = 7;
    */
   pid: number;
+
+  /**
+   * WE-S6: target=WORKSPACE_SANDBOX requires sandbox_ref and leaves device_id
+   * empty; target=DESKTOP_DEVICE (default) requires device_id and no sandbox_ref.
+   *
+   * @generated from field: peers_touch.model.agent.v1.ExecutionTarget execution_target = 9;
+   */
+  executionTarget: ExecutionTarget;
+
+  /**
+   * @generated from field: string sandbox_ref = 10;
+   */
+  sandboxRef: string;
 };
 
 /**
@@ -258,6 +288,8 @@ export const ListTerminalSessionsResponseSchema: GenMessage<ListTerminalSessions
  */
 export type ReconcileTerminalSessionsRequest = Message<"peers_touch.model.agent.v1.ReconcileTerminalSessionsRequest"> & {
   /**
+   * DESKTOP_DEVICE reconcile: owner key + live sessions on that device.
+   *
    * @generated from field: string device_id = 1;
    */
   deviceId: string;
@@ -269,6 +301,19 @@ export type ReconcileTerminalSessionsRequest = Message<"peers_touch.model.agent.
    * @generated from field: repeated string live_session_ids = 2;
    */
   liveSessionIds: string[];
+
+  /**
+   * WE-S6: WORKSPACE_SANDBOX reconcile. When target is WORKSPACE_SANDBOX,
+   * device_id is ignored and live_session_ids are matched within sandbox_ref.
+   *
+   * @generated from field: peers_touch.model.agent.v1.ExecutionTarget execution_target = 3;
+   */
+  executionTarget: ExecutionTarget;
+
+  /**
+   * @generated from field: string sandbox_ref = 4;
+   */
+  sandboxRef: string;
 };
 
 /**
