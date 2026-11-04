@@ -25,7 +25,10 @@ apps/station/app/subserver/agent/
 tooling/docker/（或部署侧 compose）
   compose 增加 workspace-sandbox-provisioner 与 egress proxy（profile 隔离）
 
-apps/workspace-sandbox-provisioner/   [新可执行单元，独立模块/进程]
+apps/workspace-sandbox-provisioner/   [独立进程；WE-S3 落地为 station Go 模块内的
+                                       独立二进制 apps/station/app/cmd/workspace-sandbox-provisionerd
+                                       + internal/sandboxprov（stdlib-only，无业务 DB 依赖）；
+                                       未来若需独立发布再拆为独立 Go 模块]
   cmd/provisionerd/main.go
   internal/
     server/        Station 窄 RPC 服务端（鉴权、配额、白名单）
@@ -38,8 +41,9 @@ apps/workspace-sandbox-provisioner/   [新可执行单元，独立模块/进程]
     policy/        镜像白名单/digest、安全模板、配额、egress allowlist
 
 apps/desktop/
-  src-tauri/...terminal/      [改] 仅 device 模式；不代理沙盒
-  src/.../terminal|toolcard/  [改] 落点只读标注（locales 文案）
+  src-tauri/...terminal/      [改] device PTY 仍由本地 worker；新增 sandbox PTY
+                              经 Station /agent/sandbox-pty/* 代理（Desktop 不持沙盒进程）
+  src/.../terminal|toolcard/  [改] 落点只读标注（locales 文案）+ 沙盒会话轮询泵
 ```
 
 ## 依赖方向（allowed / forbidden）
