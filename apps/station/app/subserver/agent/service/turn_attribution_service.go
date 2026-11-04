@@ -295,6 +295,7 @@ func attributionEntriesForSegment(
 				version = attachmentVersions[sourceID]
 			}
 		case model.TurnAttributionKind_TURN_ATTRIBUTION_KIND_MEMORY:
+			name = historicalMemoryName(ctx, db, sourceID, name)
 			if version == "" {
 				version = shortProjectionHash(segment.GetContentHash())
 			}
@@ -415,10 +416,27 @@ func parseAttributionSourceRef(
 	case model.TurnAttributionKind_TURN_ATTRIBUTION_KIND_ATTACHMENT:
 		prefix = "attachment:"
 	case model.TurnAttributionKind_TURN_ATTRIBUTION_KIND_MEMORY:
-		if ref == "memory" || strings.HasPrefix(ref, "memory:") {
+		if ref == "memory" {
 			return "memory", "", true
 		}
-		return "", "", false
+		if !strings.HasPrefix(ref, "memory:") {
+			return "", "", false
+		}
+		value := strings.TrimPrefix(ref, "memory:")
+		version := ""
+		if marker := strings.LastIndex(value, ":version="); marker >= 0 {
+			version = value[marker+len(":version="):]
+			value = value[:marker]
+		}
+		// Aggregate refs (memory:agent=<id>, memory:agent=...) describe the
+		// whole memory section, not a single adopted entry.
+		if value == "" || strings.HasPrefix(value, "agent=") {
+			return "memory", "", true
+		}
+		if strings.ContainsAny(value, `/\`) {
+			return "", "", false
+		}
+		return safeProjectionText(value, 160), safeProjectionText(version, 64), true
 	default:
 		return "", "", false
 	}
@@ -500,9 +518,31 @@ func historicalKnowledgeName(
 	return fallback
 }
 
-func attributionOutcome(
-	decision model.ContextSegmentDecision,
-) model.TurnAttributionOutcome {
+// historicalMemoryName resolves a frozen memory id to its summary for display.
+// The aggregate "memory" pseudo-id and deleted memories leave the fallback.
+func historicalMemoryName(
+	ctx context.Context,
+	db *gorm.DB,
+	memoryID string,
+	fallback string,
+) string {
+	if memoryID == "" || memoryID == "memory" {
+		return fallback
+	}
+	var record persistence.Memory
+	if err := db.WithContext(ctx).
+		Select("summary", "content").
+		Where("id = ?", memoryID).
+		First(&record).Error; err != nil {
+		return fallback
+	}
+	if summary := safeProjectionText(record.Summary, 160); summary != "" {
+		return summary
+	}
+	return safeProjectionText(record.Content, 160)
+}
+
+func attributionOutcome(decision model.ContextSegmentDecision) model.TurnAttributionOutcome {
 	switch decision {
 	case model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED:
 		return model.TurnAttributionOutcome_TURN_ATTRIBUTION_OUTCOME_INCLUDED
