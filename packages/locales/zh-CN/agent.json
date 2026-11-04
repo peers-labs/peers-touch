@@ -1337,5 +1337,11 @@
   "agent.recovery.reselectTarget": "重新选择目标",
   "agent.recovery.openTerminalResults": "打开最终结果",
   "agent.recovery.openExistingChildOrUseNewKey": "打开已有重试或使用新键",
-  "agent.recovery.retryWhenEvaluatorReady": "评估器就绪后重试"
+  "agent.recovery.retryWhenEvaluatorReady": "评估器就绪后重试",
+  "errors": {
+    "sandboxUnavailable": "此 Station 上的工作区沙盒不可用。",
+    "sandboxNotReady": "工作区沙盒尚未就绪，必须先确认能力绑定后才能执行。",
+    "sandboxPermissionDenied": "操作在沙盒内被拒绝（操作系统权限错误）。",
+    "sandboxExecutionTargetForbidden": "禁止在同一回合混用执行落点，或将沙盒回退到本机执行。"
+  }
 }

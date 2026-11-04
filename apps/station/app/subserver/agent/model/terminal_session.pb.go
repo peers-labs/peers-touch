@@ -98,11 +98,17 @@ type TerminalSession struct {
 	ExitCode int32 `protobuf:"varint,10,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
 	// Monotonic count of bytes the worker has emitted (the ring itself is
 	// bounded and stays on the device).
-	OutputBytes   uint64                 `protobuf:"varint,11,opt,name=output_bytes,json=outputBytes,proto3" json:"output_bytes,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	EndedAt       *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	OutputBytes uint64                 `protobuf:"varint,11,opt,name=output_bytes,json=outputBytes,proto3" json:"output_bytes,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	EndedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	// WE-S6: execution placement. DESKTOP_DEVICE owns the PTY on the worker
+	// (device_id set); WORKSPACE_SANDBOX owns it in the provisioner sandbox
+	// (sandbox_ref set). The two are mutually exclusive. Default/unset is
+	// treated as DESKTOP_DEVICE for backward compatibility.
+	ExecutionTarget ExecutionTarget `protobuf:"varint,14,opt,name=execution_target,json=executionTarget,proto3,enum=peers_touch.model.agent.v1.ExecutionTarget" json:"execution_target,omitempty"`
+	SandboxRef      string          `protobuf:"bytes,15,opt,name=sandbox_ref,json=sandboxRef,proto3" json:"sandbox_ref,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *TerminalSession) Reset() {
@@ -226,6 +232,20 @@ func (x *TerminalSession) GetEndedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *TerminalSession) GetExecutionTarget() ExecutionTarget {
+	if x != nil {
+		return x.ExecutionTarget
+	}
+	return ExecutionTarget_EXECUTION_TARGET_UNSPECIFIED
+}
+
+func (x *TerminalSession) GetSandboxRef() string {
+	if x != nil {
+		return x.SandboxRef
+	}
+	return ""
+}
+
 type CreateTerminalSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Worker-generated resource id ("terms-<ULID>"). It is the global identity
@@ -238,8 +258,12 @@ type CreateTerminalSessionRequest struct {
 	Command        string   `protobuf:"bytes,5,opt,name=command,proto3" json:"command,omitempty"`
 	Args           []string `protobuf:"bytes,6,rep,name=args,proto3" json:"args,omitempty"`
 	Pid            uint32   `protobuf:"varint,7,opt,name=pid,proto3" json:"pid,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// WE-S6: target=WORKSPACE_SANDBOX requires sandbox_ref and leaves device_id
+	// empty; target=DESKTOP_DEVICE (default) requires device_id and no sandbox_ref.
+	ExecutionTarget ExecutionTarget `protobuf:"varint,9,opt,name=execution_target,json=executionTarget,proto3,enum=peers_touch.model.agent.v1.ExecutionTarget" json:"execution_target,omitempty"`
+	SandboxRef      string          `protobuf:"bytes,10,opt,name=sandbox_ref,json=sandboxRef,proto3" json:"sandbox_ref,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateTerminalSessionRequest) Reset() {
@@ -326,6 +350,20 @@ func (x *CreateTerminalSessionRequest) GetPid() uint32 {
 		return x.Pid
 	}
 	return 0
+}
+
+func (x *CreateTerminalSessionRequest) GetExecutionTarget() ExecutionTarget {
+	if x != nil {
+		return x.ExecutionTarget
+	}
+	return ExecutionTarget_EXECUTION_TARGET_UNSPECIFIED
+}
+
+func (x *CreateTerminalSessionRequest) GetSandboxRef() string {
+	if x != nil {
+		return x.SandboxRef
+	}
+	return ""
 }
 
 type CreateTerminalSessionResponse struct {
@@ -573,13 +611,18 @@ func (x *ListTerminalSessionsResponse) GetSessions() []*TerminalSession {
 }
 
 type ReconcileTerminalSessionsRequest struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	DeviceId string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// DESKTOP_DEVICE reconcile: owner key + live sessions on that device.
+	DeviceId string `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
 	// Sessions the worker currently proves alive. Every other RUNNING row for
 	// this device is downgraded to UNKNOWN (no daemon survived the restart).
 	LiveSessionIds []string `protobuf:"bytes,2,rep,name=live_session_ids,json=liveSessionIds,proto3" json:"live_session_ids,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// WE-S6: WORKSPACE_SANDBOX reconcile. When target is WORKSPACE_SANDBOX,
+	// device_id is ignored and live_session_ids are matched within sandbox_ref.
+	ExecutionTarget ExecutionTarget `protobuf:"varint,3,opt,name=execution_target,json=executionTarget,proto3,enum=peers_touch.model.agent.v1.ExecutionTarget" json:"execution_target,omitempty"`
+	SandboxRef      string          `protobuf:"bytes,4,opt,name=sandbox_ref,json=sandboxRef,proto3" json:"sandbox_ref,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ReconcileTerminalSessionsRequest) Reset() {
@@ -624,6 +667,20 @@ func (x *ReconcileTerminalSessionsRequest) GetLiveSessionIds() []string {
 		return x.LiveSessionIds
 	}
 	return nil
+}
+
+func (x *ReconcileTerminalSessionsRequest) GetExecutionTarget() ExecutionTarget {
+	if x != nil {
+		return x.ExecutionTarget
+	}
+	return ExecutionTarget_EXECUTION_TARGET_UNSPECIFIED
+}
+
+func (x *ReconcileTerminalSessionsRequest) GetSandboxRef() string {
+	if x != nil {
+		return x.SandboxRef
+	}
+	return ""
 }
 
 type ReconcileTerminalSessionsResponse struct {
@@ -762,7 +819,7 @@ var File_domain_agent_terminal_session_proto protoreflect.FileDescriptor
 
 const file_domain_agent_terminal_session_proto_rawDesc = "" +
 	"\n" +
-	"#domain/agent/terminal_session.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x03\n" +
+	"#domain/agent/terminal_session.proto\x12\x1apeers_touch.model.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a#domain/agent/execution_target.proto\"\xd7\x04\n" +
 	"\x0fTerminalSession\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12'\n" +
@@ -779,7 +836,10 @@ const file_domain_agent_terminal_session_proto_rawDesc = "" +
 	"\foutput_bytes\x18\v \x01(\x04R\voutputBytes\x129\n" +
 	"\n" +
 	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x125\n" +
-	"\bended_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xee\x01\n" +
+	"\bended_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12V\n" +
+	"\x10execution_target\x18\x0e \x01(\x0e2+.peers_touch.model.agent.v1.ExecutionTargetR\x0fexecutionTarget\x12\x1f\n" +
+	"\vsandbox_ref\x18\x0f \x01(\tR\n" +
+	"sandboxRef\"\xe7\x02\n" +
 	"\x1cCreateTerminalSessionRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\b \x01(\tR\tsessionId\x12'\n" +
@@ -789,7 +849,11 @@ const file_domain_agent_terminal_session_proto_rawDesc = "" +
 	"\x03cwd\x18\x04 \x01(\tR\x03cwd\x12\x18\n" +
 	"\acommand\x18\x05 \x01(\tR\acommand\x12\x12\n" +
 	"\x04args\x18\x06 \x03(\tR\x04args\x12\x10\n" +
-	"\x03pid\x18\a \x01(\rR\x03pid\"f\n" +
+	"\x03pid\x18\a \x01(\rR\x03pid\x12V\n" +
+	"\x10execution_target\x18\t \x01(\x0e2+.peers_touch.model.agent.v1.ExecutionTargetR\x0fexecutionTarget\x12\x1f\n" +
+	"\vsandbox_ref\x18\n" +
+	" \x01(\tR\n" +
+	"sandboxRef\"f\n" +
 	"\x1dCreateTerminalSessionResponse\x12E\n" +
 	"\asession\x18\x01 \x01(\v2+.peers_touch.model.agent.v1.TerminalSessionR\asession\"\xc8\x01\n" +
 	"\x1cUpdateTerminalSessionRequest\x12\x1d\n" +
@@ -803,10 +867,13 @@ const file_domain_agent_terminal_session_proto_rawDesc = "" +
 	"\x1bListTerminalSessionsRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"g\n" +
 	"\x1cListTerminalSessionsResponse\x12G\n" +
-	"\bsessions\x18\x01 \x03(\v2+.peers_touch.model.agent.v1.TerminalSessionR\bsessions\"i\n" +
+	"\bsessions\x18\x01 \x03(\v2+.peers_touch.model.agent.v1.TerminalSessionR\bsessions\"\xe2\x01\n" +
 	" ReconcileTerminalSessionsRequest\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12(\n" +
-	"\x10live_session_ids\x18\x02 \x03(\tR\x0eliveSessionIds\"l\n" +
+	"\x10live_session_ids\x18\x02 \x03(\tR\x0eliveSessionIds\x12V\n" +
+	"\x10execution_target\x18\x03 \x01(\x0e2+.peers_touch.model.agent.v1.ExecutionTargetR\x0fexecutionTarget\x12\x1f\n" +
+	"\vsandbox_ref\x18\x04 \x01(\tR\n" +
+	"sandboxRef\"l\n" +
 	"!ReconcileTerminalSessionsResponse\x12G\n" +
 	"\bsessions\x18\x01 \x03(\v2+.peers_touch.model.agent.v1.TerminalSessionR\bsessions\"=\n" +
 	"\x1cRemoveTerminalSessionRequest\x12\x1d\n" +
@@ -849,21 +916,25 @@ var file_domain_agent_terminal_session_proto_goTypes = []any{
 	(*RemoveTerminalSessionRequest)(nil),      // 10: peers_touch.model.agent.v1.RemoveTerminalSessionRequest
 	(*RemoveTerminalSessionResponse)(nil),     // 11: peers_touch.model.agent.v1.RemoveTerminalSessionResponse
 	(*timestamppb.Timestamp)(nil),             // 12: google.protobuf.Timestamp
+	(ExecutionTarget)(0),                      // 13: peers_touch.model.agent.v1.ExecutionTarget
 }
 var file_domain_agent_terminal_session_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.agent.v1.TerminalSession.status:type_name -> peers_touch.model.agent.v1.TerminalSessionStatus
 	12, // 1: peers_touch.model.agent.v1.TerminalSession.created_at:type_name -> google.protobuf.Timestamp
 	12, // 2: peers_touch.model.agent.v1.TerminalSession.ended_at:type_name -> google.protobuf.Timestamp
-	1,  // 3: peers_touch.model.agent.v1.CreateTerminalSessionResponse.session:type_name -> peers_touch.model.agent.v1.TerminalSession
-	0,  // 4: peers_touch.model.agent.v1.UpdateTerminalSessionRequest.status:type_name -> peers_touch.model.agent.v1.TerminalSessionStatus
-	1,  // 5: peers_touch.model.agent.v1.UpdateTerminalSessionResponse.session:type_name -> peers_touch.model.agent.v1.TerminalSession
-	1,  // 6: peers_touch.model.agent.v1.ListTerminalSessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.TerminalSession
-	1,  // 7: peers_touch.model.agent.v1.ReconcileTerminalSessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.TerminalSession
-	8,  // [8:8] is the sub-list for method output_type
-	8,  // [8:8] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	13, // 3: peers_touch.model.agent.v1.TerminalSession.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
+	13, // 4: peers_touch.model.agent.v1.CreateTerminalSessionRequest.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
+	1,  // 5: peers_touch.model.agent.v1.CreateTerminalSessionResponse.session:type_name -> peers_touch.model.agent.v1.TerminalSession
+	0,  // 6: peers_touch.model.agent.v1.UpdateTerminalSessionRequest.status:type_name -> peers_touch.model.agent.v1.TerminalSessionStatus
+	1,  // 7: peers_touch.model.agent.v1.UpdateTerminalSessionResponse.session:type_name -> peers_touch.model.agent.v1.TerminalSession
+	1,  // 8: peers_touch.model.agent.v1.ListTerminalSessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.TerminalSession
+	13, // 9: peers_touch.model.agent.v1.ReconcileTerminalSessionsRequest.execution_target:type_name -> peers_touch.model.agent.v1.ExecutionTarget
+	1,  // 10: peers_touch.model.agent.v1.ReconcileTerminalSessionsResponse.sessions:type_name -> peers_touch.model.agent.v1.TerminalSession
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_domain_agent_terminal_session_proto_init() }
@@ -871,6 +942,7 @@ func file_domain_agent_terminal_session_proto_init() {
 	if File_domain_agent_terminal_session_proto != nil {
 		return
 	}
+	file_domain_agent_execution_target_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

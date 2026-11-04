@@ -4,6 +4,8 @@ package peers_touch.model.agent.v1;
 
 import "google/protobuf/timestamp.proto";
 
+import "domain/agent/execution_target.proto";
+
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
 
 // TW-D5: a device-held persistent terminal session. The process/PTY is owned
@@ -37,6 +39,12 @@ message TerminalSession {
   uint64 output_bytes = 11;
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp ended_at = 13;
+  // WE-S6: execution placement. DESKTOP_DEVICE owns the PTY on the worker
+  // (device_id set); WORKSPACE_SANDBOX owns it in the provisioner sandbox
+  // (sandbox_ref set). The two are mutually exclusive. Default/unset is
+  // treated as DESKTOP_DEVICE for backward compatibility.
+  ExecutionTarget execution_target = 14;
+  string sandbox_ref = 15;
 }
 
 message CreateTerminalSessionRequest {
@@ -50,6 +58,10 @@ message CreateTerminalSessionRequest {
   string command = 5;
   repeated string args = 6;
   uint32 pid = 7;
+  // WE-S6: target=WORKSPACE_SANDBOX requires sandbox_ref and leaves device_id
+  // empty; target=DESKTOP_DEVICE (default) requires device_id and no sandbox_ref.
+  ExecutionTarget execution_target = 9;
+  string sandbox_ref = 10;
 }
 
 message CreateTerminalSessionResponse {
@@ -76,10 +88,15 @@ message ListTerminalSessionsResponse {
 }
 
 message ReconcileTerminalSessionsRequest {
+  // DESKTOP_DEVICE reconcile: owner key + live sessions on that device.
   string device_id = 1;
   // Sessions the worker currently proves alive. Every other RUNNING row for
   // this device is downgraded to UNKNOWN (no daemon survived the restart).
   repeated string live_session_ids = 2;
+  // WE-S6: WORKSPACE_SANDBOX reconcile. When target is WORKSPACE_SANDBOX,
+  // device_id is ignored and live_session_ids are matched within sandbox_ref.
+  ExecutionTarget execution_target = 3;
+  string sandbox_ref = 4;
 }
 
 message ReconcileTerminalSessionsResponse {
