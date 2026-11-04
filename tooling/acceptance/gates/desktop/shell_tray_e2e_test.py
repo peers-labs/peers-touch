@@ -26,7 +26,7 @@ class DesktopShellTrayGateTests(unittest.TestCase):
 
         self.assertEqual(
             (inspection["width"], inspection["height"]),
-            (88, 36),
+            (36, 36),
         )
         self.assertTrue(inspection["transparent"])
         self.assertTrue(inspection["opaque"])

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { registerPrivateMediaLocalPreviews } from '../../services/privateMediaLocalPreview';
 import {
   Audience_Kind,
   AudienceSchema,
@@ -62,7 +63,7 @@ const TAG = 'moment-composer';
 // in the feed pages and from the page-header CTAs.
 //
 // Why a modal (vs. an always-open in-page composer):
-//   - Real estate: feed pages already feel busy; adding a 200px-tall
+//   - Vertical space: feed pages already feel busy; adding a 200px-tall
 //     composer at the top would push the first post below the fold.
 //   - Draft persistence: when the modal closes WITHOUT publishing,
 //     we save the text + audience into `useMomentsStore.composerDraft`
@@ -779,6 +780,21 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
       setSubmitting(true);
       try {
         const id = await createPost(privateDraft);
+        // The private projection starts non-ready (grant pending). Seed the
+        // publisher's own card with the local picked files — the exact same
+        // ordered array sent in the publish intent (the native layer zips
+        // intent files with planned object ids in order) — so the post paints
+        // the real image immediately instead of a placeholder until the
+        // granted render URL arrives.
+        const localPreviews = privateDraft.kind === 'image'
+          ? privateDraft.localFiles.map((item) => ({
+              src: item.previewSrc,
+              // Best-effort only until a video-capable picker supplies MIME;
+              // the current picker admits images exclusively.
+              isVideo: /\.(mp4|mov|m4v|webm)$/i.test(item.filePath),
+            }))
+          : [];
+        registerPrivateMediaLocalPreviews(id, localPreviews);
         message.success(t('moments.compose.published'));
         cancelScheduledDraftWrite();
         setText('');

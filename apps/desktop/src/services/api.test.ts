@@ -1597,8 +1597,11 @@ describe('api.updateProvider', () => {
       input: {
           id: 'openai',
           enabled: true,
-          key_vaults: JSON.stringify({ api_key: credential }),
+          // The Station-centralized provider interface takes the credential
+          // as a plain api_key field (the retired key_vaults envelope is gone).
+          api_key: credential,
           config_json: '{"base_url":""}',
+          runtime_config: undefined,
           version: 0,
       },
     })

@@ -1,0 +1,10 @@
+{
+  "name": "@peers-touch/ui-semantics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "check": "tsc --noEmit" },
+  "dependencies": { "@peers-touch/ui-contracts": "workspace:*" },
+  "devDependencies": { "typescript": "~5.9.3" }
+}

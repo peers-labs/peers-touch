@@ -100,3 +100,32 @@ function interpolate(value: string, params?: TranslationParams): string {
     value,
   );
 }
+
+// Native runtimes report errors as "stable.locale.key:diagnostic-detail".
+// Only the part before the first ':' is a translation key; the suffix carries
+// HTTP statuses and transport text for logs, never for the UI.
+const MOBILE_ERROR_KEY_PATTERN = /(mobile\.[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+)/;
+
+export function mobileErrorKey(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  return raw.match(MOBILE_ERROR_KEY_PATTERN)?.[1] ?? null;
+}
+
+type Translate = (key: string, params?: TranslationParams) => string;
+
+// Resolve any native/UI error string to human-readable copy. Never surfaces a
+// raw locale key or transport detail: unknown keys fall back to the supplied
+// generic key instead.
+export function translateMobileError(
+  t: Translate,
+  raw: string | null | undefined,
+  fallbackKey: string,
+): string {
+  const key = mobileErrorKey(raw);
+  if (key) {
+    const translated = t(key);
+    if (translated !== key) return translated;
+  }
+  const fallback = t(fallbackKey);
+  return fallback !== fallbackKey ? fallback : t('mobile.auth.errorGeneric');
+}

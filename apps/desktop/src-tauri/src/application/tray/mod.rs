@@ -17,6 +17,7 @@ const SHOW_ID: &str = "tray-show";
 const QUIT_ID: &str = "tray-quit";
 
 #[cfg(target_os = "macos")]
+// A dedicated rounded-square P mask keeps the native menu bar compact and theme-aware.
 const MACOS_TRAY_ICON_PNG: &[u8] = include_bytes!("../../../icons/tray-icon-macos.png");
 #[cfg(target_os = "macos")]
 const MACOS_MENU_TRACKING_DELAY_MS: u64 = 750;
@@ -196,7 +197,7 @@ mod tests {
     fn macos_tray_icon_is_retina_template_artwork() {
         let icon = tauri::image::Image::from_bytes(MACOS_TRAY_ICON_PNG).expect("decode tray icon");
 
-        assert_eq!((icon.width(), icon.height()), (88, 36));
+        assert_eq!((icon.width(), icon.height()), (36, 36));
 
         let mut alpha = icon.rgba().chunks_exact(4).map(|pixel| pixel[3]);
         assert!(alpha.clone().any(|value| value == 0));

@@ -224,6 +224,81 @@ OAuth is a Station-issued authentication flow coordinated by
 `authRuntime`; the provider credential never becomes a Mobile business
 credential.
 
+### 7.0 Mobile Native OAuth Topology
+
+Mobile (iOS and Android, one shared contract) authenticates through a
+**Station-direct provider flow with an OS deep-link callback**. The Station
+holds the OAuth application client credentials; the broker used by Desktop is
+not on this path. The custom scheme `peers-touch://oauth/callback` is
+registered on both platforms (`Info.plist` `CFBundleURLSchemes` and the Android
+intent filter) and is delivered to the Rust coordinator by the OS.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Web as Mobile Web<br/>(authRuntime)
+    participant Rust as Mobile Rust OAuth coordinator<br/>(iOS + Android)
+    participant OS as System browser
+    participant Provider as OAuth Provider<br/>(GitHub / Google)
+    participant Station as Station OAuth service<br/>(holds client credentials)
+    participant Secure as Native secure storage
+
+    Web->>Rust: start_oauth(provider, station)
+    Rust->>Secure: persist PKCE verifier, nonce,<br/>attempt secret, delivery key pair
+    Rust->>Station: POST /oauth/mobile/start<br/>(challenge, nonce hash, public key,<br/>redirect = peers-touch://oauth/callback)
+    Station->>Station: bind access attempt and load<br/>provider CLIENT_ID, CLIENT_SECRET, REDIRECT_URIS
+    Station-->>Rust: attempt id, opaque state, authorize_url
+    Rust->>OS: open authorize_url
+    OS->>Provider: user signs in and consents
+    Provider-->>OS: 302 peers-touch://oauth/callback?code&state
+    OS->>Rust: deep link (deep_link.rs)
+    Rust->>Rust: validate scheme/host/path, station,<br/>attempt/state/expiry, generation
+    Rust->>Station: POST /oauth/mobile/complete<br/>(code, state, pkce verifier)
+    Station->>Provider: exchange code with client_id/secret
+    Provider-->>Station: identity + tokens
+    Station->>Station: finalize Access Gate atomically,<br/>create one session, seal envelope to device key
+    Station-->>Rust: encrypted credential envelope
+    Rust->>Secure: decrypt + store session
+    Rust->>Station: POST /oauth/mobile/acknowledge
+    Rust-->>Web: public session projection only
+```
+
+Deployment prerequisites (Station runtime environment), per
+`apps/station/app/subserver/oauth/provider.go`:
+
+- `PEERS_OAUTH_<PROVIDER>_CLIENT_ID` and `..._CLIENT_SECRET` from an OAuth
+  Application whose registered callback is the custom scheme
+  `peers-touch://oauth/callback`.
+- `PEERS_OAUTH_<PROVIDER>_REDIRECT_URIS` containing that exact custom-scheme
+  URI; the Station rejects any unregistered redirect.
+
+The Desktop and Mobile paths intentionally differ and must not share client
+secrets across roles:
+
+```mermaid
+flowchart LR
+    subgraph Desktop["Desktop — broker bridge"]
+        DR["Desktop Rust<br/>loopback receiver"] --> DB["System browser"]
+        DB --> BK["Public broker (Vercel)<br/>holds provider client credentials"]
+        BK --> PV1["Provider"]
+        PV1 --> BK
+        BK -->|"http://127.0.0.1/callback"| DR
+        DR -->|"signed bridge assertion<br/>(PEERS_OAUTH_BRIDGE_SECRET)"| ST1["Station /actor/oauth-bridge"]
+    end
+
+    subgraph Mobile["Mobile — Station direct + deep link"]
+        MR["Mobile Rust<br/>deep-link receiver<br/>(iOS + Android)"] --> MB["System browser"]
+        MB --> PV2["Provider"]
+        PV2 -->|"peers-touch://oauth/callback"| MR
+        MR -->|"/oauth/mobile/start, complete, acknowledge"| ST2["Station OAuth service<br/>holds provider client credentials"]
+    end
+```
+
+Provider notes: the custom-scheme flow is symmetric on iOS and Android for
+GitHub. Google applies stricter rules to non-https redirects; Google Mobile
+sign-in may require a verified app link / broker bridge amendment and is not
+assumed by this contract.
+
 Required semantics:
 
 - Station owns attempt identity, provider/Station/redirect binding, PKCE

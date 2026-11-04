@@ -33,6 +33,8 @@ src-tauri/icons/*
 !src-tauri/icons/icon.ico
 !src-tauri/icons/icon.png
 !src-tauri/icons/tray-icon-macos.png
+!src-tauri/icons/tray-icon-macos.svg
+!src-tauri/icons/README.md
 src-tauri/gen/
 *.app
 *.exe

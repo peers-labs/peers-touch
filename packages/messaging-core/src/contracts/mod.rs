@@ -115,6 +115,10 @@ pub struct ConversationMessageProjection {
     pub required_device_count: i64,
     /// Distinct recipient devices with a durable delivered receipt.
     pub delivered_device_count: i64,
+    /// Compact @mention JSON (see desktop private_content codec); empty for
+    /// ordinary messages. Renderers decode it to chips; the local mention
+    /// notification gate reads it without re-decrypting.
+    pub mentions_json: String,
 }
 
 #[derive(Debug, Clone)]
@@ -327,6 +331,8 @@ pub struct MlsMessageProjection {
     pub committed_at_unix_ms: i64,
     pub reply_to_message_id: Option<String>,
     pub thread_root_message_id: Option<String>,
+    /// @mention set decoded once from the MLS application ciphertext.
+    pub mentions: crate::codec::private_content::MessageMentions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -481,6 +487,8 @@ pub struct DirectMessageContent {
     pub committed_at_unix_ms: i64,
     pub reply_to_message_id: Option<String>,
     pub thread_root_message_id: Option<String>,
+    /// @mention set decoded once from the ciphertext envelope.
+    pub mentions: crate::codec::private_content::MessageMentions,
 }
 
 /// Readable projection of a non-E2EE, Station-resident service-plaintext

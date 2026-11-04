@@ -5,6 +5,10 @@ import { expect, it, vi } from 'vitest';
 
 import { PrivateMediaGrid } from './PrivateMediaGrid';
 import { normalizePrivateMomentProjection } from '../../services/privateMomentsNative';
+import {
+  registerPrivateMediaLocalPreviews,
+  releasePrivateMediaLocalPreviews,
+} from '../../services/privateMediaLocalPreview';
 
 vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string, protocol: string) => `${protocol}://localhost/${path}`,
@@ -80,6 +84,7 @@ it('renders remote private image from home station', () => {
   const html = renderToStaticMarkup(
     <PrivateMediaGrid
       media={projection.content.media}
+      postId="test-post"
       onOpen={vi.fn()}
     />,
   );
@@ -118,6 +123,7 @@ it('renders remote private video retry state without direct remote URL', () => {
   const html = renderToStaticMarkup(
     <PrivateMediaGrid
       media={projection.content.media}
+      postId="test-post"
       onOpen={vi.fn()}
     />,
   );
@@ -130,6 +136,45 @@ it('renders remote private video retry state without direct remote URL', () => {
   expect(html).not.toContain('station-source');
   expect(html).not.toContain('http://');
   expect(html).not.toContain('https://');
+});
+
+it('never embeds the publisher local file in server markup during the grant gap', () => {
+  // Session-scoped local previews are a client-render-only paint. The SSR
+  // snapshot must stay empty so picked file URLs never leak into static HTML.
+  registerPrivateMediaLocalPreviews('post-pending', [
+    { src: 'asset://localhost/picked.jpg', isVideo: false },
+  ]);
+  const projection = normalizePrivateMomentProjection({
+    post_id: 'post-pending',
+    content_id: 'post-pending',
+    generation: '11',
+    author_ptid: 'ptid:author',
+    audience_kind: 'SELF',
+    state: 'CONTENT_READY',
+    content: {
+      kind: 'IMAGE',
+      text: 'own pending post',
+      media: [{
+        object_id: 'object-pending',
+        state: 'MEDIA_GRANT_PENDING',
+        access_path: 'HOME_STATION_LOCAL_OBJECT',
+        retryable: false,
+      }],
+    },
+  });
+  if (projection.content?.kind !== 'IMAGE') throw new Error('expected IMAGE content');
+  const html = renderToStaticMarkup(
+    <PrivateMediaGrid
+      media={projection.content.media}
+      postId="post-pending"
+      onOpen={vi.fn()}
+    />,
+  );
+
+  expect(html).toContain('data-private-media-state="MEDIA_GRANT_PENDING"');
+  expect(html).not.toContain('asset://localhost/picked.jpg');
+  expect(html).not.toContain('data-private-media-local="true"');
+  releasePrivateMediaLocalPreviews('post-pending');
 });
 
 it('localizes the remote private media retry state', () => {

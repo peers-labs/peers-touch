@@ -1,71 +1,38 @@
-/**
- * ModelServiceTab — Settings tab for configuring which model each scenario uses.
- *
- * Architecture:
- *   - Config stored in KV as "prefs:model-registry" (key-value map)
- *   - Each slot key: default, topicNaming, translation, etc.
- *   - API: GET/PUT /api/model-config/:key
- *   - Invalid references (disabled provider) show inline warnings
- */
-import { useCallback, useEffect, useRef, useState } from 'react';
+// Settings renders the account default owned by Station and the Provider store.
+import { useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Alert, toast } from '@lobehub/ui';
+import { Alert, Button, toast } from '@lobehub/ui';
 import { Typography, theme } from 'antd';
-import { api, type ModelServiceConfig, type ModelRef } from '../services/desktop_api';
+import type { ModelRef } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
 import { SettingsContainer } from './settings/SettingsLayout';
 import { useTranslation } from 'react-i18next';
-import { log } from '../utils/logger';
 import { useAgentStore } from '../store/agent';
+import { useActiveProviderSlice } from './settings/useActiveSettingsStores';
 
 const { Title, Text } = Typography;
 
-const SLOT_KEYS: (keyof ModelServiceConfig)[] = [
-  'default',
-];
+const SLOT_KEYS = ['default'] as const;
 
 export function ModelServiceTab() {
   const { t } = useTranslation('provider');
   const { token } = theme.useToken();
-  const [config, setConfig] = useState<ModelServiceConfig>({});
-  const [loading, setLoading] = useState(true);
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const models = useAgentStore((state) => state.availableModels);
-  const modelsLoading = useAgentStore((state) => state.loading);
+  const { runtimeDefault, setRuntimeDefault, defaultStatus, defaultSaving, loadRuntimeDefault } = useActiveProviderSlice((s) => ({
+    runtimeDefault: s.runtimeDefault, setRuntimeDefault: s.setRuntimeDefault,
+    defaultStatus: s.defaultStatus, defaultSaving: s.defaultSaving, loadRuntimeDefault: s.loadRuntimeDefault,
+  }));
+  const config = { default: runtimeDefault
+    ? { provider: runtimeDefault.providerId, model: runtimeDefault.modelId } : undefined };
+  const availableModels = useAgentStore((state) => state.availableModels);
+  const models = useMemo(() => availableModels.filter(
+    (model) => model.enabled && (!model.type || model.type === 'chat'),
+  ), [availableModels]);
+  const handleDefaultChange = async (ref: ModelRef) => {
+    try { await setRuntimeDefault(ref.provider, ref.model); }
+    catch { toast.error(t('provider.modelService.failedToSave')); }
+  };
 
-  useEffect(() => {
-    api.listModelConfig()
-      .then((cfgMap) => {
-        setConfig(cfgMap as ModelServiceConfig);
-      })
-      .catch((err) => {
-        log.error('model-service', 'Failed to load model service config', err);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-  }, []);
-
-  const handleSlotChange = useCallback((key: keyof ModelServiceConfig, ref: ModelRef) => {
-    setConfig((prev) => {
-      const next = { ...prev, [key]: ref };
-
-      // Debounced save per key
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        const body = ref.provider || ref.model ? ref : null;
-        api.setModelConfig(key, body)
-          .then(() => useAgentStore.getState().loadModels())
-          .catch(() => toast.error(t('provider.modelService.failedToSave')));
-      }, 500);
-
-      return next;
-    });
-  }, [t]);
-
-  if (loading || (modelsLoading && models.length === 0)) {
+  if (defaultStatus === 'idle' || defaultStatus === 'loading') {
     return (
       <Flexbox align="center" justify="center" style={{ padding: 40 }}>
         <Text type="secondary">{t('provider.modelService.loading')}</Text>
@@ -83,6 +50,12 @@ export function ModelServiceTab() {
           {t('provider.modelService.desc')}
         </Text>
       </Flexbox>
+
+      {defaultStatus === 'error' && <Flexbox gap={8} style={{ marginBottom: token.margin }}>
+        <Text role="alert" type="secondary">{t('provider.modelService.defaultLoadFailed')}</Text>
+        <Button onClick={() => void loadRuntimeDefault()}>{t('provider.menu.retry')}</Button>
+      </Flexbox>}
+      {defaultSaving && <Text role="status" type="secondary">{t('provider.modelService.saving')}</Text>}
 
       {noModels && (
         <Alert
@@ -114,11 +87,10 @@ export function ModelServiceTab() {
               <Text strong style={{ fontSize: 15, marginBottom: 4 }}>{t(`provider.modelService.slot.${slotKey}.title`)}</Text>
 
               <Flexbox
-                horizontal
                 align="center"
                 justify="space-between"
                 gap={16}
-                style={{ marginTop: 4 }}
+                style={{ marginTop: 4, flexDirection: 'row', flexWrap: 'wrap' }}
               >
                 <Flexbox flex={1}>
                   <Text type="secondary" style={{ fontSize: 13 }}>{t('provider.modelService.modelLabel')}</Text>
@@ -129,18 +101,19 @@ export function ModelServiceTab() {
                   className="pt-model-service-default-select"
                   value={ref}
                   onChange={(next) => {
-                    if (next) handleSlotChange(slotKey, next);
+                    if (next) void handleDefaultChange(next);
                   }}
                   models={models}
+                  allowClear={false}
                   showWarning={!!isInvalid}
-                  style={{ width: 280 }}
-                  disabled={noModels}
+                  style={{ width: 280, maxWidth: '100%' }}
+                  disabled={noModels || defaultSaving || defaultStatus !== 'ready'}
                 />
               </Flexbox>
 
               {isInvalid && (
                 <Text type="warning" style={{ fontSize: 12, marginTop: 4 }}>
-                  ⚠ {t('provider.modelService.modelInvalid', { model: ref?.model, provider: ref?.provider })}
+                  {t('provider.modelService.modelInvalid')}
                 </Text>
               )}
             </Flexbox>

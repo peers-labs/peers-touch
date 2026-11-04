@@ -23,7 +23,11 @@ This document set does not define:
 
 - Station Access Gate policy semantics, which remain owned by
   `station-access-lifecycle`;
-- Mobile OAuth UI and callback ownership;
+- Mobile OAuth UI and callback ownership; the Mobile native flow is a
+  distinct Station-direct + `peers-touch://oauth/callback` deep-link contract
+  (MS-D12/MS-D13), not a broker consumer. Its topology and the Desktop-vs-Mobile
+  path comparison live in
+  `docs/architecture/platform/client/mobile/design.md` §7.0;
 - provider application registration or provider account lifecycle;
 - a multi-tenant administration product;
 - production-scale database topology.

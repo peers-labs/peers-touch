@@ -43,7 +43,6 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
   const kind = useProfileRelationship(actorPtid);
 
   const peerProfile = useSocialChatStore((state) => state.peerProfiles[actorPtid]);
-  const conversations = useSocialChatStore((state) => state.getIMConversations());
   const federations = useFederationStore((state) => state.federations);
   const friendRequests = useSocialChatStore((state) => state.friendRequests);
   const currentUserPtid = useSessionStore((state) => state.currentUser?.actorPtid ?? null);
@@ -120,10 +119,16 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
           if (onMessage) {
             onMessage();
           } else {
-            const existing = conversations.find(
-              (conversation) => conversation.kind === 'friend'
-                && conversation.peerPtid === actorPtid,
-            );
+            // Read the derived projection imperatively at click time. Selecting
+            // getIMConversations() reactively would subscribe to a fresh array
+            // (and fresh projection objects) on every store notification,
+            // causing an unbounded re-render loop (React error #185).
+            const existing = useSocialChatStore.getState()
+              .getIMConversations()
+              .find(
+                (conversation) => conversation.kind === 'friend'
+                  && conversation.peerPtid === actorPtid,
+              );
             if (existing) selectSession(existing.id);
           }
           close();
@@ -135,12 +140,13 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
   }
 
   const addFriend = async () => {
+    const currentConversations = useSocialChatStore.getState().getIMConversations();
     const homeStationPeerId = peerProfile?.home_station_peer_id?.trim()
       || (friendRequest?.senderPtid === actorPtid
         ? friendRequest.senderHomeStationPeerId
         : friendRequest?.receiverHomeStationPeerId)
       || '';
-    const existingConversation = conversations.find(
+    const existingConversation = currentConversations.find(
       (conversation) => conversation.kind === 'friend' && conversation.peerPtid === actorPtid,
     );
     const federationId = friendRequest?.federationId

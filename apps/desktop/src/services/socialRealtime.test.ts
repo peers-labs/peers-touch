@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => ({
   presenceNotify: vi.fn(),
   loadCurrentUserProfile: vi.fn(),
   loadPeerProfile: vi.fn(),
+  seedPresentationLastGood: vi.fn(),
   initEncryption: vi.fn(),
   prewarmMessages: vi.fn(),
   resolveActorStations: vi.fn(),
@@ -127,6 +128,7 @@ vi.mock('../store/socialChat', () => ({
       clearPeerPresence: mocks.clearPeerPresence,
       loadCurrentUserProfile: mocks.loadCurrentUserProfile,
       loadPeerProfile: mocks.loadPeerProfile,
+      seedPresentationLastGood: mocks.seedPresentationLastGood,
       initEncryption: mocks.initEncryption,
       sweepTypingPeers: vi.fn(),
     }),
@@ -434,6 +436,24 @@ describe('social realtime group membership side effects', () => {
         resetsBeforeSwitch + 1,
       );
       expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:bob', true);
+    });
+  });
+
+  it('seeds presentation last-good once per authenticated actor, before bootstrap', async () => {
+    mocks.currentActorPtid = 'ptid:alice';
+    mocks.sessionListener?.();
+    await vi.waitFor(() => {
+      expect(mocks.seedPresentationLastGood).toHaveBeenCalledWith('ptid:alice');
+    });
+
+    // Same actor re-reconciling (epoch/stream renewal) must not reseed.
+    mocks.sessionListener?.();
+    expect(mocks.seedPresentationLastGood).toHaveBeenCalledTimes(1);
+
+    mocks.currentActorPtid = 'ptid:bob';
+    mocks.sessionListener?.();
+    await vi.waitFor(() => {
+      expect(mocks.seedPresentationLastGood).toHaveBeenLastCalledWith('ptid:bob');
     });
   });
 });

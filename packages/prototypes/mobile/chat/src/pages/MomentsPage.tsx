@@ -1,61 +1,25 @@
 import {
-  createElement,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
-import { Typography } from 'antd';
-import {
-  ArrowLeft,
-  Ban,
-  BarChart3,
-  Check,
-  ChevronRight,
-  CircleAlert,
-  ExternalLink,
-  Globe2,
-  ImagePlus,
-  Link as LinkIcon,
-  LoaderCircle,
-  LockKeyhole,
-  MapPin,
-  MessageCircle,
-  MoreHorizontal,
-  Pencil,
-  Play,
-  Plus,
-  RefreshCw,
-  Repeat2,
-  Search,
-  Send,
-  Share2,
-  ShieldCheck,
-  SlidersHorizontal,
-  Trash2,
-  UserRound,
-  UserMinus,
-  UserPlus,
-  UsersRound,
-  X,
-} from 'lucide-react';
+import { useT } from '../i18n';
+import { Icon, IconButton, Text, TextField } from '@peers-touch/ui';
 import type {
   Moment,
   MomentComment,
   ReactionKind,
 } from '../types';
 import {
-  GRADIENTS,
   REACTION_EMOJI,
   REACTION_KINDS,
+  type IconName,
 } from '../types';
-import { demoAvatarUrls, demoMoments } from '../data';
-import { UserSquareAvatar } from '../components/UserSquareAvatar';
+import { demoAvatarUrls, demoMediaBackgrounds, preparedMomentsData } from './moments.data';
+import { IdentityAvatar } from '../components/IdentityAvatar';
 import { ReactionChip } from '../../../../shared/ReactionChip';
 import { ReactionPicker } from '../../../../shared/ReactionPicker';
-import copy from '../../../../../locales/en/common.json';
-
-const { Text } = Typography;
 
 export type MomentsEvidenceScenario =
   | 'social-parity'
@@ -73,19 +37,19 @@ type AudienceOption = {
   id: 'PUBLIC' | 'FOLLOWERS' | 'FRIENDS' | 'CIRCLE' | 'GROUP' | 'CUSTOM_ALLOW' | 'CUSTOM_DENY' | 'SELF';
   label: string;
   detail: string;
-  icon: typeof Globe2;
+  iconId: IconName;
   requiresTarget?: boolean;
 };
 
 const AUDIENCES: AudienceOption[] = [
-  { id: 'PUBLIC', label: 'Public', detail: 'Anyone can read it', icon: Globe2 },
-  { id: 'FOLLOWERS', label: 'Followers', detail: 'Anyone following you', icon: UsersRound },
-  { id: 'FRIENDS', label: 'Friends', detail: 'Accepted friends only', icon: ShieldCheck },
-  { id: 'CIRCLE', label: 'Circle', detail: 'Choose a private audience list', icon: UsersRound, requiresTarget: true },
-  { id: 'GROUP', label: 'Group', detail: 'Choose a conversation', icon: UsersRound, requiresTarget: true },
-  { id: 'CUSTOM_ALLOW', label: 'Selected people', detail: 'Choose one or more people', icon: UserRound, requiresTarget: true },
-  { id: 'CUSTOM_DENY', label: 'Followers except', detail: 'Choose people to exclude', icon: UserMinus, requiresTarget: true },
-  { id: 'SELF', label: 'Only me', detail: 'Your trusted devices', icon: LockKeyhole },
+  { id: 'PUBLIC', label: 'Public', detail: 'Anyone can read it', iconId: 'globe' },
+  { id: 'FOLLOWERS', label: 'Followers', detail: 'Anyone following you', iconId: 'users-round' },
+  { id: 'FRIENDS', label: 'Friends', detail: 'Accepted friends only', iconId: 'shield-check' },
+  { id: 'CIRCLE', label: 'Circle', detail: 'Choose a private audience list', iconId: 'users-round', requiresTarget: true },
+  { id: 'GROUP', label: 'Group', detail: 'Choose a conversation', iconId: 'users-round', requiresTarget: true },
+  { id: 'CUSTOM_ALLOW', label: 'Selected people', detail: 'Choose one or more people', iconId: 'user-round', requiresTarget: true },
+  { id: 'CUSTOM_DENY', label: 'Followers except', detail: 'Choose people to exclude', iconId: 'user-minus', requiresTarget: true },
+  { id: 'SELF', label: 'Only me', detail: 'Your trusted devices', iconId: 'lock-keyhole' },
 ];
 
 const COMPOSER_DRAFT_STORAGE_KEY =
@@ -147,7 +111,7 @@ type CircleItem = {
 };
 
 const CIRCLES: CircleItem[] = [
-  { id: 'family', name: 'Family', description: 'The people closest to you', members: ['Bob Lee', 'Carol Li', 'Emma Liu', 'David Wu'] },
+  { id: 'family', name: 'Family', description: 'The people closest to you', members: ['Bob Zhang', 'Carol Li', 'Emma Liu', 'David Wu'] },
   { id: 'studio', name: 'Studio', description: 'Design collaborators', members: ['Carol Li', 'Grace Kim', 'Henry Wang'] },
 ];
 
@@ -163,80 +127,27 @@ const PEOPLE = [
   { id: 'david', name: 'David Wu', handle: '@david@alice.station' },
 ];
 
-const EXTRA_COMMENTS: MomentComment[] = Array.from({ length: 10 }, (_, index) => ({
-  id: `extra-${index + 1}`,
-  name: PEOPLE[index % PEOPLE.length].name,
-  avatar: PEOPLE[index % PEOPLE.length].name.split(' ').map((part) => part[0]).join(''),
-  avatarGradient: GRADIENTS[(index + 2) % GRADIENTS.length],
-  text: `A concise follow-up on the launch, note ${index + 1}.`,
-  time: `${index + 2}h`,
-}));
-
 export function preparedMoments(): Moment[] {
-  const base = demoMoments.map((moment, index) => ({
-    ...moment,
-    source: index === 0 ? 'alice.station' : 'bob.remote',
-    audience: index === 0 ? 'Friends' : 'Public',
-    reason: index === 0 ? 'You are friends' : 'Explore',
-    remote: index !== 0,
-    contentKind: moment.images?.length ? 'image' as const : 'text' as const,
-    comments: index === 0 ? [...moment.comments, ...EXTRA_COMMENTS] : moment.comments,
-  }));
-  return [
-    ...base,
-    {
-      id: 'mo-poll', name: 'Grace Kim', avatar: 'GK', avatarGradient: GRADIENTS[4], time: '3 days ago',
-      text: 'Help us choose the next community meetup format.',
-      source: 'grace.remote', audience: 'Followers', reason: 'You follow Grace', remote: true,
-      contentKind: 'poll', poll: { question: 'Which format works best?', options: ['Workshop', 'Open space', 'Lightning talks'] },
-      likes: 12, reactionCounts: { love: 12 }, comments: [],
-    },
-    {
-      id: 'mo-link', name: 'David Wu', avatar: 'DW', avatarGradient: GRADIENTS[5], time: '4 days ago',
-      text: 'A practical guide to resilient federation.',
-      source: 'alice.station', audience: 'Public', reason: 'Explore',
-      contentKind: 'link', link: { title: 'Building resilient federated networks', url: 'peers.example/research/federation' },
-      likes: 18, reactionCounts: { love: 18 }, comments: [],
-    },
-    {
-      id: 'mo-location', name: 'Emma Liu', avatar: 'EL', avatarGradient: GRADIENTS[7], time: '5 days ago',
-      text: 'A quiet place for the next design walk.',
-      source: 'eve.remote', audience: 'Friends', reason: 'You are friends', remote: true,
-      contentKind: 'location', location: { name: 'Waterfront Park', address: '18 Harbor Walk' },
-      likes: 21, reactionCounts: { love: 21 }, comments: [],
-    },
-    {
-      id: 'mo-repost', name: 'Bob Lee', avatar: 'BL', avatarGradient: GRADIENTS[2], time: '6 days ago',
-      text: 'Worth reading before our architecture review.',
-      source: 'bob.remote', audience: 'Friends', reason: 'You are friends', remote: true,
-      contentKind: 'repost', repost: { author: 'Alice Chen', text: 'A short note on keeping one source of truth across client projections.' },
-      likes: 9, reactionCounts: { love: 9 }, comments: [],
-    },
-    {
-      id: 'mo-video', name: 'Carol Li', avatar: 'CL', avatarGradient: GRADIENTS[3], time: '1 week ago',
-      text: 'Prototype walkthrough from this morning.',
-      source: 'alice.station', audience: 'Circle', reason: 'Studio circle',
-      contentKind: 'video', videoLabel: '01:42', likes: 16, reactionCounts: { love: 16 }, comments: [],
-    },
-  ];
+  return preparedMomentsData();
 }
 
 export function MomentsPage({
   scenario = 'social-parity',
   onImmersiveVisibilityChange,
-  headerActions,
   searchTarget,
+  onTargetConsumed,
 }: {
-  headerActions?: ReactNode;
   searchTarget?: { postId: string; commentId?: string };
   scenario?: MomentsEvidenceScenario;
   onImmersiveVisibilityChange?: (visible: boolean) => void;
+  onTargetConsumed?: () => void;
 }) {
+  const t = useT();
   const restoredComposerDraft = useMemo(loadPrototypeComposerDraft, []);
   const restoredAudience = useMemo(() => {
     const base = AUDIENCES.find(
       (option) => option.id === restoredComposerDraft?.audienceId,
-    ) ?? AUDIENCES[2];
+    ) ?? AUDIENCES[2]!;
     return restoredComposerDraft
       ? { ...base, detail: restoredComposerDraft.audienceDetail }
       : base;
@@ -287,9 +198,12 @@ export function MomentsPage({
     const target = searchTarget.commentId ? post?.querySelector<HTMLElement>(
       `[data-comment-id="${CSS.escape(searchTarget.commentId)}"]`,
     ) : post;
+    // Defer consumption until the expanded comment list actually materializes.
+    if (searchTarget.commentId && !target) return;
     target?.setAttribute('data-search-target', 'true');
     target?.scrollIntoView({ block: 'center' });
     target?.focus({ preventScroll: true });
+    onTargetConsumed?.();
   }, [searchTarget, expandedCommentListId]);
 
   useEffect(() => {
@@ -356,7 +270,6 @@ export function MomentsPage({
       name: 'Alice Chen',
       avatar: 'AC',
       avatarUrl: demoAvatarUrls.alice,
-      avatarGradient: GRADIENTS[0],
       text,
       time: 'Just now',
     };
@@ -374,13 +287,13 @@ export function MomentsPage({
       id: `mo-${Date.now()}`,
       name: 'Alice Chen',
       avatar: 'AC',
-      avatarGradient: GRADIENTS[0],
+      avatarUrl: demoAvatarUrls.alice,
       time: 'Just now',
       text,
       source: 'alice.station',
       audience: audience.label,
       reason: 'You published this',
-      images: composerImageSelected ? [GRADIENTS[6]] : undefined,
+      images: composerImageSelected ? [demoMediaBackgrounds.teamReview] : undefined,
       contentKind: composerImageSelected ? 'image' : 'text',
       likes: 0,
       reactionCounts: {},
@@ -392,7 +305,7 @@ export function MomentsPage({
     clearPrototypeComposerDraft();
     setNewPostText('');
     setComposerImageSelected(false);
-    setAudience(AUDIENCES[2]);
+    setAudience(AUDIENCES[2]!);
     setShowAudience(false);
     setTargetAudience(null);
     setShowComposer(false);
@@ -413,15 +326,15 @@ export function MomentsPage({
     clearPrototypeComposerDraft();
     setNewPostText('');
     setComposerImageSelected(false);
-    setAudience(AUDIENCES[2]);
+    setAudience(AUDIENCES[2]!);
     setShowAudience(false);
     setTargetAudience(null);
   }
 
   function deletePost(momentId: string) {
     setMoments((current) => current.filter((moment) => moment.id !== momentId));
-    setActiveCommentComposerId((current) => current === momentId ? null : current);
-    setExpandedCommentListId((current) => current === momentId ? null : current);
+    setActiveCommentComposerId(null);
+    setExpandedCommentListId(null);
     setActionMomentId(null);
     setConfirmDeleteId(null);
   }
@@ -441,21 +354,24 @@ export function MomentsPage({
   return (
     <div className="mp-page mp-social-page">
       <header className="mp-header">
-        <h1 className="mp-header-title">Moments</h1>
+        <h1 className="mp-header-title">{t('mobile.moments.title')}</h1>
         <div className="mp-social-header-actions">
-          {headerActions}
-          <IconButton label="Search people" onClick={() => navigate('search')}><Search size={19} /></IconButton>
-          <IconButton label="Manage circles" onClick={() => navigate('circles')}><UsersRound size={19} /></IconButton>
-          <IconButton label="New post" onClick={() => setShowComposer(true)}><ImagePlus size={20} /></IconButton>
+          <IconButton actionId="moments.people-search" iconId="contact" label={t('mobile.moments.searchPeopleShort')} emphasis="quiet"
+            onActivate={() => navigate('search')} />
+          <IconButton actionId="moments.circles" iconId="users-round" label={t('mobile.moments.manageCircles')} emphasis="quiet"
+            onActivate={() => navigate('circles')} />
+          <IconButton actionId="moments.new" iconId="image-plus" label={t('mobile.moments.newPostShort')} emphasis="quiet"
+            onActivate={() => setShowComposer(true)} />
         </div>
       </header>
 
-      <div className="mp-social-scope" aria-label="Moment scope">
+      <div className="mp-social-scope" aria-label={t('mobile.moments.scope')}>
         {(['home', 'explore'] as const).map((item) => (
           <button
             key={item}
             type="button"
             className={scope === item ? 'active' : ''}
+            aria-pressed={scope === item}
             onClick={() => {
               setReactionPickerId(null);
               setScope(item);
@@ -470,9 +386,9 @@ export function MomentsPage({
         <span>{scope === 'home' ? 'Posts shared with you' : 'Public activity across your Federation'}</span>
         {scope === 'explore' ? (
           <button type="button" onClick={() => setShowSort(true)}>
-            <SlidersHorizontal size={13} /> {exploreSort === 'recent' ? 'Recent' : 'Hot'}
+            <Icon iconId="sliders-horizontal" size={13} /> {exploreSort === 'recent' ? t('mobile.moments.sort.recent') : t('mobile.moments.sort.hot')}
           </button>
-        ) : <span>Latest</span>}
+        ) : <span>{t('mobile.moments.sort.latest')}</span>}
       </div>
 
       <div className="mp-moments-feed">
@@ -529,39 +445,41 @@ export function MomentsPage({
           <section
             className="mp-action-sheet mp-social-composer-sheet"
             role="dialog"
-            aria-label="New Moment"
+            aria-label={t('mobile.moment.newAria')}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="mp-action-sheet-handle" />
             <header className="mp-social-sheet-header">
-              <button type="button" className="mp-social-clear" onClick={clearComposer}>Clear</button>
-              <h2>New Moment</h2>
-              <button type="button" className="primary" disabled={!newPostText.trim()} onClick={publishPost}>Publish</button>
+              <button type="button" className="mp-social-clear" onClick={clearComposer}>{t('mobile.moments.clear')}</button>
+              <h2>{t('mobile.moments.newPost')}</h2>
+              <button type="button" className="mp-social-header-commit" disabled={!newPostText.trim()} onClick={publishPost}>{t('mobile.moments.publish')}</button>
             </header>
             <textarea
-              aria-label="Moment text"
+              aria-label={t('mobile.moment.compose.aria')}
               value={newPostText}
               onChange={(event) => setNewPostText(event.target.value)}
-              placeholder="What's on your mind?"
+              placeholder={t('mobile.moments.placeholder')}
             />
             {composerImageSelected ? (
-              <div className="mp-social-media-preview" aria-label="Selected image">
-                <div style={{ background: GRADIENTS[6] }} />
-                <button type="button" aria-label="Remove image" onClick={() => setComposerImageSelected(false)}><X size={15} /></button>
+              <div className="mp-social-media-preview" aria-label={t('mobile.moments.selectedImage')}>
+                <div style={{ background: demoMediaBackgrounds.teamReview }} />
+                <button type="button" aria-label={t('mobile.moment.removeImage')} onClick={() => setComposerImageSelected(false)}>
+                  <Icon iconId="close" size={15} />
+                </button>
               </div>
             ) : (
-              <button type="button" className="mp-social-media-add" aria-label="Add image" onClick={() => setComposerImageSelected(true)}>
-                <ImagePlus size={22} />
-                <span>Add image</span>
+              <button type="button" className="mp-social-media-add" aria-label={t('mobile.moment.addImage')} onClick={() => setComposerImageSelected(true)}>
+                <Icon iconId="image-plus" size={22} />
+                <span>{t('mobile.moment.addImage')}</span>
               </button>
             )}
             <button type="button" className="mp-social-audience-row" onClick={() => setShowAudience(true)}>
-              <span className="mp-social-audience-icon">{createElement(audience.icon, { size: 17 })}</span>
+              <span className="mp-social-audience-icon"><Icon iconId={audience.iconId} size={17} /></span>
               <span><strong>{audience.label}</strong><small>{audience.detail}</small></span>
-              <ChevronRight size={17} />
+              <Icon iconId="chevron-right" size={17} />
             </button>
             <div className="mp-social-composer-meta">
-              <span><ShieldCheck size={14} /> Private content is encrypted on this device</span>
+              <span><Icon iconId="shield-check" size={14} /> Private content is encrypted on this device</span>
               <span>{newPostText.length}/5000</span>
             </div>
           </section>
@@ -580,34 +498,31 @@ export function MomentsPage({
           <section
             className="mp-action-sheet mp-social-audience-sheet"
             role="dialog"
-            aria-label="Choose audience"
+            aria-label={t('mobile.moments.audience.label')}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="mp-action-sheet-handle" />
             <header className="mp-social-sheet-header">
               <span className="mp-social-sheet-spacer" />
-              <h2>Audience</h2>
+              <h2>{t('mobile.moments.audience.label')}</h2>
               <span className="mp-social-sheet-spacer" />
             </header>
-            <p className="mp-social-sheet-copy">Choose exactly who can read this Moment.</p>
+            <p className="mp-social-sheet-copy">{t('mobile.moments.audienceCopy')}</p>
             <div className="mp-social-audience-list">
-              {AUDIENCES.map((option) => {
-                const Icon = option.icon;
-                return (
-                  <button key={option.id} type="button" onClick={() => {
-                    if (option.requiresTarget) {
-                      setTargetAudience(option);
-                      return;
-                    }
-                    setAudience(option);
-                    setShowAudience(false);
-                  }}>
-                    <span className="mp-social-audience-icon"><Icon size={18} /></span>
-                    <span><strong>{option.label}</strong><small>{option.detail}</small></span>
-                    {audience.id === option.id ? <Check size={18} /> : <ChevronRight size={17} />}
-                  </button>
-                );
-              })}
+              {AUDIENCES.map((option) => (
+                <button key={option.id} type="button" onClick={() => {
+                  if (option.requiresTarget) {
+                    setTargetAudience(option);
+                    return;
+                  }
+                  setAudience(option);
+                  setShowAudience(false);
+                }}>
+                  <span className="mp-social-audience-icon"><Icon iconId={option.iconId} size={18} /></span>
+                  <span><strong>{option.label}</strong><small>{option.detail}</small></span>
+                  {audience.id === option.id ? <Icon iconId="check" size={18} /> : <Icon iconId="chevron-right" size={17} />}
+                </button>
+              ))}
             </div>
           </section>
         </div>
@@ -634,13 +549,13 @@ export function MomentsPage({
           <section
             className="mp-action-sheet mp-social-sort-sheet"
             role="dialog"
-            aria-label="Sort Explore"
+            aria-label={t('mobile.moment.sortAria')}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="mp-action-sheet-handle" />
             <header className="mp-social-sheet-header">
               <span className="mp-social-sheet-spacer" />
-              <h2>Sort Explore</h2>
+              <h2>{t('mobile.moment.sortTitle')}</h2>
               <span className="mp-social-sheet-spacer" />
             </header>
             <div className="mp-social-choice-list">
@@ -653,7 +568,7 @@ export function MomentsPage({
                   setShowSort(false);
                 }}>
                   <span><strong>{option.label}</strong><small>{option.detail}</small></span>
-                  {exploreSort === option.id ? <Check size={18} /> : null}
+                  {exploreSort === option.id ? <Icon iconId="check" size={18} /> : null}
                 </button>
               ))}
             </div>
@@ -678,7 +593,7 @@ export function MomentsPage({
           <section
             className="mp-action-sheet mp-social-compact-sheet"
             role="dialog"
-            aria-label="Moment actions"
+            aria-label={t('mobile.moment.actionsAria')}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="mp-action-sheet-handle" />
@@ -688,11 +603,11 @@ export function MomentsPage({
                   setActionMomentId(null);
                   setConfirmDeleteId(actionMoment.id);
                 }}>
-                  <Trash2 size={18} /> Delete Moment
+                  <Icon iconId="delete" size={18} /> {t('mobile.moments.deleteMoment')}
                 </button>
               ) : (
                 <button type="button" className="mp-action-item danger" onClick={() => setActionMomentId(null)}>
-                  <Ban size={18} /> Block {actionMoment.name}
+                  <Icon iconId="ban" size={18} /> {t('mobile.moment.block')} {actionMoment.name}
                 </button>
               )}
             </div>
@@ -709,17 +624,17 @@ export function MomentsPage({
           <section
             className="mp-action-sheet mp-social-confirm-sheet"
             role="alertdialog"
-            aria-label="Delete Moment"
+            aria-label={t('mobile.moments.deleteMoment')}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="mp-action-sheet-handle" />
             <div className="mp-social-confirm-copy">
-              <Trash2 size={20} />
-              <div><strong>Delete this Moment?</strong><p>Future feed, comment, media and recovery access will be revoked.</p></div>
+              <Icon iconId="delete" size={20} />
+              <div><strong>{t('mobile.moments.delete.confirmTitle')}</strong><p>{t('mobile.moments.delete.confirmDescription')}</p></div>
             </div>
             <div className="mp-social-confirm-actions">
-              <button type="button" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
-              <button type="button" className="danger" onClick={() => deletePost(confirmDeleteId)}>Delete</button>
+              <button type="button" onClick={() => setConfirmDeleteId(null)}>{t('mobile.chat.cancel')}</button>
+              <button type="button" className="danger" onClick={() => deletePost(confirmDeleteId)}>{t('mobile.moments.delete.action')}</button>
             </div>
           </section>
         </div>
@@ -761,6 +676,7 @@ function MomentArticle({
   onOpenMedia: (kind: 'image' | 'video') => void;
   onOpenActions: () => void;
 }) {
+  const t = useT();
   const hidesPlaintext = scenario === 'social-recovery-required' || scenario === 'social-revoked';
   const interactionsDisabled = hidesPlaintext || scenario === 'social-source-unavailable';
   const visibleComments = commentsExpanded ? moment.comments : moment.comments.slice(0, 10);
@@ -770,7 +686,7 @@ function MomentArticle({
     <article className="mp-social-moment" data-moment-id={moment.id} tabIndex={-1}>
       <div className="mp-social-author-row">
         <button type="button" className="mp-social-author" onClick={onOpenProfile}>
-          <UserSquareAvatar background={moment.avatarGradient} name={moment.name} size={42} />
+          <IdentityAvatar name={moment.name} initials={moment.avatar} src={moment.avatarUrl} size={40} />
           <span>
             <strong>{moment.name}</strong>
             <small>{moment.source} · {moment.time}</small>
@@ -778,7 +694,7 @@ function MomentArticle({
         </button>
         {!hidesPlaintext ? (
           <button type="button" className="mp-social-more" aria-label={`Actions for ${moment.name}'s Moment`} onClick={onOpenActions}>
-            <MoreHorizontal size={18} />
+            <Icon iconId="more-horizontal" size={18} />
           </button>
         ) : null}
       </div>
@@ -787,47 +703,46 @@ function MomentArticle({
         <div className="mp-social-body">
           <span>{moment.text}</span>
           {moment.images?.length ? (
-            <button type="button" className="mp-social-image" aria-label="Preview image" style={{ background: moment.images[0] }} onClick={() => onOpenMedia('image')} />
+            <button type="button" className="mp-social-image" aria-label={t('mobile.moments.previewImage')} style={{ background: moment.images[0] }} onClick={() => onOpenMedia('image')} />
           ) : null}
         </div>
       )}
       {!hidesPlaintext && moment.contentKind === 'video' && (
         <button type="button" className="mp-social-content-addon mp-social-video" onClick={() => onOpenMedia('video')}>
-          <span><Play size={24} fill="currentColor" /></span>
+          <span><Icon iconId="play" size={24} /></span>
           <small>{moment.videoLabel} · Encrypted video</small>
         </button>
       )}
       {!hidesPlaintext && moment.link && (
         <button type="button" className="mp-social-content-addon">
-          <span className="mp-social-content-icon"><LinkIcon size={17} /></span>
+          <span className="mp-social-content-icon"><Icon iconId="link" size={17} /></span>
           <span><strong>{moment.link.title}</strong><small>{moment.link.url}</small></span>
-          <ExternalLink size={16} />
+          <Icon iconId="external-link" size={16} />
         </button>
       )}
       {!hidesPlaintext && moment.poll && (
         <div className="mp-social-poll">
-          <strong><BarChart3 size={16} /> {moment.poll.question}</strong>
+          <strong><Icon iconId="chart-column" size={16} /> {moment.poll.question}</strong>
           {moment.poll.options.map((option) => <span key={option}>{option}</span>)}
         </div>
       )}
       {!hidesPlaintext && moment.repost && (
         <div className="mp-social-repost">
-          <strong><Repeat2 size={15} /> {moment.repost.author}</strong>
+          <strong><Icon iconId="repeat-2" size={15} /> {moment.repost.author}</strong>
           <span>{moment.repost.text}</span>
         </div>
       )}
       {!hidesPlaintext && moment.location && (
         <div className="mp-social-content-addon">
-          <span className="mp-social-content-icon"><MapPin size={17} /></span>
+          <span className="mp-social-content-icon"><Icon iconId="map-pin" size={17} /></span>
           <span><strong>{moment.location.name}</strong><small>{moment.location.address}</small></span>
-          <span />
         </div>
       )}
 
       <ScenarioState scenario={scenario} />
 
       <div className="mp-social-trust-meta">
-        {moment.remote ? <Globe2 size={13} /> : <ShieldCheck size={13} />}
+        <Icon iconId={moment.remote ? 'globe' : 'shield-check'} size={13} />
         <span>{moment.audience} · {moment.reason}</span>
       </div>
 
@@ -847,7 +762,7 @@ function MomentArticle({
                 emoji={REACTION_EMOJI[kind]}
                 count={count}
                 selected={myReactions.has(kind)}
-                label={copy['mobile.chat.reactWith'].replace(
+                label={t('mobile.chat.reactWith').replace(
                   '{{reaction}}',
                   REACTION_EMOJI[kind],
                 )}
@@ -866,21 +781,25 @@ function MomentArticle({
             scope="moment"
             disabled={interactionsDisabled}
             className="mp-moment-reaction-open"
-            label={copy['mobile.chat.addReaction']}
+            label={t('mobile.chat.addReaction')}
             expanded={reactionPickerOpen}
             onClick={onToggleReactionPicker}
           />
-          <button type="button" disabled={hidesPlaintext} className={commentComposerOpen ? 'mp-moment-action active' : 'mp-moment-action'} aria-label={commentComposerOpen ? 'Hide comment composer' : 'Add comment'} onClick={onToggleCommentComposer}>
-            <MessageCircle size={18} /><span className="mp-moment-action-count">{moment.comments.length}</span>
+          <button type="button" disabled={hidesPlaintext}
+            className={commentComposerOpen ? 'mp-moment-action active' : 'mp-moment-action'}
+            aria-label={commentComposerOpen ? 'Hide comment composer' : 'Add comment'}
+            aria-pressed={commentComposerOpen}
+            onClick={onToggleCommentComposer}>
+            <Icon iconId="message-circle" size={18} /><span className="mp-moment-action-count">{moment.comments.length}</span>
           </button>
           <button
             type="button"
             className="mp-moment-action mp-moment-action--share"
-            aria-label="Share unavailable"
-            title="Share unavailable"
+            aria-label={t('mobile.moment.shareUnavailable')}
+            title={t('mobile.moment.shareUnavailable')}
             disabled
           >
-            <Share2 size={18} />
+            <Icon iconId="share-2" size={18} />
           </button>
         </div>
       </div>
@@ -888,12 +807,12 @@ function MomentArticle({
       {reactionPickerOpen ? (
         <ReactionPicker
           className="mp-moment-reaction-picker"
-          label={copy['mobile.chat.addReaction']}
+          label={t('mobile.chat.addReaction')}
           items={REACTION_KINDS.map((kind) => ({
             id: kind,
             emoji: REACTION_EMOJI[kind],
             selected: myReactions.has(kind),
-            label: copy['mobile.chat.reactWith'].replace(
+            label: t('mobile.chat.reactWith').replace(
               '{{reaction}}',
               REACTION_EMOJI[kind],
             ),
@@ -907,11 +826,14 @@ function MomentArticle({
         <section className="mp-social-comments mp-social-comments-inline" aria-label={`Comments on ${moment.name}'s Moment`}>
           {visibleComments.map((comment) => (
             <div key={comment.id} className="mp-moment-comment" data-comment-id={comment.id} tabIndex={-1}>
-              <UserSquareAvatar background={comment.avatarGradient} name={comment.name} size={28} />
+              <IdentityAvatar name={comment.name} initials={comment.avatar} src={comment.avatarUrl} size={28} />
               <div className="mp-moment-comment-body">
-                <Text strong className="mp-moment-comment-name">{comment.name}</Text>
-                <span className="mp-moment-comment-text">{comment.text}</span>
-                <Text type="secondary" className="mp-moment-comment-time">{comment.time} · Reply</Text>
+                <span>
+                  <Text strong className="mp-moment-comment-name">{comment.name}</Text>
+                  {' '}
+                  <span className="mp-moment-comment-text">{comment.text}</span>
+                </span>
+                <Text tone="muted" className="mp-moment-comment-time">{comment.time} · Reply</Text>
               </div>
             </div>
           ))}
@@ -922,8 +844,10 @@ function MomentArticle({
           )}
           {commentComposerOpen && !interactionsDisabled && (
             <div className="mp-social-comment-composer-inline">
-              <input aria-label="Add a comment" value={commentText} onChange={(event) => onCommentChange(event.target.value)} placeholder="Add a comment..." />
-              <button type="button" aria-label="Send comment" disabled={!commentText.trim()} onClick={onComment}><Send size={16} /></button>
+              <input aria-label={t('mobile.moment.commentAdd')} value={commentText} onChange={(event) => onCommentChange(event.target.value)} placeholder={t('mobile.moments.comment.placeholder')} />
+              <button type="button" aria-label={t('mobile.moment.commentSend')} disabled={!commentText.trim()} onClick={onComment}>
+                <Icon iconId="send" size={16} />
+              </button>
             </div>
           )}
         </section>
@@ -941,18 +865,23 @@ function MediaPreviewOverlay({
   kind: 'image' | 'video';
   onClose: () => void;
 }) {
+  const t = useT();
   return (
     <div className="mp-social-media-overlay" role="presentation" onClick={onClose}>
-      <section className="mp-social-media-dialog" role="dialog" aria-modal="true" aria-label={`${kind === 'image' ? 'Image' : 'Video'} preview`} onClick={(event) => event.stopPropagation()}>
+      <section className="mp-social-media-dialog" role="dialog" aria-modal="true"
+        aria-label={`${kind === 'image' ? 'Image' : 'Video'} preview`}
+        onClick={(event) => event.stopPropagation()}>
         <header>
           <span>{moment.name}</span>
-          <button type="button" aria-label="Close media preview" onClick={onClose}><X size={20} /></button>
+          <button type="button" aria-label={t('mobile.moment.closePreview')} onClick={onClose}>
+            <Icon iconId="close" size={20} />
+          </button>
         </header>
         {kind === 'image' ? (
-          <div className="mp-social-media-canvas" style={{ background: moment.images?.[0] ?? GRADIENTS[0] }} />
+          <div className="mp-social-media-canvas" style={{ background: moment.images?.[0] }} />
         ) : (
           <div className="mp-social-media-canvas mp-social-media-video">
-            <span><Play size={30} fill="currentColor" /></span>
+            <span><Icon iconId="play" size={30} /></span>
             <small>{moment.videoLabel} · Tap to play</small>
           </div>
         )}
@@ -963,31 +892,32 @@ function MediaPreviewOverlay({
 }
 
 function ScenarioState({ scenario }: { scenario: MomentsEvidenceScenario }) {
+  const t = useT();
   if (scenario === 'social-parity' || scenario === 'social-content-types') return null;
   const states = {
     'social-private-pending': {
-      icon: <LoaderCircle className="mp-spin" size={18} />,
+      iconId: 'refresh-ccw',
       title: 'Delivery pending',
       detail: 'Bob Station is unavailable. This Moment will retry with the same delivery identity.',
       action: 'Check delivery',
       tone: 'pending',
     },
     'social-recovery-required': {
-      icon: <LockKeyhole size={18} />,
+      iconId: 'lock-keyhole',
       title: 'Recovery required',
       detail: 'Restore this trusted device before reading private history.',
       action: 'Start recovery',
       tone: 'blocking',
     },
     'social-source-unavailable': {
-      icon: <CircleAlert size={18} />,
+      iconId: 'attention',
       title: 'Source temporarily unavailable',
       detail: 'Verified content remains readable. New comments and reactions are paused.',
       action: 'Retry',
       tone: 'warning',
     },
     'social-revoked': {
-      icon: <Trash2 size={18} />,
+      iconId: 'delete',
       title: 'Moment deleted or access revoked',
       detail: 'New reads, interactions and recovery are blocked. Saved copies cannot be remotely erased.',
       action: 'Back to Moments',
@@ -997,9 +927,9 @@ function ScenarioState({ scenario }: { scenario: MomentsEvidenceScenario }) {
   const state = states[scenario];
   return (
     <section className={`mp-social-state ${state.tone}`} role="status">
-      <span>{state.icon}</span>
+      <span><Icon iconId={state.iconId} size={18} /></span>
       <div><strong>{state.title}</strong><p>{state.detail}</p></div>
-      <button type="button"><RefreshCw size={15} /> {state.action}</button>
+      <button type="button"><Icon iconId="refresh-ccw" size={15} /> {state.action}</button>
     </section>
   );
 }
@@ -1013,6 +943,7 @@ function AudienceTargetPickerSheet({
   onDismiss: () => void;
   onDone: (detail: string) => void;
 }) {
+  const t = useT();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const singleOptions = audience.id === 'CIRCLE'
@@ -1072,7 +1003,7 @@ function AudienceTargetPickerSheet({
           ) : <span className="mp-social-sheet-spacer" />}
         </header>
         <div className="mp-social-target-copy">
-          <ShieldCheck size={17} />
+          <Icon iconId="shield-check" size={17} />
           <span>
             {audience.id === 'CUSTOM_DENY'
               ? 'The base audience stays Followers. Selected people are excluded.'
@@ -1081,15 +1012,23 @@ function AudienceTargetPickerSheet({
         </div>
         {customAudience && (
           <div className="mp-social-search mp-social-target-search">
-            <label><Search size={17} /><input aria-label="Search audience people" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search people" /></label>
+            <TextField
+              aria-label={t('mobile.moments.audience.searchPeople')}
+              placeholder={t('mobile.moments.audience.searchPeople')}
+              value={query}
+              clearable
+              onClear={() => setQuery('')}
+              leading={<Icon iconId="search" size={16} />}
+              onValueChange={setQuery}
+            />
           </div>
         )}
         <div className="mp-social-choice-list mp-social-target-list">
           {singleOptions.map((option) => (
             <button key={option.id} type="button" onClick={() => onDone(`${option.name} · ${option.detail}`)}>
-              <span className="mp-social-audience-icon"><UsersRound size={18} /></span>
+              <span className="mp-social-audience-icon"><Icon iconId="users-round" size={18} /></span>
               <span><strong>{option.name}</strong><small>{option.detail}</small></span>
-              <ChevronRight size={17} />
+              <Icon iconId="chevron-right" size={17} />
             </button>
           ))}
           {customAudience && visiblePeople.map((person) => {
@@ -1098,7 +1037,7 @@ function AudienceTargetPickerSheet({
               <button key={person.id} type="button" onClick={() => setSelectedIds((current) => (
                 selected ? current.filter((id) => id !== person.id) : [...current, person.id]
               ))}>
-                <span className="mp-social-selection-check">{selected ? <Check size={16} /> : null}</span>
+                <span className="mp-social-selection-check">{selected ? <Icon iconId="check" size={16} /> : null}</span>
                 <span><strong>{person.name}</strong><small>{person.handle}</small></span>
               </button>
             );
@@ -1110,19 +1049,25 @@ function AudienceTargetPickerSheet({
 }
 
 function SocialSearchPage({ onBack, onOpenProfile }: { onBack: () => void; onOpenProfile: () => void }) {
+  const t = useT();
   return (
     <div className="mp-detail-page">
       <header className="mp-detail-header">
-        <IconButton label="Back to Moments" onClick={onBack}><ArrowLeft size={20} /></IconButton>
-        <h1 className="mp-detail-header-title">Search people</h1>
+        <IconButton actionId="people-search.back" iconId="arrow-left" label={t('mobile.moments.backToMoments')} emphasis="quiet"
+          onActivate={onBack} />
+        <h1 className="mp-detail-header-title">{t('mobile.moments.searchPeopleShort')}</h1>
       </header>
       <div className="mp-social-search">
-        <label><Search size={17} /><input aria-label="Search people" defaultValue="@bob@bob.remote" /></label>
-        <p>People in your active Federation</p>
+        <TextField
+          aria-label={t('mobile.moments.searchPeopleShort')}
+          defaultValue="@bob@bob.remote"
+          leading={<Icon iconId="search" size={16} />}
+        />
+        <p>{t('mobile.moment.activeFederation')}</p>
         <button type="button" className="mp-social-person-row" onClick={onOpenProfile}>
-          <UserSquareAvatar background={GRADIENTS[2]} name="Bob Lee" size={44} />
-          <span><strong>Bob Lee</strong><small>@bob@bob.remote · Friend</small></span>
-          <ChevronRight size={18} />
+          <IdentityAvatar name="Bob Lee" initials="BL" size={44} />
+          <span><strong>Bob Lee</strong><small>@bob@bob.remote · {t('mobile.moment.friend')}</small></span>
+          <span className="mp-row-chevron"><Icon iconId="chevron-right" size={18} /></span>
         </button>
       </div>
     </div>
@@ -1130,6 +1075,7 @@ function SocialSearchPage({ onBack, onOpenProfile }: { onBack: () => void; onOpe
 }
 
 function SocialProfilePage({ moments, onBack, onOpenMoment }: { moments: Moment[]; onBack: () => void; onOpenMoment: (id: string) => void }) {
+  const t = useT();
   const [following, setFollowing] = useState(true);
   const [blocked, setBlocked] = useState(false);
   const [showActions, setShowActions] = useState(false);
@@ -1137,31 +1083,35 @@ function SocialProfilePage({ moments, onBack, onOpenMoment }: { moments: Moment[
   return (
     <div className="mp-detail-page">
       <header className="mp-detail-header">
-        <IconButton label="Back to Moments" onClick={onBack}><ArrowLeft size={20} /></IconButton>
-        <h1 className="mp-detail-header-title">Profile</h1>
-        <IconButton label="Profile actions" onClick={() => setShowActions(true)}><MoreHorizontal size={20} /></IconButton>
+        <IconButton actionId="profile.back" iconId="arrow-left" label={t('mobile.moments.backToMoments')} emphasis="quiet"
+          onActivate={onBack} />
+        <h1 className="mp-detail-header-title">{t('mobile.moments.profileTitle')}</h1>
+        <IconButton actionId="profile.actions" iconId="more-horizontal" label={t('mobile.moments.profileActions')} emphasis="quiet"
+          onActivate={() => setShowActions(true)} />
       </header>
       <section className="mp-social-profile">
-        <UserSquareAvatar background={GRADIENTS[2]} name="Bob Lee" size={72} />
+        <IdentityAvatar name="Bob Lee" initials="BL" size={72} />
         <h2>Bob Lee</h2>
         <p>@bob@bob.remote</p>
-        <div className="mp-social-profile-meta"><Globe2 size={14} /> Remote Station · Verified friend</div>
+        <div className="mp-social-profile-meta"><Icon iconId="globe" size={14} /> Remote Station · Verified friend</div>
         <div className="mp-social-profile-actions">
           <button type="button" className="primary" disabled={blocked} onClick={() => setFollowing((current) => !current)}>
-            {following ? <Check size={16} /> : <UserPlus size={16} />} {blocked ? 'Blocked' : following ? 'Following' : 'Follow'}
+            {following ? <><Icon iconId="check" size={16} /> Following</> : <><Icon iconId="user-plus" size={16} /> Follow</>}
           </button>
-          <button type="button" disabled={blocked}><MessageCircle size={16} /> Message</button>
+          <button type="button" disabled={blocked}><Icon iconId="message-circle" size={16} /> Message</button>
         </div>
-        {blocked && <div className="mp-social-profile-blocked" role="status"><Ban size={15} /> Social authority confirms this actor is blocked.</div>}
-        <div className="mp-social-profile-stats"><span><strong>24</strong>Posts</span><span><strong>18</strong>Following</span><span><strong>41</strong>Followers</span></div>
+        {blocked && <div className="mp-social-profile-blocked" role="status"><Icon iconId="ban" size={15} /> Social authority confirms this actor is blocked.</div>}
       </section>
       <section className="mp-social-profile-feed">
-        <h3>Recent Moments</h3>
-        {moments.slice(0, 2).map((moment) => <button key={moment.id} type="button" onClick={() => onOpenMoment(moment.id)}><span>{moment.text}</span><ChevronRight size={17} /></button>)}
+        <h3>{t('mobile.moment.recentMoments')}</h3>
+        {moments.slice(0, 2).map((moment) => <button key={moment.id} type="button" onClick={() => onOpenMoment(moment.id)}>
+          <span>{moment.text}</span><Icon iconId="chevron-right" size={17} />
+        </button>)}
       </section>
       {showActions && (
         <div className="mp-action-sheet-backdrop" role="presentation" onPointerDown={() => setShowActions(false)}>
-          <section className="mp-action-sheet mp-social-compact-sheet" role="dialog" aria-label="Profile actions" onPointerDown={(event) => event.stopPropagation()}>
+          <section className="mp-action-sheet mp-social-compact-sheet" role="dialog" aria-label={t('mobile.moments.profileActions')}
+            onPointerDown={(event) => event.stopPropagation()}>
             <div className="mp-action-sheet-handle" />
             <div className="mp-action-group">
               <button type="button" className={blocked ? 'mp-action-item' : 'mp-action-item danger'} onClick={() => {
@@ -1172,7 +1122,7 @@ function SocialProfilePage({ moments, onBack, onOpenMoment }: { moments: Moment[
                 }
                 setConfirmBlock(true);
               }}>
-                <Ban size={18} /> {blocked ? 'Unblock Bob Lee' : 'Block Bob Lee'}
+                <Icon iconId="ban" size={18} /> {blocked ? 'Unblock Bob Lee' : 'Block Bob Lee'}
               </button>
             </div>
           </section>
@@ -1180,19 +1130,20 @@ function SocialProfilePage({ moments, onBack, onOpenMoment }: { moments: Moment[
       )}
       {confirmBlock && (
         <div className="mp-action-sheet-backdrop" role="presentation" onPointerDown={() => setConfirmBlock(false)}>
-          <section className="mp-action-sheet mp-social-confirm-sheet" role="alertdialog" aria-label="Block Bob Lee" onPointerDown={(event) => event.stopPropagation()}>
+          <section className="mp-action-sheet mp-social-confirm-sheet" role="alertdialog" aria-label={t('mobile.moment.blockTitle', { name: 'Bob Lee' })}
+            onPointerDown={(event) => event.stopPropagation()}>
             <div className="mp-action-sheet-handle" />
             <div className="mp-social-confirm-copy">
-              <Ban size={20} />
-              <div><strong>Block Bob Lee?</strong><p>New feed, detail, interaction and recovery access will be denied after authoritative readback.</p></div>
+              <Icon iconId="ban" size={20} />
+              <div><strong>{t('mobile.moment.blockTitle', { name: 'Bob Lee' })}</strong><p>{t('mobile.moment.blockBody')}</p></div>
             </div>
             <div className="mp-social-confirm-actions">
-              <button type="button" onClick={() => setConfirmBlock(false)}>Cancel</button>
+              <button type="button" onClick={() => setConfirmBlock(false)}>{t('mobile.chat.cancel')}</button>
               <button type="button" className="danger" onClick={() => {
                 setBlocked(true);
                 setFollowing(false);
                 setConfirmBlock(false);
-              }}>Block</button>
+              }}>{t('mobile.moment.block')}</button>
             </div>
           </section>
         </div>
@@ -1202,6 +1153,7 @@ function SocialProfilePage({ moments, onBack, onOpenMoment }: { moments: Moment[
 }
 
 function CirclePage({ onBack }: { onBack: () => void }) {
+  const t = useT();
   const [circles, setCircles] = useState<CircleItem[]>(CIRCLES);
   const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ circleId?: string; name: string; description: string } | null>(null);
@@ -1250,54 +1202,57 @@ function CirclePage({ onBack }: { onBack: () => void }) {
     return (
       <div className="mp-detail-page">
         <header className="mp-detail-header">
-          <IconButton label="Back to Circles" onClick={() => setSelectedCircleId(null)}><ArrowLeft size={20} /></IconButton>
+          <IconButton actionId="circle.back" iconId="arrow-left" label={t('mobile.moments.backToCircles')} emphasis="quiet"
+            onActivate={() => setSelectedCircleId(null)} />
           <h1 className="mp-detail-header-title">{selectedCircle.name}</h1>
-          <IconButton label="Rename circle" onClick={() => setEditing({
-            circleId: selectedCircle.id,
-            name: selectedCircle.name,
-            description: selectedCircle.description,
-          })}><Pencil size={19} /></IconButton>
+          <IconButton actionId="circle.rename" iconId="pencil-line" label={t('mobile.moments.renameCircle')} emphasis="quiet"
+            onActivate={() => setEditing({
+              circleId: selectedCircle.id,
+              name: selectedCircle.name,
+              description: selectedCircle.description,
+            })} />
         </header>
-        <div className="mp-social-circle-copy"><ShieldCheck size={18} /><span>{selectedCircle.description}. Membership is publisher-private.</span></div>
+        <div className="mp-social-circle-copy"><Icon iconId="shield-check" size={18} /><span>{selectedCircle.description}. Membership is publisher-private.</span></div>
         <section className="mp-social-circle-detail">
           <div className="mp-social-section-heading">
-            <span><strong>Members</strong><small>{selectedCircle.members.length} people</small></span>
-            <button type="button" onClick={() => setMemberPickerOpen(true)}><UserPlus size={16} /> Add</button>
+            <span><strong>{t('mobile.moment.circleMembers')}</strong><small>{t('mobile.moment.circlePeople', { n: selectedCircle.members.length })}</small></span>
+            <button type="button" onClick={() => setMemberPickerOpen(true)}><Icon iconId="user-plus" size={16} /> Add</button>
           </div>
           {selectedCircle.members.map((member) => (
             <div key={member} className="mp-social-member-row">
-              <UserSquareAvatar background={GRADIENTS[2]} name={member} size={36} />
-              <span><strong>{member}</strong><small>Canonical actor identity</small></span>
+              <IdentityAvatar name={member} initials={member.split(' ').map(part => part[0]).join('')} size={36} />
+              <span><strong>{member}</strong><small>{t('mobile.moment.circleIdentity')}</small></span>
               <button type="button" aria-label={`Remove ${member}`} onClick={() => setCircles((current) => current.map((circle) => (
                 circle.id === selectedCircle.id
                   ? { ...circle, members: circle.members.filter((name) => name !== member) }
                   : circle
-              )))}><UserMinus size={17} /></button>
+              )))}><Icon iconId="user-minus" size={17} /></button>
             </div>
           ))}
-          {selectedCircle.members.length === 0 && <div className="mp-social-empty-inline">No members yet. Add people before publishing to this Circle.</div>}
+          {selectedCircle.members.length === 0 && <div className="mp-social-empty-inline">{t('mobile.moments.noMembers')}</div>}
         </section>
         <section className="mp-social-danger-group">
-          <button type="button" onClick={() => setConfirmDelete(true)}><Trash2 size={17} /> Delete Circle</button>
+          <button type="button" onClick={() => setConfirmDelete(true)}><Icon iconId="delete" size={17} /> Delete Circle</button>
         </section>
         {editing && (
           <CircleEditSheet editing={editing} onChange={setEditing} onCancel={() => setEditing(null)} onSave={saveCircle} />
         )}
         {confirmDelete && (
           <div className="mp-action-sheet-backdrop" role="presentation" onPointerDown={() => setConfirmDelete(false)}>
-            <section className="mp-action-sheet mp-social-confirm-sheet" role="alertdialog" aria-label="Delete Circle" onPointerDown={(event) => event.stopPropagation()}>
+            <section className="mp-action-sheet mp-social-confirm-sheet" role="alertdialog" aria-label={t('mobile.moments.deleteCircle')}
+              onPointerDown={(event) => event.stopPropagation()}>
               <div className="mp-action-sheet-handle" />
               <div className="mp-social-confirm-copy">
-                <Trash2 size={20} />
-                <div><strong>Delete {selectedCircle.name}?</strong><p>Existing posts keep their canonical audience snapshot. New publishes cannot target this Circle.</p></div>
+                <Icon iconId="delete" size={20} />
+                <div><strong>{t('mobile.moment.deleteCircleTitle', { name: selectedCircle.name })}</strong><p>{t('mobile.moment.deleteCircleBody')}</p></div>
               </div>
               <div className="mp-social-confirm-actions">
-                <button type="button" onClick={() => setConfirmDelete(false)}>Cancel</button>
+                <button type="button" onClick={() => setConfirmDelete(false)}>{t('mobile.chat.cancel')}</button>
                 <button type="button" className="danger" onClick={() => {
                   setCircles((current) => current.filter((circle) => circle.id !== selectedCircle.id));
                   setSelectedCircleId(null);
                   setConfirmDelete(false);
-                }}>Delete</button>
+                }}>{t('mobile.moments.delete.action')}</button>
               </div>
             </section>
           </div>
@@ -1309,17 +1264,19 @@ function CirclePage({ onBack }: { onBack: () => void }) {
   return (
     <div className="mp-detail-page">
       <header className="mp-detail-header">
-        <IconButton label="Back to Moments" onClick={onBack}><ArrowLeft size={20} /></IconButton>
-        <h1 className="mp-detail-header-title">Circles</h1>
-        <IconButton label="Create circle" onClick={() => setEditing({ name: '', description: '' })}><Plus size={19} /></IconButton>
+        <IconButton actionId="circles.back" iconId="arrow-left" label={t('mobile.moments.backToMoments')} emphasis="quiet"
+          onActivate={onBack} />
+        <h1 className="mp-detail-header-title">{t('mobile.moments.circlesTitle')}</h1>
+        <IconButton actionId="circles.create" iconId="plus" label={t('mobile.moments.createCircle')} emphasis="quiet"
+          onActivate={() => setEditing({ name: '', description: '' })} />
       </header>
-      <div className="mp-social-circle-copy"><ShieldCheck size={18} /><span>Circles are private audience lists. Members cannot see the full list.</span></div>
+      <div className="mp-social-circle-copy"><Icon iconId="shield-check" size={18} /><span>{t('mobile.moments.circlesCopy')}</span></div>
       <div className="mp-social-circle-list">
         {circles.map((circle) => (
           <button key={circle.id} type="button" onClick={() => setSelectedCircleId(circle.id)}>
-            <span className="mp-social-audience-icon"><UsersRound size={18} /></span>
+            <span className="mp-social-audience-icon"><Icon iconId="users-round" size={18} /></span>
             <span><strong>{circle.name}</strong><small>{circle.description} · {circle.members.length} members</small></span>
-            <ChevronRight size={17} />
+            <Icon iconId="chevron-right" size={17} />
           </button>
         ))}
       </div>
@@ -1341,18 +1298,21 @@ function CircleEditSheet({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  const t = useT();
   return (
     <div className="mp-action-sheet-backdrop" role="presentation" onPointerDown={onCancel}>
-      <section className="mp-action-sheet mp-social-circle-editor" role="dialog" aria-label={editing.circleId ? 'Rename Circle' : 'Create Circle'} onPointerDown={(event) => event.stopPropagation()}>
+      <section className="mp-action-sheet mp-social-circle-editor" role="dialog"
+        aria-label={editing.circleId ? 'Rename Circle' : 'Create Circle'}
+        onPointerDown={(event) => event.stopPropagation()}>
         <div className="mp-action-sheet-handle" />
         <header className="mp-social-sheet-header">
           <span className="mp-social-sheet-spacer" />
           <h2>{editing.circleId ? 'Edit Circle' : 'New Circle'}</h2>
-          <button type="button" className="primary" disabled={!editing.name.trim()} onClick={onSave}>Save</button>
+          <button type="button" className="primary" disabled={!editing.name.trim()} onClick={onSave}>{t('mobile.moments.save')}</button>
         </header>
         <div className="mp-social-form">
-          <label><span>Name</span><input value={editing.name} onChange={(event) => onChange({ ...editing, name: event.target.value })} placeholder="Circle name" /></label>
-          <label><span>Description</span><textarea value={editing.description} onChange={(event) => onChange({ ...editing, description: event.target.value })} placeholder="Who belongs here?" /></label>
+          <label><span>{t('mobile.moment.fieldName')}</span><input value={editing.name} onChange={(event) => onChange({ ...editing, name: event.target.value })} placeholder={t('mobile.moment.circleNamePlaceholder')} /></label>
+          <label><span>{t('mobile.moment.fieldDescription')}</span><textarea value={editing.description} onChange={(event) => onChange({ ...editing, description: event.target.value })} placeholder={t('mobile.moment.circleDescriptionPlaceholder')} /></label>
         </div>
       </section>
     </div>
@@ -1368,24 +1328,36 @@ function CircleMemberPickerPage({
   onBack: () => void;
   onAdd: (name: string) => void;
 }) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const visible = PEOPLE.filter((person) => `${person.name} ${person.handle}`.toLowerCase().includes(query.toLowerCase()));
   return (
     <div className="mp-detail-page">
       <header className="mp-detail-header">
-        <IconButton label="Back to Circle" onClick={onBack}><ArrowLeft size={20} /></IconButton>
-        <h1 className="mp-detail-header-title">Add people</h1>
+        <IconButton actionId="circle-members.back" iconId="arrow-left" label={t('mobile.moments.backToCircle')} emphasis="quiet"
+          onActivate={onBack} />
+        <h1 className="mp-detail-header-title">{t('mobile.moments.addPeople')}</h1>
       </header>
       <div className="mp-social-search">
-        <label><Search size={17} /><input aria-label="Search Circle members" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search people" /></label>
-        <p>People in your active Federation</p>
+        <TextField
+          aria-label={t('mobile.moment.searchCircleMembers')}
+          placeholder={t('mobile.moments.audience.searchPeople')}
+          value={query}
+          clearable
+          onClear={() => setQuery('')}
+          leading={<Icon iconId="search" size={16} />}
+          onValueChange={setQuery}
+        />
+        <p>{t('mobile.moment.activeFederation')}</p>
         {visible.map((person) => {
           const added = circle.members.includes(person.name);
           return (
             <div key={person.id} className="mp-social-member-row">
-              <UserSquareAvatar background={GRADIENTS[2]} name={person.name} size={40} />
+              <IdentityAvatar name={person.name} initials={person.name.split(' ').map(part => part[0]).join('')} size={40} />
               <span><strong>{person.name}</strong><small>{person.handle}</small></span>
-              <button type="button" disabled={added} onClick={() => onAdd(person.name)}>{added ? <Check size={17} /> : <UserPlus size={17} />}</button>
+              <button type="button" disabled={added} onClick={() => onAdd(person.name)}>
+                {added ? <Icon iconId="check" size={17} /> : <Icon iconId="user-plus" size={17} />}
+              </button>
             </div>
           );
         })}
@@ -1394,6 +1366,5 @@ function CircleMemberPickerPage({
   );
 }
 
-function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
-  return <button type="button" className="mp-header-action" aria-label={label} onClick={onClick}>{children}</button>;
-}
+// Keep ReactNode import used by future sub-views without churn.
+export type MomentsNode = ReactNode;

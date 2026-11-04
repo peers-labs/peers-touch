@@ -158,6 +158,7 @@ Pick one based on intent:
 
 ### Invariants (active)
 
+- [`invariants/provider-execution-owner-boundary.md`](invariants/provider-execution-owner-boundary.md) — Provider resources, grants, credentials and shared binaries preserve the requesting actor's execution boundary.
 - [`invariants/relay-readloop-discipline.md`](invariants/relay-readloop-discipline.md) — readLoop goroutines must dispatch blocking work asynchronously.
 - [`invariants/locator-publisher-symmetry.md`](invariants/locator-publisher-symmetry.md) — `PublishVisibility` callers split into "user-driven" (broadcast) and "maintenance" (no broadcast); no third category.
 - [`invariants/relay-runtime-role-is-minimal.md`](invariants/relay-runtime-role-is-minimal.md) — Relay composition is deny-by-default and fails closed on missing transport/operator security.

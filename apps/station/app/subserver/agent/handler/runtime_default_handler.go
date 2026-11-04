@@ -36,8 +36,8 @@ func (h *ProviderHandlers) HandleSetRuntimeDefault(
 	providerID := strings.TrimSpace(req.GetProviderId())
 	modelID := strings.TrimSpace(req.GetModelId())
 	if providerID == "" || modelID == "" {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"provider_id and model_id are required", nil)
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"provider_id and model_id are required", nil))
 	}
 
 	available, err := h.admissionResolver.ListAvailableModels(ctx, actorPTID)
@@ -52,8 +52,8 @@ func (h *ProviderHandlers) HandleSetRuntimeDefault(
 		}
 	}
 	if !matched {
-		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"selected model is not available for this actor", nil)
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"selected model is not available for this actor", nil))
 	}
 
 	row, err := h.runtimeDefaults.SetRuntimeDefault(

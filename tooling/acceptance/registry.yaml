@@ -1295,7 +1295,7 @@
           "apps/desktop/.gitignore",
           "apps/desktop/src-tauri/Cargo.lock",
           "apps/desktop/src-tauri/Cargo.toml",
-          "apps/desktop/src-tauri/icons/tray-icon-macos.png",
+          "apps/desktop/src-tauri/icons/tray-icon-macos.*",
           "apps/desktop/src-tauri/src/application/tray/**",
           "apps/desktop/src-tauri/src/application/window_lifecycle.rs",
           "docs/client/desktop/tray-residency.md",

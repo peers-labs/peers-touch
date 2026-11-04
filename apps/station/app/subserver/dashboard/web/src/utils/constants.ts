@@ -16,6 +16,8 @@ export const PAGES = {
   TRANSPORT: 'transport',
   RELAY_ATTACHMENTS: 'relay-attachments',
   ACCESS_GATES: 'access-gates',
+  AI: 'ai',
+  FEDERATION: 'federation',
 } as const;
 
 export type Page = typeof PAGES[keyof typeof PAGES];

@@ -111,8 +111,8 @@ try {
       ) - before)).toBeLessThanOrEqual(2);
     }
     async function searchHistory(query) {
-      await device.getByRole('button', { name: 'More', exact: true }).click();
-      await device.getByRole('button', { name: 'Search Chat History', exact: true }).click();
+      await device.getByRole('button', { name: copy['mobile.chat.moreActions'], exact: true }).click();
+      await device.getByRole('button', { name: copy['mobile.chat.searchHistory'], exact: true }).click();
       await expect(messages()).toHaveCount(0);
       await device.getByRole('textbox', { name: searchCopy['search.label'], exact: true }).fill(query);
       await device.locator('[data-prototype-page="search"]')
@@ -136,7 +136,7 @@ try {
       () => device.getByRole('button', { name: 'Me', exact: true }).click(),
       () => device.locator('.mp-tabbar-item').filter({ hasText: copy['mobile.chat.title'] }).click());
 
-    const chatSearch = device.getByPlaceholder('Search conversations', { exact: true });
+    const chatSearch = device.getByPlaceholder(copy['mobile.chat.searchPlaceholder'], { exact: true });
     await chatSearch.fill(copy['mobile.chat.thread']);
     assert.equal(await traverse(conversations, 240, 100), 240);
     await chatSearch.fill('240');
@@ -188,14 +188,14 @@ try {
     await next.scrollIntoViewIfNeeded();
     const retained = messages().locator('[data-scroll-anchor-id="long-message-200"]');
     const retainedOffset = await offset(retained);
-    await device.getByPlaceholder('Message', { exact: true }).fill('local-long-list-check');
+    await device.getByPlaceholder(copy['mobile.chat.messagePlaceholder'], { exact: true }).fill('local-long-list-check');
     await device.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(messages()).toHaveAttribute('data-window-total', '481');
     await expect(messages()).toHaveAttribute('data-window-start', '0');
     await expect.poll(async () => Math.abs(await offset(retained) - retainedOffset)).toBeLessThanOrEqual(2);
     await messages().getByRole('button', { name: copy['mobile.chat.latestMessage'], exact: true }).click();
     await atTail();
-    await device.getByPlaceholder('Message', { exact: true }).fill('local-live-tail-check');
+    await device.getByPlaceholder(copy['mobile.chat.messagePlaceholder'], { exact: true }).fill('local-live-tail-check');
     await device.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(messages()).toHaveAttribute('data-window-start', '282');
     await atTail();
@@ -257,7 +257,7 @@ try {
     await open('long-lists');
     await rows(list('conversations')).first().click();
     const retainedText = 'local-search-continuity';
-    await device.getByPlaceholder('Message', { exact: true }).fill(retainedText);
+    await device.getByPlaceholder(copy['mobile.chat.messagePlaceholder'], { exact: true }).fill(retainedText);
     await device.getByRole('button', { name: 'Send', exact: true }).click();
     await searchHistory(retainedText);
     await expect(rows(list('search'))).toHaveCount(1);
@@ -279,6 +279,7 @@ try {
     await expect(retainedMessage).toBeFocused();
     await retainedMessage.locator('.mp-bubble').click({ button: 'right' });
     await device.getByRole('button', { name: copy['mobile.chat.deleteForMe'], exact: true }).click();
+    await device.locator('[data-hide-confirm]').click();
     await device.getByRole('button', { name: 'Back', exact: true }).click();
     await expect(rows(list('search'))).toHaveCount(0);
     await expect(device.getByText(searchCopy['search.empty.detail'], { exact: true })).toBeVisible();
@@ -290,7 +291,7 @@ try {
     await messages().locator('[data-scroll-anchor-id="long-message-001"]').getByRole('button', {
       name: copy['mobile.chat.threadReplyCount'].replace('{{count}}', '3'), exact: true,
     }).click();
-    await device.getByPlaceholder('Reply in thread', { exact: true }).fill('local-thread-search-continuity');
+    await device.getByPlaceholder(copy['mobile.thread.replyPlaceholder'], { exact: true }).fill('local-thread-search-continuity');
     await device.getByRole('button', { name: 'Send', exact: true }).click();
     await device.getByRole('button', { name: 'Back', exact: true }).click();
     await searchHistory('local-thread-search-continuity');
@@ -307,8 +308,12 @@ try {
     await page.getByRole('button', { name: 'Retry fails', exact: true }).click();
     await expect(device.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
     await open('find-people-no-membership');
-    await expect(page.getByRole('dialog', { name: 'Find People', exact: true })
-      .getByRole('button', { name: 'Send Request', exact: true })).toBeDisabled();
+    // peers-ui keeps unavailable commands focusable (B19): aria-disabled plus an
+    // AT-exposed reason instead of a native disabled attribute.
+    const noMembershipRequest = page.getByRole('dialog', { name: 'Find People', exact: true })
+      .locator('[data-action-id^="find-people.request."]');
+    await expect(noMembershipRequest).toHaveAttribute('aria-disabled', 'true');
+    await expect(noMembershipRequest).toContainText(copy['mobile.contacts.sendRequest']);
     await open('contact-direct');
     await device.getByRole('button', { name: /Frank/ }).click();
     await device.getByRole('button', { name: copy['mobile.contacts.openChat'], exact: true }).click();
@@ -325,8 +330,10 @@ try {
     assert.deepEqual((await page.locator('.mp-evidence-intent').innerText()).split(' / ').slice(0, 2), intent);
     await page.getByRole('button', { name: 'Request confirmed pending', exact: true }).click();
     await page.getByRole('button', { name: 'Relationship accepted', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Find People', exact: true })
-      .getByRole('button', { name: 'Friends', exact: true })).toBeDisabled();
+    const acceptedRequest = page.getByRole('dialog', { name: 'Find People', exact: true })
+      .locator('[data-action-id^="find-people.request."]');
+    await expect(acceptedRequest).toHaveAttribute('aria-disabled', 'true');
+    await expect(acceptedRequest).toContainText(copy['mobile.contacts.alreadyFriend']);
     await open('draft-restored');
     await expect(device.locator('.mp-shell')).toHaveCount(1);
     assert.deepEqual(errors, []);

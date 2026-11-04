@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+  <!-- A cut-out P preserves contrast when AppKit recolors the template mask. -->
+  <path fill="#000" fill-rule="evenodd" d="M9 1 H27 C31.418278 1 35 4.581722 35 9 V27 C35 31.418278 31.418278 35 27 35 H9 C4.581722 35 1 31.418278 1 27 V9 C1 4.581722 4.581722 1 9 1 Z M11 8 H19 C23.418278 8 26 10.581722 26 15 C26 19.418278 23.418278 22 19 22 H16 V28 H11 Z M16 12.5 V17.5 H19 C20.656854 17.5 21.5 16.656854 21.5 15 C21.5 13.343146 20.656854 12.5 19 12.5 Z"/>
+</svg>

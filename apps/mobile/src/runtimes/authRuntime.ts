@@ -4,6 +4,7 @@ import type {
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
 } from '../app/lifecycle/types';
+import { mobileErrorKey } from '../app/mobileI18n';
 import { registerOAuthAccessGrantFinalizer } from '../features/auth/authSession';
 import { activeStationEntry } from '../features/station/stationRegistry';
 import {
@@ -272,8 +273,7 @@ function applyIntentFailure(
   fallbackRecovery: AuthRuntimeRecovery = 'restart',
 ): void {
   const message = readableErrorMessage(error);
-  const marker = message.match(/mobile\.auth\.[A-Za-z0-9]+/)?.[0];
-  const errorKey = marker ?? 'mobile.auth.oauthFailed';
+  const errorKey = mobileErrorKey(message) ?? 'mobile.auth.oauthFailed';
   const recovery = errorKey === 'mobile.auth.oauthBrowserUnavailable'
     ? 'retry-provider'
     : errorKey === 'mobile.auth.oauthStationMismatch'

@@ -2240,6 +2240,7 @@ impl MessagingEngine {
         thread_root_message_id: &str,
         attachment_intents: &[LocalAttachmentIntent],
         send_intent_id: &str,
+        mentions: &super::private_content::MessageMentions,
     ) -> Result<SubmitMessageOutcome, String> {
         let _guard = self
             .send_intent_lock
@@ -2334,6 +2335,7 @@ impl MessagingEngine {
             attachments: Vec::new(),
             attempt_count: 0,
             created_at_unix_ms,
+            mentions: mentions.clone(),
         };
         if uploads.is_empty() {
             self.store.create_message_draft(&draft)?;
@@ -2673,6 +2675,7 @@ impl MessagingEngine {
                         reply_to_message_id: &draft.reply_to_message_id,
                         thread_root_message_id: &draft.thread_root_message_id,
                         attachments: &draft.attachments,
+                        mentions: &draft.mentions,
                         client_timestamp_unix_ms: draft.created_at_unix_ms,
                     },
                     &bootstraps,
@@ -2696,6 +2699,7 @@ impl MessagingEngine {
                     reply_to_message_id: &draft.reply_to_message_id,
                     thread_root_message_id: &draft.thread_root_message_id,
                     attachments: &draft.attachments,
+                    mentions: &draft.mentions,
                     client_timestamp_unix_ms: draft.created_at_unix_ms,
                 },
             )?,

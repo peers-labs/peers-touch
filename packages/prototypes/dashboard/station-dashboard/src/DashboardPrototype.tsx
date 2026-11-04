@@ -55,11 +55,13 @@ import {
   type RouteRow,
 } from "./prototypeData";
 import "./index.css";
+import { ModelServiceAdminWireflow, ModelServiceWireflowTheme } from '../../../shared/ModelServiceWireflow';
+import { isModelWireflow } from '../../../shared/modelServiceWireflow';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
 
-type StationPage = "overview" | "attachments" | "routes" | "node";
+type StationPage = "overview" | "attachments" | "routes" | "node" | "models";
 type RelayPage = "invitations" | "attachments" | "service";
 type AttachMode = "attach" | "migrate";
 type ImportStep = "import" | "verified";
@@ -198,7 +200,7 @@ function NavButton({
 export function DashboardPrototype() {
   const [messageApi, contextHolder] = message.useMessage();
   const [operatorView, setOperatorView] = useState<OperatorView>("station");
-  const [stationPage, setStationPage] = useState<StationPage>("overview");
+  const [stationPage, setStationPage] = useState<StationPage>(isModelWireflow() ? "models" : "overview");
   const [relayPage, setRelayPage] = useState<RelayPage>("invitations");
   const [attachments, setAttachments] =
     useState<AttachmentRow[]>(INITIAL_ATTACHMENTS);
@@ -907,6 +909,12 @@ export function DashboardPrototype() {
           <nav className="nav-list">
             {operatorView === "station" ? (
               <>
+                {isModelWireflow() && <NavButton
+                  active={stationPage === "models"}
+                  icon={<KeyRound size={16} />}
+                  label="模型服务"
+                  onClick={() => setStationPage("models")}
+                />}
                 <NavButton
                   active={stationPage === "overview"}
                   icon={<LayoutDashboard size={16} />}
@@ -988,7 +996,9 @@ export function DashboardPrototype() {
             </Text>
           </div>
           <div className="page-scroll">
-            {operatorView === "station" ? stationContent : relayContent}
+            {operatorView === "station" && stationPage === "models"
+              ? <ModelServiceWireflowTheme><ModelServiceAdminWireflow /></ModelServiceWireflowTheme>
+              : operatorView === "station" ? stationContent : relayContent}
           </div>
         </main>
       </div>

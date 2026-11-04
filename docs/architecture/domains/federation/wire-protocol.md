@@ -615,8 +615,20 @@ Returns full FederationSummary + member list + recent ledger events + sync curso
 #### CreateFederation (Dashboard only)
 
 ```text
-POST /sub-federation/federations
+POST /dashboard/api/federation/create
 ```
+
+Create, join, leave and archive require a live Dashboard administrator session.
+Dashboard delegates to the Federation management port. Federation derives the
+ledger signing Actor from its configured initial Station owner; an Actor JWT
+cannot acquire governance authority. Peer ledger and signature validation
+remain Federation-owned.
+
+Dashboard also reads management projections through
+`POST /dashboard/api/federation/list` and
+`POST /dashboard/api/federation/stations`. The Actor-authenticated GET
+projections above remain read-only; their capability hints do not authorize
+management writes.
 
 ```protobuf
 message CreateFederationRequest {
@@ -634,7 +646,7 @@ message CreateFederationResponse {
 #### JoinFederation
 
 ```text
-POST /sub-federation/federations/join
+POST /dashboard/api/federation/join
 ```
 
 ```protobuf
@@ -653,7 +665,7 @@ message JoinFederationResponse {
 #### LeaveFederation
 
 ```text
-POST /sub-federation/federations/{federation_id}/leave
+POST /dashboard/api/federation/leave
 ```
 
 ```protobuf
@@ -666,6 +678,13 @@ message LeaveFederationResponse {
   bool success = 1;
 }
 ```
+
+#### DeleteFederation
+
+`POST /dashboard/api/federation/delete` accepts `DeleteFederationRequest`
+with `federation_id` and returns `DeleteFederationResponse.success`.
+The request archives the Federation through its existing governance ledger.
+Only the creator on the sequencer Station can archive it.
 
 ---
 

@@ -1,0 +1,1345 @@
+{
+  "kind": "peers-ui-glyph-source-registry",
+  "glyphs": {
+    "blocks": {
+      "source": "lucide@0.577.0/icons/blocks",
+      "sourceDigest": "sha256:de6343d547339077f3121f364a4a5fcba2492e191a7af8692a34b1425e5cd48b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "external-link": {
+      "source": "lucide@0.577.0/icons/external-link",
+      "sourceDigest": "sha256:9cf9d425d4eba20daee0853fe1cb424ecaeb6dfd0b9624e95631b4e7adfd65b6",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "eye-off": {
+      "source": "lucide@0.577.0/icons/eye-off",
+      "sourceDigest": "sha256:bb1b7539557f1db3cb0b6444d7a1642ccc9d1dd4908c46cd6db140f5177b01e4",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "maximize-2": {
+      "source": "lucide@0.577.0/icons/maximize-2",
+      "sourceDigest": "sha256:1a74d8e34ebbfc5cb9a9f3fa05f0c410caf6859f9e961e50eaaca324c5cdd0ff",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "minimize-2": {
+      "source": "lucide@0.577.0/icons/minimize-2",
+      "sourceDigest": "sha256:15f5335404d52d04552016916a9d2f59863e21707eaef2084f177e45a95edfc7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "close": {
+      "source": "lucide@0.577.0/icons/x",
+      "sourceDigest": "sha256:10565396e14240a1e502761da65cc540f82b85c1a33c57da8943abccb1e37961",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "refresh-cw": {
+      "source": "lucide@0.577.0/icons/refresh-cw",
+      "sourceDigest": "sha256:8a7b9382c778184166101a82e5459898abfa1ad422a1c34d5c05d06483da5c15",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "rotate-ccw": {
+      "source": "lucide@0.577.0/icons/rotate-ccw",
+      "sourceDigest": "sha256:0ddffa6481d48227cbdaa214fad91cf9d98891782f88e6a2f1a1f2caf48d724a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "bot": {
+      "source": "lucide@0.577.0/icons/bot",
+      "sourceDigest": "sha256:8d4d8f7045b4b6afe0e110adc5680d83893763f9db0f10a10f4391cd31882c96",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "grip-vertical": {
+      "source": "lucide@0.577.0/icons/grip-vertical",
+      "sourceDigest": "sha256:417bcc993144c76fe56fbcb02f77c2001a7f9418d6b233615677ee04aa2a79ca",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "message-square": {
+      "source": "lucide@0.577.0/icons/message-square",
+      "sourceDigest": "sha256:1504a78437b8d3e665fc3718e3039767eabff45441761366ce2b3d7221927aaa",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "plus": {
+      "source": "lucide@0.577.0/icons/plus",
+      "sourceDigest": "sha256:800a52c2b1fa4175ffc4ccc77ba0836ceb7b2cc2e2658be542689fe078d4df5f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "user": {
+      "source": "lucide@0.577.0/icons/user",
+      "sourceDigest": "sha256:5c71354714b4fe69ba902dfb87b5edbf0279a91df442e3befd71b0a9e4a65c60",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "square-check": {
+      "source": "lucide@0.577.0/icons/square-check",
+      "sourceDigest": "sha256:cdc9367898dcad1f3d1785947f607fad2f187c7b3331d36415abcdffe92f62f5",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "chevron-right": {
+      "source": "lucide@0.577.0/icons/chevron-right",
+      "sourceDigest": "sha256:4a4d6ef4a07f2476b6353fb9e4de7e0f576e548afaf53b0ff078bc68e2f8fb95",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "hash": {
+      "source": "lucide@0.577.0/icons/hash",
+      "sourceDigest": "sha256:a2c0d292c99a8f8541d4da18615d5c17e1cf80a4c95fa4547259e5f8ec483d77",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "list-checks": {
+      "source": "lucide@0.577.0/icons/list-checks",
+      "sourceDigest": "sha256:7ee9d861a23f1d48405931579693190e1acb2f4537637b4773549395682f7f98",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "message-square-plus": {
+      "source": "lucide@0.577.0/icons/message-square-plus",
+      "sourceDigest": "sha256:e07572bbbd7d0e3d1c9dc161c16d74d42d75ce27202b1a4b60fabc6a7e77997f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "more-horizontal": {
+      "source": "lucide@0.577.0/icons/ellipsis",
+      "sourceDigest": "sha256:c9bd877efc7df3f8a1f7330dba3e4e8434f9afac1b911704f67880684af04fa4",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "edit": {
+      "source": "lucide@0.577.0/icons/pencil",
+      "sourceDigest": "sha256:f1f92c3ab4e4973c60bc0263bcfd29837b11d6837b78df7c0f54bac63acd1332",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "pin": {
+      "source": "lucide@0.577.0/icons/pin",
+      "sourceDigest": "sha256:0c2bdbfd57148fc120c00e6e97d49575998b7426f129cac97153dd09ee2dbde6",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "search": {
+      "source": "lucide@0.577.0/icons/search",
+      "sourceDigest": "sha256:3e055df9eda22e6ebcd4a01049a6b08daed301fdd0ad43723c5930808988b7e8",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "square": {
+      "source": "lucide@0.577.0/icons/square",
+      "sourceDigest": "sha256:70929c5d79dd4a38df57a6a290a027364f19f4a4657a1784d63bb4d24db8fd72",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "delete": {
+      "source": "lucide@0.577.0/icons/trash-2",
+      "sourceDigest": "sha256:869de04e0a166e10e990fbe5ebb3e2345a10b073da1510fa9a4e422a288928a5",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "message-circle": {
+      "source": "lucide@0.577.0/icons/message-circle",
+      "sourceDigest": "sha256:9cbc6a236beebaa07b64f72115c04a6ce069feae9656c11f7ceb91a0b0b6170e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "settings": {
+      "source": "lucide@0.577.0/icons/settings",
+      "sourceDigest": "sha256:dc1cb7c31e3c8af9ccef686f40c84cc128a73ae12604e765004bb67f1e9cd1d9",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "sparkles": {
+      "source": "lucide@0.577.0/icons/sparkles",
+      "sourceDigest": "sha256:160ad3aa5505ae4fd309dc258823b6a1555c0939f2fcd85e628c0aa86a495a2a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "panel-right-close": {
+      "source": "lucide@0.577.0/icons/panel-right-close",
+      "sourceDigest": "sha256:c2dc38b990be3b2c2591881deb1576d5d8014a86ce81ee193a5560c4220633e6",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "panel-right-open": {
+      "source": "lucide@0.577.0/icons/panel-right-open",
+      "sourceDigest": "sha256:855a782fca351e33f460d85059ead9ef81682aeb86db2e128841030b054eb81a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "send": {
+      "source": "lucide@0.577.0/icons/send",
+      "sourceDigest": "sha256:f1d5b6773d2be019c2d73006666216498b6b0e706957443b6e7c44e9d80b9465",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "chevron-down": {
+      "source": "lucide@0.577.0/icons/chevron-down",
+      "sourceDigest": "sha256:29a172b8784019c9c842b7ed6aeacbb1af604b836d66dc1ede824dea2c935ff7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "pencil-line": {
+      "source": "lucide@0.577.0/icons/pencil-line",
+      "sourceDigest": "sha256:59183f94ddbb11ea2bc60df30e182ed35bfd0d56040679d4715c564fb4143d7d",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "image": {
+      "source": "lucide@0.577.0/icons/image",
+      "sourceDigest": "sha256:33b1b687f3f5f87fa0dd581ec391aeb758b9e33d3eaed0bffcd4f51b8c67a9ba",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "warning": {
+      "source": "lucide@0.577.0/icons/triangle-alert",
+      "sourceDigest": "sha256:88d72a292fdb436f7fa08617a5c01ca0911a1e47c16cca36deee07d7ae002ca8",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "arrow-up": {
+      "source": "lucide@0.577.0/icons/arrow-up",
+      "sourceDigest": "sha256:9e78b22e53a7a2034a8f57634c5065bc0061fc1c016a0505ce67a8e97e91b8d7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "chevron-up": {
+      "source": "lucide@0.577.0/icons/chevron-up",
+      "sourceDigest": "sha256:cbc654f323ae7870a4f4a89d68cadf74e53184ae728b6ab77d8afc6637d0bb16",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "server-cog": {
+      "source": "lucide@0.577.0/icons/server-cog",
+      "sourceDigest": "sha256:5f5601249c12027139431fd742c4527f31e53d27678439ac391dc313ba190ca3",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "slash": {
+      "source": "lucide@0.577.0/icons/slash",
+      "sourceDigest": "sha256:691882bd397368921ca8131292081e9098d4dbc5c18a958d3f6d790e0c02e175",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "house": {
+      "source": "lucide@0.577.0/icons/house",
+      "sourceDigest": "sha256:c16b8267bfac02e23829b638a2000ae38118546a21ffd6cf5e9490ed1a466506",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-text": {
+      "source": "lucide@0.577.0/icons/file-text",
+      "sourceDigest": "sha256:7ba384229eef01124453aac4296519a53e0f9979e4a86023a1679bd954796f32",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "flask-conical": {
+      "source": "lucide@0.577.0/icons/flask-conical",
+      "sourceDigest": "sha256:c95fd79da9c489de9db54c5e81ed1698d5a596922ecfcfe5930f5f8bf2439ff6",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-user": {
+      "source": "lucide@0.577.0/icons/circle-user",
+      "sourceDigest": "sha256:0498f8ef55b862a4e0c11a1c13357cc17f108bfbb34ceaeff7c15d9a018fca48",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "network": {
+      "source": "lucide@0.577.0/icons/network",
+      "sourceDigest": "sha256:001a077615afa0d05dbc21ea0ff7e8726fb131c487a9e9eb5930c151838ff88a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "users": {
+      "source": "lucide@0.577.0/icons/users",
+      "sourceDigest": "sha256:0b878a47ea9b9e8b8f6b3c0694fc11fd19576cfec5b1d72e1b924dc1af27b7c0",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "store": {
+      "source": "lucide@0.577.0/icons/store",
+      "sourceDigest": "sha256:fbd537022d40f7842d14b85a967c6bda4a7b95dfe68f8bd726c5a0462237dbea",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "puzzle": {
+      "source": "lucide@0.577.0/icons/puzzle",
+      "sourceDigest": "sha256:20a82c531a8bdd5269801902783a6bea31308fc1075ba0c05f3c953b50b894b9",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-plus": {
+      "source": "lucide@0.577.0/icons/circle-plus",
+      "sourceDigest": "sha256:384b48b8713e7630192c22b23edcb109c0ceb3b081ea2c4b45c920c661144947",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "messages-square": {
+      "source": "lucide@0.577.0/icons/messages-square",
+      "sourceDigest": "sha256:8e0ab0ce0329ee1536e2f92ca633c5b9e3b60c11f26f90030d92ecb14b3ab36c",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "command": {
+      "source": "lucide@0.577.0/icons/command",
+      "sourceDigest": "sha256:917b3814e575cbeb4266550fe733ab85490ca3e4fe8bf65b7835927fc10b5b2e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-dot": {
+      "source": "lucide@0.577.0/icons/circle-dot",
+      "sourceDigest": "sha256:832af86fecae984de7ca933a8e22ac6d043d448fd8501d137585afffa8766de9",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-question-mark": {
+      "source": "lucide@0.577.0/icons/circle-question-mark",
+      "sourceDigest": "sha256:ba7540359806be0bcc51e4b0e209204b720abecbe52cef9ead1720c0303e5271",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "attention": {
+      "source": "lucide@0.577.0/icons/circle-alert",
+      "sourceDigest": "sha256:a5abe24cd34f5c1bb85a5083f9d3f82e5663ee49b5943a0c125f08fa0c40eaec",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "download": {
+      "source": "lucide@0.577.0/icons/download",
+      "sourceDigest": "sha256:0644ad8f1a5ab023962f192fdfae9b1d5babcf9ab621ad3c3450c80aea4fad10",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "pause": {
+      "source": "lucide@0.577.0/icons/pause",
+      "sourceDigest": "sha256:011273ec829deb5bc44d5ea03948f817cb64e658ca84c340898329051c95545b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "play": {
+      "source": "lucide@0.577.0/icons/play",
+      "sourceDigest": "sha256:6a8412f68b9b09a941632cac1cc8652a895cc83dd59f6b41dde9cf31e86f3596",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "upload": {
+      "source": "lucide@0.577.0/icons/upload",
+      "sourceDigest": "sha256:49aa7029a80fdacdf40481ec12041c41b1e99fba1d6c5a4b440e265bcc70f0d9",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "monitor": {
+      "source": "lucide@0.577.0/icons/monitor",
+      "sourceDigest": "sha256:745bf4262de2ca2832ffe93b20e568633646b43233bbb2053a58fcbf301ffdb2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "server": {
+      "source": "lucide@0.577.0/icons/server",
+      "sourceDigest": "sha256:b7f2ad9f5bba7c6203183da85edfcfbe6550dce1ce55c539895976a7c19419f2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "wrench": {
+      "source": "lucide@0.577.0/icons/wrench",
+      "sourceDigest": "sha256:af78f34d6f075d1daf6cb2404611a59dbc87af55b3f10811900ef4c4670e6d39",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "copy": {
+      "source": "lucide@0.577.0/icons/copy",
+      "sourceDigest": "sha256:89f510d5bc9f2d5645d72c4e2fb662dc081b8e3a5dbc241cd08bb107f5d4889f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "check": {
+      "source": "lucide@0.577.0/icons/check",
+      "sourceDigest": "sha256:33c2cbe29fdaa6cbfc79497a6e03ba69e693b42050808922fd892687fcd694c7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "clock": {
+      "source": "lucide@0.577.0/icons/clock",
+      "sourceDigest": "sha256:11b66a58ae5d754edc45b4b9ccadc6ffcfecf4a094dc94d7c99f1642bd2c87fc",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "success": {
+      "source": "lucide@0.577.0/icons/circle-check",
+      "sourceDigest": "sha256:5227398aa8825e6575820ee886cd3b5a15effa24b8eece1908f650188e8d7fd1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "error": {
+      "source": "lucide@0.577.0/icons/circle-x",
+      "sourceDigest": "sha256:b3f405433b398e191f62c360e5c6032585bbfed2d3e07d0ea3f961dc61cfa77a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "info": {
+      "source": "lucide@0.577.0/icons/info",
+      "sourceDigest": "sha256:a27b47e88b2d593050ed4b48760702d7440b049d44d82aed1ce9c84032087f02",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "rotate-cw": {
+      "source": "lucide@0.577.0/icons/rotate-cw",
+      "sourceDigest": "sha256:f9f71b3ffee00eded8d660f102e541ad8f3cc719cd92ad2a243546c60a739c32",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "eye": {
+      "source": "lucide@0.577.0/icons/eye",
+      "sourceDigest": "sha256:1fd4b9393277fd0f018a63c4f243bddd3962900e95fc6e80d2956eb0e241b153",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "globe": {
+      "source": "lucide@0.577.0/icons/globe",
+      "sourceDigest": "sha256:d12b524e992c473c787e5ed97696556465468e299ed32de053537e38f24023bb",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "bell": {
+      "source": "lucide@0.577.0/icons/bell",
+      "sourceDigest": "sha256:9809b7e3115b15dcc590d6126187ff9d2436ba607573b7060df9829d92b39bf0",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "check-check": {
+      "source": "lucide@0.577.0/icons/check-check",
+      "sourceDigest": "sha256:66a4a2f47d8ce7db5188e4024f01a919dab7355d03f59e0cb32fa25181363a12",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "user-plus": {
+      "source": "lucide@0.577.0/icons/user-plus",
+      "sourceDigest": "sha256:5779125127f8f74eb9dc7249661b113a2a0cfe19bfe4cc17a7474378b2c2b10f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "user-check": {
+      "source": "lucide@0.577.0/icons/user-check",
+      "sourceDigest": "sha256:2ce0b67638ec7e184a67542cbeb8049391d38554a83077d5d5f600cfdc85154e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "link": {
+      "source": "lucide@0.577.0/icons/link",
+      "sourceDigest": "sha256:e94d4a435618d67e945ed42bf49653dfccd46f54befd96ad605d469c5f7356cc",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "link-2-off": {
+      "source": "lucide@0.577.0/icons/link-2-off",
+      "sourceDigest": "sha256:3461a694eaa4db015a098f7ebcdf0e130a389153ca299c5c67db7c693f1f3f90",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "book-open": {
+      "source": "lucide@0.577.0/icons/book-open",
+      "sourceDigest": "sha256:46f413ae80dcd78ddf95f31e5dc3f8b2be8c3e08b54e274f1a2f4886bfc56817",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "settings-2": {
+      "source": "lucide@0.577.0/icons/settings-2",
+      "sourceDigest": "sha256:ac642886b4db1ebc23440562333fb7c272f6908f197809b13251f2611fb4cd8e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "code-xml": {
+      "source": "lucide@0.577.0/icons/code-xml",
+      "sourceDigest": "sha256:5ba88b98e353daf60aea2bf2f39cd7d3249adba67712cf682e954d12f74c83d1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "edit-note": {
+      "source": "lucide@0.577.0/icons/square-pen",
+      "sourceDigest": "sha256:244808272fbc3ae27262400f766243f196346d6954a9a38e0b3817fd0fa49c14",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "folder-open": {
+      "source": "lucide@0.577.0/icons/folder-open",
+      "sourceDigest": "sha256:344ba400c7f194c16830799f278f548d93feb06006d73828f01194f5aad884eb",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "history": {
+      "source": "lucide@0.577.0/icons/history",
+      "sourceDigest": "sha256:744ba2aac494e94bddd6026b52f6f964ab75bd1dcf6c16c78ed2bc3c12e0b144",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "cpu": {
+      "source": "lucide@0.577.0/icons/cpu",
+      "sourceDigest": "sha256:353a6fcf1f33f7ddbb26058ef1c3cf7e2c1333fcebf359cb98624f5a7223ed0e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "package": {
+      "source": "lucide@0.577.0/icons/package",
+      "sourceDigest": "sha256:c63dd37cac9277ef1fadbf358c2a59f860ea037e82e2d38179672af9cade411d",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "plug": {
+      "source": "lucide@0.577.0/icons/plug",
+      "sourceDigest": "sha256:ff51af9b29f37cac2d0736d8d9858f2755f644c0e7772f5ae13a5a55d186bfe8",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "arrow-left": {
+      "source": "lucide@0.577.0/icons/arrow-left",
+      "sourceDigest": "sha256:082622d1fbcd5651af3add6b80ed305f1660b95d33b57e5f1449a82393e528d1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "book-open-text": {
+      "source": "lucide@0.577.0/icons/book-open-text",
+      "sourceDigest": "sha256:62862ff352660aeae1d1d9bf5b38393aa19ec602340194e0633e7be78de19191",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-slash-2": {
+      "source": "lucide@0.577.0/icons/circle-slash-2",
+      "sourceDigest": "sha256:34def980a0875918b4a67e63bb1b016757190a248c1451a8dc61e84de5c37a8f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "list-tree": {
+      "source": "lucide@0.577.0/icons/list-tree",
+      "sourceDigest": "sha256:71528b2453d265bf343d5a871aae9889c25cf71d99e27dfe7948e9d066ba1b8f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "link-2": {
+      "source": "lucide@0.577.0/icons/link-2",
+      "sourceDigest": "sha256:d478bc2677469aa476e055b98716f087efabd735dfde0a7698fe9a78abb100b2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "unplug": {
+      "source": "lucide@0.577.0/icons/unplug",
+      "sourceDigest": "sha256:6c3e2b62a490c582c73b5373a41fc353745d72c704387b0850b199b31f50c62d",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "brain-circuit": {
+      "source": "lucide@0.577.0/icons/brain-circuit",
+      "sourceDigest": "sha256:36280a8d8f0ba0e5c0434a99eb893733945a6f6c6b546ce785c7c7574c5e2e57",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "zap": {
+      "source": "lucide@0.577.0/icons/zap",
+      "sourceDigest": "sha256:f124a03e5a287ee1c43ef9985c00e8f8f70862a15fede2c1f55d8058988e0c99",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "list": {
+      "source": "lucide@0.577.0/icons/list",
+      "sourceDigest": "sha256:e9ec800b5210b2ae47eb6bd62e0ce7342a4e4b4959e797a801b96d00ed2747c5",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "panel-left-close": {
+      "source": "lucide@0.577.0/icons/panel-left-close",
+      "sourceDigest": "sha256:4e0043647a3cb609e553c1c559edc93827c3d0250a265dcd7cb57dd53e24c65d",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "panel-left-open": {
+      "source": "lucide@0.577.0/icons/panel-left-open",
+      "sourceDigest": "sha256:344b474870f68a636ccecbaf2e293260e02fc0e7fa6b6aedf23aa06b11b2d198",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "loading": {
+      "source": "lucide@0.577.0/icons/loader-circle",
+      "sourceDigest": "sha256:41d92bb0ea898e859637de50e6a260a70c2d2e4e67db60c338861635e5e93527",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-audio": {
+      "source": "lucide@0.577.0/icons/file-headphone",
+      "sourceDigest": "sha256:81536a9dcd97799de9950b18882c19c52510f573e72658e071c58d07fc9acf4a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-image": {
+      "source": "lucide@0.577.0/icons/file-image",
+      "sourceDigest": "sha256:4240de9af39096824fe32df7cb0c426b4f4adc5f7089f9bdc39376e907ba29b1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-video": {
+      "source": "lucide@0.577.0/icons/file-play",
+      "sourceDigest": "sha256:7aca341e214721d0d4534309f0e6adee569f86f1f9bef2e289f0bb66b4b142cb",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "lock": {
+      "source": "lucide@0.577.0/icons/lock",
+      "sourceDigest": "sha256:b348feda382d12404f4f8056cf4c22c78099ab35b1247ed1d773c59974ede750",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "paperclip": {
+      "source": "lucide@0.577.0/icons/paperclip",
+      "sourceDigest": "sha256:cae702ccfdbae5af528386efe576e68a811fb9d127baaa1347c319bd548c577f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "volume-2": {
+      "source": "lucide@0.577.0/icons/volume-2",
+      "sourceDigest": "sha256:292f420089f7e0c5896f873b40f47be49716cd5ddc0f35f33314d8f691eda95b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "camera": {
+      "source": "lucide@0.577.0/icons/camera",
+      "sourceDigest": "sha256:8caca112dda25e3dcf5f1b96ddc7dc2a62d10138b98fe4e3e35d3726a779238a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "camera-off": {
+      "source": "lucide@0.577.0/icons/camera-off",
+      "sourceDigest": "sha256:ed7591b6d2b91d56561df65399e5b984df0098a0f13071143683fa2616bab3b7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "mic": {
+      "source": "lucide@0.577.0/icons/mic",
+      "sourceDigest": "sha256:21ab0241dd8c2252a7757533e9bb8dc4ab3a02a08a6a42ec7ee563855d7fd444",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "mic-off": {
+      "source": "lucide@0.577.0/icons/mic-off",
+      "sourceDigest": "sha256:953e9505426c68b8b9fdeec92e913e5bc0d5264e405bde92ed1fb8ccfee55e28",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "panel-top": {
+      "source": "lucide@0.577.0/icons/panel-top",
+      "sourceDigest": "sha256:f10f58ed578b54bd7fc0506ffbf7deb0f8a3a2f214269dd6f15e14e3ec6f8c7f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "phone": {
+      "source": "lucide@0.577.0/icons/phone",
+      "sourceDigest": "sha256:748807cc0d33dc6a8864a0aec1b15cdf39fbc1dbf984f93f205f8898b97e22d1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "phone-off": {
+      "source": "lucide@0.577.0/icons/phone-off",
+      "sourceDigest": "sha256:e5d4deb3b94365e7b9d55a5afd071e5ef83b25d387922becd0ff666d0a5be30b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "video": {
+      "source": "lucide@0.577.0/icons/video",
+      "sourceDigest": "sha256:6ded219896c70f81cd8c95d3d548a46e7ee741d7c58c95971e393e923ab1c9a7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file": {
+      "source": "lucide@0.577.0/icons/file",
+      "sourceDigest": "sha256:1baea242b2197138b9ae74bd290e8248b769ffc352cef341457ee38e85e604e0",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "scissors": {
+      "source": "lucide@0.577.0/icons/scissors",
+      "sourceDigest": "sha256:58db47660325b45c63524a0f2764124459c22718807ff8c2373eb7258129eff5",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "smile": {
+      "source": "lucide@0.577.0/icons/smile",
+      "sourceDigest": "sha256:b93cb4592362c2f156c6f832fff3227428b4187b185c761c806c43eafbae9125",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "contact": {
+      "source": "lucide@0.577.0/icons/contact",
+      "sourceDigest": "sha256:18dd531b1e5e5fdb0c80174683fb0c3681b0fcdee75ff741aab802eeaa31db9d",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "bell-off": {
+      "source": "lucide@0.577.0/icons/bell-off",
+      "sourceDigest": "sha256:6c9096f75504a8b82263f8e9e55d482756516bcf2b3f9a8613016162aa6a8b89",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "film": {
+      "source": "lucide@0.577.0/icons/film",
+      "sourceDigest": "sha256:df30e3e118b35c28087acef57d7b0dbba7f843956c6250fb3bf3ef77b5c7d894",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "log-out": {
+      "source": "lucide@0.577.0/icons/log-out",
+      "sourceDigest": "sha256:8b84f4a61cbe2275672e9410372d64ba2d2919926992baffc8721aca94de6a1a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "shield-check": {
+      "source": "lucide@0.577.0/icons/shield-check",
+      "sourceDigest": "sha256:248ecfbd326e781bb76e1181333bbf53cf6d4897bc7f1ec2a23265d02ba2b053",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "inbox": {
+      "source": "lucide@0.577.0/icons/inbox",
+      "sourceDigest": "sha256:f43877b0ed40137df44e638a167fa8ac64b1afb564d6ba6217e8cfc73f477c0e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "shield-alert": {
+      "source": "lucide@0.577.0/icons/shield-alert",
+      "sourceDigest": "sha256:d38f0060b71b44d68f47d6d7ca64015359528a60d219867e90f648fade08a805",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "users-round": {
+      "source": "lucide@0.577.0/icons/users-round",
+      "sourceDigest": "sha256:4b6cc1943845746dc656346017b83cf594a039c8f770799d2dbfd25ceaa24985",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "volume-x": {
+      "source": "lucide@0.577.0/icons/volume-x",
+      "sourceDigest": "sha256:18997dd2b1d42cd8a6067deb42ee1dd68b4ca4b5a0c890055f7c3e4b349c3bb0",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "locate-fixed": {
+      "source": "lucide@0.577.0/icons/locate-fixed",
+      "sourceDigest": "sha256:a67b2653db9ece7f8df06569582d70daf2756f45ec8893915706e83a83daa396",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "message-square-reply": {
+      "source": "lucide@0.577.0/icons/message-square-reply",
+      "sourceDigest": "sha256:0c701ef7dec77761474d49a0bbd2bb09f48cfd96b6bdfad23a934c601d7f7e0f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "expand": {
+      "source": "lucide@0.577.0/icons/expand",
+      "sourceDigest": "sha256:35d83dd1be5a80dd0380753d1194eb95a371e8c6ad827d832be0f49097fc48f1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "shield-question-mark": {
+      "source": "lucide@0.577.0/icons/shield-question-mark",
+      "sourceDigest": "sha256:2ec306242519a8e933117b0ce44f84d9f8e2e711c3c25d438752680039981845",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "arrow-right": {
+      "source": "lucide@0.577.0/icons/arrow-right",
+      "sourceDigest": "sha256:bc3be8e844ef5ed559bdcca106b5a939440ff03c64420a015522421c25332791",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "music": {
+      "source": "lucide@0.577.0/icons/music",
+      "sourceDigest": "sha256:fa156c698a068223be28a496eb388928c6b9144535f47e8d5244c928a3d480e9",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "terminal": {
+      "source": "lucide@0.577.0/icons/terminal",
+      "sourceDigest": "sha256:347fa7adc5c78be405ba9497b24b6997bfa8f7c529b0c943b15316dd17c06292",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "clock-3": {
+      "source": "lucide@0.577.0/icons/clock-3",
+      "sourceDigest": "sha256:4137677c469a84e35da4028ef652ddce665c3fb06e7a0dbcf49838a3eaace9f3",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "corner-up-right": {
+      "source": "lucide@0.577.0/icons/corner-up-right",
+      "sourceDigest": "sha256:a9435fd16444a6df0722c37fba0be9230ac5f514465c20f1d591deade2c23421",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "smile-plus": {
+      "source": "lucide@0.577.0/icons/smile-plus",
+      "sourceDigest": "sha256:ad35f2f92d5de905a0030f82b03c64a71d44db18980034dfc0493f94d8fa3fc4",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "hourglass": {
+      "source": "lucide@0.577.0/icons/hourglass",
+      "sourceDigest": "sha256:c6434310e9c01bea379ef69ece6823e5eed9531712ef09fb5668f984ae00fbac",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "gitlab": {
+      "source": "lucide@0.577.0/icons/gitlab",
+      "sourceDigest": "sha256:9c3af7c5678e6a74804c3408a9cc0d24a89b43326822e60fe80c8c9f54d2acdf",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "cloud": {
+      "source": "lucide@0.577.0/icons/cloud",
+      "sourceDigest": "sha256:2ad3c1778c1e9f5d97641c033a1c80d1944ad33a3cf75be28f67a68b79638691",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "radio-tower": {
+      "source": "lucide@0.577.0/icons/radio-tower",
+      "sourceDigest": "sha256:d562bedfbda08ded503f4846836db6397eb01082e6f93df6e1fcaaf4cb91a00c",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "wifi": {
+      "source": "lucide@0.577.0/icons/wifi",
+      "sourceDigest": "sha256:45b6db93f33f5d4128280a4343ebcf7f8c62db62d08ba4ec51a45b5417c463f7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "brain": {
+      "source": "lucide@0.577.0/icons/brain",
+      "sourceDigest": "sha256:98588211a0e7fe4210cc390771622fc18b2ba24f7191bdeeff1114e244761b30",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "activity": {
+      "source": "lucide@0.577.0/icons/activity",
+      "sourceDigest": "sha256:3e946c860cc1666d09be213c98ef8f3e84a1eb942ad9e63f36c3d1e5bd9883ef",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "braces": {
+      "source": "lucide@0.577.0/icons/braces",
+      "sourceDigest": "sha256:0291ad1c40be9d903305eeb8b553ad55dcc73c4faf486571f5ef1921362ec368",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "workflow": {
+      "source": "lucide@0.577.0/icons/workflow",
+      "sourceDigest": "sha256:e01e3c97c2be1803eaf39d2b156d76f18ed7237d7f2619cde48db3587af138a0",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "list-ordered": {
+      "source": "lucide@0.577.0/icons/list-ordered",
+      "sourceDigest": "sha256:7c55ef98b480f8d143974f1bef33c39385c8987bd5911e97d6646bef2ef0db9c",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle": {
+      "source": "lucide@0.577.0/icons/circle",
+      "sourceDigest": "sha256:81f245330e06d6a91d8d373bd0942e1cd9c68bc793f66a0b4a84ac2ccb23b9a7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-pen-line": {
+      "source": "lucide@0.577.0/icons/file-pen-line",
+      "sourceDigest": "sha256:0a19ab1cf9ce7d440759a8029d4d10979a2f1f894d60166b6ab1ade60a7f8a57",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-plus-corner": {
+      "source": "lucide@0.577.0/icons/file-plus-corner",
+      "sourceDigest": "sha256:f22c9e83e22c0832b10dc57b392b3847c76c9a19e3fac02519a207cd3cc6d83d",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "square-terminal": {
+      "source": "lucide@0.577.0/icons/square-terminal",
+      "sourceDigest": "sha256:86cae0a4c46c9992250c645ea9824e9aa7f441dc55dcedc1be51192fc282e2e2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "hard-drive": {
+      "source": "lucide@0.577.0/icons/hard-drive",
+      "sourceDigest": "sha256:af10844de79bb7de5764655a386e00972f5d269b1bfe85a109b6d5beb0783ef3",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "monitor-smartphone": {
+      "source": "lucide@0.577.0/icons/monitor-smartphone",
+      "sourceDigest": "sha256:20eb5964f7c7887247ee4e7e5ce8c7cf05c44dfadc9831d208562482c9a1eeb6",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "git-branch": {
+      "source": "lucide@0.577.0/icons/git-branch",
+      "sourceDigest": "sha256:e1dfc3fa83b49177554d296684e1e3412b67e82f69da89437931562d94b3cead",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "eraser": {
+      "source": "lucide@0.577.0/icons/eraser",
+      "sourceDigest": "sha256:0ae2f0c317ca76089a642f794e053fae73f6363daae396ccb59e2d2a2411c195",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "languages": {
+      "source": "lucide@0.577.0/icons/languages",
+      "sourceDigest": "sha256:3159f5c52f6dfc3622bef8adbac9a2b786ba088442ad8b2b9508efd7c5753aa2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "message-square-more": {
+      "source": "lucide@0.577.0/icons/message-square-more",
+      "sourceDigest": "sha256:f9c02c1012c1556ac8acef200f4114baae577c8dfa34a00b183eed4299bd333e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "forward": {
+      "source": "lucide@0.577.0/icons/forward",
+      "sourceDigest": "sha256:08a8cd637696de4dd6f65f2341b251898b482539e595a4aed9c3c08037dbeef7",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "user-round-check": {
+      "source": "lucide@0.577.0/icons/user-round-check",
+      "sourceDigest": "sha256:bb87c8c18cb9da3a2ed3aff009235d78672d76ba0269559d7cdb89cdf26ddf98",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "user-minus": {
+      "source": "lucide@0.577.0/icons/user-minus",
+      "sourceDigest": "sha256:c778dbed9c76bdece6728fb761c9367185b8590039b7af5742832d5804021692",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "chevron-left": {
+      "source": "lucide@0.577.0/icons/chevron-left",
+      "sourceDigest": "sha256:be51587cc1299076b457197115ec149d39d30c95ac8692d38663fdd5f082d14e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "map-pin": {
+      "source": "lucide@0.577.0/icons/map-pin",
+      "sourceDigest": "sha256:73248a88f957239d5601b30a550a6f8cfe5ee9c73055ced1796962b8ba5ea7cb",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "image-plus": {
+      "source": "lucide@0.577.0/icons/image-plus",
+      "sourceDigest": "sha256:8b9a772de84a7fde5ac07a89d99b75d693824d709f2597971af3fce965e5d41c",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "lock-keyhole": {
+      "source": "lucide@0.577.0/icons/lock-keyhole",
+      "sourceDigest": "sha256:670f089889db907fb3188a841532e52f768fe6f26f05c70cbbf02b9e2871c4ea",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "send-horizontal": {
+      "source": "lucide@0.577.0/icons/send-horizontal",
+      "sourceDigest": "sha256:295e4622ef97b0de056b9fbb0bb83594438f72c7155730ef1f4b19a1e929bdc0",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "refresh-ccw": {
+      "source": "lucide@0.577.0/icons/refresh-ccw",
+      "sourceDigest": "sha256:b980d21531ec8be7eafab5a623323a3c1604cc43bde8375bf6b828d57d91c4bb",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "wifi-off": {
+      "source": "lucide@0.577.0/icons/wifi-off",
+      "sourceDigest": "sha256:0eeff3d93b89da2a0394e4cd960b6ee2ccabcab114d78dfec8ef4d2a7cfb9952",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "thumbs-up": {
+      "source": "lucide@0.577.0/icons/thumbs-up",
+      "sourceDigest": "sha256:ab757070f028c644dbbd2ebe35b3697e40d3acbd9dc893151a9c4c03c64d0f77",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "plug-zap": {
+      "source": "lucide@0.577.0/icons/plug-zap",
+      "sourceDigest": "sha256:3676ceae3b0291e6b2d633ca88da07a50389295c26aa87fbe479f766b3367827",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "key-round": {
+      "source": "lucide@0.577.0/icons/key-round",
+      "sourceDigest": "sha256:fdccba4295ded685512b7c01dd3b15adb7be9c358f41173da9bd6b51d730adc5",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "log-in": {
+      "source": "lucide@0.577.0/icons/log-in",
+      "sourceDigest": "sha256:01eb80b9b48bd6f0858ff86733090051abd7150743daf04b2e56056eb8088443",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "cloud-download": {
+      "source": "lucide@0.577.0/icons/cloud-download",
+      "sourceDigest": "sha256:2c8d63f5f8d2097037209e21a3b70a73d29825df53e48e04f4ddb1769f7f8d06",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "cloud-upload": {
+      "source": "lucide@0.577.0/icons/cloud-upload",
+      "sourceDigest": "sha256:8c4e8f8bd0400e652658a76578324bfe4d6757a23cec264e6d45b43f3f2222a4",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "code": {
+      "source": "lucide@0.577.0/icons/code",
+      "sourceDigest": "sha256:ed5456f36942641587e158bc2b01523c44085c6fda000d086f0452f8582b606e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "arrow-up-right": {
+      "source": "lucide@0.577.0/icons/arrow-up-right",
+      "sourceDigest": "sha256:62df89d99dbab36a73330676b1df3b4e48294f76f923146d4dab39a678e24649",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-slash": {
+      "source": "lucide@0.577.0/icons/circle-slash",
+      "sourceDigest": "sha256:a1c239c82e6c20a0fd28118fe1eb731a9a6b2ffb99c679cc7bdc37953eb006f9",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "newspaper": {
+      "source": "lucide@0.577.0/icons/newspaper",
+      "sourceDigest": "sha256:f22bd5508b6e178d20aaae8713af37664b540e5aa733fa913d18c9d799a03d6e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "minus": {
+      "source": "lucide@0.577.0/icons/minus",
+      "sourceDigest": "sha256:117a51581934fb7de28bc162e3e47e98066e20017c7d4923669694edb2db25e3",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "thumbs-down": {
+      "source": "lucide@0.577.0/icons/thumbs-down",
+      "sourceDigest": "sha256:00b728ea4a461eca31646f7476ffd6d5cedbe2029e49c137b58478a364eff3f9",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "trending-down": {
+      "source": "lucide@0.577.0/icons/trending-down",
+      "sourceDigest": "sha256:a3cafbbc0e1dbb421c266363ac6a840aeaa319d9fa8611e5a4fab0bd866d21ef",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "trending-up": {
+      "source": "lucide@0.577.0/icons/trending-up",
+      "sourceDigest": "sha256:a4617e83f34c2a9421af8978964adc4d7377a8ec50d9d0df8bb4eccd4db9565f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "unlink": {
+      "source": "lucide@0.577.0/icons/unlink",
+      "sourceDigest": "sha256:eb6bb0c15a1cd574b1144baa094ea6d10821b54b8b6d2f81181e616e1f28b917",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "database": {
+      "source": "lucide@0.577.0/icons/database",
+      "sourceDigest": "sha256:ed9f4801d914c4fbb0924a035ff75949e52320adbf88f80b6b121fdc9e3d4f92",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "save": {
+      "source": "lucide@0.577.0/icons/save",
+      "sourceDigest": "sha256:c27cbb64a8a368e6a0f8c91897de7eef4487aa8d55854f8b8838e60ea01f6d76",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "pen": {
+      "source": "lucide@0.577.0/icons/pen",
+      "sourceDigest": "sha256:65bb73c1124460587875f8dc245d243608969a348fadf49c928c204d0f92015a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "timer": {
+      "source": "lucide@0.577.0/icons/timer",
+      "sourceDigest": "sha256:0662fee246a59229be18dc306fec34d6ca5dd904f6b5ddcc7bbe1a3bd4ef9f44",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "calendar-clock": {
+      "source": "lucide@0.577.0/icons/calendar-clock",
+      "sourceDigest": "sha256:27f6e2cfe10dc2502208b754d9f9d0eb6eb8137cf113c5d78c909ead56aa2530",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "smartphone": {
+      "source": "lucide@0.577.0/icons/smartphone",
+      "sourceDigest": "sha256:6d6d83fdc004506dcd6e164614619259342375ff6fde9bd696e7f8b95921911b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "sliders-horizontal": {
+      "source": "lucide@0.577.0/icons/sliders-horizontal",
+      "sourceDigest": "sha256:f9c276afdc781e65324a1a3daaed3afcbaabbb1c320061609f6630d6abb9b3d5",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "star": {
+      "source": "lucide@0.577.0/icons/star",
+      "sourceDigest": "sha256:9c357991258f84ae605b4fe7b978dfdbdbb2fa1ca7ba9929e4408e105a42b39f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "clipboard-copy": {
+      "source": "lucide@0.577.0/icons/clipboard-copy",
+      "sourceDigest": "sha256:d326d30ff355cd60f8965f3adf2d80a7957804bbac8eb80790d5674767556fad",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "key": {
+      "source": "lucide@0.577.0/icons/key",
+      "sourceDigest": "sha256:ee9bf455cbdf120e7398621ea8c1899aa805eb03b9623889a040323fbf2c0978",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "shield": {
+      "source": "lucide@0.577.0/icons/shield",
+      "sourceDigest": "sha256:1aad9c112d25073b55163f06df393d75c824d21ea2d672976d5e6754998dfb8f",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "heart-pulse": {
+      "source": "lucide@0.577.0/icons/heart-pulse",
+      "sourceDigest": "sha256:7a345109c183dcacf5998627956680d62a3c4e4c34ae1b8aa24a822161115038",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "message-square-text": {
+      "source": "lucide@0.577.0/icons/message-square-text",
+      "sourceDigest": "sha256:78effd340bb7a01d5c2956646ec7343a451408fd3269ff400e38536e86463bc2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "route": {
+      "source": "lucide@0.577.0/icons/route",
+      "sourceDigest": "sha256:bd49ff69d61e6e13a17659c54fd13d4c706f601b524f139fa5de4db91ddf848c",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "user-round": {
+      "source": "lucide@0.577.0/icons/user-round",
+      "sourceDigest": "sha256:de1ebabfd3a58ab9dd51a935020c2eb82cdfb07bb9e79d5a3bcf5d694246d86a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "scan-line": {
+      "source": "lucide@0.577.0/icons/scan-line",
+      "sourceDigest": "sha256:ffdc80378a3f35a69e88f7e8ed6dc21b06c13bcbedeed69925254426ba03c715",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-key": {
+      "source": "lucide@0.577.0/icons/file-key",
+      "sourceDigest": "sha256:a3d77980eac834dfe1f31b14495d7024a7c36eb011182739aff311109e4c661a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-check-big": {
+      "source": "lucide@0.577.0/icons/circle-check-big",
+      "sourceDigest": "sha256:c4c07829a04b50b8ada43d708dc905a075a63d2e5664add1cca293328cd941af",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "compass": {
+      "source": "lucide@0.577.0/icons/compass",
+      "sourceDigest": "sha256:8804d65e9dd295f7c55575736f8bd34ec2586abea341944218e06961548ce7c1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "cable": {
+      "source": "lucide@0.577.0/icons/cable",
+      "sourceDigest": "sha256:f045d2a3d7c150b13f7b93d6b929bd3af6cfdfbee906799adf48cb7caf310f7b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "book-marked": {
+      "source": "lucide@0.577.0/icons/book-marked",
+      "sourceDigest": "sha256:1777d9066e3997975e717b76969863de8f30024d890374d70acca7afe6575dbf",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-stop": {
+      "source": "lucide@0.577.0/icons/circle-stop",
+      "sourceDigest": "sha256:2c121d71bd76e0f822188b1a6cd7f7d2f790835a9fabd636e62f458ea3c82fa3",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "layers": {
+      "source": "lucide@0.577.0/icons/layers",
+      "sourceDigest": "sha256:fcd5a766c00aff846b3ef4be301924f89fe39b0422840e4b96b62ff58eca3352",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "mouse-pointer-2": {
+      "source": "lucide@0.577.0/icons/mouse-pointer-2",
+      "sourceDigest": "sha256:9dbfd656750fd737b7c8ed4dc1e7acc9fadb13b0717fbcfbaf1060a6b62db7fd",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "chart-candlestick": {
+      "source": "lucide@0.577.0/icons/chart-candlestick",
+      "sourceDigest": "sha256:5734fa235d723e2855a00f456d14d4ada1ccf53bed9de0d6c9fc5f00812f5a75",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-input": {
+      "source": "lucide@0.577.0/icons/file-input",
+      "sourceDigest": "sha256:c9aafae20b3d76a6a9cdbc572d68bca2f01aafbe5802bd0e1d9fa2484695e261",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "notebook-pen": {
+      "source": "lucide@0.577.0/icons/notebook-pen",
+      "sourceDigest": "sha256:25a93dc4742ed2a60ffa7143b700d726f51d90ff5431c280adfc2363cae64661",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "package-open": {
+      "source": "lucide@0.577.0/icons/package-open",
+      "sourceDigest": "sha256:e1ccc2e83b3043406f4867694c392533d4c298075dce5d6c9437ea715d546bf6",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "clipboard-check": {
+      "source": "lucide@0.577.0/icons/clipboard-check",
+      "sourceDigest": "sha256:0eced8d419299f70c87fce04e05d928181e095a3b03b8980d877ccd7bc074858",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "list-todo": {
+      "source": "lucide@0.577.0/icons/list-todo",
+      "sourceDigest": "sha256:144795d9808b5ecf77944100f9beb98eeeb86ff67b645949340c9186f0afbf7a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "type": {
+      "source": "lucide@0.577.0/icons/type",
+      "sourceDigest": "sha256:c6e4d6e0c1d4824b776ee98bb1e0154a6c698c69727bdf091bab7ad1ec6d6f29",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "trophy": {
+      "source": "lucide@0.577.0/icons/trophy",
+      "sourceDigest": "sha256:76e823fd8f17c454cfe0430747cd34253c4ccf9461652677c48a4f37df4742b2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "pen-tool": {
+      "source": "lucide@0.577.0/icons/pen-tool",
+      "sourceDigest": "sha256:87f34c2541cf01c5e492f425c10206d844cd4d84e9b4885f09ec58c341a01a03",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "github": {
+      "source": "lucide@0.577.0/icons/github",
+      "sourceDigest": "sha256:a95ea08b94632aa5d1bc56e75ce0d522972bbf6c72f7b1256ebf872c79f94490",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "mail": {
+      "source": "lucide@0.577.0/icons/mail",
+      "sourceDigest": "sha256:3f262a605fc297ade222271defd1438a1171c47597a058f53d5c881a7aaa677b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "arrow-down": {
+      "source": "lucide@0.577.0/icons/arrow-down",
+      "sourceDigest": "sha256:46bd7cde53411b0949539f38a0032c0ef797ce00f7eaec13f4abf69f92225c0b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "chevrons-down": {
+      "source": "lucide@0.577.0/icons/chevrons-down",
+      "sourceDigest": "sha256:583f55293ff5833da850a733b578675370b11ced67d046cc1814456ed61ad349",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "archive": {
+      "source": "lucide@0.577.0/icons/archive",
+      "sourceDigest": "sha256:d7b64c6e0087bb5b50c3e981b9d44d97c87859c917ca9047a175d91bf0ddc5be",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "archive-restore": {
+      "source": "lucide@0.577.0/icons/archive-restore",
+      "sourceDigest": "sha256:aa53c815b83d19a3742faca3dfe1ffa2d93747f9adb4e11c206f6efa4be2dcef",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-pause": {
+      "source": "lucide@0.577.0/icons/circle-pause",
+      "sourceDigest": "sha256:5f354588ee22e5170ed8970365910384f6787b19f4c2f3591ffdb9ba75945037",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "corner-up-left": {
+      "source": "lucide@0.577.0/icons/corner-up-left",
+      "sourceDigest": "sha256:b74d3582bd0e58ed681496bf1231b82f78971ed1b618e92765b5e6d61952c17e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "flag": {
+      "source": "lucide@0.577.0/icons/flag",
+      "sourceDigest": "sha256:3ac014c1b170c1a41e0605744c836a7e162b4adb9f37a88b30d46ea392395eca",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "ban": {
+      "source": "lucide@0.577.0/icons/ban",
+      "sourceDigest": "sha256:5083bbca774988aa00f541e553c0d4b03e31399f8803e0e5b01773c98d196af6",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "laugh": {
+      "source": "lucide@0.577.0/icons/laugh",
+      "sourceDigest": "sha256:300870b8eb89cb5d48939e7f8b3a643fcba311a8b50de26d21e2f7a680123af8",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "shield-x": {
+      "source": "lucide@0.577.0/icons/shield-x",
+      "sourceDigest": "sha256:d5e8c5207a52c737a2de177335f9680e8d7b83c88e32dac5fd9dc2d1657a531a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "earth": {
+      "source": "lucide@0.577.0/icons/earth",
+      "sourceDigest": "sha256:a05f5ed783e41eb6fda61b896cca839f0f8dd7ae9abdcd74f3f0f9402771076d",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "chart-column": {
+      "source": "lucide@0.577.0/icons/chart-column",
+      "sourceDigest": "sha256:067075810dc34010df7493e63d60195cd0f269017070b3b52b8a91510e4c9c40",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "repeat-2": {
+      "source": "lucide@0.577.0/icons/repeat-2",
+      "sourceDigest": "sha256:072b8b8192beaeb58a0835f1d44dcc73e4c99f72c2727334ac50a8d64a07f029",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "share-2": {
+      "source": "lucide@0.577.0/icons/share-2",
+      "sourceDigest": "sha256:608b1e855e3370a271918e92a69deaf633a7e1ca80f0c2986c7be90c7cc5da86",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "image-off": {
+      "source": "lucide@0.577.0/icons/image-off",
+      "sourceDigest": "sha256:755f57536ca4f7428fddee9bc86626fe2faede874a5890bfd0cce79f6e6818e6",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "heart": {
+      "source": "lucide@0.577.0/icons/heart",
+      "sourceDigest": "sha256:e36e5fb3d4a8d0b10925cc2c5dc132503327177176f1269cbe955b0b7801614a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "identity-fingerprint": {
+      "source": "lucide@0.577.0/icons/fingerprint-pattern",
+      "sourceDigest": "sha256:b6ee46ffe39c7bc046d727b25d657199d99045672bf365c9783c6249ea2d52bf",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "palette": {
+      "source": "lucide@0.577.0/icons/palette",
+      "sourceDigest": "sha256:49b9c7a54b7777756005a3e073a289818b2af5cbca7b7cbc89368071bb1010d8",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "layout-dashboard": {
+      "source": "lucide@0.577.0/icons/layout-dashboard",
+      "sourceDigest": "sha256:ae91b1842f0d4defabaac1974eb46e239e7bd15a3c3a578a04fbcf6bb8298547",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "ticket": {
+      "source": "lucide@0.577.0/icons/ticket",
+      "sourceDigest": "sha256:fb61e3d0eb5f3d6a1f21bbdde74f085c102427bc2c142c78ac917d964d48a1a5",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "shield-off": {
+      "source": "lucide@0.577.0/icons/shield-off",
+      "sourceDigest": "sha256:ae6c044ea30367b0c05347de41f301a7c4de6594b36f0c7cf549c3ba1c11d3e1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "scroll-text": {
+      "source": "lucide@0.577.0/icons/scroll-text",
+      "sourceDigest": "sha256:36fe1ad990d351c72f303ce0aec44b91c961bce76ab508d6e8cc31ee184c275a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "folder-tree": {
+      "source": "lucide@0.577.0/icons/folder-tree",
+      "sourceDigest": "sha256:7285a529ef918ff7df1d9b76ca1fd549516cc1454ccd17d51183c1f9a8398671",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-chart-column": {
+      "source": "lucide@0.577.0/icons/file-chart-column",
+      "sourceDigest": "sha256:ee33def36c69a819316470e06fed002c5c4a21f6ca79041d337addf219f91f6b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "files": {
+      "source": "lucide@0.577.0/icons/files",
+      "sourceDigest": "sha256:2e3b6dd07144eb9e9f8ef354ffec5ed1fb323a66da97275a277eb7f11af22136",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-diff": {
+      "source": "lucide@0.577.0/icons/file-diff",
+      "sourceDigest": "sha256:74383fb8d9ad53b6cb0716cf7c9da1675af64301ff64c1aaff349e60e248bbae",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "moon": {
+      "source": "lucide@0.577.0/icons/moon",
+      "sourceDigest": "sha256:7c8b87d4469975680eae621368534454295a5872e30faa869cc1dc8f7219beb1",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "radio": {
+      "source": "lucide@0.577.0/icons/radio",
+      "sourceDigest": "sha256:568e4342b2988cd9712f3d6493eb5af08786d87db4d2137114a7ca3de10edd08",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "sun": {
+      "source": "lucide@0.577.0/icons/sun",
+      "sourceDigest": "sha256:75453dacf887d12686dbdc3a1bf505601d4f046ca387b88f331f54187be9bd00",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "pen-line": {
+      "source": "lucide@0.577.0/icons/pen-line",
+      "sourceDigest": "sha256:5073ddb96322ef66b25d240f588b1ad784d467fbcf5620858a823f3bd9d64350",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "boxes": {
+      "source": "lucide@0.577.0/icons/boxes",
+      "sourceDigest": "sha256:681d059a849b2e3bcf1d4961d2447f6d2aec88b0db60fa1308e22dcce8c8d756",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-gauge": {
+      "source": "lucide@0.577.0/icons/circle-gauge",
+      "sourceDigest": "sha256:3094963707467bf0257dd5e28237f4b94b857e693dd034e0d30d6141b3a1594e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "audio-lines": {
+      "source": "lucide@0.577.0/icons/audio-lines",
+      "sourceDigest": "sha256:c4797823de96dda218b7e44c90006686dfab196ffe6772c5635061e78dfa04c2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "list-filter": {
+      "source": "lucide@0.577.0/icons/list-filter",
+      "sourceDigest": "sha256:17042551b75cb80bdbaf78c15b1fda919d96204c139e8e22af32854f8cfc6ae3",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "folder": {
+      "source": "lucide@0.577.0/icons/folder",
+      "sourceDigest": "sha256:5b6e8e3980eff8dc1163a088b694a3ea28d9ad63269bb9d52ef80f5bdbfe3e3a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "package-check": {
+      "source": "lucide@0.577.0/icons/package-check",
+      "sourceDigest": "sha256:c5e6bc05939598f740980bce8fb6f73c3dd11a5dcf7e2f443a85b649947a7720",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "pin-off": {
+      "source": "lucide@0.577.0/icons/pin-off",
+      "sourceDigest": "sha256:fb7c7cc2af360d0588059d22d42cd93926d67a75f5f0f2b8c63fd849a45de7af",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "phone-incoming": {
+      "source": "lucide@0.577.0/icons/phone-incoming",
+      "sourceDigest": "sha256:0791127a15db48e6bccfadc7643693b8b6f2068351a42178f411f45aac9d4db9",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "video-off": {
+      "source": "lucide@0.577.0/icons/video-off",
+      "sourceDigest": "sha256:65019f383d9c8ccc3b93ecaf3bd7c18f161a89f64ffd4a6c255a48ff1f28d740",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "cloud-off": {
+      "source": "lucide@0.577.0/icons/cloud-off",
+      "sourceDigest": "sha256:a97cb181e144f7f8408ec1769891bc051f895285806f22c25d43c7b33649de1b",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "undo-2": {
+      "source": "lucide@0.577.0/icons/undo-2",
+      "sourceDigest": "sha256:777c0ba2a0c2fa56dd70836351bbd2922b2436c3d97588906b96b61523625c28",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "crown": {
+      "source": "lucide@0.577.0/icons/crown",
+      "sourceDigest": "sha256:379cdf1d7c07eb27feec9bf4aa713386e742c1c71a185301ef67867598c3599e",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "user-cog": {
+      "source": "lucide@0.577.0/icons/user-cog",
+      "sourceDigest": "sha256:e25a9e1109fd9f30b33d27e07883895a43d39881f7ba8cb2d5148f0e08b48727",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "qr-code": {
+      "source": "lucide@0.577.0/icons/qr-code",
+      "sourceDigest": "sha256:21efe371578a79ddfc4b97c5dfe8d878a026a5fc6ae90c5a80f470b1a1b6065d",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "sliders-vertical": {
+      "source": "lucide@0.577.0/icons/sliders-vertical",
+      "sourceDigest": "sha256:176b58cde345b729e0318c21f8bd0a897c92c14b33435b80af7a5f64d440ef99",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-json": {
+      "source": "lucide@0.577.0/icons/file-braces",
+      "sourceDigest": "sha256:8990d2112c3cbfbf79000f93a2478940b2a93f9b7ef34c57697d0aee7cde603c",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-archive": {
+      "source": "lucide@0.577.0/icons/file-archive",
+      "sourceDigest": "sha256:fd49ae28ea9029c69d815da228e2de98c08b68254c79a277bffcd0197143951a",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "calendar": {
+      "source": "lucide@0.577.0/icons/calendar",
+      "sourceDigest": "sha256:40658affa4981ca545fffd2b872eec3358ff8c3060be8501f9134813fae3eded",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "flame": {
+      "source": "lucide@0.577.0/icons/flame",
+      "sourceDigest": "sha256:82dcf7feae38d8d2d94c50d78125f403865d520594d154bd1671949fcfbaa2c8",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "user-round-cog": {
+      "source": "lucide@0.577.0/icons/user-round-cog",
+      "sourceDigest": "sha256:3aeff9c214969b47df42e352b79b2cdff1da2069aa2ef0ff911cf2645dd4be03",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "file-clock": {
+      "source": "lucide@0.577.0/icons/file-clock",
+      "sourceDigest": "sha256:7fb1699b57be800ae7695c76f679e8e44cbfdab3d10e6f51abb8a33e806adffd",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "laptop": {
+      "source": "lucide@0.577.0/icons/laptop",
+      "sourceDigest": "sha256:5625e0a436c71ca5e67ec616e6c7c3153cf9eabc181b939f792decdf2c3d2ea2",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "more-vertical": {
+      "source": "lucide@0.577.0/icons/ellipsis-vertical",
+      "sourceDigest": "sha256:d3b4727f6804a7ea3eaf3bdeb0415fa1f0d5c2b4ae78e90a45b2d6ba89b3e0ec",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "cloud-cog": {
+      "source": "lucide@0.577.0/icons/cloud-cog",
+      "sourceDigest": "sha256:3b5eef9b55f2829d8af0e00d3e4a34137de437dc1277fafda87dac5e9b5eca57",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "panels-top-left": {
+      "source": "lucide@0.577.0/icons/panels-top-left",
+      "sourceDigest": "sha256:2803a2079709ef463d8e5f0e277e8ba11cdde455e3a3e5c7e00b057cd5ecc842",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-play": {
+      "source": "lucide@0.577.0/icons/circle-play",
+      "sourceDigest": "sha256:7864f9ed4b179326c4951f20df2fb510024f8952e9405a2f061ea4e98f937e90",
+      "licenseRef": "../LICENSE.lucide"
+    },
+    "circle-minus": {
+      "source": "lucide@0.577.0/icons/circle-minus",
+      "sourceDigest": "sha256:d7f83e273bccfaca5afdae15a377e582bde15a4e4be48bcbeea096f689475700",
+      "licenseRef": "../LICENSE.lucide"
+    }
+  }
+}

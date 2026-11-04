@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { CORE_PAGE_LIST } from '../types/navigation';
+import { CORE_PAGE_LIST, isDesktopAppletAvailable, resolveAvailablePage } from '../types/navigation';
 
 const SELECTED_ONLY_MODULES = ['channels', 'cron', 'oss', 'command-menu'] as const;
 const AI_SETTINGS_MODULES = ['discover', 'memory'] as const;
@@ -59,14 +59,22 @@ describe('Desktop navigation ownership', () => {
     expect(registry).not.toContain('getModulesWithPages');
   });
 
-  it('owns Atelier as the only sibling work surface inside Agent', () => {
+  it('withholds Atelier while retaining the Agent Chat work surface', () => {
     const source = desktopSource('components/agent/AgentModuleNav.tsx');
 
     expect(source).toContain('data-pt-agent-module-item="chat"');
-    expect(source).toContain('data-pt-agent-module-item="atelier"');
-    expect(source).toContain("'applet:peers.atelier'");
+    expect(source).not.toContain('data-pt-agent-module-item="atelier"');
     expect(source).not.toContain('evaluation');
     expect(source).not.toContain("label: t('agent.canvas");
+  });
+
+  it('returns restored Atelier and orchestration routes to Agent Chat', () => {
+    expect(resolveAvailablePage('applet:peers.atelier')).toBe('agent');
+    expect(resolveAvailablePage('agent-orchestration')).toBe('agent');
+    expect(isDesktopAppletAvailable('peers.atelier')).toBe(false);
+    expect(isDesktopAppletAvailable('peers.note')).toBe(true);
+    expect(resolveAvailablePage('applet:peers.note')).toBe('applet:peers.note');
+    expect(resolveAvailablePage('settings')).toBe('settings');
   });
 
   it('keeps hidden capabilities routable without standalone Marketplace or Memory pages', () => {
@@ -83,7 +91,7 @@ describe('Desktop navigation ownership', () => {
     expect(source).toContain("sectionKeys: ['cron', 'command-menu', 'tools']");
     expect(source).toContain("sectionKeys: ['channels', 'connections', 'bots']");
     expect(source).toContain("sectionKeys: ['storage', 'oss', 'logs']");
-    expect(source).toContain("'providers', 'models', 'discover', 'memory'");
+    expect(source).toContain("'models', 'discover', 'memory'");
   });
 
   it('routes owned resources into Settings and rejects removed module routes', () => {

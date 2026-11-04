@@ -1,5 +1,5 @@
 use super::group::{MlsGroupManager, MlsPreparedReceive};
-use crate::codec::private_content::decode_message_private_content;
+use crate::codec::private_content::{decode_message_private_content, MessageMentions};
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
     ConversationAuthorityMemberProjection, CryptoEndpoint, InteractionMutation,
@@ -259,6 +259,7 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
 
         let message_sender = message_sender
             .ok_or_else(|| "messaging MLS application has no message sender".to_string())?;
+        let mentions = MessageMentions::from_private_content(&private_content);
         let projection = MlsMessageProjection {
             conversation_id: event.conversation_id.clone(),
             event_id: event.event_id.clone(),
@@ -271,6 +272,7 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
             committed_at_unix_ms,
             reply_to_message_id: reply_to_message_id.map(str::to_string),
             thread_root_message_id: thread_root_message_id.map(str::to_string),
+            mentions,
         };
         let result = self
             .store

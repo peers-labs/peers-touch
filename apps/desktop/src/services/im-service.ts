@@ -9,6 +9,7 @@ import type {
   IMServiceV1,
   ThreadCountResult,
   MemberSettingsResult,
+  MessageMention,
   MlsLeaveIntentView,
   MessagingConversationProjection,
   MessagingProjection,
@@ -323,6 +324,54 @@ interface MessagingMessageWire {
   last_error_code?: string | null
   required_device_count?: number
   delivered_device_count?: number
+  mentions_json?: string
+}
+
+/**
+ * Parse the compact native mention envelope `{"all":bool,"m":[[ptid,offset,
+ * length,display]]}`. Empty string maps to no mentions; invalid input
+ * degrades to an empty set instead of blocking the whole message read.
+ */
+function parseMentionSet(raw: string | undefined): { mentions: MessageMention[]; mentionAll: boolean } {
+  const empty = { mentions: [], mentionAll: false }
+  const trimmed = raw?.trim()
+  if (!trimmed) return empty
+  let value: unknown
+  try {
+    value = JSON.parse(trimmed)
+  } catch {
+    return empty
+  }
+  const mentions: MessageMention[] = []
+  if (value && typeof value === 'object') {
+    const rows = (value as { m?: unknown }).m
+    const mentionAll = (value as { all?: unknown }).all === true
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        if (!Array.isArray(row)) continue
+        const [actorPtid, offset, length, display] = row as unknown[]
+        const actor = typeof actorPtid === 'string' ? actorPtid : ''
+        if (
+          !actor.startsWith('ptid:')
+          || typeof offset !== 'number'
+          || typeof length !== 'number'
+          || !Number.isFinite(offset)
+          || !Number.isFinite(length)
+          || length <= 0
+        ) {
+          continue
+        }
+        mentions.push({
+          actorPtid: actor,
+          offset,
+          length,
+          display: typeof display === 'string' ? display : '',
+        })
+      }
+    }
+    return { mentions, mentionAll }
+  }
+  return empty
 }
 
 interface ServiceMessageWire {
@@ -448,6 +497,7 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
     lastErrorCode: message.last_error_code ?? undefined,
     requiredDeviceCount: message.required_device_count ?? 0,
     deliveredDeviceCount: message.delivered_device_count ?? 0,
+    ...parseMentionSet(message.mentions_json),
   }
 }
 
@@ -788,7 +838,7 @@ const messagingService: MessagingServiceContract = {
     }
   },
 
-  async sendMessage(conversationId, conversationKind, plaintext, attachments = [], relation) {
+  async sendMessage(conversationId, conversationKind, plaintext, attachments = [], relation, mentionSet) {
     const response = await cmd<
       {
         conversation_id: string
@@ -804,6 +854,13 @@ const messagingService: MessagingServiceContract = {
           content_kind: 'file' | 'voice_note'
           duration_ms: number
         }>
+        mentions: Array<{
+          actor_ptid: string
+          offset: number
+          length: number
+          display: string
+        }>
+        mention_all: boolean
       },
       {
         command_id: string
@@ -826,6 +883,13 @@ const messagingService: MessagingServiceContract = {
         content_kind: attachment.contentKind,
         duration_ms: attachment.durationMs,
       })),
+      mentions: (mentionSet?.mentions ?? []).map(mention => ({
+        actor_ptid: mention.actorPtid,
+        offset: mention.offset,
+        length: mention.length,
+        display: mention.display,
+      })),
+      mention_all: mentionSet?.mentionAll ?? false,
     })
     return {
       admission: 'admitted' as const,
@@ -1021,6 +1085,7 @@ const messagingService: MessagingServiceContract = {
           pinned_by_ptid?: string
           pinned_at_unix_ms?: number
           read_by_ptids: string[]
+          mentions_json?: string
         }>
       }
     >('messaging_search_messages', {
@@ -1068,6 +1133,7 @@ const messagingService: MessagingServiceContract = {
       attemptCount: 0,
       requiredDeviceCount: 0,
       deliveredDeviceCount: 0,
+      ...parseMentionSet(message.mentions_json),
     }))
   },
 

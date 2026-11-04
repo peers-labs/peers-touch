@@ -22,6 +22,7 @@ image embeds targeting that exact asset are counted as diagram references.
 | `search.authority-map` | `search` | `authority-map` | [source](./domains/search/authority-map.svg) | 1 |
 | `search.device-query` | `search` | `dynamic-flow` | [source](./domains/search/device-query.svg) | 1 |
 | `search.reuse-topology` | `search` | `reuse-topology` | [source](./domains/search/architecture.svg) | 2 |
+| `ui-system.design-architecture` | `ui-system` | `logical-layer` | [source](./platform/client/ui-system/architecture.svg) | 1 |
 
 ## `cross-client-runtime.reuse-topology`
 
@@ -146,3 +147,13 @@ image embeds targeting that exact asset are counted as diagram references.
 - Referenced by:
   - [docs/architecture/README.md](./README.md)
   - [docs/architecture/domains/search/architecture-diagram.md](./domains/search/architecture-diagram.md)
+
+## `ui-system.design-architecture`
+
+- Module: `ui-system`
+- Viewpoint: `logical-layer`
+- Diagram spec: [docs/architecture/platform/client/ui-system/architecture.diagram.json](./platform/client/ui-system/architecture.diagram.json)
+- SVG asset: [docs/architecture/platform/client/ui-system/architecture.svg](./platform/client/ui-system/architecture.svg)
+- Referenced by:
+  - [docs/architecture/platform/client/ui-system/design.md](./platform/client/ui-system/design.md)
+

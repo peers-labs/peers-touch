@@ -1184,6 +1184,15 @@ interface AvailableModelWire {
   capabilities?: unknown;
 }
 
+export type ProviderInstallState =
+  | 'ready'
+  | 'missing'
+  | 'installing'
+  | 'failed'
+  | 'manual_required'
+  | 'unsupported'
+  | '';
+
 export interface ProviderListItem {
   id: string;
   name: string;
@@ -1196,6 +1205,10 @@ export interface ProviderListItem {
   credential_status: string;
   runtime_kind: string;
   version: number;
+  owner_scope?: 'actor' | 'station';
+  install_state?: ProviderInstallState;
+  install_supported?: boolean;
+  manual_install_url?: string;
 }
 
 // Station-authoritative actor default used by new Topics.
@@ -1881,15 +1894,6 @@ export interface ModelRef {
   model: string;
 }
 
-export interface ModelServiceConfig {
-  default?: ModelRef;
-  topicNaming?: ModelRef;
-  translation?: ModelRef;
-  historyCompress?: ModelRef;
-  cronDefault?: ModelRef;
-  agentRouter?: ModelRef;
-}
-
 export interface ModelServiceReference {
   slot?: string;
   service?: string;
@@ -2464,7 +2468,7 @@ export interface ProviderIdInput {
 export interface ProviderUpdateInput {
   id: string;
   enabled: boolean;
-  key_vaults?: string;
+  api_key?: string;
   config_json?: string;
   runtime_config?: ProviderRuntimeConfig;
   runtime_kind?: string;
@@ -2474,7 +2478,6 @@ export interface ProviderUpdateInput {
 
 export interface ProviderCheckInput {
   id: string;
-  key_vaults?: string;
   config_json?: string;
 }
 
@@ -2483,7 +2486,7 @@ export interface ProviderCreateInput {
   name: string;
   description: string;
   logo: string;
-  key_vaults: string;
+  api_key?: string;
   config_json: string;
   runtime_kind?: string;
   protocol?: string;
@@ -4401,19 +4404,6 @@ export interface CronRunsInput {
   job_id: string;
 }
 
-export interface ModelConfigKeyInput {
-  key: string;
-}
-
-export interface ModelConfigSetInput {
-  key: string;
-  ref: ModelRef | null;
-}
-
-export interface ProviderIdInputV2 {
-  provider_id: string;
-}
-
 export interface OAuthIdInput {
   id: string;
 }
@@ -5907,6 +5897,14 @@ export const api = {
       (r.providers || []).map(mapAIChatProviderToListItem),
     ),
 
+  getProviderPolicy: () =>
+    invokeRustDataFromStatus<void, { policy: { personal_providers_enabled: boolean } }>('provider_policy')
+      .then((r) => r.policy),
+
+  listPersonalProviders: () =>
+    invokeRustDataFromStatus<void, { providers?: any[] }>('provider_personal_list')
+      .then((r) => (r.providers || []).map(mapAIChatProviderToListItem)),
+
   getRuntimeDefault: () =>
     invokeRustDataFromStatus<void, { runtimeDefault: RuntimeDefaultSelection }>(
       'provider_runtime_default_get',
@@ -5922,8 +5920,8 @@ export const api = {
       expected_revision: expectedRevision,
     }).then((r) => r.runtimeDefault),
 
-  getProvider: (id: string) =>
-    invokeRustDataFromStatus<ProviderIdInput, { provider?: any }>('provider_get', { id }).then((r) =>
+  getProvider: (id: string, personal = false) =>
+    invokeRustDataFromStatus<ProviderIdInput, { provider?: any }>(personal ? 'provider_personal_get' : 'provider_get', { id }).then((r) =>
       mapAIChatProviderToDetail(r.provider || {}),
     ),
 
@@ -5937,7 +5935,7 @@ export const api = {
     invokeRustDataFromStatus<ProviderUpdateInput, { provider: any }>('provider_update', {
         id,
         enabled: data.enabled,
-        ...(data.api_key ? { key_vaults: JSON.stringify({ api_key: data.api_key }) } : {}),
+        ...(data.api_key ? { api_key: data.api_key } : {}),
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
         runtime_config: data.runtime_config,
         version: data.version ?? 0,
@@ -5951,7 +5949,6 @@ export const api = {
       install_hint?: string;
     }>('provider_check', {
         id,
-        key_vaults: data.api_key ? JSON.stringify({ api_key: data.api_key }) : undefined,
         config_json: data.base_url ? JSON.stringify({ base_url: data.base_url, model: data.model || '' }) : undefined,
     }),
 
@@ -5964,7 +5961,7 @@ export const api = {
         name: data.name,
         description: data.description || '',
         logo: data.logo || '',
-        key_vaults: JSON.stringify({ api_key: data.api_key || '' }),
+        api_key: data.api_key || undefined,
         config_json: JSON.stringify({ base_url: data.base_url || '' }),
     }),
 
@@ -7118,27 +7115,11 @@ export const api = {
 
   // ── Model Service ──
 
-  // Model config registry (key-based)
-  listModelConfig: () =>
-    invokeRustDataFromStatus<void, { config: Record<string, ModelRef> }>('model_config_list').then((r) => r.config),
-
-  getModelConfig: (key: string) =>
-    invokeRustDataFromStatus<ModelConfigKeyInput, { key: string; ref: ModelRef | null; resolved: ModelRef | null }>(
-      'model_config_get',
-      { key },
-    ),
-
-  setModelConfig: (key: string, ref: ModelRef | null) =>
-    invokeRustDataFromStatus<ModelConfigSetInput, { key: string; ref: ModelRef | null }>('model_config_set', { key, ref }),
-
-  deleteModelConfig: (key: string) =>
-    invokeRustDataFromStatus<ModelConfigKeyInput, { ok: boolean }>('model_config_delete', { key }),
-
-  getProviderReferences: (providerId: string) =>
-    invokeRustDataFromStatus<ProviderIdInputV2, { references: ModelServiceReference[] }>(
-      'model_config_provider_references',
-      { provider_id: providerId },
-    ).then((r) => r.references),
+  getProviderReferences: async (providerId: string): Promise<ModelServiceReference[]> => {
+    const result = await api.getRuntimeDefault();
+    return result?.providerId === providerId && result.modelId
+      ? [{ slot: 'default', model: result.modelId }] : [];
+  },
 
   // ── Channels ──
 
@@ -8918,7 +8899,19 @@ function mapAIChatProviderToListItem(item: any): ProviderListItem {
       ? 'direct'
       : wireRuntimeKind,
     version: Number(item.version || 0),
+    owner_scope: item.owner?.scope === 'PROVIDER_RESOURCE_SCOPE_STATION' || item.owner?.scope === 2 ? 'station' : 'actor',
+    install_state: normalizeInstallState(item.install_state ?? item.installState),
+    install_supported: Boolean(item.install_supported ?? item.installSupported),
+    manual_install_url: String(item.manual_install_url ?? item.manualInstallUrl ?? ''),
   };
+}
+
+function normalizeInstallState(value: unknown): ProviderInstallState {
+  const allowed: ProviderInstallState[] = [
+    'ready', 'missing', 'installing', 'failed', 'manual_required', 'unsupported',
+  ];
+  const state = String(value ?? '').trim() as ProviderInstallState;
+  return allowed.includes(state) ? state : '';
 }
 
 function asUnknownRecord(value: unknown): Record<string, unknown> {
@@ -8981,7 +8974,6 @@ function mapProviderModel(value: unknown): ModelItem | null {
 
 function mapAIChatProviderToDetail(item: any): ProviderDetail {
   const cfg = parseJSONSafe(item.config_json);
-  const keyVaults = parseJSONSafe(item.key_vaults);
   const checkModel = String(item.check_model || '');
   const providerModels = Array.isArray(item.models)
     ? item.models
@@ -8995,7 +8987,7 @@ function mapAIChatProviderToDetail(item: any): ProviderDetail {
     ...mapAIChatProviderToListItem(item),
     home_url: item.home_url || cfg.home_url || '',
     api_key_url: item.api_key_url || cfg.api_key_url || '',
-    api_key: item.api_key || keyVaults.api_key || '',
+    api_key: '',
     base_url: item.base_url || cfg.base_url || '',
     default_base_url: item.base_url || cfg.default_base_url || cfg.base_url || '',
     cli_command: String(item.cli_command || ''),

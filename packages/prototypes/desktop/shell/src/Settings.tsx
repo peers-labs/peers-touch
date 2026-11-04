@@ -96,6 +96,8 @@ import {
 import { toast } from '../../shared/Toast';
 import { BotChannels } from './BotChannels';
 import { LarkChannels } from './LarkChannels';
+import { ModelServiceConsumerWireflow, ModelServiceWireflowTheme } from '../../../shared/ModelServiceWireflow';
+import { isModelWireflow } from '../../../shared/modelServiceWireflow';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DESIGN SYSTEM (canonical atoms — ui-identity components.md §3 scale)
@@ -2739,7 +2741,7 @@ type GroupId = 'general' | 'network' | 'ai' | 'channels' | 'advanced';
 type SectionId =
   | 'account' | 'notifications' | 'privacy' | 'appearance'
   | 'station' | 'discovery' | 'federation'
-  | 'providers' | 'models' | 'discover' | 'memory' | 'skills' | 'mcp'
+  | 'models' | 'discover' | 'memory' | 'skills' | 'mcp'
   | 'lark' | 'bots'
   | 'storage' | 'applets' | 'statistics' | 'cron' | 'command-menu' | 'logs' | 'about';
 
@@ -2767,7 +2769,6 @@ const GROUPS: GroupDef[] = [
   {
     id: 'ai', label: 'AI', icon: Sparkles,
     sections: [
-      { id: 'providers', label: 'Providers', icon: Server },
       { id: 'models', label: 'Models', icon: Brain },
       { id: 'discover', label: 'Discover', icon: Search },
       { id: 'memory', label: 'Memory', icon: HardDrive },
@@ -2806,7 +2807,6 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
     case 'station': return <StationSection />;
     case 'discovery': return <DiscoverySection federations={federations} />;
     case 'federation': return <FederationSection federations={federations} setFederations={setFederations} />;
-    case 'providers': return <ProvidersSection />;
     case 'models': return <ModelsSection />;
     case 'discover': return <DiscoverSection />;
     case 'memory': return <MemorySection />;
@@ -2825,15 +2825,19 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
   }
 }
 
-export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: () => void }) {
+export function SettingsPage({ onOpenCommandPalette, onStartModelChat }: { onOpenCommandPalette: () => void; onStartModelChat?: () => void }) {
   const reviewParams = new URLSearchParams(window.location.search);
   const reviewLark = reviewParams.get('state') === 'lark-settings';
   const reviewChannel = reviewParams.get('section') === 'bots' ? 'bots' : 'lark';
-  const [activeGroup, setActiveGroup] = useState<GroupId>(reviewLark ? 'channels' : 'general');
-  const [activeSection, setActiveSection] = useState<SectionId>(reviewLark ? reviewChannel : 'account');
+  const [activeGroup, setActiveGroup] = useState<GroupId>(isModelWireflow() ? 'ai' : reviewLark ? 'channels' : 'general');
+  const [activeSection, setActiveSection] = useState<SectionId>(isModelWireflow() ? 'models' : reviewLark ? reviewChannel : 'account');
   const [federations, setFederations] = useState<JoinedFederation[]>(MOCK_FEDERATIONS);
 
-  const group = GROUPS.find((g) => g.id === activeGroup) ?? GROUPS[0];
+  const groups = isModelWireflow() ? GROUPS.map((entry) => entry.id === 'ai' ? {
+    ...entry, sections: entry.sections
+      .map((section) => section.id === 'models' ? { ...section, label: '我的模型' } : section),
+  } : entry) : GROUPS;
+  const group = groups.find((g) => g.id === activeGroup) ?? groups[0];
   const current = group.sections.find((s) => s.id === activeSection) ?? group.sections[0];
   // Level-2 navigation is always a vertical section rail (never a second
   // horizontal tab strip). All groups currently have >1 section.
@@ -2841,7 +2845,7 @@ export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: (
 
   const onGroupChange = (gid: GroupId) => {
     setActiveGroup(gid);
-    const g = GROUPS.find((x) => x.id === gid) ?? GROUPS[0];
+    const g = groups.find((x) => x.id === gid) ?? groups[0];
     setActiveSection(g.sections[0].id);
   };
 
@@ -2855,7 +2859,7 @@ export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: (
         borderBottom: `1px solid ${T.borderSoft}`,
         backgroundColor: T.white, overflowX: 'auto',
       }}>
-        {GROUPS.map((g) => {
+        {groups.map((g) => {
           const active = g.id === activeGroup;
           const Icon = g.icon;
           return (
@@ -2921,7 +2925,9 @@ export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: (
         ) : null}
 
         <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
-          {renderSection(current.id, onOpenCommandPalette, federations, setFederations)}
+          {isModelWireflow() && current.id === 'models'
+            ? <ModelServiceWireflowTheme><ModelServiceConsumerWireflow onStartChat={onStartModelChat} /></ModelServiceWireflowTheme>
+            : renderSection(current.id, onOpenCommandPalette, federations, setFederations)}
         </div>
       </div>
     </div>

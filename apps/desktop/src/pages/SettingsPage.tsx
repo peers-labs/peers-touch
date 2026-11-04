@@ -13,7 +13,7 @@ import {
   Code, PenTool, Clock, Shield, ShieldCheck, File,
   Edit, Package, Plus, Send, RefreshCw,
   GitBranch, HardDrive, Image, Trash2, Server, AlertTriangle, RotateCcw,
-  Database, Network,
+  Database,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useProviderStore } from '../store/provider';
@@ -27,7 +27,6 @@ import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
 import { log } from '../utils/logger';
 import { SettingsContainer, SettingsSection, SettingsItemCard, SettingsRow } from '../components/settings/SettingsLayout';
 import { ChatStorageSettings } from '../components/settings/ChatStorageSettings';
-import { FederationTab } from '../components/settings/FederationTab';
 import { RecoverySettings } from '../components/settings/RecoverySettings';
 import { usePrefetch } from '../kernel/usePrefetch';
 import {
@@ -114,16 +113,6 @@ function useSettingsSections(): SectionDef[] {
         render: () => <RecoverySettings />,
       },
       {
-        key: 'federation',
-        label: t('settings.tab.federation', { defaultValue: 'Federation' }),
-        icon: Network,
-        // Slot between built-in `account` (registry order, 5–10) and
-        // `general` so the user sees their identity → federation
-        // → general flow naturally.
-        order: 20,
-        render: () => <FederationTab />,
-      },
-      {
         key: 'storage',
         label: t('settings.tab.storage'),
         icon: HardDrive,
@@ -181,16 +170,10 @@ function useTabGroups(): TabGroupDef[] {
         sectionKeys: ['account', 'security', 'general'],
       },
       {
-        key: 'federation',
-        label: t('settings.group.federation', { defaultValue: 'Federation' }),
-        icon: Globe,
-        sectionKeys: ['federation'],
-      },
-      {
         key: 'ai',
         label: t('settings.group.ai'),
         icon: Sparkles,
-        sectionKeys: ['providers', 'models', 'discover', 'memory', 'skills', 'mcp', 'voice'],
+        sectionKeys: ['models', 'discover', 'memory', 'skills', 'mcp', 'voice'],
       },
       {
         key: 'tools',
@@ -225,7 +208,7 @@ function useTabGroups(): TabGroupDef[] {
     ];
 
     // Only keep section keys that actually exist in the registry or local definitions
-    const knownKeys = new Set([...allSections, 'security', 'federation', 'storage', 'applets', 'general', 'tools', 'help']);
+    const knownKeys = new Set([...allSections, 'security', 'storage', 'applets', 'general', 'tools', 'help']);
     return groups.map((g) => ({
       ...g,
       sectionKeys: g.sectionKeys.filter((k) => knownKeys.has(k)),
@@ -432,7 +415,7 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
         <div
           style={{
             flex: 1,
-            overflowY: activeSection === 'providers' ? 'hidden' : 'auto',
+            overflowY: 'auto',
             overflowX: 'hidden',
             scrollBehavior: 'smooth',
           }}

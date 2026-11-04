@@ -1,0 +1,11 @@
+{
+  "kind": "peers-ui-standard-json-schema-validation",
+  "status": "PASS",
+  "claimScope": "PROPOSED_RECORD_SHAPE_ONLY",
+  "standard": "JSON Schema Draft 2020-12",
+  "schemaDigest": "sha256:731905a515eae5871123f91e76b4f934c2bd905f6572ddf5c0e9f601bd3a7173",
+  "registryDigest": "sha256:44d6987927337b0b583fecbc00f92ba198e651bda8a1a39be7c34c35730ba674",
+  "validatorSourceDigest": "sha256:cadd4487f56a27b74588b10c12afca18b42ec9b5da3135e59b016eec90437444",
+  "rejectedMutations": 5,
+  "usefulnessEvidence": "UNPROVEN"
+}

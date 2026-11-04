@@ -409,6 +409,28 @@ var (
 
 // registry lazily builds the gatekeeper registry with the Station's built-in
 // gates. Custom or future gates register here without touching DecisionForAttempt.
+// OAuthAvailabilityFunc reports whether this Station runs at least one OAuth
+// provider that is enabled and has credentials configured.
+type OAuthAvailabilityFunc func(ctx context.Context) bool
+
+// oauthAvailability is installed by the app layer from the reviewed OAuth
+// configuration. A nil predicate means "unknown/unconfigured", and the login
+// gate omits the OAuth action instead of advertising a path it would reject.
+var oauthAvailability OAuthAvailabilityFunc
+
+// RegisterOAuthAvailability installs the configuration-backed OAuth
+// availability predicate used when building login gates.
+func RegisterOAuthAvailability(fn OAuthAvailabilityFunc) {
+	oauthAvailability = fn
+}
+
+func oauthAvailable(ctx context.Context) bool {
+	if oauthAvailability == nil {
+		return false
+	}
+	return oauthAvailability(ctx)
+}
+
 func registry() *gatekeeper.Registry {
 	registryOnce.Do(func() {
 		r := gatekeeper.NewRegistry(grantID)

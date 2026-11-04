@@ -6,7 +6,7 @@ import {
   getMobileLifecycleKernel,
   useLifecycleKernel,
 } from './app/lifecycle';
-import { useMobileI18n } from './app/mobileI18n';
+import { translateMobileError, useMobileI18n } from './app/mobileI18n';
 import { MobileShell } from './components/MobileShell';
 import {
   RecoveryOverlayHost,
@@ -602,7 +602,7 @@ function MobileAppRoot() {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.loginFailed')));
+      setAuthError(translateMobileError(t, msg, 'mobile.auth.loginFailed'));
     } finally {
       setAuthLoading(false);
     }
@@ -733,7 +733,7 @@ function MobileAppRoot() {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.inviteCodeRejected')));
+      setAuthError(translateMobileError(t, msg, 'mobile.auth.inviteCodeRejected'));
     } finally {
       setAuthLoading(false);
     }
@@ -767,7 +767,7 @@ function MobileAppRoot() {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
-      setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.gateUnavailable')));
+      setAuthError(translateMobileError(t, msg, 'mobile.auth.gateUnavailable'));
     } finally {
       setAuthLoading(false);
     }
@@ -819,7 +819,7 @@ function MobileAppRoot() {
           observedStationPeerId,
         );
       }
-      setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+      setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
       showStationSelection();
     } finally {
       setAuthLoading(false);
@@ -1078,7 +1078,7 @@ function MobileAppRoot() {
           return await addDiscoveredRoute(discovery.routes[0]);
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
-          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
           return false;
         } finally {
           setStationChecking(false);
@@ -1098,7 +1098,7 @@ function MobileAppRoot() {
           return await addDiscoveredRoute(route);
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
-          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
           return false;
         } finally {
           setStationChecking(false);
@@ -1150,7 +1150,7 @@ function MobileAppRoot() {
             })
           ));
           const msg = error instanceof Error ? error.message : '';
-          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
           return;
         }
 
@@ -1191,7 +1191,7 @@ function MobileAppRoot() {
           await startAccessGateChainFor(nextStation);
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
-          setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));
+          setStationError(translateMobileError(t, msg, 'mobile.launch.stationUnavailable'));
         } finally {
           setStationChecking(false);
         }

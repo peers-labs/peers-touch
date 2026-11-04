@@ -1,4 +1,5 @@
 import { createDesktopStore } from './createDesktopStore';
+import { replaceEqualDeep } from '@tanstack/query-core';
 import { log } from '../utils/logger';
 import { resolveI18nValue } from '../i18n/index';
 import {
@@ -8,9 +9,9 @@ import {
   type AgentCapabilityPermissionKind,
   type AgentCreate,
   type AppletInfo,
-  type ModelServiceConfig,
 } from '../services/desktop_api';
 import { useAgentCapabilityStore } from './agentCapabilities';
+import { useSessionStore } from './session';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
 import {
   findAvailableModel,
@@ -219,14 +220,11 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   },
 
   loadModels: async () => {
+    const epoch = useSessionStore.getState().sessionEpoch;
     set({ loading: true, error: null });
     try {
-      const [res, modelConfig, runtimeDefault] = await Promise.all([
+      const [res, runtimeDefault] = await Promise.all([
         api.listAvailableModels(),
-        api.listModelConfig().catch((error) => {
-          log.warn('agent', 'Failed to load default model config', { error: toStoreError(error) });
-          return {} as ModelServiceConfig;
-        }),
         api.getRuntimeDefault().catch((error) => {
           log.warn('agent', 'Failed to load Station runtime default', {
             error: toStoreError(error),
@@ -234,15 +232,16 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
           return null;
         }),
       ]);
+      if (epoch !== useSessionStore.getState().sessionEpoch) return;
       const models = res.models || [];
       log.info('agent', 'Models loaded', { count: models.length });
       const enabledModels = models.filter((m) => m.enabled);
-      // Station runtime default is the truth new Topics inherit; the local
-      // model-registry slot and the catalog fallback only cover older stores.
+      // A persisted account default is authoritative; the catalog is used
+      // only when the account has not selected an available model.
       const configuredDefault =
-        runtimeDefault?.modelId || modelConfig.default?.model || res.default;
+        runtimeDefault?.modelId || res.default;
       const configuredDefaultProvider =
-        runtimeDefault?.providerId || modelConfig.default?.provider || '';
+        runtimeDefault?.providerId || '';
       const defaultSelection = resolveAvailableModelSelection(
         enabledModels,
         '',
@@ -250,18 +249,19 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         configuredDefault,
         configuredDefaultProvider,
       );
-      set({
-        availableModels: enabledModels,
+      set((state) => ({
+        availableModels: replaceEqualDeep(state.availableModels, enabledModels),
         defaultModel: defaultSelection.modelId,
         defaultProviderId: defaultSelection.providerId,
         lastLoadedAt: Date.now(),
-      });
+      }));
     } catch (error) {
+      if (epoch !== useSessionStore.getState().sessionEpoch) return;
       const message = toStoreError(error);
       log.error('agent', 'Failed to load models', { error: message });
       set({ error: message });
     } finally {
-      set({ loading: false });
+      if (epoch === useSessionStore.getState().sessionEpoch) set({ loading: false });
     }
   },
 
@@ -304,7 +304,13 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         selectedCandidates,
         defaultCandidate,
       );
-      set({ ...roster, lastLoadedAt: Date.now() });
+      // An unchanged Station read is not a new roster. Keep selector and
+      // selected-Agent identity stable through background reconciliation.
+      set((state) => ({
+        ...roster,
+        agents: replaceEqualDeep(state.agents, roster.agents),
+        lastLoadedAt: Date.now(),
+      }));
       const nextSelected = roster.selectedAgent;
       if (nextSelected && nextSelected !== persistedSelected) {
         void api.setSelectedAgent(nextSelected).catch((error) => {
@@ -334,7 +340,11 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         const idx = activeIds.indexOf('web-search');
         if (idx >= 0) activeIds.splice(idx, 1);
       }
-      set({ applets, enabledAppletIds: activeIds, lastLoadedAt: Date.now() });
+      set((state) => ({
+        applets: replaceEqualDeep(state.applets, applets),
+        enabledAppletIds: replaceEqualDeep(state.enabledAppletIds, activeIds),
+        lastLoadedAt: Date.now(),
+      }));
     } catch (error) {
       const message = toStoreError(error);
       log.error('agent', 'Failed to load applets', { error: message });

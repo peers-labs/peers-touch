@@ -1,0 +1,259 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "一对一语音与视频通话：双 Home Station 信令 + WebRTC 媒体",
+    "subtitle": "呼叫/接听/挂断作为密封信封发到各自的 Home Station：同站走本地 EventBus，跨站经联邦实时信令路由转发，Station 只做不透明转发、不持密钥。媒体端到端 DTLS-SRTP，直连优先、TURN 兜底。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/journey-realtime-call.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "caller",
+      "type": "frontend",
+      "label": "呼叫方 Client",
+      "sublabel": "getUserMedia 采集",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/p2p/callP2p.ts",
+          "label": "callP2p.ts · startCall",
+          "line": 1299,
+          "end_line": 1340
+        },
+        {
+          "path": "apps/desktop/src/components/chat/CallSurface.tsx",
+          "label": "CallSurface.tsx",
+          "line": 81,
+          "end_line": 230
+        }
+      ]
+    },
+    {
+      "id": "callerHome",
+      "type": "backend",
+      "label": "呼叫方 Home Station",
+      "sublabel": "POST /realtime/signal · SSE",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/handler.go",
+          "label": "handler.go · handlePostSignal / routeSignal",
+          "line": 261,
+          "end_line": 393
+        },
+        {
+          "path": "apps/station/app/subserver/events/handler.go",
+          "label": "handler.go · 联邦路由判定",
+          "line": 524,
+          "end_line": 606
+        }
+      ]
+    },
+    {
+      "id": "calleeHome",
+      "type": "backend",
+      "label": "被叫方 Home Station",
+      "sublabel": "通话解析归属 · 联邦对端",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/peer_routes.go",
+          "label": "peer_routes.go · handleRealtimeSignal",
+          "line": 509,
+          "end_line": 551
+        },
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go · PublishPeerSignal",
+          "line": 226,
+          "end_line": 296
+        },
+        {
+          "path": "apps/station/app/subserver/events/call_resolution.go",
+          "label": "call_resolution.go · open / resolve",
+          "line": 81,
+          "end_line": 267
+        },
+        {
+          "path": "apps/station/frame/core/federation/routes.go",
+          "label": "routes.go · RealtimeSignalRoute",
+          "line": 58,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "callee",
+      "type": "frontend",
+      "label": "被叫方 Client",
+      "sublabel": "响铃 / 接听 / 拒绝",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/p2p/callP2p.ts",
+          "label": "callP2p.ts · acceptCall",
+          "line": 1344,
+          "end_line": 1406
+        }
+      ]
+    },
+    {
+      "id": "turn",
+      "type": "backend",
+      "label": "STUN / TURN",
+      "sublabel": "ICE 发现与中继（:3478）",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/plugin/native/subserver/turn/turn.go",
+          "label": "turn.go · Pion TURN",
+          "line": 37,
+          "end_line": 105
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 486,
+      "label": "振铃与接听（45s 无应答自动结束）"
+    },
+    {
+      "from": 502,
+      "to": 760,
+      "label": "通话中：端到端实时媒体"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "caller",
+      "to": "callerHome",
+      "y": 180,
+      "label": "POST /realtime/signal：密封 CALL_REQUEST",
+      "variant": "security",
+      "note": "先 getUserMedia；采集失败直接 media-failed，不发呼叫"
+    },
+    {
+      "id": "fwd-request",
+      "from": "callerHome",
+      "to": "calleeHome",
+      "y": 236,
+      "label": "联邦转发 /federation/realtime/signal",
+      "variant": "security",
+      "note": "同站走本地 EventBus；跨站经 claims 校验的联邦通道"
+    },
+    {
+      "id": "ring",
+      "from": "calleeHome",
+      "to": "callee",
+      "y": 292,
+      "label": "SSE 扇出：所有在线设备响铃",
+      "variant": "dashed",
+      "note": "通话解析记录在被叫方 Home Station 打开"
+    },
+    {
+      "id": "accept",
+      "from": "callee",
+      "to": "calleeHome",
+      "y": 348,
+      "label": "赢家设备发密封 CALL_ACCEPT",
+      "variant": "security",
+      "note": "他端设备接听后，本机静默停响"
+    },
+    {
+      "id": "fwd-accept",
+      "from": "calleeHome",
+      "to": "callerHome",
+      "y": 404,
+      "label": "联邦转发回程，解析终态",
+      "variant": "security",
+      "note": "多设备赢家解析只存在于被叫方 Home Station"
+    },
+    {
+      "id": "accepted",
+      "from": "callerHome",
+      "to": "caller",
+      "y": 460,
+      "label": "SSE：通话激活（winning_device_id）",
+      "variant": "return"
+    },
+    {
+      "id": "offer",
+      "from": "caller",
+      "to": "callerHome",
+      "y": 516,
+      "label": "密封 OFFER + ICE 候选",
+      "variant": "dashed",
+      "note": "经同一联邦/SSE 路径送达；远端描述未应用前候选先缓冲"
+    },
+    {
+      "id": "answer",
+      "from": "callee",
+      "to": "calleeHome",
+      "y": 572,
+      "label": "密封 ANSWER + ICE 候选",
+      "variant": "dashed",
+      "note": "反向同路径；由指定 offerer 驱动协商"
+    },
+    {
+      "id": "media",
+      "from": "caller",
+      "to": "callee",
+      "y": 628,
+      "label": "DTLS-SRTP 加密媒体直连",
+      "variant": "emphasis",
+      "note": "DataChannel 仅服务通话就绪，不再承载消息文本"
+    },
+    {
+      "id": "relay",
+      "from": "caller",
+      "to": "turn",
+      "y": 684,
+      "label": "直连不通：ICE 选用 relay 候选",
+      "variant": "dashed",
+      "note": "TURN-REST 凭证建连时经 /api/v1/turn/ice-servers 预配（24h）"
+    },
+    {
+      "id": "relay-media",
+      "from": "turn",
+      "to": "callee",
+      "y": 740,
+      "label": "经 TURN 中继的 SRTP 媒体",
+      "variant": "dashed",
+      "note": "45s 无应答发 CALL_END；ICE 断开有 20s 重连窗口"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "信令路径与信令/媒体分离",
+      "items": [
+        "呼叫、接听、SDP 与挂断都作为密封信封（X25519 + HKDF + AES-256-GCM）发到各自的 Home Station；Station 只做不透明转发，不持密钥。",
+        "收件人归属他站时经 /federation/realtime/signal 联邦转发（对端校验 claims 后本地 EventBus 扇出）；同站则本地直接投递。",
+        "多设备响铃与赢家解析始终归被叫方 Home Station；跨站查询赢家走 /federation/realtime/call-resolution。音频/视频媒体走浏览器 WebRTC，与 Station 无关。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "回退与恢复",
+      "items": [
+        "ICE 断开进入 reconnecting：仅 offerer 发起 ICE restart，20s 内恢复，否则 network-failed。",
+        "振铃 45s 无应答自动 CALL_END；权限失败以 media-failed 拒绝，主叫不用等满超时。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "群组通话不是这套",
+      "items": [
+        "群语音/视频不做 P2P 网格：Client 向 Station 换取 LiveKit SFU 授权后直连 SFU，见群组通话 Journey。"
+      ]
+    }
+  ]
+}

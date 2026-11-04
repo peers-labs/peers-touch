@@ -1,4 +1,5 @@
 import { createDesktopStore } from './createDesktopStore';
+import { replaceEqualDeep } from '@tanstack/query-core';
 import { chatService, type Session } from '../services/chat-service';
 import { api } from '../services/desktop_api';
 import { useAgentStore } from './agent';
@@ -163,10 +164,10 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
         const drafts = (get().topicsByAgentId[agentId] || []).filter((topic) =>
           isAgentDraftKey(topic.key),
         );
-        const topics = [
+        const topics = replaceEqualDeep(get().topicsByAgentId[agentId], [
           ...drafts,
           ...sessions.map((session) => normalizeTopic(session, existingByKey.get(session.key))),
-        ];
+        ]);
         set((state) => ({
           topicsByAgentId: { ...state.topicsByAgentId, [agentId]: topics },
           loadingAgentIds: { ...state.loadingAgentIds, [agentId]: false },

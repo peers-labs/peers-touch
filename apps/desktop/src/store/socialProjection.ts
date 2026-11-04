@@ -119,6 +119,12 @@ export interface SocialMessage {
   groupUlid?: string;
   mentionedPtids?: string[];
   mentionAll?: boolean;
+  /**
+   * E2EE in-body @mentions with UTF-16 offsets for chip rendering. The coarse
+   * `mentionedPtids`/`mentionAll` fields stay available for hint/push paths
+   * that must not parse offsets.
+   */
+  mentions?: import('../services/im-service-contract').MessageMention[];
   status?: number;
   deliveredAt?: unknown;
   readAt?: unknown;
@@ -323,6 +329,9 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   lastErrorCode?: string;
   requiredDeviceCount?: number;
   deliveredDeviceCount?: number;
+  /** E2EE in-body @mentions with UTF-16 ranges for chip rendering. */
+  mentions?: import('../services/im-service-contract').MessageMention[];
+  mentionAll?: boolean;
   // Common typed content for non-E2EE Station service messages.
   serviceMessage?: DesktopServiceMessage;
 };
@@ -542,6 +551,8 @@ export function projectDesktopIMMessage(
     readByPtids: (message as { readByPtids?: string[] }).readByPtids ?? [],
     eventSequence: messageGroupSeq(message),
     deliveryState: (message as { deliveryState?: string }).deliveryState ?? '',
+    mentions: message.mentions,
+    mentionAll: message.mentionAll,
     serviceMessage: message.serviceMessage,
   };
 }

@@ -1,8 +1,62 @@
 pub use messaging_core::codec::private_content::{
     decode_message_private_content, encode_message_private_content,
-    validate_attachment_plaintext_metadata, validate_message_private_content,
-    MESSAGE_MAX_ATTACHMENT_COUNT, MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
+    encode_message_private_content_with_mentions,
+    validate_attachment_plaintext_metadata, validate_message_private_content, MessageMentions,
+    MESSAGE_MAX_ATTACHMENT_COUNT, MESSAGE_MAX_MENTIONS, MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
 };
+
+pub use crate::model::chat::MessageMention;
+
+/// Serialize the in-ciphertext mention set for the additive `mentions_json`
+/// store column. Compact wire form: `{"all":bool,"m":[[ptid,offset,length,display]]}`.
+/// Empty mention sets map to "" so existing/mention-free rows stay byte-clean.
+pub fn encode_mentions_json(mentions: &MessageMentions) -> String {
+    if mentions.mentions.is_empty() && !mentions.mention_all {
+        return String::new();
+    }
+    let rows: Vec<serde_json::Value> = mentions
+        .mentions
+        .iter()
+        .map(|m| serde_json::json!([
+            m.actor_ptid,
+            m.offset,
+            m.length,
+            m.display,
+        ]))
+        .collect();
+    serde_json::json!({ "all": mentions.mention_all, "m": rows }).to_string()
+}
+
+/// Parse a `mentions_json` column value. Missing/empty/invalid => no mentions;
+/// an invalid row must never block reading a message, so it degrades to empty.
+pub fn decode_mentions_json(raw: &str) -> MessageMentions {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return MessageMentions::empty();
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return MessageMentions::empty();
+    };
+    let mention_all = value.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
+    let mentions = value
+        .get("m")
+        .and_then(|v| v.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let tuple = row.as_array()?;
+                    Some(MessageMention {
+                        actor_ptid: tuple.first()?.as_str()?.to_string(),
+                        offset: tuple.get(1)?.as_u64()? as u32,
+                        length: tuple.get(2)?.as_u64()? as u32,
+                        display: tuple.get(3).and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    MessageMentions { mentions, mention_all }
+}
 
 #[cfg(test)]
 pub(super) fn test_attachment_metadata(
@@ -57,6 +111,8 @@ mod tests {
             format_version: MESSAGE_PRIVATE_CONTENT_FORMAT_VERSION,
             text: "exact plaintext".to_string(),
             attachments: vec![test_attachment_metadata("attachment-1")],
+            mentions: vec![],
+            mention_all: false,
         };
         let encoded =
             encode_message_private_content(&expected.text, &expected.attachments).unwrap();
@@ -74,6 +130,8 @@ mod tests {
                 test_attachment_metadata("attachment-1"),
                 test_attachment_metadata("attachment-1"),
             ],
+            mentions: vec![],
+            mention_all: false,
         };
         assert!(validate_message_private_content(&duplicate).is_err());
 

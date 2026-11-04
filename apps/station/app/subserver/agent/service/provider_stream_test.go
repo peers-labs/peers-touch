@@ -198,7 +198,7 @@ func TestParseAnthropicStreamDeltaMetadata(t *testing.T) {
 	}
 }
 
-func TestProviderServiceExecutesCatalogCLIWithoutCredential(t *testing.T) {
+func TestProviderServiceExecutesConfiguredCredentiallessCLI(t *testing.T) {
 	openAdmissionTestDB(t, "provider_catalog_cli")
 	root := t.TempDir()
 	commandPath := filepath.Join(root, "traecli")
@@ -223,6 +223,11 @@ printf '%s\n' '{"type":"done"}'
 	t.Cleanup(func() {
 		catalogProvider.CLIArgv = originalCommand
 	})
+	if _, err := NewProviderConfigService().Create(context.Background(), ProviderCreateRequest{
+		ActorPTID: "actor-1", ProviderID: "trae-cli",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	var streamed string
 	response, err := provider.Call(context.Background(), &ProviderCallRequest{
@@ -265,16 +270,17 @@ func TestProviderServiceReturnsTypedCLIBinaryMissing(t *testing.T) {
 		catalogProvider.CLIArgv = originalCommand
 	})
 	if err := db.Create(&persistence.AgentProvider{
-		ID:          "provider-row",
-		ActorPTID:   "actor-1",
-		Name:        "trae-cli",
-		DisplayName: "TRAE CLI",
-		SourceType:  "catalog",
-		RuntimeKind: "cli",
-		Protocol:    "cli",
-		CliCommand:  "peers-touch-cli-that-does-not-exist",
-		Enabled:     true,
-		Version:     1,
+		ID:           "provider-row",
+		ActorPTID:    "actor-1",
+		Name:         "trae-cli",
+		DisplayName:  "TRAE CLI",
+		SourceType:   "catalog",
+		RuntimeKind:  "cli",
+		CLIAdapterID: "trae-cli",
+		Protocol:     "cli",
+		CliCommand:   "peers-touch-cli-that-does-not-exist",
+		Enabled:      true,
+		Version:      1,
 	}).Error; err != nil {
 		t.Fatalf("seed CLI provider: %v", err)
 	}
@@ -329,16 +335,17 @@ printf '%s\n' '{"type":"done","content":"persisted"}'
 		catalogProvider.CLIArgv = originalCommand
 	})
 	if err := db.Create(&persistence.AgentProvider{
-		ID:          "provider-row",
-		ActorPTID:   "actor-1",
-		Name:        "trae-cli",
-		DisplayName: "TRAE CLI",
-		SourceType:  "catalog",
-		RuntimeKind: "cli",
-		Protocol:    "cli",
-		CliCommand:  persistedCommand + " " + persistedOutput,
-		Enabled:     true,
-		Version:     1,
+		ID:           "provider-row",
+		ActorPTID:    "actor-1",
+		Name:         "trae-cli",
+		DisplayName:  "TRAE CLI",
+		SourceType:   "catalog",
+		RuntimeKind:  "cli",
+		CLIAdapterID: "trae-cli",
+		Protocol:     "cli",
+		CliCommand:   persistedCommand + " " + persistedOutput,
+		Enabled:      true,
+		Version:      1,
 	}).Error; err != nil {
 		t.Fatalf("seed CLI provider: %v", err)
 	}
@@ -379,7 +386,7 @@ func TestProviderCallWithRetryBypassesCredentialLeaseForCLI(t *testing.T) {
 		ShowAPIKey:  &showAPIKey,
 		Protocol:    "cli",
 		RuntimeKind: "cli",
-		CLIArgv:     []string{"test-cli"},
+		CLIArgv:     []string{os.Args[0]},
 		Models: []catalog.CatalogModel{{
 			ID:            "default",
 			DisplayName:   "Default",
@@ -399,6 +406,11 @@ func TestProviderCallWithRetryBypassesCredentialLeaseForCLI(t *testing.T) {
 		t.Fatalf("migrate CLI runtime authority: %v", err)
 	}
 	seedRuntimeAuthorityRows(t, db, "turn-1", "attempt-1")
+	if _, err := NewProviderConfigService().Create(context.Background(), ProviderCreateRequest{
+		ActorPTID: "ptid:person:owner", ProviderID: "test-cli",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	resolver := NewRuntimeAdmissionResolver(
 		NewProviderConfigService(),
 		NewModelConfigService(),

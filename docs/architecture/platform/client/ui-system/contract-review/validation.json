@@ -1,0 +1,109 @@
+{
+  "kind": "peers-ui-contract-review-validation",
+  "status": "PASS",
+  "claimScope": "SOURCE_FREEZE_MAPPING_TYPED_PREDICATE_AND_DOCUMENT_STRUCTURE_ONLY",
+  "semanticAcceptance": "UNPROVEN",
+  "usefulnessEvidence": "UNPROVEN",
+  "galleryEvidence": "NOT_BUILT",
+  "productEvidence": "NOT_RUN",
+  "independentReview": "NOT_RUN",
+  "checks": [
+    {
+      "id": "standard-json-schema",
+      "status": "PASS",
+      "details": {
+        "standard": "JSON Schema Draft 2020-12",
+        "rejectedMutations": 5,
+        "scope": "shape only"
+      }
+    },
+    {
+      "id": "source-fence",
+      "status": "PASS",
+      "details": {
+        "frozenSourceFiles": 24,
+        "canonicalCommit": "879e4d51133b7372272b2cba0037f04d63e73913",
+        "historicalInventory": true
+      }
+    },
+    {
+      "id": "complete-catalog-and-symbol-mapping",
+      "status": "PASS",
+      "details": {
+        "catalog": 134,
+        "contracts": 130,
+        "symbols": 269,
+        "scenarios": 547
+      }
+    },
+    {
+      "id": "typed-axes-defaults-and-references",
+      "status": "PASS",
+      "details": {
+        "axes": 401,
+        "noProjectionDefault": true,
+        "caseBindingsUnproven": 547
+      }
+    },
+    {
+      "id": "predicate-domain-and-state-closure",
+      "status": "PASS",
+      "details": {
+        "capabilitySpecificPredicates": 130,
+        "stateTemplates": "finite and explicit; not domain protocol proof",
+        "unboundProbes": 130
+      }
+    },
+    {
+      "id": "visible-calibration",
+      "status": "PASS",
+      "details": {
+        "cases": 520,
+        "matched": 520,
+        "independence": "same author",
+        "proof": "predicate behavior only"
+      }
+    },
+    {
+      "id": "malformed-input-and-expression-rejection",
+      "status": "PASS",
+      "details": "Wrong types, unknown fields, missing observation, unknown operators and undeclared refs fail closed."
+    },
+    {
+      "id": "full-audit-crosswalk",
+      "status": "PASS",
+      "details": {
+        "contracts": 130,
+        "dimensions": 10,
+        "findings": 12,
+        "acceptance": "not granted"
+      }
+    },
+    {
+      "id": "usefulness-and-execution-claim-boundaries",
+      "status": "PASS",
+      "details": {
+        "protocolRun": false,
+        "freshCasesAbsent": true,
+        "closures": 8,
+        "gates": 5
+      }
+    },
+    {
+      "id": "review-navigation",
+      "status": "PASS",
+      "details": {
+        "links": 56,
+        "sourceSnapshots": "literal source blobs; original relative links are not this package navigation"
+      }
+    },
+    {
+      "id": "frozen-artifact-manifest",
+      "status": "PASS",
+      "details": {
+        "files": 71,
+        "freeze": "content identity; no Owner approval or usefulness verdict"
+      }
+    }
+  ]
+}

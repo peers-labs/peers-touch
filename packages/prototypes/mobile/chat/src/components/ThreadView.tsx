@@ -1,16 +1,15 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Input, Typography } from 'antd';
-import { ArrowLeft, Plus, Send } from 'lucide-react';
+import { useT } from '../i18n';
+import { Icon, Text, TextArea } from '@peers-touch/ui';
 import type { Message, Conversation } from '../types';
 import { demoAvatarUrls } from '../data';
 import { IdentityAvatar } from './IdentityAvatar';
-
-const { Text } = Typography;
 
 export function ThreadView({ message, conversation, onBack, targetId, onReply }: {
   message: Message; conversation: Conversation; onBack: () => void; targetId?: string;
   onReply: (reply: Message) => void;
 }) {
+  const t = useT();
   const [threadInput, setThreadInput] = useState('');
   const replies = message.threadReplies ?? [];
   const root = useRef<HTMLDivElement>(null);
@@ -41,13 +40,13 @@ export function ThreadView({ message, conversation, onBack, targetId, onReply }:
   return (
     <div className="mp-thread-view" ref={root}>
       <header className="mp-thread-header">
-        <button type="button" className="mp-thread-back" onClick={onBack} aria-label="Back">
-          <ArrowLeft size={22} />
+        <button type="button" className="mp-thread-back" onClick={onBack} aria-label={t('mobile.chat.back')}>
+          <Icon iconId="arrow-left" size={22} />
         </button>
         <div className="mp-thread-contact">
           <div className="mp-thread-contact-info">
-            <Text strong className="mp-thread-name">Thread</Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>{message.mine ? 'You' : conversation.name}</Text>
+            <Text strong className="mp-thread-name">{t('mobile.ui.thread')}</Text>
+            <Text tone="muted" style={{ fontSize: 11 }}>{message.mine ? 'You' : conversation.name}</Text>
           </div>
         </div>
       </header>
@@ -80,22 +79,25 @@ export function ThreadView({ message, conversation, onBack, targetId, onReply }:
       </div>
 
       <div className="mp-composer">
-        <button type="button" className="mp-composer-attach" aria-label="Attach"><Plus size={22} /></button>
-        <Input.TextArea
+        <button type="button" className="mp-composer-attach" aria-label={t('mobile.chat.attach')}><Icon iconId="plus" size={22} /></button>
+        <TextArea
           className="mp-composer-input"
           value={threadInput}
-          placeholder="Reply in thread"
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          onChange={(e) => setThreadInput(e.target.value)}
-          onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleThreadSend(); } }}
+          placeholder={t('mobile.thread.replyPlaceholder')}
+          minimumRows={1}
+          maximumRows={4}
+          framing="embedded"
+          onValueChange={setThreadInput}
+          onEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); handleThreadSend(); } }}
         />
         <button
           type="button"
           className={`mp-composer-send ${threadInput.trim() ? 'active' : ''}`}
-          aria-label="Send"
+          aria-label={t('mobile.chat.send')}
+          disabled={!threadInput.trim()}
           onClick={handleThreadSend}
         >
-          <Send size={18} />
+          <Icon iconId="send" size={18} />
         </button>
       </div>
     </div>

@@ -69,7 +69,14 @@ Rules:
 Rules:
 
 - A page should usually have one `action.primary` region.
-- Do not use black as a standalone CTA unless the theme defines black as `action.primary`.
+- `action.primary` is the neutral **ink** primitive, shared with `text.primary`
+  (light `#202431` on white; dark inverts to near-white `#f1f3f8` with ink text).
+  The dominant action wins by weight and hierarchy, never by brand hue; hue is
+  reserved for semantic and trust meaning (`success`/`warning`/`danger`/`info`,
+  `trust.*`). Focus rings, selection/checked state, form-control accent-color,
+  and the self-authored bubble all reference the same ink primitive.
+- Unread/count badges are neutral emphasis (ink), never `danger`; destructive or
+  attention states use the tone-driven dot indicator.
 - Do not use red for routine secondary actions.
 - Do not use blue links, purple avatars, black CTAs, and red actions together without token ownership.
 
@@ -120,13 +127,22 @@ Rules:
 | `border.hairline` | quiet separation           | feed item edge, divider      |
 | `border.focus`    | keyboard/focus ownership   | parent control focus state   |
 | `border.danger`   | destructive/error boundary | validation or blocking state |
-| `shadow.none`     | flat reading flow          | dense feeds and lists        |
-| `shadow.soft`     | subtle lifted surface      | composer, lightweight card   |
+| `shadow.none`     | flat reading flow          | dense feeds, nested/flat card (`Card flat`), lists |
+| `shadow.rest`     | resting card on the recessed canvas | content cards/panels (`Card`, `--pt-shadow-rest`) |
+| `shadow.soft`     | subtle lifted surface      | composer, toast, hover lift  |
 | `shadow.float`    | popover/dropdown           | floating action surfaces     |
 
 Rules:
 
-- Do not stack border and shadow unless the surface is truly raised.
+- A resting card is separated from the canvas by all three, in order: the
+  `canvas → surface` tonal step, a 1px hairline, and `shadow.rest`. The tonal
+  step is the primary separator — never collapse it and rely on border/shadow
+  alone, or boundaries wash out on low-contrast (warm/neutral) palettes.
+- A hairline + `shadow.rest` is the single sanctioned border-and-shadow stack,
+  and only for a surface resting on the recessed canvas. Do not add heavier
+  shadows or multiple stacked borders.
+- A card already inside a raised region uses `flat` (hairline, no shadow) to
+  avoid double elevation.
 - Do not use heavy card borders to solve unclear layout.
 - Composite controls must not render duplicated external borders.
 

@@ -12,7 +12,9 @@ import {
 } from '../../store/friendshipProjection';
 import {
   canonicalProfileAvatar,
+  projectGroupAvatarSlots,
   remoteProfileHandle,
+  resolveActorIdentity,
 } from '../../store/socialProfileProjection';
 import type { FriendRequestData } from '../../store/socialNormalizers';
 import {
@@ -20,6 +22,7 @@ import {
   type PresentedError,
 } from '../../services/errorPresenter';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { log } from '../../utils/logger';
 import {
@@ -601,9 +604,19 @@ export function ChatContactsPanel({
                     e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
                   }}
                 >
-                  <UserSquareAvatar
-                    remoteUrl={conversation.avatar}
-                    actorPtid={conversation.peerPtid || null}
+                  <GroupSquareAvatar
+                    remoteUrl={conversation.avatar || undefined}
+                    members={projectGroupAvatarSlots(
+                      groupMembers[conversation.id] || [],
+                      (ptid, nickname) => resolveActorIdentity({
+                        ptid,
+                        currentUserPtid,
+                        currentUserProfile,
+                        peerProfiles,
+                        sessions: [],
+                        nickname,
+                      }),
+                    )}
                     name={displayName}
                     size={avatarSize}
                   />

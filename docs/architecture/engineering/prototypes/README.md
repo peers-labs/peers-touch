@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-06-22 | **Updated**: 2026-10-18
+> **Created**: 2026-06-22 | **Updated**: 2026-10-29
 > **Owner**: Architecture Team
 
 ---
@@ -27,13 +27,14 @@
 原型体系的目标形态不是只有文档总账，而是一个随时可运行的统一前端入口：
 
 - 各原型模块各自维护代码，通过 manifest 注入统一入口。
-- 统一入口按 `desktop` / `mobile` / `dashboard` / `control` 四类一级站点聚合原型：
-  `dashboard` 指 Station Dashboard，`control` 指独立云控管理面。
+- 统一入口按 `desktop` / `mobile` / `dashboard` / `control` / `frontend-eles` 一级站点聚合原型：
+  `dashboard` 指 Station Dashboard，`control` 指独立云控管理面，`frontend-eles` 是共享元素与风格审阅入口。
+- Frontend Eles 当前默认展示 Quiet Internet 风格北极星 Draft V2，旧基础/表达样本作为元素库保留。
 - 当前 worktree 内的 `prototype.manifest.ts` 由 Portal 自动发现并展示。
 - 不同 worktree / branch 的原型版本可在同一个入口中切换预览。
-- 四个一级站点的选中原型都通过统一预览壳层提供全屏查看；远端 worktree
+- 所有一级站点的选中原型都通过统一预览壳层提供全屏查看；远端 worktree
   iframe 使用相同入口。
-- 一级站点支持 `?site=desktop|mobile|dashboard|control` 深链，便于直接打开目标
+- 一级站点支持 `?site=desktop|mobile|dashboard|control|frontend-eles` 深链，便于直接打开目标
   原型分区；切换站点时 URL 同步更新。
 - 当前总账继续负责确认门、状态和正式落地准入。
 
@@ -58,6 +59,7 @@
 | 站点 | 原型 ID | 归属层级 | 原型路径 | 落地目标 | 对应设计版本 | 状态 | 入口文档 |
 |------|---------|----------|---------|---------|------------|------|---------|
 | desktop | `desktop-shell` | Desktop 一级站点外壳 | `packages/prototypes/desktop/shell/` | Desktop 容器外壳（apps/desktop）；原型为 React web 展示 | runtime/desktop-runtime-architecture | drafting | [prototype/README.md](./desktop-shell/README.md) |
+| frontend-eles | `ui-system` | Frontend Eles 独立风格/元素审阅入口 | `packages/prototypes/shared/ui-system/` | Quiet Internet Draft V2、130项能力目录、基础/表达样本；不代表生产主题或业务 runtime | platform/client/ui-system | drafting | [prototype/README.md](../../platform/client/ui-system/prototype/README.md) |
 | desktop | `agent-canvas` | Desktop Agent 页内编排入口 | `packages/prototypes/agent-canvas/` | Agent 页内编排入口（由 `packages/prototypes/desktop/shell/` 的 Agent 页图标打开）；原型为 React web 展示 | agent/agent-canvas-orchestration | drafting | [agent-canvas-orchestration.md](../../domains/agent/agent-canvas-orchestration.md) |
 | desktop | `atelier` | Desktop 内的 applet 原型，不是一级模块 | `packages/prototypes/desktop/applets/atelier/` | Applet（Lynx），运行在 Desktop 容器内；原型为 React+LobeUI web 展示 | atelier/functional-modules §1 | drafting | [prototype/README.md](../../domains/applets/atelier/prototype/README.md) |
 | desktop | `applet-lifecycle` | Desktop Applet Box 极简 launcher 原型，不是一级模块 | `packages/prototypes/desktop/features/applet-lifecycle/` | Desktop Applet Box 安装包导入、展示、打开、运行、通知、退出、卸载；原型为 React web 展示 | applet-runtime/official-applet-architecture-contract + applet-launcher-ux-contract | landed | [prototype/README.md](../../platform/applet-runtime/prototype/README.md) |
@@ -71,7 +73,12 @@
 | control | `x-config` | X Config 一级站点管理台 | `packages/prototypes/control/x-config/` | 官方 Relay/公开 Station 候选与升级配置、草稿校验、直接发布和恢复 | x-config v2.0 | confirmed | [prototype/README.md](../../platform/client/control-plane/prototype/README.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
-> 登记表的一级维度是原型站点（`desktop` / `mobile` / `dashboard` / `control`），不是每个原型工程目录；applet、通话、聊天等都必须挂在所属站点下。
+> 登记表的一级维度是原型站点；`frontend-eles` 承载共享元素/风格，applet、通话、聊天等仍挂在所属产品站点下。
+
+Desktop Shell 与 Station Dashboard 内新增的模型服务生命周期候选保持
+`drafting`，不增加独立入口卡片，也不提升既有原型确认状态。
+对应设计、运行深链与缺失证明见
+[CLI 账号连接线框](../../domains/agent/provider-cli-authentication/wireflow.md)。
 
 ---
 
@@ -117,7 +124,7 @@ L2 截图要求：
 
 ## 5. 一级站点全屏预览
 
-- `desktop`、`mobile`、`dashboard`、`control` 的 Live Preview / Remote Preview 顶栏
+- `desktop`、`mobile`、`dashboard`、`control`、`frontend-eles` 的 Live Preview / Remote Preview 顶栏
   必须提供 `全屏查看` 图标按钮。
 - 全屏只扩大当前选中原型的预览壳层，不改变原型状态、路由或 manifest 归属。
 - 本地组件与远端 iframe 共用一个全屏 owner；各原型不得重复实现 Portal
@@ -134,6 +141,6 @@ L2 截图要求：
 
 | 维度 | 约定 |
 |------|------|
-| 技术栈 | React + Vite + `@lobehub/ui` 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + CSS |
+| 技术栈 | React + Vite；Frontend Eles 使用 `@peers-touch/ui`，既有产品原型在迁移前可保留其登记的技术栈 |
 | 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard / control；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
 | 落地 | 由对应工程参照原型按其运行时重新实现（如 Applet 用 Lynx），原型本身不要求能直接搬成产物 |

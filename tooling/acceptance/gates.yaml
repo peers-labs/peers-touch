@@ -209,7 +209,7 @@
       "environment": "home-station", "provisioner": "home-station",
       "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
       "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
-      "description": "Native mixed Provider Settings, Station CLI discovery, shared availability and Topic model ownership."
+      "description": "Suite-reused authenticated Dashboard DM/CLI configuration and discovery, Native model consumption, shared availability and Topic model ownership."
     },
     "agent-chat-topics-native": {
       "requiredRuntimeCells": ["desktop-linux-native"],
@@ -596,6 +596,19 @@
       ],
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove authenticated ephemeral typing start, stop, session switch, disconnect and TTL cleanup without durable lane or history writes."
+    },
+    "chat-native-mentions-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.native_mentions_runner",
+      "timeout_seconds": 1800,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native",
+        "desktop-linux-native",
+        "desktop-windows-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run two isolated Native group clients and prove E2EE named @mentions and owner-only @all decrypt with offsets, render chips, and raise the muted-exception yellow marker until the conversation is opened."
     },
     "chat-native-multi-device-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",
@@ -1195,7 +1208,7 @@
         "desktop-macos-native"
       ],
       "tier": "env-evidence",
-      "description": "Build and launch the exact-source packaged macOS Desktop, prove the 88 x 36 Template Peers wordmark through a 62 x 24 AXMenuExtra status item, close-to-hide residency, native Show restoration, package/process identity, screenshot support, and reverse cleanup."
+      "description": "Build and launch the exact-source packaged macOS Desktop, prove the 36 x 36 Template rounded-square P through a targeted 36 x 24 AXMenuExtra status item, close-to-hide residency, native Show restoration, package/process identity, screenshot support, and reverse cleanup."
     },
     "desktop-shell-domain-validation": {
       "dependsOn": [

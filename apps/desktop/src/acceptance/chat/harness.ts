@@ -26,6 +26,7 @@ import { useSessionStore } from '../../store/session';
 import { useSearchStore } from '../../store/search';
 import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq, type SocialMessage } from '../../store/socialProjection';
+import { useNavigationBadgeStore } from '../../store/navigationBadges';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
 import {
   AttachmentAccessState,
@@ -266,6 +267,9 @@ function interactionProjection(
     reactions: state.reactions[messageId] ?? [],
     pinned: Boolean(state.pinnedMessages[messageId]),
     readByPtids: message.readByPtids,
+    mentions: message.mentions ?? [],
+    mentionAll: Boolean(message.mentionAll),
+    mentionedPtids: (message.mentions ?? []).map((mention) => mention.actorPtid),
   };
 }
 
@@ -398,6 +402,7 @@ async function onboardingSnapshot(peerPtid: string) {
 
 export function installAcceptanceHarness(): void {
   (window as any).__PT_ACCEPTANCE_STORE__ = useSocialChatStore;
+  (window as any).__PT_ACCEPTANCE_BADGE_STORE__ = useNavigationBadgeStore;
   registerAcceptanceHarness('chat', {
     logout: (input: { actorPtid: string }) =>
       nativeAcceptanceBridge.logout(input),
@@ -1070,6 +1075,59 @@ export function installAcceptanceHarness(): void {
         groupUlid,
         messageUlid: messages[messages.length - 1]?.id ?? '',
         messageCount: messages.length,
+      };
+    },
+
+    // E2EE @mention send through the real native command with an explicit
+    // in-ciphertext mention set; used by the two-desktop mentions gate.
+    async sendGroupMention({
+      conversationId,
+      content,
+      mentions = [],
+      mentionAll = false,
+    }: {
+      conversationId: string;
+      content: string;
+      mentions?: Array<{
+        actorPtid: string;
+        offset: number;
+        length: number;
+        display: string;
+      }>;
+      mentionAll?: boolean;
+    }) {
+      const outcome = await imServiceV1.messaging.sendMessage(
+        conversationId,
+        'group',
+        content,
+        [],
+        { sendIntentId: newSendIntentId() },
+        { mentions, mentionAll },
+      );
+      await refreshConversation('group', conversationId);
+      return {
+        ...outcome,
+        projection: interactionProjection('group', conversationId, outcome.messageId),
+      };
+    },
+
+    async setConversationMuted({
+      conversationId,
+      muted,
+    }: {
+      conversationId: string;
+      muted: boolean;
+    }) {
+      await useSocialChatStore.getState()
+        .updateConversationLocalState('group', conversationId, { muted });
+      return { conversationId, muted };
+    },
+
+    async mentionFlagState({ conversationId }: { conversationId: string }) {
+      const actorPtid = activeSessionActorPtid() ?? '';
+      return {
+        conversationId,
+        mentioned: useNavigationBadgeStore.getState().hasMention(actorPtid, conversationId),
       };
     },
 

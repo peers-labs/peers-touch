@@ -4,7 +4,7 @@ import { ModelServiceTab } from '../components/ModelServiceTab';
 
 registerModule({
   id: 'models',
-  name: 'Model Service',
+  name: 'Models',
   icon: Cpu,
   settingsPanel: ModelServiceTab,
   settingsEntry: { order: 15 },

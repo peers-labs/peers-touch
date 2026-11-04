@@ -86,6 +86,44 @@ wait "$child_pid"
 	}
 }
 
+func TestAuxiliaryCommandCancellationTerminatesPipeHoldingChild(t *testing.T) {
+	root := t.TempDir()
+	childPIDPath := filepath.Join(root, "auxiliary-child.pid")
+	commandPath := writeExecutable(t, root, "installer", `#!/bin/sh
+sleep 30 &
+printf '%s\n' "$!" > "$1"
+wait
+`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	command := exec.CommandContext(ctx, commandPath, childPIDPath)
+	PrepareCommand(command)
+	defer CleanupCommand(command)
+	result := make(chan error, 1)
+	go func() { _, err := command.CombinedOutput(); result <- err }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := os.Stat(childPIDPath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("installer child did not start")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	childPID := readProcessID(t, childPIDPath)
+	cancel()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("cancelled auxiliary command succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("child kept installation output pipes open after cancellation")
+	}
+	waitForProcessExit(t, childPID, time.Second)
+}
+
 func TestExecutorNormalExitTerminatesRemainingProcessGroup(t *testing.T) {
 	root := t.TempDir()
 	childPIDPath := filepath.Join(root, "child.pid")

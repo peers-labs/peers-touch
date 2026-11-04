@@ -291,7 +291,7 @@ pub struct ProviderIdInput {
 pub struct ProviderUpdateInput {
     pub id: String,
     pub enabled: bool,
-    pub key_vaults: Option<String>,
+    pub api_key: Option<String>,
     pub config_json: Option<String>,
     pub runtime_config: Option<serde_json::Value>,
     pub runtime_kind: Option<String>,
@@ -303,7 +303,6 @@ pub struct ProviderUpdateInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderCheckInput {
     pub id: String,
-    pub key_vaults: Option<String>,
     pub config_json: Option<String>,
 }
 
@@ -313,7 +312,7 @@ pub struct ProviderCreateInput {
     pub name: String,
     pub description: String,
     pub logo: String,
-    pub key_vaults: String,
+    pub api_key: Option<String>,
     pub config_json: String,
     pub runtime_kind: Option<String>,
     pub protocol: Option<String>,
@@ -440,22 +439,6 @@ pub struct CronToggleInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CronRunsInput {
     pub job_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelConfigKeyInput {
-    pub key: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelConfigSetInput {
-    pub key: String,
-    pub r#ref: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderIdInputV2 {
-    pub provider_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

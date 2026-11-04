@@ -54,6 +54,9 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 | [modules/](./modules/README.md) | **Agent 子模块设计索引** — 参考分析、Peers 专题设计与 Acceptance 边界；不独立重定义根模块 owner |
 | [provider-runtime-strategy.md](./provider-runtime-strategy.md) | Provider runtime 选择与执行位置策略 |
 
+[CLI 账号连接方案草案](./provider-cli-authentication/README.md)定义直接登录入口、
+供应商授权等待和同一 Owner 的登录生命周期。状态为 draft，未实施或生效。
+
 ---
 
 ## 4. 执行计划

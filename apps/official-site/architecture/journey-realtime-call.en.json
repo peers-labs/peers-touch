@@ -1,0 +1,259 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "1:1 voice and video calls: dual Home Station signaling + WebRTC media",
+    "subtitle": "Ring/accept/end are sealed envelopes posted to each peer's own Home Station: local EventBus when both peers share a Station, federated realtime routing across Stations. Stations relay opaque payloads and never hold keys. Media is end-to-end DTLS-SRTP, direct first with TURN fallback.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/journey-realtime-call.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "caller",
+      "type": "frontend",
+      "label": "Caller Client",
+      "sublabel": "getUserMedia capture",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/p2p/callP2p.ts",
+          "label": "callP2p.ts · startCall",
+          "line": 1299,
+          "end_line": 1340
+        },
+        {
+          "path": "apps/desktop/src/components/chat/CallSurface.tsx",
+          "label": "CallSurface.tsx",
+          "line": 81,
+          "end_line": 230
+        }
+      ]
+    },
+    {
+      "id": "callerHome",
+      "type": "backend",
+      "label": "Caller Home Station",
+      "sublabel": "POST /realtime/signal · SSE",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/events/handler.go",
+          "label": "handler.go · handlePostSignal / routeSignal",
+          "line": 261,
+          "end_line": 393
+        },
+        {
+          "path": "apps/station/app/subserver/events/handler.go",
+          "label": "handler.go · federation routing decision",
+          "line": 524,
+          "end_line": 606
+        }
+      ]
+    },
+    {
+      "id": "calleeHome",
+      "type": "backend",
+      "label": "Callee Home Station",
+      "sublabel": "call resolution owner · peer route",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/peer_routes.go",
+          "label": "peer_routes.go · handleRealtimeSignal",
+          "line": 509,
+          "end_line": 551
+        },
+        {
+          "path": "apps/station/app/subserver/events/events.go",
+          "label": "events.go · PublishPeerSignal",
+          "line": 226,
+          "end_line": 296
+        },
+        {
+          "path": "apps/station/app/subserver/events/call_resolution.go",
+          "label": "call_resolution.go · open / resolve",
+          "line": 81,
+          "end_line": 267
+        },
+        {
+          "path": "apps/station/frame/core/federation/routes.go",
+          "label": "routes.go · RealtimeSignalRoute",
+          "line": 58,
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "callee",
+      "type": "frontend",
+      "label": "Callee Client",
+      "sublabel": "Ring / accept / decline",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/p2p/callP2p.ts",
+          "label": "callP2p.ts · acceptCall",
+          "line": 1344,
+          "end_line": 1406
+        }
+      ]
+    },
+    {
+      "id": "turn",
+      "type": "backend",
+      "label": "STUN / TURN",
+      "sublabel": "ICE discovery and relay (:3478)",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/plugin/native/subserver/turn/turn.go",
+          "label": "turn.go · Pion TURN",
+          "line": 37,
+          "end_line": 105
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 486,
+      "label": "Ringing and acceptance (auto-ends after 45s unanswered)"
+    },
+    {
+      "from": 502,
+      "to": 760,
+      "label": "In call: end-to-end realtime media"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "caller",
+      "to": "callerHome",
+      "y": 180,
+      "label": "POST /realtime/signal: sealed CALL_REQUEST",
+      "variant": "security",
+      "note": "getUserMedia runs first; capture failure ends media-failed"
+    },
+    {
+      "id": "fwd-request",
+      "from": "callerHome",
+      "to": "calleeHome",
+      "y": 236,
+      "label": "Federation forward /federation/realtime/signal",
+      "variant": "security",
+      "note": "Same-Station peers use the local EventBus"
+    },
+    {
+      "id": "ring",
+      "from": "calleeHome",
+      "to": "callee",
+      "y": 292,
+      "label": "SSE fan-out: every online device rings",
+      "variant": "dashed",
+      "note": "Call resolution opens at the callee Home Station"
+    },
+    {
+      "id": "accept",
+      "from": "callee",
+      "to": "calleeHome",
+      "y": 348,
+      "label": "Winning device sends sealed CALL_ACCEPT",
+      "variant": "security",
+      "note": "A sibling device answering stops this ring"
+    },
+    {
+      "id": "fwd-accept",
+      "from": "calleeHome",
+      "to": "callerHome",
+      "y": 404,
+      "label": "Federation forward back; resolution terminal",
+      "variant": "security",
+      "note": "Winner resolution lives only at the callee Home"
+    },
+    {
+      "id": "accepted",
+      "from": "callerHome",
+      "to": "caller",
+      "y": 460,
+      "label": "SSE: call active (winning_device_id)",
+      "variant": "return"
+    },
+    {
+      "id": "offer",
+      "from": "caller",
+      "to": "callerHome",
+      "y": 516,
+      "label": "Sealed OFFER + ICE candidates",
+      "variant": "dashed",
+      "note": "Same federation/SSE path; candidates buffer then replay"
+    },
+    {
+      "id": "answer",
+      "from": "callee",
+      "to": "calleeHome",
+      "y": 572,
+      "label": "Sealed ANSWER + ICE candidates",
+      "variant": "dashed",
+      "note": "Reverse path; the designated offerer negotiates"
+    },
+    {
+      "id": "media",
+      "from": "caller",
+      "to": "callee",
+      "y": 628,
+      "label": "Direct DTLS-SRTP encrypted media",
+      "variant": "emphasis",
+      "note": "The DataChannel only serves call readiness, not message text"
+    },
+    {
+      "id": "relay",
+      "from": "caller",
+      "to": "turn",
+      "y": 684,
+      "label": "Direct ICE fails: relay candidate selected",
+      "variant": "dashed",
+      "note": "TURN-REST credential provisioned at setup via /api/v1/turn/ice-servers (24h)"
+    },
+    {
+      "id": "relay-media",
+      "from": "turn",
+      "to": "callee",
+      "y": 740,
+      "label": "SRTP media via TURN relay",
+      "variant": "dashed",
+      "note": "CALL_END after 45s unanswered; ICE drops get a 20s reconnect window"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Signaling path and signaling/media separation",
+      "items": [
+        "Ring, accept, SDP and hangup post as sealed envelopes (X25519 + HKDF + AES-256-GCM) to each peer's own Home Station; Stations relay opaque payloads and never hold keys.",
+        "When the recipient is homed remotely, /federation/realtime/signal forwards the frame and the peer verifies claims before local EventBus fan-out; same-Station delivery is local only.",
+        "Multi-device ringing and the winning-device resolution live at the callee Home Station; cross-Station winner reads use /federation/realtime/call-resolution. Audio/video runs over browser WebRTC, independent of the Stations."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Fallback and recovery",
+      "items": [
+        "On an ICE drop the call enters reconnecting: only the offerer sends an ICE restart; recovery must land within 20s or it ends network-failed.",
+        "Ringing auto-sends CALL_END after 45s; a permission failure rejects with media-failed so the caller never waits out the timeout."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Group calls differ",
+      "items": [
+        "Group voice/video is not a P2P mesh: clients obtain a LiveKit SFU grant from Station and connect to the SFU. See the group-call journey."
+      ]
+    }
+  ]
+}

@@ -22,7 +22,7 @@
       ],
       "evidence": {
         "truth_sources": ["Station Agent, Conversation, Provider, Turn and ToolCall authority", "Desktop actor-scoped drafts and attachments"],
-        "surfaces": ["Native Desktop Agent Chat and global Settings"],
+        "surfaces": ["Native Desktop Agent Chat and global Models Settings", "Authenticated Dashboard Provider editor"],
         "proven_by": [
           "agent-definition-roundtrip-native-e2e",
           "agent-slash-command-native-e2e",
@@ -38,7 +38,8 @@
           "Versioned Station command projection and immutable historical Turn attribution from Profile-two Native Desktop"
         ],
         "unproven_scope": [
-          "All 136 baseline operations and additional production assertions until their Native Gates execute",
+          "Active prototype, Dashboard management and production assertions until their owning Gates execute; retired Desktop Provider actions are historical baseline only",
+          "Successful vendor CLI authorization and real reply remain unproven until configured vendor credentials are exercised",
           "Mobile, macOS and Windows platform-specific behavior",
           "CUT product scope and broader Agent orchestration, marketplace and Evaluation"
         ]

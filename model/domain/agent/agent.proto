@@ -1913,8 +1913,12 @@ message ListScheduledJobRunsResponse {
 message QuickCompletionRequest {
   string agent_id = 1;
   string prompt = 2;
+  string provider = 3;
+  string model = 4;
 }
 
 message QuickCompletionResponse {
   string content = 1;
+  string provider = 2;
+  string model = 3;
 }

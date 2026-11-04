@@ -24,6 +24,11 @@ type RuntimeAdmissionResolver struct {
 	runtimeModels *RuntimeModelCatalog
 	now           func() time.Time
 	externalReady func() bool
+	managedBin    func() string
+}
+
+func (r *RuntimeAdmissionResolver) SetManagedBin(resolve func() string) {
+	r.managedBin = resolve
 }
 
 func (r *RuntimeAdmissionResolver) SetRuntimeModelCatalog(
@@ -75,30 +80,45 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 	ctx context.Context,
 	actorPTID string,
 ) ([]ResolvedAvailableModel, error) {
-	userProviders, err := r.providers.List(ctx, actorPTID)
+	userProviders, err := r.providers.ListEffective(ctx, actorPTID)
 	if err != nil {
 		return nil, err
 	}
 
-	providerMap := make(map[string]*persistence.AgentProvider, len(userProviders))
-	for i := range userProviders {
-		if _, exists := providerMap[userProviders[i].Name]; !exists {
-			providerMap[userProviders[i].Name] = &userProviders[i]
-		}
-	}
-
 	var result []ResolvedAvailableModel
-
-	for _, registeredProvider := range catalog.List() {
-		cp := registeredProvider
-		if r.runtimeModels != nil {
-			cp = r.runtimeModels.EffectiveProvider(actorPTID, registeredProvider)
+	for i := range userProviders {
+		userMatch := &userProviders[i]
+		allowed, err := r.providers.CanUse(ctx, actorPTID, userMatch, "")
+		if err != nil {
+			return nil, err
 		}
+		if !allowed {
+			continue
+		}
+		definition, err := r.providers.effectiveProviderCatalog(ctx, userMatch, r.runtimeModels)
+		if err != nil {
+			return nil, err
+		}
+		if definition == nil {
+			requiresKey := userMatch.Protocol != "ollama"
+			definition = &catalog.CatalogProvider{ID: userMatch.Name, Name: userMatch.DisplayName,
+				RuntimeKind: userMatch.RuntimeKind, Protocol: userMatch.Protocol, ShowAPIKey: &requiresKey}
+			if definition.Name == "" {
+				definition.Name = userMatch.Name
+			}
+		}
+		cp := *definition
 		if !catalogProviderAdvertised(cp) || !r.CatalogProviderAvailable(cp) {
 			continue
 		}
-		userMatch := providerMap[cp.ID]
-		if !admitProvider(cp, userMatch) {
+		credentialOwner := userMatch
+		if userMatch.BackendProviderID != "" {
+			credentialOwner, err = r.providers.CLIBackend(ctx, userMatch)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !admitProvider(cp, credentialOwner) {
 			continue
 		}
 		hidden := parseHiddenModels(func() string {
@@ -107,7 +127,7 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 			}
 			return ""
 		}())
-		dbModels, err := r.models.List(ctx, actorPTID, cp.ID)
+		dbModels, err := r.models.ListOwned(ctx, providerOwner(userMatch), cp.ID)
 		if err != nil {
 			return nil, errcode.New(
 				errcode.AgentInternal,
@@ -116,9 +136,8 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 				err,
 			)
 		}
-		if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
+		if userMatch.BackendProviderID != "" {
 			dbModels = nil
-			hidden = nil
 		}
 		effectiveModels, err := ResolveEffectiveProviderModels(&cp, dbModels, hidden)
 		if err != nil {
@@ -135,6 +154,13 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 				effectiveModel.ContextWindow <= 1 {
 				continue
 			}
+			allowed, err := r.providers.CanUse(ctx, actorPTID, userMatch, effectiveModel.ID)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
+				continue
+			}
 			result = append(result, ResolvedAvailableModel{
 				ID:            effectiveModel.ID,
 				ProviderID:    cp.ID,
@@ -144,62 +170,6 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 				Enabled:       effectiveModel.Enabled,
 				ContextWindow: int32(effectiveModel.ContextWindow),
 				Capabilities:  effectiveModel.Capabilities,
-			})
-		}
-	}
-
-	for i := range userProviders {
-		provider := &userProviders[i]
-		if catalog.Find(provider.Name) != nil ||
-			!provider.Enabled ||
-			!r.ProviderRuntimeAvailable(provider.RuntimeKind, provider.Protocol) {
-			continue
-		}
-		hidden := parseHiddenModels(provider.HiddenModels)
-		dbModels, err := r.models.List(ctx, actorPTID, provider.Name)
-		if err != nil {
-			return nil, errcode.New(
-				errcode.AgentInternal,
-				http.StatusInternalServerError,
-				fmt.Sprintf(
-					"failed to load model capability source for provider %q",
-					provider.Name,
-				),
-				err,
-			)
-		}
-		providerName := strings.TrimSpace(provider.DisplayName)
-		if providerName == "" {
-			providerName = provider.Name
-		}
-		for j := range dbModels {
-			databaseModel := &dbModels[j]
-			if !databaseModel.Enabled ||
-				databaseModel.ContextWindow <= 1 ||
-				containsStr(hidden, databaseModel.ModelID) {
-				continue
-			}
-			capabilities, err := resolveModelCapabilityFacts(nil, databaseModel)
-			if err != nil {
-				return nil, errcode.New(
-					errcode.AgentInvalidSourceState,
-					http.StatusConflict,
-					fmt.Sprintf(
-						"model %q capability metadata is invalid",
-						databaseModel.ModelID,
-					),
-					err,
-				)
-			}
-			result = append(result, ResolvedAvailableModel{
-				ID:            databaseModel.ModelID,
-				ProviderID:    provider.Name,
-				ProviderName:  providerName,
-				DisplayName:   databaseModel.DisplayName,
-				Type:          "chat",
-				Enabled:       true,
-				ContextWindow: int32(databaseModel.ContextWindow),
-				Capabilities:  map[string]bool(capabilities),
 			})
 		}
 	}
@@ -229,24 +199,22 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			"model_id is required", nil)
 	}
 
-	userProviders, err := r.providers.List(ctx, actorPTID)
+	userMatch, err := r.providers.ResolveForActor(ctx, actorPTID, providerID, modelID)
 	if err != nil {
-		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
-			"failed to load provider configuration", err)
+		return nil, err
 	}
 
-	var userMatch *persistence.AgentProvider
-	for i := range userProviders {
-		if userProviders[i].Name == providerID {
-			userMatch = &userProviders[i]
-			break
+	cp, err := r.providers.effectiveProviderCatalog(ctx, userMatch, r.runtimeModels)
+	if err != nil {
+		return nil, err
+	}
+	if userMatch.RuntimeKind == providerRuntimeCLI {
+		if cp == nil {
+			return nil, errcode.NewRuntimeUnavailable("direct_model", "cli_adapter_not_registered")
 		}
-	}
-
-	cp := catalog.Find(providerID)
-	if cp != nil && r.runtimeModels != nil {
-		effective := r.runtimeModels.EffectiveProvider(actorPTID, *cp)
-		cp = &effective
+		if _, err := readProviderRuntimeConfig(cp, userMatch); err != nil {
+			return nil, err
+		}
 	}
 	if cp == nil && userMatch == nil {
 		return nil, errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
@@ -259,12 +227,14 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			"runtime_not_advertised",
 		)
 	}
-	if cp != nil &&
-		isExternalRuntime(cp.RuntimeKind, cp.Protocol) &&
-		!r.CatalogProviderAvailable(*cp) {
+	if cp != nil && !r.CatalogProviderAvailable(*cp) {
+		reason := "adapter_unavailable"
+		if cp.RuntimeKind == providerRuntimeCLI {
+			reason = "cli_binary_missing"
+		}
 		return nil, errcode.NewRuntimeUnavailable(
 			runtimeKindForUnavailableProvider(cp.RuntimeKind),
-			"adapter_unavailable",
+			reason,
 		)
 	}
 	if userMatch != nil && !r.ProviderRuntimeAvailable(userMatch.RuntimeKind, userMatch.Protocol) {
@@ -281,10 +251,18 @@ func (r *RuntimeAdmissionResolver) Resolve(
 		)
 	}
 
+	credentialOwner := userMatch
+	if userMatch.BackendProviderID != "" {
+		credentialOwner, err = r.providers.CLIBackend(ctx, userMatch)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if cp != nil {
 		requiresAPIKey := cp.ShowAPIKey == nil || *cp.ShowAPIKey
 		if requiresAPIKey {
-			if userMatch == nil || parseKeyVaultAPIKey(userMatch.KeyVaults) == "" {
+			key, keyErr := providerCredentialAPIKey(credentialOwner)
+			if keyErr != nil || key == "" {
 				return nil, errcode.NewProviderCredentialMissing(providerID)
 			}
 		}
@@ -295,13 +273,12 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	var modelType string
 	var catalogMatch *catalog.CatalogModel
 	var databaseMatch *persistence.AgentModel
-	dbModels, err := r.models.List(ctx, actorPTID, providerID)
+	dbModels, err := r.models.ListOwned(ctx, providerOwner(userMatch), providerID)
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to load model capability source", err)
 	}
-	if cp != nil &&
-		strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
+	if userMatch.BackendProviderID != "" {
 		dbModels = nil
 	}
 	for i := range dbModels {
@@ -310,7 +287,7 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			break
 		}
 	}
-	if databaseMatch != nil && !databaseMatch.Enabled {
+	if containsStr(parseHiddenModels(userMatch.HiddenModels), modelID) || (databaseMatch != nil && !databaseMatch.Enabled) {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			fmt.Sprintf("model %q is disabled", modelID), nil)
 	}
@@ -322,9 +299,6 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			}
 			return ""
 		}())
-		if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
-			hidden = nil
-		}
 		for _, m := range cp.Models {
 			if m.ID == modelID {
 				if !m.Enabled || m.Type != "chat" || containsStr(hidden, modelID) {
@@ -339,7 +313,7 @@ func (r *RuntimeAdmissionResolver) Resolve(
 				break
 			}
 		}
-		if !modelEnabled {
+		if !modelEnabled && userMatch.BackendProviderID == "" {
 			if databaseMatch != nil {
 				modelEnabled = true
 				contextWindow = int32(databaseMatch.ContextWindow)
@@ -389,6 +363,14 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	if err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to hash runtime capability source", err)
+	}
+	if userMatch.BackendProviderID != "" {
+		hash, err := canonicalJSONHash(map[string]any{"profileSource": sourceVersion,
+			"backendID": credentialOwner.ID, "backendVersion": credentialOwner.Version})
+		if err != nil {
+			return nil, err
+		}
+		sourceVersion = "cap-src-" + hash
 	}
 	observedAt := time.Now().UTC()
 	if r.now != nil {
@@ -782,9 +764,13 @@ func catalogProviderAdvertised(cp catalog.CatalogProvider) bool {
 }
 
 func CatalogProviderAvailable(cp catalog.CatalogProvider) bool {
+	return catalogProviderAvailable(cp, nil)
+}
+
+func catalogProviderAvailable(cp catalog.CatalogProvider, pathEntries []string) bool {
 	if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) ||
 		strings.EqualFold(strings.TrimSpace(cp.Protocol), providerRuntimeCLI) {
-		return providercli.VerifyCliBinary(cp.CLIArgv).Available
+		return providercli.VerifyCliBinaryFor(cp.CLIArgv, pathEntries).Available
 	}
 	return true
 }
@@ -795,7 +781,11 @@ func (r *RuntimeAdmissionResolver) CatalogProviderAvailable(
 	if isExternalRuntime(cp.RuntimeKind, cp.Protocol) {
 		return r != nil && r.externalReady != nil && r.externalReady()
 	}
-	return CatalogProviderAvailable(cp)
+	var pathEntries []string
+	if r != nil && r.managedBin != nil {
+		pathEntries = append(pathEntries, r.managedBin())
+	}
+	return catalogProviderAvailable(cp, pathEntries)
 }
 
 func (r *RuntimeAdmissionResolver) ProviderRuntimeAvailable(
@@ -877,9 +867,6 @@ func resolvedRuntimeKind(
 }
 
 func admitProvider(cp catalog.CatalogProvider, userMatch *persistence.AgentProvider) bool {
-	if !catalogProviderAdvertised(cp) || !CatalogProviderAvailable(cp) {
-		return false
-	}
 	enabled := cp.Enabled
 	if userMatch != nil {
 		enabled = userMatch.Enabled
@@ -891,7 +878,11 @@ func admitProvider(cp catalog.CatalogProvider, userMatch *persistence.AgentProvi
 	if !requiresAPIKey {
 		return true
 	}
-	return userMatch != nil && parseKeyVaultAPIKey(userMatch.KeyVaults) != ""
+	if !ProviderCredentialConfigured(userMatch) {
+		return false
+	}
+	key, err := providerCredentialAPIKey(userMatch)
+	return err == nil && strings.TrimSpace(key) != ""
 }
 
 func admitCatalogModel(m catalog.CatalogModel, hidden []string) bool {
@@ -905,15 +896,4 @@ func containsStr(slice []string, item string) bool {
 		}
 	}
 	return false
-}
-
-func parseKeyVaultAPIKey(kv string) string {
-	var m map[string]interface{}
-	if err := json.Unmarshal([]byte(kv), &m); err != nil {
-		return ""
-	}
-	if v, ok := m["api_key"].(string); ok {
-		return v
-	}
-	return ""
 }

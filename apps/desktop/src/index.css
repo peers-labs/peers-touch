@@ -64,6 +64,10 @@ input, textarea, [contenteditable="true"] {
   to { opacity: 1; }
 }
 
+.pt-install-spin {
+  animation: spin 1s linear infinite;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }

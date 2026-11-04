@@ -1,5 +1,5 @@
 import type { Dispatch } from 'react';
-import { Button, Typography } from 'antd';
+import { Button, Text } from '@peers-touch/ui';
 import type { SocialDemoAction, SocialDemoState } from '../socialDemo';
 
 export function SocialEvidenceControls({
@@ -14,45 +14,52 @@ export function SocialEvidenceControls({
 
   return (
     <section className="mp-evidence-controls" aria-label="Controlled Social demo transitions">
-      <Typography.Text type="secondary">
+      <Text tone="secondary">
         Demo transitions only. Use Retry, Send Request, Check Status, or Message in the preview,
         then choose its outcome here.
-      </Typography.Text>
+      </Text>
       <div className="mp-evidence-actions">
-        <Button size="small" disabled={state.runtime !== 'retrying'}
-          onClick={() => dispatch({ type: 'resolve-runtime', outcome: 'ready' })}>
+        <Button actionId="evidence.retry-ready" density="compact"
+          availability={state.runtime !== 'retrying' ? { kind: 'disabled', reason: 'Only while retrying' } : undefined}
+          onActivate={() => dispatch({ type: 'resolve-runtime', outcome: 'ready' })}>
           Retry succeeds
         </Button>
-        <Button size="small" disabled={state.runtime !== 'retrying'}
-          onClick={() => dispatch({ type: 'resolve-runtime', outcome: 'failed' })}>
+        <Button actionId="evidence.retry-fails" density="compact"
+          availability={state.runtime !== 'retrying' ? { kind: 'disabled', reason: 'Only while retrying' } : undefined}
+          onActivate={() => dispatch({ type: 'resolve-runtime', outcome: 'failed' })}>
           Retry fails
         </Button>
-        <Button size="small" disabled={!resolvingRequest}
-          onClick={() => dispatch({ type: 'resolve-request', outcome: 'sent' })}>
+        <Button actionId="evidence.request-sent" density="compact"
+          availability={!resolvingRequest ? { kind: 'disabled', reason: 'Only while resolving' } : undefined}
+          onActivate={() => dispatch({ type: 'resolve-request', outcome: 'sent' })}>
           Request confirmed pending
         </Button>
-        <Button size="small" disabled={!resolvingRequest}
-          onClick={() => dispatch({ type: 'resolve-request', outcome: 'unknown' })}>
+        <Button actionId="evidence.request-unknown" density="compact"
+          availability={!resolvingRequest ? { kind: 'disabled', reason: 'Only while resolving' } : undefined}
+          onActivate={() => dispatch({ type: 'resolve-request', outcome: 'unknown' })}>
           Request outcome unknown
         </Button>
-        <Button size="small" disabled={state.request?.status !== 'sent'}
-          onClick={() => dispatch({ type: 'accept-request' })}>
+        <Button actionId="evidence.request-accepted" density="compact"
+          availability={state.request?.status !== 'sent' ? { kind: 'disabled', reason: 'Only after request is sent' } : undefined}
+          onActivate={() => dispatch({ type: 'accept-request' })}>
           Relationship accepted
         </Button>
-        <Button size="small" disabled={state.direct?.status !== 'preparing'}
-          onClick={() => dispatch({ type: 'resolve-direct', outcome: 'ready' })}>
+        <Button actionId="evidence.direct-ready" density="compact"
+          availability={state.direct?.status !== 'preparing' ? { kind: 'disabled', reason: 'Only while opening direct' } : undefined}
+          onActivate={() => dispatch({ type: 'resolve-direct', outcome: 'ready' })}>
           Direct ready
         </Button>
-        <Button size="small" disabled={state.direct?.status !== 'preparing'}
-          onClick={() => dispatch({ type: 'resolve-direct', outcome: 'failed' })}>
+        <Button actionId="evidence.direct-fails" density="compact"
+          availability={state.direct?.status !== 'preparing' ? { kind: 'disabled', reason: 'Only while opening direct' } : undefined}
+          onActivate={() => dispatch({ type: 'resolve-direct', outcome: 'failed' })}>
           Direct fails
         </Button>
       </div>
-      <Typography.Text type="secondary" className="mp-evidence-intent">
+      <Text tone="secondary" className="mp-evidence-intent">
         Intent: {state.request
           ? `${state.request.intentId} / ${state.request.federationId} / ${state.request.status}`
           : 'none'}
-      </Typography.Text>
+      </Text>
     </section>
   );
 }

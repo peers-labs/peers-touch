@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "群组语音与视频通话：Station 授权 + LiveKit SFU",
+    "subtitle": "Client 不建 P2P 网格：Home Station 校验成员身份并向 Conversation Authority 换取 LiveKit 短期 Token，媒体单点上行、由 SFU 转发。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/journey-group-call.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "participants": [
+    {
+      "id": "member",
+      "type": "frontend",
+      "label": "成员 Client",
+      "sublabel": "livekit-client",
+      "sources": [
+        {
+          "path": "apps/desktop/src/modules/groupCall/groupCallManager.ts",
+          "label": "groupCallManager.ts · joinGroupCall",
+          "line": 89,
+          "end_line": 136
+        }
+      ]
+    },
+    {
+      "id": "home",
+      "type": "backend",
+      "label": "Home Station",
+      "sublabel": "groupcall 子服务：成员校验",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/groupcall/handler.go",
+          "label": "handler.go · /group-call/join",
+          "line": 27,
+          "end_line": 145
+        }
+      ]
+    },
+    {
+      "id": "authority",
+      "type": "backend",
+      "label": "Conversation Authority",
+      "sublabel": "群组归属 Station（可能跨站）",
+      "sources": [
+        {
+          "path": "apps/station/frame/core/federation/routes.go",
+          "label": "routes.go · 群组通话权威路由",
+          "line": 55,
+          "end_line": 62
+        }
+      ]
+    },
+    {
+      "id": "sfu",
+      "type": "external",
+      "label": "LiveKit SFU",
+      "sublabel": "外部媒体服务（7880/7881）",
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/groupcall/livekit_adapter.go",
+          "label": "livekit_adapter.go · Token 签发",
+          "line": 37,
+          "end_line": 100
+        }
+      ]
+    },
+    {
+      "id": "others",
+      "type": "frontend",
+      "label": "其他成员",
+      "sublabel": "同房间各 Client"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 350,
+      "label": "加入授权（跨站透明）"
+    },
+    {
+      "from": 365,
+      "to": 595,
+      "label": "SFU 房间媒体"
+    },
+    {
+      "from": 610,
+      "to": 690,
+      "label": "房间生命周期"
+    }
+  ],
+  "messages": [
+    {
+      "id": "join",
+      "from": "member",
+      "to": "home",
+      "y": 185,
+      "label": "POST /group-call/join（group_ulid）",
+      "variant": "emphasis"
+    },
+    {
+      "id": "resolve",
+      "from": "home",
+      "to": "authority",
+      "y": 240,
+      "label": "解析群组通话权威（联邦路由）",
+      "variant": "security",
+      "note": "权威在他站时，经联邦通道转发 Join 申请"
+    },
+    {
+      "id": "grant",
+      "from": "authority",
+      "to": "home",
+      "y": 295,
+      "label": "AUTHORIZED 加入决策",
+      "variant": "return"
+    },
+    {
+      "id": "token",
+      "from": "home",
+      "to": "member",
+      "y": 340,
+      "label": "LiveKit url + 限时参与 JWT（6h）+ room",
+      "variant": "return",
+      "note": "Station 持有 API Key/Secret；Client 只拿到受限 JWT"
+    },
+    {
+      "id": "connect",
+      "from": "member",
+      "to": "sfu",
+      "y": 400,
+      "label": "WS 连接并发布麦克风/摄像头轨道",
+      "variant": "emphasis"
+    },
+    {
+      "id": "fanout",
+      "from": "sfu",
+      "to": "others",
+      "y": 455,
+      "label": "SFU 转发轨道（每人只上行一次）",
+      "variant": "emphasis"
+    },
+    {
+      "id": "others-publish",
+      "from": "others",
+      "to": "sfu",
+      "y": 510,
+      "label": "其他成员发布/订阅",
+      "variant": "dashed"
+    },
+    {
+      "id": "events",
+      "from": "sfu",
+      "to": "member",
+      "y": 565,
+      "label": "参与者列表 / 活跃发言人事件",
+      "variant": "dashed"
+    },
+    {
+      "id": "webhook",
+      "from": "sfu",
+      "to": "home",
+      "y": 625,
+      "label": "Webhook：房间开始/结束",
+      "variant": "dashed"
+    },
+    {
+      "id": "notify",
+      "from": "home",
+      "to": "member",
+      "y": 670,
+      "label": "SSE ROOM_ACTIVE / ROOM_ENDED",
+      "variant": "dashed",
+      "note": "未加入的成员也能收到“群通话进行中”提示"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "SFU 而非 P2P 网格",
+      "items": [
+        "每个 Client 只向 LiveKit 单点上行，由 SFU 向房间成员分发，避免 N×N 连接。",
+        "1:1 通话走 P2P（TURN 兜底）；群组通话走 SFU，两条媒体路径各自独立。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "外部依赖与降级",
+      "items": [
+        "LiveKit 单独部署，经 LIVEKIT_API_URL / PUBLIC_URL / KEY / SECRET 配置；未配置时拒绝加入，1:1 与消息不受影响。",
+        "内置 TURN 关闭，复用 Station :3478 的 Pion TURN；WSS 走 7880、RTC 媒体走 TCP/UDP 7881，对外通告 LIVEKIT_NODE_IP。"
+      ]
+    }
+  ]
+}
