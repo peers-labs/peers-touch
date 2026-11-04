@@ -22,7 +22,14 @@ const POLL_MS = 12_000;
 export function MemoryReviewDock() {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const agentId = useAgentStore((state) => state.selectedAgent);
+  // Station keys memory by the agent's canonical id — the same identity the
+  // turn pipeline uses for extraction and prompt injection. selectedAgent is
+  // only the display name, so resolve name -> id; addressing memory by name
+  // would orphan extracted candidates from the review queue and confirmed
+  // memory from recall.
+  const agentId = useAgentStore((state) =>
+    state.agents.find((agent) => agent.name === state.selectedAgent)?.id ?? '',
+  );
 
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<AgentMemoryEntry[]>([]);
