@@ -281,6 +281,7 @@ func (s *TerminalSessionService) Create(
 				errcode.AgentSandboxUnavailableLocaleKey, nil)
 		}
 		openErr := s.sandboxPTY.Open(ctx, sandbox.PtySessionOpen{
+			ActorPTID:  actorID,
 			SandboxRef: sandboxRef,
 			PtyID:      sessionID,
 			Command:    command,
@@ -289,6 +290,12 @@ func (s *TerminalSessionService) Create(
 		})
 		if openErr != nil {
 			_ = s.removeRow(ctx, actorID, sessionID)
+			// Preserve an authorization refusal (foreign/unknown/released ref)
+			// instead of masking it as provisioner unavailability.
+			var bizErr *errcode.BizError
+			if errors.As(openErr, &bizErr) {
+				return nil, bizErr
+			}
 			return nil, errcode.New(errcode.AgentSandboxUnavailable, http.StatusServiceUnavailable,
 				errcode.AgentSandboxUnavailableLocaleKey, openErr)
 		}

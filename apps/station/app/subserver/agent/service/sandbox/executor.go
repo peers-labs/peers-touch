@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -69,10 +70,14 @@ func (e *Executor) EnsureSandbox(ctx context.Context, actorPTID, agentID, worksp
 	return e.alloc.MarkAllocated(ctx, row.Ref, volume)
 }
 
-// EnsureByRef cold-starts (or re-attaches) an already-allocated sandbox
-// addressed by its ref. The PTY proxy uses it when the client names an
-// explicitly allocated sandbox rather than a (actor, agent, workspace) key.
-func (e *Executor) EnsureByRef(ctx context.Context, ref string) (*Sandbox, error) {
+// EnsureByRefForActor cold-starts (or re-attaches) an already-allocated
+// sandbox addressed by ref, but only when that sandbox is currently allocated
+// to the given actor. This is the PTY-proxy authorization boundary: an unknown
+// ref, a foreign owner, or a terminal (RELEASED/FAILED) allocation is refused
+// before any provisioner contact, so a terminal can never be opened in a
+// sandbox the actor does not currently own, and a released sandbox can never be
+// revived through the terminal path.
+func (e *Executor) EnsureByRefForActor(ctx context.Context, actorPTID, ref string) (*Sandbox, error) {
 	available, _, reason, err := e.probe(ctx)
 	if err != nil || !available {
 		if err == nil {
@@ -80,15 +85,12 @@ func (e *Executor) EnsureByRef(ctx context.Context, ref string) (*Sandbox, error
 		}
 		return nil, newUnavailable("provisioner probe failed: " + err.Error())
 	}
-	row, err := e.alloc.store.Get(ctx, ref)
+	row, err := e.alloc.store.GetActiveForActor(ctx, strings.TrimSpace(actorPTID), ref)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
-		return nil, newNotReady("unknown sandbox_ref " + ref)
-	}
-	if row.State == StateFailed {
-		return nil, newUnavailable("sandbox is FAILED; requires out-of-band readiness reset")
+		return nil, newTargetForbidden("sandbox_ref is not an active sandbox for this actor: " + ref)
 	}
 	volume, err := e.client.EnsureAllocated(ctx, row.Ref, row.ImageRef, row.VolumeRef)
 	if err != nil {

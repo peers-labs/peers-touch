@@ -108,6 +108,11 @@ type Store interface {
 	// ListActiveForActor returns REQUESTED/ALLOCATED/DORMANT sandboxes owned by
 	// an actor, used for back-end reconciliation.
 	ListActiveForActor(ctx context.Context, actor string) ([]*Sandbox, error)
+	// GetActiveForActor returns one REQUESTED/ALLOCATED/DORMANT sandbox only if
+	// it is owned by the actor. Unknown refs, foreign owners, and terminal
+	// (RELEASED/FAILED) rows all yield (nil,nil), so a caller can never open a
+	// sandbox that is not currently allocated to the requesting actor.
+	GetActiveForActor(ctx context.Context, actor, ref string) (*Sandbox, error)
 	Insert(ctx context.Context, s *Sandbox) error
 	Update(ctx context.Context, ref string, mutate func(s *Sandbox) error) (*Sandbox, error)
 	Get(ctx context.Context, ref string) (*Sandbox, error)

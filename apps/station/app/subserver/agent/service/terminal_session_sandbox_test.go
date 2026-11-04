@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/sandbox"
@@ -82,6 +84,43 @@ func TestSandboxTerminalCreateOpensProvisionerPty(t *testing.T) {
 	if bridge.opened.SandboxRef != "wbox-1" || bridge.opened.Command != "sh" ||
 		bridge.opened.PtyID != row.ID {
 		t.Fatalf("open=%+v", bridge.opened)
+	}
+	// The authenticated actor must be threaded through so the bridge can
+	// authorize (actor, sandbox_ref) against the allocation table.
+	if bridge.opened.ActorPTID != "actor:1" {
+		t.Fatalf("open actor=%q, want actor:1", bridge.opened.ActorPTID)
+	}
+}
+
+// forbiddenPtyBridge emulates the executor refusing a foreign/unknown/released
+// ref: no PTY is opened and a typed target-forbidden error is returned.
+type forbiddenPtyBridge struct {
+	fakePtyBridge
+}
+
+func (f *forbiddenPtyBridge) Open(_ context.Context, in sandbox.PtySessionOpen) error {
+	f.opened = in
+	return errcode.New(errcode.AgentSandboxExecutionTargetForbidden, 422,
+		errcode.AgentSandboxExecutionTargetForbiddenLocaleKey, nil)
+}
+
+// When the sandbox owner check refuses the open, the error must surface as the
+// authorization code (not a masked 503) and the half-created row is removed.
+func TestSandboxTerminalCreateForeignRefForbiddenAndRolledBack(t *testing.T) {
+	db := openTerminalDB(t)
+	svc := NewTerminalSessionService()
+	svc.SetDB(db)
+	svc.SetSandboxPtyBridge(&forbiddenPtyBridge{})
+
+	_, err := svc.Create(context.Background(), "actor:1", sandboxCreateRequest())
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) || biz.Code != errcode.AgentSandboxExecutionTargetForbidden {
+		t.Fatalf("want target-forbidden, got %v", err)
+	}
+	var n int64
+	db.Model(&persistence.TerminalSession{}).Count(&n)
+	if n != 0 {
+		t.Fatalf("refused open must not leave a terminal row, got %d", n)
 	}
 }
 

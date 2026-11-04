@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -218,5 +219,52 @@ func TestExecutorParkKeepsVolume(t *testing.T) {
 	stored, _ := store.Get(context.Background(), row.Ref)
 	if stored.State != StateDormant || stored.VolumeRef == "" {
 		t.Fatalf("stored=%+v must be dormant with volume retained", stored)
+	}
+}
+
+func seedSandbox(t *testing.T, store Store, ref, actor string, state State) {
+	t.Helper()
+	if err := store.Insert(context.Background(), &Sandbox{
+		Ref: ref, ActorPTID: actor, AgentID: "g", WorkspaceRoot: "/workspace",
+		ImageRef: "r/u@sha256:" + strings.Repeat("a", 64), State: state,
+		VolumeRef: "wbox-vol-" + ref, BackendKind: "oci_linux",
+	}); err != nil {
+		t.Fatalf("seed %s: %v", ref, err)
+	}
+}
+
+// The PTY open path must authorize (actor, ref) against an ACTIVE owned
+// allocation: foreign owners, unknown refs, and RELEASED sandboxes are refused
+// before any provisioner call. Only the actor's own active sandbox is opened.
+func TestEnsureByRefForActorAuthorization(t *testing.T) {
+	fc := &fakeClient{probeOK: true}
+	ex, store := newTestExecutor(fc)
+	seedSandbox(t, store, "wbox-own", "actor-1", StateAllocated)
+	seedSandbox(t, store, "wbox-other", "actor-2", StateAllocated)
+	seedSandbox(t, store, "wbox-dead", "actor-1", StateReleased)
+
+	forbidden := func(ref, actor, label string) {
+		t.Helper()
+		fc.allocCalls = 0
+		_, err := ex.EnsureByRefForActor(context.Background(), actor, ref)
+		var biz *errcode.BizError
+		if !errors.As(err, &biz) || biz.Code != errcode.AgentSandboxExecutionTargetForbidden {
+			t.Fatalf("%s: want target-forbidden, got %v", label, err)
+		}
+		if fc.allocCalls != 0 {
+			t.Fatalf("%s: forbidden ref must not contact provisioner (calls=%d)", label, fc.allocCalls)
+		}
+	}
+	forbidden("wbox-other", "actor-1", "foreign owner")
+	forbidden("wbox-dead", "actor-1", "released sandbox")
+	forbidden("wbox-missing", "actor-1", "unknown ref")
+
+	// The actor's own active sandbox cold-starts via the provisioner.
+	got, err := ex.EnsureByRefForActor(context.Background(), "actor-1", "wbox-own")
+	if err != nil {
+		t.Fatalf("owned active sandbox must open: %v", err)
+	}
+	if got.Ref != "wbox-own" || fc.allocCalls == 0 {
+		t.Fatalf("owned open ref=%s allocCalls=%d", got.Ref, fc.allocCalls)
 	}
 }

@@ -17,6 +17,9 @@ func NewTerminalBridge(executor *Executor, pty PtyClient) *TerminalBridge {
 
 // PtySessionOpen is one interactive terminal request.
 type PtySessionOpen struct {
+	// ActorPTID is the authenticated owner. The sandbox must be currently
+	// allocated to this actor or the open is refused (no cross-tenant PTY).
+	ActorPTID  string
 	SandboxRef string
 	PtyID      string
 	Command    string
@@ -26,9 +29,10 @@ type PtySessionOpen struct {
 	Rows       uint32
 }
 
-// Open cold-starts the sandbox if needed and opens the PTY inside it.
+// Open authorizes the actor against an active owned sandbox, cold-starts it if
+// needed, and opens the PTY inside it.
 func (b *TerminalBridge) Open(ctx context.Context, in PtySessionOpen) error {
-	if _, err := b.executor.EnsureByRef(ctx, in.SandboxRef); err != nil {
+	if _, err := b.executor.EnsureByRefForActor(ctx, in.ActorPTID, in.SandboxRef); err != nil {
 		return err
 	}
 	return b.pty.OpenPty(ctx, PtyOpen{

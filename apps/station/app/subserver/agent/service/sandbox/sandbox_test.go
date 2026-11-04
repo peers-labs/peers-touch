@@ -330,3 +330,19 @@ func (f *fakeStore) Get(_ context.Context, ref string) (*Sandbox, error) {
 	cp := *s
 	return &cp, nil
 }
+
+func (f *fakeStore) GetActiveForActor(_ context.Context, actor, ref string) (*Sandbox, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.rows[ref]
+	if !ok || s.ActorPTID != actor {
+		return nil, nil
+	}
+	switch s.State {
+	case StateRequested, StateAllocated, StateDormant:
+	default:
+		return nil, nil
+	}
+	cp := *s
+	return &cp, nil
+}

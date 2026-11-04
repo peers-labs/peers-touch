@@ -63,6 +63,20 @@ func (s *GormStore) Insert(ctx context.Context, snd *Sandbox) error {
 	return s.db.WithContext(ctx).Create(sandboxToRow(snd)).Error
 }
 
+func (s *GormStore) GetActiveForActor(ctx context.Context, actor, ref string) (*Sandbox, error) {
+	var row persistence.AgentWorkspaceSandbox
+	err := s.db.WithContext(ctx).
+		Where("sandbox_ref = ? AND actor_ptid = ? AND state IN ?", ref, actor, activeStates).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return rowToSandbox(row), nil
+}
+
 func (s *GormStore) Get(ctx context.Context, ref string) (*Sandbox, error) {
 	var row persistence.AgentWorkspaceSandbox
 	if err := s.db.WithContext(ctx).Where("sandbox_ref = ?", ref).First(&row).Error; err != nil {
