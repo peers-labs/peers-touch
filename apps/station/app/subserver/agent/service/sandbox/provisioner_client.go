@@ -31,24 +31,24 @@ type LiveProof struct {
 
 // ExecCall is one bounded command (mirrors provisionerd's ExecRequest).
 type ExecCall struct {
-	SandboxRef     string
-	Command        string
-	Args           []string
-	Cwd            string
-	Env            []string
-	Stdin          []byte
-	MaxOutputBytes int
+	SandboxRef     string   `json:"sandbox_ref"`
+	Command        string   `json:"command"`
+	Args           []string `json:"args"`
+	Cwd            string   `json:"cwd"`
+	Env            []string `json:"env"`
+	Stdin          []byte   `json:"stdin"`
+	MaxOutputBytes int      `json:"max_output_bytes"`
 }
 
 // ExecOutcome is the OS truth of a command. Non-zero exit / OS refusal are
 // outcomes, not Go errors.
 type ExecOutcome struct {
-	ExitCode  int
-	Signal    int
-	OSErrno   string
-	Stdout    []byte
-	Stderr    []byte
-	Truncated bool
+	ExitCode  int    `json:"exit_code"`
+	Signal    int    `json:"signal,omitempty"`
+	OSErrno   string `json:"os_errno,omitempty"`
+	Stdout    []byte `json:"stdout"`
+	Stderr    []byte `json:"stderr"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 // HTTPClient talks to an independent workspace-sandbox-provisionerd.

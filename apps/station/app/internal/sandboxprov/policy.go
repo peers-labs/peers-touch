@@ -97,8 +97,10 @@ func (p Policy) ValidateSpec(s SecuritySpec) error {
 
 // Validate enforces image + spec before any runtime contact.
 func (p Policy) Validate(req AllocRequest) error {
-	if strings.TrimSpace(req.SandboxRef) == "" || strings.TrimSpace(req.VolumeRef) == "" {
-		return fmt.Errorf("%w: sandbox_ref and volume_ref are required", ErrPolicyRejected)
+	// Only sandbox_ref is required. The persistent volume name is derived
+	// deterministically from the ref by the backend; callers never name it.
+	if strings.TrimSpace(req.SandboxRef) == "" {
+		return fmt.Errorf("%w: sandbox_ref is required", ErrPolicyRejected)
 	}
 	if err := p.ValidateImage(req.ImageRef); err != nil {
 		return err

@@ -67,30 +67,30 @@ var (
 
 // ExecRequest is a one-shot command inside a running sandbox.
 type ExecRequest struct {
-	SandboxRef string
-	Command    string
-	Args       []string
-	Cwd        string
+	SandboxRef string   `json:"sandbox_ref"`
+	Command    string   `json:"command"`
+	Args       []string `json:"args"`
+	Cwd        string   `json:"cwd"`
 	// Env is an allowlist of NAME=value entries provisioned by the caller.
-	Env []string
+	Env []string `json:"env"`
 	// Stdin is bounded bytes piped to the process. File write content travels
 	// here (never through argv or a shell), so it cannot be interpreted as a
 	// command or shell metacharacters.
-	Stdin []byte
+	Stdin []byte `json:"stdin"`
 	// MaxOutputBytes bounds captured stdout+stderr separately.
-	MaxOutputBytes int
+	MaxOutputBytes int `json:"max_output_bytes"`
 }
 
 // ExecResult carries the OS-level truth of one command. A non-zero exit or an
 // OS refusal is NOT an error at the protocol level: it is a normal result so
 // callers persist the bounded bytes/exit code/digest honestly.
 type ExecResult struct {
-	ExitCode  int
-	Signal    int
-	OSErrno   string
-	Stdout    []byte
-	Stderr    []byte
-	Truncated bool
+	ExitCode  int    `json:"exit_code"`
+	Signal    int    `json:"signal,omitempty"`
+	OSErrno   string `json:"os_errno,omitempty"`
+	Stdout    []byte `json:"stdout"`
+	Stderr    []byte `json:"stderr"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 // LiveProof is the backend truth for one sandbox ref during reconcile.
