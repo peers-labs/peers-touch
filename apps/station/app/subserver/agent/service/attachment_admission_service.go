@@ -237,8 +237,13 @@ func attachmentOmissionReason(
 	if mimeType == "application/pdf" && !input.GetFile() {
 		return "selected_model_has_no_file_input"
 	}
-	if mimeType == "text/plain" && !input.GetFile() {
-		return "selected_model_has_no_file_input"
+	// Plain text rides the universal text modality: every provider adapter
+	// inlines a text/plain body as an ordinary text content part, so it must
+	// not be gated on (or require) model file-input capability. Gating it on
+	// File made text material fail on capable text models that simply do not
+	// advertise file uploads (e.g. Volcengine ARK chat endpoints).
+	if mimeType == "text/plain" && !input.GetText() {
+		return "selected_model_has_no_text_input"
 	}
 	return ""
 }

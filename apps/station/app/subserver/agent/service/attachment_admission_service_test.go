@@ -287,6 +287,68 @@ func TestAttachmentAdmissionRecordsExplicitModelOmission(t *testing.T) {
 	}
 }
 
+func TestAttachmentAdmissionInlinesTextWithoutFileInput(t *testing.T) {
+	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
+	objectExpiry := now.Add(time.Hour)
+	body := []byte("Material token: TEXT-INLINE-4417\nharbor ledger rooms are indigo\n")
+	sum := sha256.Sum256(body)
+	checksum := hex.EncodeToString(sum[:])
+	ref := &model.AgentAttachmentRef{
+		AttachmentId:       "attachment-text-1",
+		ObjectRef:          "oss:cas/01/text",
+		MimeType:           "text/plain",
+		SizeBytes:          uint64(len(body)),
+		Checksum:           "sha256:" + checksum,
+		Filename:           "material.txt",
+		AuthorizationScope: "conversation:conversation-1",
+		ExpiresAt:          timestamppb.New(now.Add(30 * time.Minute)),
+	}
+	admission := NewAttachmentAdmissionService(&attachmentMetadataReaderStub{
+		meta: &ossmodel.FileMeta{
+			Key:        "cas/01/text",
+			Name:       "material.txt",
+			Size:       int64(len(body)),
+			Mime:       "text/plain",
+			Sha256:     checksum,
+			OwnerPTID:  "actor-1",
+			Visibility: ossmodel.VisibilityPrivate,
+			ExpiresAt:  &objectExpiry,
+		},
+		body: body,
+	})
+	admission.now = func() time.Time { return now }
+
+	// The model advertises text only: no image, no file input. Plain-text
+	// material must still be admitted (adapters inline it as a text part),
+	// rather than omitted with selected_model_has_no_file_input.
+	attachments, err := admission.Admit(
+		context.Background(),
+		"actor-1",
+		"conversation-1",
+		[]*model.AgentAttachmentRef{ref},
+		attachmentCapabilities(false, false, 4, 1024),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("admit text attachment without file input: %v", err)
+	}
+	if len(attachments) != 1 {
+		t.Fatalf("expected one admitted attachment, got %d", len(attachments))
+	}
+	if attachments[0].OmissionReason != "" {
+		t.Fatalf("text attachment must not be omitted, got reason %q", attachments[0].OmissionReason)
+	}
+	if string(attachments[0].Body) != string(body) {
+		t.Fatalf("text body not retained for inline injection")
+	}
+	segments := attachmentContextSegments(attachments)
+	if len(segments) != 1 ||
+		segments[0].Decision != model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED ||
+		segments[0].DecisionReason != "" {
+		t.Fatalf("text attachment should be included without an omission reason: %+v", segments)
+	}
+}
+
 func TestAttachmentAdmissionRejectsSpoofedMimeContent(t *testing.T) {
 	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
 	body := []byte("not a png")
