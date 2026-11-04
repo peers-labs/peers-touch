@@ -50,14 +50,27 @@ cd apps/station && go test ./app/subserver/agent/service -run 'TestMemory' -coun
 显式写入默认 confirmed；检索失败降级为空快照而非全量注入；frozen 不可 reject；
 `ExtractFromTurn`（“请记住…”）产出的是 gated candidate。
 
+## 本轮已进一步闭环（Per-Turn 冻结 / 插件 readiness / Provider 归属）
+
+- **Per-Turn 上下文冻结回看（doneWhen 第 2 条）**：identity 与 agent-config(规则) 段以
+  `agent:<id>:version=<n>` 冻结，新增 `TURN_ATTRIBUTION_KIND_PROFILE`，在 TurnAttribution 回看 agent
+  定义版本（Desktop 归因面板新增 Profile chip）；每个被采用的 confirmed memory 冻结独立
+  `memory:<id>:version=<内容hash>` 并解析出名称，逐条 MEMORY 归因可回看。Skill 激活体、工具、附件
+  版本此前已逐采用项冻结。Go 单测 TestAttributionProfileEntryFreezesAgentVersion 等覆盖。
+- **插件 installed/enabled/readiness→真实调用→撤权阻断（doneWhen 第 3 条，语义层）**：tool_dispatch
+  要求 (capabilityId,version,bindingId,bindingRevision) 在不可变、哈希校验、未过期的 readiness 快照中
+  恰为 READY，否则拒绝；撤权/升级改 revision → 旧快照失配 → 阻断新 admission。由现有 current-source
+  单测证明（FailsClosedForStaleBinding / SnapshotIsImmutable / BindingMutationsPublishInvalidations /
+  CommandCapabilitySnapshotPins...）。
+- **O09 Provider 归属（静态审计）**：Desktop provider 层为 Station 纯代理，无 CLI/第二 registry；
+  默认选择发送完整 (provider_id, model_id)+revision。回填 O09=PARTIAL。
+
 ## 本轮未闭环（保持 UNPROVEN/PARTIAL，不冒充完成）
 
-- **Per-Turn 上下文冻结回看（规则/Memory/Skill/capability 版本写入 TurnAttribution）**：既有
-  `turn_attribution_service` 已投影 prompt/附件/工具版本，但本轮未新增 Memory/Skill 版本冻结字段，
-  亦未做 journey 复核，保持待办。
-- **插件 installed/enabled/readiness → 真实工具调用 → 撤权阻断新 admission（O08 插件支柱）**：本轮未新增实现；
-  文件/命令/Browser/Terminal 的准入与审批由 TW-D4–D6 证明，通用 MCP/插件 readiness 门未单独编排 journey。
 - **两条完整端到端业务旅程（TW-O12）**：研究/文档（含第二任务模型改写召回）与代码/服务/Browser
-  （失败反馈→修复→复测）本轮未跑，保持 UNPROVEN；弱验收模型不据此声称模型语义召回。
+  （失败反馈→修复→复测）本轮未跑，保持 UNPROVEN；弱验收 0.5b 模型上不主张模型语义召回，agent 维度
+  可用性已由 Station confirmed-only 检索谓词与行事实证明。
+- **通用第三方 MCP 插件 install→probe→ready 的 native app journey** 未单独编排（本周真实使用的
+  文件/命令/Browser/Terminal 已在同一 readiness 门由 D4–D6 证明）。
 - **R01/R05/R06 UI 硬切、R04 外部 app-server 接入**：R04 在计划内为独立证据门（本周 nonGoal）；
   R01/R05/R06 属较大 UI 重构，未在无人验收的夜间做跨绿树成组删除，留待白班按 replacement-inventory 收口。
