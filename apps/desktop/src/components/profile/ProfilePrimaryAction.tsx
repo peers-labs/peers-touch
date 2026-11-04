@@ -43,7 +43,6 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
   const kind = useProfileRelationship(actorPtid);
 
   const peerProfile = useSocialChatStore((state) => state.peerProfiles[actorPtid]);
-  const conversations = useSocialChatStore((state) => state.getIMConversations());
   const federations = useFederationStore((state) => state.federations);
   const friendRequests = useSocialChatStore((state) => state.friendRequests);
   const currentUserPtid = useSessionStore((state) => state.currentUser?.actorPtid ?? null);
@@ -120,10 +119,16 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
           if (onMessage) {
             onMessage();
           } else {
-            const existing = conversations.find(
-              (conversation) => conversation.kind === 'friend'
-                && conversation.peerPtid === actorPtid,
-            );
+            // Read the projected conversations at click time. Selecting
+            // getIMConversations() reactively is unsafe because it builds a
+            // new array on every call, which React reads as an endlessly
+            // changing store snapshot (Maximum update depth exceeded).
+            const existing = useSocialChatStore.getState()
+              .getIMConversations()
+              .find(
+                (conversation) => conversation.kind === 'friend'
+                  && conversation.peerPtid === actorPtid,
+              );
             if (existing) selectSession(existing.id);
           }
           close();
@@ -140,9 +145,12 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
         ? friendRequest.senderHomeStationPeerId
         : friendRequest?.receiverHomeStationPeerId)
       || '';
-    const existingConversation = conversations.find(
-      (conversation) => conversation.kind === 'friend' && conversation.peerPtid === actorPtid,
-    );
+    const existingConversation = useSocialChatStore.getState()
+      .getIMConversations()
+      .find(
+        (conversation) => conversation.kind === 'friend'
+          && conversation.peerPtid === actorPtid,
+      );
     const federationId = friendRequest?.federationId
       || existingConversation?.federationId
       || singleFederationId(federations);

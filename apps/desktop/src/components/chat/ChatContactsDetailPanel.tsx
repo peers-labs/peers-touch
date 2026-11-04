@@ -36,9 +36,6 @@ export function ChatContactsDetailPanel({
     loadPeerProfile: s.loadPeerProfile,
   }));
 
-  const activeConversation = selectedContact
-    ? findContactConversation(selectedContact, getIMConversations())
-    : undefined;
   const isGroup = selectedContact?.kind === 'group';
   const peerPtid = selectedContact && selectedContact.kind !== 'group'
     ? selectedContact.peerPtid
@@ -54,6 +51,11 @@ export function ChatContactsDetailPanel({
   }, [peerPtid, loadPeerProfile]);
 
   const profile = useMemo<PublicProfileModel | null>(() => {
+    // Project inside the memo: getIMConversations() returns a fresh array,
+    // so calling it during render would invalidate this memo every pass.
+    const activeConversation = selectedContact
+      ? findContactConversation(selectedContact, getIMConversations())
+      : undefined;
     if (selectedContact?.kind === 'group') {
       return {
         displayName: selectedContact.displayName,
@@ -149,7 +151,7 @@ export function ChatContactsDetailPanel({
       },
       t('chat.social.profile.joined'),
     );
-  }, [activeConversation, cachedPeer, peerPtid, selectedContact, t]);
+  }, [cachedPeer, getIMConversations, peerPtid, selectedContact, t]);
 
   if (!selectedContact) {
     return (
