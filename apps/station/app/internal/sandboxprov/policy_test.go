@@ -19,7 +19,11 @@ func validSpec() SecuritySpec {
 }
 
 func TestValidateImage(t *testing.T) {
-	p := Policy{AllowedRepositories: []string{"registry.example.com/peers/sandboxes"}}
+	allowedID := "sha256:" + strings.Repeat("c", 64)
+	p := Policy{
+		AllowedRepositories: []string{"registry.example.com/peers/sandboxes"},
+		AllowedImageIDs:     []string{allowedID},
+	}
 	digest := "@sha256:" + strings.Repeat("a", 64)
 
 	cases := []struct {
@@ -32,6 +36,9 @@ func TestValidateImage(t *testing.T) {
 		{"mutable tag rejected", "registry.example.com/peers/sandboxes/ubuntu:latest", ErrPolicyRejected},
 		{"non-allowlisted repo", "docker.io/library/ubuntu:latest" + digest, ErrPolicyRejected},
 		{"bad digest length", "registry.example.com/peers/sandboxes/ubuntu@sha256:deadbeef", ErrPolicyRejected},
+		{"allowed bare image id", allowedID, nil},
+		{"non-allowlisted image id", "sha256:" + strings.Repeat("d", 64), ErrPolicyRejected},
+		{"malformed image id", "sha256:short", ErrPolicyRejected},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

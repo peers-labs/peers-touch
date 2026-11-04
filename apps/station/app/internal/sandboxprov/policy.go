@@ -11,8 +11,14 @@ import (
 // request bodies can never widen it.
 type Policy struct {
 	// AllowedRepositories are exact repository prefixes, e.g.
-	// "registry.example.com/peers/sandboxes".
+	// "registry.example.com/peers/sandboxes". Images referenced as
+	// repo@sha256:<digest> must be under one of them.
 	AllowedRepositories []string
+	// AllowedImageIDs pins locally-built or air-gapped images by content ID
+	// ("sha256:<64hex>"). It is the dev-cell / offline equivalent of the
+	// repository digest allowlist: the reference is immutable and the list is
+	// provisioner config, never taken from the request body.
+	AllowedImageIDs []string
 	// NetworkName is the isolated network sandboxes must join when
 	// IsolateStationNet is set (never the station/postgres network).
 	IsolatedNetwork string
@@ -23,20 +29,32 @@ type Policy struct {
 // digestImageRE matches image refs pinned by @sha256:<64hex>.
 var digestImageRE = regexp.MustCompile(`^(.+)@sha256:[0-9a-f]{64}$`)
 
-// ValidateImage requires a whitelisted repository AND a digest pin. Mutable
-// tags (even latest) are rejected so a sandbox can't silently change code.
+// imageIDRE matches a bare content-addressed image id (sha256:<64hex>).
+var imageIDRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// ValidateImage requires EITHER a whitelisted repository image pinned by
+// @sha256 digest, OR a bare content ID explicitly present in AllowedImageIDs.
+// Mutable tags (even latest) are rejected so a sandbox cannot silently change.
 func (p Policy) ValidateImage(imageRef string) error {
-	m := digestImageRE.FindStringSubmatch(strings.TrimSpace(imageRef))
-	if m == nil {
-		return fmt.Errorf("%w: image must be pinned by @sha256 digest: %q", ErrPolicyRejected, imageRef)
-	}
-	repo := m[1]
-	for _, allowed := range p.AllowedRepositories {
-		if repo == allowed || strings.HasPrefix(repo, allowed+"/") {
-			return nil
+	ref := strings.TrimSpace(imageRef)
+	if m := digestImageRE.FindStringSubmatch(ref); m != nil {
+		repo := m[1]
+		for _, allowed := range p.AllowedRepositories {
+			if repo == allowed || strings.HasPrefix(repo, allowed+"/") {
+				return nil
+			}
 		}
+		return fmt.Errorf("%w: repository not allowlisted: %q", ErrPolicyRejected, repo)
 	}
-	return fmt.Errorf("%w: repository not allowlisted: %q", ErrPolicyRejected, repo)
+	if imageIDRE.MatchString(ref) {
+		for _, id := range p.AllowedImageIDs {
+			if id == ref {
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: image id not allowlisted: %q", ErrPolicyRejected, ref)
+	}
+	return fmt.Errorf("%w: image must be pinned by @sha256 digest or allowlisted image id: %q", ErrPolicyRejected, imageRef)
 }
 
 // ValidateSpec enforces the fail-closed security baseline. A backend that

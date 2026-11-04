@@ -38,6 +38,16 @@ func env(key, def string) string {
 	return def
 }
 
+func splitNonEmpty(v string) []string {
+	var out []string
+	for _, part := range strings.Split(strings.TrimSpace(v), ",") {
+		if s := strings.TrimSpace(part); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func envInt(key string, def int64) int64 {
 	if v, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(key)), 10, 64); err == nil && v > 0 {
 		return v
@@ -49,7 +59,8 @@ func loadConfig() config {
 	return config{
 		listen: env("PROVISIONER_LISTEN", ":8090"),
 		policy: sandboxprov.Policy{
-			AllowedRepositories: strings.Split(env("SANDBOX_ALLOWED_REPOS", ""), ","),
+			AllowedRepositories: splitNonEmpty(os.Getenv("SANDBOX_ALLOWED_REPOS")),
+			AllowedImageIDs:     splitNonEmpty(os.Getenv("SANDBOX_ALLOWED_IMAGE_IDS")),
 			IsolatedNetwork:     env("SANDBOX_ISOLATED_NETWORK", "wbox-isolated"),
 			MaxQuota: sandboxprov.Quota{
 				MemoryBytes: envInt("SANDBOX_MAX_MEMORY_BYTES", 1<<30),
