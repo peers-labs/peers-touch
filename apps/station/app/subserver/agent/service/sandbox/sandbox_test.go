@@ -80,7 +80,7 @@ func TestResolvePlacement(t *testing.T) {
 }
 
 func TestGuardFailClosed(t *testing.T) {
-	placement := model.ExecutionPlacement{
+	placement := &model.ExecutionPlacement{
 		Target:     model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX,
 		SandboxRef: "wbox-1", BindingId: "bind-1",
 	}
@@ -109,16 +109,18 @@ func TestGuardFailClosed(t *testing.T) {
 
 	t.Run("missing binding -> not ready", func(t *testing.T) {
 		g := NewGuard(func() (bool, string, string) { return true, "oci_linux", "" })
-		bad := placement
-		bad.BindingId = ""
-		if err := g.Admit(bad); bizErr(t, err).Code != errcode.AgentSandboxNotReady {
+		missingBinding := &model.ExecutionPlacement{
+			Target:     model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX,
+			SandboxRef: "wbox-1", // BindingId intentionally empty
+		}
+		if err := g.Admit(missingBinding); bizErr(t, err).Code != errcode.AgentSandboxNotReady {
 			t.Fatalf("code = %v", bizErr(t, err).Code)
 		}
 	})
 
 	t.Run("desktop placement passes untouched", func(t *testing.T) {
 		g := NewGuard(nil)
-		if err := g.Admit(model.ExecutionPlacement{Target: model.ExecutionTarget_EXECUTION_TARGET_DESKTOP_DEVICE}); err != nil {
+		if err := g.Admit(&model.ExecutionPlacement{Target: model.ExecutionTarget_EXECUTION_TARGET_DESKTOP_DEVICE}); err != nil {
 			t.Fatalf("err: %v", err)
 		}
 	})

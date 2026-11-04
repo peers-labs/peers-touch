@@ -72,7 +72,7 @@ func (e *Executor) EnsureSandbox(ctx context.Context, actorPTID, agentID, worksp
 // Run executes one command in the sandbox named by the already-authorized
 // placement. A command that exits non-zero or is refused by the OS is a normal
 // ExecOutcome; only infrastructure failures become errors.
-func (e *Executor) Run(ctx context.Context, placement model.ExecutionPlacement, call ExecCall) (*ExecOutcome, error) {
+func (e *Executor) Run(ctx context.Context, placement *model.ExecutionPlacement, call ExecCall) (*ExecOutcome, error) {
 	if placement.Target != model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX {
 		return nil, newTargetForbidden("sandbox executor received a non-sandbox placement")
 	}
@@ -96,7 +96,7 @@ func (e *Executor) Run(ctx context.Context, placement model.ExecutionPlacement, 
 // EnsureAndRun is the one-call convenience used by dispatch: make the
 // workspace live, verify the authorized placement matches that sandbox, then
 // execute.
-func (e *Executor) EnsureAndRun(ctx context.Context, actorPTID, agentID, workspaceRoot string, placement model.ExecutionPlacement, call ExecCall) (*ExecOutcome, error) {
+func (e *Executor) EnsureAndRun(ctx context.Context, actorPTID, agentID, workspaceRoot string, placement *model.ExecutionPlacement, call ExecCall) (*ExecOutcome, error) {
 	row, err := e.EnsureSandbox(ctx, actorPTID, agentID, workspaceRoot)
 	if err != nil {
 		return nil, err

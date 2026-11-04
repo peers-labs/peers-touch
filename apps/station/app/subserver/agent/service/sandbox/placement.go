@@ -70,7 +70,7 @@ func IsLocalDeviceFamily(capabilityID string) bool {
 //   - both families in one turn -> SANDBOX_EXECUTION_TARGET_FORBIDDEN (mixed
 //     execution targets are never allowed; the caller must split the turn).
 //   - no executional capability -> UNSPECIFIED placement (non-execution turn).
-func ResolvePlacement(caps []ResolvedCapability) (model.ExecutionPlacement, error) {
+func ResolvePlacement(caps []ResolvedCapability) (*model.ExecutionPlacement, error) {
 	var local, sandbox bool
 	var readySandbox *ResolvedCapability
 	for i := range caps {
@@ -87,23 +87,23 @@ func ResolvePlacement(caps []ResolvedCapability) (model.ExecutionPlacement, erro
 	}
 
 	if sandbox && local {
-		return model.ExecutionPlacement{}, newTargetForbidden(
+		return nil, newTargetForbidden(
 			"one turn mixes desktop-device and workspace-sandbox capabilities")
 	}
 	if !sandbox && !local {
 		// Non-execution turn: caller should not dispatch an executional tool.
-		return model.ExecutionPlacement{Target: model.ExecutionTarget_EXECUTION_TARGET_UNSPECIFIED}, nil
+		return &model.ExecutionPlacement{Target: model.ExecutionTarget_EXECUTION_TARGET_UNSPECIFIED}, nil
 	}
 	if local {
-		return model.ExecutionPlacement{Target: model.ExecutionTarget_EXECUTION_TARGET_DESKTOP_DEVICE}, nil
+		return &model.ExecutionPlacement{Target: model.ExecutionTarget_EXECUTION_TARGET_DESKTOP_DEVICE}, nil
 	}
 
 	if readySandbox == nil {
-		return model.ExecutionPlacement{}, newNotReady(
+		return nil, newNotReady(
 			"workspace sandbox binding is not READY or has no sandbox_ref")
 	}
 	c := *readySandbox
-	return model.ExecutionPlacement{
+	return &model.ExecutionPlacement{
 		Target:          model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX,
 		SandboxRef:      c.SandboxRef,
 		WorkspaceRoot:   c.WorkspaceRoot,
@@ -128,7 +128,7 @@ func NewGuard(probe Probe) *Guard { return &Guard{probe: probe} }
 // Admit validates a resolved sandbox placement against live provisioner
 // availability. It never substitutes the desktop: an unavailable/not-ready
 // sandbox is a hard failure (WE-D04).
-func (g *Guard) Admit(placement model.ExecutionPlacement) error {
+func (g *Guard) Admit(placement *model.ExecutionPlacement) error {
 	if placement.Target != model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX {
 		return nil
 	}

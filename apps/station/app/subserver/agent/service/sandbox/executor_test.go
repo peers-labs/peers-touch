@@ -50,8 +50,8 @@ func newTestExecutor(c Client) (*Executor, Store) {
 	return NewExecutor(ExecutorConfig{Allocator: alloc, Client: c, DefaultImage: "r/u@sha256:" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}), store
 }
 
-func placementFor(ref string) model.ExecutionPlacement {
-	return model.ExecutionPlacement{
+func placementFor(ref string) *model.ExecutionPlacement {
+	return &model.ExecutionPlacement{
 		Target:     model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX,
 		SandboxRef: ref, WorkspaceRoot: "/workspace",
 		BindingId: "bind", BindingRevision: 1, CapabilityId: SandboxExecuteCapability,

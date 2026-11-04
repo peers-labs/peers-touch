@@ -1342,6 +1342,7 @@
     "sandboxUnavailable": "此 Station 上的工作区沙盒不可用。",
     "sandboxNotReady": "工作区沙盒尚未就绪，必须先确认能力绑定后才能执行。",
     "sandboxPermissionDenied": "操作在沙盒内被拒绝（操作系统权限错误）。",
-    "sandboxExecutionTargetForbidden": "禁止在同一回合混用执行落点，或将沙盒回退到本机执行。"
+    "sandboxExecutionTargetForbidden": "禁止在同一回合混用执行落点，或将沙盒回退到本机执行。",
+    "sandboxInvalidArgs": "沙盒工具参数无效。"
   }
 }

@@ -1,6 +1,7 @@
 package sandboxprov
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -176,6 +177,9 @@ func (b *OCICLIBBackend) Exec(ctx context.Context, req ExecRequest) (*ExecResult
 	stderr.limit = maxOut
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if len(req.Stdin) > 0 {
+		cmd.Stdin = bytes.NewReader(req.Stdin)
+	}
 	runErr := cmd.Run()
 
 	res := &ExecResult{

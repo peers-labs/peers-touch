@@ -1342,6 +1342,7 @@
     "sandboxUnavailable": "Workspace sandbox is unavailable on this Station.",
     "sandboxNotReady": "The workspace sandbox is not ready; the capability binding must be confirmed before running.",
     "sandboxPermissionDenied": "The operation was denied inside the sandbox (operating system permission error).",
-    "sandboxExecutionTargetForbidden": "Mixed execution targets in one turn, or a sandbox-to-local fallback, are forbidden."
+    "sandboxExecutionTargetForbidden": "Mixed execution targets in one turn, or a sandbox-to-local fallback, are forbidden.",
+    "sandboxInvalidArgs": "Invalid sandbox tool arguments."
   }
 }

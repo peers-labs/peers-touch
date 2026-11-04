@@ -73,6 +73,10 @@ type ExecRequest struct {
 	Cwd        string
 	// Env is an allowlist of NAME=value entries provisioned by the caller.
 	Env []string
+	// Stdin is bounded bytes piped to the process. File write content travels
+	// here (never through argv or a shell), so it cannot be interpreted as a
+	// command or shell metacharacters.
+	Stdin []byte
 	// MaxOutputBytes bounds captured stdout+stderr separately.
 	MaxOutputBytes int
 }

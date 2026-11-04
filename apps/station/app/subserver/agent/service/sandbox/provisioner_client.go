@@ -27,6 +27,7 @@ type ExecCall struct {
 	Args           []string
 	Cwd            string
 	Env            []string
+	Stdin          []byte
 	MaxOutputBytes int
 }
 
