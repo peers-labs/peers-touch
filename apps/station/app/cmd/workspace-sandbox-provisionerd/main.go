@@ -9,6 +9,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log"
@@ -79,6 +80,7 @@ func loadConfig() config {
 func main() {
 	cfg := loadConfig()
 	backend := sandboxprov.NewOCICLIBBackend(cfg.policy)
+	pty := sandboxprov.NewPtyManager()
 
 	if ok, reason := backend.Probe(); !ok {
 		log.Printf("provisioner starting but runtime probe FAILED: %s (all sandbox calls will fail closed)", reason)
@@ -145,6 +147,144 @@ func main() {
 			return
 		}
 		writeJSON(w, res)
+	})
+
+	// POST /v1/ptys/open
+	mux.HandleFunc("/v1/ptys/open", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in sandboxprov.PtyOpenRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		pid, err := pty.Open(r.Context(), in)
+		if err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"pty_id": in.PtyID, "pid": pid})
+	})
+
+	// POST /v1/ptys/write
+	mux.HandleFunc("/v1/ptys/write", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in struct {
+			SandboxRef string `json:"sandbox_ref"`
+			PtyID      string `json:"pty_id"`
+			DataB64    string `json:"data_b64"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		data, err := base64.StdEncoding.DecodeString(in.DataB64)
+		if err != nil {
+			http.Error(w, "bad base64", http.StatusBadRequest)
+			return
+		}
+		if err := pty.Write(r.Context(), in.SandboxRef, in.PtyID, data); err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"bytes_written": len(data)})
+	})
+
+	// POST /v1/ptys/read
+	mux.HandleFunc("/v1/ptys/read", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in sandboxprov.PtyReadRequest
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		result, err := pty.Read(r.Context(), in)
+		if err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"data_b64":    base64.StdEncoding.EncodeToString(result.Data),
+			"next_cursor": result.NextCursor,
+			"truncated":   result.Truncated,
+			"pid":         result.Pid,
+			"state":       result.State,
+			"exit_code":   result.ExitCode,
+		})
+	})
+
+	// POST /v1/ptys/resize
+	mux.HandleFunc("/v1/ptys/resize", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in struct {
+			SandboxRef string `json:"sandbox_ref"`
+			PtyID      string `json:"pty_id"`
+			Cols       uint32 `json:"cols"`
+			Rows       uint32 `json:"rows"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if err := pty.Resize(r.Context(), in.SandboxRef, in.PtyID, in.Cols, in.Rows); err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"resized": true})
+	})
+
+	// POST /v1/ptys/signal
+	mux.HandleFunc("/v1/ptys/signal", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in struct {
+			SandboxRef string `json:"sandbox_ref"`
+			PtyID      string `json:"pty_id"`
+			Signal     int    `json:"signal"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if err := pty.Signal(r.Context(), in.SandboxRef, in.PtyID, in.Signal); err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"signaled": true})
+	})
+
+	// POST /v1/ptys/close
+	mux.HandleFunc("/v1/ptys/close", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var in struct {
+			SandboxRef string `json:"sandbox_ref"`
+			PtyID      string `json:"pty_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if err := pty.Close(r.Context(), in.SandboxRef, in.PtyID); err != nil {
+			writePolicyError(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"closed": true})
 	})
 
 	// POST /v1/sandboxes/dormant  {"sandbox_ref"} — stop, keep volume.

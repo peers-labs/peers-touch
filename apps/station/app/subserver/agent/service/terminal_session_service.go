@@ -24,6 +24,10 @@ const (
 	terminalStatusExited  = "exited"
 	terminalStatusKilled  = "killed"
 	terminalStatusUnknown = "unknown"
+
+	// Persisted execution-target vocabulary.
+	terminalTargetDesktop = "desktop_device"
+	terminalTargetSandbox = "workspace_sandbox"
 )
 
 // TerminalSessionService persists device-held terminal session metadata
@@ -107,6 +111,13 @@ func TerminalSessionProto(row *persistence.TerminalSession) *model.TerminalSessi
 	if row.EndedAt != nil {
 		proto.EndedAt = timestamppb.New(*row.EndedAt)
 	}
+	switch strings.TrimSpace(row.ExecutionTarget) {
+	case terminalTargetSandbox:
+		proto.ExecutionTarget = model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX
+	default:
+		proto.ExecutionTarget = model.ExecutionTarget_EXECUTION_TARGET_DESKTOP_DEVICE
+	}
+	proto.SandboxRef = row.SandboxRef
 	return proto
 }
 
@@ -163,8 +174,19 @@ func (s *TerminalSessionService) Create(
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "command is required", nil)
 	}
 	deviceID := strings.TrimSpace(req.GetDeviceId())
-	if deviceID == "" {
+	sandboxRef := strings.TrimSpace(req.GetSandboxRef())
+	target := terminalTargetDesktop
+	if req.GetExecutionTarget() == model.ExecutionTarget_EXECUTION_TARGET_WORKSPACE_SANDBOX {
+		target = terminalTargetSandbox
+	}
+	if target == terminalTargetDesktop && deviceID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "device_id is required", nil)
+	}
+	if target == terminalTargetSandbox && sandboxRef == "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "sandbox_ref is required", nil)
+	}
+	if target == terminalTargetSandbox && deviceID != "" {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "sandbox session must not bind a device", nil)
 	}
 	argsJSON, err := json.Marshal(req.GetArgs())
 	if err != nil {
@@ -197,18 +219,20 @@ func (s *TerminalSessionService) Create(
 			}
 		}
 		row = persistence.TerminalSession{
-			ID:             sessionID,
-			ConversationID: conversationID,
-			TurnID:         strings.TrimSpace(req.GetTurnId()),
-			DeviceID:       deviceID,
-			ActorPTID:      actorID,
-			CWD:            strings.TrimSpace(req.GetCwd()),
-			Command:        command,
-			ArgsJSON:       string(argsJSON),
-			PID:            req.GetPid(),
-			Status:         terminalStatusRunning,
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			ID:              sessionID,
+			ConversationID:  conversationID,
+			TurnID:          strings.TrimSpace(req.GetTurnId()),
+			DeviceID:        deviceID,
+			ActorPTID:       actorID,
+			CWD:             strings.TrimSpace(req.GetCwd()),
+			Command:         command,
+			ArgsJSON:        string(argsJSON),
+			PID:             req.GetPid(),
+			Status:          terminalStatusRunning,
+			ExecutionTarget: target,
+			SandboxRef:      sandboxRef,
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
 		if createErr := tx.Create(&row).Error; createErr != nil {
 			return errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "create terminal session", createErr)
