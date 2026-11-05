@@ -1,0 +1,27 @@
+{
+  "ran_at": "2026-11-05T01:45:28.519Z",
+  "mode": "desktop-native-headless-gateway",
+  "plan": "TW-20261102",
+  "closure": "tw-00-gateway-login",
+  "source_commit": "9f0b99a2340a71a80c4ca95606a15f16de610cc9",
+  "station_url": "persisted-active",
+  "pass": 3,
+  "fail": 0,
+  "results": [
+    {
+      "id": "A1",
+      "pass": true,
+      "evidence": "password login accepted for alice@p.t"
+    },
+    {
+      "id": "A2",
+      "pass": true,
+      "evidence": "actor=ptid:v1:actor:peers:p:alice:12207944cf1582ce3f41…"
+    },
+    {
+      "id": "A3",
+      "pass": true,
+      "evidence": "agents_list returned 0"
+    }
+  ]
+}
