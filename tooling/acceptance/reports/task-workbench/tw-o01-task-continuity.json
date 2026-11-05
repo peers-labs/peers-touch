@@ -1,0 +1,51 @@
+{
+  "ran_at": "2026-11-05T06:57:08.312Z",
+  "mode": "desktop-native-headless-gateway",
+  "plan": "TW-20261102",
+  "closure": "tw-o01-task-continuity",
+  "outcome": "O01",
+  "source_commit": "be2279aa47076f4f5d71741069a72610e12683b6",
+  "station_url": "persisted-active",
+  "provider_id": "ollama-local",
+  "model_id": "qwen-tw",
+  "pass": 4,
+  "fail": 0,
+  "results": [
+    {
+      "id": "L1",
+      "pass": true,
+      "evidence": "lineA=conv_523f21ae50fad189db9413a2 lineB=conv_a849c442cf2a78203496f612 distinct=true"
+    },
+    {
+      "id": "L2",
+      "pass": true,
+      "evidence": "lineA two-turn history msgs=4 distinctTurns=2 turns=[turn_c7ba8a6d12e415265a293e2d,turn_509a3887a4df0e2364ad1e73]"
+    },
+    {
+      "id": "L3",
+      "pass": true,
+      "evidence": "lineB msgs=2 noTurnLeak=true"
+    },
+    {
+      "id": "L4",
+      "pass": true,
+      "evidence": "after switch-back: listKeepsBoth=true lineA=4msgs lineB=2msgs"
+    }
+  ],
+  "evidence": {
+    "lines": [
+      {
+        "line": "A",
+        "conversation_id": "conv_523f21ae50fad189db9413a2",
+        "messages": 4,
+        "turns": 2
+      },
+      {
+        "line": "B",
+        "conversation_id": "conv_a849c442cf2a78203496f612",
+        "messages": 2,
+        "turns": 1
+      }
+    ]
+  }
+}

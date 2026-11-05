@@ -185,11 +185,22 @@ export class Gateway {
     return this.decode(r)?.conversation ?? null;
   }
 
-  async conversationMessages(conversationId, { limit = 50 } = {}) {
-    const r = await this.cmd('agent_conversation_messages', {
-      conversation_id: conversationId,
-      limit,
+  async conversationList(agentId, { status = 'active', pageSize = 100 } = {}) {
+    const r = await this.cmd('agent_conversation_list', {
+      agent_id: agentId,
+      status,
+      page: 1,
+      page_size: pageSize,
     });
+    const decoded = this.decode(r);
+    return decoded?.conversations ?? decoded?.items ?? [];
+  }
+
+  async conversationMessages(conversationId, { limit = 50, afterSeq, beforeSeq } = {}) {
+    const input = { conversation_id: conversationId, limit };
+    if (Number.isInteger(afterSeq)) input.after_seq = afterSeq;
+    if (Number.isInteger(beforeSeq)) input.before_seq = beforeSeq;
+    const r = await this.cmd('agent_conversation_messages', input);
     return this.decode(r)?.messages ?? [];
   }
 
