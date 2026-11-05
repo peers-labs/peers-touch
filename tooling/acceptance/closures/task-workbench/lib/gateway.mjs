@@ -363,7 +363,7 @@ export class Gateway {
   // request can race re-establishment and surface HTTP 502 ("Station HTTP/2
   // is not ready"). That is a transport warm-up condition, not a turn result,
   // so the call is retried a bounded number of times before failing.
-  async runTurn(body, { coldRetries = 2, timeoutMs = 90_000 } = {}) {
+  async runTurn(body, { coldRetries = 2, timeoutMs = 90_000, onFrame = null } = {}) {
     let lastError = null;
     for (let attempt = 0; attempt <= coldRetries; attempt += 1) {
       if (attempt > 0) {
@@ -387,7 +387,7 @@ export class Gateway {
             message: `HTTP ${response.status}`,
           });
         }
-        const trace = await this.#readSse(response.body, controller);
+        const trace = await this.#readSse(response.body, controller, onFrame);
         clearTimeout(timer);
         return { ok: true, ...trace };
       } catch (error) {
@@ -399,7 +399,7 @@ export class Gateway {
     return { ok: false, error: lastError?.message ?? 'turn failed', frames: [] };
   }
 
-  async #readSse(stream, controller) {
+  async #readSse(stream, controller, onFrame = null) {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -441,6 +441,7 @@ export class Gateway {
       if (payload._event === 'admission_replayed' || payload.type === 'admission_replayed') {
         admission = payload.admission ?? payload;
       }
+      if (typeof onFrame === 'function') onFrame(payload);
     };
 
     for (;;) {
