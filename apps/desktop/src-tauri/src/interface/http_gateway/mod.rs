@@ -36,6 +36,7 @@ use crate::application::agents as app_agents;
 use crate::application::applet_store as app_applet_store;
 use crate::application::applets as app_applets;
 use crate::application::agent_logical_artifact as app_logical_artifact;
+use crate::application::agent_browser_session as app_browser_session;
 use crate::application::agent_terminal_session as app_terminal_session_rpc;
 use crate::application::auth::service as app_auth;
 use crate::application::capability_authority as app_capability_authority;
@@ -1283,6 +1284,22 @@ fn unauthorized_error() -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::Unauthorized, "authentication required", None)
 }
 
+/// Maps a device browser worker error onto the gateway JSON envelope with the
+/// same code classification as the Tauri browser commands.
+fn browser_app_failure(error: &crate::application::browser::BrowserError) -> Value {
+    let code = match error.code {
+        "BROWSER_INVALID_ARGUMENT" => ErrorCode::InvalidArgument,
+        "BROWSER_HOST_UNAVAILABLE" => ErrorCode::Unavailable,
+        "BROWSER_HUMAN_TAKEOVER_HELD" | "BROWSER_SNAPSHOT_REF_STALE" => ErrorCode::Conflict,
+        _ => ErrorCode::InternalError,
+    };
+    to_json(AppResult::<serde_json::Value>::fail(
+        code,
+        error.message.clone(),
+        Some(json!({ "code": error.code })),
+    ))
+}
+
 fn dispatch_channel_operation(
     args: Value,
     state: &AppState,
@@ -1615,6 +1632,78 @@ struct GwTerminalReadInput {
 #[derive(Debug, serde::Deserialize)]
 struct GwTerminalWorkspaceInput {
     device_id: String,
+}
+
+// ── Headless browser bridge inputs (TW-D6) ──────────────────────────────
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserSessionInput {
+    session_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserTabOpenInput {
+    session_id: String,
+    url: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserNavigateInput {
+    session_id: String,
+    tab_id: String,
+    url: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserTabRefInput {
+    session_id: String,
+    tab_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserElementInput {
+    session_id: String,
+    tab_id: String,
+    element_ref: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserFillInput {
+    session_id: String,
+    tab_id: String,
+    element_ref: String,
+    value: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserStationCreateInput {
+    session_id: String,
+    conversation_id: String,
+    #[serde(default)]
+    turn_id: String,
+    device_id: String,
+    engine: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserTabInput {
+    tab_id: String,
+    generation: u64,
+    url: String,
+    title: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserStationUpdateInput {
+    session_id: String,
+    status: i32,
+    lease: i32,
+    #[serde(default)]
+    tabs: Vec<GwBrowserTabInput>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GwBrowserStationListInput {
+    conversation_id: String,
 }
 
 /// Dispatch a command by name, returning the result as a JSON Value.
@@ -8316,6 +8405,266 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     None,
                 )),
             }
+        }
+        // =================================================================
+        // Headless acceptance bridge: device-held browser sessions (TW-D6).
+        // The worker drives the real managed Chrome through CDP exactly as
+        // for the Tauri webview; the gateway adds no alternate control path.
+        // Worker functions are async; gateway workers are plain std threads,
+        // so driving them on the Tauri runtime here cannot nest a runtime.
+        // =================================================================
+        "browser_host_info" => {
+            to_json(AppResult::success(crate::application::browser::host_info()))
+        }
+        "browser_session_create" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_session_create") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::create_session(app, input.session_id),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_session_list" => {
+            to_json(AppResult::success(crate::application::browser::list_sessions()))
+        }
+        "browser_navigate" => {
+            let input = match parse_args::<GwBrowserNavigateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_navigate") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::navigate(app, &input.session_id, input.tab_id, input.url),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_inspect" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::inspect(&input.session_id),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_snapshot" => {
+            let input = match parse_args::<GwBrowserTabRefInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::snapshot(&input.session_id, input.tab_id),
+            ) {
+                Ok(snapshot) => to_json(AppResult::success(snapshot)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_fill" => {
+            let input = match parse_args::<GwBrowserFillInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_fill") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::fill(
+                    app,
+                    &input.session_id,
+                    input.tab_id,
+                    input.element_ref,
+                    input.value,
+                ),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_submit" => {
+            let input = match parse_args::<GwBrowserElementInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_submit") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::submit(
+                    app,
+                    &input.session_id,
+                    input.tab_id,
+                    input.element_ref,
+                ),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_screenshot" => {
+            let input = match parse_args::<GwBrowserTabRefInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::screenshot(&input.session_id, input.tab_id),
+            ) {
+                Ok(bytes) => to_json(AppResult::success(json!({
+                    "mime": "image/png",
+                    "data_b64": B64.encode(bytes),
+                }))),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_takeover" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_takeover") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::takeover(app, &input.session_id),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_release" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_release") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::release(app, &input.session_id),
+            ) {
+                Ok(meta) => to_json(AppResult::success(meta)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        "browser_remove" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let app = match runtime.app_handle("browser_remove") {
+                Ok(app) => app,
+                Err(e) => return e,
+            };
+            match tauri::async_runtime::block_on(
+                crate::application::browser::remove_session(app, &input.session_id),
+            ) {
+                Ok(()) => to_json(AppResult::success(true)),
+                Err(error) => browser_app_failure(&error),
+            }
+        }
+        // Station browser-session metadata proxies (proto, bearer auth).
+        "agent_browser_session_create" => {
+            let input = match parse_args::<GwBrowserStationCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json_proto(app_browser_session::create(
+                state.station.client(),
+                &token,
+                &model::agent::v1::CreateBrowserSessionRequest {
+                    session_id: input.session_id,
+                    conversation_id: input.conversation_id,
+                    turn_id: input.turn_id,
+                    device_id: input.device_id,
+                    engine: input.engine,
+                },
+            ))
+        }
+        "agent_browser_session_update" => {
+            let input = match parse_args::<GwBrowserStationUpdateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            let tabs = input.tabs
+                .into_iter()
+                .map(|tab| model::agent::v1::BrowserTab {
+                    tab_id: tab.tab_id,
+                    generation: tab.generation,
+                    url: tab.url,
+                    title: tab.title,
+                })
+                .collect();
+            to_json_proto(app_browser_session::update(
+                state.station.client(),
+                &token,
+                &model::agent::v1::UpdateBrowserSessionRequest {
+                    session_id: input.session_id,
+                    status: input.status,
+                    lease: input.lease,
+                    tabs,
+                },
+            ))
+        }
+        "agent_browser_session_list" => {
+            let input = match parse_args::<GwBrowserStationListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json_proto(app_browser_session::list(
+                state.station.client(),
+                &token,
+                &model::agent::v1::ListBrowserSessionsRequest {
+                    conversation_id: input.conversation_id,
+                },
+            ))
+        }
+        "agent_browser_session_remove" => {
+            let input = match parse_args::<GwBrowserSessionInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json_proto(app_browser_session::remove(
+                state.station.client(),
+                &token,
+                &model::agent::v1::RemoveBrowserSessionRequest {
+                    session_id: input.session_id,
+                },
+            ))
         }
 
         // =================================================================
