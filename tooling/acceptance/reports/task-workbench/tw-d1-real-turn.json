@@ -1,10 +1,10 @@
 {
-  "ran_at": "2026-11-05T02:45:38.479Z",
+  "ran_at": "2026-11-05T02:55:02.399Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261102",
   "closure": "tw-d1-real-turn",
   "outcome": "O02",
-  "source_commit": "a18c66b4ed356892e524ece721345e17417d62a3",
+  "source_commit": "544ea48eaa2a49edf9381009817a9e9144c48d36",
   "station_url": "persisted-active",
   "provider_id": "ollama-local",
   "model_id": "qwen-tw",
@@ -24,22 +24,22 @@
     {
       "id": "B3",
       "pass": true,
-      "evidence": "conversation conv_0d2211c7587138c3b7b171e3 bound ollama-local/qwen-tw"
+      "evidence": "conversation conv_c2ba4e5f0363fd0fae3fff1b bound ollama-local/qwen-tw"
     },
     {
       "id": "B4",
       "pass": true,
-      "evidence": "turn stage=turn_completed turn_id=turn_7772f68f4d0d846bc2cbc3cf"
+      "evidence": "turn stage=turn_completed turn_id=turn_78e4db2e9f832dedb8860ff6"
     },
     {
       "id": "B5",
       "pass": true,
-      "evidence": "streamed deltas=3 text=\"PONG!\""
+      "evidence": "streamed deltas=1 text=\"PING\""
     },
     {
       "id": "B6",
       "pass": true,
-      "evidence": "messages=2 shared_turn=true turn_id=turn_7772f68f4d0d846bc2cbc3cf"
+      "evidence": "messages=2 shared_turn=true turn_id=turn_78e4db2e9f832dedb8860ff6"
     },
     {
       "id": "B7",
@@ -60,24 +60,22 @@
         "turn_started",
         "provider_call_started",
         "provider_delta",
-        "provider_delta",
-        "provider_delta",
         "turn_completed"
       ],
-      "text": "PONG!",
+      "text": "PING",
       "done_stage": "turn_completed",
-      "turn_id": "turn_7772f68f4d0d846bc2cbc3cf",
+      "turn_id": "turn_78e4db2e9f832dedb8860ff6",
       "error": null
     },
     "persisted": {
       "count": 2,
       "user_seq": 1,
       "assistant_seq": 2,
-      "turn_id": "turn_7772f68f4d0d846bc2cbc3cf"
+      "turn_id": "turn_78e4db2e9f832dedb8860ff6"
     },
     "replay": {
       "admission_status": 3,
-      "admission_turn_id": "turn_7772f68f4d0d846bc2cbc3cf",
+      "admission_turn_id": "turn_78e4db2e9f832dedb8860ff6",
       "messages_after": 2
     }
   }

@@ -1,0 +1,73 @@
+{
+  "ran_at": "2026-11-05T02:55:04.287Z",
+  "mode": "desktop-native-headless-gateway",
+  "plan": "TW-20261102",
+  "closure": "tw-o09-provider-revoke-restore",
+  "outcome": "O09",
+  "source_commit": "544ea48eaa2a49edf9381009817a9e9144c48d36",
+  "station_url": "persisted-active",
+  "provider_id": "ollama-local",
+  "model_id": "qwen-tw",
+  "pass": 5,
+  "fail": 0,
+  "results": [
+    {
+      "id": "C1",
+      "pass": true,
+      "evidence": "precondition enabled=true cred=configured"
+    },
+    {
+      "id": "C2",
+      "pass": true,
+      "evidence": "conversation selects ollama-local/qwen-tw"
+    },
+    {
+      "id": "C3",
+      "pass": true,
+      "evidence": "selected provider answered completed=true text=\"PONG\""
+    },
+    {
+      "id": "C4",
+      "pass": true,
+      "evidence": "revoked provider enabled=false ⇒ error_type=RUNTIME_UNAVAILABLE reason=provider_disabled answer_emitted=false"
+    },
+    {
+      "id": "C5",
+      "pass": true,
+      "evidence": "restored enabled=true cred=configured completed=true text=\"PONG\""
+    }
+  ],
+  "evidence": {
+    "legs": [
+      {
+        "leg": "select_use",
+        "stages": [
+          "turn_started",
+          "provider_call_started",
+          "provider_delta",
+          "provider_delta",
+          "turn_completed"
+        ],
+        "text": "PONG"
+      },
+      {
+        "leg": "revoke_fail_closed",
+        "provider_enabled": false,
+        "error_type": "RUNTIME_UNAVAILABLE",
+        "reason_code": "provider_disabled",
+        "locale_key": "agent.errors.runtimeUnavailable"
+      },
+      {
+        "leg": "restore_use",
+        "stages": [
+          "turn_started",
+          "provider_call_started",
+          "provider_delta",
+          "provider_delta",
+          "turn_completed"
+        ],
+        "text": "PONG"
+      }
+    ]
+  }
+}

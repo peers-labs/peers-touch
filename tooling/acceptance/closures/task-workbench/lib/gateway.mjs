@@ -157,6 +157,24 @@ export class Gateway {
     return { created: true };
   }
 
+  // Enables/disables a provider while preserving its base URL and credential.
+  // Station returns the incremented revision; callers always re-read the
+  // provider first so a stale expected_version never causes a 409.
+  async providerSetEnabled(providerId, enabled) {
+    const provider = await this.providerGet(providerId);
+    const r = await this.cmd('provider_update', {
+      id: providerId,
+      enabled,
+      version: Number(provider?.version ?? 1),
+      key_vaults: '{"api_key":"ollama"}',
+      config_json: JSON.stringify({
+        base_url: provider?.base_url,
+        protocol: provider?.protocol ?? 'openai',
+      }),
+    });
+    return this.decode(r)?.provider ?? null;
+  }
+
   async conversationCreate(agentId, { providerId, modelName, title }) {
     const r = await this.cmd('agent_conversation_create', {
       agent_id: agentId,
