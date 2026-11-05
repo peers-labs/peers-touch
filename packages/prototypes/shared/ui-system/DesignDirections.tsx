@@ -20,15 +20,17 @@ import {
   Upload, ImageIcon,
   type LucideIcon,
 } from 'lucide-react';
-import { UIProvider } from '@peers-touch/ui';
-import { MomentsFeature } from './moments/MomentsFeature';
+import { Button, UIProvider } from '@peers-touch/ui';
 import { SettingsFeature } from './settings/SettingsFeature';
 import type { SettingsNavigationRequest } from './settings/SettingsFeature';
 import { ChatFeature } from './chat/ChatFeature';
 import type { ChatNavigationRequest } from './chat/ChatFeature';
+import { MomentsFeature, type MomentsNavigationRequest } from './moments/MomentsFeature';
+import { MOMENT_SEEDS } from './moments/moments-data';
 import { GlobalSearchOverlay } from './search/GlobalSearchOverlay';
 import type { GlobalSearchTarget } from './search/GlobalSearchOverlay';
 import { NotificationBell } from './notifications/NotificationBell';
+import { SelfCardPopover } from './SelfCardPopover';
 import { makeTranslate, usePrefs } from './prefs';
 import './design-directions.css';
 
@@ -59,7 +61,7 @@ const SKINS: Skin[] = [
   {
     id: 'glass',
     name: '松绿 · 北极星',
-    desc: '北极星语法 · 松绿玻璃 · 近黑胶囊 · 单琥珀强调 · 大数值，desktop 原型在此上演进',
+    desc: '北极星语法 · 中性纸感毛玻璃 · 近黑胶囊 · 松绿只做连接标点 · 大数值，desktop 原型在此上演进',
   },
 ];
 
@@ -78,6 +80,13 @@ const RAIL_NAV: { icon: LucideIcon; key: RailTab; labelKey: 'tab.chats' | 'nav.m
 
 export function DesignDirections() {
   const [skinId, setSkinId] = useState('glass');
+  // Prototype-only command-surface grammar deep link (?cmdgrammar=...).
+  // Independent from the frame skin: the experiment freezes layout and only
+  // re-expresses the ⌘K panel line system.
+  const [cmdGrammar] = useState<'glass' | 'linear-light' | 'linear-dark'>(() => {
+    const requested = new URLSearchParams(window.location.search).get('cmdgrammar');
+    return requested === 'linear-light' || requested === 'linear-dark' ? requested : 'glass';
+  });
   const [wallpaper, setWallpaper] = useState<string>('none');
   const [wallName, setWallName] = useState<string>('无背景');
   const [railTab, setRailTab] = useState<RailTab>('moments');
@@ -86,6 +95,24 @@ export function DesignDirections() {
   const [newChatSignal, setNewChatSignal] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
   const [settingsNav, setSettingsNav] = useState<SettingsNavigationRequest | null>(null);
+  // The rail identity tile opens a FLOATING identity card (never a page
+  // navigation); its manage action routes into Settings › Account.
+  const [selfCardOpen, setSelfCardOpen] = useState(false);
+  const openManageAccount = () => {
+    setRailTab('settings');
+    setSettingsNav({ nonce: Date.now(), group: 'general', section: 'account' });
+  };
+  // Cross-surface identity navigation: identity cards opened from chat route
+  // into the moments profile (or the profile of a specific moment's author).
+  const [momentsNav, setMomentsNav] = useState<MomentsNavigationRequest | null>(null);
+  const openMomentsProfile = (name: string) => {
+    setRailTab('moments');
+    setMomentsNav({ nonce: Date.now(), kind: 'profile', name });
+  };
+  const openMoment = (momentId: string) => {
+    const author = MOMENT_SEEDS.find(post => post.id === momentId)?.author;
+    if (author) openMomentsProfile(author);
+  };
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
 
@@ -217,7 +244,13 @@ export function DesignDirections() {
         </div>
 
         <nav className="sk-rail" aria-label="主导航">
-          <div className="sk-rail-avatar">林</div>
+          <SelfCardPopover open={selfCardOpen} onOpenChange={setSelfCardOpen}
+            onManageAccount={openManageAccount}>
+            {/* The Popover owns open/close (its injected trigger handler);
+                no onActivate here or the click toggles twice and re-closes. */}
+            <Button actionId="rail.open-self" emphasis="quiet" className="sk-rail-avatar"
+              data-rail-self="true" aria-label="查看我的资料" aria-haspopup="dialog">林</Button>
+          </SelfCardPopover>
           <div className="sk-rail-group">
             <button type="button"
               className={`sk-rail-icon${searchOpen ? ' is-active' : ''}`}
@@ -260,27 +293,20 @@ export function DesignDirections() {
           </div>
         </nav>
 
-        <main className={`sk-feed${isChat ? ' is-chat' : ''}`}>
-          {!isChat && (
-            <header className="sk-feed-head">
-              <div className="sk-head-title">
-                <span className="sk-eyebrow">
-                  {railTab === 'moments' ? '社交 · 动态' : t('head.settingsEyebrow')}
-                </span>
-                <h1>
-                  {railTab === 'moments' ? '朋友圈动态' : t('head.settingsTitle')}
-                </h1>
-              </div>
-            </header>
-          )}
+        <main className="sk-feed">
+          {/* No article-style page head on any surface: the outer rail names
+              the place (aria-current), and each surface owns its own sub-bar
+              (scope Segmented / settings tabs). A duplicated big title was
+              rejected as a tiled-admin seam; see C22. */}
 
           {/* All three surfaces stay mounted so cross-surface state (e.g. the
               outer-rail unread badge) stays live; only the active pane shows. */}
           <div className="sk-feed-pane" data-pane-active={isChat ? 'true' : 'false'}>
-            <ChatFeature navigation={chatNav} newChatSignal={newChatSignal} onUnreadTotal={setChatUnread} />
+            <ChatFeature navigation={chatNav} newChatSignal={newChatSignal} onUnreadTotal={setChatUnread}
+              onOpenMomentsProfile={openMomentsProfile} onOpenMoment={openMoment} />
           </div>
           <div className="sk-feed-pane" data-pane-active={railTab === 'moments' ? 'true' : 'false'}>
-            <MomentsFeature />
+            <MomentsFeature navigation={momentsNav} />
           </div>
           <div className="sk-feed-pane" data-pane-active={railTab === 'settings' ? 'true' : 'false'}>
             <SettingsFeature navigation={settingsNav} />
@@ -290,6 +316,7 @@ export function DesignDirections() {
 
       <GlobalSearchOverlay
         open={searchOpen}
+        grammar={cmdGrammar}
         onClose={() => setSearchOpen(false)}
         onNavigate={handleSearchNavigate} />
       </UIProvider>

@@ -1,23 +1,31 @@
 /**
  * MomentsFeature — the full social moments surface inside the north-star
  * frame. It migrates the visible anatomy of the desktop moments module
- * (MomentsApp: feed / explore / people search / circles, composer, detail,
- * profile) with peers-ui components and local state only.
+ * (MomentsApp: merged timeline / circles scope, scope-local search, in-stream
+ * recent/hot sort, composer, profile) with peers-ui components and local
+ * state only.
  */
-import { useState, type KeyboardEvent } from 'react';
-import { Check, ChevronLeft, ChevronRight, Plus, Search, UserPlus } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  Avatar, AvatarGroup, Button, Dialog, Empty, IconButton, Segmented, Select,
+  Check, ChevronLeft, ChevronRight, Search, UserPlus,
+} from 'lucide-react';
+import {
+  Avatar, AvatarGroup, Button, Dialog, Empty, FilePicker, Icon, IconButton, Segmented, Select,
   TextArea, TextField, Toggle,
 } from '@peers-touch/ui';
 import { MomentCard } from './MomentCard';
 import {
-  CIRCLE_SEEDS, MOMENT_SEEDS, PEOPLE_SEEDS, VIEWER,
-  type AudienceKind, type Circle, type Moment, type Person, type ReactionKind, type TrustReason,
+  CIRCLE_SEEDS, GROUP_SEEDS, IDENTITY_INK, MOMENT_SEEDS, PEOPLE_SEEDS, VIEWER,
+  type AudienceKind, type AudienceGroup, type Circle, type Moment,
+  type Person, type ReactionKind, type TrustReason,
 } from './moments-data';
 import './moments.css';
 
-type MomentsTab = 'feed' | 'explore' | 'circles';
+type MomentsTab = 'feed' | 'circles';
+// Feed order is an explicit user view (default: time). `hot` only applies when
+// the reader chooses it — the platform never defaults to engagement ranking.
+// Comment ordering is separate and time-only (communicative equality).
+type FeedSort = 'recent' | 'hot';
 
 // Feed/profile stay in one surface; cards carry their own comments inline.
 type MomentsNav =
@@ -25,58 +33,214 @@ type MomentsNav =
   | { kind: 'profile'; name: string; from: MomentsTab };
 
 const TAB_OPTIONS: { value: MomentsTab; label: string }[] = [
-  { value: 'feed', label: '首页' },
-  { value: 'explore', label: '探索' },
+  { value: 'feed', label: '动态' },
   { value: 'circles', label: '圈友' },
 ];
 
-const TAB_HINT: Record<MomentsTab, string> = {
-  feed: '关注与同圈邻居的最新动态',
-  explore: '联邦内其他站点的公开动态',
-  circles: '发布动态的受众分组与成员',
-};
-
 // Information-locality rule: the single sub-bar search filters whichever
-// scope is active — home posts, federated posts, or my audience circles.
-// There is no separate people tab (person discovery is the profile reached
-// from any author, and circle membership is managed inside each circle).
-const TAB_SEARCH_PLACEHOLDER: Record<MomentsTab, string> = {
-  feed: '搜索这条流的动态（作者、正文）',
-  explore: '搜索联邦公开动态（站点、作者、正文）',
-  circles: '搜索圈子名称、描述或成员',
-};
+// scope is active — the merged timeline (home + federated public) or my
+// audience circles. One short shared placeholder keeps the search chrome
+// geometrically identical across tabs (same glyph, same content width).
+const TAB_SEARCH_PLACEHOLDER = '搜索动态与圈友';
 
+// Proto-parity audience list (post.proto Audience.Kind), broad → explicit →
+// self, same order as desktop AudiencePicker.
 const AUDIENCE_OPTIONS: { value: AudienceKind; label: string }[] = [
   { value: 'public', label: '公开 · 联邦可见' },
   { value: 'followers', label: '关注者' },
-  { value: 'friends', label: '朋友' },
-  { value: 'circle', label: '圈子' },
+  { value: 'friends', label: '朋友（互相关注）' },
+  { value: 'circle', label: '圈子（我的受众分组）' },
+  { value: 'group', label: '群聊成员' },
+  { value: 'allow', label: '部分可见（白名单）' },
+  { value: 'deny', label: '不给谁看（黑名单）' },
   { value: 'self', label: '仅自己' },
 ];
 
+const MAX_IMAGES = 9;
 const PAGE_SIZE = 3;
 
-function ComposeDialog({ open, circles, onDismiss, onPublish }: {
+/** Scroll distance (px) within which the stream counts as "at the top". */
+const FEED_TOP_THRESHOLD = 4;
+/** Capsule vertical insets — the pill owns them; layers are 28px tall. */
+const FEED_PILL_PAD = 4;
+
+/**
+ * Floating feed chip with two roles, decided by live scroll position:
+ *  - at the very top: the 最新/热门 order Segmented;
+ *  - scrolled down: the SAME right-anchored capsule shrinks to a compact
+ *    icon-only 回顶 tile; choosing it smooth-scrolls back and the capsule
+ *    grows back into the sorter.
+ *
+ * Smoothness contract: both layers share ONE intrinsic-width grid stage
+ * (`width: max-content`, never shrinkable) right-anchored inside the
+ * width-animated pill. Because the stage width never depends on the pill's
+ * animated width, measuring it can never feed back into a crushed layout, the
+ * right edge is the fixed anchor through the whole morph, and both layers
+ * occupy the exact same box — no slide, no snap, no flash. The stage is
+ * clipped by the pill's own overflow while the layers cross-fade by opacity.
+ */
+function FeedSortFloat({ value, onChange }: {
+  value: FeedSort;
+  onChange: (value: FeedSort) => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [atTop, setAtTop] = useState(true);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    const scroller = rootRef.current?.closest('.sk-moments-scroll');
+    if (!scroller) return;
+    let frame = 0;
+    const sync = () => {
+      frame = 0;
+      setAtTop(scroller.scrollTop <= FEED_TOP_THRESHOLD);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(sync);
+    };
+    sync();
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      scroller.removeEventListener('scroll', onScroll);
+    };
+  }, []);
+
+  // The sorter width is the STAGE's intrinsic width (plus the 2× inset),
+  // written once through a CSS custom property — never a direct style.width
+  // write (primitive-layer guard). The stage is max-content and
+  // non-shrinkable, so its measure stays constant while the pill's width
+  // animates: measuring inside an already-shrunk pill can never feed back as
+  // a crushed sorter. ResizeObserver keeps the measure honest across font /
+  // density changes. The width transition is enabled only after the first
+  // measurement (data-morph-ready) so mount never animates from the fallback
+  // width.
+  useLayoutEffect(() => {
+    const pill = pillRef.current;
+    const stage = stageRef.current;
+    if (!pill || !stage) return;
+    const measure = () => {
+      pill.style.setProperty('--sk-feed-pill-w', `${stage.offsetWidth + FEED_PILL_PAD * 2}px`);
+    };
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(stage);
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      // Next frame: keep the measured start width, then allow transitions.
+      requestAnimationFrame(() => { pill.dataset.morphReady = 'true'; });
+    }
+    return () => resize.disconnect();
+  }, []);
+
+  const scrollToTop = () => {
+    rootRef.current
+      ?.closest('.sk-moments-scroll')
+      ?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="sk-feed-sort-float" data-feed-sort data-feed-mode={atTop ? 'sort' : 'top'}
+      ref={rootRef}>
+      <div className="sk-feed-sort-pill" ref={pillRef} data-mode={atTop ? 'sort' : 'top'}
+        data-morph-ready="false">
+        <div className="sk-feed-sort-stage" ref={stageRef}>
+          <Segmented<FeedSort> className="sk-feed-sort-options" label="动态排序" density="compact"
+            value={value}
+            options={[
+              { value: 'recent', label: '最新' },
+              { value: 'hot', label: '热门' },
+            ]}
+            onValueChange={next => onChange(next ?? 'recent')} />
+          <Button actionId="feed.back-to-top" emphasis="quiet" density="compact"
+            className="sk-feed-sort-top"
+            aria-label="回到最顶"
+            onActivate={scrollToTop}>
+            <Icon iconId="arrow-up" size={15} />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export interface ComposerDraft {
+  text: string;
+  images: string[];
+  audience: AudienceKind;
+  circle?: string;
+  group?: string;
+  actorIds: string[];
+}
+
+// Local, network-free image attach: read picked files as data URLs so the new
+// post renders a real preview without any station / OSS round-trip.
+function readImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function ComposeDialog({ open, circles, people, groups, onDismiss, onPublish }: {
   open: boolean;
   circles: Circle[];
+  people: Person[];
+  groups: AudienceGroup[];
   onDismiss: () => void;
-  onPublish: (draft: { text: string; audience: AudienceKind; circle?: string }) => void;
+  onPublish: (draft: ComposerDraft) => void;
 }) {
   const [text, setText] = useState('');
+  const [images, setImages] = useState<string[]>([]);
   const [audience, setAudience] = useState<AudienceKind>('public');
-  // Stay bound to a surviving circle; when the audience list shrinks to zero
-  // (the publisher deleted every group) the circle Select is not rendered.
+  // Stay bound to a surviving target; reset when the audience kind changes.
   const [circleId, setCircleId] = useState(circles[0]?.id ?? '');
+  const [groupId, setGroupId] = useState(groups[0]?.id ?? '');
+  const [actorIds, setActorIds] = useState<string[]>([]);
+
   const trimmed = text.trim();
   const circle = circles.find(entry => entry.id === circleId) ?? circles[0];
+  const group = groups.find(entry => entry.id === groupId) ?? groups[0];
   const circleMissing = audience === 'circle' && circles.length === 0;
+  const groupMissing = audience === 'group' && groups.length === 0;
+  const actorsMissing = (audience === 'allow' || audience === 'deny') && actorIds.length === 0;
+
+  const reset = () => {
+    setText(''); setImages([]); setAudience('public'); setActorIds([]);
+  };
 
   const publish = () => {
-    if (!trimmed || circleMissing) return;
-    onPublish({ text: trimmed, audience, circle: audience === 'circle' ? circle?.name : undefined });
-    setText('');
-    setAudience('public');
+    if (!trimmed || circleMissing || groupMissing || actorsMissing) return;
+    onPublish({
+      text: trimmed, images, audience, actorIds,
+      circle: audience === 'circle' ? circle?.name : undefined,
+      group: audience === 'group' ? group?.name : undefined,
+    });
+    reset();
   };
+
+  const pickFilesFileList = async (files: readonly File[]) => {
+    const room = MAX_IMAGES - images.length;
+    const picked = (await Promise.all(files.slice(0, room).map(readImage)));
+    setImages(current => [...current, ...picked].slice(0, MAX_IMAGES));
+  };
+
+  const toggleActor = (id: string) => setActorIds(list =>
+    list.includes(id) ? list.filter(entry => entry !== id) : [...list, id]);
+
+  const disabledReason = !trimmed
+    ? '请输入动态内容'
+    : circleMissing
+      ? '还没有圈子，先去圈友新建分组'
+      : groupMissing
+        ? '还没有可发布的群聊'
+        : actorsMissing
+          ? audience === 'allow' ? '白名单至少选择一位' : '黑名单至少选择一位'
+          : undefined;
 
   return (
     <Dialog open={open} onDismiss={onDismiss} title="发动态" width={480}
@@ -85,11 +249,7 @@ function ComposeDialog({ open, circles, onDismiss, onPublish }: {
         <>
           <Button actionId="compose.cancel" emphasis="quiet" label="取消" onActivate={onDismiss} />
           <Button actionId="compose.publish" emphasis="primary" label="发布"
-            availability={!trimmed
-              ? { kind: 'disabled', reason: '请输入动态内容' }
-              : circleMissing
-                ? { kind: 'disabled', reason: '还没有圈子，先去圈友新建分组' }
-                : { kind: 'enabled' }}
+            availability={disabledReason ? { kind: 'disabled', reason: disabledReason } : { kind: 'enabled' }}
             onActivate={publish} />
         </>
       }>
@@ -98,6 +258,29 @@ function ComposeDialog({ open, circles, onDismiss, onPublish }: {
           className="sk-compose-input" value={text} aria-label="动态内容"
           data-compose-value={text} placeholder="分享你身边正在发生的连接……"
           onValueChange={setText} onEnter={event => event.preventDefault()} />
+
+        {images.length > 0 && (
+          <div className="sk-compose-thumbs" data-compose-image-count={images.length}>
+            {images.map((src, index) => (
+              <span className="sk-compose-thumb" key={`${src.slice(0, 24)}-${index}`}>
+                <img src={src} alt={`待发布图片 ${index + 1}`} />
+                <IconButton actionId={`compose.image.remove.${index}`} iconId="close" iconSize={12}
+                  density="compact" emphasis="quiet" label="移除图片"
+                  className="sk-compose-thumb-remove"
+                  onActivate={() => setImages(list => list.filter((_, i) => i !== index))} />
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="sk-compose-toolbar" data-compose-file-input>
+          <FilePicker
+            iconId="image-plus"
+            label={images.length > 0 ? `图片 ${images.length}/${MAX_IMAGES}` : '添加图片'}
+            accept="image/*" multiple disabled={images.length >= MAX_IMAGES}
+            onFiles={pickFilesFileList} />
+        </div>
+
         <div className="sk-compose-audience">
           <Select<AudienceKind> label="可见范围" aria-label="可见范围"
             options={AUDIENCE_OPTIONS} value={audience}
@@ -111,19 +294,87 @@ function ComposeDialog({ open, circles, onDismiss, onPublish }: {
               <span className="sk-circle-missing">还没有圈子，先去「圈友」新建分组</span>
             )
           )}
+          {audience === 'group' && (
+            groups.length > 0 ? (
+              <Select<string> label="群聊" aria-label="选择群聊"
+                options={groups.map(entry => ({ value: entry.id, label: entry.name }))}
+                value={group?.id ?? ''} onValueChange={value => setGroupId(String(value))} />
+            ) : (
+              <span className="sk-circle-missing">还没有可发布的群聊</span>
+            )
+          )}
+          {(audience === 'allow' || audience === 'deny') && (
+            <fieldset className="sk-audience-actors" data-audience-actors={audience}>
+              <legend>{audience === 'allow' ? '仅这些人可见' : '关注者中排除这些人'}</legend>
+              {people.map(person => {
+                const chosen = actorIds.includes(person.id);
+                return (
+                  <Button key={person.id} actionId={`compose.actor.${person.id}`}
+                    emphasis={chosen ? 'secondary' : 'quiet'} density="compact"
+                    className={`sk-audience-actor${chosen ? ' is-chosen' : ''}`}
+                    aria-pressed={chosen} data-actor-id={person.id}
+                    leading={<Avatar name={person.name} background={person.tone} size={24}
+                      style={{ borderRadius: 7 }} aria-hidden="true" />}
+                    trailing={chosen ? <Check size={13} aria-hidden="true" /> : undefined}
+                    onActivate={() => toggleActor(person.id)}>
+                    {person.name}
+                  </Button>
+                );
+              })}
+            </fieldset>
+          )}
         </div>
       </div>
     </Dialog>
   );
 }
 
+export interface MyMomentsStats {
+  posts: number;
+  comments: number;
+  reactionsGiven: number;
+  commentsReceived: number;
+  reactionsReceived: number;
+  following: number;
+  followers: number;
+  circles: number;
+}
+
+function StatGrid({ stats }: { stats: MyMomentsStats }) {
+  const cells: { label: string; value: number; key: string }[] = [
+    { key: 'posts', label: '动态', value: stats.posts },
+    { key: 'comments', label: '发出评论', value: stats.comments },
+    { key: 'reactionsGiven', label: '送出反应', value: stats.reactionsGiven },
+    { key: 'commentsReceived', label: '收到评论', value: stats.commentsReceived },
+    { key: 'reactionsReceived', label: '收到反应', value: stats.reactionsReceived },
+    { key: 'following', label: '关注', value: stats.following },
+    { key: 'followers', label: '粉丝', value: stats.followers },
+    { key: 'circles', label: '圈子', value: stats.circles },
+  ];
+  return (
+    <div className="sk-stats-grid" data-moments-stats>
+      {cells.map(cell => (
+        <span className="sk-stat-cell" key={cell.key} data-stat={cell.key}>
+          <strong>{cell.value}</strong>
+          <em>{cell.label}</em>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ProfileView({ name, people, postCount, onBack, onAuthor, onToggleReaction,
-  followed, onToggleFollow }: {
+  followed, blocked, followers, following, stats, onToggleFollow, onToggleBlock }: {
   name: string;
   people: Person[];
   postCount: number;
   followed: boolean;
+  blocked: boolean;
+  followers: number;
+  following: number;
+  stats: MyMomentsStats | null;
   onToggleFollow: (id: string) => void;
+  onToggleBlock: (id: string) => void;
   onBack: () => void;
   onAuthor: (name: string) => void;
   onToggleReaction: (id: string, kind: ReactionKind) => void;
@@ -132,11 +383,12 @@ function ProfileView({ name, people, postCount, onBack, onAuthor, onToggleReacti
   const tone = person?.tone ?? '#5d6b62';
   const station = person?.station ?? '本站';
   const bio = person?.bio ?? '';
+  const isSelf = name === VIEWER.name;
   return (
     <div className="sk-profile-view">
       <Button actionId="profile.back" emphasis="quiet" leading={<ChevronLeft size={15} />}
         label="返回" onActivate={onBack} className="sk-detail-back" />
-      <section className="sk-post sk-profile">
+      <section className="sk-post sk-profile" data-profile-self={isSelf ? 'true' : 'false'}>
         <Avatar name={name} background={tone} size={72} style={{ borderRadius: 20 }} />
         <div className="sk-profile-id">
           <h2>{name}</h2>
@@ -144,17 +396,27 @@ function ProfileView({ name, people, postCount, onBack, onAuthor, onToggleReacti
           {bio && <p>{bio}</p>}
           <div className="sk-profile-stats">
             <span><strong>{postCount}</strong> 动态</span>
+            <span><strong>{followers}</strong> 粉丝</span>
+            {!isSelf && <span><strong>{following}</strong> 关注</span>}
           </div>
         </div>
-        {person && (
-          <Toggle actionId={`profile.follow.${person.id}`} className="sk-profile-follow"
-            emphasis={followed ? 'secondary' : 'primary'}
-            selected={followed}
-            leading={followed ? <Check size={14} /> : <UserPlus size={14} />}
-            label={followed ? '已关注' : '关注'}
-            onSelectedChange={() => onToggleFollow(person.id)} />
+        {person && !isSelf && (
+          <span className="sk-profile-actions">
+            <Toggle actionId={`profile.follow.${person.id}`} className="sk-profile-follow"
+              emphasis={followed ? 'secondary' : 'primary'}
+              selected={followed}
+              leading={followed ? <Check size={14} /> : <UserPlus size={14} />}
+              label={followed ? '已关注' : '关注'}
+              onSelectedChange={() => onToggleFollow(person.id)} />
+            <Button actionId={`profile.block.${person.id}`} emphasis="quiet" tone="danger"
+              density="compact"
+              data-profile-block={blocked ? 'on' : 'off'}
+              label={blocked ? '取消拉黑' : '拉黑'}
+              onActivate={() => onToggleBlock(person.id)} />
+          </span>
         )}
       </section>
+      {isSelf && stats && <StatGrid stats={stats} />}
     </div>
   );
 }
@@ -250,7 +512,7 @@ function CircleManageDialog({ circle, people, onDismiss, onSave, onRequestDelete
   const trimmedName = draft.name.trim();
   const memberOf = (id: string) => circle.members.find(member => member.id === id);
   const memberName = (id: string) => memberOf(id)?.name ?? people.find(person => person.id === id)?.name ?? id;
-  const memberTone = (id: string) => memberOf(id)?.tone ?? people.find(person => person.id === id)?.tone ?? '#7d8c7d';
+  const memberTone = (id: string) => memberOf(id)?.tone ?? people.find(person => person.id === id)?.tone ?? IDENTITY_INK;
   const candidates = people.filter(person => !draft.memberIds.includes(person.id));
 
   return (
@@ -324,12 +586,18 @@ function CircleManageDialog({ circle, people, onDismiss, onSave, onRequestDelete
   );
 }
 
-export function MomentsFeature() {
+export type MomentsNavigationRequest =
+  | { nonce: number; kind: 'profile'; name: string };
+
+export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationRequest | null }) {
   const [tab, setTab] = useState<MomentsTab>('feed');
   const [nav, setNav] = useState<MomentsNav>({ kind: 'tab' });
   const [posts, setPosts] = useState<Moment[]>(MOMENT_SEEDS);
   const [people, setPeople] = useState<Person[]>(PEOPLE_SEEDS);
   const [circles, setCircles] = useState<Circle[]>(CIRCLE_SEEDS);
+  // GROUP audience targets are static local group conversations (read-only).
+  const groups = GROUP_SEEDS;
+  const [feedSort, setFeedSort] = useState<FeedSort>('recent');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [composerOpen, setComposerOpen] = useState(false);
   const [circleComposerOpen, setCircleComposerOpen] = useState(false);
@@ -340,8 +608,19 @@ export function MomentsFeature() {
   // domain.
   const [query, setQuery] = useState('');
 
-  const homePosts = posts.filter(post => !post.federated);
-  const federatedPosts = posts.filter(post => post.federated);
+  // BLOCK policy: a blocked actor leaves every timeline (home + federated).
+  const blockedNames = new Set(people.filter(person => person.blocked).map(person => person.name));
+  const homePosts = posts.filter(post => !post.federated && !blockedNames.has(post.author));
+  const federatedPosts = posts.filter(post => post.federated && !blockedNames.has(post.author));
+  // One merged stream: home first, then federated public. RECENT (the
+  // default) keeps the deterministic time order (created_at DESC); HOT is an
+  // explicit reader view ranking by total reactions — never the default.
+  const reactionTotal = (post: Moment) =>
+    Object.values(post.reactions).reduce((sum, count) => sum + (count ?? 0), 0);
+  const recentTimeline = [...homePosts, ...federatedPosts];
+  const timeline = feedSort === 'hot'
+    ? [...recentTimeline].sort((a, b) => reactionTotal(b) - reactionTotal(a))
+    : recentTimeline;
 
   const switchTab = (next: MomentsTab) => {
     setTab(next);
@@ -359,11 +638,20 @@ export function MomentsFeature() {
     || circle.name.toLowerCase().includes(q)
     || circle.desc.toLowerCase().includes(q)
     || circle.members.some(member => member.name.toLowerCase().includes(q));
-  const searchedHome = q ? homePosts.filter(postMatches) : null;
-  const searchedFederated = q ? federatedPosts.filter(postMatches) : null;
+  const searchedTimeline = q ? timeline.filter(postMatches) : null;
   const searchedCircles = q ? circles.filter(circleMatches) : circles;
 
   const openProfile = (name: string) => setNav({ kind: 'profile', name, from: tab });
+  // Cross-surface request (e.g. identity card opened from chat): switch to
+  // the moments surface tab state and open the person's profile.
+  const navNonce = navigation?.nonce;
+  useEffect(() => {
+    if (!navigation || navNonce === undefined) return;
+    if (navigation.kind === 'profile') openProfile(navigation.name);
+    // openProfile is stable enough for this cross-surface effect; only the
+    // request nonce re-triggers it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navNonce]);
   const backToTab = () => {
     if (nav.kind === 'tab') return;
     setTab(nav.from);
@@ -444,17 +732,27 @@ export function MomentsFeature() {
     setPosts(list => list.filter(post => post.id !== postId));
   };
 
-  const publish = (draft: { text: string; audience: AudienceKind; circle?: string }) => {
+  const publish = (draft: ComposerDraft) => {
     const reason: TrustReason = draft.audience === 'self'
       ? 'self'
       : draft.audience === 'circle'
         ? 'circle'
-        : 'public';
+        : draft.audience === 'public'
+          ? 'public'
+          : 'following';
     const post: Moment = {
       id: `local-${Date.now()}`,
       author: VIEWER.name, tone: VIEWER.tone, source: 'local', reason,
-      audience: draft.audience, circle: draft.circle, at: '刚刚',
-      text: draft.text, reactions: {}, comments: [],
+      audience: draft.audience,
+      circle: draft.circle,
+      group: draft.group,
+      audienceActors: draft.actorIds.length
+        ? draft.actorIds.map(id => people.find(p => p.id === id)?.name ?? id)
+        : undefined,
+      at: '刚刚',
+      text: draft.text,
+      images: draft.images.length ? draft.images : undefined,
+      reactions: {}, comments: [],
     };
     setPosts(list => [post, ...list]);
     setComposerOpen(false);
@@ -469,6 +767,39 @@ export function MomentsFeature() {
       ? { ...person, followed: !person.followed }
       : person));
   };
+
+  // Block/unblock an actor. The timeline projection above removes their
+  // posts immediately; the relationship is local prototype state.
+  const toggleBlock = (id: string) => {
+    setPeople(list => list.map(person => person.id === id
+      ? { ...person, blocked: !person.blocked, followed: person.blocked ? person.followed : false }
+      : person));
+  };
+
+  // Viewer dashboard counters (proto GetMyMomentsStats), aggregated live
+  // from local state.
+  const countAllComments = (comments: Moment['comments']): number =>
+    comments.reduce((sum, comment) => sum + 1 + countAllComments(comment.replies ?? []), 0);
+  const myStats: MyMomentsStats = (() => {
+    const mine = posts.filter(post => post.author === VIEWER.name);
+    const myComments = posts.reduce((sum, post) =>
+      sum + post.comments.reduce((n, c) =>
+        n + (c.author === VIEWER.name ? 1 : 0)
+        + (c.replies ?? []).filter(r => r.author === VIEWER.name).length
+      , 0), 0);
+    const reactionsGiven = posts.reduce((sum, post) => sum + (post.viewerReactions?.length ?? 0), 0);
+    const reactionsReceived = mine.reduce((sum, post) => sum + reactionTotal(post), 0);
+    return {
+      posts: mine.length,
+      comments: myComments,
+      reactionsGiven,
+      commentsReceived: mine.reduce((sum, post) => sum + countAllComments(post.comments), 0),
+      reactionsReceived,
+      following: people.filter(person => person.followed).length,
+      followers: people.filter(person => person.mutual).length + 128,
+      circles: circles.length,
+    };
+  })();
 
   const createCircle = (name: string) => {
     setCircles(list => [...list, {
@@ -488,7 +819,7 @@ export function MomentsFeature() {
         const person = people.find(p => p.id === memberId);
         return person
           ? { id: person.id, name: person.name, tone: person.tone }
-          : { id: memberId, name: memberId, tone: '#7d8c7d' };
+          : { id: memberId, name: memberId, tone: IDENTITY_INK };
       };
       return {
         ...circle,
@@ -508,6 +839,9 @@ export function MomentsFeature() {
 
   const sharedCardProps = {
     onAuthor: openProfile,
+    resolvePerson: (name: string) => people.find(person => person.name === name),
+    onToggleFollow: toggleFollow,
+    onToggleBlock: toggleBlock,
     onToggleReaction: toggleReaction,
     onComment: addComment,
     onLikeComment: likeComment,
@@ -517,59 +851,80 @@ export function MomentsFeature() {
   };
 
   const profileName = nav.kind === 'profile' ? nav.name : '';
+  const profileIsSelf = profileName === VIEWER.name;
+  // A block affects future lists/timelines (see blockedNames above), NOT the
+  // profile the viewer is already looking at: content currently on screen
+  // stays put. The actor simply won't appear in lists on later visits.
   const profilePosts = nav.kind === 'profile'
     ? posts.filter(post => post.author === nav.name)
     : [];
+  const profilePerson = people.find(person => person.name === profileName);
+  const profileFollowers = profileIsSelf
+    ? myStats.followers
+    : profilePerson?.followers ?? 0;
 
   return (
     <div className="sk-moments">
       {nav.kind === 'tab' ? (
         <>
           <div className="sk-moments-subbar">
-            <Segmented<MomentsTab> label="动态范围" options={TAB_OPTIONS}
+            {/* Spatial-rotation contract: the scope group is a single-line
+                scrollable island; under squeeze the search and compose
+                controls collapse in place to icons, peers never rewrap. */}
+            <Segmented<MomentsTab> label="动态范围" options={TAB_OPTIONS} scrollable className="sk-scope-island"
               value={tab} onValueChange={value => switchTab(value ?? 'feed')} />
-            <span className="sk-moments-hint">{TAB_HINT[tab]}</span>
-            <TextField className="sk-scope-search" aria-label="搜索当前范围"
-              data-scope-search={tab} placeholder={TAB_SEARCH_PLACEHOLDER[tab]}
-              value={query} onValueChange={setQuery} clearable onClear={() => setQuery('')}
-              leading={<Search size={14} />} density="compact" />
+            <div className="sk-scope-wrap"
+              onClick={event => {
+                // When collapsed to an icon tile, the whole tile is the focus
+                // affordance: a click anywhere on it opens the field in place.
+                if (event.target === event.currentTarget
+                  || !(event.target as HTMLElement).closest('input,button,a')) {
+                  event.currentTarget.querySelector('input')?.focus();
+                }
+              }}>
+              <TextField className="sk-scope-search" aria-label={TAB_SEARCH_PLACEHOLDER}
+                data-scope-search={tab} placeholder={TAB_SEARCH_PLACEHOLDER}
+                value={query} onValueChange={setQuery} clearable onClear={() => setQuery('')}
+                leading={<Search size={15} />} density="compact" />
+            </div>
+            {/* One icon-only add tile in a fixed slot for every tab: identical
+                geometry, only the action (and accessible name) changes, so the
+                right chrome never shifts when the scope switches. */}
             {tab === 'feed' && (
-              <Button actionId="moments.compose" emphasis="primary" className="sk-compose-open"
-                leading={<Plus size={15} />} label="发动态" onActivate={() => setComposerOpen(true)} />
+              <IconButton actionId="moments.compose" iconId="plus" iconSize={18} label="发动态"
+                emphasis="primary" className="sk-subbar-add sk-compose-open"
+                onActivate={() => setComposerOpen(true)} />
             )}
             {tab === 'circles' && (
-              <Button actionId="circle.open-create" emphasis="primary" className="sk-circle-open"
-                leading={<Plus size={15} />} label="新建圈子" onActivate={() => setCircleComposerOpen(true)} />
+              <IconButton actionId="circle.open-create" iconId="plus" iconSize={18} label="新建圈子"
+                emphasis="primary" className="sk-subbar-add sk-circle-open"
+                onActivate={() => setCircleComposerOpen(true)} />
             )}
           </div>
 
           {tab === 'feed' && (
             <div className="sk-moments-scroll">
-              {(searchedHome ?? homePosts.slice(0, visibleCount)).map(post => (
+              {/* Global order view — a floating chip pinned to the scroll
+                  viewport's top right. It owns no row (cards start at the top)
+                  and its halo/shadow keeps it visually detached from the
+                  first card it overlaps. It dissolves while scrolling and
+                  softly returns at rest; hidden while searching. */}
+              {!q && (
+                <FeedSortFloat value={feedSort} onChange={setFeedSort} />
+              )}
+              {(searchedTimeline ?? timeline.slice(0, visibleCount)).map(post => (
                 <MomentCard key={post.id} post={post} {...sharedCardProps} />
               ))}
-              {q && searchedHome && searchedHome.length === 0 && (
+              {q && searchedTimeline && searchedTimeline.length === 0 && (
                 <Empty description={`没有匹配「${query.trim()}」的动态`} />
               )}
-              {!q && (visibleCount < homePosts.length
+              {!q && (visibleCount < timeline.length
                 ? (
                   <Button actionId="moments.load-more" emphasis="quiet" fullWidth
                     className="sk-loadmore" label="加载更多"
                     onActivate={() => setVisibleCount(count => count + PAGE_SIZE)} />
                 )
                 : <span className="sk-feed-end">没有更多了</span>)}
-            </div>
-          )}
-
-          {tab === 'explore' && (
-            <div className="sk-moments-scroll">
-              {(searchedFederated ?? federatedPosts).map(post => (
-                <MomentCard key={post.id} post={post} {...sharedCardProps} />
-              ))}
-              {q && searchedFederated && searchedFederated.length === 0 && (
-                <Empty description={`没有匹配「${query.trim()}」的联邦动态`} />
-              )}
-              {!q && <span className="sk-feed-end">联邦探索由本地示例呈现</span>}
             </div>
           )}
 
@@ -583,20 +938,31 @@ export function MomentsFeature() {
       ) : nav.kind === 'profile' ? (
         <div className="sk-moments-scroll">
           <ProfileView name={profileName} people={people} postCount={profilePosts.length}
-            followed={people.find(person => person.name === profileName)?.followed ?? false}
-            onToggleFollow={toggleFollow} onBack={backToTab}
+            followed={profilePerson?.followed ?? false}
+            blocked={profilePerson?.blocked ?? false}
+            followers={profileFollowers}
+            following={people.filter(person => person.followed).length}
+            stats={profileIsSelf ? myStats : null}
+            onToggleFollow={toggleFollow} onToggleBlock={toggleBlock} onBack={backToTab}
             onAuthor={openProfile}
             onToggleReaction={sharedCardProps.onToggleReaction} />
+          {profilePerson?.blocked && (
+            <p className="sk-profile-blocked-note" data-profile-blocked-note>
+              已拉黑 {profileName}：其动态不会再出现在你的时间线与列表中；当前主页内容保留显示，离开后按黑名单生效。
+            </p>
+          )}
           <div className="sk-profile-posts">
             {profilePosts.map(post => (
               <MomentCard key={post.id} post={post} {...sharedCardProps} />
             ))}
-            {profilePosts.length === 0 && <Empty description={`${profileName} 还没有公开动态`} />}
+            {profilePosts.length === 0 && (
+              <Empty description={`${profileName} 还没有公开动态`} />
+            )}
           </div>
         </div>
       ) : null}
 
-      <ComposeDialog open={composerOpen} circles={circles}
+      <ComposeDialog open={composerOpen} circles={circles} people={people} groups={groups}
         onDismiss={() => setComposerOpen(false)} onPublish={publish} />
       <CircleCreateDialog key={circleComposerOpen ? 'open' : 'closed'} open={circleComposerOpen}
         onDismiss={() => setCircleComposerOpen(false)}

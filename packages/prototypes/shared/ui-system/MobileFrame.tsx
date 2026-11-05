@@ -1,25 +1,33 @@
 /**
  * MobileFrame — 手机原型 tab.
  *
- * Embeds the real MobilePrototype (packages/prototypes/mobile/chat) inside a
- * device frame, so Frontend Eles owns both platform training grounds. The
- * mobile surface still consumes antd directly: that is registered framework
- * debt (see 设计理念), not permission for new prototypes to skip peers-ui.
+ * Two views of the same platform surface:
+ *  - 产品面 (default): the clean MobileApp — real Chinese product screens
+ *    built on the latest @peers-touch/ui grammar.
+ *  - 取证台: MobilePrototype — scenario injection and controlled failure
+ *    states for acceptance evidence (engineering harness, not the product
+ *    look). It already consumes peers-ui; the antd era is retired.
  */
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
+import { Button } from '@peers-touch/ui';
 
 const MobilePrototype = lazy(async () => import('@peers-touch/prototype-mobile-chat'));
+const MobileApp = lazy(async () => import('@peers-touch/prototype-mobile-chat/app'));
+
+type MobileView = 'product' | 'evidence';
 
 export function MobileFrame() {
+  const [view, setView] = useState<MobileView>('product');
   return (
     <div className="nb-shell" data-nb="mobile">
       <header className="nb-head">
         <div>
-          <span className="nb-overline">PEERS / MOBILE PROTOTYPE</span>
+          <span className="nb-overline">PEERS / MOBILE</span>
           <h1>手机原型</h1>
           <p>
-            真实手机产品面：启动站选择、准入链、会话/动态/联系人/我的。当前直接使用 antd，
-            <strong>属于已登记债务</strong>：后续按自训练宪章逐面回迁 peers-ui，新控件一律先入库。
+            真实手机产品面：消息、邻里动态、联系人、我的。产品面与桌面北极星共用同一套
+            @peers-touch/ui（方圆头像、墨色气泡、扁平发丝列表、36×20 开关、ghost 选择）；
+            取证台保留受控失败态与场景注入，供验收使用。
           </p>
         </div>
       </header>
@@ -28,19 +36,25 @@ export function MobileFrame() {
           <div className="nb-phone-screen">
             <div className="nb-phone-body" data-phone-body>
               <Suspense fallback={<div style={{ padding: 24, fontSize: 13, color: '#7e8d85' }}>载入手机原型…</div>}>
-                <MobilePrototype />
+                {view === 'product' ? <MobileApp /> : <MobilePrototype />}
               </Suspense>
             </div>
           </div>
         </div>
         <aside className="nb-phone-side">
           <section className="nb-section">
-            <header className="nb-section-head"><h2>回迁状态</h2></header>
-            <div className="nb-section-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <span className="nb-status" data-status="ok">pine 语法 · peers-ui</span>
+            <header className="nb-section-head"><h2>视图</h2></header>
+            <div className="nb-section-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div role="group" aria-label="手机视图切换" style={{ display: 'inline-flex', background: 'var(--pt-subtle)', border: '1px solid var(--pt-border)', borderRadius: 999, padding: 3, width: 'fit-content' }}>
+                <Button actionId="mobile.view.product" emphasis={view === 'product' ? 'secondary' : 'quiet'}
+                  aria-pressed={view === 'product'} onActivate={() => setView('product')}>产品面</Button>
+                <Button actionId="mobile.view.evidence" emphasis={view === 'evidence' ? 'secondary' : 'quiet'}
+                  aria-pressed={view === 'evidence'} onActivate={() => setView('evidence')}>取证台</Button>
+              </div>
               <p className="nb-card-note" style={{ margin: 0 }}>
-                与桌面北极星共用同一套 @peers-touch/ui 与 northStarVariables；
-                呈现层禁止 antd/lucide 直引，手机组合件（底部动作面板、全屏线程、64px 列表密度）由 scripts/check-layout.mjs 机器门守护。
+                {view === 'product'
+                  ? '干净的中文产品形态：只组合库原语，页面不重涂 .pt-*；形状、密度、动效与桌面一致。'
+                  : '受控场景与失败态注入，用于验收取证；呈现层同样走 peers-ui，不直引第三方组件库。'}
               </p>
             </div>
           </section>

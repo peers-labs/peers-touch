@@ -2,25 +2,75 @@
    Material language follows the frame grammar (floating cards, skin tokens);
    peers-ui primitives own the controls, this file owns layout/material only. */
 
-.sk-moments { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Container queries key off the frame's own width (this prototype is an
+   embedded app shell, not the viewport): squeeze rules follow the shell. */
+.sk-moments {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  container-type: inline-size; container-name: moments;
+}
 
-/* Scope sub-bar: segmented scope + hint + scope-local search + primary CTA
-   (one rhythm group). Search carries the auto margin so it anchors the right
-   cluster regardless of whether the scope has a CTA. */
+/* Scope sub-bar: one non-wrapping rhythm group — scrollable scope island +
+   scope-local search + primary CTA. Spatial-rotation rule: peers keep their
+   relative order and right/left anchors under squeeze; they collapse in
+   place (island scroll, icon controls) instead of wrapping to a new line. */
 .sk-moments-subbar {
-  flex-shrink: 0; display: flex; align-items: center; gap: 12px;
-  padding: 8px 22px 10px; flex-wrap: wrap;
+  flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+  /* Horizontal inset matches the chat rail (14px) so the rail-to-content
+     gutter reads as one body, not a detached head. */
+  padding: 8px 14px 10px; flex-wrap: nowrap;
 }
-.sk-moments-hint { font-size: 12px; color: var(--sk-text-3); }
-.sk-moments-subbar .pt-field-frame:has(> .sk-scope-search) {
-  margin-left: auto; width: 248px; max-width: 100%; min-width: 0;
+/* The island hugs its content when wide, shrinks (and scrolls internally)
+   when the shell narrows. */
+.sk-scope-island { flex: 0 1 auto; min-width: 96px; }
+.sk-scope-wrap {
+  flex: 0 1 auto; margin-left: auto;
+  width: 248px; max-width: 100%; min-width: 0;
+  transition: width .18s var(--pt-motion-out, ease-out);
 }
-.sk-compose-open,
-.sk-circle-open { flex-shrink: 0; }
+/* The add action is always an icon tile (no text at any width): one fixed
+   38px slot for every tab, so the right chrome cannot shift across scopes. */
+.sk-subbar-add { flex-shrink: 0; width: 38px; height: 38px; }
 
+/* Compact shell: scope island stays left; search collapses in place to an
+   icon that expands toward the CTA on focus; the CTA becomes an icon tile.
+   Nothing wraps, nothing changes order. */
+@container moments (max-width: 720px) {
+  .sk-moments-subbar { gap: 8px; }
+  .sk-scope-island { min-width: 0; }
+  .sk-scope-wrap {
+    flex: 0 0 auto; width: 38px; height: 38px;
+    display: grid; grid-template-columns: 100%; grid-template-rows: 100%;
+    /* Collapsed icon tile: the glyph is geometrically centered (the frame's
+       normal left padding + leading gap would otherwise bias it). These
+       retune the field primitive via its tokens, no .pt-* selectors. The
+       frame stretches to the same 38px square as the compose tile. */
+    --pt-field-justify: center;
+    --pt-field-gap: 0px;
+    --pt-field-xpad: 0px;
+  }
+  .sk-scope-wrap:focus-within {
+    width: min(300px, 58%);
+    --pt-field-justify: flex-start;
+    --pt-field-gap: var(--pt-space-xs);
+    --pt-field-xpad: var(--pt-space-sm);
+  }
+  /* Keep the leading glyph at full size: with the input at width 0 the icon
+     would otherwise flex-shrink to a few px (the "empty dot" defect). */
+  .sk-scope-wrap svg { flex: 0 0 auto; }
+  .sk-scope-search { width: 0 !important; opacity: 0; padding-left: 0; padding-right: 0; }
+  .sk-scope-wrap:focus-within .sk-scope-search { width: 100% !important; opacity: 1; }
+  .sk-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sk-compose-thumbs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Vertical-only scroll host: min-width:0 + overflow-x hidden makes a
+   horizontal scrollbar (and a feed column wider than the shell, which read
+   as cards/pills spilling past the frame's rounded right edge) structurally
+   impossible — long tokens wrap and images are grid-capped instead. */
 .sk-moments-scroll {
-  flex: 1; min-height: 0; overflow: auto;
-  padding: 6px 22px 24px; display: flex; flex-direction: column; gap: 14px;
+  flex: 1; min-width: 0; min-height: 0;
+  overflow-x: hidden; overflow-y: auto;
+  padding: 6px 14px 24px; display: flex; flex-direction: column; gap: 14px;
 }
 
 /* Post card — same material contract as the workbench .sk-card. */
@@ -32,6 +82,7 @@
   backdrop-filter: blur(var(--sk-glass-blur));
   -webkit-backdrop-filter: blur(var(--sk-glass-blur));
   padding: 16px 18px;
+  min-width: 0;
 }
 
 .sk-post-head { display: flex; align-items: flex-start; gap: 12px; }
@@ -81,8 +132,9 @@
 .sk-lightbox img { display: block; max-width: 100%; border-radius: 12px; }
 .sk-lightbox-count { font-size: 12px; color: var(--sk-text-3); }
 
-/* Inline comment tile: comments stay inside the post card. All comments
-   show by default; beyond 10 the card folds behind an explicit toggle. */
+/* Inline comment tile: comments stay inside the post card. Root comments
+   have one order — newest first by time — and are cursor-paged, mirroring
+   proto GetComments. Likes never reorder (communicative equality). */
 .sk-comments {
   margin-top: 10px; padding: 12px; border-radius: 12px;
   background: var(--sk-tile); display: flex; flex-direction: column; gap: 12px;
@@ -101,13 +153,22 @@
   color: var(--sk-text); font-weight: 650; font-size: 13.5px; font-family: inherit;
 }
 .sk-comment-author:hover { color: var(--sk-primary); }
+/* Comment avatar is a peers-ui Button wrapping the identity tile; the scoped
+   selector neutralizes the library button chrome so the 30px tile itself reads
+   as the chip while staying keyboard-focusable. */
+.sk-comment-item .sk-comment-avatar {
+  width: 30px; height: 30px; min-height: 0; flex-shrink: 0;
+  padding: 0; border: 0; border-radius: 9px; line-height: 0;
+  background: transparent; box-shadow: none;
+}
+.sk-comment-item .sk-comment-avatar:hover { background: transparent; }
 .sk-comment-action {
   border: 0; background: transparent; padding: 0; cursor: pointer;
   font-family: inherit; font-size: 11px; color: var(--sk-text-3);
 }
 .sk-comment-action:hover { color: var(--sk-text); }
 .sk-comment-action.is-liked { color: var(--sk-primary); font-weight: 600; }
-.sk-comment-action.is-danger:hover { color: #b0413a; }
+.sk-comment-action.is-danger:hover { color: var(--sk-danger); }
 /* Nested replies: tinted rounded block hugging the root comment. */
 .sk-reply-list {
   list-style: none; margin: 4px 0 0; padding: 8px 10px;
@@ -115,12 +176,13 @@
   border-radius: 10px; background: color-mix(in srgb, var(--sk-text) 4%, transparent);
 }
 .sk-reply-list .sk-comment-item .pt-avatar { width: 24px !important; height: 24px !important; border-radius: 7px !important; }
-.sk-comment-fold {
+/* The pager loads the next cursor page of root comments in place. */
+.sk-comment-pager {
   align-self: flex-start; border: 0; background: transparent; padding: 0;
   cursor: pointer; font-family: inherit; font-size: 12.5px; font-weight: 500;
   color: var(--sk-text-3);
 }
-.sk-comment-fold:hover { color: var(--sk-primary); }
+.sk-comment-pager:hover { color: var(--sk-primary); }
 
 /* Compact single-line composer: one field row + inline send tile. The
    library TextArea carries an 80px min-height by design, so inline comment
@@ -179,8 +241,124 @@
   outline: 1px solid color-mix(in srgb, var(--sk-accent) 45%, transparent);
 }
 
+/* Quick author card chrome lives in ../identity/identity.css (shared with the
+   chat-surface identity popover). */
+
 .sk-feed-end { text-align: center; font-size: 11.5px; color: var(--sk-text-3); padding: 6px 0 2px; }
 .sk-loadmore { margin: 2px 0; }
+
+/* Global feed-order view as a floating chip: sticky on the scroll viewport's
+   top right, zero flow height so cards start at the very top and slide under
+   it. The canvas-halo pill + shadow reads as an overlay control, never as a
+   child of whichever card happens beneath it. */
+.sk-feed-sort-float {
+  position: sticky; top: 8px; z-index: 6;
+  align-self: stretch;
+  /* min-width:0: this zero-height overlay row must NEVER contribute its
+     pill's intrinsic width to the feed column's min-content — otherwise an
+     animated/transient pill width could widen the whole column past the
+     shell's right edge. */
+  min-width: 0;
+  /* flex-start (not the default stretch): the zero-height row would
+      otherwise crush the chip to its vertical padding and paint a detached
+      white sliver while the 28px buttons overflow below it. */
+  align-items: flex-start;
+  display: flex; justify-content: flex-end;
+  height: 0; overflow: visible;
+  /* Eat the flex column gap so the first card keeps its top anchor. */
+  margin-bottom: -14px;
+  pointer-events: none;
+}
+/* One right-anchored rounded-rectangle capsule. It is a right-anchoring flex
+   box whose WIDTH animates: the measured sorter width (CSS var) in sort mode,
+   a fixed 36px in top mode. overflow:hidden clips the intrinsic stage while
+   the width morphs — the RIGHT EDGE never moves. Token-level reskin only:
+   --pt-radius-md pulls the inner selected block to 6px so it stays
+   geometrically INSIDE the 12px capsule. */
+.sk-feed-sort-pill {
+  --pt-radius-md: 6px;
+  position: relative;
+  pointer-events: auto;
+  box-sizing: border-box;
+  display: flex; justify-content: flex-end;
+  height: 36px;
+  padding: 4px;
+  border-radius: var(--sk-radius-control);
+  background: var(--sk-overlay);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .16);
+  overflow: hidden;
+  width: var(--sk-feed-pill-w, 112px);
+  transition: width .3s cubic-bezier(.22, 1, .36, 1);
+}
+/* Compact 回顶 footprint: the 28px tile plus the 2× inset. */
+.sk-feed-sort-pill[data-mode='top'] { width: 36px; }
+/* First measured width is applied without a transition (mount), then the
+   width morph is enabled. */
+.sk-feed-sort-pill[data-morph-ready='false'] { transition: none; }
+/* The stage owns the layers' geometry: one intrinsic-width, NON-SHRINKABLE
+   grid. Its width is independent of the pill's animated width, so the layers
+   keep their natural size (and the measured width stays honest) throughout
+   the morph. Right-anchored by the pill; clipped by its overflow. */
+.sk-feed-sort-stage {
+  flex: 0 0 auto;
+  display: grid;
+  width: max-content;
+  height: 28px;
+}
+/* Both layers share one grid cell and its right alignment, so their right
+   edges and vertical centers are identical at every frame. The cross-fade is
+   opacity only — no translate, no scale. Visibility timing is role-aware
+   (see the state rules below): the INCOMING layer must become visible at the
+   very first frame while the OUTGOING layer stays hittable-visible until its
+   fade finishes. A single shared `visibility 0s linear .26s` would delay the
+   incoming layer too, leaving an empty capsule for ~150ms — the flash this
+   morph exists to avoid. */
+.sk-feed-sort-options,
+.sk-feed-sort-top {
+  grid-area: 1 / 1;
+  justify-self: end;
+  align-self: center;
+}
+/* The capsule itself is the track: drop the primitive's nested track and
+   padding (the capsule's own 4px padding is the single inset), and never let
+   the two options wrap under spatial squeeze. */
+.sk-feed-sort-options { background: transparent; padding: 0; flex-wrap: nowrap; }
+/* Compact icon-only back-to-top tile: same 28px height as the segmented
+   options and a 28px square — no label row, no wasted footprint. */
+.sk-feed-sort-top {
+  width: 28px; min-width: 28px; height: 28px; min-height: 28px;
+  padding: 0; border: 0; border-radius: 6px;
+  display: grid; place-items: center;
+  background: transparent; color: var(--sk-text-2);
+}
+.sk-feed-sort-top:hover {
+  background: color-mix(in srgb, var(--sk-text) 7%, transparent);
+  color: var(--sk-text);
+}
+/* INCOMING layer: visible from frame one, fades in immediately. */
+.sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-options,
+.sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-top {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity .22s cubic-bezier(.22, 1, .36, 1), visibility 0s;
+}
+/* OUTGOING layer: keeps painting through its fade, only then goes hidden so
+   the cross-dissolve never shows an empty capsule. */
+.sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-options,
+.sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-top {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .22s cubic-bezier(.22, 1, .36, 1),
+    visibility 0s linear .22s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk-feed-sort-pill { transition: width .01s; }
+  .sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-options,
+  .sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-top,
+  .sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-options,
+  .sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-top { transition: opacity .01s; }
+}
 
 /* Profile */
 .sk-profile-view { display: flex; flex-direction: column; gap: 14px; }
@@ -191,13 +369,36 @@
 .sk-profile-id p { margin: 3px 0 0; font-size: 13px; color: var(--sk-text-2); }
 .sk-profile-stats { display: flex; gap: 14px; margin-top: 6px; font-size: 12.5px; color: var(--sk-text-3); }
 .sk-profile-stats strong { color: var(--sk-text); font-size: 14px; }
+.sk-profile-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .sk-profile-follow { flex-shrink: 0; }
+.sk-profile-blocked-note {
+  margin: 0; padding: 10px 14px; border-radius: 12px; font-size: 12.5px;
+  color: var(--sk-danger);
+  background: color-mix(in srgb, var(--sk-danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sk-danger) 25%, transparent);
+}
 .sk-profile-posts { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+
+/* Viewer dashboard — proto GetMyMomentsStats, eight counters in a card grid. */
+.sk-stats-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+}
+.sk-stat-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 12px 8px; border-radius: var(--sk-r-card);
+  background: var(--sk-card-bg); border: 1px solid var(--sk-card-border);
+  box-shadow: var(--sk-card-shadow); font-style: normal;
+}
+.sk-stat-cell strong {
+  font-size: 18px; font-weight: 650; color: var(--sk-text);
+  font-variant-numeric: tabular-nums;
+}
+.sk-stat-cell em { font-style: normal; font-size: 11.5px; color: var(--sk-text-3); }
 
 /* Circles */
 .sk-circles {
   flex: 1; min-height: 0; overflow: auto;
-  padding: 6px 22px 24px; display: flex; flex-direction: column; gap: 12px;
+  padding: 6px 14px 24px; display: flex; flex-direction: column; gap: 12px;
 }
 .sk-circle-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 /* Whole card is one peers Button opening the management dialog; neutralise
@@ -238,6 +439,34 @@
 .sk-compose-audience { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .sk-circle-missing { font-size: 12.5px; color: var(--sk-text-3); align-self: center; }
 
+/* Attached images: square thumbnail grid with an in-tile remove control. */
+.sk-compose-thumbs {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px;
+}
+.sk-compose-thumb {
+  position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden;
+  background: var(--sk-tile);
+}
+.sk-compose-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sk-compose-thumb-remove {
+  position: absolute; top: 4px; right: 4px;
+  color: #fff; border-radius: 999px;
+  background: color-mix(in srgb, #000 45%, transparent);
+}
+.sk-compose-toolbar { display: flex; align-items: center; gap: 8px; }
+
+/* Allow/deny audience chips: a borderless fieldset of toggleable people. */
+.sk-audience-actors {
+  flex: 1 1 100%; margin: 0; padding: 10px 12px; min-width: 0;
+  border: 1px solid var(--sk-card-border); border-radius: var(--sk-radius-control);
+  background: var(--sk-tile);
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.sk-audience-actors legend { padding: 0 4px; font-size: 11.5px; color: var(--sk-text-3); }
+/* Chips are peers-ui Buttons; the app layer only lays them out and rounds the
+   contour — selection reads through the Button's own emphasis, no chrome override. */
+.sk-audience-actor { border-radius: 999px; }
+
 /* Circle management dialog */
 .sk-circle-manage { display: flex; flex-direction: column; gap: 12px; }
 .sk-circle-manage .sk-circle-desc-edit { margin-top: -4px; }
@@ -266,9 +495,10 @@
 .sk-circle-footer-spacer { flex: 1; }
 
 @media (max-width: 760px) {
-  .sk-moments-subbar { padding: 8px 12px; gap: 8px; }
+  .sk-moments-subbar { padding: 8px 12px; }
   .sk-moments-scroll, .sk-circles { padding: 4px 12px 20px; }
-  .sk-moments-subbar .pt-field-frame:has(> .sk-scope-search) { width: 100%; margin-left: 0; order: 3; }
+  /* Sub-bar squeeze (island/icon collapse) is owned by the @container
+     moments block above — the shell width, not the viewport, drives it. */
   .pt-button.sk-circle-card > .pt-button-content { flex-direction: column; align-items: flex-start; gap: 10px; }
   .pt-button.sk-circle-card .sk-circle-tail { align-self: flex-end; }
   .sk-react-picker { grid-template-columns: repeat(8, 28px); }

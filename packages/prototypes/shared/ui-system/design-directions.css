@@ -66,6 +66,11 @@
   --sk-primary-ink: #fbf8f1;
   --sk-accent: #d98e5b;
   --sk-on-accent: #43260f;
+  /* Semantic tokens are independent of the brand accent in every skin:
+     danger/warn/success must never inherit the skin hue. */
+  --sk-danger: #b0413a;
+  --sk-warning: #9a6a2f;
+  --sk-success: #2f9e5e;
   --sk-rail-bg: #efe8da;
   --sk-r-card: 18px;
   --sk-radius-soft: 16px;
@@ -109,6 +114,30 @@
   font-family: var(--sk-font);
 }
 
+/* Quiet scrollbars — one grammar for every scrolling surface inside the
+   frame and its portaled overlays. The UA default is admin chrome: a thick
+   solid gray track+thumb that shouts over the content. Here the gutter is
+   transparent and the thumb is a thin neutral pill (4px painted inside a
+   10px gutter), warming only on hover. No track, no corner, no arrows. */
+.sk-theme,
+.sk-theme * {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--sk-text) 22%, transparent) transparent;
+}
+.sk-theme ::-webkit-scrollbar { width: 10px; height: 10px; }
+.sk-theme ::-webkit-scrollbar-track,
+.sk-theme ::-webkit-scrollbar-corner { background: transparent; }
+.sk-theme ::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--sk-text) 16%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+.sk-theme ::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--sk-text) 30%, transparent);
+}
+.sk-theme ::-webkit-scrollbar-thumb:horizontal { border-width: 2px 3px; }
+
 .sk-shell-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
 .sk-shell-glow { position: absolute; inset: 0; background: var(--sk-shell-glow); }
 .sk-shell-wall { position: absolute; inset: 0; background: var(--sk-wallpaper, none); background-color: transparent; }
@@ -120,6 +149,7 @@
   --sk-text: #1f2329; --sk-text-2: #5a616b; --sk-text-3: #8a9099;
   --sk-primary: #6b5bd6; --sk-primary-ink: #ffffff;
   --sk-accent: #f4a63b; --sk-on-accent: #4a3200;
+  --sk-danger: #c0392f; --sk-warning: #9a5f00; --sk-success: #1f7d52;
   --sk-rail-bg: #f2f4f7; --sk-r-card: 16px; --sk-radius-soft: 12px;
   --sk-radius-control: 9px; --sk-avatar-radius: 10px;
   --sk-btn-primary-shadow: 0 8px 20px -12px rgba(16,24,40,.5);
@@ -132,27 +162,28 @@
   --sk-card-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px -16px rgba(16, 24, 40, .12);
   --sk-shell-glow: none;
 }
+/* Pine-on-neutral glass (north-star grammar): the material stays frosted
+   (translucent cards + backdrop blur over a flat neutral paper floor), but
+   hue is flattened out of the container — no green canvas, no ambient glow.
+   Pine lives only on small brand/connection touch points via --sk-accent. */
 .sk-theme.sk-skin-glass {
-  --sk-canvas: #dceade; --sk-surface: rgba(255,255,255,.62); --sk-subtle: rgba(255,255,255,.5);
-  --sk-tile: rgba(255,255,255,.52);
-  --sk-text: #11201a; --sk-text-2: #52605a; --sk-text-3: #7e8d85;
-  --sk-primary: #0d100d; --sk-primary-ink: #f3f8f4;
-  --sk-accent: #e8a117; --sk-on-accent: #3a2a02;
-  --sk-rail-bg: rgba(255,255,255,.45); --sk-r-card: 20px; --sk-radius-soft: 22px;
+  --sk-canvas: #f4f5f4; --sk-surface: rgba(255,255,255,.64); --sk-subtle: rgba(255,255,255,.52);
+  --sk-tile: rgba(255,255,255,.54);
+  --sk-text: #171a1c; --sk-text-2: #5d6368; --sk-text-3: #8a9096;
+  --sk-primary: #1a1d20; --sk-primary-ink: #ffffff;
+  --sk-accent: #2f6a50; --sk-on-accent: #ffffff;
+  --sk-danger: #c0392f; --sk-warning: #9a5f00; --sk-success: #1f7d52;
+  --sk-rail-bg: rgba(255,255,255,.5); --sk-r-card: 20px; --sk-radius-soft: 22px;
   --sk-radius-control: 12px; --sk-avatar-radius: 11px;
-  --sk-btn-primary-shadow: 0 10px 24px -14px rgba(10,30,24,.7);
+  --sk-btn-primary-shadow: 0 10px 24px -14px rgba(20,24,22,.45);
   --sk-font: Manrope, -apple-system, "PingFang SC", "Segoe UI", sans-serif;
   --sk-display-font: Manrope, -apple-system, "PingFang SC", sans-serif;
-  --sk-glass-blur: 22px; --sk-glass-border: rgba(255,255,255,.7);
-  --sk-shell-bg: var(--sk-canvas); --sk-card-bg: rgba(255,255,255,.66);
-  /* white .66 composited over the glass canvas #dceade */
-  --sk-overlay: #f2f4f2;
-  --sk-card-border: rgba(255,255,255,.75);
-  --sk-card-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 10px 30px -18px rgba(28,60,48,.35);
-  --sk-shell-glow:
-    radial-gradient(700px 460px at 8% -8%, color-mix(in srgb, var(--sk-accent) 26%, transparent), transparent 62%),
-    radial-gradient(880px 580px at 100% 6%, rgba(122,196,178,.5), transparent 62%),
-    radial-gradient(720px 600px at 56% 112%, rgba(127,180,171,.35), transparent 60%);
+  --sk-glass-blur: 22px; --sk-glass-border: rgba(22,26,24,.10);
+  --sk-shell-bg: var(--sk-canvas); --sk-card-bg: rgba(255,255,255,.68);
+  --sk-overlay: #ffffff;
+  --sk-card-border: rgba(22,26,24,.09);
+  --sk-card-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 10px 30px -18px rgba(20,24,22,.22);
+  --sk-shell-glow: none;
 }
 .sk-shell[data-wallpaper="image"] .sk-shell-wall::after {
   content: ""; position: absolute; inset: 0;
@@ -167,13 +198,33 @@
   backdrop-filter: blur(var(--sk-glass-blur));
   -webkit-backdrop-filter: blur(var(--sk-glass-blur));
 }
-.sk-rail-avatar {
-  /* Identity anchors the rail one step above the 38px nav targets. */
-  width: 44px; height: 44px; border-radius: 12px; margin-bottom: 20px;
-  display: grid; place-items: center; font-size: 17px; font-weight: 700;
+/* Identity anchors the rail one step above the 38px nav targets. It is a
+   peers-ui Button (keyboard-focusable); the rail-scoped selectors neutralize
+   the library button chrome and keep the tile a fixed 44px rounded square. */
+.sk-rail .sk-rail-avatar {
+  width: 44px; height: 44px; min-height: 0; margin-bottom: 20px;
+  padding: 0; border: 0; border-radius: 12px;
+  display: grid; place-items: center; cursor: pointer;
+  font-size: 17px; font-weight: 700; line-height: 1;
   color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
-  box-shadow: 0 10px 22px -12px rgba(16,52,44,.55);
+  box-shadow: 0 10px 22px -12px rgba(20,24,22,.45);
+  /* Quiet wash only: no transform/box-shadow animation. Moving the hit target
+     under the cursor flickers at the tile edge, and animating shadow over the
+     rail's backdrop-filter repaints noisily. */
+  transition: background-color .16s cubic-bezier(.22,1,.36,1), color .16s cubic-bezier(.22,1,.36,1);
 }
+/* Hover stays a PINE tile: lighten the pine fill slightly, never swap it for
+   the near-white quiet wash (that read as the tile flashing white on hover). */
+.sk-rail .sk-rail-avatar:hover {
+  color: var(--sk-btn-primary-ink);
+  background: color-mix(in srgb, var(--sk-btn-primary-bg) 86%, #ffffff);
+}
+/* While its identity card is open the tile stays the active pine mark. */
+.sk-rail .sk-rail-avatar[aria-expanded='true'] {
+  color: var(--sk-btn-primary-ink);
+  background: var(--sk-btn-primary-bg);
+}
+.sk-rail .sk-rail-avatar:focus-visible { outline: var(--sk-focus-ring); outline-offset: 2px; }
 .sk-rail-group { display: flex; flex-direction: column; gap: 4px; }
 .sk-rail-spacer { flex: 1; }
 /* The higher-specificity descendant selector is required: the peers-ui
@@ -186,35 +237,65 @@
   border-radius: var(--sk-radius-control);
   display: grid; place-items: center; cursor: pointer;
   color: var(--sk-btn-quiet-ink); background: var(--sk-btn-quiet-bg);
-  transition: background .15s, color .15s;
+  transition: background .16s cubic-bezier(.22,1,.36,1), color .16s cubic-bezier(.22,1,.36,1), box-shadow .16s cubic-bezier(.22,1,.36,1);
 }
-.sk-rail-icon:hover { color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover); }
-.sk-rail-icon.is-active {
+/* State rules must outrank the 0,3,0 geometry/base rule above: a bare
+   .sk-rail-icon:hover / .is-active (0,2,0) silently lost to it, which left
+   every selected rail target (moments/chat/settings/search) quiet gray and
+   killed hover feedback. Scope states under the rail at 0,4,0. */
+.sk-rail .sk-rail-group .sk-rail-icon:hover,
+.sk-rail .sk-rail-entry .sk-rail-icon:hover {
+  color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover);
+}
+.sk-rail .sk-rail-group .sk-rail-icon.is-active,
+.sk-rail .sk-rail-entry .sk-rail-icon.is-active {
   color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
   box-shadow: var(--sk-btn-primary-shadow);
 }
 
-/* feed */
-.sk-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-/* Surface panes stay mounted (live cross-surface state); only the active one shows. */
-.sk-feed-pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
-.sk-feed-pane[data-pane-active='true'] { display: flex; }
-.sk-feed-pane[data-pane-active='true'] > * { flex: 1; min-height: 0; }
-.sk-feed-head {
-  height: 62px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 0 22px;
-  background: var(--sk-head-bg);
-  backdrop-filter: blur(var(--sk-glass-blur));
-  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
+/* ── Rail self identity card (Popover) ──
+   The popover shell yields all chrome to the card: zero padding so the banner
+   bleeds to the rounded corners. */
+.sk-self-card-popover { padding: 0; border-radius: 16px; overflow: hidden; }
+.sk-self-card { width: 300px; background: var(--sk-overlay); }
+.sk-self-card-banner {
+  height: 92px;
+  background: linear-gradient(120deg,
+    color-mix(in srgb, var(--sk-primary) 42%, transparent),
+    color-mix(in srgb, var(--sk-primary) 10%, transparent));
 }
-.sk-head-title { display: flex; flex-direction: column; gap: 1px; }
-.sk-feed-head h1 { margin: 0; font-size: 19px; font-family: var(--sk-display-font); letter-spacing: -.01em; }
-.sk-eyebrow { font-size: 9.5px; font-weight: 600; letter-spacing: .05em; color: var(--sk-text-3); }
+/* padding-top (not a child margin) owns the overlap clearance: a first-child
+   margin would collapse through the zero top padding and hide the name
+   behind the avatar. */
+.sk-self-card-body { position: relative; padding: 44px 16px 14px; }
+/* 64px avatar overlaps the banner ~28px with a card-colored ring. */
+.sk-self-card-avatar {
+  position: absolute; top: -28px; left: 16px;
+  width: 64px; height: 64px; border-radius: 16px;
+  display: grid; place-items: center;
+  font-size: 24px; font-weight: 700;
+  color: var(--sk-btn-primary-ink);
+  background: #2f6a50;
+  box-shadow: 0 0 0 4px var(--sk-overlay), 0 6px 16px rgba(15,23,42,.18);
+}
+.sk-self-card-name { font-size: 17px; font-weight: 650; color: var(--sk-text); }
+.sk-self-card-handle { margin-top: 2px; font-size: 12px; color: var(--sk-text-3); }
+.sk-self-card-stats { display: flex; gap: 20px; margin-top: 12px; }
+.sk-self-card-stat { display: flex; flex-direction: column; gap: 1px; font-size: 11.5px; color: var(--sk-text-3); }
+.sk-self-card-stat strong { font-size: 16px; font-weight: 650; color: var(--sk-text); }
+.sk-self-card-joined { margin-top: 9px; font-size: 11.5px; color: var(--sk-text-3); }
+.sk-self-card-body [data-self-card-manage] { margin-top: 13px; }
 
+/* feed: panes own their scroll; the frame never shows a page-level scrollbar */
+.sk-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* Surface panes stay mounted (live cross-surface state); only the active one shows. */
+.sk-feed-pane { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.sk-feed-pane[data-pane-active='true'] { display: flex; }
+.sk-feed-pane[data-pane-active='true'] > * { flex: 1; min-width: 0; min-height: 0; }
 /* ---- Increment 1: ConversationRail (peers-ui composed) ---- */
 .sk-conv-rail {
   position: relative; z-index: 1;
-  width: 296px; flex-shrink: 0; padding: 14px;
+  width: 296px; flex-shrink: 0; padding: 0 14px 14px;
   display: flex; flex-direction: column; overflow: auto;
   background: var(--sk-chat-bg, transparent);
   backdrop-filter: blur(var(--sk-glass-blur));
@@ -240,8 +321,8 @@
   font-size: 11.5px; color: var(--sk-text-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* peers-ui Badge count must read as the single accent, not the primary pill */
-.sk-conv-row .pt-badge-count { background: var(--sk-accent); color: var(--sk-on-accent); }
+/* Unread count is a neutral ink pill; pine is reserved for connection/brand. */
+.sk-conv-row .pt-badge-count { background: var(--sk-primary); color: var(--sk-primary-ink); }
 .sk-conv-empty .pt-empty { padding: 24px 8px; color: var(--sk-text-3); font-size: 12px; }
 
 .sk-conversation { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px; }
@@ -251,14 +332,20 @@
 /* Increment 2: ConversationView */
 .sk-conv-view {
   flex: 1; min-height: 0; display: flex; flex-direction: column;
-  padding: 18px 22px 16px; gap: 12px;
+  /* No top padding: the header itself owns the 8px frame inset + 44px title
+     row (one 52px band), so a full-bleed wallpaper layer behind the column
+     is fully covered above its hairline without a magic top offset. */
+  padding: 0 22px 12px; gap: 12px;
 }
-.sk-msg-stream { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
+/* Vertical-only scroll host: horizontal overflow is hidden so a long token
+   or an absolutely-positioned hover bar can never grow a horizontal
+   scrollbar (or get clipped by the frame) — content wraps instead. */
+.sk-msg-stream { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
 /* Avatar top-aligns with the bubble (desktop ChatArea parity): the avatar
    and the content column share flex-start, so in 1:1 chats avatar and bubble
    begin on the same line; in groups the avatar aligns with the sender name.
    Emoji-only rows bottom-align (large glyph, desktop parity). */
-.sk-msg { display: flex; align-items: flex-start; gap: 9px; max-width: 78%; }
+.sk-msg { display: flex; align-items: flex-start; gap: 9px; max-width: 78%; min-width: 0; }
 .sk-msg.is-emoji-only { align-items: flex-end; }
 .sk-msg-peer { align-self: flex-start; }
 .sk-msg-me { align-self: flex-end; flex-direction: row-reverse; }
@@ -279,8 +366,10 @@
 .sk-msg-me .sk-msg-time { color: color-mix(in srgb, var(--sk-text-2) 80%, transparent); }
 
 .sk-composer {
-  flex-shrink: 0; display: flex; align-items: flex-end; gap: 10px;
-  padding: 8px 8px 8px 14px; border-radius: 16px;
+  flex-shrink: 0; min-width: 0; display: flex; align-items: flex-end; gap: 10px;
+  /* Symmetric inset: tools/send share one rhythm and the pill aligns cleanly
+     inside the stream column (no wide asymmetric lead beside the catalog). */
+  padding: 8px; border-radius: 16px;
   background: var(--sk-tile);
 }
 .sk-composer:focus-within { box-shadow: 0 0 0 2px var(--sk-focus-ring); }
@@ -320,7 +409,60 @@
   background: transparent; font-family: inherit; text-align: left;
 }
 .sk-picker-row:hover { background: var(--sk-tile); }
-.pt-dialog { border-radius: var(--sk-r-card); }
+
+/* ── Overlay template: every modal dialog shares one mother plate with
+   ⌘K command panel — 18px corners, one hairline, quiet header/footer.
+   ⌘K 是一级浮层，Dialog 是二级工具表面，两者结构不同但材质母板同一。
+   The bridge's r-card/radius-md mapping is a cold admin token and a
+   cross-skin leak (radius-0 Dialog measured 20px, Select 39 vs TextField
+   36); the skin owns overlay chrome here. Default glass skin unaffected. */
+.sk-theme .pt-dialog {
+  border-radius: 18px;
+  border-color: var(--sk-card-border);
+  header, footer { border-color: var(--sk-card-border); }
+}
+.sk-theme .pt-dialog-header {
+  padding: 12px 16px;
+}
+.sk-theme .pt-dialog-header h2 { font-size: 15.5px; font-weight: 600; }
+.sk-theme .pt-dialog-body { padding: 16px; }
+.sk-theme .pt-dialog-footer {
+  padding: 10px 16px;
+}
+/* Controls inside dialogs are tool-surface grammar, not admin forms.
+   The dialog portals outside .sk-settings, so the token bridge's strong
+   border (--pt-borderStrong rgb(32,36,49)) and avatar-square md (11px)
+   are normalized here within the dialog mother plate. One source for
+   hairline frames, 8px corners, 36px controls, and a soft focus grammar;
+   future settings pages inherit instead of restyling every field. */
+.sk-theme .pt-dialog .pt-field-frame:not([data-multiline='true']),
+.sk-theme .pt-dialog .pt-select-trigger { border-radius: 8px; }
+.sk-theme .pt-dialog .pt-field-frame:not([data-multiline='true']) {
+  height: 36px; min-height: 36px;
+}
+.sk-theme .pt-dialog .pt-field-frame:not([data-multiline='true']) .pt-input {
+  height: 100%; min-height: 0; padding: 0;
+}
+.sk-theme .pt-dialog .pt-select-trigger {
+  border-color: var(--sk-card-border);
+  background: var(--sk-overlay);
+}
+.sk-theme .pt-dialog .pt-select-trigger:hover:not(:disabled)[aria-disabled!='true'] {
+  border-color: color-mix(in srgb, var(--sk-primary) 24%, var(--sk-card-border));
+  background: var(--sk-overlay);
+}
+.sk-theme .pt-dialog .pt-field-frame { border-color: var(--sk-card-border); }
+.sk-theme .pt-dialog .pt-field-frame:focus-within {
+  border-color: color-mix(in srgb, var(--sk-primary) 24%, var(--sk-card-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 8%, transparent);
+}
+/* One soft focus grammar on every dialog control. */
+.sk-theme .pt-dialog .pt-field-frame,
+.sk-theme .pt-dialog .pt-select {
+  transition: border-color 140ms var(--pt-motion-out), box-shadow 140ms var(--pt-motion-out);
+}
+/* Footer controls share the 8px corner family. */
+.sk-theme .pt-dialog-footer .pt-button { border-radius: 8px; }
 
 /* Persistent two-pane down to tablet; chat.css owns the <720 swap. */
 @media (max-width: 720px) {
@@ -330,13 +472,20 @@
 @media (max-width: 760px) {
   .sk-page { padding: 0; }
   .sk-shell { height: auto; min-height: 100vh; border-radius: 0; border: 0; box-shadow: none; flex-direction: column; }
+  /* Spatial rotation: vertical gravity (top group / spacer / bottom group)
+     rotates into horizontal gravity (left cluster / spacer / right cluster).
+     Element ORDER is unchanged; the two functional groups stay visually
+     separated instead of collapsing into one centered row. */
   .sk-rail {
-    width: 100%; flex-direction: row; justify-content: center; gap: 6px; padding: 8px;
+    width: 100%; flex-direction: row; justify-content: flex-start; gap: 6px; padding: 8px 12px;
   }
-  .sk-rail-avatar { margin: 0 8px 0 0; }
-  .sk-rail-spacer { display: none; }
+  .sk-rail-avatar { margin: 0; }
+  .sk-rail-spacer {
+    display: block; flex: 1 1 auto; min-width: 16px;
+    align-self: center; height: 22px;
+    border-left: 1px solid var(--sk-card-border);
+  }
   .sk-rail-group { flex-direction: row; }
-  .sk-feed-head { padding: 0 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sk-shell *, .sk-switcher * { animation: none !important; transition: none !important; }

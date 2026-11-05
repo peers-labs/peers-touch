@@ -78,7 +78,7 @@ const SETTINGS_FUNCTIONS: { titleKey: StringKey; group: SettingsGroup; section: 
   { titleKey: 'sec.dataStorage', group: 'advanced', section: 'storage', icon: Database, keywords: '存储 缓存 导出 storage cache' },
   { titleKey: 'sec.statistics', group: 'advanced', section: 'statistics', icon: MonitorSmartphone, keywords: '统计 热力图 statistics' },
   { titleKey: 'sec.logs', group: 'advanced', section: 'logs', icon: Clock3, keywords: '日志 logs 诊断' },
-  { titleKey: 'sec.cron', group: 'advanced', section: 'cron', icon: Clock3, keywords: '定时任务 scheduled tasks' },
+  { titleKey: 'sec.cron', group: 'ai', section: 'cron', icon: Clock3, keywords: '定时任务 scheduled tasks agent 调度' },
   { titleKey: 'sec.commandMenu', group: 'advanced', section: 'command-menu', icon: CommandIcon, keywords: '命令面板 command palette' },
   { titleKey: 'sec.about', group: 'advanced', section: 'about', icon: Info, keywords: '关于 about 版本' },
 ];
@@ -146,14 +146,22 @@ function highlight(text: string, query: string) {
   );
 }
 
-export function GlobalSearchOverlay({ open, onClose, onNavigate }: {
+export type CommandGrammar = 'glass' | 'linear-light' | 'linear-dark';
+
+export function GlobalSearchOverlay({ open, grammar = 'glass', onClose, onNavigate }: {
   open: boolean;
+  /** Prototype-only line-grammar experiment; 'glass' keeps the shipped look. */
+  grammar?: CommandGrammar;
   onClose: () => void;
   onNavigate: (target: GlobalSearchTarget) => void;
 }) {
   const { t } = useT();
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
+  // The panel stays mounted through its exit animation instead of vanishing
+  // the moment open flips false; mounted tracks presence, closing the phase.
+  const [mounted, setMounted] = useState(false);
+  const [closing, setClosing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const openerRef = useRef<Element | null>(null);
 
@@ -205,7 +213,24 @@ export function GlobalSearchOverlay({ open, onClose, onNavigate }: {
 
   useEffect(() => { setCursor(0); }, [query]);
 
-  if (!open) return null;
+  // Presence: enter mounts immediately, exit lingers one soft fade-out.
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      setClosing(false);
+      return;
+    }
+    if (!mounted) { setClosing(false); return; }
+    setClosing(true);
+    // Must unmount within the gate's 120ms post-Esc budget; exit stays soft
+    // but shorter than the entrance.
+    const timer = window.setTimeout(() => { setMounted(false); setClosing(false); }, 110);
+    return () => window.clearTimeout(timer);
+    // mounted is intentionally read but not a dep: only open drives phases.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  if (!mounted) return null;
 
   const flat = results;
   const openTarget = (target: GlobalSearchTarget) => {
@@ -242,7 +267,9 @@ export function GlobalSearchOverlay({ open, onClose, onNavigate }: {
       : kind === 'moment' ? 'search.kind.moments' : 'search.kind.functions');
 
   return (
-    <div className="sk-search-overlay" role="dialog" aria-modal="true" aria-label={t('search.title')}>
+    <div className="sk-search-overlay" data-grammar={grammar}
+      data-closing={closing ? 'true' : undefined}
+      role="dialog" aria-modal="true" aria-label={t('search.title')}>
       <div className="sk-search-scrim" onClick={onClose} />
       <div className="sk-search-panel" data-search-open>
         <div className="sk-search-input-row">

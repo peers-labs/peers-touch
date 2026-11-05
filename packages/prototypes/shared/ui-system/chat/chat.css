@@ -1,14 +1,17 @@
 /* ChatFeature — chats/contacts catalog + conversation surface.
    Reuses .sk-conv-* material classes; layout lives here. */
 
-.sk-feed.is-chat { padding: 0; overflow: hidden; }
-
 /* Desktop parity: session/contacts catalog owns the LEFT column,
    conversation view sits to its right (desktop SocialChatPage order). */
 .sk-chat-feature {
-  flex: 1; min-height: 0;
+  flex: 1; min-width: 0; min-height: 0;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
+  /* No fixed min-width: under extreme squeeze the surface REFLOWS into the
+     single-pane swap + compact insets (WeChat parity), it must never force a
+     640px floor that gets clipped at the frame edge. Horizontal overflow is
+     structurally impossible — every child chain has min-width:0 and the
+     message stream is the only scroll host (vertical). */
 }
 .sk-chat-main { grid-column: 2; min-width: 0; min-height: 0; display: flex; }
 .sk-chat-feature > .sk-conv-rail {
@@ -25,13 +28,47 @@
    compact icon that expands into a field and takes over the tab space; it is
    a local list filter. Cross-surface global search lives on the outer rail
    (⌘K), in-chat history search lives in the conversation profile. */
-.sk-rail-header { display: flex; align-items: center; gap: 8px; padding: 2px 2px 10px; }
+/* Fixed 52px band owning the frame inset (8 top + 44 row): the segmented
+   track is 36px (28px control + 2×4px chrome), and the expanded search field
+   must total the same 36px, or the rail header grows on open and the list
+   jumps. The 12/4 padding optically centers the track on the same y as the
+   conversation title. */
+.sk-rail-header {
+  display: flex; align-items: center; gap: 8px;
+  height: 52px; box-sizing: border-box; padding: 12px 2px 4px;
+}
 .sk-rail-tabs { flex: 1 1 auto; min-width: 0; }
 .sk-chat-subnav.pt-segmented { width: 100%; white-space: nowrap; }
 .sk-subnav-label { display: inline-flex; align-items: center; gap: 5px; }
-/* Expanded in-rail search: field owns the row, close tile on the right. */
-.sk-rail-search { flex: 1 1 auto; min-width: 0; display: flex; }
-.sk-rail-search .pt-field-frame { flex: 1; min-width: 0; }
+/* Expanded in-rail search: field owns the row, close tile on the right.
+   Enter is a soft fade + 6px slide instead of an instant swap. */
+.sk-rail-search {
+  flex: 1 1 auto; min-width: 0; display: flex;
+  animation: sk-rail-search-in 160ms cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes sk-rail-search-in {
+  from { opacity: 0; transform: translateX(6px); }
+  to { opacity: 1; transform: none; }
+}
+.sk-rail-search .pt-field-frame {
+  flex: 1; min-width: 0;
+  /* 34px content + 2×1px hairline = 36px, exactly the segmented track. */
+  height: 34px; min-height: 34px;
+  border-color: var(--sk-card-border);
+  border-radius: var(--sk-radius-control);
+  transition: border-color 140ms cubic-bezier(.22, 1, .36, 1),
+    box-shadow 140ms cubic-bezier(.22, 1, .36, 1);
+}
+/* Focus changes one element only: the hairline warms slightly; no heavy
+   dark border, no strong ring. */
+.sk-rail-search .pt-field-frame:focus-within {
+  border-color: color-mix(in srgb, var(--sk-primary) 32%, var(--sk-card-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 9%, transparent);
+}
+.sk-rail-search .pt-input { min-height: 0; height: 24px; padding: 0; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) {
+  .sk-rail-search { animation: none; }
+}
 /* Rounded-square ghost tile, never a circle; compact peers-ui sizing,
    glyph optically centered by the button content rule. These are quiet
    chrome: no border in ANY state (the library hover rule can paint a
@@ -80,7 +117,8 @@
   width: 10px; height: 10px; border-radius: 50%;
   border: 2px solid var(--sk-card-bg);
 }
-.sk-presence-dot.is-online { background: #3f9142; }
+/* presence = a live connection: the pine touch point, not success green. */
+.sk-presence-dot.is-online { background: var(--sk-accent); }
 .sk-presence-dot.is-offline { background: var(--sk-text-3); opacity: .55; }
 .sk-unread-badge {
   position: absolute; right: -6px; top: -6px;
@@ -151,13 +189,13 @@
 .sk-request-card:focus-within .sk-request-decide { opacity: 1; }
 .sk-decide.pt-icon-button { color: var(--sk-text-3); }
 .sk-decide.is-accept:hover {
-  color: #3f9142;
-  background: color-mix(in srgb, #3f9142 12%, transparent);
+  color: var(--sk-accent);
+  background: color-mix(in srgb, var(--sk-accent) 12%, transparent);
 }
 .sk-decide.is-reject:hover,
 .sk-decide.is-danger:hover {
-  color: #b0413a;
-  background: color-mix(in srgb, #b0413a 10%, transparent);
+  color: var(--sk-danger);
+  background: color-mix(in srgb, var(--sk-danger) 10%, transparent);
 }
 .sk-request-sent { color: var(--sk-text-3); }
 .sk-request-card.is-outgoing { background: color-mix(in srgb, var(--sk-primary) 5%, transparent); }
@@ -250,8 +288,13 @@
   .sk-member-federation { margin-left: 44px; max-width: none; white-space: normal; }
 }
 
-/* stream: group sender + service messages */
-.sk-msg-col { display: flex; flex-direction: column; gap: 3px; max-width: 76%; }
+/* stream: group sender + service messages. The row is already capped at 78%
+   of the stream; the column keeps its 76% reading measure at wide widths but
+   MUST be shrinkable (min-width:0) so a narrow pane wraps instead of
+   overflowing. */
+.sk-msg-col { display: flex; flex-direction: column; gap: 3px; max-width: 76%; min-width: 0; flex: 0 1 auto; }
+.sk-msg-main { min-width: 0; max-width: 100%; }
+.sk-msg-bubble { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .sk-msg-me .sk-msg-col { align-items: flex-end; }
 .sk-msg-sender { font-size: 11px; color: var(--sk-text-3); padding-left: 4px; }
 .sk-msg-service { display: flex; justify-content: center; margin: 8px 0; }
@@ -269,6 +312,11 @@
 
 @media (max-width: 720px) {
   .sk-chat-feature { grid-template-columns: minmax(0, 1fr); }
+  /* Reset the two-pane grid-column placements: without this the explicit
+     grid-column:2 on main creates an implicit empty auto track and the
+     conversation starts mid-shell (the old rail's width). */
+  .sk-chat-feature > .sk-conv-rail,
+  .sk-chat-feature > .sk-chat-main { grid-column: 1; }
   .sk-chat-feature > .sk-conv-rail { display: flex; width: auto; border-right: 0; }
   .sk-chat-feature > .sk-chat-main { display: none; }
   .sk-chat-feature.sk-narrow-open > .sk-conv-rail { display: none; }
@@ -280,13 +328,25 @@
     background: transparent; color: var(--sk-text-2);
   }
   .sk-chat-back:hover { background: var(--sk-btn-quiet-bg-hover); color: var(--sk-text); }
+  /* Single-pane compact insets (WeChat parity): tighter side padding so the
+     thread keeps usable width; the header stays one row with the back tile. */
+  .sk-conv-view { padding-left: 14px; padding-right: 14px; }
+  .sk-chat-head { padding-left: 10px; padding-right: 10px; gap: 6px; }
+  .sk-chat-head-actions { gap: 2px; }
+  .sk-chat-head-actions .sk-head-action { width: 32px; height: 32px; min-height: 32px; }
+  .sk-composer-zone { min-width: 0; }
 }
 
-/* Phone-narrow header: keep back, title, audio and search; video/info
-   already live in the detail sheet reachable on wider surfaces. */
+/* Phone-narrow header: keep back, title, audio; video/info already live in
+   the detail sheet reachable on wider surfaces. Bubbles take more of the
+   row; composer tools tighten so the input never overflows. */
 @media (max-width: 480px) {
   .sk-chat-head [data-action-id='chat.call-video'],
   .sk-chat-head [data-action-id='chat.open-info'] { display: none; }
+  .sk-conv-view { padding-left: 10px; padding-right: 10px; }
+  .sk-msg { max-width: 88%; }
+  .sk-composer { gap: 6px; padding: 6px; }
+  .sk-composer-tools { gap: 0; }
 }
 
 /* ── Increment 11: header / sheets / search / thread / call ── */
@@ -295,7 +355,13 @@
    a tall toolbar. Title sits on the left baseline; three borderless glyphs
    share an even rhythm on the right. */
 .sk-chat-head {
-  flex-shrink: 0; height: 52px; padding: 0 20px;
+  /* One 52px band that owns the frame inset: 8px above the title row + a
+     44px row. Aligned with the rail header. The previous 14+48 stack put the
+     title at ~60% of the band and read as a heavy strip above the hairline.
+     Being opaque at the top of the column also covers any full-bleed chat
+     wallpaper above the hairline. */
+  flex-shrink: 0; box-sizing: border-box;
+  height: 52px; padding: 8px 20px 0;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
@@ -331,24 +397,43 @@
 }
 
 /* Per-conversation chat background (desktop detail panel setting).
-   Presets paint the message stream; uploaded images cover it. A translucent
-   canvas veil keeps message meta legible over saturated presets. */
-.sk-conv-view[data-chat-background]:not([data-chat-background='default']) .sk-msg-stream {
-  position: relative;
+   The wallpaper is a FULL-BLEED layer on the conversation column — edge to
+   edge from the header hairline to the pane bottom, square corners — never a
+   rounded card inset by the column padding (that left white gutters on every
+   side). It sits behind all column children; the header and composer paint
+   their own surfaces so chrome stays legible over any preset. */
+.sk-conv-view[data-chat-background]:not([data-chat-background='default'])::before {
+  content: '';
+  position: absolute; inset: 0; z-index: 0;
   background-size: cover; background-position: center;
-  border-radius: var(--sk-radius-soft);
 }
-.sk-conv-view[data-chat-background='dusk'] .sk-msg-stream {
+.sk-conv-view[data-chat-background]:not([data-chat-background='default']) > .sk-chat-head,
+.sk-conv-view[data-chat-background]:not([data-chat-background='default']) > .sk-msg-stream,
+.sk-conv-view[data-chat-background]:not([data-chat-background='default']) > .sk-composer-zone {
+  position: relative; z-index: 1;
+}
+.sk-conv-view[data-chat-background='dusk']::before {
   background-image: linear-gradient(135deg,#f6d8b8,#e7a98e 45%,#b08bb8);
 }
-.sk-conv-view[data-chat-background='mint'] .sk-msg-stream {
+.sk-conv-view[data-chat-background='mint']::before {
   background-image: linear-gradient(135deg,#cdeede,#a7d7cf 50%,#bcd0f2);
 }
-.sk-conv-view[data-chat-background='night'] .sk-msg-stream {
+.sk-conv-view[data-chat-background='night']::before {
   background-image: radial-gradient(120% 120% at 20% 0%,#3a4a63,#1c2536 70%);
 }
-.sk-conv-view[data-chat-background='image'] .sk-msg-stream {
+.sk-conv-view[data-chat-background='image']::before {
   background-image: var(--sk-chat-bg-image);
+}
+/* Chrome surfaces over the wallpaper: the title band is opaque (wallpaper
+   starts at the hairline, WeChat parity); the composer floats on a near-
+   opaque canvas veil so the input row stays legible over a busy image. */
+.sk-conv-view[data-chat-background]:not([data-chat-background='default']) .sk-chat-head {
+  background: var(--sk-overlay);
+}
+.sk-conv-view[data-chat-background]:not([data-chat-background='default']) .sk-composer-zone {
+  background: color-mix(in srgb, var(--sk-overlay) 92%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 /* side sheets (detail + thread) */
@@ -356,23 +441,40 @@
   position: absolute; top: 0; bottom: 0; right: 0; width: 300px; z-index: 8;
   background: var(--sk-overlay);
   border-left: 1px solid var(--sk-card-border);
-  box-shadow: -10px 0 30px -18px rgba(28, 46, 32, .35);
+  box-shadow: -10px 0 30px -18px rgba(20, 24, 22, .30);
   display: flex; flex-direction: column;
 }
-/* The sheet overlays a conv view whose chrome is inset 18px; shift the head
-   to the same line as .sk-chat-head (top 18, height 60) so both surfaces
-   share one continuous hairline instead of two offset rules. */
+/* Phone squeeze: the sheet takes the full pane instead of leaving an
+   unreadable sliver of chat beside a fixed 300px panel (WeChat parity). */
+@media (max-width: 560px) {
+  .sk-side-sheet { width: auto; left: 0; right: 0; border-left: 0; }
+}
+/* The sheet overlays the conv view from the frame edge; its 52px band (8 top
+   + 44 row) mirrors the chat header so the titles and hairlines coincide. */
 .sk-side-head {
   position: relative;
-  /* The sheet is inset by the 18px conv-view top pad, so the title starts
-     18px down and its 52px band lands on the chat header's hairline
-     (18 + 52 = the chat-head bottom edge). */
-  height: 52px; flex-shrink: 0; margin-top: 18px; padding: 0 12px;
+  box-sizing: border-box;
+  height: 52px; flex-shrink: 0; margin-top: 0; padding: 8px 12px 0;
   display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
 .sk-side-head strong { font-size: 15.5px; font-weight: 650; letter-spacing: .01em; color: var(--sk-text); text-align: center; }
-.sk-side-head .pt-icon-button { position: absolute; right: 10px; }
+/* Top-right icon group: message search / chat background / close — borderless
+   30px glyphs in one even rhythm (the background & search actions live here,
+   not as two extra settings rows). */
+.sk-side-head-actions {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 2px;
+}
+.sk-side-head-action {
+  width: 30px; height: 30px; min-height: 30px; padding: 0;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--sk-text-2);
+}
+.sk-side-head-action:hover {
+  background: color-mix(in srgb, var(--sk-text) 7%, transparent);
+  color: var(--sk-text);
+}
 .sk-side-body { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 
 /* ── Profile sheet (desktop DetailPanel parity, card system) ── */
@@ -432,20 +534,37 @@
 .sk-profile-member-role {
   font-size: 9px; line-height: 1.4; color: var(--sk-text-3); text-align: center;
 }
-/* Ownership is expressed by member ordering + an unobtrusive role label. */
+/* Ownership is expressed by member ordering + an unobtrusive role label.
+   Add/manage are avatar-sized icon tiles in the same grid (WeChat parity),
+   so no text row sits under the members. */
 .sk-profile-member-actions {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: flex-end;
   gap: 8px; margin-top: 2px;
 }
-.pt-button.sk-profile-add {
-  min-height: 0; height: auto; padding: 5px 12px;
-  border: 1px dashed color-mix(in srgb, var(--sk-text) 22%, transparent);
-  background: transparent; color: var(--sk-text-2);
-  font-size: 12px; font-weight: 550; border-radius: 9px;
+.sk-profile-member-tile { display: flex; justify-content: center; }
+.sk-profile-members .sk-profile-add-tile,
+.sk-profile-members .sk-profile-manage-tile {
+  width: 38px; min-width: 38px; height: 38px; min-height: 38px;
+  padding: 0; border-radius: 11px;
 }
-.sk-profile-add:hover:not([aria-disabled='true']) { color: var(--sk-primary); border-color: var(--sk-primary); }
-.sk-profile-add[aria-disabled='true'] { opacity: .5; cursor: not-allowed; }
-.sk-profile-member-links { display: inline-flex; gap: 8px; margin-left: auto; }
+.sk-profile-members .sk-profile-add-tile {
+  border: 1px dashed color-mix(in srgb, var(--sk-text) 28%, transparent);
+  background: transparent; color: var(--sk-text-2);
+}
+.sk-profile-members .sk-profile-add-tile:hover:not([aria-disabled='true']) {
+  color: var(--sk-primary);
+  border-color: var(--sk-primary);
+  background: color-mix(in srgb, var(--sk-primary) 6%, transparent);
+}
+.sk-profile-members .sk-profile-add-tile[aria-disabled='true'] { opacity: .45; }
+.sk-profile-members .sk-profile-manage-tile {
+  border: 0; background: color-mix(in srgb, var(--sk-text) 6%, transparent);
+  color: var(--sk-text-2);
+}
+.sk-profile-members .sk-profile-manage-tile:hover {
+  background: color-mix(in srgb, var(--sk-text) 10%, transparent);
+  color: var(--sk-text);
+}
 .pt-button.sk-profile-link {
   min-height: 0; height: auto; padding: 4px 2px;
   font-size: 12px; color: var(--sk-primary);
@@ -481,7 +600,7 @@
   width: 16px; flex: 0 0 16px; display: inline-grid; place-items: center;
   color: var(--sk-text-3);
 }
-.sk-detail-icon.is-danger, .sk-setting-row.is-danger { color: #b0413a; }
+.sk-detail-icon.is-danger, .sk-setting-row.is-danger { color: var(--sk-danger); }
 .sk-setting-label { flex: 1; min-width: 0; }
 .sk-setting-chevron { color: var(--sk-text-3); flex-shrink: 0; }
 .sk-setting-value {
@@ -634,7 +753,7 @@
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 11.5px; color: var(--sk-text-3); font-variant-numeric: tabular-nums;
 }
-.sk-call-audio-id span.is-warn { color: #b97f1f; font-weight: 650; }
+.sk-call-audio-id span.is-warn { color: var(--sk-warning); font-weight: 650; }
 .sk-call-video-pane {
   position: relative; height: 188px; background: #0f172a;
   border-radius: 15px 15px 0 0; overflow: hidden;
@@ -781,7 +900,7 @@
 .sk-call-tile {
   position: relative; min-height: 108px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  padding: 12px 8px; border-radius: 16px; color: #f3f8f4;
+  padding: 12px 8px; border-radius: 16px; color: #f2f4f2;
   background: rgba(255,255,255,.09); border: 1px solid transparent;
   transition: border-color .15s;
 }
@@ -790,7 +909,7 @@
   box-shadow: inset 0 0 0 1px var(--sk-accent);
 }
 .sk-call-tile-name { font-size: 12px; opacity: .9; }
-.sk-call-tile-muted { position: absolute; top: 8px; left: 9px; color: rgba(243,248,244,.62); }
+.sk-call-tile-muted { position: absolute; top: 8px; left: 9px; color: rgba(242,244,242,.62); }
 
 /* Unified-left preference: own messages join peers on the left (color
    still distinguishes them). Set via [data-message-layout] on the feature. */
@@ -971,7 +1090,7 @@
   border-color: var(--sk-primary, #202431);
 }
 .sk-msg.is-selectable.is-selected .sk-msg-bubble {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-accent, #202431) 38%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 30%, transparent);
 }
 
 .sk-bulk-bar {
@@ -1007,11 +1126,13 @@
 .sk-spin { animation: sk-spin .9s linear infinite; }
 
 .sk-composer-zone {
-  position: relative; flex-shrink: 0;
+  position: relative; flex-shrink: 0; min-width: 0;
   display: flex; flex-direction: column; gap: 8px;
 }
 .sk-composer-zone > .pt-alert { margin: 0 4px; }
-.sk-composer { width: 100%; align-items: center; padding: 6px 10px 6px 4px; }
+/* Width/alignment only — the pill's own padding (symmetric 8px) is owned by
+   design-directions.css so tools/send keep one rhythm. */
+.sk-composer { width: 100%; align-items: center; }
 .sk-composer-tools {
   display: flex; align-items: center; gap: 1px; flex-shrink: 0; align-self: flex-end;
 }

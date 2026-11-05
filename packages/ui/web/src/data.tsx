@@ -28,6 +28,33 @@ export function Heading({ level = 2, truncate, style, className='', ...props }: 
   const Tag = `h${level}` as 'h2';
   return <Tag {...props} className={`pt-heading ${className}`} style={{ ...(truncate ? { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as CSSProperties : {}), ...style }} />;
 }
+/**
+ * Pick a glyph color that clears the avatar tile fill. The primitive accepts
+ * arbitrary caller-owned backgrounds (identity tiles, generated avatars), so
+ * the fixed ink glyph cannot work on dark fills. Returns undefined when the
+ * background is unresolved, leaving the token-driven CSS default in place.
+ */
+function glyphColorFor(background?: string): string | undefined {
+  if (!background) return undefined;
+  const hex = background.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  const rgb = background.match(/rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  let channels: number[] | null = null;
+  if (hex) {
+    const digits = hex[1];
+    const full = digits.length === 3 ? [...digits].map(c => c + c).join('') : digits;
+    channels = [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16));
+  } else if (rgb) {
+    channels = rgb.slice(1, 4).map(Number);
+  }
+  if (!channels || channels.some(Number.isNaN)) return undefined;
+  const linear = channels.map(c => {
+    const srgb = c / 255;
+    return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  return luminance < 0.2 ? 'var(--pt-white)' : 'var(--pt-primary)';
+}
+
 export interface AvatarProps extends HTMLAttributes<HTMLSpanElement> {
   source?: string; name?: string; size?: number; fallback?: ReactNode; background?: string;
   onImageFailure?: () => void;
@@ -36,7 +63,7 @@ export function Avatar({ source, name = '', size = 36, fallback, children, backg
   const [failed, setFailed] = useState<string | null>(null);
   return <span {...props} className={`pt-avatar ${className}`} role={source && failed !== source ? undefined : 'img'}
     aria-label={source && failed !== source ? undefined : name}
-    style={{ width: size, height: size, borderRadius: Math.max(8, Math.floor(size * .25)), background, ...style }}>
+    style={{ width: size, height: size, borderRadius: Math.max(8, Math.floor(size * .25)), background, color: glyphColorFor(background), ...style }}>
     {source && failed !== source ? <img src={source} alt={name} onError={() => {setFailed(source);onImageFailure?.();}} />
       : fallback ?? children ?? [...name.trim()][0]?.toLocaleUpperCase() ?? '?'}
   </span>;
@@ -119,13 +146,16 @@ export function DataTable<T>({ rows, columns, rowKey, loading, emptyLabel, pageS
     {pageSize && rows.length > pageSize && <Pagination page={activePage} total={rows.length} pageSize={pageSize} onPageChange={setPage} />}
   </div>;
 }
-export interface PaginationProps { page: number; total: number; pageSize?: number; onPageChange: (page: number) => void }
-export function Pagination({ page, total, pageSize = 20, onPageChange }: PaginationProps) {
+export interface PaginationProps {
+  page: number; total: number; pageSize?: number; onPageChange: (page: number) => void;
+  previousLabel?: string; nextLabel?: string;
+}
+export function Pagination({ page, total, pageSize = 20, onPageChange, previousLabel = 'Previous', nextLabel = 'Next' }: PaginationProps) {
   const count = Math.max(1, Math.ceil(total/pageSize));
   return <nav className="pt-action-group" aria-label="Pagination">
-    <Button actionId="pagination.previous" label="Previous" availability={page <= 1 ? { kind: 'disabled', reason: 'First page' } : undefined} onActivate={() => onPageChange(page-1)} />
+    <Button actionId="pagination.previous" label={previousLabel} availability={page <= 1 ? { kind: 'disabled', reason: 'First page' } : undefined} onActivate={() => onPageChange(page-1)} />
     <span aria-live="polite">{page} / {count}</span>
-    <Button actionId="pagination.next" label="Next" availability={page >= count ? { kind: 'disabled', reason: 'Last page' } : undefined} onActivate={() => onPageChange(page+1)} />
+    <Button actionId="pagination.next" label={nextLabel} availability={page >= count ? { kind: 'disabled', reason: 'Last page' } : undefined} onActivate={() => onPageChange(page+1)} />
   </nav>;
 }
 export interface VirtualListProps<T> extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {

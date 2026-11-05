@@ -38,6 +38,20 @@ export function craftBatterySource(rootSelector) {
       const cls = (el.getAttribute('class') || '').split(/\\s+/).filter(Boolean).slice(0, 2).join('.');
       return (el.tagName.toLowerCase() + (cls ? '.' + cls : '') + (id ? '#' + id : '')).slice(0, 80);
     };
+    // Resolved paint alpha. Engines serialize colors as either rgba(r,g,b,a)
+    // or the modern color(srgb r g b / a) form; both must yield a number.
+    const rgbaAlpha = value => {
+      const m = /rgba?\\(([^)]+)\\)/.exec(value);
+      if (!m) return 1;
+      const parts = m[1].split(',').map(p => parseFloat(p.trim()));
+      return parts.length === 4 ? parts[3] : 1;
+    };
+    const colorAlpha = value => {
+      if (!value || value === 'transparent' || value === 'rgba(0, 0, 0, 0)') return 0;
+      const slash = /\\/\\s*([0-9.]+)/.exec(value);
+      if (slash) return parseFloat(slash[1]);
+      return rgbaAlpha(value);
+    };
 
     // C1 — Native OS chrome must never be visibly rendered. File/color inputs
     // are always hidden behind a custom affordance; raw submit/reset inputs are
@@ -46,11 +60,12 @@ export function craftBatterySource(rootSelector) {
       if (visible(el) && !screenReaderOnly(el)) flag('native-control-chrome', describe(el));
     });
 
-    // C2 — The switch is an intrinsic compact control (42x24). Even inside a
-    // stretchy flex/grid parent it must keep its geometry.
+    // C2 — The switch is an intrinsic dense 36x20 control (promoted from the
+    // old 44x26 iOS pill). Even inside a stretchy parent it must keep its
+    // geometry; the old tall/wide bounds are now defects.
     root.querySelectorAll('.pt-switch').forEach(el => {
       const r = box(el);
-      if (r.width > 60 || r.width < 34 || r.height < 20 || r.height > 30) {
+      if (r.width > 44 || r.width < 32 || r.height < 18 || r.height > 24) {
         flag('switch-intrinsic-geometry', describe(el), { width: Math.round(r.width), height: Math.round(r.height) });
       }
     });
@@ -162,7 +177,7 @@ export function craftBatterySource(rootSelector) {
     // C10 — App-frame chrome zones (icon rail, top bar, side rail) separate by
     // material surfaces + blur, never by hairline border strokes. A border on
     // these zones regresses to the tiled admin-frame seam the owner rejected.
-    ['.sk-rail', '.sk-feed-head', '.sk-chats'].forEach(sel => {
+    ['.sk-rail', '.sk-chats'].forEach(sel => {
       root.querySelectorAll(sel).forEach(el => {
         const s = cs(el);
         const widths = [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth]
@@ -221,15 +236,9 @@ export function craftBatterySource(rootSelector) {
     // C14 — Floating overlays that sit above a busy surface must paint
     // opaquely. The recurring defect: translucent card tokens let the stream
     // and composer bleed through side sheets and the hover action bar.
-    const rgbaAlpha = value => {
-      const m = /rgba?\\(([^)]+)\\)/.exec(value);
-      if (!m) return 1;
-      const parts = m[1].split(',').map(p => parseFloat(p.trim()));
-      return parts.length === 4 ? parts[3] : 1;
-    };
     ['.sk-side-sheet', '.sk-msg-actions-bar'].forEach(sel => {
       root.querySelectorAll(sel).forEach(el => {
-        const alpha = rgbaAlpha(cs(el).backgroundColor);
+        const alpha = colorAlpha(cs(el).backgroundColor);
         if (alpha < 0.98) flag('translucent-overlay', describe(el), { backgroundColor: cs(el).backgroundColor });
       });
     });
@@ -247,6 +256,197 @@ export function craftBatterySource(rootSelector) {
       const hasGlyph = !!el.querySelector('svg,img,[class*="avatar"]');
       if (hasGlyph && !named) flag('icon-button-unlabeled', describe(el));
     });
+
+    // C16 — Scrollbars are quiet infrastructure, never UA admin chrome.
+    // Every scrolling surface inside the frame must opt into the thin
+    // grammar: a <=10px gutter with a transparent track and a low-alpha
+    // thumb. The recurring defect was the default thick solid gray bar
+    // painting beside the contact list ("可以跑火车了").
+    // One grammar across TWO scopes: product surfaces inside .sk-theme and
+    // the harness preview host (.prototype-portal-preview-body), which is an
+    // ancestor of .sk-shell and therefore invisible to root.querySelectorAll —
+    // it previously kept the UA-default thick gutter.
+    const quietScrollbarOn = el => {
+      const s = cs(el);
+      if (!['auto', 'scroll'].includes(s.overflowY) && !['auto', 'scroll'].includes(s.overflowX)) return;
+      const bar = getComputedStyle(el, '::-webkit-scrollbar');
+      const gutter = parseFloat(bar.width) || 0;
+      if (gutter > 10) flag('loud-scrollbar-gutter', describe(el), { width: bar.width });
+      const track = getComputedStyle(el, '::-webkit-scrollbar-track');
+      const trackAlpha = colorAlpha(track.backgroundColor);
+      if (trackAlpha > 0.05) flag('painted-scrollbar-track', describe(el), { track: track.backgroundColor });
+      const thumb = getComputedStyle(el, '::-webkit-scrollbar-thumb');
+      const thumbAlpha = colorAlpha(thumb.backgroundColor);
+      if (thumbAlpha > 0.4) flag('loud-scrollbar-thumb', describe(el), { thumb: thumb.backgroundColor, alpha: thumbAlpha });
+    };
+    root.querySelectorAll('*').forEach(el => {
+      if (el.closest('.sk-theme')) quietScrollbarOn(el);
+    });
+    document.querySelectorAll('.prototype-portal-preview-body').forEach(quietScrollbarOn);
+
+    // C17 — A floating layer (menu/popover/tooltip) is portaled OUTSIDE the
+    // app frame (.sk-shell), so viewport clamping alone let a menu opened near
+    // the rail paint over the outer page. Its rect must stay within the frame
+    // that clips its anchor. Dialogs/drawers are modal centering layers that
+    // may cover the viewport, so they are intentionally excluded.
+    (() => {
+      const frame = document.querySelector('.sk-shell');
+      if (!frame) return;
+      const f = box(frame), gap = 4;
+      document.querySelectorAll('.pt-overlay.pt-menu,.pt-overlay.pt-popover,.pt-overlay.pt-tooltip')
+        .forEach(el => {
+          if (!visible(el)) return;
+          const r = box(el);
+          if (r.left < f.left - gap || r.right > f.right + gap
+            || r.top < f.top - gap || r.bottom > f.bottom + gap) {
+            flag('overlay-escapes-frame', describe(el), {
+              overlay: [r.left, r.top, r.right, r.bottom].map(n => Math.round(n)).join(','),
+              frame: [f.left, f.top, f.right, f.bottom].map(n => Math.round(n)).join(','),
+            });
+          }
+        });
+    })();
+
+    // C18 — A ghost Select inside a flat settings row is a quiet action: at
+    // rest (closed, not hovered) it paints no fill and no visible border.
+    // Only hover/open may raise the neutral well. A painted resting box is the
+    // bordered-SaaS-input look the ghost variant exists to remove.
+    root.querySelectorAll('.pt-select[data-appearance=ghost] .pt-select-trigger').forEach(el => {
+      if (!visible(el) || el.getAttribute('aria-expanded') === 'true') return;
+      const s = cs(el);
+      if (s.hovered) return;
+      const bgAlpha = colorAlpha(s.backgroundColor);
+      const borderWidth = parseFloat(s.borderTopWidth) || 0;
+      const borderAlpha = colorAlpha(s.borderTopColor);
+      if (bgAlpha > 0.02 || (borderWidth > 0 && borderAlpha > 0.05)) {
+        flag('ghost-select-painted-at-rest', describe(el),
+          { bg: s.backgroundColor, borderWidth, border: s.borderTopColor });
+      }
+    });
+
+    // C19 — Floating surfaces must carry the single surface-in motion contract
+    // (opacity + settle), never appear instantly or each define their own
+    // transition. Assert the stylesheet actually defines the keyframes and the
+    // popover/menu/dialog/drawer rules consume it — a presentational claim
+    // must exist in shipped CSS, not only in the token file.
+    (() => {
+      let hasKeyframes = false, consumesMotion = false;
+      for (const sheet of Array.from(document.styleSheets)) {
+        let rules;
+        try { rules = sheet.cssRules; } catch (error) { continue; }
+        if (!rules) continue;
+        for (const rule of Array.from(rules)) {
+          if (rule.type === 7 && rule.name === 'pt-surface-in') hasKeyframes = true;
+          const text = rule.cssText || '';
+          if (/\\.pt-overlay\\.pt-(popover|menu|dialog|drawer)/.test(text) && /pt-surface-in/.test(text)) {
+            consumesMotion = true;
+          }
+        }
+      }
+      if (!hasKeyframes || !consumesMotion) {
+        flag('overlay-surface-in-missing', 'styles.css', { hasKeyframes, consumesMotion });
+      }
+    })();
+
+    // C20 — Pine-on-neutral glass discipline: the glass skin's container is a
+    // flat NEUTRAL paper floor (channel spread tight), never a green canvas,
+    // and the ambient color glow must stay flattened to none. Frosted
+    // translucency lives on card surfaces; hue is reserved for pine accents.
+    (() => {
+      const skin = document.querySelector('.sk-theme.sk-skin-glass');
+      if (!skin) return;
+      const vars = getComputedStyle(skin);
+      const parse = (value) => {
+        const hex = value.trim().match(/^#([0-9a-f]{6})$/i);
+        if (hex) {
+          const d = hex[1];
+          return [0, 2, 4].map(i => parseInt(d.slice(i, i + 2), 16));
+        }
+        const rgb = value.match(/rgba?\\(\\s*([\\d.]+)[\\s,]+([\\d.]+)[\\s,]+([\\d.]+)/);
+        return rgb ? rgb.slice(1, 4).map(Number) : null;
+      };
+      const canvas = parse(vars.getPropertyValue('--sk-canvas'));
+      if (canvas) {
+        const spread = Math.max(...canvas) - Math.min(...canvas);
+        if (spread > 12) {
+          flag('glass-canvas-tinted', '.sk-skin-glass --sk-canvas', { canvas: vars.getPropertyValue('--sk-canvas'), spread });
+        }
+      }
+      if (vars.getPropertyValue('--sk-shell-glow').trim() !== 'none') {
+        flag('glass-glow-not-flat', '.sk-skin-glass --sk-shell-glow', { glow: vars.getPropertyValue('--sk-shell-glow') });
+      }
+    })();
+
+    // C21 — Spatial rotation on the moments scope sub-bar: under squeeze the
+    // peer controls must NOT wrap. The scope group is a single-line scrollable
+    // island (library primitive), driven by a CONTAINER query on the frame
+    // width (not the viewport). The old redundant hint text must be gone.
+    const subbar = document.querySelector('.sk-moments-subbar');
+    if (subbar) {
+      if (document.querySelector('.sk-moments-hint')) {
+        flag('moments-scope-hint-present', '.sk-moments-hint', {});
+      }
+      if (cs(subbar).flexWrap !== 'nowrap') {
+        flag('moments-subbar-wraps', '.sk-moments-subbar', { flexWrap: cs(subbar).flexWrap });
+      }
+      const island = subbar.querySelector('.sk-scope-island');
+      if (!island || island.getAttribute('data-scrollable') === null) {
+        flag('moments-scope-island-missing', '.sk-scope-island[data-scrollable]', {});
+      }
+      const moments = document.querySelector('.sk-moments');
+      if (moments && cs(moments).containerType !== 'inline-size') {
+        flag('moments-container-missing', '.sk-moments', { containerType: moments ? cs(moments).containerType : null });
+      }
+      // Shipped CSS must contain both halves of the contract: the library's
+      // scrollable island rule and the frame-driven @container collapse.
+      let shippedIsland = false, shippedContainer = false;
+      for (const sheet of Array.from(document.styleSheets)) {
+        let rules;
+        try { rules = sheet.cssRules; } catch (error) { continue; }
+        if (!rules) continue;
+        const walkRules = (list) => {
+          for (const rule of Array.from(list)) {
+            const text = rule.cssText || '';
+            if (text.includes('[data-scrollable]')) shippedIsland = true;
+            if (text.includes('@container') && text.includes('sk-scope-wrap')) shippedContainer = true;
+            if (rule.cssRules) walkRules(rule.cssRules);
+          }
+        };
+        walkRules(rules);
+      }
+      if (!shippedIsland) flag('scrollable-island-css-missing', 'styles.css [data-scrollable]', {});
+      if (!shippedContainer) flag('moments-container-css-missing', 'moments.css @container', {});
+    }
+
+    // C22 — Settings grouped-card language (Trae parity): titled white cards
+    // open immediately under the rail (the active rail item is the subject);
+    // there is NO article-style page heading. Cards separate by whitespace,
+    // never a flat full-bleed hairline document or a cold SaaS grey floor.
+    const settingsSurface = document.querySelector('.sk-settings');
+    if (settingsSurface) {
+      if (settingsSurface.querySelector('.sk-settings-pagehead, .sk-settings-scroll > h1')) {
+        flag('settings-article-pagehead-present', '.sk-settings-pagehead', {});
+      }
+      const card = settingsSurface.querySelector('.sk-settings-card, .pt-list-section[data-inset] .pt-list-body');
+      if (!card) {
+        flag('settings-grouped-card-missing', '.sk-settings-card / [data-inset] .pt-list-body', {});
+      } else {
+        const bg = cs(card).backgroundColor;
+        // Forbidden cold SaaS panel grey.
+        if (bg === 'rgb(233, 236, 242)') {
+          flag('settings-card-cold-grey', '.sk-settings card', { bg });
+        }
+      }
+      // The old flat-document rule (full-bleed top hairline between every
+      // section) must not divide the page any more.
+      for (const section of Array.from(settingsSurface.querySelectorAll('.sk-settings-section + .sk-settings-section'))) {
+        const top = cs(section).borderTopWidth;
+        if (top && top !== '0px') {
+          flag('settings-flat-section-hairline', '.sk-settings-section + .sk-settings-section', { top });
+          break;
+        }
+      }
+    }
 
     return {
       pass: offenders.length === 0,

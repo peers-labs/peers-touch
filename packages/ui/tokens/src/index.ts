@@ -7,7 +7,7 @@ export { northStarTheme, northStarVariables } from './north-star-theme';
 export const geometry = {
   radius: { xs: 4, sm: 6, md: 8, lg: 12, xl: 16, full: 999 },
   space: { xxs: 4, xs: 8, sm: 12, md: 16, lg: 20, xl: 24, xxl: 32 },
-  control: { compact: 28, menu: 32, normal: 36, comfortable: 44 },
+  control: { compact: 28, row: 30, menu: 30, normal: 36, comfortable: 44 },
   icon: { compact: 16, normal: 18, comfortable: 20 },
   font: {
     sans: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', sans-serif",
@@ -16,7 +16,7 @@ export const geometry = {
   typography: { body: 14, small: 12, heading2: 30, heading4: 20, strong: 600 },
   layer: { popup: 1000 },
   motion: {
-    instant: 0, fast: 100, normal: 200, slow: 300,
+    instant: 0, fast: 100, surface: 140, normal: 200, slow: 300,
     standard: 'cubic-bezier(0.645, 0.045, 0.355, 1)',
     out: 'cubic-bezier(0.215, 0.61, 0.355, 1)',
     emphasized: 'cubic-bezier(0.78, 0.14, 0.15, 0.86)',
@@ -51,6 +51,10 @@ const light = {
   text: ink.light.solid, secondary: '#626979', muted: '#757d8c',
   primary: ink.light.solid, primaryHover: ink.light.hover, onPrimary: ink.light.onSolid,
   primarySubtle: ink.light.subtle, border: '#e5e8ef', borderStrong: '#cbd0da',
+  // Brand accent is deliberately neutral in the canonical cold-ink theme:
+  // chromatic brand identities belong to candidate/product themes. Primary
+  // already carries hierarchy through ink, so accent mirrors it here.
+  accent: ink.light.solid, accentHover: ink.light.hover, onAccent: ink.light.onSolid, accentSubtle: ink.light.subtle,
   // Success foreground must clear AA 4.5 not only on white/surface but on the
   // subtle wells where alerts/tags actually render (4.81/4.63); the prior
   // #25875a measured 4.48/4.21/4.06 and failed all three small-text cases.
@@ -65,6 +69,7 @@ const dark: typeof light = {
   text: ink.dark.solid, secondary: '#b1b7c4', muted: '#969daa',
   primary: ink.dark.solid, primaryHover: ink.dark.hover, onPrimary: ink.dark.onSolid,
   primarySubtle: ink.dark.subtle, border: '#2d323d', borderStrong: '#4a5261',
+  accent: ink.dark.solid, accentHover: ink.dark.hover, onAccent: ink.dark.onSolid, accentSubtle: ink.dark.subtle,
   success: '#63c28f', warning: '#e2a54a', danger: '#f07b7b', info: '#7ab9ed',
   successSubtle: '#173c2b', warningSubtle: '#3c2d14', dangerSubtle: '#402326', infoSubtle: '#1c304a', white: '#ffffff',
   focus: ink.dark.solid, scrim: 'rgba(0,0,0,0.6)',

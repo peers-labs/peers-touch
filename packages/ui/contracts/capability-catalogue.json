@@ -303,7 +303,8 @@
         "NumberField",
         "TextArea",
         "OTPField",
-        "FieldFrame"
+        "FieldFrame",
+        "Field"
       ],
       "implementationRefs": [
         "packages/ui/web/src/fields.tsx"
@@ -596,7 +597,9 @@
       "exports": [
         "Form",
         "FormField",
-        "useFormController"
+        "useFormController",
+        "FormGroup",
+        "FormFooter"
       ],
       "implementationRefs": [
         "packages/ui/web/src/form.tsx",
@@ -762,7 +765,9 @@
       "specRef": "docs/architecture/platform/client/ui-system/specs/input.md#ui.spec.datepicker",
       "exports": [
         "DateField",
-        "DateRangeField"
+        "DateRangeField",
+        "DateTimeField",
+        "DateTimeRangeField"
       ],
       "implementationRefs": [
         "packages/ui/web/src/advanced-fields.tsx"
@@ -1050,7 +1055,8 @@
       "owner": "Client Platform / UI System",
       "specRef": "docs/architecture/platform/client/ui-system/specs/input.md#ui.spec.togglegroup",
       "exports": [
-        "ToggleGroup"
+        "ToggleGroup",
+        "Toggle"
       ],
       "implementationRefs": [
         "packages/ui/web/src/actions.tsx",
@@ -1628,7 +1634,8 @@
       "owner": "Client Platform / UI System",
       "specRef": "docs/architecture/platform/client/ui-system/specs/identity.md#ui.spec.icon",
       "exports": [
-        "Icon"
+        "Icon",
+        "BrandMark"
       ],
       "implementationRefs": [
         "packages/ui/web/src/icon.tsx"
@@ -2039,7 +2046,8 @@
       "specRef": "docs/architecture/platform/client/ui-system/specs/feedback.md#ui.spec.toast",
       "exports": [
         "ToastHost",
-        "createToastChannel"
+        "createToastChannel",
+        "FeedbackHost"
       ],
       "implementationRefs": [
         "packages/ui/web/src/feedback.tsx"
@@ -2080,7 +2088,8 @@
       "owner": "Client Platform / UI System",
       "specRef": "docs/architecture/platform/client/ui-system/specs/content.md#ui.spec.descriptions",
       "exports": [
-        "Descriptions"
+        "Descriptions",
+        "Description"
       ],
       "implementationRefs": [
         "packages/ui/web/src/data.tsx"
@@ -2333,7 +2342,8 @@
       "exports": [
         "Text",
         "Paragraph",
-        "Heading"
+        "Heading",
+        "HighlightText"
       ],
       "implementationRefs": [
         "packages/ui/web/src/data.tsx"
@@ -3402,7 +3412,8 @@
       "owner": "Client Platform / UI System",
       "specRef": "docs/architecture/platform/client/ui-system/specs/navigation.md#ui.spec.commandpalette",
       "exports": [
-        "CommandPalette"
+        "CommandPalette",
+        "CommandPicker"
       ],
       "implementationRefs": [
         "packages/ui/web/src/advanced-layout.tsx"

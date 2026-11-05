@@ -683,7 +683,12 @@ const styles: Record<string, CSSProperties> = {
   previewBody: {
     height: 720,
     minHeight: 0,
-    overflow: 'auto',
+    // Vertical only: product surfaces own their minimum widths and clip
+    // rather than grow a horizontal UA scrollbar. The quiet scrollbar
+    // grammar itself lives in responsive.css (pseudo-elements cannot be
+    // inlined).
+    overflowX: 'hidden',
+    overflowY: 'auto',
   },
   // Definite-height clipping host, mirroring the remote iframe preview
   // (previewBody height:720 + overflow:auto). Full-screen app prototypes
@@ -695,7 +700,8 @@ const styles: Record<string, CSSProperties> = {
   localPreviewBody: {
     height: 780,
     minHeight: 0,
-    overflow: 'auto',
+    overflowX: 'hidden',
+    overflowY: 'auto',
   },
   previewPlaceholder: {
     height: '100%',

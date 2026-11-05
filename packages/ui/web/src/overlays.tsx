@@ -10,6 +10,24 @@ import { Button, IconButton } from './actions';
 import { Icon } from './icon';
 
 const focusable = 'button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])';
+/** Floating layers must stay inside the app surface that clips their anchor.
+ * Viewport clamping alone lets a menu escape a rounded overflow:hidden app
+ * frame and paint over the outer page; the nearest hidden/clip ancestor is
+ * the real boundary (the prototype frame in specimens, the window in
+ * production where the walk reaches <html> and yields no tighter rect). */
+function nearestClipFrame(anchor: HTMLElement, win: Window): DOMRect | null {
+  let node: HTMLElement | null = anchor.parentElement;
+  const { body, documentElement } = win.document;
+  while (node && node !== body && node !== documentElement) {
+    const style = win.getComputedStyle(node);
+    if (style.overflowX === 'hidden' || style.overflowX === 'clip'
+      || style.overflowY === 'hidden' || style.overflowY === 'clip') {
+      return node.getBoundingClientRect();
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
 interface OverlayLayerProps {
   children: ReactNode;
   open: boolean;
@@ -59,18 +77,36 @@ function OverlayLayer({
         left = a.right + gap;
         top = edgeBottom ? a.bottom - r.height : a.top;
       }
-      // Keep on-screen. Side panels only flip above the trigger for the
-      // start-aligned variants; bottom-aligned ones clamp toward the gap so
-      // they share the owner's bottom edge whenever the viewport allows it.
-      if (top + r.height > win.innerHeight - gap) {
-        top = edgeBottom ? Math.max(gap, win.innerHeight - r.height - gap)
-          : Math.max(gap, a.top - r.height - gap);
+      // Keep inside the anchor's clipping frame (or the viewport when the
+      // app surface is the full window). Side panels only flip above the
+      // trigger for the start-aligned variants; bottom-aligned ones clamp
+      // toward the gap so they share the owner's bottom edge.
+      const clip = nearestClipFrame(anchor, win);
+      const minLeft = clip ? Math.max(gap, clip.left + gap) : gap;
+      const maxLeft = clip ? Math.min(win.innerWidth - r.width - gap, clip.right - r.width - gap)
+        : win.innerWidth - r.width - gap;
+      const minTop = clip ? Math.max(gap, clip.top + gap) : gap;
+      const maxTop = clip ? Math.min(win.innerHeight - r.height - gap, clip.bottom - r.height - gap)
+        : win.innerHeight - r.height - gap;
+      // Viewport wins over the clip frame vertically. The frame is a scroll
+      // container (e.g. the message stream) whose box can extend past the
+      // visible area and whose top can sit below the only space the popup
+      // fits in; the fixed popup is portaled out of that container, so it is
+      // not actually clipped by it. Flip above the trigger when opening below
+      // would leave the viewport, even if that crosses the frame top.
+      const viewMinTop = gap;
+      const viewMaxTop = win.innerHeight - r.height - gap;
+      if (top > viewMaxTop) {
+        const above = a.top - r.height - gap;
+        if (!edgeBottom && above >= viewMinTop) top = above;
+        else top = Math.max(viewMinTop, Math.min(maxTop, viewMaxTop));
       }
-      if (top < gap) top = gap;
+      if (top < viewMinTop) top = viewMinTop;
+      const finalTop = Math.max(viewMinTop, Math.min(top, viewMaxTop));
       setPosition({
-        left: Math.max(gap, Math.min(left, win.innerWidth - r.width - gap)),
-        top: Math.max(gap, Math.min(top, win.innerHeight - r.height - gap)),
-        maxHeight: win.innerHeight - gap * 2,
+        left: Math.max(minLeft, Math.min(left, maxLeft)),
+        top: finalTop,
+        maxHeight: win.innerHeight - gap * 2 - finalTop,
       });
     };
     positionPopup();

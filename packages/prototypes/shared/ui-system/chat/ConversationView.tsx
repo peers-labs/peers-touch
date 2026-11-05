@@ -19,6 +19,7 @@ import { MessageAttachments } from './MessageAttachments';
 import { VoicePlayer } from './VoiceNote';
 import { ChatComposer, type ComposerPayload } from './ChatComposer';
 import { CallOverlay, type CallKind } from './CallOverlay';
+import { ChatAvatarTrigger } from './ChatIdentity';
 import { useT } from '../prefs';
 import type { ReactionKind } from '../../chat-domain';
 
@@ -38,7 +39,8 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onClearHistory, onDeleteConversation, onRenameConversation,
   onSetGroupAvatar, onSetMyNickname, onSetChatBackground,
   onAddGroupMembers, onRemoveGroupMember, onSetGroupMemberRole,
-  onDissolveGroup, onLeaveGroup }: {
+  onDissolveGroup, onLeaveGroup,
+  onOpenMomentsProfile, onOpenMoment }: {
   conversation: Conversation;
   messages: ChatMessage[];
   call: { conversationId: string; kind: CallKind; direction: 'in' | 'out'; multi?: boolean } | null;
@@ -73,6 +75,9 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   onSetGroupMemberRole: (conversationId: string, name: string, role: 'owner' | 'admin' | 'member') => void;
   onDissolveGroup: (conversationId: string) => void;
   onLeaveGroup: (conversationId: string) => void;
+  /** Cross to the moments surface: open the person's full profile / a moment. */
+  onOpenMomentsProfile?: (name: string) => void;
+  onOpenMoment?: (momentId: string) => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -240,14 +245,28 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                 </button>
               )}
               {m.from === 'peer' ? (
-                conversation.kind === 'group' && m.senderName
-                  ? <Avatar name={m.senderName} background={m.senderTone ?? conversation.tone} size={32}
-                      className="sk-msg-avatar" style={{ borderRadius: 8 }} />
-                  : <Avatar name={conversation.name} background={conversation.tone} size={32}
-                      className="sk-msg-avatar" style={{ borderRadius: 'var(--sk-avatar-radius)' }} />
+                <ChatAvatarTrigger
+                  name={conversation.kind === 'group' && m.senderName ? m.senderName : conversation.name}
+                  tone={conversation.kind === 'group' && m.senderName
+                    ? (m.senderTone ?? conversation.tone)
+                    : conversation.tone}
+                  conversation={conversation}
+                  onOpenMomentsProfile={onOpenMomentsProfile}
+                  onOpenMoment={onOpenMoment}>
+                  {conversation.kind === 'group' && m.senderName
+                    ? <Avatar name={m.senderName} background={m.senderTone ?? conversation.tone} size={32}
+                        className="sk-msg-avatar" style={{ borderRadius: 8 }} />
+                    : <Avatar name={conversation.name} background={conversation.tone} size={32}
+                        className="sk-msg-avatar" style={{ borderRadius: 'var(--sk-avatar-radius)' }} />}
+                </ChatAvatarTrigger>
               ) : (
-                <Avatar name={VIEWER_NAME} background={VIEWER_TONE} size={32}
-                  className="sk-msg-avatar sk-msg-avatar-self" style={{ borderRadius: avatarRadius }} />
+                <ChatAvatarTrigger name={VIEWER_NAME} tone={VIEWER_TONE}
+                  conversation={conversation}
+                  onOpenMomentsProfile={onOpenMomentsProfile}
+                  onOpenMoment={onOpenMoment}>
+                  <Avatar name={VIEWER_NAME} background={VIEWER_TONE} size={32}
+                    className="sk-msg-avatar sk-msg-avatar-self" style={{ borderRadius: avatarRadius }} />
+                </ChatAvatarTrigger>
               )}
               <div className="sk-msg-col">
                 {m.from === 'peer' && conversation.kind === 'group' && m.senderName && (
