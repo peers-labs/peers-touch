@@ -3417,6 +3417,37 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 )),
             }
         }
+        // Station-side credential revocation for headless provider-switch /
+        // restore-deep-link verification. Optimistic-concurrency version comes
+        // from provider_get; the surface never touches the plaintext secret.
+        "provider_credential_delete" => {
+            #[derive(serde::Deserialize)]
+            struct Input {
+                id: String,
+                version: i64,
+            }
+            let input = match parse_args::<Input>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            match app_provider::station_api::delete_credential(
+                state.station.client(),
+                &token,
+                &input.id,
+                input.version,
+            ) {
+                Ok(()) => to_json(AppResult::success(json!({ "deleted": true }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("{error:?}"),
+                    None,
+                )),
+            }
+        }
         "provider_list_available_models" => {
             let scope = match resolve_scope(state) {
                 Ok(s) => s,

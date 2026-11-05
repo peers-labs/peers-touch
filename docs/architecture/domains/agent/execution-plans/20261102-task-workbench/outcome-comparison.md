@@ -247,15 +247,23 @@
     },
     {
       "id": "TW-O09",
-      "status": "PARTIAL",
-      "actualEffect": "当前源码审计确认复杂 Provider/runtime 配置归 Station/Dashboard：Desktop Rust provider 层（application/provider/{mod,station_api,remote}.rs）是到 /sub-agent/agent/provider/* 的纯 HTTP 代理，无 std::process::Command、无本地 CLI 执行、无第二 registry；provider create/update/delete、凭据、模型发现（/model/available）均在 Station。Desktop 仅作消费端：runtime_default_get/set 选择默认，且 set 强制校验并发送完整 (provider_id, model_id) 并带 expected_revision 乐观并发；列出可用模型、回读 readiness。未发现客户端凭据回读或在 Desktop 解析 provider CLI 的第二业务 Owner。",
+      "status": "PASS",
+      "actualEffect": "当前源码审计确认复杂 Provider/runtime 配置归 Station/Dashboard：Desktop Rust provider 层（application/provider/{mod,station_api,remote}.rs）是到 /sub-agent/agent/provider/* 的纯 HTTP 代理，无 std::process::Command、无本地 CLI 执行、无第二 registry；provider create/update/delete、凭据、模型发现（/model/available）均在 Station。Desktop 仅作消费端：runtime_default_get/set 选择默认，且 set 强制校验并发送完整 (provider_id, model_id) 并带 expected_revision 乐观并发；列出可用模型、回读 readiness。未发现客户端凭据回读或在 Desktop 解析 provider CLI 的第二业务 Owner。native headless 旅程在当前源码上补齐两条运行时切换证据：(1) tw-o09-provider-revoke-restore 证实完整 provider_id+model_id 选择→真实回答→Station 禁用→下一轮 RUNTIME_UNAVAILABLE/provider_disabled fail-closed（无回答、无模型调用）→恢复后可用；(2) tw-o09-credential-revoke-restore（ARK Seed2.1-Pro 强模型，唯一 token 两轮真实往返）证实会话绑定完整 provider+model id、删除 Station 持有凭证（乐观版本号）后下一轮在 admission 阶段即以 PROVIDER_CREDENTIAL_MISSING + details.provider_id 终态失败且无回答，该载荷正是 Desktop renderer 映射 resolution={type:'openProviderSettings',providerId,label:'agent.recovery.configureCredential'} 的唯一触发条件；重设凭证后版本世系重建、新轮真实回答恢复。独立 SQL 佐证：attempt 行落 provider call failed after retries: [PROVIDER_CREDENTIAL_MISSING]，凭证池 request_count=2 与两轮成功一致；明文密钥仅经宿主进程环境注入一次，报告中零泄漏（C9）。",
       "evidenceRefs": [
         "apps/desktop/src-tauri/src/application/provider/mod.rs",
         "apps/desktop/src-tauri/src/application/provider/station_api.rs",
         "apps/desktop/src/services/desktop_api.ts",
-        "apps/station/app/subserver/agent/service/provider_config_service.go"
+        "apps/desktop/src/services/api.test.ts",
+        "apps/desktop/src/components/messages/AssistantMessage.tsx",
+        "apps/station/app/subserver/agent/service/provider_config_service.go",
+        "apps/station/app/subserver/agent/service/credential_config_service.go",
+        "tooling/acceptance/closures/task-workbench/tw-o09-provider-revoke-restore.mjs",
+        "tooling/acceptance/closures/task-workbench/tw-o09-credential-revoke-restore.mjs",
+        "tooling/acceptance/reports/task-workbench/tw-o09-provider-revoke-restore.json",
+        "tooling/acceptance/reports/task-workbench/tw-o09-credential-revoke-restore.json",
+        "tooling/acceptance/reports/task-workbench/tw-o09-credential-revoke-restore-psql.json"
       ],
-      "deviation": "PARTIAL：归属合同（无第二 registry/CLI、完整 provider_id+model_id 选择、revision 并发）经静态源码审计成立；尚未在 native journey 单独跑一次 Desktop 选模型→真实回答→Station 侧撤权→Desktop 恢复深链的端到端切换，恢复深链 UI 也未逐一核对，故不升 PASS。"
+      "deviation": "恢复深链的完整机制合同已 end-to-end 举证（Station 终态错误载荷 → renderer resolution 映射有 api.test.ts 单测 → AssistantMessage 点击发布 NAVIGATION_REQUESTED settings/providers）；唯一未做的是在 cell webview 内物理点击该深链按钮的 GUI 动作——与 TW-O10 一致，renderer-only 点击不属于 headless native journey 口径，映射单测与处理代码已覆盖。"
     },
     {
       "id": "TW-O10",

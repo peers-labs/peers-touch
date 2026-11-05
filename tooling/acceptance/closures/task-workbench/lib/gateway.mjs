@@ -110,6 +110,12 @@ export class Gateway {
     return this.decode(r)?.provider ?? null;
   }
 
+  // Revokes the Station-held credential (optimistic version from providerGet).
+  async providerCredentialDelete(providerId, version) {
+    const r = await this.cmd('provider_credential_delete', { id: providerId, version });
+    return r?.data ?? null;
+  }
+
   // Idempotently ensures a custom OpenAI-compatible provider exists. Returns
   // the provider record (existing or newly created).
   async ensureProvider({ id, name, baseUrl, protocol = 'openai' }) {
