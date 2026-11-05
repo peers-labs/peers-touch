@@ -79,7 +79,202 @@ export class Gateway {
 
   async agentsList() {
     const r = await this.cmd('agents_list');
-    return r.data;
+    return this.decode(r);
+  }
+
+  // Most gateway commands return their payload as a JSON-encoded `status`
+  // string. decode() unwraps that and tolerates already-object responses.
+  decode(result) {
+    const status = result?.data?.status;
+    if (typeof status === 'string') {
+      try {
+        return JSON.parse(status);
+      } catch {
+        return null;
+      }
+    }
+    return result?.data ?? null;
+  }
+
+  async providerGet(providerId) {
+    const r = await this.cmd('provider_get', { id: providerId });
+    return this.decode(r)?.provider ?? null;
+  }
+
+  // Idempotently ensures a custom OpenAI-compatible provider exists. Returns
+  // the provider record (existing or newly created).
+  async ensureProvider({ id, name, baseUrl, protocol = 'openai' }) {
+    try {
+      const existing = await this.providerGet(id);
+      if (existing) return existing;
+    } catch {
+      // Fall through to create when the provider is absent.
+    }
+    const r = await this.cmd('provider_create', {
+      id,
+      name,
+      description: 'task-workbench acceptance provider',
+      logo: '',
+      key_vaults: '{"api_key":"ollama"}',
+      config_json: JSON.stringify({ base_url: baseUrl, protocol }),
+    });
+    return this.decode(r)?.provider ?? null;
+  }
+
+  // Ensures a model row exists under a provider, keyed by the upstream
+  // provider model id (e.g. "qwen-tw"). Ollama needs no real secret but the
+  // Station credential lease still requires a credential row to exist.
+  async ensureProviderModel(providerId, { id, displayName, contextWindow = 32768 }) {
+    const provider = await this.providerGet(providerId);
+    const credentialConfigured = provider?.credential_status === 'configured';
+    if (!credentialConfigured) {
+      await this.cmd('provider_update', {
+        id: providerId,
+        enabled: true,
+        version: Number(provider?.version ?? 1),
+        key_vaults: '{"api_key":"ollama"}',
+        config_json: JSON.stringify({
+          base_url: provider?.base_url,
+          protocol: provider?.protocol ?? 'openai',
+        }),
+      });
+    }
+    const models = provider?.models ?? [];
+    const present = models.some((m) => (m.model_id ?? m.id) === id);
+    if (present) return { created: false };
+    await this.cmd('model_add', {
+      provider_id: providerId,
+      data: {
+        id,
+        display_name: displayName ?? id,
+        enabled: true,
+        context_window: contextWindow,
+        capabilities: {
+          flags: { streaming: true, 'text-input': true, 'text-output': true },
+        },
+      },
+    });
+    return { created: true };
+  }
+
+  async conversationCreate(agentId, { providerId, modelName, title }) {
+    const r = await this.cmd('agent_conversation_create', {
+      agent_id: agentId,
+      title,
+      provider_id: providerId,
+      model_name: modelName,
+    });
+    return this.decode(r)?.conversation ?? null;
+  }
+
+  async conversationMessages(conversationId, { limit = 50 } = {}) {
+    const r = await this.cmd('agent_conversation_messages', {
+      conversation_id: conversationId,
+      limit,
+    });
+    return this.decode(r)?.messages ?? [];
+  }
+
+  // High-level real turn driver. Sends a Station-shaped turn body to the
+  // native SSE proxy and returns a structured trace.
+  //
+  // The verified libp2p HTTP/2 route session is cold after idle; its first
+  // request can race re-establishment and surface HTTP 502 ("Station HTTP/2
+  // is not ready"). That is a transport warm-up condition, not a turn result,
+  // so the call is retried a bounded number of times before failing.
+  async runTurn(body, { coldRetries = 2, timeoutMs = 90_000 } = {}) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= coldRetries; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(`${this.baseUrl}/agent/turn/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        if (response.status === 502) {
+          lastError = new Error(`cold HTTP/2 route 502 (attempt ${attempt + 1})`);
+          continue;
+        }
+        if (!response.ok || !response.body) {
+          throw new GatewayError('agent/turn/stream', {
+            message: `HTTP ${response.status}`,
+          });
+        }
+        const trace = await this.#readSse(response.body, controller);
+        clearTimeout(timer);
+        return { ok: true, ...trace };
+      } catch (error) {
+        lastError = error;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    return { ok: false, error: lastError?.message ?? 'turn failed', frames: [] };
+  }
+
+  async #readSse(stream, controller) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const frames = [];
+    const stages = [];
+    let text = '';
+    let done = null;
+    let error = null;
+    let admission = null;
+
+    const ingest = (frame) => {
+      let eventName = null;
+      let dataLine = null;
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataLine = line.slice(5).trimStart();
+      }
+      if (dataLine === null) return;
+      let payload = null;
+      try {
+        payload = JSON.parse(dataLine);
+      } catch {
+        return;
+      }
+      if (eventName) payload._event = eventName;
+      frames.push(payload);
+      if (payload.stage) stages.push(payload.stage);
+      const delta = payload.text ?? payload.delta ?? payload.content;
+      if (typeof delta === 'string' && (payload.type === 'text' || payload._event === 'text')) {
+        text += delta;
+      }
+      if (payload.type === 'text' && typeof delta !== 'string') {
+        // Some encoders nest text under delta.text.
+        const nested = payload.delta?.text ?? payload.content?.text;
+        if (typeof nested === 'string') text += nested;
+      }
+      if (payload.type === 'done') done = payload;
+      if (payload.type === 'error') error = payload;
+      if (payload._event === 'admission_replayed' || payload.type === 'admission_replayed') {
+        admission = payload.admission ?? payload;
+      }
+    };
+
+    for (;;) {
+      const { value, done: ended } = await reader.read();
+      if (ended) break;
+      buffer += decoder.decode(value, { stream: true });
+      let index;
+      while ((index = buffer.indexOf('\n\n')) !== -1) {
+        ingest(buffer.slice(0, index));
+        buffer = buffer.slice(index + 2);
+      }
+      if (controller.signal.aborted) break;
+    }
+    if (buffer.trim()) ingest(buffer.trim());
+    return { frames, stages, text, done, error, admission };
   }
 
   // SSE POST to /agent/turn/stream. Calls onEvent(rawDataString) for each SSE

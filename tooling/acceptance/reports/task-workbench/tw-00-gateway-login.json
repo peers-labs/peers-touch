@@ -1,9 +1,9 @@
 {
-  "ran_at": "2026-11-05T01:45:28.519Z",
+  "ran_at": "2026-11-05T02:45:37.064Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261102",
   "closure": "tw-00-gateway-login",
-  "source_commit": "9f0b99a2340a71a80c4ca95606a15f16de610cc9",
+  "source_commit": "a18c66b4ed356892e524ece721345e17417d62a3",
   "station_url": "persisted-active",
   "pass": 3,
   "fail": 0,
@@ -21,7 +21,7 @@
     {
       "id": "A3",
       "pass": true,
-      "evidence": "agents_list returned 0"
+      "evidence": "agents_list returned 1"
     }
   ]
 }
