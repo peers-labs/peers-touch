@@ -286,6 +286,13 @@ func (s *LogicalArtifactService) ClaimVersion(
 	if origin == model.ArtifactVersionOrigin_ARTIFACT_VERSION_ORIGIN_UNSPECIFIED {
 		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "version origin is required", nil)
 	}
+	// IMPORT is a forward-only, explicit-bytes origin: the caller supplies the
+	// bytes directly. It must never resurrect bytes from a historical chat
+	// message — agent-output claiming is the AGENT_OUTPUT origin's job.
+	if origin == model.ArtifactVersionOrigin_ARTIFACT_VERSION_ORIGIN_IMPORT &&
+		strings.TrimSpace(req.GetSourceMessageId()) != "" {
+		return nil, nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest, "import origin takes explicit body bytes, not a source message", nil)
+	}
 
 	db, err := s.getDB(ctx)
 	if err != nil {

@@ -569,3 +569,99 @@ func hasHTTPStatus(err error, status int) bool {
 	}
 	return false
 }
+
+// IMPORT is a forward-only explicit-bytes origin. There is no legacy scan or
+// backfill: bytes come from the request, historical chat messages can never
+// seed an import, and the version sequence stays immutable and idempotent.
+func TestLogicalArtifactExplicitImportIsForwardOnly(t *testing.T) {
+	ctx := context.Background()
+	db := openLogicalArtifactDB(t, "import-forward")
+	seedArtifactConversation(t, db)
+	svc := newLogicalArtifactSvc(db)
+
+	const externalBody = "# Imported spec\n\ncreated outside the chat\n"
+	importReq := func() *model.ClaimArtifactVersionRequest {
+		return &model.ClaimArtifactVersionRequest{
+			ConversationId:       "conv-art",
+			Name:                 "external-spec.md",
+			Origin:               model.ArtifactVersionOrigin_ARTIFACT_VERSION_ORIGIN_IMPORT,
+			Body:                 externalBody,
+			ContentType:          "text/markdown",
+			Summary:              "explicit external import",
+			ClientIdempotencyKey: "import-key-1",
+			// Deliberately no SourceMessageId / SourceTurnId.
+		}
+	}
+
+	// 1. Explicit bytes become immutable v1 with origin=import, no message link.
+	artifact, v1, err := svc.ClaimVersion(ctx, "ptid:actor-1", importReq())
+	if err != nil {
+		t.Fatalf("explicit import v1: %v", err)
+	}
+	if v1.Seq != 1 || v1.Origin != artifactOriginImport {
+		t.Fatalf("import v1 seq=%d origin=%q", v1.Seq, v1.Origin)
+	}
+	if v1.SourceMessageID != "" || v1.SourceTurnID != "" {
+		t.Fatalf("import must not reference a chat message: turn=%q message=%q", v1.SourceTurnID, v1.SourceMessageID)
+	}
+	if v1.SHA256 != artifactBodySHA256([]byte(externalBody)) {
+		t.Fatalf("import v1 sha mismatch")
+	}
+	if artifact.CurrentVersion != v1.ID || artifact.CurrentSeq != 1 {
+		t.Fatalf("artifact current pointer not at import v1")
+	}
+
+	// Stored bytes are exactly the supplied bytes.
+	_, bodyRow, err := svc.GetVersionBody(ctx, "ptid:actor-1", v1.ID)
+	if err != nil || string(bodyRow.Body) != externalBody {
+		t.Fatalf("import body mismatch: %q err=%v", string(bodyRow.Body), err)
+	}
+
+	// 2. Same idempotency key replays to the same row, never a second version.
+	replayArtifact, replayed, err := svc.ClaimVersion(ctx, "ptid:actor-1", importReq())
+	if err != nil {
+		t.Fatalf("import idempotent replay: %v", err)
+	}
+	if replayed.ID != v1.ID || replayArtifact.CurrentSeq != 1 {
+		t.Fatalf("import replay must not manufacture a version: idEqual=%v seq=%d", replayed.ID == v1.ID, replayArtifact.CurrentSeq)
+	}
+
+	// 3. IMPORT must not pull bytes from a historical assistant message.
+	_, _, err = svc.ClaimVersion(ctx, "ptid:actor-1", &model.ClaimArtifactVersionRequest{
+		ConversationId:       "conv-art",
+		Origin:               model.ArtifactVersionOrigin_ARTIFACT_VERSION_ORIGIN_IMPORT,
+		SourceMessageId:      "msg-v1",
+		Body:                 "ignored",
+		ClientIdempotencyKey: "import-legacy-attempt",
+	})
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) || biz.Code != errcode.AgentInvalidRequest {
+		t.Fatalf("import with source message must be rejected as invalid request: %v", err)
+	}
+	if rows := countArtifactVersions(t, db, artifact.ID); rows != 1 {
+		t.Fatalf("rejected import must not persist a version, rows=%d", rows)
+	}
+
+	// 4. A second explicit import on the current base appends v2 immutably.
+	_, v2, err := svc.ClaimVersion(ctx, "ptid:actor-1", &model.ClaimArtifactVersionRequest{
+		ConversationId:        "conv-art",
+		ArtifactId:            artifact.ID,
+		ExpectedBaseVersionId: v1.ID,
+		Origin:                model.ArtifactVersionOrigin_ARTIFACT_VERSION_ORIGIN_IMPORT,
+		Body:                  "# Imported spec v2\n\nupdated outside\n",
+		ContentType:           "text/markdown",
+		ClientIdempotencyKey:  "import-key-2",
+	})
+	if err != nil || v2.Seq != 2 || v2.ParentVersionID != v1.ID || v2.Origin != artifactOriginImport {
+		t.Fatalf("import v2: %+v err=%v", v2, err)
+	}
+}
+
+func countArtifactVersions(t *testing.T, db *gorm.DB, artifactID string) int64 {
+	t.Helper()
+	var n int64
+	if err := db.Model(&persistence.ArtifactVersion{}).Where("artifact_id = ?", artifactID).Count(&n).Error; err != nil {
+		t.Fatalf("count versions: %v", err)
+	}
+	return n
+}

@@ -175,7 +175,7 @@
         "apps/desktop/src/components/agent/workbench/DocumentArtifactPanel.tsx",
         "commit 92f14d79f"
       ],
-      "deviation": "PARTIAL：reader/Search/通知/消息卡片/Portal 尚未全部切到同一 artifact/version（本期仅交付工作台 reader、导出与消息认领入口，消息代码块解析保留为展示但已不作为版本真源）；旧消息一次性导入迁移未做；人工编辑乐观并发的 UI 旅程与拒绝/检查失败保持待处理未在 Native 旅程覆盖（Station 语义由 Go 测试覆盖）；验收模型无视觉能力，材料为 text/plain 而非 PNG；该 WebKit harness 无法合成真实选区，选区反馈以正文锚定兜底（产品保留实时选区优先）；exact-source 仅证明研究/文档闭环的版本环，完整消费者切换与旧结果导入在后续切片收口。"
+      "deviation": "PARTIAL：reader/Search/通知/消息卡片/Portal 尚未全部切到同一 artifact/version（本期仅交付工作台 reader、导出与消息认领入口，消息代码块解析保留为展示但已不作为版本真源）；人工编辑乐观并发的拒绝/检查失败的 Native 旅程仍待覆盖（Station 语义由 Go 测试覆盖；Desktop 409 回读 UX 已实现并由 vitest 覆盖）；验收模型无视觉能力，材料为 text/plain 而非 PNG；该 WebKit harness 无法合成真实选区，选区反馈以正文锚定兜底（产品保留实时选区优先）；exact-source 仅证明研究/文档闭环的版本环，完整消费者切换在后续切片收口。不做历史消息回填：IMPORT 定义为前向的显式字节导入原语（请求直供字节、幂等、不可变、禁止引用历史消息，由 Go 测试 TestLogicalArtifactExplicitImportIsForwardOnly 举证），不扫描也不提升历史对话文本。"
     },
     {
       "id": "TW-O05",
