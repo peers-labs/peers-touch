@@ -48,6 +48,12 @@ const turnBody = (conversation, agentId) => ({
   model: modelId,
 });
 
+// Station may close the initial SSE after admission_replayed and continue the
+// run on /agent/turn/events; the governed driver follows both streams.
+const drive = (body, timeoutMs = 120_000) =>
+  gw.runGovernedTurn(body, { decide: () => ({ approved: true }), timeoutMs });
+const turnError = (g) => g?.transportError ?? (g?.terminal?.type === 'error' ? g.terminal : null);
+
 try {
   await gw.login(account, password);
 
@@ -59,6 +65,11 @@ try {
   const agents = await gw.agentsList();
   const agentId = agents?.agents?.[0]?.id;
   if (!agentId) throw new Error('no agent available');
+
+  // This leg exercises provider selection only: converge the agent's tool
+  // scope to empty so a non-agentic model runtime (qwen-tw) is never rejected
+  // for tool capabilities unrelated to the O09 contract.
+  await gw.convergeToolScope(agentId, []);
 
   const enabledProvider = await gw.providerGet(providerId);
   checks.record(
@@ -76,35 +87,37 @@ try {
   checks.record('C2', selectionBound,
     `conversation selects ${convA?.provider_id}/${convA?.model_name}`);
 
-  const turnA = await gw.runTurn(turnBody(convA.conversation_id, agentId));
+  const turnA = await drive(turnBody(convA.conversation_id, agentId));
   const answered =
-    turnA.done?.stage === 'turn_completed' &&
+    turnA.ok === true &&
+    turnA.terminalStage === 'turn_completed' &&
     typeof turnA.text === 'string' &&
     turnA.text.trim().length > 0;
   checks.record('C3', answered,
-    `selected provider answered completed=${turnA.done?.stage === 'turn_completed'} echoMatch=${answerRe.test((turnA.text ?? '').trim())} text=${JSON.stringify((turnA.text ?? '').trim().slice(0, 40))}`);
-  evidence.legs.push({ leg: 'select_use', stages: turnA.stages, text: turnA.text });
+    `selected provider answered ok=${turnA.ok} stage=${turnA.terminalStage} echoMatch=${answerRe.test((turnA.text ?? '').trim())} text=${JSON.stringify((turnA.text ?? '').trim().slice(0, 40))}`);
+  evidence.legs.push({ leg: 'select_use', stage: turnA.terminalStage, text: turnA.text });
 
   // ---- C4: revoke on Station ⇒ next turn fails closed ---------------------
   const disabled = await gw.providerSetEnabled(providerId, false);
   const convB = await gw.conversationCreate(agentId, {
     providerId, modelName: modelId, title: 'O09 revoked',
   });
-  const turnB = await gw.runTurn(turnBody(convB.conversation_id, agentId), { coldRetries: 1 });
-  const reason = turnB.error?.details?.reason_code ?? turnB.error?.error_type ?? null;
+  const turnB = await drive(turnBody(convB.conversation_id, agentId));
+  const errB = turnError(turnB) ?? {};
+  const reason = errB?.details?.reason_code ?? errB?.error_type ?? null;
   const failClosed =
-    !turnB.done &&
-    turnB.error?.error_type === 'RUNTIME_UNAVAILABLE' &&
+    turnB.ok === false &&
+    errB?.error_type === 'RUNTIME_UNAVAILABLE' &&
     reason === 'provider_disabled' &&
     (turnB.text ?? '').length === 0;
   checks.record('C4', failClosed && disabled?.enabled === false,
-    `revoked provider enabled=${disabled?.enabled} ⇒ error_type=${turnB.error?.error_type} reason=${reason} answer_emitted=${(turnB.text ?? '').length > 0}`);
+    `revoked provider enabled=${disabled?.enabled} ⇒ error_type=${errB?.error_type} reason=${reason} answer_emitted=${(turnB.text ?? '').length > 0}`);
   evidence.legs.push({
     leg: 'revoke_fail_closed',
     provider_enabled: disabled?.enabled,
-    error_type: turnB.error?.error_type ?? null,
+    error_type: errB?.error_type ?? null,
     reason_code: reason,
-    locale_key: turnB.error?.locale_key ?? null,
+    locale_key: errB?.locale_key ?? null,
   });
 
   // ---- C5: restore ⇒ selection usable again -------------------------------
@@ -112,15 +125,16 @@ try {
   const convC = await gw.conversationCreate(agentId, {
     providerId, modelName: modelId, title: 'O09 restored',
   });
-  const turnC = await gw.runTurn(turnBody(convC.conversation_id, agentId));
+  const turnC = await drive(turnBody(convC.conversation_id, agentId));
   const restoredOk =
     restored?.enabled === true &&
     restored?.credential_status === 'configured' &&
-    turnC.done?.stage === 'turn_completed' &&
+    turnC.ok === true &&
+    turnC.terminalStage === 'turn_completed' &&
     (turnC.text ?? '').trim().length > 0;
   checks.record('C5', restoredOk,
-    `restored enabled=${restored?.enabled} cred=${restored?.credential_status} completed=${turnC.done?.stage === 'turn_completed'} echoMatch=${answerRe.test((turnC.text ?? '').trim())} text=${JSON.stringify((turnC.text ?? '').trim().slice(0, 40))}`);
-  evidence.legs.push({ leg: 'restore_use', stages: turnC.stages, text: turnC.text });
+    `restored enabled=${restored?.enabled} cred=${restored?.credential_status} ok=${turnC.ok} stage=${turnC.terminalStage} echoMatch=${answerRe.test((turnC.text ?? '').trim())} text=${JSON.stringify((turnC.text ?? '').trim().slice(0, 40))}`);
+  evidence.legs.push({ leg: 'restore_use', stage: turnC.terminalStage, text: turnC.text });
 } catch (error) {
   evidence.fatal = error?.message ?? String(error);
   checks.record('FATAL', false, evidence.fatal);

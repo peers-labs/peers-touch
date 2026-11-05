@@ -37,24 +37,9 @@ const gw = new Gateway();
 const { account, password } = envActor();
 const evidence = { legs: [], conversations: {}, turns: {} };
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const marker = (tag) => `${tag}-${randomBytes(3).toString('hex').toUpperCase()}`;
 
-// The acceptance agent has client-anchored device capabilities bound in its
-// tool scope, so admission requires a pinned client capability session on
-// every turn (same preflight as the O12 headless closures).
-async function bootSession() {
-  await gw.deviceEngineActivate();
-  await gw.executorSupervisorStart();
-  let sessions = [];
-  for (let attempt = 0; attempt < 20 && sessions.length === 0; attempt += 1) {
-    await sleep(1000);
-    sessions = await gw.capabilitySessions();
-  }
-  return sessions[0] ?? null;
-}
-
-const turnBody = (conversation, agentId, token, sessionId) => ({
+const turnBody = (conversation, agentId, token) => ({
   client_idempotency_key: crypto.randomUUID(),
   conversation_id: conversation,
   agent_id: agentId,
@@ -66,8 +51,15 @@ const turnBody = (conversation, agentId, token, sessionId) => ({
   max_retries: 0,
   provider: providerId,
   model: modelId,
-  client_capability_session_id: sessionId,
 });
+
+// Drives the turn across the initial SSE plus /agent/turn/events replay
+// continuations (Station may close the initial stream after admission_replayed).
+const drive = (body, timeoutMs = 150_000) =>
+  gw.runGovernedTurn(body, { decide: () => ({ approved: true }), timeoutMs });
+// Admission errors surface as transportError; continuation-terminal error
+// frames surface as terminal. Both carry the typed error envelope.
+const turnError = (g) => g?.transportError ?? (g?.terminal?.type === 'error' ? g.terminal : null);
 
 // Mirror of the Desktop renderer predicate in
 // services/desktop_api.ts deriveResolution(): error_type + details.provider_id
@@ -95,9 +87,10 @@ try {
   const agentId = agents?.agents?.[0]?.id;
   if (!agentId) throw new Error('no agent available');
 
-  const session = await bootSession();
-  evidence.capability_session = session?.session_id ?? null;
-  if (!session?.session_id) throw new Error('device capability session did not come online');
+  // Credential recovery is independent of device tools: converge the agent's
+  // tool scope to empty so admission reaches the provider credential lease
+  // without a client capability session.
+  await gw.convergeToolScope(agentId, []);
 
   // ---- C1: credential precondition (restore-first makes reruns deterministic)
   let status = (await gw.cmd('provider_credential_status', { id: providerId }))?.data?.status ?? null;
@@ -122,15 +115,16 @@ try {
     `conversation binds full ids provider=${convA?.provider_id} model=${convA?.model_name}`);
 
   // ---- C3: real strong-model answer while credential is present -----------
-  const turnA = await gw.runTurn(turnBody(convA.conversation_id, agentId, tokenA, session.session_id), { timeoutMs: 120_000 });
-  evidence.turns.A = { turn_id: turnA.turnId, stage: turnA.done?.stage ?? null };
+  const turnA = await drive(turnBody(convA.conversation_id, agentId, tokenA), 240_000);
+  evidence.turns.A = { turn_id: turnA.turnId, stage: turnA.terminalStage ?? null };
   const textA = (turnA.text ?? '').trim();
   const answeredA =
-    turnA.done?.stage === 'turn_completed' &&
+    turnA.ok === true &&
+    turnA.terminalStage === 'turn_completed' &&
     textA.includes(tokenA);
   checks.record('C3', answeredA,
-    `strong model completed=${turnA.done?.stage === 'turn_completed'} tokenEchoed=${textA.includes(tokenA)} text=${JSON.stringify(textA.slice(0, 48))}`);
-  evidence.legs.push({ leg: 'select_use', stages: turnA.stages, text: textA.slice(0, 120) });
+    `strong model ok=${turnA.ok} stage=${turnA.terminalStage} tokenEchoed=${textA.includes(tokenA)} text=${JSON.stringify(textA.slice(0, 48))}`);
+  evidence.legs.push({ leg: 'select_use', stage: turnA.terminalStage, text: textA.slice(0, 120) });
 
   // ---- C4: optimistic-version credential delete ---------------------------
   const del = await gw.providerCredentialDelete(providerId, versionBefore);
@@ -150,22 +144,22 @@ try {
     providerId, modelName: modelId, title: `O09 revoked ${tokenA}`,
   });
   evidence.conversations.B = { id: convB?.conversation_id, provider_id: convB?.provider_id, model_name: convB?.model_name };
-  const turnB = await gw.runTurn(turnBody(convB.conversation_id, agentId, marker('NOANSWER'), session.session_id), { coldRetries: 0, timeoutMs: 60_000 });
+  const turnB = await drive(turnBody(convB.conversation_id, agentId, marker('NOANSWER')), 60_000);
+  const errB = turnError(turnB) ?? {};
   evidence.turns.B = {
     turn_id: turnB.turnId,
-    stage: turnB.done?.stage ?? null,
-    error: turnB.error ? {
-      error_type: turnB.error.error_type ?? null,
-      reason_code: turnB.error?.details?.reason_code ?? null,
-      provider_id: turnB.error?.details?.provider_id ?? null,
-      locale_key: turnB.error.locale_key ?? null,
-      terminal: turnB.error.terminal ?? null,
-      retryable: turnB.error.retryable ?? null,
-    } : null,
+    stage: turnB.terminalStage ?? null,
+    error: {
+      error_type: errB.error_type ?? null,
+      reason_code: errB?.details?.reason_code ?? null,
+      provider_id: errB?.details?.provider_id ?? null,
+      locale_key: errB.locale_key ?? null,
+      terminal: errB.terminal ?? null,
+      retryable: errB.retryable ?? null,
+    },
   };
-  const errB = turnB.error ?? {};
   const failClosed =
-    !turnB.done &&
+    turnB.ok === false &&
     errB.error_type === 'PROVIDER_CREDENTIAL_MISSING' &&
     errB.details?.provider_id === providerId &&
     (turnB.text ?? '').length === 0;
@@ -199,13 +193,13 @@ try {
     providerId, modelName: modelId, title: `O09 restored ${tokenC}`,
   });
   evidence.conversations.C = { id: convC?.conversation_id, provider_id: convC?.provider_id, model_name: convC?.model_name };
-  const turnC = await gw.runTurn(turnBody(convC.conversation_id, agentId, tokenC, session.session_id), { timeoutMs: 120_000 });
-  evidence.turns.C = { turn_id: turnC.turnId, stage: turnC.done?.stage ?? null };
+  const turnC = await drive(turnBody(convC.conversation_id, agentId, tokenC), 240_000);
+  evidence.turns.C = { turn_id: turnC.turnId, stage: turnC.terminalStage ?? null };
   const textC = (turnC.text ?? '').trim();
-  const answeredC = turnC.done?.stage === 'turn_completed' && textC.includes(tokenC);
+  const answeredC = turnC.ok === true && turnC.terminalStage === 'turn_completed' && textC.includes(tokenC);
   checks.record('C8', answeredC,
-    `post-restore completed=${turnC.done?.stage === 'turn_completed'} tokenEchoed=${textC.includes(tokenC)} text=${JSON.stringify(textC.slice(0, 48))}`);
-  evidence.legs.push({ leg: 'restore_use', stages: turnC.stages, text: textC.slice(0, 120) });
+    `post-restore ok=${turnC.ok} stage=${turnC.terminalStage} tokenEchoed=${textC.includes(tokenC)} text=${JSON.stringify(textC.slice(0, 48))}`);
+  evidence.legs.push({ leg: 'restore_use', stage: turnC.terminalStage, text: textC.slice(0, 120) });
 
   // ---- C9: secret hygiene — the key never reaches evidence/report ----------
   const serialized = JSON.stringify({ evidence, results: checks.results });
