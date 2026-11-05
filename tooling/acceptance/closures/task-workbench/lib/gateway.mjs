@@ -193,6 +193,142 @@ export class Gateway {
     return this.decode(r)?.messages ?? [];
   }
 
+  // Calls a gateway arm that returns a prost response as { proto_b64 } and
+  // decodes it using the named schema in lib/proto.mjs.
+  async proto(name, schemaName, input = {}) {
+    const { decodeProtoB64 } = await import('./proto.mjs');
+    const r = await this.cmd(name, input);
+    const b64 = r?.data?.proto_b64;
+    if (typeof b64 !== 'string') {
+      throw new GatewayError(name, { message: 'missing proto_b64 in response' });
+    }
+    return decodeProtoB64(b64, schemaName);
+  }
+
+  // ── Device-held terminal sessions (TW-D5, JSON) ──────────────────────────
+  async terminalDefaultWorkspace(deviceId) {
+    const r = await this.cmd('terminal_default_workspace', { device_id: deviceId });
+    return this.decode(r)?.workspaceRoot ?? null;
+  }
+
+  async terminalCreate(workspaceRoot, {
+    command, args = [], cwd, cols = 100, rows = 30, allowedRoots = [],
+  }) {
+    const r = await this.cmd('terminal_session_create', {
+      command, args, cwd, workspace_root: workspaceRoot, allowed_roots: allowedRoots,
+      cols, rows,
+    });
+    return r.data;
+  }
+
+  async terminalWrite(sessionId, utf8) {
+    const dataB64 = Buffer.from(utf8, 'utf8').toString('base64');
+    await this.cmd('terminal_session_write', { session_id: sessionId, data_b64: dataB64 });
+    return true;
+  }
+
+  async terminalResize(sessionId, cols, rows) {
+    return this.cmd('terminal_session_resize', { session_id: sessionId, cols, rows });
+  }
+
+  async terminalKill(sessionId) {
+    const r = await this.cmd('terminal_session_kill', { session_id: sessionId });
+    return r.data;
+  }
+
+  async terminalRemove(sessionId) {
+    return this.cmd('terminal_session_remove', { session_id: sessionId });
+  }
+
+  async terminalList() {
+    const r = await this.cmd('terminal_session_list');
+    return Array.isArray(r.data) ? r.data : [];
+  }
+
+  async terminalRead(sessionId, cursor = 0) {
+    const r = await this.cmd('terminal_session_read', { session_id: sessionId, cursor });
+    return r.data;
+  }
+
+  // ── Station terminal metadata + sandbox PTY (proto) ──────────────────────
+  async stationTerminalCreate(input) {
+    return this.proto('agent_terminal_session_create', 'CreateTerminalSession', input);
+  }
+
+  async stationTerminalUpdate(input) {
+    return this.proto('agent_terminal_session_update', 'UpdateTerminalSession', input);
+  }
+
+  async stationTerminalList(conversationId) {
+    const r = await this.proto('agent_terminal_session_list', 'ListTerminalSessions', {
+      conversation_id: conversationId,
+    });
+    return r.sessions ?? [];
+  }
+
+  async stationTerminalReconcile(input) {
+    const r = await this.proto('agent_terminal_session_reconcile', 'ReconcileTerminalSessions', input);
+    return r.sessions ?? [];
+  }
+
+  async stationTerminalRemove(sessionId) {
+    return this.proto('agent_terminal_session_remove', 'RemoveTerminalSession', {
+      session_id: sessionId,
+    });
+  }
+
+  async resolveActiveSandboxes() {
+    const r = await this.proto('agent_sandbox_resolve_active', 'ResolveActiveSandboxes', {});
+    return r.sandboxes ?? [];
+  }
+
+  // ── Logical artifact versions (TW-D3 / O04, proto) ───────────────────────
+  async artifactClaimVersion(input) {
+    return this.proto('agent_task_artifact_claim_version', 'ClaimArtifactVersion', input);
+  }
+
+  async artifactList(conversationId) {
+    const r = await this.proto('agent_task_artifact_list', 'ListTaskArtifacts', {
+      conversation_id: conversationId,
+    });
+    return r.artifacts ?? [];
+  }
+
+  async artifactVersions(artifactId) {
+    const r = await this.proto('agent_task_artifact_versions', 'ListArtifactVersions', {
+      artifact_id: artifactId,
+    });
+    return r.versions ?? [];
+  }
+
+  async artifactBody(versionId) {
+    return this.proto('agent_task_artifact_body_get', 'GetArtifactVersionBody', {
+      version_id: versionId,
+    });
+  }
+
+  async artifactRecordCheck(input) {
+    return this.proto('agent_task_artifact_check_record', 'RecordArtifactCheck', input);
+  }
+
+  async artifactChecks(artifactId) {
+    const r = await this.proto('agent_task_artifact_check_list', 'ListArtifactChecks', {
+      artifact_id: artifactId,
+    });
+    return r.checks ?? [];
+  }
+
+  async artifactAccept(input) {
+    return this.proto('agent_task_artifact_accept', 'AcceptArtifactVersion', input);
+  }
+
+  async artifactAcceptances(artifactId) {
+    const r = await this.proto('agent_task_artifact_acceptance_list', 'ListArtifactAcceptances', {
+      artifact_id: artifactId,
+    });
+    return r.acceptances ?? [];
+  }
+
   // High-level real turn driver. Sends a Station-shaped turn body to the
   // native SSE proxy and returns a structured trace.
   //

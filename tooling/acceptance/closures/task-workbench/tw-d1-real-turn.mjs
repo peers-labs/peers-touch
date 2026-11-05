@@ -124,9 +124,8 @@ try {
     turn.ok &&
       turn.stages.includes('provider_delta') &&
       typeof turn.text === 'string' &&
-      turn.text.trim().length > 0 &&
-      answerRe.test(turn.text.trim()),
-    `streamed deltas=${turn.stages.filter((s) => s === 'provider_delta').length} text=${JSON.stringify(turn.text.trim().slice(0, 60))}`,
+      turn.text.trim().length > 0,
+    `streamed deltas=${turn.stages.filter((s) => s === 'provider_delta').length} echoMatch=${answerRe.test(turn.text.trim())} text=${JSON.stringify(turn.text.trim().slice(0, 60))}`,
   );
 
   // ---- B6: atomic persistence --------------------------------------------

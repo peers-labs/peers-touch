@@ -1,0 +1,80 @@
+{
+  "ran_at": "2026-11-05T04:24:22.049Z",
+  "mode": "desktop-native-headless-gateway",
+  "plan": "TW-20261102",
+  "closure": "tw-d5-device-terminal",
+  "outcome": "O06",
+  "source_commit": "75e6d1cf94348fc13b1cfc84ab553a8ef8741830",
+  "station_url": "persisted-active",
+  "device_id": "headless-cell-device",
+  "pass": 8,
+  "fail": 0,
+  "results": [
+    {
+      "id": "T1",
+      "pass": true,
+      "evidence": "workspaceRoot=/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/94b052879548594a4c11fc6294e0c4a6"
+    },
+    {
+      "id": "T2",
+      "pass": true,
+      "evidence": "session=terms-01M6MZ6PPH0RFXJ4QG7EZN6WDS pid=67808 status=running cwd=/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/94b052879548594a4c11fc6294e0c4a6"
+    },
+    {
+      "id": "T3",
+      "pass": true,
+      "evidence": "marker observed=true bytes=19"
+    },
+    {
+      "id": "T3b",
+      "pass": true,
+      "evidence": "after viewer-close: process status=running ring-replay=true"
+    },
+    {
+      "id": "T4",
+      "pass": true,
+      "evidence": "station row id=terms-01M6MZ6PPH0RFXJ4QG7EZN6WDS pid=67808 status=1 target=1 cwd=/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/94b052879548594a4c11fc6294e0c4a6"
+    },
+    {
+      "id": "T5",
+      "pass": true,
+      "evidence": "killed status=killed exit=1 pid=67808 outputBytes=19"
+    },
+    {
+      "id": "T6",
+      "pass": true,
+      "evidence": "station killed status=3 outputBytes=19 pid=67808"
+    },
+    {
+      "id": "T7",
+      "pass": true,
+      "evidence": "stationGone=true workerGone=true readRejected=true"
+    }
+  ],
+  "evidence": {
+    "workspaceRoot": "/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/94b052879548594a4c11fc6294e0c4a6",
+    "session": {
+      "id": "terms-01M6MZ6PPH0RFXJ4QG7EZN6WDS",
+      "pid": 67808,
+      "cwd": "/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/94b052879548594a4c11fc6294e0c4a6"
+    },
+    "stationFinal": {
+      "session_id": "terms-01M6MZ6PPH0RFXJ4QG7EZN6WDS",
+      "conversation_id": "conv_7c4fd86007450eb6c854355a",
+      "device_id": "headless-cell-device",
+      "cwd": "/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/94b052879548594a4c11fc6294e0c4a6",
+      "command": "sh",
+      "args": [
+        "-c",
+        "long-lived"
+      ],
+      "pid": 67808,
+      "status": 3,
+      "exit_code": 1,
+      "output_bytes": 19,
+      "_12": "\b����\u0006\u0010���\u0002",
+      "_13": "\b����\u0006\u0010���\u0003",
+      "execution_target": 1
+    }
+  }
+}

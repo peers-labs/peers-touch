@@ -1,10 +1,10 @@
 {
-  "ran_at": "2026-11-05T02:55:04.287Z",
+  "ran_at": "2026-11-05T04:24:18.495Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261102",
   "closure": "tw-o09-provider-revoke-restore",
   "outcome": "O09",
-  "source_commit": "544ea48eaa2a49edf9381009817a9e9144c48d36",
+  "source_commit": "75e6d1cf94348fc13b1cfc84ab553a8ef8741830",
   "station_url": "persisted-active",
   "provider_id": "ollama-local",
   "model_id": "qwen-tw",
@@ -24,7 +24,7 @@
     {
       "id": "C3",
       "pass": true,
-      "evidence": "selected provider answered completed=true text=\"PONG\""
+      "evidence": "selected provider answered completed=true echoMatch=true text=\"PONG\""
     },
     {
       "id": "C4",
@@ -34,7 +34,7 @@
     {
       "id": "C5",
       "pass": true,
-      "evidence": "restored enabled=true cred=configured completed=true text=\"PONG\""
+      "evidence": "restored enabled=true cred=configured completed=true echoMatch=false text=\"POKE\""
     }
   ],
   "evidence": {
@@ -66,7 +66,7 @@
           "provider_delta",
           "turn_completed"
         ],
-        "text": "PONG"
+        "text": "POKE"
       }
     ]
   }

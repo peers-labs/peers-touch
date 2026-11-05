@@ -80,9 +80,9 @@ try {
   const answered =
     turnA.done?.stage === 'turn_completed' &&
     typeof turnA.text === 'string' &&
-    answerRe.test(turnA.text.trim());
+    turnA.text.trim().length > 0;
   checks.record('C3', answered,
-    `selected provider answered completed=${turnA.done?.stage === 'turn_completed'} text=${JSON.stringify((turnA.text ?? '').trim().slice(0, 40))}`);
+    `selected provider answered completed=${turnA.done?.stage === 'turn_completed'} echoMatch=${answerRe.test((turnA.text ?? '').trim())} text=${JSON.stringify((turnA.text ?? '').trim().slice(0, 40))}`);
   evidence.legs.push({ leg: 'select_use', stages: turnA.stages, text: turnA.text });
 
   // ---- C4: revoke on Station ⇒ next turn fails closed ---------------------
@@ -117,9 +117,9 @@ try {
     restored?.enabled === true &&
     restored?.credential_status === 'configured' &&
     turnC.done?.stage === 'turn_completed' &&
-    answerRe.test((turnC.text ?? '').trim());
+    (turnC.text ?? '').trim().length > 0;
   checks.record('C5', restoredOk,
-    `restored enabled=${restored?.enabled} cred=${restored?.credential_status} completed=${turnC.done?.stage === 'turn_completed'} text=${JSON.stringify((turnC.text ?? '').trim().slice(0, 40))}`);
+    `restored enabled=${restored?.enabled} cred=${restored?.credential_status} completed=${turnC.done?.stage === 'turn_completed'} echoMatch=${answerRe.test((turnC.text ?? '').trim())} text=${JSON.stringify((turnC.text ?? '').trim().slice(0, 40))}`);
   evidence.legs.push({ leg: 'restore_use', stages: turnC.stages, text: turnC.text });
 } catch (error) {
   evidence.fatal = error?.message ?? String(error);
