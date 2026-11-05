@@ -6379,6 +6379,41 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &token,
             ))
         }
+        // Headless bridge: agent-scoped memory candidates + review gate.
+        // Distinct from the generic memory_* arms; these carry agent_id and
+        // the candidate status filter used by the O08 confirmation dock.
+        "agent_memory_list" => {
+            let input =
+                match parse_args::<app_agent_growth::AgentMemoryListInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_memory_list(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
+        "agent_memory_review" => {
+            let input =
+                match parse_args::<app_agent_growth::AgentMemoryReviewInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_growth::agent_memory_review(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
         "memory_get" => {
             let input = match parse_args::<MemoryIdInput>(args) {
                 Ok(v) => v,

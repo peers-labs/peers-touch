@@ -1,0 +1,58 @@
+{
+  "ran_at": "2026-11-05T08:03:00.639Z",
+  "mode": "desktop-native-headless-gateway",
+  "plan": "TW-20261102",
+  "closure": "tw-o08-memory-recall",
+  "outcome": "O08",
+  "source_commit": "e6a8d32970871703dd6cef331146489508db2769",
+  "station_url": "persisted-active",
+  "provider_id": "ark",
+  "model_id": "ep-20260623145021-n4xdm",
+  "strong_model": true,
+  "pass": 6,
+  "fail": 0,
+  "results": [
+    {
+      "id": "M1-turn",
+      "pass": true,
+      "evidence": "plant turn stage=turn_completed err=null"
+    },
+    {
+      "id": "M1",
+      "pass": true,
+      "evidence": "candidate memoryId=mem_5e8e539024afea6a9e5e1219 status=candidate agentScoped=true"
+    },
+    {
+      "id": "M2",
+      "pass": true,
+      "evidence": "confirmed memories containing marker before review=false (must be false)"
+    },
+    {
+      "id": "M3",
+      "pass": true,
+      "evidence": "review status=confirmed nowConfirmed=true"
+    },
+    {
+      "id": "M4",
+      "pass": true,
+      "evidence": "new task recall completed=true answer=\"ZEPHYR-D6DDAAA3\""
+    },
+    {
+      "id": "M4b",
+      "pass": true,
+      "evidence": "marker absent from task2 own user history=true; recall therefore via injected memory"
+    }
+  ],
+  "evidence": {
+    "marker": "ZEPHYR-D6DDAAA3",
+    "candidate": {
+      "id": "mem_5e8e539024afea6a9e5e1219",
+      "status": "candidate",
+      "sourceTurnId": "turn_cb496f32afaaa9ab3a65a9a9"
+    },
+    "recall": {
+      "conversation_id": "conv_19088449a7d78e1625d21ca1",
+      "answer": "ZEPHYR-D6DDAAA3"
+    }
+  }
+}

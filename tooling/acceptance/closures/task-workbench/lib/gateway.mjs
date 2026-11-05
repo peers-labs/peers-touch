@@ -185,6 +185,22 @@ export class Gateway {
     return this.decode(r)?.conversation ?? null;
   }
 
+  // ── Agent memory candidate gate (O08) ────────────────────────────────────
+  async agentMemoryList(agentId, status) {
+    const r = await this.cmd('agent_memory_list', { agent_id: agentId, status });
+    return this.decode(r)?.items ?? [];
+  }
+
+  // status: 2 = confirmed, 3 = rejected (MemoryStatus proto enum).
+  async agentMemoryReview(memoryId, agentId, status) {
+    const r = await this.cmd('agent_memory_review', {
+      memory_id: memoryId,
+      agent_id: agentId,
+      status,
+    });
+    return this.decode(r)?.item ?? null;
+  }
+
   async conversationList(agentId, { status = 'active', pageSize = 100 } = {}) {
     const r = await this.cmd('agent_conversation_list', {
       agent_id: agentId,
