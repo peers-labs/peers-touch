@@ -1,0 +1,36 @@
+{
+  "plan": "TW-20261102",
+  "closure": "tw-o12-browser-psql",
+  "outcome": "O12-browser-takeover",
+  "source_commit": "85e874d3a73e9c6c4ad605812109a7267fa1f332",
+  "verified_at": "2026-11-05T12:58:10.589Z",
+  "source": "postgres://pt-tw-d1/postgres peers_touch_tw_d1 (direct SQL after lifecycle removal)",
+  "session_id": "brows-01M6NWGTCEP2CTMTAVBMYRH2HF",
+  "conversation_id": "conv_eddcfaeccfc8a432e5493ffc",
+  "facts": {
+    "session_rows_left": 0,
+    "total_rows": 0,
+    "conversation_status": "active",
+    "alice_owned": true
+  },
+  "assertions": [
+    [
+      "closed_session_row_removed",
+      true
+    ],
+    [
+      "no_browser_rows_left_in_acceptance_db",
+      true
+    ],
+    [
+      "conversation_persisted_active",
+      true
+    ],
+    [
+      "conversation_owned_by_alice_actor",
+      true
+    ]
+  ],
+  "pass": 4,
+  "fail": 0
+}

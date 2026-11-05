@@ -196,6 +196,22 @@ export const SCHEMAS = {
     8: { name: 'selected_client_session_id', type: 'string' },
     9: { name: 'capabilities', type: 'msg', repeated: true, schema: null },
   },
+  BrowserTab: {
+    1: { name: 'tab_id', type: 'string' },
+    2: { name: 'generation', type: 'v' },
+    3: { name: 'url', type: 'string' },
+    4: { name: 'title', type: 'string' },
+  },
+  BrowserSession: {
+    1: { name: 'session_id', type: 'string' },
+    2: { name: 'conversation_id', type: 'string' },
+    3: { name: 'turn_id', type: 'string' },
+    4: { name: 'device_id', type: 'string' },
+    5: { name: 'engine', type: 'string' },
+    6: { name: 'status', type: 'v' },
+    7: { name: 'lease', type: 'v' },
+    8: { name: 'tabs', type: 'msg', repeated: true, schema: null },
+  },
   ArtifactFeedback: {
     1: { name: 'feedback_id', type: 'string' },
     2: { name: 'artifact_id', type: 'string' },
@@ -213,6 +229,7 @@ export const SCHEMAS = {
 SCHEMAS.ListTerminalSessions[1].schema = SCHEMAS.TerminalSession;
 SCHEMAS.CapabilityManifest[5].schema = SCHEMAS.CapabilityDisplayMetadata;
 SCHEMAS.CapabilityReadinessSnapshot[9].schema = SCHEMAS.CapabilityReadiness;
+SCHEMAS.BrowserSession[8].schema = SCHEMAS.BrowserTab;
 
 export const RESPONSE_SCHEMAS = {
   CreateTerminalSession: {
@@ -267,6 +284,15 @@ export const RESPONSE_SCHEMAS = {
   },
   ListArtifactFeedback: {
     2: { name: 'feedback', type: 'msg', repeated: true, schema: SCHEMAS.ArtifactFeedback },
+  },
+  CreateBrowserSession: {
+    1: { name: 'session', type: 'msg', schema: SCHEMAS.BrowserSession },
+  },
+  ListBrowserSessions: {
+    1: { name: 'sessions', type: 'msg', repeated: true, schema: SCHEMAS.BrowserSession },
+  },
+  RemoveBrowserSession: {
+    1: { name: 'removed', type: 'bool' },
   },
 };
 

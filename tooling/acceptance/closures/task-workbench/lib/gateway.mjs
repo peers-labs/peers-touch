@@ -221,6 +221,121 @@ export class Gateway {
     return decoded?.conversations ?? decoded?.items ?? [];
   }
 
+  // ── Device-held browser sessions (TW-D6) ────────────────────────────────
+  async browserHostInfo() {
+    const r = await this.cmd('browser_host_info', {});
+    return r.data;
+  }
+
+  async browserSessionCreate(sessionId) {
+    const r = await this.cmd('browser_session_create', { session_id: sessionId });
+    return r.data;
+  }
+
+  async browserSessionListWorkers() {
+    const r = await this.cmd('browser_session_list', {});
+    return r.data ?? [];
+  }
+
+  async browserNavigate(sessionId, tabId, url) {
+    const r = await this.cmd('browser_navigate', {
+      session_id: sessionId,
+      tab_id: tabId,
+      url,
+    });
+    return r.data;
+  }
+
+  async browserInspect(sessionId) {
+    const r = await this.cmd('browser_inspect', { session_id: sessionId });
+    return r.data;
+  }
+
+  async browserSnapshot(sessionId, tabId) {
+    const r = await this.cmd('browser_snapshot', {
+      session_id: sessionId,
+      tab_id: tabId,
+    });
+    return r.data;
+  }
+
+  async browserFill(sessionId, tabId, elementRef, value) {
+    const r = await this.cmd('browser_fill', {
+      session_id: sessionId,
+      tab_id: tabId,
+      element_ref: elementRef,
+      value,
+    });
+    return r.data;
+  }
+
+  async browserSubmit(sessionId, tabId, elementRef) {
+    const r = await this.cmd('browser_submit', {
+      session_id: sessionId,
+      tab_id: tabId,
+      element_ref: elementRef,
+    });
+    return r.data;
+  }
+
+  async browserScreenshot(sessionId, tabId) {
+    const r = await this.cmd('browser_screenshot', {
+      session_id: sessionId,
+      tab_id: tabId,
+    });
+    return r.data;
+  }
+
+  async browserTakeover(sessionId) {
+    const r = await this.cmd('browser_takeover', { session_id: sessionId });
+    return r.data;
+  }
+
+  async browserRelease(sessionId) {
+    const r = await this.cmd('browser_release', { session_id: sessionId });
+    return r.data;
+  }
+
+  async browserRemove(sessionId) {
+    const r = await this.cmd('browser_remove', { session_id: sessionId });
+    return r.data;
+  }
+
+  async browserStationCreate(input) {
+    const r = await this.proto('agent_browser_session_create', 'CreateBrowserSession', input);
+    return r.session ?? null;
+  }
+
+  // Worker metadata reporting; the response is a raw prost byte array, which
+  // the closure only needs to succeed (Station truth is read back via list).
+  // Tabs arrive as worker camelCase meta and must be mapped to the Station
+  // proxy's snake_case contract.
+  async browserStationUpdate(input) {
+    const payload = { ...input };
+    if (Array.isArray(input.tabs)) {
+      payload.tabs = input.tabs.map((tab) => ({
+        tab_id: tab.tabId ?? tab.tab_id,
+        generation: tab.generation,
+        url: tab.url,
+        title: tab.title,
+      }));
+    }
+    return this.cmd('agent_browser_session_update', payload);
+  }
+
+  async browserStationList(conversationId) {
+    const r = await this.proto('agent_browser_session_list', 'ListBrowserSessions', {
+      conversation_id: conversationId,
+    });
+    return r.sessions ?? [];
+  }
+
+  async browserStationRemove(sessionId) {
+    return this.proto('agent_browser_session_remove', 'RemoveBrowserSession', {
+      session_id: sessionId,
+    });
+  }
+
   // Station-authoritative turn trace (JSON status string).
   async turnTrace(turnId) {
     const r = await this.cmd('agent_turn_trace_get', { turn_id: turnId });
