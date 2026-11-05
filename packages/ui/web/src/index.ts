@@ -12,6 +12,7 @@ export type { UIProviderProps } from './provider';
 export { Icon, BrandMark } from './icon';
 export type { IconProps } from './icon';
 export * from './actions';
+export * from './file-picker';
 export * from './fields';
 export * from './selection';
 export * from './form';

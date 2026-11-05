@@ -159,6 +159,13 @@ pine 是这种关系的情绪符号，取的是「**迎客松**」意象，不�
   现合同：消息 `[data-rail-target='chat']`、动态 `[data-rail-target='moments']`、
   设置 `[data-rail-target='settings']`，搜索 `[data-global-search-trigger]`，
   铃 `[data-action-id='nav.notifications']`。轨钮结构计数 = 5。
+- **选中态是墨黑实心块**：当前面（含搜索浮层打开态）的轨钮必须渲染
+  `--sk-btn-primary-bg`（glass 皮肤即 `#1a1d20`）填充 + 白图标 + 主按钮投影，
+  未选中透明、hover 7% 墨洗。状态规则的选择器特异性必须 ≥ 几何基规则
+  （基规则 `.sk-rail .sk-rail-group .sk-rail-icon` 为 0,3,0；状态规则一度写成
+  0,2,0 被静默压回灰色，导致全部选中态与 hover 失效）——状态用
+  `.sk-rail .sk-rail-group .sk-rail-icon.is-active/:hover`（0,4,0）。
+  `rail-active-filled` / `rail-inactive-transparent` computedStyle 断言锁死。
 - ≤760px 轨道转顶栏时铃与设置同行，既有媒体查询自动覆盖。
 
 ## Surface lifecycle 与全局快捷键（增量 37）

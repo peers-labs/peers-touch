@@ -6,10 +6,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, Bot, Check, CheckCircle2, Clock3, Link2, Loader2, Plus, Radio, RefreshCw,
-  ScanLine, ShieldCheck, Trash2,
+  ScanLine, ShieldCheck, Trash2, Upload,
 } from 'lucide-react';
 import {
-  Alert, Button, Dialog, Segmented, Select, Switch, Tag, TextField,
+  Alert, Button, Dialog, FilePickButton, IconButton, Segmented, Select, Switch, Tag, TextField,
 } from '@peers-touch/ui';
 import { makeTranslate, usePrefs, type StringKey, type Translate } from '../../prefs';
 import { SettingsRow, SettingsSection } from '../SettingsPrimitives';
@@ -20,7 +20,7 @@ function useT(): { t: Translate } {
   return { t: makeTranslate(prefs.locale) };
 }
 
-/* ── Bots (compressed BotChannels parity) ────────────────────────────── */
+/* ── Bots (BotChannels parity: registry + one-time credential issuance) ─ */
 
 type BotState = 'active' | 'disabled' | 'revoked';
 interface RegistryBot {
@@ -29,35 +29,116 @@ interface RegistryBot {
   publishingId: string;
   state: BotState;
   rateLimitPerMinute: number;
+  avatarName: string | null;
+}
+interface CredentialReveal {
+  titleKey: StringKey;
+  secret: string;
+  ingressUrl?: string;
 }
 
+const BOT_STORAGE_KEY = 'peers.prototype.northstar.registry-bots.v1';
+
 const INITIAL_BOTS: RegistryBot[] = [
-  { id: 'bot-build', name: 'Build Bot', publishingId: 'program/build', state: 'active', rateLimitPerMinute: 60 },
-  { id: 'bot-release', name: 'Release Bot', publishingId: 'program/release', state: 'disabled', rateLimitPerMinute: 30 },
+  { id: 'bot-build', name: 'Build Bot', publishingId: 'program/build', state: 'active', rateLimitPerMinute: 60, avatarName: null },
+  { id: 'bot-release', name: 'Release Bot', publishingId: 'program/release', state: 'disabled', rateLimitPerMinute: 30, avatarName: null },
 ];
+
+function loadBots(): RegistryBot[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(BOT_STORAGE_KEY) ?? 'null');
+    if (!Array.isArray(parsed)) return INITIAL_BOTS;
+    return parsed.filter((item): item is RegistryBot => (
+      item && typeof item === 'object'
+      && typeof item.id === 'string'
+      && typeof item.name === 'string'
+      && typeof item.publishingId === 'string'
+      && ['active', 'disabled', 'revoked'].includes(item.state)
+      && typeof item.rateLimitPerMinute === 'number'
+    ));
+  } catch {
+    return INITIAL_BOTS;
+  }
+}
+
+function createSecret(): string {
+  return `ptb_${crypto.randomUUID().replace(/-/g, '').slice(0, 28)}`;
+}
+
+function createPublishingId(name: string, bots: RegistryBot[]): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bot';
+  let candidate = `program/${base}`;
+  let suffix = 2;
+  while (bots.some(bot => bot.publishingId === candidate)) {
+    candidate = `program/${base}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+const botInitials = (name: string) => name.slice(0, 2).toUpperCase();
 
 export function BotsSection() {
   const { t } = useT();
-  const [bots, setBots] = useState<RegistryBot[]>(INITIAL_BOTS);
+  const [bots, setBots] = useState<RegistryBot[]>(loadBots);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
-  const [rate, setRate] = useState('60');
-  const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const [avatarName, setAvatarName] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState<CredentialReveal | null>(null);
+  const [secretRevealed, setSecretRevealed] = useState(false);
+  const [rotating, setRotating] = useState<RegistryBot | null>(null);
+  const [revoking, setRevoking] = useState<RegistryBot | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(BOT_STORAGE_KEY, JSON.stringify(bots));
+  }, [bots]);
+
+  useEffect(() => {
+    setSecretRevealed(false);
+  }, [credentials]);
 
   const patch = (id: string, p: Partial<RegistryBot>) =>
     setBots(list => list.map(bot => bot.id === id ? { ...bot, ...p } : bot));
-  const create = () => {
-    if (!name.trim()) return;
-    const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bot';
-    setBots(list => [...list, {
-      id: `bot-${Date.now()}`, name: name.trim(),
-      publishingId: `program/${base}`, state: 'active',
-      rateLimitPerMinute: Number(rate) || 60,
-    }]);
-    setName(''); setRate('60'); setCreateOpen(false);
-  };
+
   const stateKey = (s: BotState): StringKey =>
     s === 'active' ? 'bots.state.active' : s === 'disabled' ? 'bots.state.disabled' : 'bots.state.revoked';
+
+  const createBot = () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    const publishingId = createPublishingId(trimmedName, bots);
+    setBots(list => [...list, {
+      id: `bot-${crypto.randomUUID()}`,
+      name: trimmedName,
+      publishingId,
+      state: 'active',
+      rateLimitPerMinute: 60,
+      avatarName,
+    }]);
+    setCreateOpen(false);
+    setName('');
+    setAvatarName(null);
+    // Credential issuance is the product point of "create": the ingress path
+    // and the one-time secret must surface before the modal closes, never later.
+    setCredentials({ titleKey: 'bots.credTitle', ingressUrl: `/v1/message-publishing/${publishingId}`, secret: createSecret() });
+  };
+
+  const rotateSecret = () => {
+    if (!rotating) return;
+    setRotating(null);
+    setCredentials({ titleKey: 'bots.newSecretTitle', secret: createSecret() });
+  };
+
+  const curlSnippet = useMemo(() => {
+    if (!credentials?.ingressUrl) return '';
+    return `curl -X POST "$STATION_ORIGIN${credentials.ingressUrl}" \\
+  -H "Authorization: Bearer ${credentials.secret}" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: <unique-id>" \\
+  --data '{"content":{"text":{"text":"Build passed"}},"source_context":{"program":"ci"}}'`;
+  }, [credentials]);
+
+  const copy = (value: string) => { void navigator.clipboard?.writeText(value); };
 
   return (
     <SettingsSection icon={Bot} title={t('bots.title')} subtitle={t('bots.subtitle')}
@@ -66,53 +147,141 @@ export function BotsSection() {
       <div className="sk-bot-list">
         {bots.map(bot => (
           <div className="sk-bot-row" key={bot.id} data-bot={bot.id} data-bot-state={bot.state}>
-            <div className="sk-bot-icon"><Bot size={16} /></div>
-            <div className="sk-bot-id">
-              <div><strong>{bot.name}</strong><Tag tone={bot.state === 'active' ? 'success' : 'neutral'}>{t(stateKey(bot.state))}</Tag></div>
-              <code className="sk-mono">{bot.publishingId}</code>
+            <div className={`sk-bot-icon${bot.avatarName ? ' is-initials' : ''}`}>
+              {bot.avatarName ? <strong>{botInitials(bot.name)}</strong> : <Bot size={16} />}
             </div>
-            <span className="sk-bot-rate">{t('bots.rateLimit')} · {bot.rateLimitPerMinute}</span>
-            {bot.state === 'revoked' ? null : (
-              <Switch checked={bot.state === 'active'} aria-label={bot.name}
-                onCheckedChange={checked => patch(bot.id, { state: checked ? 'active' : 'disabled' })} />
-            )}
-            {confirmRevoke === bot.id ? (
-              <span className="sk-inline-confirm sk-inline-confirm-danger" data-revoke-confirm>
-                <Button actionId={`bot.${bot.id}.revoke-confirm`} emphasis="quiet" density="compact" tone="danger" label={t('bots.revoke')}
-                  onActivate={() => patch(bot.id, { state: 'revoked' })} />
-                <Button actionId={`bot.${bot.id}.revoke-cancel`} emphasis="quiet" density="compact" label={t('common.cancel')}
-                  onActivate={() => setConfirmRevoke(null)} />
-              </span>
-            ) : (
-              /* Same row-action grammar as Lark channels: quiet danger
-                 text button, never a bordered icon tile. */
-              <Button actionId={`bot.${bot.id}.revoke`} emphasis="quiet" density="compact" tone="danger"
-                leading={<Trash2 size={13} />} label={t('bots.revoke')}
-                onActivate={() => setConfirmRevoke(bot.id)} />
-            )}
+            <div className="sk-bot-id">
+              <div className="sk-bot-title">
+                <strong>{bot.name}</strong>
+                <Tag tone={bot.state === 'active' ? 'success' : 'neutral'}>{t(stateKey(bot.state))}</Tag>
+              </div>
+              <div className="sk-bot-meta">
+                <code className="sk-mono">{bot.publishingId}</code>
+                <span>{bot.rateLimitPerMinute} {t('bots.perMinute')}</span>
+              </div>
+            </div>
+            {/* Actions are one trailing icon cluster, same grammar as the
+                real registry: enable switch, rotate secret, revoke. */}
+            <div className="sk-bot-actions">
+              {bot.state === 'revoked' ? null : (
+                <Switch checked={bot.state === 'active'} aria-label={bot.name}
+                  onCheckedChange={checked => patch(bot.id, { state: checked ? 'active' : 'disabled' })} />
+              )}
+              {bot.state === 'revoked' ? null : (
+                <IconButton actionId={`bot.${bot.id}.rotate`} iconId="key-round" iconSize={14}
+                  emphasis="quiet" density="compact" label={t('bots.rotate')}
+                  onActivate={() => setRotating(bot)} />
+              )}
+              {bot.state === 'revoked' ? null : (
+                <IconButton actionId={`bot.${bot.id}.revoke`} iconId="delete" iconSize={14}
+                  emphasis="quiet" density="compact" tone="danger" label={t('bots.revoke')}
+                  onActivate={() => setRevoking(bot)} />
+              )}
+            </div>
           </div>
         ))}
         {bots.length === 0 && <p className="sk-field-hint">{t('bots.empty')}</p>}
       </div>
 
+      {/* Create: name + optional avatar only; rate limit is a registry
+          property fixed at creation, never a native number spinner here. */}
       <Dialog open={createOpen} onDismiss={() => setCreateOpen(false)} title={t('bots.add')}
-        width={420} closeLabel={t('common.close')}
+        width={460} closeLabel={t('common.cancel')}
         footer={
           <>
             <Button actionId="bot.create-cancel" emphasis="quiet" label={t('common.cancel')}
               onActivate={() => setCreateOpen(false)} />
             <Button actionId="bot.create-confirm" emphasis="primary" leading={<Check size={14} />}
-              label={t('common.confirm')}
-              onActivate={create} />
+              label={t('bots.createConfirm')}
+              availability={!name.trim() ? { kind: 'disabled', reason: t('bots.field.name') } : undefined}
+              onActivate={createBot} />
           </>
         }>
-        <div className="sk-upload-dialog">
-          <TextField aria-label={t('bots.add')} placeholder="CI Bot"
-            value={name} data-bot-name onValueChange={setName}
-            onEnter={event => { event.preventDefault(); create(); }} />
-          <TextField aria-label={t('bots.rateLimit')} type="number" value={rate}
-            onValueChange={setRate} />
+        <div className="sk-bot-create">
+          <label className="sk-wiz-field">
+            <span>{t('bots.field.name')}</span>
+            <TextField autoFocus aria-label={t('bots.field.name')} placeholder={t('bots.namePlaceholder')}
+              value={name} data-bot-name onValueChange={setName}
+              onEnter={event => { event.preventDefault(); createBot(); }} />
+          </label>
+          <div className="sk-bot-avatar-field">
+            <FilePickButton actionId="bot.avatar-pick" accept="image/*"
+              emphasis="quiet" density="compact" leading={<Upload size={13} />}
+              label={avatarName ?? t('bots.field.avatar')}
+              onFiles={files => setAvatarName(files[0]?.name ?? null)} />
+          </div>
         </div>
+      </Dialog>
+
+      {/* One-time credentials: shown immediately on create/rotate, never
+          retrievable again after dismissal. */}
+      <Dialog open={!!credentials} onDismiss={() => setCredentials(null)} title={credentials ? t(credentials.titleKey) : ''}
+        width={560} closeLabel={t('common.cancel')}
+        footer={
+          <Button actionId="bot.cred-done" emphasis="primary" label={t('bots.credDone')}
+            onActivate={() => setCredentials(null)} />
+        }>
+        <div className="sk-bot-cred" data-bot-credential>
+          <p className="sk-field-hint" data-bot-cred-once>{t('bots.credOnce')}</p>
+          {credentials?.ingressUrl ? (
+            <label className="sk-wiz-field">
+              <span>{t('bots.credIngress')}</span>
+              <TextField readOnly value={credentials.ingressUrl} data-bot-cred-ingress
+                trailing={<IconButton actionId="bot.cred-copy-ingress" iconId="copy" iconSize={13}
+                  emphasis="quiet" density="compact" label={t('bots.credCopyIngress')}
+                  onActivate={() => copy(credentials.ingressUrl ?? '')} />} />
+            </label>
+          ) : null}
+          <label className="sk-wiz-field">
+            <span>{t('bots.credSecret')}</span>
+            <TextField readOnly type={secretRevealed ? 'text' : 'password'} value={credentials?.secret ?? ''}
+              data-bot-cred-secret
+              trailing={<span className="sk-bot-cred-actions">
+                <IconButton actionId="bot.cred-reveal" iconId={secretRevealed ? 'eye-off' : 'eye'} iconSize={14}
+                  emphasis="quiet" density="compact" label={t('bots.credSecret')}
+                  onActivate={() => setSecretRevealed(v => !v)} />
+                <IconButton actionId="bot.cred-copy-secret" iconId="copy" iconSize={13}
+                  emphasis="quiet" density="compact" label={t('bots.credCopySecret')}
+                  onActivate={() => copy(credentials?.secret ?? '')} />
+              </span>} />
+          </label>
+          {curlSnippet ? (
+            <div className="sk-bot-curl">
+              <span>{t('bots.credCurl')}</span>
+              <pre data-bot-cred-curl>{curlSnippet}</pre>
+            </div>
+          ) : null}
+        </div>
+      </Dialog>
+
+      <Dialog open={!!rotating} onDismiss={() => setRotating(null)} title={t('bots.rotateTitle')}
+        width={460} closeLabel={t('common.cancel')}
+        footer={
+          <>
+            <Button actionId="bot.rotate-cancel" emphasis="quiet" label={t('common.cancel')}
+              onActivate={() => setRotating(null)} />
+            <Button actionId="bot.rotate-confirm" emphasis="primary" tone="danger"
+              label={t('bots.rotateConfirm')} onActivate={rotateSecret} />
+          </>
+        }>
+        <p className="sk-field-hint">{rotating ? t('bots.rotateBody', { name: rotating.name }) : ''}</p>
+      </Dialog>
+
+      <Dialog open={!!revoking} onDismiss={() => setRevoking(null)} title={t('bots.revokeTitle')}
+        width={460} closeLabel={t('common.cancel')}
+        footer={
+          <>
+            <Button actionId="bot.revoke-cancel" emphasis="quiet" label={t('common.cancel')}
+              onActivate={() => setRevoking(null)} />
+            <Button actionId="bot.revoke-confirm" emphasis="primary" tone="danger"
+              label={t('bots.revoke')}
+              onActivate={() => {
+                if (revoking) patch(revoking.id, { state: 'revoked' });
+                setRevoking(null);
+              }} />
+          </>
+        }>
+        <p className="sk-field-hint">{revoking ? t('bots.revokeBody', { name: revoking.name }) : ''}</p>
       </Dialog>
     </SettingsSection>
   );

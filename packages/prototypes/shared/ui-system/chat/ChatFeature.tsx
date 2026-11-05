@@ -27,11 +27,15 @@ export type ChatNavigationRequest =
   | { nonce: number; kind: 'conversation'; conversationId: string; messageId?: string }
   | { nonce: number; kind: 'person'; personId: string };
 
-export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
+export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
+  onOpenMomentsProfile, onOpenMoment }: {
   navigation?: ChatNavigationRequest | null;
   /** Increments to open the find-people picker (shell ⌘N shortcut). */
   newChatSignal?: number;
   onUnreadTotal?: (total: number) => void;
+  /** Identity-card cross-surface navigation into moments. */
+  onOpenMomentsProfile?: (name: string) => void;
+  onOpenMoment?: (momentId: string) => void;
 }) {
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
@@ -434,6 +438,8 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal }: {
             onDissolveGroup={dissolveGroup}
             onLeaveGroup={leaveGroup}
             onForwardMessages={forwardMessages}
+            onOpenMomentsProfile={onOpenMomentsProfile}
+            onOpenMoment={onOpenMoment}
             onStartCall={kind => setCall({ conversationId: selectedConversation.id, kind, direction: 'out' })} />
         ) : (
           <div className="sk-chat-placeholder">

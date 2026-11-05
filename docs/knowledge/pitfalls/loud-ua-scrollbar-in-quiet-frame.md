@@ -51,10 +51,16 @@ Both scopes:
   (`border: 3px solid transparent; background-clip: padding-box`),
   resting alpha .16, hover .30, full pill radius. No arrows, no track fill.
 
-Horizontal: lists own their minimum width (e.g. `.sk-chat-feature`
-`min-width: 640px`) and the preview host is `overflow-x: hidden` — under
-squeeze the surface clips instead of growing a horizontal UA bar; a list
-crushed below its readable minimum has no meaning.
+Horizontal: the preview host is `overflow-x: hidden`, and content surfaces
+must REFLOW rather than rely on a fixed-width floor. `.sk-chat-feature` is
+`min-width: 0` with a full `min-width: 0` shrink chain (main → conv-view →
+stream → msg row/col/bubble → composer); the message stream is the only
+scroll host and is `overflow-x: hidden; overflow-y: auto`, while bubbles
+wrap (`overflow-wrap: anywhere`) and the meta row `flex-wrap`s. Below 720px
+the feature swaps to single pane and the detail sheet goes full-bleed below
+560px. A previous `min-width: 640px` floor was removed: it clipped the
+self bubbles, avatars and status text at the frame edge under extreme
+squeeze instead of reflowing.
 
 ## What guards against regression
 

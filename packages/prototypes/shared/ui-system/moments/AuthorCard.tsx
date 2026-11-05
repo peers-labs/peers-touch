@@ -1,83 +1,59 @@
 /**
- * AuthorCard — quick identity popover for any non-profile surface.
+ * Moments adapter for the shared IdentityCard.
  *
- * Clicking an avatar/name on a post or comment opens THIS small card instead
- * of navigating away; the full profile is reached only via its "查看主页"
- * action. Keeps browsing in place — users never open a full profile just to
- * glance at who someone is.
- *
- * Coverage rule: every identity chip outside the profile header opens this
- * card, including the viewer's own chips (self card offers "查看我的主页"
- * only) and actors without a seeded Person (identity + profile entry only).
+ * Coverage rule: every identity chip outside the profile header opens the
+ * quick card, including the viewer's own chips and actors without a seeded
+ * Person (identity + profile entry only). The card also shows the actor's
+ * latest moments. This file only maps moments data onto the surface-agnostic
+ * card; the chrome/actions live in ../identity/IdentityCard.
  */
-import { useState, type ReactElement, type ReactNode } from 'react';
-import { Check, UserPlus } from 'lucide-react';
-import { Avatar, Button, Popover, Toggle } from '@peers-touch/ui';
-import type { Person } from './moments-data';
-import { VIEWER } from './moments-data';
+import type { ReactElement, ReactNode } from 'react';
+import { IdentityCard, IdentityTrigger, type IdentityMoment } from '../identity/IdentityCard';
+import type { Moment, Person } from './moments-data';
+import { MOMENT_SEEDS, VIEWER } from './moments-data';
+
+export function momentsByIdentity(name: string, posts: Moment[] = MOMENT_SEEDS): IdentityMoment[] {
+  return posts
+    .filter(post => post.author === name)
+    .slice(0, 3)
+    .map(post => ({ id: post.id, text: post.text, image: post.images?.[0], at: post.at }));
+}
 
 export function AuthorCard({ person, name, station, onOpenProfile, onToggleFollow, onToggleBlock }: {
   person?: Person;
   name: string;
-  /** Station fallback for post/comment actors that have no seeded Person. */
   station?: string;
   onOpenProfile: () => void;
   onToggleFollow: () => void;
   onToggleBlock: () => void;
 }) {
   const isSelf = name === VIEWER.name;
-  const tone = person?.tone ?? (isSelf ? VIEWER.tone : undefined);
-  const followed = person?.followed ?? false;
-  const blocked = person?.blocked ?? false;
   return (
-    <div className="sk-author-card" data-author-name={name}
-      data-author-self={isSelf ? 'true' : 'false'}
-      data-author-seeded={person ? 'true' : 'false'}>
-      <header className="sk-author-head">
-        <Avatar name={name} background={tone} size={44} style={{ borderRadius: 12 }} />
-        <div className="sk-author-idcol">
-          <strong>{name}</strong>
-          <span className="sk-author-station">{person?.station ?? station ?? '本站'}</span>
-        </div>
-      </header>
-      {person?.bio && <p className="sk-author-bio">{person.bio}</p>}
-      {person && !isSelf && (
-        <div className="sk-author-stats">
-          <span><strong>{person.followers}</strong> 粉丝</span>
-          {person.mutual && <span className="sk-author-mutual">互相关注</span>}
-        </div>
-      )}
-      <div className="sk-author-actions">
-        {person && !isSelf && (
-          <Toggle actionId={`author.follow.${person.id}`}
-            className="sk-author-follow"
-            emphasis={followed ? 'secondary' : 'primary'}
-            selected={followed}
-            data-author-follow={followed ? 'on' : 'off'}
-            leading={followed ? <Check size={14} /> : <UserPlus size={14} />}
-            label={followed ? '已关注' : '关注'}
-            onSelectedChange={onToggleFollow} />
-        )}
-        {person && !isSelf && (
-          <Button actionId={`author.block.${person.id}`} emphasis="quiet" tone="danger" density="compact"
-            data-author-block={blocked ? 'on' : 'off'}
-            label={blocked ? '取消拉黑' : '拉黑'} onActivate={onToggleBlock} />
-        )}
-        <Button actionId="author.open-profile" emphasis="secondary" fullWidth
-          data-author-open="profile"
-          label={isSelf ? '查看我的主页' : '查看主页'} onActivate={onOpenProfile} />
-      </div>
-    </div>
+    <IdentityCard
+      name={name}
+      tone={person?.tone ?? (isSelf ? VIEWER.tone : undefined)}
+      station={person?.station ?? station}
+      bio={person?.bio}
+      followers={person ? person.followers : undefined}
+      mutual={person?.mutual}
+      isSelf={isSelf}
+      seeded={Boolean(person)}
+      followed={person?.followed ?? false}
+      blocked={person?.blocked ?? false}
+      moments={momentsByIdentity(name)}
+      actionIdSuffix={person ? person.id : ''}
+      onOpenProfile={onOpenProfile}
+      onToggleFollow={person && !isSelf ? onToggleFollow : undefined}
+      onToggleBlock={person && !isSelf ? onToggleBlock : undefined} />
   );
 }
 
 /**
  * Wraps a single semantic trigger (avatar or name button) with the quick
- * author card. The popover is controlled here so that choosing "查看主页"
- * closes the card in the same gesture as the navigation.
+ * author card. The popover closes in the same gesture as profile navigation.
  */
 export function AuthorTrigger({ name, person, station, children, placement = 'bottom',
-  onOpenProfile, onToggleFollow, onToggleBlock }: {
+  onOpenProfile, onToggleFollow, onToggleBlock, onOpenMoment }: {
   name: string;
   person?: Person;
   station?: string;
@@ -86,18 +62,28 @@ export function AuthorTrigger({ name, person, station, children, placement = 'bo
   onOpenProfile: (name: string) => void;
   onToggleFollow: (id: string) => void;
   onToggleBlock: (id: string) => void;
+  /** Open one moment on the full moments surface (defaults to profile). */
+  onOpenMoment?: (momentId: string) => void;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
   return (
-    <Popover placement={placement} label={`${name} 的名片`} open={open} onOpenChange={setOpen}
-      className="sk-author-popover"
-      content={
-        <AuthorCard person={person} name={name} station={station}
-          onOpenProfile={() => { setOpen(false); onOpenProfile(name); }}
-          onToggleFollow={() => person && onToggleFollow(person.id)}
-          onToggleBlock={() => person && onToggleBlock(person.id)} />
-      }>
+    <IdentityTrigger placement={placement}
+      name={name}
+      tone={person?.tone ?? (name === VIEWER.name ? VIEWER.tone : undefined)}
+      station={person?.station ?? station}
+      bio={person?.bio}
+      followers={person ? person.followers : undefined}
+      mutual={person?.mutual}
+      isSelf={name === VIEWER.name}
+      seeded={Boolean(person)}
+      followed={person?.followed ?? false}
+      blocked={person?.blocked ?? false}
+      moments={momentsByIdentity(name)}
+      actionIdSuffix={person ? person.id : ''}
+      onOpenProfile={() => onOpenProfile(name)}
+      onToggleFollow={person ? () => onToggleFollow(person.id) : undefined}
+      onToggleBlock={person ? () => onToggleBlock(person.id) : undefined}
+      onOpenMoment={onOpenMoment ?? (() => onOpenProfile(name))}>
       {children}
-    </Popover>
+    </IdentityTrigger>
   );
 }

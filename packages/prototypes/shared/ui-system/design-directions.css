@@ -213,9 +213,11 @@
      rail's backdrop-filter repaints noisily. */
   transition: background-color .16s cubic-bezier(.22,1,.36,1), color .16s cubic-bezier(.22,1,.36,1);
 }
+/* Hover stays a PINE tile: lighten the pine fill slightly, never swap it for
+   the near-white quiet wash (that read as the tile flashing white on hover). */
 .sk-rail .sk-rail-avatar:hover {
-  color: var(--sk-text);
-  background: var(--sk-btn-quiet-bg-hover);
+  color: var(--sk-btn-primary-ink);
+  background: color-mix(in srgb, var(--sk-btn-primary-bg) 86%, #ffffff);
 }
 /* While its identity card is open the tile stays the active pine mark. */
 .sk-rail .sk-rail-avatar[aria-expanded='true'] {
@@ -237,8 +239,16 @@
   color: var(--sk-btn-quiet-ink); background: var(--sk-btn-quiet-bg);
   transition: background .16s cubic-bezier(.22,1,.36,1), color .16s cubic-bezier(.22,1,.36,1), box-shadow .16s cubic-bezier(.22,1,.36,1);
 }
-.sk-rail-icon:hover { color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover); }
-.sk-rail-icon.is-active {
+/* State rules must outrank the 0,3,0 geometry/base rule above: a bare
+   .sk-rail-icon:hover / .is-active (0,2,0) silently lost to it, which left
+   every selected rail target (moments/chat/settings/search) quiet gray and
+   killed hover feedback. Scope states under the rail at 0,4,0. */
+.sk-rail .sk-rail-group .sk-rail-icon:hover,
+.sk-rail .sk-rail-entry .sk-rail-icon:hover {
+  color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover);
+}
+.sk-rail .sk-rail-group .sk-rail-icon.is-active,
+.sk-rail .sk-rail-entry .sk-rail-icon.is-active {
   color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
   box-shadow: var(--sk-btn-primary-shadow);
 }
@@ -279,13 +289,13 @@
 /* feed: panes own their scroll; the frame never shows a page-level scrollbar */
 .sk-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 /* Surface panes stay mounted (live cross-surface state); only the active one shows. */
-.sk-feed-pane { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.sk-feed-pane { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 .sk-feed-pane[data-pane-active='true'] { display: flex; }
-.sk-feed-pane[data-pane-active='true'] > * { flex: 1; min-height: 0; }
+.sk-feed-pane[data-pane-active='true'] > * { flex: 1; min-width: 0; min-height: 0; }
 /* ---- Increment 1: ConversationRail (peers-ui composed) ---- */
 .sk-conv-rail {
   position: relative; z-index: 1;
-  width: 296px; flex-shrink: 0; padding: 14px;
+  width: 296px; flex-shrink: 0; padding: 0 14px 14px;
   display: flex; flex-direction: column; overflow: auto;
   background: var(--sk-chat-bg, transparent);
   backdrop-filter: blur(var(--sk-glass-blur));
@@ -322,17 +332,20 @@
 /* Increment 2: ConversationView */
 .sk-conv-view {
   flex: 1; min-height: 0; display: flex; flex-direction: column;
-  /* Top 14 (not 18): the conversation header band then starts at exactly the
-     same y as the catalog rail header (rail padding is 14) — one header line
-     across both columns. */
-  padding: 14px 22px 16px; gap: 12px;
+  /* No top padding: the header itself owns the 8px frame inset + 44px title
+     row (one 52px band), so a full-bleed wallpaper layer behind the column
+     is fully covered above its hairline without a magic top offset. */
+  padding: 0 22px 12px; gap: 12px;
 }
-.sk-msg-stream { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
+/* Vertical-only scroll host: horizontal overflow is hidden so a long token
+   or an absolutely-positioned hover bar can never grow a horizontal
+   scrollbar (or get clipped by the frame) — content wraps instead. */
+.sk-msg-stream { flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
 /* Avatar top-aligns with the bubble (desktop ChatArea parity): the avatar
    and the content column share flex-start, so in 1:1 chats avatar and bubble
    begin on the same line; in groups the avatar aligns with the sender name.
    Emoji-only rows bottom-align (large glyph, desktop parity). */
-.sk-msg { display: flex; align-items: flex-start; gap: 9px; max-width: 78%; }
+.sk-msg { display: flex; align-items: flex-start; gap: 9px; max-width: 78%; min-width: 0; }
 .sk-msg.is-emoji-only { align-items: flex-end; }
 .sk-msg-peer { align-self: flex-start; }
 .sk-msg-me { align-self: flex-end; flex-direction: row-reverse; }
@@ -353,7 +366,7 @@
 .sk-msg-me .sk-msg-time { color: color-mix(in srgb, var(--sk-text-2) 80%, transparent); }
 
 .sk-composer {
-  flex-shrink: 0; display: flex; align-items: flex-end; gap: 10px;
+  flex-shrink: 0; min-width: 0; display: flex; align-items: flex-end; gap: 10px;
   /* Symmetric inset: tools/send share one rhythm and the pill aligns cleanly
      inside the stream column (no wide asymmetric lead beside the catalog). */
   padding: 8px; border-radius: 16px;

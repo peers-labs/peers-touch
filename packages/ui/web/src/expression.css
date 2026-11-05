@@ -28,7 +28,7 @@
 .pt-expression-candidate .pt-group-avatar{box-shadow:var(--as-bevel);background:var(--pt-border);border:1px solid var(--as-keyline)}
 .pt-expression-candidate .pt-group-avatar>.pt-avatar:nth-child(2){background:var(--as-writing-surface)}
 .pt-expression-candidate .pt-group-avatar>.pt-avatar:nth-child(3){background:var(--as-devops-surface)}
-.pt-expression-candidate .pt-tag{border-color:transparent;background:var(--as-field);color:var(--pt-text);padding:4px 8px;line-height:1.4;box-shadow:var(--as-bevel);overflow-wrap:anywhere}
+.pt-expression-candidate .pt-tag{border-color:transparent;background:var(--as-field);color:var(--pt-text);padding:4px 8px;line-height:1.4;box-shadow:var(--as-bevel);overflow-wrap:anywhere;white-space:normal;flex:0 1 auto}
 .pt-expression-candidate .pt-tag[data-tone=success]{background:var(--pt-primarySubtle);color:var(--pt-success)}
 .pt-expression-candidate .pt-tag[data-tone=warning]{background:var(--as-warning-surface);color:var(--as-on-warning)}
 .pt-expression-candidate .pt-tag[data-tone=danger]{background:var(--as-danger-surface);color:var(--pt-danger)}

@@ -15,7 +15,7 @@ import { useDismissOutside } from '../use-dismiss-outside';
 import {
   BellOff, Bookmark, ChevronLeft, Eraser, File as FileIcon,
   Image as ImageIcon, LogOut, Phone, Pin, Smartphone, Trash2,
-  UserPlus, Users, Video,
+  Users, Video,
 } from 'lucide-react';
 import {
   Avatar, Button, Checkbox, Dialog, Empty, IconButton, Switch, TextArea, TextField, Toggle,
@@ -313,31 +313,33 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
                   )}
                 </div>
               ))}
-            </div>
-            {(canManage || members.length > 8) && (
-              <div className="sk-profile-member-actions">
-                {canManage && (
-                  <Button emphasis="quiet" density="compact" className="sk-profile-add"
-                    actionId="profile.add-member-open"
-                    leading={<UserPlus size={13} />} label={t('profile.addMember')}
+              {/* Member actions are avatar-sized icon tiles IN the grid (WeChat
+                  parity), never a dashed full-width row + text links below:
+                  a dashed add tile, then a quiet manage tile. */}
+              {canManage && (
+                <div className="sk-profile-member-tile">
+                  <IconButton className="sk-profile-add-tile" iconId="user-plus" iconSize={18}
+                    actionId="profile.add-member-open" label={t('profile.addMember')}
                     availability={addCandidates.length === 0
                       ? { kind: 'disabled', reason: t('profile.addMemberEmpty') }
                       : undefined}
                     onActivate={() => { setAddSelected(new Set()); setAddOpen(true); }} />
-                )}
-                <span className="sk-profile-member-links">
-                  {members.length > 8 && (
-                    <Button emphasis="quiet" density="compact" className="sk-profile-link"
-                      actionId="profile.see-all"
-                      label={showAll ? t('profile.showLess') : t('profile.seeAll')}
-                      onActivate={() => setShowAll(v => !v)} />
-                  )}
-                  {canManage && (
-                    <Button emphasis="quiet" density="compact" className="sk-profile-link"
-                      actionId="profile.manage-members" label={t('profile.manageMembers')}
-                      onActivate={() => setManageOpen(true)} />
-                  )}
-                </span>
+                </div>
+              )}
+              {canManage && (
+                <div className="sk-profile-member-tile">
+                  <IconButton className="sk-profile-manage-tile" iconId="settings" iconSize={17}
+                    actionId="profile.manage-members" label={t('profile.manageMembers')}
+                    onActivate={() => setManageOpen(true)} />
+                </div>
+              )}
+            </div>
+            {members.length > 8 && (
+              <div className="sk-profile-member-actions">
+                <Button emphasis="quiet" density="compact" className="sk-profile-link"
+                  actionId="profile.see-all"
+                  label={showAll ? t('profile.showLess') : t('profile.seeAll')}
+                  onActivate={() => setShowAll(v => !v)} />
               </div>
             )}
           </section>

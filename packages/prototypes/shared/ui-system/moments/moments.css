@@ -5,7 +5,7 @@
 /* Container queries key off the frame's own width (this prototype is an
    embedded app shell, not the viewport): squeeze rules follow the shell. */
 .sk-moments {
-  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
   container-type: inline-size; container-name: moments;
 }
 
@@ -63,8 +63,13 @@
   .sk-compose-thumbs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* Vertical-only scroll host: min-width:0 + overflow-x hidden makes a
+   horizontal scrollbar (and a feed column wider than the shell, which read
+   as cards/pills spilling past the frame's rounded right edge) structurally
+   impossible — long tokens wrap and images are grid-capped instead. */
 .sk-moments-scroll {
-  flex: 1; min-height: 0; overflow: auto;
+  flex: 1; min-width: 0; min-height: 0;
+  overflow-x: hidden; overflow-y: auto;
   padding: 6px 14px 24px; display: flex; flex-direction: column; gap: 14px;
 }
 
@@ -77,6 +82,7 @@
   backdrop-filter: blur(var(--sk-glass-blur));
   -webkit-backdrop-filter: blur(var(--sk-glass-blur));
   padding: 16px 18px;
+  min-width: 0;
 }
 
 .sk-post-head { display: flex; align-items: flex-start; gap: 12px; }
@@ -235,33 +241,8 @@
   outline: 1px solid color-mix(in srgb, var(--sk-accent) 45%, transparent);
 }
 
-/* Quick author card: every avatar/name chip outside the profile header opens
-   THIS popover instead of navigating; full profile sits one action deeper. */
-.sk-author-popover { padding: 0; width: 252px; }
-.sk-author-card {
-  padding: 14px; display: flex; flex-direction: column; gap: 10px;
-}
-.sk-author-head { display: flex; align-items: center; gap: 10px; }
-.sk-author-idcol { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.sk-author-idcol strong { font-size: 14.5px; font-weight: 650; color: var(--sk-text); }
-.sk-author-station { font-size: 11.5px; color: var(--sk-text-3); }
-.sk-author-bio {
-  margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--sk-text-2);
-}
-.sk-author-stats {
-  display: flex; align-items: center; gap: 12px;
-  font-size: 12px; color: var(--sk-text-3);
-}
-.sk-author-stats strong { color: var(--sk-text); font-size: 13px; }
-.sk-author-mutual {
-  padding: 1px 8px; border-radius: var(--sk-radius-control);
-  font-size: 11px; color: var(--sk-primary);
-  background: color-mix(in srgb, var(--sk-primary) 12%, transparent);
-}
-.sk-author-actions {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
-.sk-author-follow { flex: 0 0 auto; }
+/* Quick author card chrome lives in ../identity/identity.css (shared with the
+   chat-surface identity popover). */
 
 .sk-feed-end { text-align: center; font-size: 11.5px; color: var(--sk-text-3); padding: 6px 0 2px; }
 .sk-loadmore { margin: 2px 0; }
@@ -273,6 +254,11 @@
 .sk-feed-sort-float {
   position: sticky; top: 8px; z-index: 6;
   align-self: stretch;
+  /* min-width:0: this zero-height overlay row must NEVER contribute its
+     pill's intrinsic width to the feed column's min-content — otherwise an
+     animated/transient pill width could widen the whole column past the
+     shell's right edge. */
+  min-width: 0;
   /* flex-start (not the default stretch): the zero-height row would
       otherwise crush the chip to its vertical padding and paint a detached
       white sliver while the 28px buttons overflow below it. */

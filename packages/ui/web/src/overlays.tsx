@@ -88,15 +88,25 @@ function OverlayLayer({
       const minTop = clip ? Math.max(gap, clip.top + gap) : gap;
       const maxTop = clip ? Math.min(win.innerHeight - r.height - gap, clip.bottom - r.height - gap)
         : win.innerHeight - r.height - gap;
-      if (top > maxTop) {
-        top = edgeBottom ? Math.max(minTop, maxTop)
-          : Math.max(minTop, a.top - r.height - gap);
+      // Viewport wins over the clip frame vertically. The frame is a scroll
+      // container (e.g. the message stream) whose box can extend past the
+      // visible area and whose top can sit below the only space the popup
+      // fits in; the fixed popup is portaled out of that container, so it is
+      // not actually clipped by it. Flip above the trigger when opening below
+      // would leave the viewport, even if that crosses the frame top.
+      const viewMinTop = gap;
+      const viewMaxTop = win.innerHeight - r.height - gap;
+      if (top > viewMaxTop) {
+        const above = a.top - r.height - gap;
+        if (!edgeBottom && above >= viewMinTop) top = above;
+        else top = Math.max(viewMinTop, Math.min(maxTop, viewMaxTop));
       }
-      if (top < minTop) top = minTop;
+      if (top < viewMinTop) top = viewMinTop;
+      const finalTop = Math.max(viewMinTop, Math.min(top, viewMaxTop));
       setPosition({
         left: Math.max(minLeft, Math.min(left, maxLeft)),
-        top: Math.max(minTop, Math.min(top, maxTop)),
-        maxHeight: (clip ? clip.bottom : win.innerHeight) - gap * 2 - Math.max(minTop, Math.min(top, maxTop)),
+        top: finalTop,
+        maxHeight: win.innerHeight - gap * 2 - finalTop,
       });
     };
     positionPopup();

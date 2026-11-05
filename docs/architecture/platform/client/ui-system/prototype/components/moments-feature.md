@@ -43,6 +43,15 @@
   层首帧即 visible 并淡入，outgoing 层保持绘制到淡出结束才 hidden（单一
   `visibility 0s linear .22s` 会把 incoming 一起延迟，留下约 150ms 空白胶囊，即被否决的
   「闪」方案）。`data-feed-mode=sort|top`，两层始终挂载、不卸载不回流。
+  **横向零溢出是结构属性，禁止数值试错与断点补丁（2026-11-06 硬化，对齐聊天面）**：从 `.sk-moments`、
+  `.sk-feed-pane`（及 active pane 的直接子项）、`.sk-moments-scroll`、`.sk-feed-sort-float`
+  到 `.sk-post` 全链 `min-width:0`；滚动宿主 `.sk-moments-scroll` 显式
+  `overflow-x:hidden; overflow-y:auto`——只允许纵向滚动，任何后代的 intrinsic 宽都无法把列
+  撑出 `.sk-shell` 圆角右缘。排序/回顶胶囊与卡片是同一滚动宿主的同级 flex 子项，二者右缘由
+  布局天然重合（不允许靠固定宽度/margin 对齐）；胶囊是 `width:max-content` 的 sticky 零高
+  overlay，`min-width:0` 保证它不向列反馈 min-content。自适应不得以挑几个宽度的媒体查询
+  「验证」：`widthSweep` oracle 在 **700–2880 每 24px 一档**（顶部态 + 下滑 600px 回顶态）
+  连续断言胶囊/卡片右缘一致、滚动宿主零横溢、卡名单行——任意一档发散即红。
 - **就近搜索（信息就近规则）**：subbar 常驻一个带放大镜的 `TextField`（与其它搜索
   同一交互：即时过滤、可清除），**搜索域随当前范围切换**——动态过滤合并时间线
   （站点/作者/正文），圈友过滤分组（名称/描述/成员名）；搜索在当前时间序上就地过滤、
@@ -73,11 +82,18 @@
   观看者反应以**全框唯一松绿标点**（pine + 12% 淡洗）标记。
 - **评论删除**：仅自己的评论在 meta 行出现「删除」（danger quiet 钮，非 hover 才可见的图标），
   两段确认（删除动态/删除评论共用确认 Dialog），删除递归清理嵌套回复；他人评论无删除入口。
-- **快捷名片（AuthorCard Popover）**：个人页之外的一切身份芯片——动态作者头（头像+名字
-  同一触发区）、每条评论的头像与名字——点击只弹 252px 名片，不离开当前流：头像/名/站点/bio/
-  粉丝/互相关注、关注 `Toggle`、拉黑、「查看主页」fullWidth 钮（点击即关名片再导航）。
-  本人的芯片只显示「查看我的主页」；无本地档案的陌生作者只显示身份与「查看主页」，不伪造
-  关注/粉丝。名片状态由 `data-author-self` / `data-author-seeded` / `data-author-follow` 标记。
+- **身份色板（identity-tone，2026-11-05）**：字母头像按身份取确定性色相（陈屿靛蓝/周禾赭/
+  苏禾陶土/林晚青/老周棕/阿砚紫/河埠头钢青等），未知名字哈希取同一色板；**自己独占松绿
+  `#2f6a50`、群组合保留中性墨灰 `#3d434a`**。禁止让所有他人头像共用近黑色（曾导致整列像
+  墓碑）。色相均为亮度<0.2 的中深色，Avatar 自动配白字。
+- **快捷身份名片（共享 identity/IdentityCard，2026-11-05 起动态/聊天共用）**：个人页之外
+  的一切身份芯片——动态作者头（头像+名字同一触发区）、每条评论的头像与名字、**聊天消息流里
+  的头像**——点击只弹 264px 名片，不离开当前流：头像/名/站点/bio/粉丝/互相关注、**最近动态**
+  （至多 3 个 72px 缩略格，有图用图、无图三行文字摘要，点格进该作者主页）、关注 `Toggle`、
+  拉黑、「发消息」（聊天面，关闭即留在会话）、「查看主页」fullWidth 钮（点击即关名片再导航；
+  聊天面会跨面切到动态面个人页）。本人芯片只显示「查看我的主页」；无本地档案的陌生作者只显示
+  身份与「查看主页」，不伪造关注/粉丝。名片状态由 `data-author-self` / `data-author-seeded` /
+  `data-author-follow` 标记；只有 follow/block 的 actionId 带 personId 后缀。
 - **个人页**：72px 方圆身份头（r20）、站点/简介、动态数、关注翻转、TA 的动态列表；
   入口收敛为名片的「查看主页」与轨内自我头像的浮动名片卡（增量 41 后无独立找人页）。
 - **圈友 = 我的受众分组（增量 40 闭环）**：语义对齐 proto `Circle`——单个 actor 拥有的
@@ -153,7 +169,7 @@
 
 ## 4. 门禁
 
-`north-star.suite.json` 中 25 个 moments 场景：feed 全解剖与工艺电池（含 3 tab、搜索域绑定、
+`north-star.suite.json` 中 32 个 moments 场景：feed 全解剖与工艺电池（含 3 tab、搜索域绑定、
 无 people 面断言）、
 加载更多 3→6、反应单胶囊（初始 `data-reaction-total=27` → 开面板选赞 → 松绿选中且 28 →
 再选同一表情取消回 27、`aria-pressed` 复位）、选择器 16 项、选择器选第 3 种、
@@ -173,8 +189,12 @@ explore 搜「植物」→1 条联邦动态且搜索态无结尾标记；circles
 `moments-circle-empty-compose-guard`（删空 3 组出 Empty；发动态选圈子受众时圈子 Select 不渲染、
 引导出现——同时锁死库级「Dialog 内 Select 可点」）、个人页返回、个人页 72 身份内容。
 1360 与 390 双宽度自动溢出；实测 0 console error、390 无横向溢出。
+`moments-never-overflows-under-squeeze` 锁死横向结构合同：两个 `widthSweep` 在 700–2880
+每 24px 连续扫描（顶部排序态 + 下滑 600px 的回顶态），断言排序/回顶胶囊右缘与首卡右缘
+逐像素一致（≤1px）、`.sk-moments-scroll` 零横溢、卡名单行——不是抽样视口，任何一档
+发散即红；不得对会纵向滚动的卡片用四边 containedIn（其底边随滚动内容超出可视区属正常）。
 轨身份 44 由 feed 场景的 computedStyle 断言固定。
-consumer/board/foundation 回归 OBSERVED，import-guard 裸元素债务持平 697，tsc 干净。
+consumer/board/foundation 回归 OBSERVED（north-star 165 + boards 20），import-guard 裸元素债务持平 686，tsc 干净。
 
 ## 5. UNPROVEN
 

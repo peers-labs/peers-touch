@@ -586,7 +586,10 @@ function CircleManageDialog({ circle, people, onDismiss, onSave, onRequestDelete
   );
 }
 
-export function MomentsFeature() {
+export type MomentsNavigationRequest =
+  | { nonce: number; kind: 'profile'; name: string };
+
+export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationRequest | null }) {
   const [tab, setTab] = useState<MomentsTab>('feed');
   const [nav, setNav] = useState<MomentsNav>({ kind: 'tab' });
   const [posts, setPosts] = useState<Moment[]>(MOMENT_SEEDS);
@@ -639,6 +642,16 @@ export function MomentsFeature() {
   const searchedCircles = q ? circles.filter(circleMatches) : circles;
 
   const openProfile = (name: string) => setNav({ kind: 'profile', name, from: tab });
+  // Cross-surface request (e.g. identity card opened from chat): switch to
+  // the moments surface tab state and open the person's profile.
+  const navNonce = navigation?.nonce;
+  useEffect(() => {
+    if (!navigation || navNonce === undefined) return;
+    if (navigation.kind === 'profile') openProfile(navigation.name);
+    // openProfile is stable enough for this cross-surface effect; only the
+    // request nonce re-triggers it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navNonce]);
   const backToTab = () => {
     if (nav.kind === 'tab') return;
     setTab(nav.from);

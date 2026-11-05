@@ -182,7 +182,7 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-form{display:flex;flex-direction:column;gap:var(--pt-space-md)}
 .pt-form-section{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--pt-space-sm)}
 .pt-form-section legend{font-size:15px;font-weight:600;margin-bottom:var(--pt-space-xs)}
-.pt-tag{display:inline-flex;align-items:center;gap:var(--pt-space-xxs);padding:2px var(--pt-space-xs);border:1px solid var(--pt-border);border-radius:var(--pt-radius-xs);background:var(--pt-subtle);color:var(--pt-secondary);font-size:12px;max-width:100%;vertical-align:middle}
+.pt-tag{display:inline-flex;align-items:center;gap:var(--pt-space-xxs);padding:2px var(--pt-space-xs);border:1px solid var(--pt-border);border-radius:var(--pt-radius-xs);background:var(--pt-subtle);color:var(--pt-secondary);font-size:12px;max-width:100%;vertical-align:middle;white-space:nowrap;flex:0 0 auto}
 .pt-tag[data-tone=danger],.pt-alert[data-tone=danger]{color:var(--pt-danger)}
 .pt-tag[data-tone=success],.pt-alert[data-tone=success]{color:var(--pt-success)}
 .pt-tag[data-tone=warning],.pt-alert[data-tone=warning]{color:var(--pt-warning)}

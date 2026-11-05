@@ -96,6 +96,21 @@
           "equals": 5
         },
         {
+          "id": "rail-active-filled",
+          "type": "computedStyle",
+          "target": ".sk-rail .sk-rail-icon.is-active",
+          "prop": "backgroundColor",
+          "equals": "rgb(26, 29, 32)"
+        },
+        {
+          "id": "rail-inactive-transparent",
+          "type": "computedStyle",
+          "all": true,
+          "target": ".sk-rail .sk-rail-icon:not(.is-active)",
+          "prop": "backgroundColor",
+          "equals": "rgba(0, 0, 0, 0)"
+        },
+        {
           "id": "rail-width",
           "type": "computedStyle",
           "target": ".sk-rail",
@@ -2155,7 +2170,15 @@
           "type": "computedStyle",
           "target": ".sk-chat-head",
           "prop": "height",
-          "equals": "48px"
+          "equals": "52px"
+        },
+        {
+          "id": "band-flush-with-pane-top",
+          "type": "edgesAlign",
+          "target": ".sk-chat-head",
+          "peer": ".sk-conv-view",
+          "edge": "top",
+          "tolerance": 0
         },
         {
           "id": "head-band-aligns-with-rail",
@@ -2203,6 +2226,76 @@
         }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.chat-reflows-under-squeeze",
+      "title": "极端窄宽（560/400）：会话单栏回流填满，不横向溢出、不裁剪气泡与状态，资料侧拉满幅",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "click", "target": ".sk-conv-row.is-pinned-row" },
+        { "op": "wait", "ms": 250 },
+        { "op": "viewport", "width": 560, "height": 860 },
+        { "op": "expect",
+          "oracle": {
+            "id": "single-pane-fills-at-560",
+            "type": "edgesAlign",
+            "target": ".sk-chat-main",
+            "peer": ".sk-chat-feature",
+            "edge": "left",
+            "tolerance": 2
+          }
+        },
+        { "op": "expect",
+          "oracle": {
+            "id": "main-right-fills-at-560",
+            "type": "edgesAlign",
+            "target": ".sk-chat-main",
+            "peer": ".sk-chat-feature",
+            "edge": "right",
+            "tolerance": 2
+          }
+        },
+        { "op": "expect",
+          "oracle": {
+            "id": "no-overflow-at-560",
+            "type": "overflow",
+            "target": ".sk-chat-feature"
+          }
+        },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "expect",
+          "oracle": {
+            "id": "detail-sheet-full-bleed-at-560",
+            "type": "edgesAlign",
+            "target": ".sk-side-sheet",
+            "peer": ".sk-chat-main",
+            "edge": "left",
+            "tolerance": 2
+          }
+        },
+        { "op": "viewport", "width": 400, "height": 860 },
+        { "op": "expect",
+          "oracle": {
+            "id": "no-overflow-at-400",
+            "type": "overflow",
+            "target": ".sk-chat-feature"
+          }
+        },
+        { "op": "expect",
+          "oracle": {
+            "id": "self-avatar-inside-pane-at-400",
+            "type": "containedIn",
+            "target": ".sk-msg-me .sk-msg-avatar-self",
+            "owner": ".sk-chat-feature"
+          }
+        }
+      ],
+      "oracles": [],
+      "finalizers": [
+        { "op": "viewport", "width": 1360, "height": 900 }
+      ]
     },
     {
       "id": "ui.prototype.north-star.call-audio",
@@ -3861,6 +3954,38 @@
           "target": "[data-action-id='profile.manage-members']"
         },
         {
+          "id": "add-member-is-icon-tile",
+          "type": "computedStyle",
+          "target": ".sk-profile-add-tile",
+          "prop": "width",
+          "equals": "38px"
+        },
+        {
+          "id": "add-member-tile-has-glyph-no-text",
+          "type": "count",
+          "target": ".sk-profile-add-tile svg",
+          "equals": 1
+        },
+        {
+          "id": "manage-is-icon-tile",
+          "type": "computedStyle",
+          "target": ".sk-profile-manage-tile",
+          "prop": "width",
+          "equals": "38px"
+        },
+        {
+          "id": "manage-tile-has-glyph-no-text",
+          "type": "count",
+          "target": ".sk-profile-manage-tile svg",
+          "equals": 1
+        },
+        {
+          "id": "member-actions-live-in-grid-not-text-row",
+          "type": "count",
+          "target": ".sk-profile-members .sk-profile-member-tile",
+          "equals": 2
+        },
+        {
           "id": "nickname-row",
           "type": "exists",
           "target": "[data-profile-nickname]"
@@ -4331,6 +4456,26 @@
             "target": ".sk-conv-view",
             "attr": "data-chat-background",
             "equals": "mint"
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "wallpaper-full-bleed-not-card",
+            "type": "computedStyle",
+            "target": ".sk-msg-stream",
+            "prop": "borderTopLeftRadius",
+            "equals": "0px"
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "wallpaper-paints-column-not-stream",
+            "type": "computedStyle",
+            "target": ".sk-msg-stream",
+            "prop": "backgroundImage",
+            "equals": "none"
           }
         },
         {
@@ -7777,6 +7922,40 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.moments-never-overflows-under-squeeze",
+      "title": "动态面任意窗口宽度（700–2880 连续扫描，含回顶态）零横向溢出：排序/回顶胶囊右缘与卡片右缘逐像素一致",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='moments']" },
+        { "op": "wait", "ms": 150 }
+      ],
+      "oracles": [
+        {
+          "id": "fluid-at-top",
+          "type": "widthSweep",
+          "from": 700, "to": 2880, "step": 24, "height": 900,
+          "align": [
+            { "target": ".sk-feed-sort-pill", "peer": ".sk-post", "edge": "right", "tolerance": 1 }
+          ],
+          "noOverflow": [".sk-moments-scroll"],
+          "singleLine": [".sk-post:first-of-type .sk-post-name"]
+        },
+        {
+          "id": "fluid-scrolled-top-mode",
+          "type": "widthSweep",
+          "from": 700, "to": 2880, "step": 24, "height": 900,
+          "scroll": [{ "target": ".sk-moments-scroll", "top": 600 }],
+          "align": [
+            { "target": ".sk-feed-sort-pill", "peer": ".sk-post", "edge": "right", "tolerance": 1 }
+          ],
+          "noOverflow": [".sk-moments-scroll"]
+        }
+      ],
+      "finalizers": [
+        { "op": "viewport", "width": 1360, "height": 900 }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.moments-feed-sort-morphs-to-top",
       "title": "排序胶囊仅在最顶有效：下滑后变形为「回顶」，点击平滑回顶后再变回最新/热门胶囊",
       "level": "L3_DYNAMIC",
@@ -8718,6 +8897,19 @@
           "type": "exists",
           "scope": "global",
           "target": "[data-action-id='author.follow.p-linwan']"
+        },
+        {
+          "id": "recent-moments-section",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card .sk-author-moments"
+        },
+        {
+          "id": "recent-moment-tiles",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-author-card .sk-author-moment-tile",
+          "gte": 1
         }
       ],
       "finalizers": [
@@ -8725,6 +8917,54 @@
           "op": "press",
           "key": "Escape"
         }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.chat-message-avatar-identity-card",
+      "title": "聊天消息头像点开同款身份名片：含最近动态/发消息，查看主页跨到动态面",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "click", "target": ".sk-conv-row.is-pinned-row" },
+        { "op": "wait", "ms": 250 },
+        { "op": "click", "target": ".sk-msg-stream .sk-msg-peer .sk-msg-avatar" },
+        { "op": "wait", "ms": 300 }
+      ],
+      "oracles": [
+        {
+          "id": "card-open",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card"
+        },
+        {
+          "id": "card-has-recent-moments",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card .sk-author-moments"
+        },
+        {
+          "id": "message-action-present",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-message]"
+        },
+        {
+          "id": "open-profile-present",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-open='profile']"
+        },
+        {
+          "id": "card-on-screen-not-clipped",
+          "type": "containedIn",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-open='profile']",
+          "owner": "body"
+        }
+      ],
+      "finalizers": [
+        { "op": "press", "key": "Escape" }
       ]
     },
     {
@@ -10505,73 +10745,86 @@
     },
     {
       "id": "ui.prototype.north-star.settings-bots",
-      "title": "增量23：通道›机器人——2 种子状态标签、停用切换、新建对话框真实增行",
+      "title": "通道›机器人：种子状态/凭据签发（入口+一次性密钥+curl）/轮换/吊销两段态；任意宽度状态标签与名单行不竖排",
       "level": "L3_DYNAMIC",
       "operations": [
-        {
-          "op": "click",
-          "target": "[data-rail-target='settings']"
-        },
-        {
-          "op": "wait",
-          "ms": 150
-        },
-        {
-          "op": "click",
-          "target": "[data-settings-group='channels']"
-        },
-        {
-          "op": "wait",
-          "ms": 150
-        }
+        { "op": "click", "target": "[data-rail-target='settings']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "click", "target": "[data-settings-group='channels']" },
+        { "op": "wait", "ms": 150 },
+
+        { "op": "expect", "id": "two-bots", "oracle": { "type": "count", "scope": "global", "target": "[data-bot]", "equals": 2 } },
+        { "op": "expect", "id": "build-active", "oracle": { "type": "textContains", "scope": "global", "target": "[data-bot='bot-build']", "contains": "运行中" } },
+        { "op": "expect", "id": "release-disabled", "oracle": { "type": "textContains", "scope": "global", "target": "[data-bot='bot-release']", "contains": "已停用" } },
+
+        { "op": "clickGlobal", "target": "[data-action-id='bot.create-open']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "type", "scope": "global", "target": "[data-bot-name]", "value": "Nightly Bot" },
+        { "op": "expect", "id": "create-confirm-enabled", "oracle": { "type": "enabled", "scope": "global", "target": "[data-action-id='bot.create-confirm']" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.create-confirm']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "expect", "id": "credential-dialog-shown", "oracle": { "type": "exists", "scope": "global", "target": "[data-bot-credential]" } },
+        { "op": "expect", "id": "credential-ingress-path", "oracle": { "type": "attr", "scope": "global", "target": "[data-bot-cred-ingress]", "attr": "value", "equals": "/v1/message-publishing/program/nightly-bot" } },
+        { "op": "expect", "id": "credential-secret-masked", "oracle": { "type": "attr", "scope": "global", "target": "[data-bot-cred-secret]", "attr": "type", "equals": "password" } },
+        { "op": "expect", "id": "credential-curl-has-path", "oracle": { "type": "textContains", "scope": "global", "target": "[data-bot-cred-curl]", "contains": "/v1/message-publishing/program/nightly-bot" } },
+        { "op": "expect", "id": "credential-curl-has-bearer", "oracle": { "type": "textContains", "scope": "global", "target": "[data-bot-cred-curl]", "contains": "ptb_" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.cred-reveal']" },
+        { "op": "wait", "ms": 100 },
+        { "op": "expect", "id": "credential-secret-revealed", "oracle": { "type": "attr", "scope": "global", "target": "[data-bot-cred-secret]", "attr": "type", "equals": "text" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.cred-done']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "expect", "id": "credential-dialog-closed", "oracle": { "type": "missing", "scope": "global", "target": "[data-bot-credential]" } },
+
+        { "op": "clickGlobal", "target": ".sk-bot-row:last-child [data-action-id$='.rotate']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "expect", "id": "rotate-dialog-shown", "oracle": { "type": "textContains", "scope": "global", "target": ".pt-dialog-body", "contains": "Nightly Bot" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.rotate-confirm']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "expect", "id": "new-secret-dialog-shown", "oracle": { "type": "exists", "scope": "global", "target": "[data-bot-credential]" } },
+        { "op": "expect", "id": "rotate-has-no-ingress", "oracle": { "type": "missing", "scope": "global", "target": "[data-bot-cred-ingress]" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.cred-done']" },
+        { "op": "wait", "ms": 150 },
+
+        { "op": "clickGlobal", "target": ".sk-bot-row:last-child [data-action-id$='.revoke']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "expect", "id": "revoke-dialog-shown", "oracle": { "type": "textContains", "scope": "global", "target": ".pt-dialog-body", "contains": "Nightly Bot" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.revoke-confirm']" },
+        { "op": "wait", "ms": 150 }
       ],
       "oracles": [
         {
-          "id": "two-bots",
+          "id": "bot-rows-fluid-at-any-width",
+          "type": "widthSweep",
+          "from": 700, "to": 2880, "step": 24, "height": 900,
+          "noOverflow": [".sk-settings-scroll"],
+          "singleLine": [".sk-bot-row .pt-tag", ".sk-bot-title strong", ".sk-bot-meta code"]
+        },
+        {
+          "id": "three-bots-after-create",
           "type": "count",
+          "scope": "global",
           "target": "[data-bot]",
-          "equals": 2
+          "equals": 3
         },
         {
-          "id": "build-active",
+          "id": "new-row-revoked",
           "type": "textContains",
-          "target": "[data-bot='bot-build']",
-          "contains": "运行中"
+          "scope": "global",
+          "target": ".sk-bot-row:last-child",
+          "contains": "已吊销"
         },
         {
-          "id": "release-disabled",
-          "type": "textContains",
-          "target": "[data-bot='bot-release']",
-          "contains": "已停用"
+          "id": "revoked-row-has-no-actions",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-bot-row:last-child .sk-bot-actions > *",
+          "equals": 0
         }
       ],
       "finalizers": [
-        {
-          "op": "clickGlobal",
-          "target": "[data-action-id='bot.create-open']"
-        },
-        {
-          "op": "wait",
-          "ms": 200
-        },
-        {
-          "op": "type",
-          "scope": "global",
-          "target": "[data-bot-name]",
-          "value": "Nightly Bot"
-        },
-        {
-          "op": "clickGlobal",
-          "target": "[data-action-id='bot.create-confirm']"
-        },
-        {
-          "op": "wait",
-          "ms": 150
-        },
-        {
-          "op": "clickGlobal",
-          "target": "[data-settings-group='general']"
-        }
+        { "op": "viewport", "width": 1360, "height": 900 },
+        { "op": "wait", "ms": 100 },
+        { "op": "clickGlobal", "target": "[data-settings-group='general']" }
       ]
     },
     {

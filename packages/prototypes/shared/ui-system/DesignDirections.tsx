@@ -21,11 +21,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Button, UIProvider } from '@peers-touch/ui';
-import { MomentsFeature } from './moments/MomentsFeature';
 import { SettingsFeature } from './settings/SettingsFeature';
 import type { SettingsNavigationRequest } from './settings/SettingsFeature';
 import { ChatFeature } from './chat/ChatFeature';
 import type { ChatNavigationRequest } from './chat/ChatFeature';
+import { MomentsFeature, type MomentsNavigationRequest } from './moments/MomentsFeature';
+import { MOMENT_SEEDS } from './moments/moments-data';
 import { GlobalSearchOverlay } from './search/GlobalSearchOverlay';
 import type { GlobalSearchTarget } from './search/GlobalSearchOverlay';
 import { NotificationBell } from './notifications/NotificationBell';
@@ -100,6 +101,17 @@ export function DesignDirections() {
   const openManageAccount = () => {
     setRailTab('settings');
     setSettingsNav({ nonce: Date.now(), group: 'general', section: 'account' });
+  };
+  // Cross-surface identity navigation: identity cards opened from chat route
+  // into the moments profile (or the profile of a specific moment's author).
+  const [momentsNav, setMomentsNav] = useState<MomentsNavigationRequest | null>(null);
+  const openMomentsProfile = (name: string) => {
+    setRailTab('moments');
+    setMomentsNav({ nonce: Date.now(), kind: 'profile', name });
+  };
+  const openMoment = (momentId: string) => {
+    const author = MOMENT_SEEDS.find(post => post.id === momentId)?.author;
+    if (author) openMomentsProfile(author);
   };
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
@@ -290,10 +302,11 @@ export function DesignDirections() {
           {/* All three surfaces stay mounted so cross-surface state (e.g. the
               outer-rail unread badge) stays live; only the active pane shows. */}
           <div className="sk-feed-pane" data-pane-active={isChat ? 'true' : 'false'}>
-            <ChatFeature navigation={chatNav} newChatSignal={newChatSignal} onUnreadTotal={setChatUnread} />
+            <ChatFeature navigation={chatNav} newChatSignal={newChatSignal} onUnreadTotal={setChatUnread}
+              onOpenMomentsProfile={openMomentsProfile} onOpenMoment={openMoment} />
           </div>
           <div className="sk-feed-pane" data-pane-active={railTab === 'moments' ? 'true' : 'false'}>
-            <MomentsFeature />
+            <MomentsFeature navigation={momentsNav} />
           </div>
           <div className="sk-feed-pane" data-pane-active={railTab === 'settings' ? 'true' : 'false'}>
             <SettingsFeature navigation={settingsNav} />

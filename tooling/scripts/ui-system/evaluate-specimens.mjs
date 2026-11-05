@@ -172,6 +172,10 @@ async function runOperation(page, anchor, op) {
         behavior: 'instant',
       }), op);
       break;
+    case 'viewport':
+      await page.setViewportSize({ width: op.width, height: op.height ?? 900 });
+      await page.waitForTimeout(op.settle ?? 120);
+      break;
     case 'wait': await page.waitForTimeout(op.ms ?? 150); break;
     case 'waitFor': await target.waitFor({ state: op.state ?? 'visible', timeout: op.timeout ?? 4000 }); break;
     default: throw new Error(`UNKNOWN_OPERATION: ${op.op}`);
@@ -505,6 +509,107 @@ async function checkOracle(page, anchor, oracle) {
         const pass = textWidth <= available + 0.5;
         return { pass, placeholder, textWidth: Math.round(textWidth), available: Math.round(available) };
       });
+    }
+    case 'singleLine': {
+      // Class-level anti-crush gate: the element's text must occupy exactly
+      // one line and its border box must not exceed one line height. Catches
+      // CJK tags/labels that wrap character-by-character when a flex column
+      // squeezes them (scrollHeight alone cannot see it — the box grows with
+      // the wrap). `scope: global` is honored by the caller's locator.
+      const node = await one();
+      return node.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const lineRects = [...range.getClientRects()].filter(rect => rect.height > 0);
+        const lineTops = new Set(lineRects.map(rect => Math.round(rect.top)));
+        // Benchmark against the computed line box: a Range fragment rect
+        // trims the half-leading (19px vs a 20.25px line box), so the
+        // fragment height alone would false-fail single-line text. Fall back
+        // to the measured fragment only when line-height is "normal".
+        const computedLineHeight = parseFloat(cs.lineHeight);
+        const lineBase = Number.isFinite(computedLineHeight) && computedLineHeight > 0
+          ? computedLineHeight
+          : Math.max(...lineRects.map(rect => rect.height), 0);
+        const heightLimit = lineBase
+          + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+          + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth) + 1;
+        const rect = el.getBoundingClientRect();
+        return {
+          pass: lineTops.size <= 1 && rect.height <= heightLimit,
+          lines: lineTops.size,
+          height: Math.round(rect.height),
+          heightLimit: Math.round(heightLimit),
+        };
+      });
+    }
+    case 'widthSweep': {
+      // Continuous fluidity gate, not hand-picked breakpoints: resize the
+      // viewport across every width in [from,to] by `step` and assert the
+      // invariants hold at EVERY step — edge alignment between independent
+      // elements, zero horizontal overflow of named scroll hosts, and
+      // single-line text on every matched leaf. Adaptive layouts must be
+      // correct for an arbitrary user window, not only at sampled widths.
+      const from = oracle.from ?? 700;
+      const to = oracle.to ?? 2880;
+      const step = oracle.step ?? 24;
+      const height = oracle.height ?? 900;
+      const settleMs = oracle.settleMs ?? 60;
+      const aligns = oracle.align ?? [];
+      const overflowHosts = oracle.noOverflow ?? [];
+      const singleLineSelectors = oracle.singleLine ?? [];
+      const scrolls = oracle.scroll ?? [];
+      const startSize = page.viewportSize();
+      const offenders = [];
+
+      try {
+        for (let width = from; width <= to; width += step) {
+          await page.setViewportSize({ width, height });
+          await page.waitForTimeout(settleMs);
+          for (const s of scrolls) {
+            await page.locator(s.target).first().evaluate((el, top) => { el.scrollTop = top; }, s.top);
+          }
+          if (scrolls.length) await page.waitForTimeout(40);
+          const result = await page.evaluate(({ aligns, overflowHosts, singleLineSelectors }) => {
+            const fails = [];
+            const box = sel => document.querySelector(sel)?.getBoundingClientRect() ?? null;
+            const isSingleLine = (el) => {
+              const cs = getComputedStyle(el);
+              const range = document.createRange();
+              range.selectNodeContents(el);
+              const rects = [...range.getClientRects()].filter(r => r.height > 0);
+              const tops = new Set(rects.map(r => Math.round(r.top)));
+              const lh = parseFloat(cs.lineHeight);
+              const lineBase = Number.isFinite(lh) && lh > 0 ? lh : Math.max(...rects.map(r => r.height), 0);
+              const limit = lineBase + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+                + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth) + 1;
+              return tops.size <= 1 && el.getBoundingClientRect().height <= limit;
+            };
+            for (const a of aligns) {
+              const ra = box(a.target), rb = box(a.peer);
+              if (!ra || !rb) { fails.push(`${a.target}|${a.peer}:missing`); continue; }
+              const edge = r => ({ left: r.x, right: r.x + r.width, top: r.y, bottom: r.y + r.height })[a.edge ?? 'right'];
+              const delta = Math.abs(edge(ra) - edge(rb));
+              if (delta > (a.tolerance ?? 1)) fails.push(`${a.edge} ${a.target} vs ${a.peer}: ${Math.round(delta)}px`);
+            }
+            for (const sel of overflowHosts) {
+              const el = document.querySelector(sel);
+              if (el && el.scrollWidth - el.clientWidth > 1) fails.push(`overflow ${sel}: +${el.scrollWidth - el.clientWidth}px`);
+            }
+            for (const sel of singleLineSelectors) {
+              const nodes = document.querySelectorAll(sel);
+              if (!nodes.length) { fails.push(`${sel}:missing`); continue; }
+              if (!Array.from(nodes).every(isSingleLine)) fails.push(`multiline ${sel} (${nodes.length})`);
+            }
+            return fails;
+          }, { aligns, overflowHosts, singleLineSelectors });
+          for (const f of result) offenders.push(`w${width}: ${f}`);
+          if (offenders.length >= 12) break;
+        }
+      } finally {
+        if (startSize) await page.setViewportSize(startSize);
+      }
+      return { pass: offenders.length === 0, offenders };
     }
     case 'craftBattery': {
       // Craft geometry gate: native-control leakage, intrinsic compact-control
