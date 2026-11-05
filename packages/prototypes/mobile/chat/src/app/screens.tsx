@@ -361,13 +361,13 @@ export function MeScreen({ state, dispatch }: { state: AppState; dispatch: Dispa
     <div className="ma-page ma-me">
       {/* Identity — desktop Settings › Identity parity: banner, avatar on its
           lower edge with a card ring, tags, stats, and copyable identity.
-          Change affordances are small translucent overlay icons — identity
-          content owns the visual weight (owner view, no competing chrome). */}
+          Edit affordances are pencil icons hidden until the owner is hovered
+          (touch: always reachable) — identity owns the resting view. */}
       <header className="ma-profile" data-me-profile>
         <div className="ma-profile-banner" data-has-image={banner ? 'true' : 'false'}>
           {banner && <img src={banner} alt="" />}
           <span className="ma-profile-banner-action">
-            <FilePicker iconOnly iconId="image" accept="image/*" label="更换头图" onFiles={readBanner} />
+            <FilePicker iconOnly iconId="edit" accept="image/*" label="更换头图" onFiles={readBanner} />
           </span>
         </div>
         <div className="ma-profile-body">
@@ -379,7 +379,7 @@ export function MeScreen({ state, dispatch }: { state: AppState; dispatch: Dispa
                   boxShadow: '0 0 0 3px var(--pt-surface), 0 4px 12px rgba(15,23,42,.16)',
                 }} />
               <span className="ma-profile-avatar-action">
-                <FilePicker iconOnly iconId="camera" accept="image/*" label="更换头像" onFiles={readAvatar} />
+                <FilePicker iconOnly iconId="edit" accept="image/*" label="更换头像" onFiles={readAvatar} />
               </span>
             </div>
             <div className="ma-profile-meta">

@@ -29,6 +29,7 @@ import type { ChatNavigationRequest } from './chat/ChatFeature';
 import { GlobalSearchOverlay } from './search/GlobalSearchOverlay';
 import type { GlobalSearchTarget } from './search/GlobalSearchOverlay';
 import { NotificationBell } from './notifications/NotificationBell';
+import { SelfCardPopover } from './SelfCardPopover';
 import { makeTranslate, usePrefs } from './prefs';
 import './design-directions.css';
 
@@ -93,12 +94,12 @@ export function DesignDirections() {
   const [newChatSignal, setNewChatSignal] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
   const [settingsNav, setSettingsNav] = useState<SettingsNavigationRequest | null>(null);
-  // Bumped whenever the rail identity tile is clicked; MomentsFeature opens
-  // the viewer's own moments profile in response (cross-pane signal).
-  const [momentsSelfSignal, setMomentsSelfSignal] = useState(0);
-  const openSelfMoments = () => {
-    setRailTab('moments');
-    setMomentsSelfSignal(nonce => nonce + 1);
+  // The rail identity tile opens a FLOATING identity card (never a page
+  // navigation); its manage action routes into Settings › Account.
+  const [selfCardOpen, setSelfCardOpen] = useState(false);
+  const openManageAccount = () => {
+    setRailTab('settings');
+    setSettingsNav({ nonce: Date.now(), group: 'general', section: 'account' });
   };
   const prefs = usePrefs();
   const t = makeTranslate(prefs.locale);
@@ -231,9 +232,13 @@ export function DesignDirections() {
         </div>
 
         <nav className="sk-rail" aria-label="主导航">
-          <Button actionId="rail.open-self" emphasis="quiet" className="sk-rail-avatar"
-            data-rail-self="true" aria-label="查看我的主页"
-            onActivate={openSelfMoments}>林</Button>
+          <SelfCardPopover open={selfCardOpen} onOpenChange={setSelfCardOpen}
+            onManageAccount={openManageAccount}>
+            {/* The Popover owns open/close (its injected trigger handler);
+                no onActivate here or the click toggles twice and re-closes. */}
+            <Button actionId="rail.open-self" emphasis="quiet" className="sk-rail-avatar"
+              data-rail-self="true" aria-label="查看我的资料" aria-haspopup="dialog">林</Button>
+          </SelfCardPopover>
           <div className="sk-rail-group">
             <button type="button"
               className={`sk-rail-icon${searchOpen ? ' is-active' : ''}`}
@@ -288,7 +293,7 @@ export function DesignDirections() {
             <ChatFeature navigation={chatNav} newChatSignal={newChatSignal} onUnreadTotal={setChatUnread} />
           </div>
           <div className="sk-feed-pane" data-pane-active={railTab === 'moments' ? 'true' : 'false'}>
-            <MomentsFeature openSelfSignal={momentsSelfSignal} />
+            <MomentsFeature />
           </div>
           <div className="sk-feed-pane" data-pane-active={railTab === 'settings' ? 'true' : 'false'}>
             <SettingsFeature navigation={settingsNav} />

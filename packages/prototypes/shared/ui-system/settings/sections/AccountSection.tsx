@@ -77,7 +77,7 @@ export function AccountSection() {
           <div className="sk-banner" data-has-image={banner ? 'true' : 'false'}>
             {banner && <img src={banner} alt="" />}
             <span className="sk-banner-action">
-              <FilePicker iconOnly iconId="image" accept="image/*" label={t('account.bannerChange')}
+              <FilePicker iconOnly iconId="edit" accept="image/*" label={t('account.bannerChange')}
                 onFiles={applyImage(setBanner)} />
             </span>
           </div>
@@ -87,7 +87,7 @@ export function AccountSection() {
                 <Avatar name={displayName} source={avatar || undefined} background="#2f6a50"
                   size={80} style={{ borderRadius: 22 }} />
                 <span className="sk-identity-avatar-action">
-                  <FilePicker iconOnly iconId="camera" accept="image/*" label={t('account.avatarChange')}
+                  <FilePicker iconOnly iconId="edit" accept="image/*" label={t('account.avatarChange')}
                     onFiles={applyImage(setAvatar)} />
                 </span>
               </div>

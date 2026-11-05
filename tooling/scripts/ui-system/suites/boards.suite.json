@@ -323,6 +323,8 @@
         { "id": "avatar-white-ring", "type": "computedStyle", "scope": "global", "target": "[data-phone-body] .ma-profile-avatar .pt-avatar", "prop": "boxShadow", "contains": "0px0px0px3px" },
         { "id": "change-markers-rounded-square", "type": "roundedSquareAll", "scope": "global", "target": "[data-phone-body] [data-me-profile] [data-icon-only=true] .pt-file-button" },
         { "id": "avatar-camera-contained", "type": "containedIn", "scope": "global", "target": "[data-phone-body] .ma-profile-avatar-action", "owner": ".ma-profile-avatar", "tolerance": 0 },
+        { "id": "edit-pencil-hidden-at-rest", "type": "computedStyle", "scope": "global", "target": "[data-phone-body] .ma-profile-banner-action", "prop": "opacity", "equals": "0" },
+        { "id": "edit-uses-pencil-glyph", "type": "attr", "scope": "global", "target": "[data-phone-body] .ma-profile-banner-action svg path:first-child", "attr": "d", "contains": "21.174" },
         { "id": "identity-linye", "type": "textContains", "scope": "global", "target": "[data-phone-body] [data-me-profile]", "contains": "林野" },
         { "id": "identity-handle", "type": "textContains", "scope": "global", "target": "[data-phone-body] [data-me-profile]", "contains": "@linye" },
         { "id": "identity-stats", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-profile-stats", "contains": "粉丝" },

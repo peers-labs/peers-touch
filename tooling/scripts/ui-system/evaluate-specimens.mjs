@@ -420,6 +420,23 @@ async function checkOracle(page, anchor, oracle) {
         owner: ow ? { right: Math.round(ow.right), bottom: Math.round(ow.bottom) } : null,
       };
     }
+    case 'edgesAlign': {
+      // Two independent elements must share one edge coordinate (e.g. the
+      // composer pill and the message stream starting on the same left line).
+      const peerBase = oracle.scope === 'global' ? page : scope;
+      const [a, b] = await Promise.all([one(), peerBase.locator(oracle.peer).first()]);
+      const [ra, rb] = await Promise.all([a.boundingBox(), b.boundingBox()]);
+      const tol = oracle.tolerance ?? 1;
+      if (!ra || !rb) return { pass: false, offenders: ['node has no rect'] };
+      const edgeOf = (r, edge) => ({
+        left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height,
+      })[edge ?? 'top'];
+      const delta = Math.abs(edgeOf(ra, oracle.edge) - edgeOf(rb, oracle.edge));
+      return {
+        pass: delta <= tol,
+        offenders: delta > tol ? [`${oracle.edge} edges differ by ${Math.round(delta)}`] : [],
+      };
+    }
     case 'sameWidth': {
       // Sibling-symmetry gate: the target and a peer must share an equal
       // width within tolerance (e.g. two tabs in a segmented control).

@@ -7,6 +7,11 @@
   flex: 1; min-height: 0;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
+  /* The catalog (300) plus a readable conversation column keep their own
+     minimum space. Under squeeze the surface clips at the frame edge rather
+     than crushing rows and growing a horizontal scrollbar — a list narrower
+     than this has no meaning. The preview host owns overflow-x: hidden. */
+  min-width: 640px;
 }
 .sk-chat-main { grid-column: 2; min-width: 0; min-height: 0; display: flex; }
 .sk-chat-feature > .sk-conv-rail {
@@ -326,7 +331,10 @@
    a tall toolbar. Title sits on the left baseline; three borderless glyphs
    share an even rhythm on the right. */
 .sk-chat-head {
-  flex-shrink: 0; height: 52px; padding: 0 20px;
+  /* 48px: SAME band as the catalog rail header (.sk-rail-header), so the
+     title row and the 消息/联系人 segmented share one hairline across both
+     columns — the previous 52px made the conversation side sit 4px lower. */
+  flex-shrink: 0; height: 48px; padding: 0 20px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
@@ -390,20 +398,32 @@
   box-shadow: -10px 0 30px -18px rgba(20, 24, 22, .30);
   display: flex; flex-direction: column;
 }
-/* The sheet overlays a conv view whose chrome is inset 18px; shift the head
-   to the same line as .sk-chat-head (top 18, height 60) so both surfaces
-   share one continuous hairline instead of two offset rules. */
+/* The sheet overlays the conv view, whose header band starts at the same 14px
+   top pad and is 48px tall; mirror it exactly so the sheet title and the chat
+   header share one continuous hairline. */
 .sk-side-head {
   position: relative;
-  /* The sheet is inset by the 18px conv-view top pad, so the title starts
-     18px down and its 52px band lands on the chat header's hairline
-     (18 + 52 = the chat-head bottom edge). */
-  height: 52px; flex-shrink: 0; margin-top: 18px; padding: 0 12px;
+  height: 48px; flex-shrink: 0; margin-top: 14px; padding: 0 12px;
   display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 8%, transparent);
 }
 .sk-side-head strong { font-size: 15.5px; font-weight: 650; letter-spacing: .01em; color: var(--sk-text); text-align: center; }
-.sk-side-head .pt-icon-button { position: absolute; right: 10px; }
+/* Top-right icon group: message search / chat background / close — borderless
+   30px glyphs in one even rhythm (the background & search actions live here,
+   not as two extra settings rows). */
+.sk-side-head-actions {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 2px;
+}
+.sk-side-head-action {
+  width: 30px; height: 30px; min-height: 30px; padding: 0;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--sk-text-2);
+}
+.sk-side-head-action:hover {
+  background: color-mix(in srgb, var(--sk-text) 7%, transparent);
+  color: var(--sk-text);
+}
 .sk-side-body { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 
 /* ── Profile sheet (desktop DetailPanel parity, card system) ── */
@@ -1042,7 +1062,9 @@
   display: flex; flex-direction: column; gap: 8px;
 }
 .sk-composer-zone > .pt-alert { margin: 0 4px; }
-.sk-composer { width: 100%; align-items: center; padding: 6px 10px 6px 4px; }
+/* Width/alignment only — the pill's own padding (symmetric 8px) is owned by
+   design-directions.css so tools/send keep one rhythm. */
+.sk-composer { width: 100%; align-items: center; }
 .sk-composer-tools {
   display: flex; align-items: center; gap: 1px; flex-shrink: 0; align-self: flex-end;
 }

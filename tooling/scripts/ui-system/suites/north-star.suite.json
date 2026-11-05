@@ -967,6 +967,14 @@
           "target": ".sk-composer textarea"
         },
         {
+          "id": "composer-lead-aligns-stream",
+          "type": "edgesAlign",
+          "target": ".sk-composer",
+          "peer": ".sk-msg-stream",
+          "edge": "left",
+          "tolerance": 1
+        },
+        {
           "id": "send-disabled-when-empty",
           "type": "attr",
           "target": ".sk-composer .pt-icon-button",
@@ -2147,7 +2155,16 @@
           "type": "computedStyle",
           "target": ".sk-chat-head",
           "prop": "height",
-          "equals": "52px"
+          "equals": "48px"
+        },
+        {
+          "id": "head-band-aligns-with-rail",
+          "type": "anchoredTo",
+          "target": ".sk-chat-head",
+          "owner": ".sk-rail-header",
+          "side": "right",
+          "align": "top",
+          "tolerance": 1
         },
         {
           "id": "borderless-action",
@@ -3770,7 +3787,7 @@
             "id": "plain-icons",
             "type": "count",
             "target": "[data-detail-panel] .sk-detail-icon",
-            "gte": 7
+            "gte": 5
           }
         },
         {
@@ -3849,9 +3866,26 @@
           "target": "[data-profile-nickname]"
         },
         {
-          "id": "background-row",
+          "id": "background-entry",
           "type": "exists",
           "target": "[data-profile-background]"
+        },
+        {
+          "id": "search-entry",
+          "type": "exists",
+          "target": "[data-profile-search]"
+        },
+        {
+          "id": "bg-search-are-header-icons",
+          "type": "count",
+          "target": ".sk-side-head-actions [data-action-id='profile.background'], .sk-side-head-actions [data-action-id='profile.search']",
+          "equals": 2
+        },
+        {
+          "id": "bg-search-no-longer-rows",
+          "type": "count",
+          "target": ".sk-setting-row [data-profile-background], .sk-setting-row [data-profile-search]",
+          "equals": 0
         },
         {
           "id": "two-switches",
@@ -7776,7 +7810,7 @@
         },
         {
           "op": "wait",
-          "ms": 120
+          "ms": 420
         },
         {
           "op": "expect",
@@ -7786,6 +7820,64 @@
             "target": ".sk-feed-sort-float",
             "attr": "data-feed-mode",
             "equals": "top"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "compact-36px",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-feed-sort-pill",
+            "prop": "width",
+            "equals": "36px"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "right-edge-anchored-in-top-mode",
+          "oracle": {
+            "type": "edgesAlign",
+            "target": ".sk-feed-sort-pill",
+            "peer": ".sk-moments-scroll .sk-post:first-of-type",
+            "edge": "right",
+            "tolerance": 1
+          }
+        },
+        {
+          "op": "expect",
+          "id": "tile-icon-rendered",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-feed-sort-top svg",
+            "equals": 1
+          }
+        },
+        {
+          "op": "expect",
+          "id": "tile-visible-in-top-mode",
+          "oracle": {
+            "type": "visible",
+            "target": ".sk-feed-sort-top"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "options-hidden-in-top-mode",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-feed-sort-options",
+            "prop": "visibility",
+            "equals": "hidden"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "options-stay-one-line-clipped",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-feed-sort-options",
+            "prop": "height",
+            "equals": "28px"
           }
         },
         {
@@ -7821,6 +7913,35 @@
           "type": "count",
           "target": ".sk-feed-sort-float .sk-feed-sort-options .pt-button",
           "equals": 2
+        },
+        {
+          "id": "sorter-width-restored",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-pill",
+          "prop": "width",
+          "equals": "112px"
+        },
+        {
+          "id": "options-one-line-after-restore",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-options",
+          "prop": "height",
+          "equals": "28px"
+        },
+        {
+          "id": "tile-hidden-in-sort-mode",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-top",
+          "prop": "visibility",
+          "equals": "hidden"
+        },
+        {
+          "id": "right-edge-anchored-after-restore",
+          "type": "edgesAlign",
+          "target": ".sk-feed-sort-pill",
+          "peer": ".sk-moments-scroll .sk-post:first-of-type",
+          "edge": "right",
+          "tolerance": 1
         },
         {
           "id": "capsule-rounded-rect",
@@ -8733,48 +8854,86 @@
       ]
     },
     {
-      "id": "ui.prototype.north-star.moments-rail-self",
-      "title": "侧栏自我头像直达我的主页：self profile 身份卡与统计",
+      "id": "ui.prototype.north-star.rail-self-floating-card",
+      "title": "侧栏自我头像弹浮动名片卡（不是页面）：头像/林野/@linye/统计/管理账号，无 profile 页",
       "level": "L3_DYNAMIC",
       "operations": [
         {
           "op": "click",
           "target": "[data-rail-self]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "expect",
+          "id": "manage-routes-to-account",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-rail-self]",
+            "attr": "aria-expanded",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "floating-card-open",
+          "oracle": {
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-self-card]"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "card-name",
+          "oracle": {
+            "type": "textContains",
+            "scope": "global",
+            "target": "[data-self-card] .sk-self-card-name",
+            "contains": "林野"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "card-stats",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": "[data-self-card] .sk-self-card-stat",
+            "equals": 3
+          }
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-action-id='rail.self.manage']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
         }
       ],
       "oracles": [
         {
-          "id": "self-profile-open",
-          "type": "exists",
+          "id": "card-closed-after-manage",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-self-card]"
+        },
+        {
+          "id": "no-profile-page",
+          "type": "missing",
           "target": ".sk-profile"
         },
         {
-          "id": "self-profile-mark",
-          "type": "attr",
-          "target": ".sk-profile",
-          "attr": "data-profile-self",
-          "equals": "true"
-        },
-        {
-          "id": "self-profile-name",
-          "type": "textContains",
-          "target": ".sk-profile-id h2",
-          "contains": "林野"
-        },
-        {
-          "id": "moments-pane-active",
-          "type": "attr",
-          "target": ".sk-feed-pane:nth-of-type(2)",
-          "attr": "data-pane-active",
-          "equals": "true"
+          "id": "manage-opens-settings-account",
+          "type": "exists",
+          "target": "[data-profile-identity]"
         }
       ],
-      "finalizers": [
-        {
-          "op": "click",
-          "target": "[data-action-id='profile.back']"
-        }
-      ]
+      "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.settings-frame",
@@ -9047,6 +9206,73 @@
           "ms": 100
         }
       ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-identity-edit-on-hover",
+      "title": "身份编辑（铅笔）图标静息隐藏、不截获点击；hover 头图/头像或键盘聚焦才柔和显现",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='settings']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "banner-edit-hidden-at-rest",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-banner-action",
+            "prop": "opacity",
+            "equals": "0"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "avatar-edit-hidden-at-rest",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-identity-avatar-action",
+            "prop": "opacity",
+            "equals": "0"
+          }
+        },
+        {
+          "op": "hover",
+          "target": ".sk-banner"
+        },
+        {
+          "op": "wait",
+          "ms": 280
+        }
+      ],
+      "oracles": [
+        {
+          "id": "banner-edit-revealed-on-hover",
+          "type": "computedStyle",
+          "target": ".sk-banner-action",
+          "prop": "opacity",
+          "equals": "1"
+        },
+        {
+          "id": "banner-edit-uses-pencil",
+          "type": "attr",
+          "target": ".sk-banner-action svg path:first-child",
+          "attr": "d",
+          "contains": "21.174"
+        },
+        {
+          "id": "avatar-edit-uses-pencil",
+          "type": "attr",
+          "target": ".sk-identity-avatar-action svg path:first-child",
+          "attr": "d",
+          "contains": "21.174"
+        }
+      ],
+      "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.settings-notifications",

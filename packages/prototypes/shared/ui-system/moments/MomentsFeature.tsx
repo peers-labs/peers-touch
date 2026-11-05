@@ -5,7 +5,7 @@
  * recent/hot sort, composer, profile) with peers-ui components and local
  * state only.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Check, ChevronLeft, ChevronRight, Search, UserPlus,
 } from 'lucide-react';
@@ -61,30 +61,38 @@ const PAGE_SIZE = 3;
 
 /** Scroll distance (px) within which the stream counts as "at the top". */
 const FEED_TOP_THRESHOLD = 4;
+/** Capsule vertical insets — the pill owns them; layers are 28px tall. */
+const FEED_PILL_PAD = 4;
 
 /**
  * Floating feed chip with two roles, decided by live scroll position:
- *  - at the very top: the 最新/热门 order Segmented (sorting can be chosen
- *    only while reading from the top — the platform never hides the order
- *    control mid-stream, it repurposes it);
- *  - scrolled down: the same capsule morphs into a "回顶" action; choosing it
- *    smooth-scrolls back to the top, where it morphs back into the sorter.
- * Both layers stay mounted in one fixed-footprint capsule and cross-fade
- * (never unmounted), so the role change reads as one continuous surface.
+ *  - at the very top: the 最新/热门 order Segmented;
+ *  - scrolled down: the SAME right-anchored capsule shrinks to a compact
+ *    icon-only 回顶 tile; choosing it smooth-scrolls back and the capsule
+ *    grows back into the sorter.
+ *
+ * Smoothness contract: both layers share ONE intrinsic-width grid stage
+ * (`width: max-content`, never shrinkable) right-anchored inside the
+ * width-animated pill. Because the stage width never depends on the pill's
+ * animated width, measuring it can never feed back into a crushed layout, the
+ * right edge is the fixed anchor through the whole morph, and both layers
+ * occupy the exact same box — no slide, no snap, no flash. The stage is
+ * clipped by the pill's own overflow while the layers cross-fade by opacity.
  */
 function FeedSortFloat({ value, onChange }: {
   value: FeedSort;
   onChange: (value: FeedSort) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const [atTop, setAtTop] = useState(true);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
     const scroller = rootRef.current?.closest('.sk-moments-scroll');
     if (!scroller) return;
     let frame = 0;
-    // Real-time scrollTop, rAF-coalesced: arriving at top by any means
-    // (inertia, drag, the 回顶 action) restores the sorter without timers.
     const sync = () => {
       frame = 0;
       setAtTop(scroller.scrollTop <= FEED_TOP_THRESHOLD);
@@ -100,6 +108,33 @@ function FeedSortFloat({ value, onChange }: {
     };
   }, []);
 
+  // The sorter width is the STAGE's intrinsic width (plus the 2× inset),
+  // written once through a CSS custom property — never a direct style.width
+  // write (primitive-layer guard). The stage is max-content and
+  // non-shrinkable, so its measure stays constant while the pill's width
+  // animates: measuring inside an already-shrunk pill can never feed back as
+  // a crushed sorter. ResizeObserver keeps the measure honest across font /
+  // density changes. The width transition is enabled only after the first
+  // measurement (data-morph-ready) so mount never animates from the fallback
+  // width.
+  useLayoutEffect(() => {
+    const pill = pillRef.current;
+    const stage = stageRef.current;
+    if (!pill || !stage) return;
+    const measure = () => {
+      pill.style.setProperty('--sk-feed-pill-w', `${stage.offsetWidth + FEED_PILL_PAD * 2}px`);
+    };
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(stage);
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      // Next frame: keep the measured start width, then allow transitions.
+      requestAnimationFrame(() => { pill.dataset.morphReady = 'true'; });
+    }
+    return () => resize.disconnect();
+  }, []);
+
   const scrollToTop = () => {
     rootRef.current
       ?.closest('.sk-moments-scroll')
@@ -109,19 +144,23 @@ function FeedSortFloat({ value, onChange }: {
   return (
     <div className="sk-feed-sort-float" data-feed-sort data-feed-mode={atTop ? 'sort' : 'top'}
       ref={rootRef}>
-      <div className="sk-feed-sort-pill" data-mode={atTop ? 'sort' : 'top'}>
-        <Segmented<FeedSort> className="sk-feed-sort-options" label="动态排序" density="compact"
-          value={value}
-          options={[
-            { value: 'recent', label: '最新' },
-            { value: 'hot', label: '热门' },
-          ]}
-          onValueChange={next => onChange(next ?? 'recent')} />
-        <Button actionId="feed.back-to-top" emphasis="quiet" density="compact"
-          className="sk-feed-sort-top" fullWidth
-          leading={<Icon iconId="arrow-up" size={14} />}
-          label="回顶" aria-label="回到最顶"
-          onActivate={scrollToTop} />
+      <div className="sk-feed-sort-pill" ref={pillRef} data-mode={atTop ? 'sort' : 'top'}
+        data-morph-ready="false">
+        <div className="sk-feed-sort-stage" ref={stageRef}>
+          <Segmented<FeedSort> className="sk-feed-sort-options" label="动态排序" density="compact"
+            value={value}
+            options={[
+              { value: 'recent', label: '最新' },
+              { value: 'hot', label: '热门' },
+            ]}
+            onValueChange={next => onChange(next ?? 'recent')} />
+          <Button actionId="feed.back-to-top" emphasis="quiet" density="compact"
+            className="sk-feed-sort-top"
+            aria-label="回到最顶"
+            onActivate={scrollToTop}>
+            <Icon iconId="arrow-up" size={15} />
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -547,7 +586,7 @@ function CircleManageDialog({ circle, people, onDismiss, onSave, onRequestDelete
   );
 }
 
-export function MomentsFeature({ openSelfSignal = 0 }: { openSelfSignal?: number } = {}) {
+export function MomentsFeature() {
   const [tab, setTab] = useState<MomentsTab>('feed');
   const [nav, setNav] = useState<MomentsNav>({ kind: 'tab' });
   const [posts, setPosts] = useState<Moment[]>(MOMENT_SEEDS);
@@ -605,22 +644,6 @@ export function MomentsFeature({ openSelfSignal = 0 }: { openSelfSignal?: number
     setTab(nav.from);
     setNav({ kind: 'tab' });
   };
-
-  // Rail identity tile: the shell bumps this nonce to open the viewer's own
-  // moments profile from any pane. Applied during render (not in a passive
-  // effect) so the navigation commits in the same frame as the click — a
-  // post-effect setNav would race consumers that observe the profile on the
-  // next tick. tabRef keeps the back-target fresh without retriggering on
-  // ordinary tab switches.
-  const tabRef = useRef(tab);
-  tabRef.current = tab;
-  const handledSelfSignal = useRef(0);
-  if (openSelfSignal !== handledSelfSignal.current) {
-    handledSelfSignal.current = openSelfSignal;
-    if (openSelfSignal > 0) {
-      setNav({ kind: 'profile', name: VIEWER.name, from: tabRef.current });
-    }
-  }
 
   // Reactions are multi-select. A kind the viewer already has is unchecked
   // (count decremented); a new kind is added (count incremented). Other

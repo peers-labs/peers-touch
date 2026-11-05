@@ -13,8 +13,8 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useDismissOutside } from '../use-dismiss-outside';
 import {
-  BellOff, Bookmark, ChevronLeft, ChevronRight, Eraser, File as FileIcon,
-  Image as ImageIcon, LogOut, Phone, Pin, Search, Smartphone, Trash2,
+  BellOff, Bookmark, ChevronLeft, Eraser, File as FileIcon,
+  Image as ImageIcon, LogOut, Phone, Pin, Smartphone, Trash2,
   UserPlus, Users, Video,
 } from 'lucide-react';
 import {
@@ -225,8 +225,18 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
       data-my-role={myRole}>
       <div className="sk-side-head">
         <strong>{isGroup ? t('profile.titleGroup') : t('profile.titlePerson')}</strong>
-        <IconButton iconId="close" iconSize={16} label={t('profile.close')} actionId="chat.info-close"
-          emphasis="quiet" density="compact" onActivate={onClose} />
+        {/* Background + message search are header icon actions (self-evident
+            glyphs next to close), not two full settings rows. */}
+        <span className="sk-side-head-actions">
+          <IconButton className="sk-side-head-action" iconId="search" iconSize={16} label={t('profile.findMessages')}
+            actionId="profile.search" data-profile-search
+            emphasis="quiet" density="compact" onActivate={onSearchMessages} />
+          <IconButton className="sk-side-head-action" iconId="image" iconSize={16} label={t('profile.chatBackground')}
+            actionId="profile.background" data-profile-background
+            emphasis="quiet" density="compact" onActivate={() => setBackgroundOpen(true)} />
+          <IconButton className="sk-side-head-action" iconId="close" iconSize={16} label={t('profile.close')} actionId="chat.info-close"
+            emphasis="quiet" density="compact" onActivate={onClose} />
+        </span>
       </div>
 
       <div className="sk-side-body">
@@ -375,18 +385,6 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
               data-profile-pinned={conversation.pinned ? 'true' : 'false'}
               onCheckedChange={onTogglePin} />
           </div>
-          <Button emphasis="quiet" className="sk-setting-row" actionId="profile.background"
-            data-profile-background
-            leading={<span className="sk-detail-icon"><ImageIcon size={15} /></span>}
-            trailing={<ChevronRight size={15} className="sk-setting-chevron" />}
-            label={t('profile.chatBackground')}
-            onActivate={() => setBackgroundOpen(true)} />
-          <Button emphasis="quiet" className="sk-setting-row" actionId="profile.search"
-            data-profile-search
-            leading={<span className="sk-detail-icon"><Search size={15} /></span>}
-            trailing={<ChevronRight size={15} className="sk-setting-chevron" />}
-            label={t('profile.findMessages')}
-            onActivate={onSearchMessages} />
         </section>
 
         {/* Marked for later — personal, this-device-only bookmarks */}
@@ -704,8 +702,10 @@ export function ThreadSheet({ root, peerName, initialReplies, onClose, onReply }
     <aside ref={sheetRef} className="sk-side-sheet sk-thread-sheet" aria-label={t('thread.aria')} data-thread-panel="true">
       <div className="sk-side-head">
         <strong>{t('thread.title', { n: replies.length })}</strong>
-        <IconButton iconId="close" iconSize={15} label={t('thread.close')} actionId="thread.close"
-          emphasis="quiet" density="compact" onActivate={onClose} />
+        <span className="sk-side-head-actions">
+          <IconButton className="sk-side-head-action" iconId="close" iconSize={15} label={t('thread.close')} actionId="thread.close"
+            emphasis="quiet" density="compact" onActivate={onClose} />
+        </span>
       </div>
       <div className="sk-side-body">
         <div className="sk-thread-root">

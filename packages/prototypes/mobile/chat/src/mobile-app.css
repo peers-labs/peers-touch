@@ -328,8 +328,20 @@
     color-mix(in srgb, var(--pt-accent) 7%, transparent));
 }
 .ma-profile-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-/* Translucent icon affordance inset from the corner — never flush to the edge. */
-.ma-profile-banner-action { position: absolute; right: 12px; bottom: 12px; }
+/* Edit affordance is a hover invitation, not permanent chrome (desktop
+   parity): hidden at rest together with its hit area; warmed in on banner
+   hover / keyboard focus. */
+.ma-profile-banner-action {
+  position: absolute; right: 12px; bottom: 12px;
+  opacity: 0; pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity .24s cubic-bezier(.22, 1, .36, 1),
+    transform .24s cubic-bezier(.22, 1, .36, 1);
+}
+.ma-profile-banner:hover .ma-profile-banner-action,
+.ma-profile-banner:focus-within .ma-profile-banner-action {
+  opacity: 1; pointer-events: auto; transform: none;
+}
 .ma-profile-body { padding: 0 14px 12px; }
 .ma-profile-id { display: flex; align-items: flex-start; gap: 13px; }
 /* 72px avatar on a 112px banner: ~34px overlap with a 3px card ring. */
@@ -337,9 +349,27 @@
   position: relative; z-index: 1; margin-top: -34px; flex-shrink: 0;
   display: flex; flex-direction: column; align-items: center;
 }
-/* Camera affordance sits INSIDE the avatar owner (inset, never negative) —
-   its painted box must not cross the identity tile's edge. */
-.ma-profile-avatar-action { position: absolute; right: 6px; bottom: 6px; z-index: 2; display: inline-flex; }
+/* Edit affordance sits INSIDE the avatar owner (inset, never negative) —
+   its painted box must not cross the identity tile's edge. Hidden at rest,
+   revealed by hovering/focusing the avatar owner. */
+.ma-profile-avatar-action {
+  position: absolute; right: 6px; bottom: 6px; z-index: 2; display: inline-flex;
+  opacity: 0; pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity .24s cubic-bezier(.22, 1, .36, 1),
+    transform .24s cubic-bezier(.22, 1, .36, 1);
+}
+.ma-profile-avatar:hover .ma-profile-avatar-action,
+.ma-profile-avatar:focus-within .ma-profile-avatar-action {
+  opacity: 1; pointer-events: auto; transform: none;
+}
+/* Touch devices have no hover: keep the affordance quietly reachable. */
+@media (hover: none) {
+  .ma-profile-banner-action,
+  .ma-profile-avatar-action {
+    opacity: 1; pointer-events: auto; transform: none;
+  }
+}
 .ma-profile-meta { flex: 1; min-width: 0; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .ma-profile-names { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ma-profile-names strong { font-size: 17px; font-weight: 650; }

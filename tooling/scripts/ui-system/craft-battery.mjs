@@ -262,10 +262,13 @@ export function craftBatterySource(rootSelector) {
     // grammar: a <=10px gutter with a transparent track and a low-alpha
     // thumb. The recurring defect was the default thick solid gray bar
     // painting beside the contact list ("可以跑火车了").
-    root.querySelectorAll('*').forEach(el => {
+    // One grammar across TWO scopes: product surfaces inside .sk-theme and
+    // the harness preview host (.prototype-portal-preview-body), which is an
+    // ancestor of .sk-shell and therefore invisible to root.querySelectorAll —
+    // it previously kept the UA-default thick gutter.
+    const quietScrollbarOn = el => {
       const s = cs(el);
       if (!['auto', 'scroll'].includes(s.overflowY) && !['auto', 'scroll'].includes(s.overflowX)) return;
-      if (!el.closest('.sk-theme')) return;
       const bar = getComputedStyle(el, '::-webkit-scrollbar');
       const gutter = parseFloat(bar.width) || 0;
       if (gutter > 10) flag('loud-scrollbar-gutter', describe(el), { width: bar.width });
@@ -275,7 +278,11 @@ export function craftBatterySource(rootSelector) {
       const thumb = getComputedStyle(el, '::-webkit-scrollbar-thumb');
       const thumbAlpha = colorAlpha(thumb.backgroundColor);
       if (thumbAlpha > 0.4) flag('loud-scrollbar-thumb', describe(el), { thumb: thumb.backgroundColor, alpha: thumbAlpha });
+    };
+    root.querySelectorAll('*').forEach(el => {
+      if (el.closest('.sk-theme')) quietScrollbarOn(el);
     });
+    document.querySelectorAll('.prototype-portal-preview-body').forEach(quietScrollbarOn);
 
     // C17 — A floating layer (menu/popover/tooltip) is portaled OUTSIDE the
     // app frame (.sk-shell), so viewport clamping alone let a menu opened near

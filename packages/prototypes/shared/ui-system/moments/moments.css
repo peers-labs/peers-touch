@@ -283,45 +283,95 @@
   margin-bottom: -14px;
   pointer-events: none;
 }
-/* One fixed-footprint rounded-rectangle capsule. It hosts TWO stacked
-   layers (order segmented / 回顶 action) in the same grid cell; the inactive
-   layer cross-fades in place, so the role morph never reflows the stream.
-   Token-level reskin only (the class rides the primitive roots; no
-   descendant selectors): --pt-radius-md pulls the inner controls to 6px so
-   they stay geometrically INSIDE the 12px capsule — the old full-round
-   capsule let the selected block's arc bleed past its edge. */
+/* One right-anchored rounded-rectangle capsule. It is a right-anchoring flex
+   box whose WIDTH animates: the measured sorter width (CSS var) in sort mode,
+   a fixed 36px in top mode. overflow:hidden clips the intrinsic stage while
+   the width morphs — the RIGHT EDGE never moves. Token-level reskin only:
+   --pt-radius-md pulls the inner selected block to 6px so it stays
+   geometrically INSIDE the 12px capsule. */
 .sk-feed-sort-pill {
   --pt-radius-md: 6px;
+  position: relative;
   pointer-events: auto;
-  display: grid;
+  box-sizing: border-box;
+  display: flex; justify-content: flex-end;
+  height: 36px;
   padding: 4px;
   border-radius: var(--sk-radius-control);
   background: var(--sk-overlay);
   box-shadow: 0 6px 18px rgba(15, 23, 42, .16);
+  overflow: hidden;
+  width: var(--sk-feed-pill-w, 112px);
+  transition: width .3s cubic-bezier(.22, 1, .36, 1);
 }
+/* Compact 回顶 footprint: the 28px tile plus the 2× inset. */
+.sk-feed-sort-pill[data-mode='top'] { width: 36px; }
+/* First measured width is applied without a transition (mount), then the
+   width morph is enabled. */
+.sk-feed-sort-pill[data-morph-ready='false'] { transition: none; }
+/* The stage owns the layers' geometry: one intrinsic-width, NON-SHRINKABLE
+   grid. Its width is independent of the pill's animated width, so the layers
+   keep their natural size (and the measured width stays honest) throughout
+   the morph. Right-anchored by the pill; clipped by its overflow. */
+.sk-feed-sort-stage {
+  flex: 0 0 auto;
+  display: grid;
+  width: max-content;
+  height: 28px;
+}
+/* Both layers share one grid cell and its right alignment, so their right
+   edges and vertical centers are identical at every frame. The cross-fade is
+   opacity only — no translate, no scale. Visibility timing is role-aware
+   (see the state rules below): the INCOMING layer must become visible at the
+   very first frame while the OUTGOING layer stays hittable-visible until its
+   fade finishes. A single shared `visibility 0s linear .26s` would delay the
+   incoming layer too, leaving an empty capsule for ~150ms — the flash this
+   morph exists to avoid. */
 .sk-feed-sort-options,
 .sk-feed-sort-top {
   grid-area: 1 / 1;
-  transition:
-    opacity .3s cubic-bezier(.22, 1, .36, 1),
-    transform .3s cubic-bezier(.22, 1, .36, 1),
-    visibility 0s linear .3s;
-  will-change: opacity, transform;
+  justify-self: end;
+  align-self: center;
 }
 /* The capsule itself is the track: drop the primitive's nested track and
-   padding (the capsule's own 4px padding is the single inset). */
-.sk-feed-sort-options { background: transparent; padding: 0; }
-.sk-feed-sort-top { justify-content: center; }
-.sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-top,
-.sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-options {
+   padding (the capsule's own 4px padding is the single inset), and never let
+   the two options wrap under spatial squeeze. */
+.sk-feed-sort-options { background: transparent; padding: 0; flex-wrap: nowrap; }
+/* Compact icon-only back-to-top tile: same 28px height as the segmented
+   options and a 28px square — no label row, no wasted footprint. */
+.sk-feed-sort-top {
+  width: 28px; min-width: 28px; height: 28px; min-height: 28px;
+  padding: 0; border: 0; border-radius: 6px;
+  display: grid; place-items: center;
+  background: transparent; color: var(--sk-text-2);
+}
+.sk-feed-sort-top:hover {
+  background: color-mix(in srgb, var(--sk-text) 7%, transparent);
+  color: var(--sk-text);
+}
+/* INCOMING layer: visible from frame one, fades in immediately. */
+.sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-options,
+.sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-top {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity .22s cubic-bezier(.22, 1, .36, 1), visibility 0s;
+}
+/* OUTGOING layer: keeps painting through its fade, only then goes hidden so
+   the cross-dissolve never shows an empty capsule. */
+.sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-options,
+.sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-top {
   opacity: 0;
-  transform: translateY(5px) scale(.97);
   visibility: hidden;
   pointer-events: none;
+  transition: opacity .22s cubic-bezier(.22, 1, .36, 1),
+    visibility 0s linear .22s;
 }
 @media (prefers-reduced-motion: reduce) {
-  .sk-feed-sort-options,
-  .sk-feed-sort-top { transition: none; }
+  .sk-feed-sort-pill { transition: width .01s; }
+  .sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-options,
+  .sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-top,
+  .sk-feed-sort-pill[data-mode='top'] .sk-feed-sort-options,
+  .sk-feed-sort-pill[data-mode='sort'] .sk-feed-sort-top { transition: opacity .01s; }
 }
 
 /* Profile */

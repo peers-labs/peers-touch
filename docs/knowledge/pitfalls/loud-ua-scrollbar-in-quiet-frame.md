@@ -4,6 +4,9 @@ title: UA-default scrollbars paint thick admin chrome inside the quiet frame
 status: active
 owns:
   - packages/prototypes/shared/ui-system/design-directions.css
+  - packages/prototypes/shared/ui-system/chat/chat.css
+  - packages/prototypes/portal/src/App.tsx
+  - packages/prototypes/portal/src/responsive.css
   - tooling/scripts/ui-system/craft-battery.mjs
   - tooling/scripts/ui-system/suites/north-star.suite.json
 related:
@@ -32,7 +35,15 @@ scrollable surface to rediscover the same defect.
 
 ## Mitigation
 
-One grammar on `.sk-theme` (covers the frame and portaled overlays):
+One grammar, two scopes (they MUST stay geometrically identical — a thick
+harness bar beside a thin product bar reads as two competing languages):
+
+1. `.sk-theme` in `design-directions.css` — the frame and portaled overlays.
+2. `.prototype-portal-preview-body` in `packages/prototypes/portal/src/responsive.css`
+   — the harness scroll host is an ANCESTOR of `.sk-shell`, so scope 1 cannot
+   reach it; this was the 2026-11-05 recurrence (the "粗的粗，细的细" report).
+
+Both scopes:
 
 - `scrollbar-width: thin` + `scrollbar-color` for the Firefox channel.
 - WebKit channel: 10px transparent gutter, transparent track/corner,
@@ -40,12 +51,17 @@ One grammar on `.sk-theme` (covers the frame and portaled overlays):
   (`border: 3px solid transparent; background-clip: padding-box`),
   resting alpha .16, hover .30, full pill radius. No arrows, no track fill.
 
+Horizontal: lists own their minimum width (e.g. `.sk-chat-feature`
+`min-width: 640px`) and the preview host is `overflow-x: hidden` — under
+squeeze the surface clips instead of growing a horizontal UA bar; a list
+crushed below its readable minimum has no meaning.
+
 ## What guards against regression
 
 Craft battery rule C16 iterates every scrollable element inside `.sk-theme`
-and fails when the webkit gutter exceeds 10px, the track alpha exceeds .05,
-or the resting thumb alpha exceeds .4. The full north-star suite runs it
-across every surface state.
+AND every `.prototype-portal-preview-body`, and fails when the webkit gutter
+exceeds 10px, the track alpha exceeds .05, or the resting thumb alpha exceeds
+.4. The full north-star suite runs it across every surface state.
 
 Implementation caveat: the battery body is a template literal that is
 `eval`'d in the page. Regex backslashes must be doubled (`/\\/\\s*…/`); a
