@@ -4124,6 +4124,30 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
+        // Headless-only device bootstrap: the GUI login flow activates the
+        // actor-device messaging engine as part of post-login onboarding. The
+        // password login used by the E2E HTTP gateway only binds a JWT, so a
+        // headless harness must run the SAME existing activation (identity
+        // continuity + device signing identity + engine worker) before the
+        // capability supervisor can register. This calls the production
+        // application function; it adds no parallel device protocol or bypass.
+        "agent_device_engine_activate" => {
+            let (account_id, actor_ptid, token) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            match app_auth::activate_messaging_profile(state, &account_id, &actor_ptid, &token) {
+                Ok(()) => to_json(AppResult::success(json!({
+                    "activated": true,
+                    "account_id": account_id,
+                }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("device engine activation failed: {error}"),
+                    None,
+                )),
+            }
+        }
         "agent_client_executor_supervisor_stop" => {
             if http_gateway_bearer_token(state).is_none() {
                 return to_json(unauthorized_error());
