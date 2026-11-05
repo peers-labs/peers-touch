@@ -33,8 +33,10 @@ import {
   Wrench,
   ChevronRight,
   Zap,
+  Image as ImageIcon,
   type LucideIcon,
 } from 'lucide-react';
+import { Button } from '@peers-touch/ui';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
 import { AppletWorkspacePage } from '../../features/applet-workspace/src/AppletWorkspacePrototype';
 import { SocialChatPage } from '../../features/social-chat/src/pages/SocialChatPage';
@@ -42,6 +44,7 @@ import { Page as AgentFeaturePage } from '../../features/agent/src/Page';
 import { AgentChatPage } from './AgentChatPage';
 import { SettingsPage } from './Settings';
 import { INITIAL_NOTIFICATIONS, NotificationPanel, type NotifItem } from './Notifications';
+import { ProfilePopover } from './ProfilePopover';
 import { T } from './theme';
 import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
@@ -111,7 +114,7 @@ const NAV_ITEMS: { id: string; icon: LucideIcon; title: string }[] = [
   { id: 'search', icon: Search, title: '搜索' },
   { id: 'chat', icon: MessageCircle, title: '聊天' },
   { id: 'agent', icon: Bot, title: 'Agent' },
-  { id: 'moments', icon: Sparkles, title: '动态' },
+  { id: 'moments', icon: ImageIcon, title: '动态' },
 ];
 
 const COMMANDS: { id: string; label: string; desc: string; shortcut: string; target: string }[] = [
@@ -193,6 +196,9 @@ function SideNav({
   onToggleNotifications,
   notificationButtonRef,
   searchOpen,
+  profileOpen,
+  profileButtonRef,
+  onToggleProfile,
 }: {
   page: string;
   onNavigate: (p: string) => void;
@@ -201,6 +207,9 @@ function SideNav({
   unreadCount: number;
   onToggleNotifications: (pointer: boolean) => void;
   notificationButtonRef: RefObject<HTMLButtonElement | null>;
+  profileOpen: boolean;
+  profileButtonRef: RefObject<HTMLButtonElement | null>;
+  onToggleProfile: (pointer: boolean) => void;
 }) {
   return (
     <div
@@ -217,26 +226,33 @@ function SideNav({
         borderRight: `1px solid ${T.border}`,
       }}
     >
-      {/* avatar */}
-      <div
+      {/* avatar — opens the profile popover */}
+      <Button
+        ref={profileButtonRef}
+        actionId="shell.profile.open"
+        data-shell-profile-button
+        aria-label="我的资料"
+        aria-haspopup="dialog"
+        aria-expanded={profileOpen}
         title="我的资料"
+        emphasis="quiet"
+        onActivate={() => onToggleProfile(true)}
         style={{
           width: 36,
           height: 36,
+          minHeight: 36,
           borderRadius: 8,
           marginBottom: 16,
+          padding: 0,
+          border: 'none',
           background: `linear-gradient(135deg, ${T.primary}, #9a8df0)`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
           color: T.white,
           fontWeight: 'bold',
           fontSize: 15,
-          cursor: 'pointer',
         }}
       >
         P
-      </div>
+      </Button>
 
       {/* topActions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -275,7 +291,7 @@ function PagePlaceholder({ page }: { page: string }) {
   const meta: Record<string, { title: string; desc: string; icon: LucideIcon }> = {
     search: { title: '搜索', desc: '全局搜索页（peers-touch 容器壳页，原型未细化）', icon: Search },
     chat: { title: '聊天', desc: '社交聊天页（含 Chat / Contacts 与会话内 stream call）', icon: MessageCircle },
-    moments: { title: '动态', desc: 'Social 动态页', icon: Sparkles },
+    moments: { title: '动态', desc: 'Social 动态页', icon: ImageIcon },
     settings: { title: '设置', desc: '设置页（peers-touch 容器壳页，原型未细化）', icon: Settings },
   };
   const m = meta[page] ?? { title: page, desc: '占位页', icon: Blocks };
@@ -664,6 +680,8 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const notificationViewRef = useRef(notificationView);
   notificationViewRef.current = notificationView;
   const [notifications, setNotifications] = useState<NotifItem[]>(INITIAL_NOTIFICATIONS);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
   const unreadCount = notifications.filter((n) => !n.read).length;
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
@@ -674,6 +692,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const navigate = (p: string) => {
     // 搜索是覆盖层而不是路由页：点击搜索图标只唤起 Search，保留当前页面。
     if (p === 'search') {
+      setProfileOpen(false);
       setSearchOpen(true);
       return;
     }
@@ -687,6 +706,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
       });
     }
     setNotificationView('closed');
+    setProfileOpen(false);
     setPage(p);
   };
 
@@ -707,6 +727,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
       } else if (e.key === 'Escape') {
         setPaletteOpen(false);
         setSearchOpen(false);
+        setProfileOpen(false);
         if (notificationViewRef.current !== 'closed') {
           setNotificationView('closed');
           // Restore the bell after the dialog's own close/focus teardown.
@@ -771,6 +792,13 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
         unreadCount={unreadCount}
         searchOpen={searchOpen}
         notificationButtonRef={notificationButtonRef}
+        profileOpen={profileOpen}
+        profileButtonRef={profileButtonRef}
+        onToggleProfile={(pointer) => {
+          setProfileOpen((v) => !v);
+          // Pointer openers leave no :focus-visible ring on the avatar.
+          if (pointer) requestAnimationFrame(() => profileButtonRef.current?.blur());
+        }}
         onToggleNotifications={(pointer) => {
           setNotificationView((v) => {
             if (v === 'closed') {
@@ -806,6 +834,13 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                 : n,
             ))}
           />
+      ) : null}
+      {profileOpen ? (
+        <ProfilePopover
+          anchorRef={profileButtonRef}
+          onClose={() => setProfileOpen(false)}
+          onManageAccount={() => navigate('settings')}
+        />
       ) : null}
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {visitedAgentSurfaces.size > 0 && (

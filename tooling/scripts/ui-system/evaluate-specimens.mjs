@@ -163,6 +163,15 @@ async function runOperation(page, anchor, op) {
       await input.setInputFiles((op.files ?? []).map(filePayload));
       break;
     }
+    case 'scroll':
+      // Programmatic scrollBy still dispatches a real scroll event, which is
+      // what scroll-reactive UI (e.g. the dissolving feed-order chip) listens
+      // for; behavior stays instant so timing assertions stay deterministic.
+      await target.evaluate((el, op) => el.scrollTo({
+        top: (op.top ?? (el.scrollTop + (op.deltaY ?? 0))),
+        behavior: 'instant',
+      }), op);
+      break;
     case 'wait': await page.waitForTimeout(op.ms ?? 150); break;
     case 'waitFor': await target.waitFor({ state: op.state ?? 'visible', timeout: op.timeout ?? 4000 }); break;
     default: throw new Error(`UNKNOWN_OPERATION: ${op.op}`);
@@ -229,6 +238,27 @@ async function checkOracle(page, anchor, oracle) {
       }
       return { pass: offenders.length === 0, checked: list.length, offenders };
     });
+    case 'containedIn': {
+      // The target's painted box must stay within its owner's box (same scope).
+      // Encodes the craft rule that an overlay affordance's visual extent
+      // belongs inside its owner tile (no negative-offset bleed past an edge).
+      const child = await one();
+      const ownerLoc = oracle.owner ? scope.locator(oracle.owner) : scope;
+      const ownerCount = await ownerLoc.count();
+      if (ownerCount === 0) return { pass: false, offenders: ['OWNER_NO_MATCH'] };
+      const [cBox, oBox] = await Promise.all([child.boundingBox(), ownerLoc.first().boundingBox()]);
+      const tol = oracle.tolerance ?? 0;
+      const offenders = [];
+      if (!cBox) offenders.push('child has no rect');
+      if (!oBox) offenders.push('owner has no rect');
+      if (cBox && oBox) {
+        if (cBox.x < oBox.x - tol) offenders.push(`left ${Math.round(cBox.x)} < ${Math.round(oBox.x)}`);
+        if (cBox.y < oBox.y - tol) offenders.push(`top ${Math.round(cBox.y)} < ${Math.round(oBox.y)}`);
+        if (cBox.x + cBox.width > oBox.x + oBox.width + tol) offenders.push('bleeds past owner right edge');
+        if (cBox.y + cBox.height > oBox.y + oBox.height + tol) offenders.push('bleeds past owner bottom edge');
+      }
+      return { pass: offenders.length === 0, offenders };
+    }
     case 'widthStableOnActivate': {
       const node = await one();
       const before = await node.boundingBox();
@@ -283,6 +313,11 @@ async function checkOracle(page, anchor, oracle) {
       const node = await one();
       const text = ((await node.textContent()) ?? '').replace(/\s+/g, ' ').trim();
       return oracle.equals !== undefined ? text === oracle.equals : text.includes(oracle.contains ?? '');
+    }
+    case 'scrollTop': {
+      const el = await one();
+      const top = await el.evaluate(node => node.scrollTop);
+      return oracle.lte !== undefined ? top <= oracle.lte : top === oracle.equals;
     }
     case 'overflow': return page.evaluate(sel => {
       const root = document.querySelector(sel);
@@ -399,6 +434,60 @@ async function checkOracle(page, anchor, oracle) {
         pass: delta <= tol,
         offenders: delta > tol ? [`widths ${Math.round(ra.width)} vs ${Math.round(rb.width)} differ by ${Math.round(delta)}`] : [],
       };
+    }
+    case 'geometryStableAcross': {
+      // Cross-state chrome gate: the named peers must keep the exact same
+      // rectangle through every state-changing step (e.g. a scope tab switch
+      // must not move a shared search/add slot). Peers may remount between
+      // steps — they are re-resolved by selector each snapshot.
+      const selectors = [oracle.target, ...(oracle.peers ?? [])];
+      const tol = oracle.tolerance ?? 1;
+      const norm = r => r
+        ? { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }
+        : null;
+      const snap = () => Promise.all(selectors.map(async sel =>
+        norm(await page.locator(sel).first().boundingBox())));
+      const baseline = await snap();
+      const offenders = [];
+      for (const step of oracle.steps ?? []) {
+        await page.locator(step).first().click();
+        await page.waitForTimeout(oracle.stepMs ?? 180);
+        const next = await snap();
+        next.forEach((rect, i) => {
+          const base = baseline[i];
+          if (!rect || !base) { offenders.push(`${selectors[i]}: missing rect`); return; }
+          for (const key of ['x', 'y', 'width', 'height']) {
+            if (Math.abs(rect[key] - base[key]) > tol) {
+              offenders.push(`${selectors[i]}.${key} ${base[key]} -> ${rect[key]}`);
+            }
+          }
+        });
+      }
+      return { pass: offenders.length === 0, baseline, offenders };
+    }
+    case 'placeholderFits': {
+      // The field's placeholder must render WITHOUT truncation inside the
+      // field content box (canvas text measurement against the actual
+      // leading/trailing slots). A field collapsed to an icon tile is an
+      // intentional "no placeholder" state and passes as collapsed.
+      const node = await one();
+      return node.evaluate(el => {
+        const frame = el.closest('.pt-field-frame') ?? el;
+        const ics = getComputedStyle(el);
+        if (el.clientWidth <= 2 || parseFloat(ics.opacity) === 0) return { pass: true, collapsed: true };
+        const placeholder = el.getAttribute('placeholder') ?? '';
+        const ctx = document.createElement('canvas').getContext('2d');
+        ctx.font = `${ics.fontStyle} ${ics.fontWeight} ${ics.fontSize} ${ics.fontFamily}`;
+        const textWidth = ctx.measureText(placeholder).width;
+        const fcs = getComputedStyle(frame);
+        let available = frame.clientWidth
+          - parseFloat(fcs.paddingLeft) - parseFloat(fcs.paddingRight);
+        const slots = [...frame.children].filter(child => child !== el);
+        slots.forEach(child => { available -= child.getBoundingClientRect().width; });
+        available -= Math.max(0, slots.length) * parseFloat(fcs.gap || fcs.columnGap || '0');
+        const pass = textWidth <= available + 0.5;
+        return { pass, placeholder, textWidth: Math.round(textWidth), available: Math.round(available) };
+      });
     }
     case 'craftBattery': {
       // Craft geometry gate: native-control leakage, intrinsic compact-control

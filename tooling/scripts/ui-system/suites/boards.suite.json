@@ -41,7 +41,7 @@
     },
     {
       "id": "ui.prototype.eles.elements-tokens-and-registry",
-      "title": "增量26：基础元素板只渲染真实令牌与能力登记——20 已验收、6 缺口，无虚构组件演示",
+      "title": "增量26：基础元素板只渲染真实令牌与能力登记——22 已验收、5 缺口，无虚构组件演示",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.elements']" },
@@ -52,8 +52,8 @@
         { "id": "candidate-theme-named", "type": "textContains", "scope": "global", "target": "[data-nb='elements']", "contains": "north-star-pine-glass" },
         { "id": "token-section", "type": "exists", "scope": "global", "target": ".nb-token-grid" },
         { "id": "registry-present", "type": "exists", "scope": "global", "target": "[data-nb-registry]" },
-        { "id": "vetted-count", "type": "count", "scope": "global", "target": "[data-cap-status='vetted']", "equals": 20 },
-        { "id": "gap-count", "type": "count", "scope": "global", "target": "[data-cap-status='gap']", "equals": 6 },
+        { "id": "vetted-count", "type": "count", "scope": "global", "target": "[data-cap-status='vetted']", "equals": 22 },
+        { "id": "gap-count", "type": "count", "scope": "global", "target": "[data-cap-status='gap']", "equals": 5 },
         { "id": "gap-command-surface", "type": "exists", "scope": "global", "target": "[data-cap='CommandSurface']" },
         { "id": "no-fabricated-demo", "type": "missing", "scope": "global", "target": "[data-specimen]" }
       ],
@@ -130,17 +130,266 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.eles.mobile-frame",
-      "title": "增量25：手机原型收编进 Frontend Eles，真实 MobilePrototype 在手机框内运行",
+      "id": "ui.prototype.eles.mobile-product-default",
+      "title": "手机框默认是干净中文产品面 MobileApp（最新 peers-ui · ma- 组件）",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
-        { "op": "wait", "ms": 800 }
+        { "op": "wait", "ms": 900 }
       ],
       "oracles": [
         { "id": "phone-frame", "type": "exists", "scope": "global", "target": "[data-phone-frame]" },
-        { "id": "mobile-rendered", "type": "count", "scope": "global", "target": "[data-phone-body] [class^='ant-'], [data-phone-body] [class*=' ant-']", "gte": 8 },
-        { "id": "debt-marked", "type": "exists", "scope": "global", "target": "[data-status='gap']" }
+        { "id": "product-root", "type": "exists", "scope": "global", "target": "[data-phone-body] .ma-root" },
+        { "id": "four-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .ma-tab", "equals": 4 },
+        { "id": "chinese-tab", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-tabbar", "contains": "消息" },
+        { "id": "agent-tab-reserved", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-action-id='ma.tab.agent']" },
+        { "id": "agent-tab-label", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-tabbar", "contains": "Agent" },
+        { "id": "contacts-not-a-tab", "type": "missing", "scope": "global", "target": "[data-phone-body] [data-action-id='ma.tab.contacts']" },
+        { "id": "chats-segment-two-options", "type": "count", "scope": "global", "target": "[data-phone-body] .ma-chats-segmented .pt-button", "equals": 2 },
+        { "id": "conversation-rows", "type": "count", "scope": "global", "target": "[data-phone-body] .ma-row", "gte": 5 }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-agent-reserved",
+      "title": "手机产品面：第 2 格预留给 Agent——可点进诚实占位页，联系人不占底部 tab",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='ma.tab.agent']" },
+        { "op": "wait", "ms": 300 }
+      ],
+      "oracles": [
+        { "id": "agent-placeholder", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-agent-reserved]" },
+        { "id": "agent-placeholder-copy", "type": "textContains", "scope": "global", "target": "[data-phone-body] [data-agent-reserved]", "contains": "预留" },
+        { "id": "agent-tab-active", "type": "exists", "scope": "global", "target": "[data-phone-body] .ma-tab.active [data-action-id='ma.tab.agent']" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-contact-detail",
+      "title": "手机产品面：联系人并入消息页分段——切联系人后进群详情，发消息进入中文会话线程",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-chats-segmented [data-action-id='segment.contacts']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] section.ma-group-block:first-of-type .ma-row" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='ma.group.message']" },
+        { "op": "wait", "ms": 350 }
+      ],
+      "oracles": [
+        { "id": "thread-opens", "type": "exists", "scope": "global", "target": "[data-phone-body] .ma-thread .ma-messages" },
+        { "id": "thread-is-group", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-thread-name", "contains": "小区生活群" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-new-chat-sheet",
+      "title": "手机产品面：消息 + 打开框内发起面板",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='ma.new-chat']" },
+        { "op": "wait", "ms": 300 }
+      ],
+      "oracles": [
+        { "id": "sheet-open", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-sheet", "contains": "搜索并发起会话" },
+        { "id": "in-frame", "type": "exists", "scope": "global", "target": "[data-phone-body] .ma-root .ma-sheet" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-inline-comments",
+      "title": "手机产品面：动态评论就地展开（非二级页），发送后追加并更新计数",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-tab:nth-child(3)" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='ma.comment.mo-zhouhe']" },
+        { "op": "wait", "ms": 250 },
+        { "op": "type", "scope": "global", "target": "[data-phone-body] [data-comments='mo-zhouhe'] input", "value": "我也想换一盆" },
+        { "op": "click", "scope": "global", "target": "[data-action-id='ma.comment.send.mo-zhouhe']" },
+        { "op": "wait", "ms": 300 }
+      ],
+      "oracles": [
+        { "id": "comments-inline", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-comments='mo-zhouhe']" },
+        { "id": "comment-appended", "type": "textContains", "scope": "global", "target": "[data-phone-body] [data-comments='mo-zhouhe']", "contains": "我也想换一盆" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-call-lifecycle",
+      "title": "手机产品面：会话发起语音通话→接听进入计时态→挂断",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-row" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='ma.call.audio']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-call-btn.is-accept" },
+        { "op": "wait", "ms": 400 }
+      ],
+      "oracles": [
+        { "id": "call-active", "type": "attr", "scope": "global", "target": "[data-phone-body] .ma-call", "attr": "data-call-state", "equals": "active" }
+      ],
+      "finalizers": [
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-call-btn.is-danger" },
+        { "op": "wait", "ms": 200 }
+      ]
+    },
+    {
+      "id": "ui.prototype.eles.mobile-moment-publish",
+      "title": "手机产品面：动态相机打开框内底部面板，发布后新动态置顶",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-tab:nth-child(3)" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='ma.new-moment']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "type", "scope": "global", "target": "[data-phone-body] .ma-sheet textarea", "value": "今晚架空层交换种子" },
+        { "op": "click", "scope": "global", "target": "[data-action-id='ma.moment.publish']" },
+        { "op": "wait", "ms": 350 }
+      ],
+      "oracles": [
+        { "id": "sheet-closed", "type": "missing", "scope": "global", "target": "[data-phone-body] .ma-sheet" },
+        { "id": "new-moment-on-top", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-moment:first-child", "contains": "今晚架空层交换种子" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-global-search",
+      "title": "手机产品面：搜索覆盖层跨会话/联系人检索，点结果进入会话",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-search-trigger" },
+        { "op": "wait", "ms": 350 },
+        { "op": "type", "scope": "global", "target": "[data-phone-body] [data-search-page] input", "value": "陈" },
+        { "op": "wait", "ms": 250 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-search-page] .ma-row" },
+        { "op": "wait", "ms": 350 }
+      ],
+      "oracles": [
+        { "id": "result-opens-thread", "type": "exists", "scope": "global", "target": "[data-phone-body] .ma-thread .ma-messages" },
+        { "id": "result-is-target", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-thread-name", "contains": "陈屿" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-setting-detail",
+      "title": "手机产品面：我的-当前站点进入二级设置，可切换站点",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-tab:nth-child(4)" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .pt-list-row:has-text('当前站点')" },
+        { "op": "wait", "ms": 350 }
+      ],
+      "oracles": [
+        { "id": "station-page", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-thread-name", "contains": "站点" },
+        { "id": "stations-listed", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-detail-body", "contains": "松绿书屋站" },
+        { "id": "offline-marked", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-detail-body", "contains": "离线" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-me-profile",
+      "title": "手机产品面：我的页身份卡与 desktop 对称——头图+交叠白边头像、林野/@linye、统计与 PTID",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-tab:nth-child(4)" },
+        { "op": "wait", "ms": 350 }
+      ],
+      "oracles": [
+        { "id": "profile-card", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-me-profile] .ma-profile-banner" },
+        { "id": "old-id-header-gone", "type": "missing", "scope": "global", "target": "[data-phone-body] .ma-me-id" },
+        { "id": "avatar-overlaps-banner", "type": "computedStyle", "scope": "global", "target": "[data-phone-body] .ma-profile-avatar", "prop": "marginTop", "contains": "-34px" },
+        { "id": "avatar-white-ring", "type": "computedStyle", "scope": "global", "target": "[data-phone-body] .ma-profile-avatar .pt-avatar", "prop": "boxShadow", "contains": "0px0px0px3px" },
+        { "id": "change-markers-rounded-square", "type": "roundedSquareAll", "scope": "global", "target": "[data-phone-body] [data-me-profile] [data-icon-only=true] .pt-file-button" },
+        { "id": "avatar-camera-contained", "type": "containedIn", "scope": "global", "target": "[data-phone-body] .ma-profile-avatar-action", "owner": ".ma-profile-avatar", "tolerance": 0 },
+        { "id": "identity-linye", "type": "textContains", "scope": "global", "target": "[data-phone-body] [data-me-profile]", "contains": "林野" },
+        { "id": "identity-handle", "type": "textContains", "scope": "global", "target": "[data-phone-body] [data-me-profile]", "contains": "@linye" },
+        { "id": "identity-stats", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-profile-stats", "contains": "粉丝" },
+        { "id": "identity-ptid", "type": "textContains", "scope": "global", "target": "[data-phone-body] [data-me-profile]", "contains": "ptid:3f9a7c21" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-signout-signin",
+      "title": "手机产品面：我的-退出登录确认后进入登出闸门（无 tabbar），重新登录回到消息",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-tab:nth-child(4)" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='me.signout']" },
+        { "op": "wait", "ms": 250 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='me.signout.confirm']" },
+        { "op": "wait", "ms": 300 }
+      ],
+      "oracles": [
+        { "id": "signed-out-gate", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-signed-out]" },
+        { "id": "tabbar-hidden", "type": "missing", "scope": "global", "target": "[data-phone-body] .ma-tabbar" },
+        { "id": "identity-shown", "type": "textContains", "scope": "global", "target": "[data-phone-body] [data-signed-out]", "contains": "林野" }
+      ],
+      "finalizers": [
+        { "op": "clickGlobal", "scope": "global", "target": "[data-phone-body] [data-action-id='auth.signin']" },
+        { "op": "wait", "ms": 300 }
+      ]
+    },
+    {
+      "id": "ui.prototype.eles.mobile-station-switch-add",
+      "title": "手机产品面：站点页切换真实联动当前站点；添加站点弹层提交后新站选中并出现在身份卡",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 900 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-tab:nth-child(4)" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] .pt-list-row:has-text('当前站点')" },
+        { "op": "wait", "ms": 300 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='ma.station.add']" },
+        { "op": "wait", "ms": 250 },
+        { "op": "type", "scope": "global", "target": "[data-phone-body] input[aria-label='站点名称']", "value": "河边书架站" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='ma.station.add.confirm']" },
+        { "op": "wait", "ms": 300 }
+      ],
+      "oracles": [
+        { "id": "new-station-selected", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-detail-body", "contains": "河边书架站" },
+        { "id": "current-updated", "type": "textContains", "scope": "global", "target": "[data-phone-body] .ma-detail-body", "contains": "当前连接：河边书架站" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.mobile-evidence-harness",
+      "title": "切到取证台后 MobilePrototype 在 peers-ui 作用域内运行（mp- 组件仍在）",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-action-id='view.mobile']" },
+        { "op": "wait", "ms": 600 },
+        { "op": "click", "scope": "global", "target": "[data-action-id='mobile.view.evidence']" },
+        { "op": "wait", "ms": 1200 }
+      ],
+      "oracles": [
+        { "id": "mobile-scope", "type": "exists", "scope": "global", "target": "[data-phone-body] .mobile-prototype-scope" },
+        { "id": "mobile-rendered", "type": "count", "scope": "global", "target": "[data-phone-body] [class*='mp-']", "gte": 8 }
       ],
       "finalizers": []
     }

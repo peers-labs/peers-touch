@@ -12,9 +12,14 @@
 
 .sk-search-scrim {
   position: absolute; inset: 0;
-  background: color-mix(in srgb, #102018 30%, transparent);
+  background: color-mix(in srgb, #16181a 30%, transparent);
   backdrop-filter: blur(6px) saturate(1.05);
   -webkit-backdrop-filter: blur(6px) saturate(1.05);
+  animation: sk-search-scrim-in 200ms cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes sk-search-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .sk-search-panel {
@@ -25,15 +30,27 @@
   background: var(--sk-overlay);
   border: 1px solid var(--sk-card-border);
   border-radius: 18px;
-  box-shadow: 0 24px 64px -24px rgba(16, 32, 24, .35),
+  box-shadow: 0 24px 64px -24px rgba(20, 24, 22, .35),
     inset 0 1px 0 color-mix(in srgb, #ffffff 55%, transparent);
   overflow: hidden;
-  animation: sk-search-in 140ms cubic-bezier(.2, .7, .2, 1);
+  /* Gentle decelerate: opacity leads, a 4px rise and breath of scale settle
+     softly. The long tail (ease-out quint) is what keeps it from snapping. */
+  animation: sk-search-in 200ms cubic-bezier(.22, 1, .36, 1);
 }
 
 @keyframes sk-search-in {
-  from { opacity: 0; transform: translateY(-6px) scale(.995); }
+  from { opacity: 0; transform: translateY(-4px) scale(.99); }
   to { opacity: 1; transform: none; }
+}
+/* Exit keyframes live here; the closing-phase selectors sit at the end of
+   the file so they win over each grammar's entrance declaration. */
+@keyframes sk-search-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(2px) scale(.995); }
+}
+@keyframes sk-search-scrim-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 .sk-search-input-row {
@@ -111,6 +128,10 @@
   text-align: left; cursor: pointer;
   color: var(--sk-text);
   font-family: inherit;
+  /* The wash must glide between rows under hover and keyboard navigation;
+     an instant swap is what makes cursor movement feel abrupt. */
+  transition: background-color 150ms cubic-bezier(.22, 1, .36, 1),
+    box-shadow 150ms cubic-bezier(.22, 1, .36, 1);
 }
 .sk-search-row:hover,
 .sk-search-row.is-active {
@@ -125,6 +146,8 @@
   border-radius: 9px;
   background: var(--sk-tile);
   color: var(--sk-text-2);
+  transition: background-color 150ms cubic-bezier(.22, 1, .36, 1),
+    color 150ms cubic-bezier(.22, 1, .36, 1);
 }
 .sk-search-row.is-active .sk-search-row-icon {
   background: color-mix(in srgb, var(--sk-primary) 14%, var(--sk-tile));
@@ -216,4 +239,200 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sk-search-panel { animation: none; }
+}
+
+/* =====================================================================
+   Linear command grammar — prototype experiment (?cmdgrammar=...).
+   The line budget, not color, is the grammar: icons are naked strokes
+   (never boxed), the input row has no rule, groups divide by whitespace,
+   and the panel keeps exactly ONE hairline (the footer) at ~6-7%. The
+   shipped glass grammar above is untouched when data-grammar is absent.
+   ===================================================================== */
+.sk-search-overlay[data-grammar='linear-light'],
+.sk-search-overlay[data-grammar='linear-dark'] {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+.sk-search-overlay[data-grammar='linear-light'] {
+  --cmd-panel: #ffffff;
+  --cmd-ink: #0f1011;
+  --cmd-ink-2: #5a5f69;
+  --cmd-ink-3: #8a8f98;
+  --cmd-hairline: rgba(15, 16, 17, .06);
+  --cmd-chip-border: rgba(15, 16, 17, .10);
+  --cmd-wash: rgba(15, 16, 17, .045);
+}
+.sk-search-overlay[data-grammar='linear-dark'] {
+  --cmd-panel: #1a1b1e;
+  --cmd-ink: #e6e8eb;
+  --cmd-ink-2: #9ca1a8;
+  --cmd-ink-3: #62666d;
+  --cmd-hairline: rgba(255, 255, 255, .07);
+  --cmd-chip-border: rgba(255, 255, 255, .12);
+  --cmd-wash: rgba(255, 255, 255, .06);
+}
+
+/* scrim + panel: one hairline around, quiet elevation, no inset highlight */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-scrim {
+  background: rgba(15, 16, 17, .30);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-scrim {
+  background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-panel,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-panel {
+  width: min(640px, 100%);
+  background: var(--cmd-panel);
+  border: 1px solid var(--cmd-hairline);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px -16px rgba(0, 0, 0, .28), 0 2px 8px -2px rgba(0, 0, 0, .08);
+  animation: sk-search-in-linear 200ms cubic-bezier(.22, 1, .36, 1);
+}
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-panel {
+  box-shadow: 0 16px 48px -16px rgba(0, 0, 0, .72), 0 2px 8px -2px rgba(0, 0, 0, .4);
+}
+@keyframes sk-search-in-linear {
+  from { opacity: 0; transform: translateY(-4px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
+/* input row: no rule, no focus border — the caret and glyph own the row */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-input-row,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-input-row {
+  padding: 12px 14px;
+  border-bottom: 0;
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-input-row:focus-within,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-input-row:focus-within {
+  border-bottom-color: transparent;
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-input,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-input { font-size: 14px; color: var(--cmd-ink); }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-input::placeholder,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-input::placeholder { color: var(--cmd-ink-3); }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-leading,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-leading { color: var(--cmd-ink-3); width: 16px; height: 16px; }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-close,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-close { color: var(--cmd-ink-3); }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-close:hover,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-close:hover {
+  background: var(--cmd-wash); color: var(--cmd-ink);
+}
+
+/* kbd: flat stroke chip, never a filled key */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-kbd,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-kbd,
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-footer kbd,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-footer kbd {
+  background: transparent;
+  border: 1px solid var(--cmd-chip-border);
+  color: var(--cmd-ink-3);
+  border-radius: 5px;
+}
+
+/* body tightens; groups divide by whitespace + label, never rules */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-body,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-body { padding: 4px 8px 8px; }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-group,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-group { padding: 6px 2px; }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-group + .sk-search-group,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-group + .sk-search-group {
+  border-top: 0; padding-top: 10px;
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-group-title,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-group-title {
+  text-transform: none; letter-spacing: 0;
+  font-size: 11px; font-weight: 500;
+  color: var(--cmd-ink-3);
+  padding: 4px 8px 6px;
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-group-title em,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-group-title em { color: var(--cmd-ink-3); }
+
+/* rows: neutral wash, 6px corner, no inset ring, no accent anywhere */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row {
+  gap: 10px; padding: 7px 8px; border-radius: 6px; color: var(--cmd-ink);
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row:hover,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row:hover,
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row.is-active,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row.is-active {
+  background: var(--cmd-wash);
+  box-shadow: none;
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row-title,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row-title {
+  font-size: 13px; font-weight: 450; color: var(--cmd-ink);
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row.is-active .sk-search-row-title,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row.is-active .sk-search-row-title { font-weight: 550; }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row-meta,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row-meta { font-size: 12px; color: var(--cmd-ink-3); }
+
+/* icons unbox: a fixed glyph column, bare 16px stroke, tertiary ink */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row-icon,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row-icon {
+  width: 20px; height: 20px;
+  background: transparent; border-radius: 0;
+  color: var(--cmd-ink-3);
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row-icon svg,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row-icon svg { width: 16px; height: 16px; stroke-width: 1.75; }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row.is-active .sk-search-row-icon,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row.is-active .sk-search-row-icon {
+  background: transparent; color: var(--cmd-ink);
+}
+
+/* meta tag becomes plain tertiary text; the open glyph stays quiet */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row-tag,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row-tag {
+  background: transparent; border-radius: 0; padding: 0;
+  font-size: 11.5px; color: var(--cmd-ink-3);
+}
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-row-open,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-row-open { width: 14px; height: 14px; }
+
+/* query hits gain weight, never a color block */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-hit,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-hit {
+  background: transparent; padding: 0; border-radius: 0;
+  color: var(--cmd-ink); font-weight: 600;
+}
+
+/* empty state follows the same ink ladder */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-empty strong,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-empty strong { color: var(--cmd-ink); font-weight: 550; }
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-empty p,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-empty p,
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-boundary-inline,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-boundary-inline { color: var(--cmd-ink-3); }
+
+/* the single hairline in the panel */
+.sk-search-overlay[data-grammar='linear-light'] .sk-search-footer,
+.sk-search-overlay[data-grammar='linear-dark'] .sk-search-footer {
+  border-top: 1px solid var(--cmd-hairline);
+  color: var(--cmd-ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-search-overlay[data-grammar='linear-light'] .sk-search-panel,
+  .sk-search-overlay[data-grammar='linear-dark'] .sk-search-panel { animation: none; }
+}
+
+/* Closing phase — last in source order so it overrides both grammars'
+   entrance animation. Exit is shorter than entrance: leave promptly, land
+   softly. */
+.sk-search-overlay[data-closing='true'] .sk-search-panel {
+  animation: sk-search-out 90ms cubic-bezier(.4, 0, .7, 1) forwards;
+}
+.sk-search-overlay[data-closing='true'] .sk-search-scrim {
+  animation: sk-search-scrim-out 90ms cubic-bezier(.4, 0, .7, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk-search-overlay[data-closing='true'] .sk-search-panel,
+  .sk-search-overlay[data-closing='true'] .sk-search-scrim { animation: none; }
 }

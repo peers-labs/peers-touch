@@ -1,8 +1,6 @@
 /* ChatFeature — chats/contacts catalog + conversation surface.
    Reuses .sk-conv-* material classes; layout lives here. */
 
-.sk-feed.is-chat { padding: 0; overflow: hidden; }
-
 /* Desktop parity: session/contacts catalog owns the LEFT column,
    conversation view sits to its right (desktop SocialChatPage order). */
 .sk-chat-feature {
@@ -25,13 +23,45 @@
    compact icon that expands into a field and takes over the tab space; it is
    a local list filter. Cross-surface global search lives on the outer rail
    (⌘K), in-chat history search lives in the conversation profile. */
-.sk-rail-header { display: flex; align-items: center; gap: 8px; padding: 2px 2px 10px; }
+/* Fixed 48px band: the segmented track is 36px (28px control + 2×4px chrome)
+   and the expanded search field must total the same 36px, or the rail header
+   grows 3px on open and the list below visibly jumps. */
+.sk-rail-header {
+  display: flex; align-items: center; gap: 8px;
+  height: 48px; box-sizing: border-box; padding: 2px 2px 10px;
+}
 .sk-rail-tabs { flex: 1 1 auto; min-width: 0; }
 .sk-chat-subnav.pt-segmented { width: 100%; white-space: nowrap; }
 .sk-subnav-label { display: inline-flex; align-items: center; gap: 5px; }
-/* Expanded in-rail search: field owns the row, close tile on the right. */
-.sk-rail-search { flex: 1 1 auto; min-width: 0; display: flex; }
-.sk-rail-search .pt-field-frame { flex: 1; min-width: 0; }
+/* Expanded in-rail search: field owns the row, close tile on the right.
+   Enter is a soft fade + 6px slide instead of an instant swap. */
+.sk-rail-search {
+  flex: 1 1 auto; min-width: 0; display: flex;
+  animation: sk-rail-search-in 160ms cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes sk-rail-search-in {
+  from { opacity: 0; transform: translateX(6px); }
+  to { opacity: 1; transform: none; }
+}
+.sk-rail-search .pt-field-frame {
+  flex: 1; min-width: 0;
+  /* 34px content + 2×1px hairline = 36px, exactly the segmented track. */
+  height: 34px; min-height: 34px;
+  border-color: var(--sk-card-border);
+  border-radius: var(--sk-radius-control);
+  transition: border-color 140ms cubic-bezier(.22, 1, .36, 1),
+    box-shadow 140ms cubic-bezier(.22, 1, .36, 1);
+}
+/* Focus changes one element only: the hairline warms slightly; no heavy
+   dark border, no strong ring. */
+.sk-rail-search .pt-field-frame:focus-within {
+  border-color: color-mix(in srgb, var(--sk-primary) 32%, var(--sk-card-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 9%, transparent);
+}
+.sk-rail-search .pt-input { min-height: 0; height: 24px; padding: 0; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) {
+  .sk-rail-search { animation: none; }
+}
 /* Rounded-square ghost tile, never a circle; compact peers-ui sizing,
    glyph optically centered by the button content rule. These are quiet
    chrome: no border in ANY state (the library hover rule can paint a
@@ -80,7 +110,8 @@
   width: 10px; height: 10px; border-radius: 50%;
   border: 2px solid var(--sk-card-bg);
 }
-.sk-presence-dot.is-online { background: #3f9142; }
+/* presence = a live connection: the pine touch point, not success green. */
+.sk-presence-dot.is-online { background: var(--sk-accent); }
 .sk-presence-dot.is-offline { background: var(--sk-text-3); opacity: .55; }
 .sk-unread-badge {
   position: absolute; right: -6px; top: -6px;
@@ -151,13 +182,13 @@
 .sk-request-card:focus-within .sk-request-decide { opacity: 1; }
 .sk-decide.pt-icon-button { color: var(--sk-text-3); }
 .sk-decide.is-accept:hover {
-  color: #3f9142;
-  background: color-mix(in srgb, #3f9142 12%, transparent);
+  color: var(--sk-accent);
+  background: color-mix(in srgb, var(--sk-accent) 12%, transparent);
 }
 .sk-decide.is-reject:hover,
 .sk-decide.is-danger:hover {
-  color: #b0413a;
-  background: color-mix(in srgb, #b0413a 10%, transparent);
+  color: var(--sk-danger);
+  background: color-mix(in srgb, var(--sk-danger) 10%, transparent);
 }
 .sk-request-sent { color: var(--sk-text-3); }
 .sk-request-card.is-outgoing { background: color-mix(in srgb, var(--sk-primary) 5%, transparent); }
@@ -356,7 +387,7 @@
   position: absolute; top: 0; bottom: 0; right: 0; width: 300px; z-index: 8;
   background: var(--sk-overlay);
   border-left: 1px solid var(--sk-card-border);
-  box-shadow: -10px 0 30px -18px rgba(28, 46, 32, .35);
+  box-shadow: -10px 0 30px -18px rgba(20, 24, 22, .30);
   display: flex; flex-direction: column;
 }
 /* The sheet overlays a conv view whose chrome is inset 18px; shift the head
@@ -481,7 +512,7 @@
   width: 16px; flex: 0 0 16px; display: inline-grid; place-items: center;
   color: var(--sk-text-3);
 }
-.sk-detail-icon.is-danger, .sk-setting-row.is-danger { color: #b0413a; }
+.sk-detail-icon.is-danger, .sk-setting-row.is-danger { color: var(--sk-danger); }
 .sk-setting-label { flex: 1; min-width: 0; }
 .sk-setting-chevron { color: var(--sk-text-3); flex-shrink: 0; }
 .sk-setting-value {
@@ -634,7 +665,7 @@
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 11.5px; color: var(--sk-text-3); font-variant-numeric: tabular-nums;
 }
-.sk-call-audio-id span.is-warn { color: #b97f1f; font-weight: 650; }
+.sk-call-audio-id span.is-warn { color: var(--sk-warning); font-weight: 650; }
 .sk-call-video-pane {
   position: relative; height: 188px; background: #0f172a;
   border-radius: 15px 15px 0 0; overflow: hidden;
@@ -781,7 +812,7 @@
 .sk-call-tile {
   position: relative; min-height: 108px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  padding: 12px 8px; border-radius: 16px; color: #f3f8f4;
+  padding: 12px 8px; border-radius: 16px; color: #f2f4f2;
   background: rgba(255,255,255,.09); border: 1px solid transparent;
   transition: border-color .15s;
 }
@@ -790,7 +821,7 @@
   box-shadow: inset 0 0 0 1px var(--sk-accent);
 }
 .sk-call-tile-name { font-size: 12px; opacity: .9; }
-.sk-call-tile-muted { position: absolute; top: 8px; left: 9px; color: rgba(243,248,244,.62); }
+.sk-call-tile-muted { position: absolute; top: 8px; left: 9px; color: rgba(242,244,242,.62); }
 
 /* Unified-left preference: own messages join peers on the left (color
    still distinguishes them). Set via [data-message-layout] on the feature. */
@@ -971,7 +1002,7 @@
   border-color: var(--sk-primary, #202431);
 }
 .sk-msg.is-selectable.is-selected .sk-msg-bubble {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-accent, #202431) 38%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 30%, transparent);
 }
 
 .sk-bulk-bar {

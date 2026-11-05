@@ -1153,18 +1153,17 @@ label.mp-request-item { cursor: pointer; }
   font-weight: 500;
   cursor: pointer;
 }
-.mp-launch-content { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 26px; }
-.mp-launch-brand { display: flex; flex-direction: column; gap: 6px; }
+.mp-launch-content { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 22px; }
+.mp-launch-brand { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
 .mp-launch-brand-logo {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--pt-radius-md);
+  width: 56px;
+  height: 56px;
+  border-radius: var(--pt-radius-lg);
   object-fit: cover;
-  margin-bottom: 6px;
+  margin: 0 auto 10px;
 }
-.mp-launch-brand-copy span { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pt-muted); }
 .mp-launch-brand-copy h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
-.mp-launch-brand-copy p { margin: 0; font-size: 13.5px; color: var(--pt-secondary); }
+.mp-launch-brand-copy p { margin: 4px 0 0; font-size: 13.5px; color: var(--pt-secondary); }
 .mp-launch-panel {
   border: 1px solid var(--pt-border);
   border-radius: var(--pt-radius-xl);
@@ -1186,8 +1185,7 @@ label.mp-request-item { cursor: pointer; }
 }
 .mp-launch-offline-actions { display: flex; gap: 8px; margin-top: 8px; }
 
-.mp-station-selector-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
-.mp-station-helper { display: block; font-size: 12px; color: var(--pt-secondary); margin-top: 2px; }
+.mp-station-selector-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .mp-station-selection-state { font-size: 12px; font-weight: 600; color: var(--pt-muted); }
 .mp-station-selection-state.selected { color: var(--pt-success); }
 .mp-station-list { display: flex; flex-direction: column; gap: 6px; }

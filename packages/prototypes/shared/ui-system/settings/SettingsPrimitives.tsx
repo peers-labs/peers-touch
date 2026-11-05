@@ -2,7 +2,7 @@
  * Settings primitives — north-star frame counterparts of the desktop
  * components/settings/SettingsLayout.tsx (Container/Section/Row/ItemCard).
  *
- * They own material only (floating card, hairline-free zone separation);
+ * They own the grouped-card material (titled white card, hairlines inside);
  * every control inside a row is a real peers-ui component with local state
  * owned by the caller. No control is rendered for decoration.
  */
@@ -21,14 +21,15 @@ export function SettingsSection({ icon: Icon, title, subtitle, extra, children }
       <header className="sk-settings-section-head">
         <div className="sk-settings-section-id">
           <h2>
-            {Icon && <Icon size={16} strokeWidth={1.8} aria-hidden="true" />}
+            {Icon && <Icon size={15} strokeWidth={1.8} aria-hidden="true" />}
             {title}
           </h2>
           {subtitle && <p>{subtitle}</p>}
         </div>
         {extra && <div className="sk-settings-section-extra">{extra}</div>}
       </header>
-      {children}
+      {/* One elevated card holds the related rows; hairlines live inside. */}
+      <div className="sk-settings-card">{children}</div>
     </section>
   );
 }
@@ -38,7 +39,7 @@ export function SettingsRow({ label, description, children, vertical = false, cl
   description?: string;
   children?: ReactNode;
   vertical?: boolean;
-  /** Optional row-level modifier (e.g. sk-settings-subrow for a child preference). */
+  /** Optional row-level modifier class for section-specific layout. */
   className?: string;
 }) {
   return (

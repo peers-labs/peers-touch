@@ -5,10 +5,13 @@ import { IconButton } from './actions';
 
 export interface AlertProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   title?: ReactNode; description?: ReactNode; tone?: Tone; action?: ReactNode; icon?: ReactNode;
+  /** card = bordered tinted callout for blocking messages; inline = quiet
+      in-flow status with a 2px tone rail (no bordered box). */
+  variant?: 'card' | 'inline';
   dismissLabel?: string; onDismiss?: () => void;
 }
-export function Alert({ title, description, tone = 'info', action, icon, children, dismissLabel, onDismiss, className = '', ...props }: AlertProps) {
-  return <div {...props} className={`pt-alert ${className}`} data-tone={tone}
+export function Alert({ title, description, tone = 'info', variant = 'card', action, icon, children, dismissLabel, onDismiss, className = '', ...props }: AlertProps) {
+  return <div {...props} className={`pt-alert ${className}`} data-tone={tone} data-variant={variant}
     role={props.role ?? (tone === 'danger' ? 'alert' : 'status')}>
     {icon ?? (tone === 'warning' || tone === 'danger' ? <Icon iconId="warning" /> : null)}
     <div className="pt-alert-body">{title && <div className="pt-alert-title">{title}</div>}

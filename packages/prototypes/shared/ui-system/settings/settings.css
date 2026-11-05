@@ -1,9 +1,34 @@
 /* SettingsFeature — north-star settings surface.
    IA (desktop Settings.tsx parity): a 48px underline group tab bar with one
    hairline on the bar edge and a 2px primary active indicator; the second
-   level is a plain bordered section sidebar; content reuses floating cards. */
+   level is a plain section sidebar; content is a GROUPED-CARD document.
+   Grammar (Trae parity): this is software, not an article — there is no
+   page heading; the active rail item is the subject. Content opens straight
+   into titled white CARDs on the paper floor: cards separate by whitespace,
+   hairlines live only inside a card, rows breathe, and card titles are plain
+   text with no leading glyphs. Card material is the shared ListSection
+   `inset` primitive retuned via tokens (never .pt-* selectors). */
 
-.sk-settings { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sk-settings {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  --sk-row-hairline: color-mix(in srgb, var(--sk-text) 6%, transparent);
+  --sk-set-ease: cubic-bezier(.22, 1, .36, 1);
+  /* Trae-style grouped cards: retune the shared ListSection primitives for
+     this surface ONLY (token overrides, never .pt-* selectors). Each related
+     block is one elevated card on the paper floor; titles read as a clear
+     hierarchy above the card, rows breathe, and hairlines stay inside. */
+  --pt-list-well: var(--sk-overlay);
+  --pt-list-well-border: color-mix(in srgb, var(--sk-text) 4%, transparent);
+  --pt-list-well-radius: 12px;
+  --pt-list-title-size: 13.5px;
+  --pt-list-title-weight: 600;
+  --pt-list-title-color: var(--sk-text);
+  --pt-list-heading-gap: 8px;
+  --pt-list-section-gap: 22px;
+  --pt-list-row-y: 11px;
+  /* Trae grammar: card titles are plain text, no leading glyphs. */
+  --pt-list-heading-icon-display: none;
+}
 
 /* Level 1 — transparent text tabs, never SaaS pill chips. */
 .sk-settings-tabbar {
@@ -20,7 +45,7 @@
   border: 0; background: transparent; cursor: pointer;
   color: var(--sk-text-2);
   font-family: inherit; font-size: 13px; font-weight: 500;
-  transition: color .15s;
+  transition: color 160ms var(--sk-set-ease);
 }
 .sk-settings-tab:hover { color: var(--sk-text); }
 .sk-settings-tab.is-active { color: var(--sk-primary); font-weight: 650; }
@@ -40,72 +65,97 @@
 }
 .sk-settings-side {
   display: flex; align-items: center; gap: 10px; text-align: left;
-  padding: 9px 10px; border: 0; border-radius: 8px;
+  padding: 7px 10px; border: 0; border-radius: 6px;
   background: transparent; cursor: pointer;
   color: var(--sk-text-2);
-  font-family: inherit; font-size: 13px; font-weight: 500;
-  transition: background .15s, color .15s;
+  font-family: inherit; font-size: 13px; font-weight: 450;
+  transition: background 160ms var(--sk-set-ease), color 160ms var(--sk-set-ease);
 }
 .sk-settings-side svg { flex-shrink: 0; }
-.sk-settings-side:hover { background: color-mix(in srgb, var(--sk-text) 5%, transparent); color: var(--sk-text); }
+.sk-settings-side:hover { background: color-mix(in srgb, var(--sk-text) 4.5%, transparent); color: var(--sk-text); }
+/* Selected section is a neutral wash with ink text — the primary hue is
+   reserved for the level-1 underline indicator, never repeated here. */
 .sk-settings-side.is-active {
-  background: color-mix(in srgb, var(--sk-primary) 10%, transparent);
-  color: var(--sk-primary); font-weight: 650;
+  background: color-mix(in srgb, var(--sk-text) 5.5%, transparent);
+  color: var(--sk-text); font-weight: 600;
 }
 
 .sk-settings-scroll {
   flex: 1; min-width: 0; overflow: auto;
-  padding: 20px 24px 40px;
+  padding: 18px 28px 48px;
 }
 
-/* Section = floating card, same material contract as moments .sk-post. */
+/* Section = a titled CARD (Trae grouping): title sits above an elevated
+   white card, sections separate by whitespace — never a full-bleed hairline
+   across the document. */
 .sk-settings-section {
-  background: var(--sk-card-bg);
-  border: 1px solid var(--sk-card-border);
-  border-radius: var(--sk-r-card);
-  box-shadow: var(--sk-card-shadow);
-  backdrop-filter: blur(var(--sk-glass-blur));
-  -webkit-backdrop-filter: blur(var(--sk-glass-blur));
-  padding: 18px 20px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
   display: flex; flex-direction: column;
-  max-width: 720px;
+  max-width: 880px;
 }
-.sk-settings-section + .sk-settings-section { margin-top: 14px; }
+.sk-settings-section + .sk-settings-section { margin-top: 22px; }
 .sk-settings-section-head {
   display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 14px; margin-bottom: 8px;
+  gap: 14px; margin: 2px 2px 8px;
 }
+/* The card: one surface per related block, matching the inset ListSection. */
+.sk-settings-card {
+  background: var(--sk-overlay);
+  border: 1px solid color-mix(in srgb, var(--sk-text) 4%, transparent);
+  border-radius: 12px;
+  padding: 0 14px;
+}
+.sk-settings-card > .sk-settings-row:first-child { padding-top: 12px; }
+.sk-settings-card > .sk-settings-row:last-child { padding-bottom: 12px; }
 .sk-settings-section-id h2 {
   margin: 0; display: flex; align-items: center; gap: 8px;
-  font-size: 14.5px; font-weight: 650; color: var(--sk-text);
+  font-size: 13.5px; font-weight: 600; color: var(--sk-text);
 }
-.sk-settings-section-id h2 svg { color: var(--sk-text-3); }
-.sk-settings-section-id p { margin: 4px 0 0; font-size: 12.5px; color: var(--sk-text-3); }
+.sk-settings-section-id h2 svg { display: none; }
+.sk-settings-section-id p { margin: 3px 0 0; font-size: 12px; color: var(--sk-text-3); }
 .sk-settings-section-extra { flex-shrink: 0; }
 
-/* Row: label block left, intrinsic control right, hairline-free separation. */
+/* Row: label block left, intrinsic control right, one hairline between. */
 .sk-settings-row {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 18px; padding: 13px 0;
+  gap: 18px; padding: 11px 0;
 }
 .sk-settings-row + .sk-settings-row {
-  border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent);
+  border-top: 1px solid var(--sk-row-hairline);
 }
 .sk-settings-row.is-vertical { flex-direction: column; align-items: stretch; gap: 9px; }
 .sk-settings-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.sk-settings-row-label { font-size: 13.5px; font-weight: 550; color: var(--sk-text); }
-.sk-settings-row-desc { font-size: 12px; color: var(--sk-text-3); line-height: 1.5; }
+.sk-settings-row-label { font-size: 14px; font-weight: 500; color: var(--sk-text); }
+.sk-settings-row-desc { font-size: 12.5px; color: var(--sk-text-3); line-height: 1.5; }
 .sk-settings-row-control { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
 .sk-settings-row.is-vertical .sk-settings-row-control { width: 100%; }
 .sk-settings-row.is-vertical .sk-settings-row-control > .pt-field-frame { flex: 1; }
-/* Child preference under a segmented row: indented, quieter label. */
-.sk-settings-subrow { padding: 9px 0 9px; }
-.sk-settings-subrow .sk-settings-row-text { padding-left: 16px; }
-.sk-settings-subrow .sk-settings-row-label { font-size: 12.5px; font-weight: 450; color: var(--sk-text-2); }
+/* PIN management actions sit directly under the PIN-lock row, aligned to the
+   row's label before the next hairline-separated row begins. */
+.sk-pin-manage { padding: 2px 0 8px; }
 
-/* Embedded multiline fields own a rounded tile surface inside settings. */
+/* Every control frame in settings uses the same quiet hairline instead of
+   the library's strong border; focus warms one line only. This overrides
+   --pt-borderStrong-derived frames without touching the library contract. */
+.sk-settings .pt-field-frame {
+  background: var(--sk-card-bg);
+  border-color: var(--sk-card-border);
+  border-radius: var(--sk-radius-control);
+  transition: border-color 140ms var(--sk-set-ease), box-shadow 140ms var(--sk-set-ease);
+}
+.sk-settings .pt-field-frame:focus-within {
+  border-color: color-mix(in srgb, var(--sk-primary) 32%, var(--sk-card-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 9%, transparent);
+}
+/* Embedded multiline fields stay flat, not tinted tiles. */
 .sk-settings-section .pt-field-frame[data-framing="embedded"] {
-  background: var(--sk-tile);
+  background: transparent;
   border: 1px solid var(--sk-card-border);
   border-radius: var(--sk-radius-control);
   padding: 4px 8px;
@@ -122,9 +172,10 @@
 .sk-settings-item { margin-top: 12px; }
 .sk-settings-section > .pt-button { align-self: flex-start; }
 
+/* Nested item groups are plain spacing, not a tinted inner card. */
 .sk-settings-item {
-  padding: 14px 16px; border-radius: var(--sk-radius-control);
-  background: var(--sk-tile);
+  padding: 0; border-radius: 0;
+  background: transparent;
 }
 
 /* Shortcut recorder */
@@ -132,7 +183,7 @@
 .sk-shortcut-input {
   width: 168px; height: 34px; box-sizing: border-box;
   border: 1px solid var(--sk-card-border); border-radius: var(--sk-radius-control);
-  background: var(--sk-tile); color: var(--sk-text);
+  background: var(--sk-card-bg); color: var(--sk-text);
   padding: 0 12px; font-size: 13px; font-variant-numeric: tabular-nums;
   font-family: inherit; outline: none;
 }
@@ -142,24 +193,34 @@
 .sk-settings-empty .pt-empty { padding: 28px 24px; }
 
 /* ── Account ─────────────────────────────────────────────── */
-/* Banner is a separate tile: the avatar lives in the identity card below,
-   never overlapping the tinted gradient (no edge staining). */
+/* Identity is one tile: the banner bleeds to the card's top corners and the
+   avatar overlaps its lower edge with a card-colored separation ring. */
+.sk-identity {
+  margin: 0 -14px;
+  border-radius: 12px 12px 0 0;
+  overflow: hidden;
+}
 .sk-banner {
-  position: relative; height: 124px; border-radius: calc(var(--sk-r-card) - 4px);
-  overflow: hidden; margin-bottom: 12px;
-  background: linear-gradient(120deg, color-mix(in srgb, var(--sk-primary) 26%, transparent),
-    color-mix(in srgb, var(--sk-accent) 30%, transparent));
+  position: relative; height: 120px; overflow: hidden;
+  /* Flat neutral ink wash; hue never enters the container. */
+  background: linear-gradient(120deg, color-mix(in srgb, var(--sk-primary) 14%, transparent),
+    color-mix(in srgb, var(--sk-primary) 4%, transparent));
 }
 .sk-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.sk-banner-action { position: absolute; right: 10px; bottom: 10px; }
-.sk-banner-action .pt-button {
-  background: color-mix(in srgb, #000 38%, transparent); color: #fff; border-color: transparent;
+/* Translucent icon affordance, inset from the corner (never flush). */
+.sk-banner-action { position: absolute; right: 12px; bottom: 12px; }
+.sk-identity-card { padding: 0 18px 16px; background: transparent; }
+.sk-identity-row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+/* 80px avatar on a 120px banner: ~38px overlap with a 4px card ring. */
+.sk-identity-avatar {
+  position: relative; z-index: 1; margin-top: -38px;
+  display: flex; flex-direction: column; align-items: center;
 }
-.sk-identity-row { display: flex; gap: 18px; padding: 2px 2px 0; align-items: flex-start; flex-wrap: wrap; }
-.sk-identity-avatar { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.sk-identity-avatar .pt-avatar { box-shadow: 0 0 0 1px var(--sk-card-border); }
-.sk-identity-avatar .pt-button { font-size: 11.5px; }
-.sk-identity-meta { flex: 1; min-width: 220px; padding-top: 6px; display: flex; flex-direction: column; gap: 10px; }
+.sk-identity-avatar-action { position: absolute; right: 6px; bottom: 6px; z-index: 2; display: inline-flex; }
+.sk-identity-avatar .pt-avatar {
+  box-shadow: 0 0 0 4px var(--sk-overlay), 0 6px 16px rgba(15, 23, 42, .18);
+}
+.sk-identity-meta { flex: 1; min-width: 220px; padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
 .sk-identity-names { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sk-identity-names strong { font-size: 18px; color: var(--sk-text); }
 .sk-identity-stats { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--sk-text-3); }
@@ -168,11 +229,11 @@
 .sk-identity-fields {
   display: flex; gap: 14px; flex-wrap: wrap;
   margin-top: 14px; padding-top: 12px;
-  border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent);
+  border-top: 1px solid var(--sk-row-hairline);
 }
 .sk-identity-field {
   display: flex; align-items: center; gap: 8px; flex: 1; min-width: 240px;
-  padding: 7px 10px 7px 12px; border-radius: var(--sk-radius-control); background: var(--sk-tile);
+  padding: 6px 0; border-radius: 0; background: transparent;
 }
 .sk-identity-field span { font-size: 11.5px; color: var(--sk-text-3); flex-shrink: 0; }
 .sk-identity-field code {
@@ -193,7 +254,7 @@
   display: grid; grid-template-columns: minmax(0, 2fr) 1fr 1.1fr 44px;
   align-items: center; gap: 10px; padding: 9px 4px; font-size: 12.5px; color: var(--sk-text-2);
 }
-.sk-device-row + .sk-device-row { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-device-row + .sk-device-row { border-top: 1px solid var(--sk-row-hairline); }
 .sk-device-row.is-head { font-size: 11px; color: var(--sk-text-3); padding-bottom: 6px; }
 .sk-device-model { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .sk-device-model strong {
@@ -238,8 +299,8 @@
 /* ── Security ────────────────────────────────────────────── */
 .sk-recovery-status { display: flex; flex-direction: column; gap: 10px; }
 .sk-recovery-head { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--sk-text); }
-.sk-recovery-head .is-ok { color: #2f9e5e; }
-.sk-recovery-head .is-warn { color: var(--sk-accent); }
+.sk-recovery-head .is-ok { color: var(--sk-success); }
+.sk-recovery-head .is-warn { color: var(--sk-warning); }
 .sk-recovery-meta { font-size: 12px; color: var(--sk-text-3); }
 .sk-recovery-phrase { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .sk-recovery-phrase ol {
@@ -262,9 +323,11 @@
 }
 .sk-help-accordion { width: 100%; }
 .sk-help-accordion details {
-  border-radius: var(--sk-radius-control); background: var(--sk-tile);
-  padding: 4px 12px;
+  border-radius: 0; background: transparent;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--sk-row-hairline);
 }
+.sk-help-accordion details:first-child { border-top: 1px solid var(--sk-row-hairline); }
 .sk-help-accordion summary {
   cursor: pointer; list-style: none; padding: 10px 0;
 }
@@ -273,11 +336,11 @@
 .sk-help-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
 .sk-help-item {
   display: flex; flex-direction: column; gap: 3px; text-align: left;
-  border: 1px solid var(--sk-card-border); border-radius: 10px;
-  background: var(--sk-card-bg); padding: 10px 13px; cursor: pointer;
+  border: 0; border-radius: 6px;
+  background: transparent; padding: 9px 8px; cursor: pointer;
   font-family: inherit;
 }
-.sk-help-item:hover { border-color: color-mix(in srgb, var(--sk-primary) 35%, transparent); }
+.sk-help-item:hover { background: color-mix(in srgb, var(--sk-text) 4.5%, transparent); }
 .sk-help-item strong { font-size: 13px; color: var(--sk-text); }
 .sk-help-item span { font-size: 12px; color: var(--sk-text-3); }
 
@@ -332,7 +395,7 @@
   display: grid; grid-template-columns: 26px minmax(0, 1.7fr) 52px .7fr .7fr .8fr auto;
   align-items: center; gap: 10px; padding: 9px 6px; font-size: 12.5px; color: var(--sk-text-2);
 }
-.sk-storage-row + .sk-storage-row { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-storage-row + .sk-storage-row { border-top: 1px solid var(--sk-row-hairline); }
 .sk-storage-row.is-head { font-size: 11px; color: var(--sk-text-3); padding-bottom: 6px; }
 .sk-storage-name {
   font-weight: 550; color: var(--sk-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -377,21 +440,33 @@
 }
 
 /* ── Tools: cron / palette / table ──────────────────────── */
-.sk-cron-counts { display: flex; align-items: center; gap: 6px; }
-.sk-cron-list { display: flex; flex-direction: column; }
-.sk-cron-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 11px 4px;
+/* Scheduled tasks — global read-only registry (creation lives in Agents).
+   Same flat table grammar as devices/storage: quiet head, hairline rows,
+   status expressed by one small dot + text. */
+.sk-cron-registry { display: flex; flex-direction: column; }
+.sk-cron-registry-head,
+.sk-cron-registry-row {
+  display: grid; grid-template-columns: minmax(0, 2fr) 1.1fr 96px;
+  align-items: center; gap: 12px;
 }
-.sk-cron-row + .sk-cron-row { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
-.sk-cron-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.sk-cron-id strong { font-size: 13.5px; color: var(--sk-text); }
-.sk-cron-id code { font-size: 11.5px; color: var(--sk-text-3); font-family: ui-monospace, Menlo, monospace; }
-.sk-cron-id span { font-size: 11.5px; }
-.sk-cron-id span.is-ok { color: #2f9e5e; }
-.sk-cron-id span.is-muted { color: var(--sk-text-3); }
-.sk-cron-ops { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.sk-cron-form { display: flex; flex-direction: column; gap: 10px; }
+.sk-cron-registry-head {
+  padding: 2px 4px 7px;
+  font-size: 11px; font-weight: 500; color: var(--sk-text-3);
+}
+.sk-cron-registry-row { padding: 11px 4px; }
+.sk-cron-registry-row + .sk-cron-registry-row { border-top: 1px solid var(--sk-row-hairline); }
+.sk-cron-registry-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sk-cron-registry-id strong { font-size: 13px; font-weight: 550; color: var(--sk-text); }
+.sk-cron-registry-owner { font-size: 11.5px; color: var(--sk-text-3); }
+.sk-cron-registry-schedule { font-size: 12.5px; color: var(--sk-text-2); font-variant-numeric: tabular-nums; }
+.sk-cron-registry-state {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--sk-text-3);
+}
+.sk-cron-registry-state i { width: 7px; height: 7px; border-radius: 50%; background: var(--sk-text-3); }
+.sk-cron-registry-row[data-task-state='active'] .sk-cron-registry-state { color: var(--sk-text-2); }
+.sk-cron-registry-row[data-task-state='active'] .sk-cron-registry-state i { background: #2f9e5e; }
+
 .sk-field-hint { margin: 0; font-size: 12px; color: var(--sk-text-3); }
 .sk-field-hint code, .sk-about-copy code {
   font-size: 11px; padding: 1px 5px; border-radius: 5px; background: var(--pt-subtle, var(--sk-tile));
@@ -401,10 +476,10 @@
 .sk-palette-list { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow: auto; }
 .sk-palette-item {
   display: flex; flex-direction: column; gap: 2px; text-align: left; width: 100%;
-  border: 1px solid var(--sk-card-border); border-radius: 10px; background: var(--sk-tile);
-  padding: 9px 13px; cursor: pointer; font-family: inherit;
+  border: 0; border-radius: 6px; background: transparent;
+  padding: 8px 10px; cursor: pointer; font-family: inherit;
 }
-.sk-palette-item:hover { border-color: color-mix(in srgb, var(--sk-primary) 40%, transparent); background: var(--sk-card-bg); }
+.sk-palette-item:hover { background: color-mix(in srgb, var(--sk-text) 4.5%, transparent); }
 .sk-palette-item strong { font-size: 13px; color: var(--sk-text); }
 .sk-palette-item span { font-size: 11.5px; color: var(--sk-text-3); }
 
@@ -412,41 +487,58 @@
 .sk-tools-row {
   display: grid; grid-template-columns: 1fr 110px 110px; align-items: center; gap: 10px; padding: 10px 4px;
 }
-.sk-tools-row + .sk-tools-row { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-tools-row + .sk-tools-row { border-top: 1px solid var(--sk-row-hairline); }
 .sk-tools-row.is-head { font-size: 11px; color: var(--sk-text-3); padding-bottom: 4px; }
 .sk-tools-row strong { font-size: 13px; color: var(--sk-text); font-weight: 550; }
 
 /* ── Channels ──────────────────────────────────────────── */
-.sk-channel-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+/* Connected integrations read as a flat list divided by hairlines, not
+   floating tiles. */
+.sk-channel-list { display: flex; flex-direction: column; margin-bottom: 12px; }
 .sk-channel-card {
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-  padding: 14px 16px; border-radius: var(--sk-radius-control); background: var(--sk-tile);
+  padding: 13px 2px; border-radius: 0; background: transparent;
+  border-top: 1px solid var(--sk-row-hairline);
 }
+.sk-channel-list .sk-channel-card:first-child { border-top: 0; }
 .sk-channel-id { display: flex; flex-direction: column; gap: 4px; min-width: 200px; }
 .sk-channel-title { display: flex; align-items: center; gap: 8px; }
-.sk-channel-title strong { font-size: 13.5px; color: var(--sk-text); }
+.sk-channel-title strong { font-size: 13px; font-weight: 600; color: var(--sk-text); }
 .sk-channel-domain {
   display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--sk-text-3);
 }
 .sk-channel-switches { display: flex; align-items: center; gap: 14px; }
+
+/* The "Bots unavailable" note must not shout: neutral hairline panel, ink
+   copy; the info tone survives only as semantics, not a saturated frame. */
+.sk-settings .pt-alert[data-tone='info'] {
+  color: var(--sk-text-2);
+  background: color-mix(in srgb, var(--sk-text) 3%, transparent);
+  border: 1px solid var(--sk-row-hairline);
+  border-radius: 8px;
+  padding: 11px 13px;
+  margin-top: 14px;
+}
+.sk-settings .pt-alert[data-tone='info'] .pt-alert-title { color: var(--sk-text); font-weight: 600; }
 .sk-wizard-step { display: flex; flex-direction: column; gap: 10px; }
 .sk-wizard-step.is-center { align-items: center; text-align: center; padding: 24px 0; }
 
 /* ── Applets ───────────────────────────────────────────── */
-.sk-applet-list { display: flex; flex-direction: column; gap: 8px; }
+.sk-applet-list { display: flex; flex-direction: column; }
 .sk-applet-row {
-  display: flex; align-items: center; gap: 13px; width: 100%; text-align: left;
-  border: 1px solid var(--sk-card-border); border-radius: var(--sk-radius-control);
-  background: var(--sk-card-bg); padding: 13px 16px; cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  border: 0; border-top: 1px solid var(--sk-row-hairline); border-radius: 0;
+  background: transparent; padding: 12px 4px; cursor: pointer; font-family: inherit;
 }
-.sk-applet-row:hover { border-color: color-mix(in srgb, var(--sk-primary) 40%, transparent); }
+.sk-applet-list .sk-applet-row:first-child { border-top: 0; }
+.sk-applet-row:hover { background: transparent; }
 .sk-applet-row.is-static { cursor: default; }
-.sk-applet-row.is-static:hover { border-color: var(--sk-card-border); }
 .sk-applet-icon {
-  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
-  display: grid; place-items: center; color: var(--sk-primary);
-  background: color-mix(in srgb, var(--sk-primary) 10%, transparent);
+  width: 28px; height: 28px; border-radius: 0; flex-shrink: 0;
+  display: grid; place-items: center; color: var(--sk-text-3);
+  background: transparent;
 }
+.sk-applet-row:hover .sk-applet-icon { color: var(--sk-primary); }
 .sk-applet-id { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .sk-applet-id strong { font-size: 13.5px; color: var(--sk-text); }
 .sk-applet-id span { font-size: 12px; color: var(--sk-text-3); }
@@ -454,11 +546,11 @@
 @media (max-width: 760px) {
   .sk-tools-row { grid-template-columns: 1fr auto; }
   .sk-tools-row > .pt-tag:nth-child(2) { display: none; }
-  .sk-cron-ops { gap: 6px; }
+  .sk-cron-registry-head, .sk-cron-registry-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .sk-cron-registry-schedule { display: none; }
 }
 
-/* inc23: identity card + relationships */
-.sk-identity-card { padding: 14px 16px 4px; border-radius: var(--sk-radius-control); background: var(--sk-tile); }
+/* inc23: relationships (flat: no inner tinted surface) */
 .sk-blocked-head {
   width: 100%; display: flex; align-items: center; gap: 8px;
   padding: 6px 0; border: 0; background: transparent; cursor: pointer;
@@ -466,12 +558,12 @@
 }
 .sk-blocked-title { flex: 1; text-align: left; font-size: 13px; font-weight: 550; }
 .sk-blocked-count { font-size: 12px; color: var(--sk-text-3); }
-.sk-blocked-list { border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-blocked-list { border-top: 1px solid var(--sk-row-hairline); }
 
 /* ── inc23: real IA sections (desktop Settings.tsx parity) ───────────── */
 
 .sk-inline-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sk-error-text { margin: 0; font-size: 12px; color: var(--sk-accent, #b0413a); }
+.sk-error-text { margin: 0; font-size: 12px; color: var(--sk-danger); }
 .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--sk-text-2); }
 .sk-spin { animation: sk-spin .8s linear infinite; }
 @keyframes sk-spin { to { transform: rotate(360deg); } }
@@ -482,26 +574,27 @@
 }
 .sk-quiet-icon:hover { color: var(--sk-primary); background: color-mix(in srgb, var(--sk-primary) 10%, transparent); }
 
-/* Danger zone */
-.sk-danger-zone { border: 1px solid color-mix(in srgb, var(--sk-accent, #b0413a) 35%, transparent); }
-.sk-danger-zone header h3 { margin: 0 0 2px; font-size: 14.5px; color: var(--sk-accent, #b0413a); font-weight: 650; }
+/* Danger zone — the one framed block in settings; the hairline itself is the
+   warning, so it stays faint and only fills on confirm. */
+.sk-danger-zone { border: 1px solid color-mix(in srgb, var(--sk-danger) 30%, transparent); border-radius: 8px; padding: 14px 16px; }
+.sk-danger-zone header h3 { margin: 0 0 2px; font-size: 14.5px; color: var(--sk-danger); font-weight: 650; }
 .sk-danger-zone header p { margin: 0 0 8px; font-size: 12px; color: var(--sk-text-3); }
 .sk-danger-link, .sk-danger-button {
   display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
   border: 0; background: transparent; padding: 4px 0; cursor: pointer;
-  color: var(--sk-accent, #b0413a); font-family: inherit; font-size: 13px; font-weight: 550;
+  color: var(--sk-danger); font-family: inherit; font-size: 13px; font-weight: 550;
 }
 .sk-danger-button {
   height: 34px; padding: 0 14px; border-radius: 10px;
-  background: var(--sk-accent, #b0413a); color: #fff; font-weight: 600;
+  background: var(--sk-danger); color: #fff; font-weight: 600;
 }
 .sk-inline-confirm {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 10px 12px; border-radius: var(--sk-radius-control);
-  background: color-mix(in srgb, var(--sk-accent, #b0413a) 8%, transparent);
+  background: color-mix(in srgb, var(--sk-danger) 8%, transparent);
   font-size: 12px; color: var(--sk-text-2); line-height: 1.5;
 }
-.sk-inline-confirm-danger { background: color-mix(in srgb, var(--sk-accent, #b0413a) 10%, transparent); }
+.sk-inline-confirm-danger { background: color-mix(in srgb, var(--sk-danger) 10%, transparent); }
 
 /* Station */
 .sk-station-binding { display: flex; align-items: center; gap: 14px; }
@@ -518,14 +611,14 @@
 .sk-handle { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 550; }
 
 /* Discovery */
-.sk-discovery-feds { margin-top: 6px; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-discovery-feds { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--sk-row-hairline); }
 .sk-discovery-feds-head strong { font-size: 13px; color: var(--sk-text); }
 
-/* Federation */
+/* Federation — add form is a flat band separated by one hairline. */
 .sk-federation-add {
-  display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; padding: 14px;
-  border: 1px solid var(--sk-card-border); border-radius: var(--sk-radius-control);
-  background: var(--sk-tile);
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 12px 0 14px;
+  border: 0; border-bottom: 1px solid var(--sk-row-hairline); border-radius: 0;
+  background: transparent;
 }
 .sk-federation-row { display: flex; align-items: center; gap: 12px; }
 .sk-federation-id { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
@@ -535,29 +628,35 @@
 .sk-federation-count strong { font-size: 14px; color: var(--sk-text); }
 .sk-federation-count em { font-size: 10px; font-style: normal; color: var(--sk-text-3); }
 .sk-federation-desc { margin: 3px 0 0; font-size: 12px; color: var(--sk-text-3); }
-.sk-federation-detail { margin-top: 12px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-federation-detail { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--sk-row-hairline); }
 .sk-federation-detail dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 0 0 10px; font-size: 12px; }
 .sk-federation-detail dt { color: var(--sk-text-3); font-size: 11px; }
 .sk-federation-detail dd { margin: 2px 0 0; color: var(--sk-text-2); word-break: break-all; }
 
-/* Providers */
+/* Providers — the catalog is a row list like the command surface: naked
+   rows, neutral wash on hover/selection, never a primary-bordered card. */
 .sk-providers { display: flex; gap: 16px; align-items: flex-start; }
-.sk-provider-list { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
+.sk-provider-list { width: 248px; flex-shrink: 0; display: flex; flex-direction: column; gap: 1px; }
 .sk-provider-item {
   width: 100%; display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px; border-radius: 10px; border: 1px solid var(--sk-card-border);
-  background: var(--sk-card-bg); color: var(--sk-text-2); cursor: pointer;
+  padding: 8px 10px; border-radius: 6px; border: 1px solid transparent;
+  background: transparent; color: var(--sk-text-2); cursor: pointer;
   font-family: inherit; text-align: left;
+  transition: background 160ms var(--sk-set-ease), color 160ms var(--sk-set-ease);
 }
-.sk-provider-item:hover { border-color: color-mix(in srgb, var(--sk-primary) 35%, transparent); }
-.sk-provider-item.is-active { border-color: var(--sk-primary); background: color-mix(in srgb, var(--sk-primary) 8%, transparent); color: var(--sk-primary); }
+.sk-provider-item:hover { background: color-mix(in srgb, var(--sk-text) 4.5%, transparent); border-color: transparent; }
+.sk-provider-item.is-active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--sk-text) 5.5%, transparent);
+  color: var(--sk-text);
+}
 .sk-provider-name { flex: 1; font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sk-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sk-text-3); flex-shrink: 0; }
 .sk-dot[data-on='1'] { background: #2f9e5e; }
 .sk-providers > .sk-settings-section { flex: 1; min-width: 0; max-width: none; }
 .sk-key-row { display: flex; gap: 8px; width: 100%; }
 .sk-key-row .pt-field-frame { flex: 1; }
-.sk-model-list { margin-top: 16px; padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); }
+.sk-model-list { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--sk-row-hairline); }
 .sk-model-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .sk-model-head strong { font-size: 13.5px; color: var(--sk-text); }
 .sk-model-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
@@ -567,7 +666,7 @@
 .sk-discover-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .sk-package-row {
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
-  padding: 12px 0; border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent);
+  padding: 12px 0; border-top: 1px solid var(--sk-row-hairline);
 }
 .sk-package-row:first-child { border-top: 0; }
 .sk-package-id { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -584,18 +683,22 @@
 .sk-weights input[type='range'] { width: 100%; accent-color: var(--sk-primary); }
 
 /* Skills */
-.sk-skill-import { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; padding: 14px;
-  border: 1px solid var(--sk-card-border); border-radius: var(--sk-radius-control); background: var(--sk-tile); }
+.sk-skill-import { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 12px 0 14px;
+  border: 0; border-bottom: 1px solid var(--sk-row-hairline); border-radius: 0; background: transparent; }
 .sk-skill-import-kinds { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sk-text-2); }
 .sk-subtabs { display: flex; gap: 4px; margin-bottom: 10px; }
 .sk-subtab {
-  border: 0; background: transparent; border-radius: 8px; padding: 6px 14px;
-  font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--sk-text-2);
+  border: 0; background: transparent; border-radius: 6px; padding: 6px 12px;
+  font-family: inherit; font-size: 13px; font-weight: 450; cursor: pointer; color: var(--sk-text-2);
+  transition: background 160ms var(--sk-set-ease), color 160ms var(--sk-set-ease);
 }
 .sk-subtab:hover { color: var(--sk-text); }
-.sk-subtab.is-active { background: color-mix(in srgb, var(--sk-primary) 10%, transparent); color: var(--sk-primary); font-weight: 650; }
+.sk-subtab.is-active {
+  background: color-mix(in srgb, var(--sk-text) 5.5%, transparent);
+  color: var(--sk-text); font-weight: 600;
+}
 .sk-skill-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0;
-  border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); color: var(--sk-text-3); }
+  border-top: 1px solid var(--sk-row-hairline); color: var(--sk-text-3); }
 .sk-skill-row:first-of-type { border-top: 0; }
 .sk-skill-id { flex: 1; min-width: 0; }
 .sk-skill-id > div { display: flex; align-items: center; gap: 8px; }
@@ -606,10 +709,10 @@
 .sk-scan-warn { color: #b5832c; }
 
 /* MCP */
-.sk-mcp-add { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; padding: 14px;
-  border: 1px solid var(--sk-card-border); border-radius: var(--sk-radius-control); background: var(--sk-tile); }
+.sk-mcp-add { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 12px 0 14px;
+  border: 0; border-bottom: 1px solid var(--sk-row-hairline); border-radius: 0; background: transparent; }
 .sk-mcp-row { display: flex; align-items: center; gap: 12px; padding: 12px 0;
-  border-top: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent); color: var(--sk-text-3); }
+  border-top: 1px solid var(--sk-row-hairline); color: var(--sk-text-3); }
 .sk-mcp-row:first-of-type { border-top: 0; }
 .sk-mcp-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sk-mcp-id > div { display: flex; align-items: center; gap: 8px; }
@@ -618,12 +721,16 @@
 .sk-mcp-tools { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 0 30px; }
 .sk-link-button { border: 0; background: transparent; padding: 0; cursor: pointer; color: var(--sk-primary); font-size: 11px; font-family: inherit; }
 
-/* Bots */
-.sk-bot-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-.sk-bot-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px;
-  border: 1px solid var(--sk-card-border); border-radius: var(--sk-radius-control); background: var(--sk-tile); }
-.sk-bot-icon { width: 34px; height: 34px; flex-shrink: 0; display: grid; place-items: center; border-radius: 10px;
-  background: color-mix(in srgb, var(--sk-primary) 10%, transparent); color: var(--sk-primary); }
+/* Bots — flat rows in the same grammar as Lark channels. */
+.sk-bot-list { display: flex; flex-direction: column; }
+.sk-bot-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 2px;
+  border: 0; border-top: 1px solid var(--sk-row-hairline); border-radius: 0; background: transparent;
+}
+.sk-bot-list .sk-bot-row:first-child { border-top: 0; }
+.sk-bot-icon { width: 28px; height: 28px; flex-shrink: 0; display: grid; place-items: center; border-radius: 0;
+  background: transparent; color: var(--sk-text-3); }
 .sk-bot-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sk-bot-id > div { display: flex; align-items: center; gap: 8px; }
 .sk-bot-id strong { font-size: 13.5px; color: var(--sk-text); }
@@ -640,8 +747,8 @@
 
 /* Statistics */
 .sk-stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
-.sk-stat-card { padding: 16px; border-radius: var(--sk-r-card); border: 1px solid var(--sk-card-border);
-  background: var(--sk-card-bg); display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--sk-text-3); }
+.sk-stat-card { padding: 12px; border-radius: 8px; border: 1px solid var(--sk-row-hairline);
+  background: transparent; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--sk-text-3); }
 .sk-stat-card strong { font-size: 20px; color: var(--sk-text); }
 .sk-stat-card span { font-size: 12px; }
 .sk-heatmap { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -650,7 +757,7 @@
 .sk-heatmap i[data-level='2'] { background: color-mix(in srgb, var(--sk-primary) 55%, transparent); }
 .sk-heatmap i[data-level='3'] { background: var(--sk-primary); }
 .sk-rank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 14px; }
-.sk-rank-card { padding: 16px; border-radius: var(--sk-r-card); border: 1px solid var(--sk-card-border); background: var(--sk-card-bg); }
+.sk-rank-card { padding: 14px; border-radius: 8px; border: 1px solid var(--sk-row-hairline); background: transparent; }
 .sk-rank-card > strong { font-size: 13px; display: block; margin-bottom: 12px; }
 .sk-rank-row { margin-bottom: 10px; }
 .sk-rank-row > span { display: flex; justify-content: space-between; font-size: 12px; color: var(--sk-text); margin-bottom: 4px; }
@@ -687,4 +794,145 @@
   .sk-log-table .sk-log-line > span:last-child { display: none; }
   .sk-bot-rate { display: none; }
   .sk-about-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Lark provisioning wizard (Linear command grammar inside dialog) ──── */
+/* Method choice is the peers-ui Segmented primitive; the app only owns rhythm. */
+.sk-wiz-tabs { margin: 0 0 20px; }
+
+/* The dialog portals outside .sk-settings, so the tool-surface field
+   grammar must be re-scoped here: hairline frames, one warmed line on focus,
+   never the library's strong border. */
+.sk-wizard .pt-field-frame,
+.sk-wizard .pt-select-trigger {
+  background: var(--sk-overlay);
+  border: 1px solid var(--sk-card-border);
+  box-shadow: none;
+  transition: border-color 140ms var(--sk-set-ease), box-shadow 140ms var(--sk-set-ease);
+}
+.sk-wizard .pt-select-trigger:hover:not([aria-disabled='true']) {
+  background: var(--sk-overlay);
+  border-color: color-mix(in srgb, var(--sk-primary) 24%, var(--sk-card-border));
+}
+.sk-wizard .pt-field-frame:focus-within {
+  border-color: color-mix(in srgb, var(--sk-primary) 24%, var(--sk-card-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sk-primary) 8%, transparent);
+}
+
+/* The form step keeps one footprint across both provisioning methods —
+   switching tabs must never resize the dialog. Content stays at the old
+   520px column measure even though the dialog itself is 680px. */
+.sk-wiz-form {
+  display: flex; flex-direction: column; gap: 16px;
+  max-width: 486px; min-height: 204px;
+}
+.sk-wiz-grid { display: grid; grid-template-columns: 1fr 220px; gap: 14px; }
+.sk-wiz-grid-3 { grid-template-columns: 200px 1fr 1fr; }
+.sk-wiz-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sk-wiz-field > span { font-size: 12.5px; font-weight: 500; color: var(--sk-text-2); }
+
+/* Scan hint card in the form: one hairline, no fill emphasis. */
+.sk-wiz-scancard {
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 13px; border: 1px solid var(--sk-row-hairline); border-radius: 8px;
+  background: color-mix(in srgb, var(--sk-text) 2.5%, transparent);
+}
+.sk-wiz-scancard-icon {
+  display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0;
+  color: var(--sk-primary);
+}
+.sk-wiz-scancard-text { display: flex; flex-direction: column; gap: 2px; }
+.sk-wiz-scancard-text strong { font-size: 13px; font-weight: 600; color: var(--sk-text); }
+.sk-wiz-scancard-text span { font-size: 12px; color: var(--sk-text-3); line-height: 1.5; }
+
+.sk-wiz-points {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.sk-wiz-points li {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--sk-text-3);
+}
+.sk-wiz-points li svg { color: #2f9e5e; flex-shrink: 0; }
+
+.sk-wiz-note {
+  margin: 0; display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--sk-text-3);
+}
+.sk-wiz-note svg { flex-shrink: 0; }
+
+/* ── QR step: code on the left is the hero; explanation flows on the right
+      behind one hairline. Layout never competes with the code. ─────────── */
+.sk-wiz-qr {
+  display: grid; grid-template-columns: 260px 1fr;
+  margin: 2px -4px 0;
+}
+.sk-wiz-qr-main {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 18px 24px 14px;
+}
+.sk-wiz-qr-frame {
+  width: 208px; height: 208px; padding: 14px;
+  background: #fff; color: #0f1011;
+  border: 1px solid var(--sk-row-hairline); border-radius: 10px;
+  display: grid; place-items: center;
+}
+.sk-wiz-qr-art { width: 100%; height: 100%; display: block; }
+.sk-wiz-qr-scan {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 500; color: var(--sk-text-2);
+}
+.sk-wiz-qr-scan svg { color: var(--sk-text-3); }
+/* QR refresh is a peers-ui quiet Button — no app chrome override. */
+.sk-wiz-qr-refresh { align-self: flex-start; }
+
+.sk-wiz-qr-side {
+  border-left: 1px solid var(--sk-row-hairline);
+  padding: 20px 24px 14px 26px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.sk-wiz-qr-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .03em; color: var(--sk-text-3); }
+.sk-wiz-qr-side h3 { margin: 0; font-size: 16px; font-weight: 600; color: var(--sk-text); }
+.sk-wiz-qr-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 500; color: var(--sk-text-2);
+}
+.sk-wiz-qr[data-qr-phase='waiting'] .sk-wiz-qr-status { color: var(--sk-text-3); }
+.sk-wiz-qr[data-qr-phase='scanned'] .sk-wiz-qr-status { color: #b5832c; }
+.sk-wiz-qr[data-qr-phase='done'] .sk-wiz-qr-status { color: #2f9e5e; }
+
+/* Process stepper: quiet numbered rows; reached steps get a hairline ring
+   on the index and a check, never a filled brand bubble. */
+.sk-wiz-steps { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; }
+.sk-wiz-steps li {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 9px 0; font-size: 12.5px; line-height: 1.5; color: var(--sk-text-3);
+}
+.sk-wiz-steps li + li { border-top: 1px solid var(--sk-row-hairline); }
+.sk-wiz-steps-index {
+  flex-shrink: 0; width: 20px; height: 20px; margin-top: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--sk-row-hairline); border-radius: 50%;
+  font-size: 11px; font-weight: 600; color: var(--sk-text-3);
+}
+.sk-wiz-steps li[data-active='true'] { color: var(--sk-text); }
+.sk-wiz-steps li[data-active='true'] .sk-wiz-steps-index {
+  border-color: color-mix(in srgb, var(--sk-primary) 40%, transparent);
+  color: var(--sk-primary);
+}
+.sk-wiz-steps li[data-reached='true'] { color: var(--sk-text); }
+.sk-wiz-steps li[data-reached='true'] .sk-wiz-steps-index {
+  border-color: color-mix(in srgb, #2f9e5e 40%, transparent);
+  color: #2f9e5e;
+}
+.sk-wiz-qr-meta {
+  margin-top: auto; padding-top: 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 11.5px; color: var(--sk-text-3);
+}
+
+@media (max-width: 640px) {
+  .sk-wiz-grid, .sk-wiz-grid-3 { grid-template-columns: 1fr; }
+  .sk-wiz-qr { grid-template-columns: 1fr; }
+  .sk-wiz-qr-side { border-left: 0; border-top: 1px solid var(--sk-row-hairline); padding: 16px 4px 0; }
 }

@@ -7,7 +7,7 @@
 .pt-ui :where(button,input,textarea,select):disabled,.pt-ui :where(button,[role=button])[aria-disabled='true']{cursor:not-allowed}
 /* B19: unavailable commands remain in the tab order; aria-disabled carries state. */
 .pt-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.pt-button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:var(--pt-space-xs);min-height:var(--pt-control-normal);padding:0 var(--pt-space-sm);border:1px solid var(--pt-borderStrong);border-radius:var(--pt-radius-md);background:var(--pt-surface);color:var(--pt-text);cursor:pointer;flex-shrink:0;vertical-align:middle;transition:background var(--pt-motion-fast) var(--pt-motion-standard),border-color var(--pt-motion-fast) var(--pt-motion-standard)}
+.pt-button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:var(--pt-space-xs);min-height:var(--pt-control-normal);padding:0 var(--pt-space-sm);border:1px solid var(--pt-borderStrong);border-radius:var(--pt-radius-md);background:var(--pt-surface);color:var(--pt-text);cursor:pointer;flex-shrink:0;vertical-align:middle;transition:background var(--pt-motion-fast) var(--pt-motion-standard),border-color var(--pt-motion-fast) var(--pt-motion-standard),color var(--pt-motion-fast) var(--pt-motion-standard),box-shadow var(--pt-motion-fast) var(--pt-motion-standard)}
 .pt-button[aria-disabled='true']{pointer-events:none}
 .pt-button:hover:not([aria-disabled='true']){background:var(--pt-subtle);border-color:var(--pt-primary)}
 .pt-button[data-density=compact]{min-height:var(--pt-control-compact);font-size:12px;border-radius:var(--pt-radius-sm)}
@@ -56,6 +56,18 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-split-trigger .pt-icon-button{border-top-left-radius:0;border-bottom-left-radius:0;height:100%}
 .pt-overlay-host{position:relative;z-index:1000}
 .pt-overlay{position:fixed;background:var(--pt-raised);color:var(--pt-text);border:1px solid var(--pt-border);border-radius:var(--pt-radius-md);box-shadow:var(--pt-shadow-float);max-width:calc(100vw - var(--pt-space-xs));overflow:auto}
+/* Floating layers enter as one continuous surface: fade + 2px rise + a
+   hair of scale, with the shared surface-out easing. This is the motion
+   signature of raised layers; it lives on the primitive so every menu,
+   popover and dialog inherits it instead of animating per page. */
+@keyframes pt-surface-in{from{opacity:0;transform:translateY(2px) scale(.985)}to{opacity:1;transform:none}}
+.pt-overlay.pt-popover,.pt-overlay.pt-menu{animation:pt-surface-in var(--pt-motion-surface) var(--pt-motion-out) both}
+.pt-modal-layer{animation:pt-scrim-in var(--pt-motion-surface) var(--pt-motion-out) both}
+@keyframes pt-scrim-in{from{opacity:0}to{opacity:1}}
+.pt-overlay.pt-dialog,.pt-overlay.pt-drawer{animation:pt-surface-in var(--pt-motion-surface) var(--pt-motion-out) both}
+@media (prefers-reduced-motion: reduce){
+  .pt-overlay.pt-popover,.pt-overlay.pt-menu,.pt-overlay.pt-dialog,.pt-overlay.pt-drawer,.pt-modal-layer{animation:none}
+}
 .pt-popover{padding:var(--pt-space-sm);min-width:180px}
 .pt-tooltip{padding:var(--pt-space-xxs) var(--pt-space-xs);font-size:12px;pointer-events:none;max-width:280px}
 .pt-tooltip-trigger{display:inline-flex}
@@ -96,7 +108,7 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-drawer-bottom{top:auto;bottom:0;height:auto;max-height:85dvh;border-radius:var(--pt-radius-xl) var(--pt-radius-xl) 0 0}
 .pt-field{display:flex;flex-direction:column;gap:var(--pt-space-xxs);min-width:0}
 .pt-field-label{font-weight:500;display:flex;gap:var(--pt-space-xxs)}
-.pt-field-frame{display:flex;align-items:center;min-height:var(--pt-control-normal);min-width:0;gap:var(--pt-space-xs);padding:0 var(--pt-space-sm);background:var(--pt-surface);border:1px solid var(--pt-borderStrong);border-radius:var(--pt-radius-md)}
+.pt-field-frame{display:flex;align-items:center;justify-content:var(--pt-field-justify,flex-start);min-height:var(--pt-control-normal);min-width:0;gap:var(--pt-field-gap,var(--pt-space-xs));padding:0 var(--pt-field-xpad,var(--pt-space-sm));background:var(--pt-surface);border:1px solid var(--pt-borderStrong);border-radius:var(--pt-radius-md)}
 .pt-field-frame:focus-within{border-color:var(--pt-focus);box-shadow:0 0 0 2px var(--pt-primarySubtle)}
 .pt-field-frame[data-invalid=true]{border-color:var(--pt-danger)}
 .pt-field-frame[data-disabled=true]{background:var(--pt-subtle);color:var(--pt-secondary)}
@@ -122,27 +134,50 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
    stretchy flex/grid parents; the knob travels by transform. */
 .pt-switch-row{display:inline-flex;align-items:center;gap:var(--pt-space-xs);min-height:var(--pt-control-normal)}
 .pt-switch-label{font-size:14px;color:var(--pt-text);user-select:none}
-/* Pill switch: full-radius track, knob fully contained at rest and on.
-   Off reads as a neutral well, on uses the semantic success green (state
-   color, not brand); no square knobs or shadows that escape the track. */
-.pt-switch{position:relative;align-self:flex-start;flex:0 0 auto;width:44px;height:26px;padding:0;border:0;border-radius:999px;background:var(--pt-borderStrong);cursor:pointer;transition:background var(--pt-motion-fast) var(--pt-motion-standard)}
+/* Switch: a dense 36x20 binary control, not the 44x26 iOS pill. On carries
+   the neutral action ink (role token --pt-switch-on, overridable per skin);
+   hue stays reserved for semantic meaning. The knob is a crisp white that
+   travels by transform with the surface-out easing. */
+.pt-switch{position:relative;align-self:flex-start;flex:0 0 auto;width:36px;height:20px;padding:0;border:0;border-radius:999px;background:var(--pt-borderStrong);cursor:pointer;transition:background var(--pt-motion-surface) var(--pt-motion-out)}
 .pt-switch:hover:not(:disabled){background:var(--pt-muted)}
-.pt-switch[aria-checked=true]{background:var(--pt-success)}
+.pt-switch[aria-checked=true]{background:var(--pt-switch-on,var(--pt-primary))}
 .pt-switch[aria-checked=true]:hover:not(:disabled){filter:brightness(1.06)}
-.pt-switch-thumb{position:absolute;top:3px;left:3px;width:20px;height:20px;background:var(--pt-surface);border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform var(--pt-motion-fast) var(--pt-motion-standard)}
-.pt-switch[aria-checked=true] .pt-switch-thumb{transform:translateX(18px)}
+.pt-switch-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;background:var(--pt-white);border-radius:50%;box-shadow:0 1px 2px rgba(0,0,0,.28);transition:transform var(--pt-motion-surface) var(--pt-motion-out)}
+.pt-switch[aria-checked=true] .pt-switch-thumb{transform:translateX(16px)}
 .pt-switch:focus-visible{outline:2px solid var(--pt-focus);outline-offset:2px}
 .pt-switch:disabled{opacity:.55;cursor:not-allowed}
 .pt-select-trigger{width:100%;display:flex;justify-content:space-between;font-weight:400;min-width:0}
 .pt-select-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pt-select-options{max-height:280px;overflow:auto}
-.pt-select-option{display:flex;align-items:center;gap:var(--pt-space-xs);width:100%;min-height:var(--pt-control-normal);padding:var(--pt-space-xs);border:0;border-radius:var(--pt-radius-sm);text-align:left;background:transparent;color:var(--pt-text);cursor:pointer}
+.pt-select-option{display:flex;align-items:center;gap:var(--pt-space-xs);width:100%;min-height:var(--pt-control-row);padding:0 var(--pt-space-xs);border:0;border-radius:var(--pt-radius-sm);text-align:left;background:transparent;color:var(--pt-text);cursor:pointer}
+/* Ghost select: inside a flat settings/list row the trigger is a quiet
+   action, not a bordered input box. Resting state is transparent; only hover
+   /open paints the neutral well. The field-box appearance stays available
+   via appearance="field" for real forms. */
+.pt-select[data-appearance=ghost] .pt-select-trigger{
+  min-height:var(--pt-control-row);
+  background:transparent;
+  border-color:transparent;
+  border-radius:var(--pt-radius-sm);
+  font-weight:400;
+}
+.pt-select[data-appearance=ghost] .pt-select-trigger:hover,
+.pt-select[data-appearance=ghost] .pt-select-trigger[aria-expanded=true]{
+  background:var(--pt-subtle);
+  border-color:transparent;
+}
 .pt-select-option[aria-selected=true]{background:var(--pt-primarySubtle);color:var(--pt-primary)}
 .pt-select-option:disabled{color:var(--pt-secondary)}
 .pt-choice-group,.pt-segmented{display:flex;align-items:center;gap:var(--pt-space-xs);flex-wrap:wrap}
 .pt-segmented{padding:var(--pt-space-xxs);gap:var(--pt-space-xxs);background:var(--pt-subtle);border-radius:var(--pt-radius-md)}
 .pt-segmented>.pt-button{min-width:0;flex-shrink:1;border-color:transparent}
 .pt-segmented[data-full-width=true]>.pt-button{flex:1}
+/* Scrollable island: never wraps; the group scrolls in one line and keeps
+   peer elements' relative positions under spatial squeeze. Options keep
+   intrinsic width; the scroll gutter is invisible, clipping at the pill edge. */
+.pt-segmented[data-scrollable]{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.pt-segmented[data-scrollable]::-webkit-scrollbar{display:none}
+.pt-segmented[data-scrollable]>.pt-button{flex:0 0 auto}
 .pt-segmented>.pt-button:focus-visible{outline-offset:-3px;z-index:1}
 .pt-form{display:flex;flex-direction:column;gap:var(--pt-space-md)}
 .pt-form-section{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--pt-space-sm)}
@@ -153,6 +188,15 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-tag[data-tone=warning],.pt-alert[data-tone=warning]{color:var(--pt-warning)}
 .pt-tag[data-tone=info],.pt-alert[data-tone=info]{color:var(--pt-info)}
 .pt-alert{display:flex;gap:var(--pt-space-sm);padding:var(--pt-space-sm);background:var(--pt-subtle);border:1px solid currentColor;border-radius:var(--pt-radius-md);align-items:flex-start}
+/* Inline alert: a state rail, not a bordered callout card. The 2px inset
+   rail carries the tone color (currentColor); no outer border, small radius,
+   quieter padding. Used for in-flow status like backup/recovery notices. */
+.pt-alert[data-variant=inline]{
+  border:0;border-radius:var(--pt-radius-sm);
+  padding:10px 12px;
+  box-shadow:inset 2px 0 0 currentColor;
+}
+.pt-alert[data-variant=inline] .pt-alert-title{font-size:13px}
 .pt-alert-body{flex:1;min-width:0}
 .pt-alert-title{font-weight:600}
 .pt-alert-description{color:var(--pt-secondary);margin-top:var(--pt-space-xxs)}
@@ -195,6 +239,42 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-list-meta{display:flex;align-items:center;gap:var(--pt-space-sm);flex:1;min-width:0}
 .pt-list-title{font-weight:500}
 .pt-list-description{color:var(--pt-secondary);font-size:12px}
+/* ---- Settings-style list primitive ------------------------------------
+   The structural answer to "flat, not carded SaaS": sections own a quiet
+   heading; rows separate by one full-bleed hairline and carry zero chrome
+   themselves. Pages compose rows; they never paint row boxes. inset groups
+   are the sanctioned exception (a well holds one related group). */
+.pt-list-section + .pt-list-section{margin-top:var(--pt-list-section-gap,var(--pt-space-lg))}
+.pt-list-heading{margin:0 0 var(--pt-list-heading-gap,var(--pt-space-xs));padding:0 var(--pt-space-xxs);display:flex;flex-direction:column;gap:2px}
+.pt-list-heading-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pt-list-heading h3{margin:0;font-size:var(--pt-list-title-size,12px);font-weight:var(--pt-list-title-weight,500);color:var(--pt-list-title-color,var(--pt-secondary))}
+.pt-list-heading-desc{font-size:12px;color:var(--pt-muted)}
+.pt-list-heading-icon{display:none}
+/* An icon is opt-in semantic chrome (danger/trust), never decoration; it
+   aligns to the title's first line while the description wraps beneath. */
+.pt-list-heading[data-icon=true]{flex-direction:row;align-items:flex-start;gap:var(--pt-space-xs)}
+.pt-list-heading[data-icon=true] .pt-list-heading-icon{display:var(--pt-list-heading-icon-display,inline-flex);margin-top:1px;color:var(--pt-muted)}
+.pt-list-body{display:flex;flex-direction:column}
+.pt-list-row{
+  display:flex;align-items:center;gap:var(--pt-space-md);
+  min-height:40px;padding:var(--pt-list-row-y,7px) var(--pt-space-xxs);
+  border-top:1px solid var(--pt-border);
+}
+.pt-list-body>.pt-list-row:first-child{border-top:0}
+.pt-list-row-main{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.pt-list-row-icon{flex:none;display:inline-flex;color:var(--pt-muted)}
+.pt-list-row-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pt-list-row-label{font-size:14px;line-height:1.35;color:var(--pt-text)}
+.pt-list-row-desc{font-size:12.5px;line-height:1.4;color:var(--pt-muted)}
+.pt-list-row-control{flex:none;display:flex;align-items:center;gap:var(--pt-space-xs);color:var(--pt-text)}
+/* Inset group: one well contains a related block; hairlines stay inside. */
+.pt-list-section[data-inset=true] .pt-list-body{
+  background:var(--pt-list-well,var(--pt-subtle));
+  border:1px solid var(--pt-list-well-border,transparent);
+  border-radius:var(--pt-list-well-radius,var(--pt-radius-md));
+  padding:0 var(--pt-space-sm);
+}
+.pt-list-section[data-inset=true] .pt-list-row{padding-left:var(--pt-space-xs);padding-right:var(--pt-space-xs)}
 .pt-divider{height:1px;border:0;background:var(--pt-border);margin:var(--pt-space-md) 0}
 .pt-code{font-family:var(--pt-mono);font-size:12px;overflow:auto;white-space:pre;padding:var(--pt-space-sm);background:var(--pt-subtle);border-radius:var(--pt-radius-md)}
 .pt-descriptions{display:grid;grid-template-columns:minmax(100px,.4fr) minmax(0,1fr);gap:var(--pt-space-xs) var(--pt-space-sm);margin:0}
@@ -226,8 +306,15 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 /* File picking: the OS file input is visually hidden; the label carries a
    fully custom dashed zone/button so no native "Choose File" chrome shows. */
 .pt-file-picker{display:inline-flex}
-.pt-file-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:var(--pt-control-compact);padding:0 var(--pt-space-md);border:1px solid var(--pt-borderStrong);border-radius:var(--pt-radius-md);background:var(--pt-surface);color:var(--pt-text);font-size:13px;font-weight:500;cursor:pointer;transition:border-color var(--pt-motion-fast),color var(--pt-motion-fast)}
+.pt-file-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:var(--pt-control-compact);padding:0 var(--pt-space-md);border:1px solid var(--pt-borderStrong);border-radius:var(--pt-radius-md);background:var(--pt-surface);color:var(--pt-text);font-size:13px;font-weight:500;cursor:pointer;transition:border-color var(--pt-motion-fast),color var(--pt-motion-fast),background var(--pt-motion-fast)}
 .pt-file-picker:hover .pt-file-button{border-color:var(--pt-primary);color:var(--pt-primary)}
+/* Icon-only affordance for overlaying imagery (avatar/cover change): a small
+   translucent scrim rounded-square — assists without competing, and stays
+   inside the identity tile. It is NEVER a full circle (frame grammar §3:
+   identity/overlay markers are rounded-square, radius strictly < half). */
+.pt-file-picker[data-icon-only=true] .pt-file-button{width:30px;height:30px;min-height:30px;padding:0;border-radius:var(--pt-radius-md);border-color:transparent;background:color-mix(in srgb,#000 34%,transparent);color:#fff}
+.pt-file-picker[data-icon-only=true] .pt-file-button svg{width:15px;height:15px}
+.pt-file-picker[data-icon-only=true]:hover .pt-file-button{border-color:transparent;background:color-mix(in srgb,#000 48%,transparent);color:#fff}
 .pt-dropzone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--pt-space-sm);width:100%;padding:var(--pt-space-xl) var(--pt-space-lg);border:1.5px dashed var(--pt-borderStrong);border-radius:var(--pt-radius-lg);background:var(--pt-subtle);color:var(--pt-secondary);text-align:center;cursor:pointer;transition:border-color var(--pt-motion-fast),background var(--pt-motion-fast)}
 .pt-dropzone-glyph{display:inline-flex;color:var(--pt-muted)}
 .pt-dropzone:hover{border-color:var(--pt-primary)}

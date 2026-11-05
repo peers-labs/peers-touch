@@ -303,7 +303,8 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "NumberField",
       "TextArea",
       "OTPField",
-      "FieldFrame"
+      "FieldFrame",
+      "Field"
     ],
     "implementationRefs": [
       "packages/ui/web/src/fields.tsx"
@@ -500,7 +501,7 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "execution=idle/pending/failed；默认 idle。",
       "availability=editable/locked；默认 editable，locked有原因。"
     ],
-    "geometryAndMotion": "track/thumb为开关专用轮廓；fast或normal位移；reduced静态替换；外围命中至少目标提案。",
+    "geometryAndMotion": "intrinsic 36×20 track / 16 thumb，在 stretch 父容器内保持尺寸不拉伸；on 用角色墨色 token（--pt-switch-on，皮肤可覆写，默认 primary 中性墨），色相只留给语义事实；surface-out 140ms thumb 位移，reduced 静态；触摸命中≥24。",
     "extremeData": "远端旧值、极慢保存、离线、连续点击、账号切换与受策略锁定。",
     "publicContractFields": "settingId/confirmedValue/desiredValue/execution/lockedReason/onToggle"
   },
@@ -538,13 +539,14 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "accessibility": "Arrow/Enter选择、Escape返回trigger；输入搜索用activedescendant；chip Backspace先定位再删除；触摸sheet适配；读屏value/数量/原因。",
     "variantAxes": [
       "selection=single/multiple；默认 single；多值明确MultiSelect合同。",
+      "appearance=field/ghost；默认 field（描边输入框，用于真实表单）；ghost 用于扁平设置行——静止透明无边框，仅 hover/open 起 neutral well，30 高，不制造 SaaS 输入框。",
       "search=none/local/remote；默认 none，小集合优先Radio。",
       "clear=allowed/required；默认 required，清空不造未知值。",
       "commit=choose/draft；默认 draft，由Form决定提交。"
     ],
-    "geometryAndMotion": "父FieldFrame唯一ring；value-label-status槽稳定；长值省略有完整阅读；菜单normal。",
+    "geometryAndMotion": "field 由 FieldFrame 给唯一 ring；ghost 静止无框、open 起 well；value-label-status 槽稳定；长值省略有完整阅读；菜单 surface-in 且收在 anchor 裁剪框内。",
     "extremeData": "同名、无项、上万项虚拟、已选不可见、全部选中、长chip与RTL。",
-    "publicContractFields": "valueId/valueIds/options/queryPort/clearPolicy/selectionMode/onChoose/onRemove"
+    "publicContractFields": "valueId/valueIds/options/appearance/queryPort/clearPolicy/selectionMode/onChoose/onRemove"
   },
   {
     "id": "ui.spec.searchbar",
@@ -596,6 +598,8 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "exports": [
       "Form",
       "FormField",
+      "FormGroup",
+      "FormFooter",
       "useFormController"
     ],
     "implementationRefs": [
@@ -762,7 +766,9 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "specRef": "docs/architecture/platform/client/ui-system/specs/input.md#ui.spec.datepicker",
     "exports": [
       "DateField",
-      "DateRangeField"
+      "DateRangeField",
+      "DateTimeField",
+      "DateTimeRangeField"
     ],
     "implementationRefs": [
       "packages/ui/web/src/advanced-fields.tsx"
@@ -996,10 +1002,11 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "variantAxes": [
       "purpose=view/filter；默认 view；完整页面内容用Tabs。",
       "activation=automatic/manual；默认 automatic仅本地轻视图。",
-      "selection=single；固定，格式多选用ToggleGroup。"
+      "selection=single；固定，格式多选用ToggleGroup。",
+      "overflow=wrap/scrollable；默认 wrap；scrollable 为单行灵动岛：永不换行、组内横滚、滚动条隐形、选中项自动入画，挤压时平级元素相对位置不变。"
     ],
     "geometryAndMotion": "等高轨道，long label可自适应非机械等宽；normal指示；reduced instant。",
-    "extremeData": "一项/多于舒适容量、全禁用、长语言、RTL；过多值用Select。",
+    "extremeData": "一项/多于舒适容量、全禁用、长语言、RTL；过多值用Select（wrap）或 scrollable 岛（必须保序的同级范围切换）。",
     "publicContractFields": "value/items/purpose/activation/onChange/contentStatus"
   },
   {
@@ -1050,6 +1057,7 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "owner": "Client Platform / UI System",
     "specRef": "docs/architecture/platform/client/ui-system/specs/input.md#ui.spec.togglegroup",
     "exports": [
+      "Toggle",
       "ToggleGroup"
     ],
     "implementationRefs": [
@@ -1628,7 +1636,8 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "owner": "Client Platform / UI System",
     "specRef": "docs/architecture/platform/client/ui-system/specs/identity.md#ui.spec.icon",
     "exports": [
-      "Icon"
+      "Icon",
+      "BrandMark"
     ],
     "implementationRefs": [
       "packages/ui/web/src/icon.tsx"
@@ -1696,10 +1705,11 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "accessibility": "重要新失败适度announce；恢复按钮键盘/触摸可达；不抢input焦点；reader有错误和下一步。",
     "variantAxes": [
       "severity=info/success/warning/error；默认 info取真实事实。",
+      "presentation=card/inline；默认 card（描边着色卡片，用于阻断）；inline 是无描边的 2px inset 状态轨，用于流内状态，不画第二个框。",
       "scope=field-group/page/system；默认 field-group。",
       "dismiss=persistent/allowed；默认 persistent，关键阻断不得消失。"
     ],
-    "geometryAndMotion": "图/文/动作同轨，颜色与文字双表达；normal局部进出；长内容自动增高。",
+    "geometryAndMotion": "图/文/动作同轨，颜色与文字双表达；normal局部进出；长内容自动增高；inline 用小半径与状态轨而非外框。",
     "extremeData": "多错误、重复错误、长诊断、离线与授权不足；technical details仅展开需要部分。",
     "publicContractFields": "messageId/severity/scope/title/body/recoveryActions/dismissPolicy"
   },
@@ -2039,7 +2049,8 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "specRef": "docs/architecture/platform/client/ui-system/specs/feedback.md#ui.spec.toast",
     "exports": [
       "ToastHost",
-      "createToastChannel"
+      "createToastChannel",
+      "FeedbackHost"
     ],
     "implementationRefs": [
       "packages/ui/web/src/feedback.tsx"
@@ -2080,7 +2091,8 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "owner": "Client Platform / UI System",
     "specRef": "docs/architecture/platform/client/ui-system/specs/content.md#ui.spec.descriptions",
     "exports": [
-      "Descriptions"
+      "Descriptions",
+      "Description"
     ],
     "implementationRefs": [
       "packages/ui/web/src/data.tsx"
@@ -2197,6 +2209,48 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "geometryAndMotion": "头像/title/meta/action同轨；长主文可截断有完整入口；行高按密度而非各页硬编码。",
     "extremeData": "0/1/海量、长名、动态删除、重复ID、无权限item。",
     "publicContractFields": "items/itemId/purpose/density/selectionView/rowSlots/actions"
+  },
+  {
+    "id": "ui.spec.settingslist",
+    "title": "ListSection / ListRow",
+    "category": "content",
+    "owner": "Client Platform / UI System",
+    "specRef": "docs/architecture/platform/client/ui-system/specs/content.md#ui.spec.settingslist",
+    "exports": [
+      "ListSection",
+      "ListRow"
+    ],
+    "implementationRefs": [
+      "packages/ui/web/src/list.tsx"
+    ],
+    "specimenRef": "packages/prototypes/shared/ui-system/settings/sections/GeneralSections.tsx (privacy/notifications/appearance)",
+    "platformSupport": [
+      {
+        "renderer": "web",
+        "status": "implemented"
+      },
+      {
+        "renderer": "lynx",
+        "status": "unsupported",
+        "reason": "No native Lynx adapter accepted or implemented"
+      }
+    ],
+    "evidenceStatus": "UNPROVEN",
+    "implementationStatus": "PRESENTATION_IMPLEMENTED",
+    "ownerBoundary": "Settings/Preference Owner 管分组、行身份与右侧 control 的值；UI Owner 管扁平形状语法，页面不得为行画盒或重涂 control。",
+    "anatomy": "Section 拥有 quiet heading（12px secondary，icon 可选且仅表语义）+ body；Row 是左 meaning（label/description/可选语义 icon）右 control（Switch/ghost Select/Segmented/Button）两区；行自身零 chrome。",
+    "statePolicy": "Row 不持有值；control 投影 owner 状态。标题与描述静态表达设置本身，不随开关值换成两个命令。",
+    "invalidCombinations": "应用层给行/control 写 .pt-* 覆盖、每行一个描边或填充卡片、用装饰性 icon、把右侧 control 拉通成行内第二个盒子、inset well 内嵌多层 well。",
+    "lifecycleAndCleanup": "纯展示组合；control 的 pending/timer 归各原语 owner；条件行（如子偏好）由数据决定挂载，不保留隐藏状态。",
+    "accessibility": "section 以标题作 aria-label；行 label 与 control 通过同区相邻关联，control 自身带 aria-label；语义 icon aria-hidden；发丝线分组不依赖颜色单独传达结构（有 heading 层级）。",
+    "variantAxes": [
+      "grouping=flat/inset；默认 flat，行之间一条满宽发丝线（首行无）；inset 是唯一认可的分组 well，一个相关块落一个 well。",
+      "rowControl=switch/ghost-select/segmented/button/link；由组合的原语决定，ListRow 不重绘它。",
+      "headingIcon=absent/semantic；默认 absent；仅 trust/danger 等语义可显式提供，禁止装饰。"
+    ],
+    "geometryAndMotion": "heading 12px secondary；行 min-height 40、label 14、description 12.5 muted；满宽 1px hairline 分隔，行无背景无边框；inset well 用 subtle 面 + md 半径，发丝线收在 well 内。",
+    "extremeData": "超长本地化 label/description、无 control 的只读行、宽域 200% 文本、条件显隐行、长选项 ghost Select。",
+    "publicContractFields": "ListSection: title/description/icon/inset；ListRow: label/description/icon/control"
   },
   {
     "id": "ui.spec.markdown",
@@ -2333,7 +2387,8 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "exports": [
       "Text",
       "Paragraph",
-      "Heading"
+      "Heading",
+      "HighlightText"
     ],
     "implementationRefs": [
       "packages/ui/web/src/data.tsx"
@@ -3402,7 +3457,8 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "owner": "Client Platform / UI System",
     "specRef": "docs/architecture/platform/client/ui-system/specs/navigation.md#ui.spec.commandpalette",
     "exports": [
-      "CommandPalette"
+      "CommandPalette",
+      "CommandPicker"
     ],
     "implementationRefs": [
       "packages/ui/web/src/advanced-layout.tsx"

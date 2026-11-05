@@ -1,0 +1,409 @@
+/* MobileApp — 干净手机产品面。
+   仅页面布局（ma-*）：所有形状/颜色/控件外观由 @peers-touch/ui 原语与
+   north-star 令牌承担。这里不出现任何 .pt-* 选择器。 */
+
+/* Product provider root: fill the phone body and establish the containing
+   block (transform) so fixed-position dialog scrims clip to the phone screen,
+   not the whole browser viewport. */
+.ma-scope {
+  height: 100%; min-height: 0;
+  display: flex; flex-direction: column;
+  transform: translateZ(0);
+  overflow: hidden;
+}
+
+.ma-root {
+  position: relative;
+  flex: 1; min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--pt-canvas);
+  color: var(--pt-text);
+  font-family: var(--pt-font);
+}
+
+/* status bar */
+.ma-statusbar {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 22px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pt-text);
+}
+.ma-status-icons { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 500; color: var(--pt-secondary); }
+
+.ma-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ma-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+
+/* top bar */
+.ma-topbar {
+  flex-shrink: 0;
+  min-height: 52px;
+  padding: 6px 16px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ma-topbar h1 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -.01em; }
+/* Messages topbar: the messages/contacts segment owns the left, + the right
+   (desktop ChatRail parity — no big title, contacts live in this segment). */
+.ma-chats-topbar { justify-content: flex-start; }
+.ma-chats-segmented { flex: 0 0 auto; }
+.ma-chats-add { margin-left: auto; flex-shrink: 0; }
+
+/* search */
+.ma-search { flex-shrink: 0; padding: 0 16px 6px; }
+/* Read-only library TextField opens the search screen; the app only sets rhythm. */
+.ma-search-trigger { width: 100%; cursor: pointer; }
+
+/* search overlay */
+.ma-search-input { flex-shrink: 0; padding: 4px 16px 10px; }
+.ma-search-scope { flex-shrink: 0; padding: 0 16px 6px; }
+.ma-search-results { flex: 1; min-height: 0; overflow-y: auto; }
+.ma-search-sub { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.ma-search-empty {
+  padding: 56px 32px; text-align: center;
+  font-size: 13px; color: var(--pt-muted); line-height: 1.6;
+}
+
+/* flat hairline lists (shared with settings grammar) */
+.ma-flat-list { list-style: none; margin: 0; padding: 0 16px; }
+.ma-flat-list li { border-bottom: 1px solid var(--pt-border); }
+.ma-flat-list li:last-child { border-bottom: 0; }
+/* ma-row is the peers-ui ListRow primitive used as a press target. */
+.ma-row { width: 100%; text-align: left; cursor: pointer; }
+.ma-row:active { background: var(--pt-subtle); }
+.ma-avatar-wrap { position: relative; flex-shrink: 0; display: inline-flex; }
+.ma-online-dot {
+  position: absolute; right: -1px; bottom: -1px;
+  width: 11px; height: 11px; border-radius: 999px;
+  /* presence = a live connection: pine punctuation, not a success state. */
+  background: var(--pt-accent);
+  border: 2px solid var(--pt-canvas);
+}
+.ma-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ma-row-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.ma-row-title { font-size: 15px; font-weight: 600; color: var(--pt-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ma-row-time { flex-shrink: 0; font-size: 11.5px; color: var(--pt-muted); }
+.ma-row-sub { font-size: 13px; color: var(--pt-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* group index */
+.ma-group-block { padding-top: 6px; }
+.ma-index {
+  margin: 6px 18px 2px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+  color: var(--pt-muted);
+}
+
+/* ── thread ── */
+.ma-thread { background: var(--pt-canvas); }
+.ma-thread-topbar {
+  flex-shrink: 0;
+  min-height: 50px;
+  padding: 4px 8px 4px 4px;
+  display: flex; align-items: center; gap: 4px;
+  border-bottom: 1px solid var(--pt-border);
+  background: var(--pt-canvas);
+}
+.ma-thread-name {
+  flex: 1; min-width: 0; text-align: center;
+  font-size: 15.5px; font-weight: 650;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ma-thread-actions { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; min-width: 40px; justify-content: flex-end; }
+.ma-thread-topbar-spacer { width: 40px; flex-shrink: 0; }
+.ma-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 12px; }
+.ma-msg { display: flex; align-items: flex-end; gap: 8px; max-width: 100%; }
+.ma-msg.peer { justify-content: flex-start; }
+.ma-msg.mine { flex-direction: row-reverse; }
+.ma-bubble {
+  max-width: 76%;
+  padding: 9px 13px;
+  border-radius: var(--pt-radius-lg);
+  font-size: 14.5px; line-height: 1.5;
+  background: var(--pt-peerBubble);
+  border: 1px solid var(--pt-border);
+  color: var(--pt-text);
+  word-break: break-word;
+}
+.ma-msg.mine .ma-bubble {
+  background: var(--pt-ownBubble);
+  border-color: var(--pt-ownBubble);
+  color: var(--pt-onPrimary);
+  border-bottom-right-radius: var(--pt-radius-sm);
+}
+.ma-msg.peer .ma-bubble { border-bottom-left-radius: var(--pt-radius-sm); }
+.ma-bubble.is-file { padding: 10px 13px; }
+.ma-file { display: inline-flex; align-items: center; gap: 10px; }
+.ma-file span { display: flex; flex-direction: column; gap: 2px; }
+.ma-file strong { font-size: 14px; font-weight: 600; }
+.ma-file em { font-style: normal; font-size: 11.5px; opacity: .72; }
+.ma-typing { display: inline-flex; gap: 4px; align-items: center; padding: 12px 14px; }
+.ma-typing i { width: 6px; height: 6px; border-radius: 999px; background: var(--pt-muted); display: inline-block; }
+
+.ma-composer {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--pt-border);
+  background: var(--pt-canvas);
+}
+
+/* ── moments ── */
+.ma-moments { list-style: none; margin: 0; padding: 4px 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.ma-moment {
+  background: var(--pt-surface);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-lg);
+  box-shadow: var(--pt-shadow-rest);
+  padding: 13px 14px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.ma-moment-head { display: flex; align-items: center; gap: 10px; }
+.ma-moment-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ma-moment-who strong { font-size: 14px; font-weight: 650; }
+.ma-moment-who em { font-style: normal; font-size: 11.5px; color: var(--pt-muted); }
+.ma-moment-text { margin: 0; font-size: 14.5px; line-height: 1.62; color: var(--pt-text); }
+.ma-moment-foot { display: flex; gap: 4px; border-top: 1px solid var(--pt-border); padding-top: 8px; }
+
+/* in-frame bottom action sheet (stays inside the phone screen) */
+.ma-sheet-scrim {
+  position: absolute; inset: 0; z-index: 40;
+  background: var(--pt-scrim, rgba(13, 16, 13, .42));
+  display: flex; align-items: flex-end;
+}
+.ma-sheet {
+  width: 100%;
+  background: var(--pt-surface);
+  border-radius: var(--pt-radius-xl) var(--pt-radius-xl) 0 0;
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+  box-shadow: var(--pt-shadow-float);
+  animation: ma-sheet-up var(--pt-motion-surface, 140ms) ease-out;
+}
+@keyframes ma-sheet-up { from { transform: translateY(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+.ma-sheet-grip {
+  display: block; width: 38px; height: 4px; margin: 2px auto 10px;
+  border-radius: 999px; background: var(--pt-border-strong);
+}
+.ma-sheet-title { margin: 0 0 12px; font-size: 16px; font-weight: 650; text-align: center; }
+
+/* moment composer sheet */
+.ma-composer-sheet { display: flex; flex-direction: column; gap: 14px; }
+.ma-composer-audience { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ma-composer-audience-label { font-size: 13px; color: var(--pt-secondary); flex-shrink: 0; }
+.ma-composer-foot { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* sheet actions are peers-ui Buttons; the app only separates the group. */
+.ma-sheet-actions { margin: 4px 0 0; display: flex; flex-direction: column; }
+.ma-sheet-actions > * + * { border-top: 1px solid var(--pt-border); }
+
+/* inline more-menu on a moment */
+.ma-inline-menu {
+  align-self: flex-end; margin-top: -4px;
+  min-width: 156px; background: var(--pt-surface);
+  border: 1px solid var(--pt-border); border-radius: var(--pt-radius-md);
+  box-shadow: var(--pt-shadow-float); overflow: hidden; z-index: 5;
+}
+/* inline menu items are peers-ui quiet Buttons. */
+.ma-inline-menu-item { width: 100%; justify-content: flex-start; }
+.ma-inline-menu-item.is-danger { color: var(--pt-danger); }
+
+/* inline comments (expand in place, never a pushed page) */
+.ma-comments { border-top: 1px solid var(--pt-border); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.ma-comments-empty { margin: 0; font-size: 12.5px; color: var(--pt-muted); }
+.ma-comments-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
+.ma-comment { display: flex; gap: 9px; align-items: flex-start; }
+.ma-comment-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ma-comment-body strong { font-size: 13px; font-weight: 650; }
+.ma-comment-body span { font-size: 13.5px; line-height: 1.5; color: var(--pt-text); }
+.ma-comment-body em { font-style: normal; font-size: 11px; color: var(--pt-muted); }
+.ma-comment-input { display: flex; align-items: center; gap: 8px; }
+
+/* call surface */
+.ma-call {
+  position: absolute; inset: 0; z-index: 60;
+  /* always-dark media stage, in both light and dark mode. */
+  background: var(--pt-mediaStage); color: var(--pt-white);
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  padding: calc(46px + env(safe-area-inset-top)) 24px calc(30px + env(safe-area-inset-bottom));
+}
+.ma-call-trust { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--pt-mediaStageText); }
+.ma-call-trust-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--pt-accent); }
+.ma-call-avatar { position: relative; }
+.ma-call-ring {
+  position: absolute; inset: -10px; border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, .18);
+}
+.ma-call-copy { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ma-call-copy strong { font-size: 24px; font-weight: 650; }
+.ma-call-copy span { font-size: 14px; color: var(--pt-mediaStageText); }
+.ma-call-controls { display: flex; align-items: center; gap: 26px; }
+/* Dial control: a peers-ui IconButton composed as a circular tile, with a
+   decorative caption below; the column is layout-only, never a second control. */
+.ma-call-btn { color: inherit; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ma-call-btn-icon {
+  width: 62px; height: 62px; min-height: 62px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: rgba(255, 255, 255, .14);
+}
+.ma-call-btn-label { font-size: 12px; color: var(--pt-mediaStageText); }
+/* accept = establish a connection: pine, with its on-accent glyph. */
+.ma-call-btn.is-accept .ma-call-btn-icon { background: var(--pt-accent); color: var(--pt-onAccent); }
+.ma-call-btn.is-danger .ma-call-btn-icon { background: var(--pt-danger); }
+.ma-call-btn.is-selected .ma-call-btn-icon { background: var(--pt-white); color: var(--pt-mediaStage); }
+
+/* ── detail (contact / group) ── */
+.ma-detail-body { flex: 1; min-height: 0; overflow-y: auto; }
+.ma-detail-hero {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 22px 16px 16px;
+}
+.ma-detail-hero strong { font-size: 19px; font-weight: 650; margin-top: 4px; }
+.ma-detail-hero em { font-style: normal; font-size: 12.5px; color: var(--pt-muted); }
+.ma-detail-actions {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 16px 6px;
+}
+.ma-detail-primary { flex: 1; min-width: 0; }
+.ma-detail-list { padding-top: 10px; }
+.ma-add-row .ma-add-icon {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: var(--pt-radius-md);
+  display: grid; place-items: center;
+  color: var(--pt-secondary);
+  background: var(--pt-subtle);
+}
+.ma-danger-zone { margin-top: 6px; }
+.ma-signout { margin-top: 4px; }
+.ma-station-form { display: flex; flex-direction: column; gap: 10px; }
+/* Signed-out gate */
+.ma-signedout {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 40px 28px 32px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: 8px;
+}
+.ma-signedout-glyph {
+  width: 72px; height: 72px; border-radius: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--pt-surface); background: var(--pt-accent);
+  box-shadow: 0 8px 20px rgba(47, 106, 80, .22);
+  margin-bottom: 10px;
+}
+.ma-signedout h1 { margin: 0; font-size: 22px; font-weight: 700; }
+.ma-signedout p { margin: 0; font-size: 13.5px; color: var(--pt-secondary); }
+.ma-signedout-note { margin-bottom: 18px !important; font-size: 12px !important; color: var(--pt-muted) !important; }
+.ma-signedout [data-action-id='auth.signin'] { max-width: 280px; }
+.ma-station-name { display: inline-flex; align-items: center; gap: 8px; }
+.ma-station-dot {
+  width: 9px; height: 9px; border-radius: 999px;
+  /* reachable station = a live federation link: pine punctuation. */
+  background: var(--pt-accent);
+}
+.ma-station-dot:not([data-online]) { background: var(--pt-border-strong); }
+
+/* ── me ── */
+.ma-me { padding-bottom: 16px; }
+/* Identity card: banner + avatar on its lower edge with a card ring
+   (desktop Settings › Identity parity). */
+.ma-profile {
+  flex-shrink: 0;
+  margin: 4px 16px 16px;
+  border: 1px solid var(--pt-border);
+  border-radius: 14px;
+  background: var(--pt-surface);
+  overflow: hidden;
+}
+.ma-profile-banner {
+  position: relative; height: 112px;
+  background: linear-gradient(120deg,
+    color-mix(in srgb, var(--pt-accent) 26%, transparent),
+    color-mix(in srgb, var(--pt-accent) 7%, transparent));
+}
+.ma-profile-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* Translucent icon affordance inset from the corner — never flush to the edge. */
+.ma-profile-banner-action { position: absolute; right: 12px; bottom: 12px; }
+.ma-profile-body { padding: 0 14px 12px; }
+.ma-profile-id { display: flex; align-items: flex-start; gap: 13px; }
+/* 72px avatar on a 112px banner: ~34px overlap with a 3px card ring. */
+.ma-profile-avatar {
+  position: relative; z-index: 1; margin-top: -34px; flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center;
+}
+/* Camera affordance sits INSIDE the avatar owner (inset, never negative) —
+   its painted box must not cross the identity tile's edge. */
+.ma-profile-avatar-action { position: absolute; right: 6px; bottom: 6px; z-index: 2; display: inline-flex; }
+.ma-profile-meta { flex: 1; min-width: 0; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ma-profile-names { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ma-profile-names strong { font-size: 17px; font-weight: 650; }
+.ma-profile-stats { display: flex; align-items: baseline; gap: 13px; flex-wrap: wrap; font-size: 12px; color: var(--pt-muted); }
+.ma-profile-stats strong { font-size: 14px; font-weight: 650; color: var(--pt-text); margin-right: 2px; }
+.ma-profile-joined { margin-left: auto; font-style: normal; font-size: 11.5px; }
+.ma-profile-fields {
+  margin-top: 12px; padding-top: 9px;
+  border-top: 1px solid var(--pt-border);
+  display: flex; flex-direction: column;
+}
+.ma-profile-field { display: flex; align-items: center; gap: 8px; padding: 3px 0; min-width: 0; }
+.ma-profile-field span { font-size: 11.5px; color: var(--pt-muted); flex-shrink: 0; }
+.ma-profile-field code {
+  flex: 1; min-width: 0; font-size: 12px; color: var(--pt-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ma-profile-copy { margin-left: auto; flex-shrink: 0; display: inline-flex; }
+/* trust/security state (encryption on): pine, not the success color. */
+.ma-ok { font-size: 13px; color: var(--pt-accent); }
+.ma-version { font-size: 13px; color: var(--pt-secondary); }
+
+/* settings sections on mobile: inset the library section via a page class */
+.ma-settings { margin: 0 16px 18px; }
+
+/* ── tab bar ── */
+.ma-tabbar {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--pt-border);
+  background: var(--pt-canvas);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+/* Tab bar items are peers-ui IconButtons (the control) plus a decorative
+   caption, composed vertically by the app shell — no native control. */
+.ma-tab {
+  position: relative;
+  min-height: 54px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  color: var(--pt-muted);
+}
+.ma-tab-label { font-size: 11px; font-weight: 500; }
+.ma-tab.active { color: var(--pt-text); }
+.ma-tab-icon { position: relative; display: inline-flex; }
+.ma-badge {
+  position: absolute; top: 5px; left: calc(50% + 7px);
+  min-width: 17px; height: 17px; padding: 0 4.5px;
+  border-radius: 999px;
+  background: var(--pt-primary); color: var(--pt-onPrimary);
+  font-size: 10px; font-weight: 650; line-height: 17px; text-align: center;
+}
+
+/* ── reserved Agent slot: honest placeholder, no mocked assistant ── */
+.ma-agent-reserved {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 24px 32px; text-align: center;
+}
+.ma-agent-glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 72px; height: 72px; border-radius: 22px;
+  background: var(--pt-subtle); color: var(--pt-muted);
+  margin-bottom: 6px;
+}
+.ma-agent-reserved strong { font-size: 16px; font-weight: 650; }
+.ma-agent-reserved p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--pt-muted); }

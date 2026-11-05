@@ -2,32 +2,45 @@
  * MomentCard — one social post in the north-star frame.
  *
  * The card is the whole surface: no separate detail page. Comments live
- * inline (shown by default, folded after COMMENT_FOLD), and every comment
- * is itself interactive — like and reply, with one level of nested
+ * inline (shown by default, newest-first by time with cursor pagination —
+ * communicative equality: likes are expression, never a ranking signal),
+ * and every comment is itself interactive — like and reply, with one level of nested
  * replies rendered in a tinted reply block (a reply to a reply attaches
  * to the root). Delete exists solely on the viewer's own content.
  */
 import { useState } from 'react';
 import {
-  Globe, Lock, MessageCircle, Smile, Trash2, UserCheck, Users, UsersRound,
+  Globe, Lock, MessageCircle, MessagesSquare, Smile, Trash2, UserCheck,
+  UserRoundX, Users, UsersRound,
 } from 'lucide-react';
 import {
   Avatar, Button, Dialog, IconButton, Menu, Popover, TextField,
 } from '@peers-touch/ui';
+import { AuthorTrigger } from './AuthorCard';
 import {
   REACTION_CATALOG, REACTION_BY_KIND, VIEWER_NAME, reactionLabel,
-  type AudienceKind, type Moment, type MomentComment, type ReactionKind, type TrustReason,
+  type AudienceKind, type Moment, type MomentComment, type Person, type ReactionKind, type TrustReason,
 } from './moments-data';
 
+/** Identity-card wiring shared by post heads and every comment row. */
+interface AuthorTriggerProps {
+  resolvePerson: (name: string) => Person | undefined;
+  onToggleFollow: (id: string) => void;
+  onToggleBlock: (id: string) => void;
+}
+
 const EXPAND_THRESHOLD = 320;
-/** Comments visible without an explicit expand action. */
-const COMMENT_FOLD = 10;
+/** Top-level comments per page (proto GetComments cursor pagination). */
+const COMMENT_PAGE = 5;
 
 const AUDIENCE_LABEL: Record<AudienceKind, string> = {
   public: '公开',
   followers: '关注者',
   friends: '朋友',
   circle: '圈子',
+  group: '群聊',
+  allow: '部分可见',
+  deny: '不给谁看',
   self: '仅自己',
 };
 
@@ -39,8 +52,10 @@ const REASON_LABEL: Record<TrustReason, string> = {
   public: '联邦公开',
 };
 
-function audienceLabel(audience: AudienceKind, circle?: string): string {
+function audienceLabel(post: Moment): string {
+  const { audience, circle, group } = post;
   if (audience === 'circle' && circle) return `圈子 · ${circle}`;
+  if (audience === 'group' && group) return `群聊 · ${group}`;
   return AUDIENCE_LABEL[audience];
 }
 
@@ -49,6 +64,9 @@ function TrustIcon({ audience }: { audience: AudienceKind }) {
   if (audience === 'followers') return <UserCheck size={size} />;
   if (audience === 'friends') return <Users size={size} />;
   if (audience === 'circle') return <UsersRound size={size} />;
+  if (audience === 'group') return <MessagesSquare size={size} />;
+  if (audience === 'deny') return <UserRoundX size={size} />;
+  if (audience === 'allow') return <Users size={size} />;
   if (audience === 'self') return <Lock size={size} />;
   return <Globe size={size} />;
 }
@@ -57,7 +75,7 @@ function TrustMeta({ post }: { post: Moment }) {
   const segments = [
     post.source === 'remote' && post.station ? `来自 ${post.station}` : '本站',
     post.reason === 'public' ? null : REASON_LABEL[post.reason],
-    audienceLabel(post.audience, post.circle),
+    audienceLabel(post),
   ].filter((segment): segment is string => Boolean(segment));
   return (
     <div className="sk-trust" data-acceptance-id="social-trust-meta">
@@ -192,18 +210,20 @@ function ImageGrid({ images }: { images: string[] }) {
   );
 }
 
-interface CommentItemProps {
+interface CommentItemProps extends AuthorTriggerProps {
   comment: MomentComment;
   depth?: number;
   rootId: string;
   postId: string;
+  /** Opens the full profile; reached from the author card, not the chip. */
   onAuthor: (name: string) => void;
   onLikeComment: (postId: string, commentId: string) => void;
   onReplyComment: (postId: string, rootId: string, text: string) => void;
   onRequestDelete: (comment: MomentComment) => void;
 }
 
-function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, onLikeComment, onReplyComment, onRequestDelete }: CommentItemProps) {
+function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, resolvePerson,
+  onToggleFollow, onToggleBlock, onLikeComment, onReplyComment, onRequestDelete }: CommentItemProps) {
   const [replying, setReplying] = useState(false);
   const [draft, setDraft] = useState('');
   const mine = comment.author === VIEWER_NAME;
@@ -222,12 +242,22 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, onLikeComme
   return (
     <li className="sk-comment-item" data-comment-id={comment.id} data-own-comment={mine ? 'true' : 'false'}
       data-depth={depth}>
-      <Avatar name={comment.author} background={comment.tone} size={30}
-        style={{ borderRadius: 9 }} aria-hidden="true" />
+      <AuthorTrigger name={comment.author} person={resolvePerson(comment.author)}
+        onOpenProfile={onAuthor} onToggleFollow={onToggleFollow} onToggleBlock={onToggleBlock}>
+        <Button actionId={`comment.author-card-avatar.${comment.id}`} emphasis="quiet"
+          density="compact" className="sk-comment-avatar"
+          aria-label={`查看 ${comment.author} 的名片`}>
+          <Avatar name={comment.author} background={comment.tone} size={30}
+            style={{ borderRadius: 9 }} aria-hidden="true" />
+        </Button>
+      </AuthorTrigger>
       <span className="sk-comment-body">
         <span className="sk-comment-line">
-          <button type="button" className="sk-comment-author"
-            onClick={() => onAuthor(comment.author)}>{comment.author}</button>
+          <AuthorTrigger name={comment.author} person={resolvePerson(comment.author)}
+            onOpenProfile={onAuthor} onToggleFollow={onToggleFollow} onToggleBlock={onToggleBlock}>
+            <button type="button" className="sk-comment-author"
+              aria-label={`查看 ${comment.author} 的名片`}>{comment.author}</button>
+          </AuthorTrigger>
           <span className="sk-comment-text">{comment.text}</span>
         </span>
         <div className="sk-comment-meta">
@@ -251,7 +281,9 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, onLikeComme
           <ul className="sk-reply-list">
             {replies.map(reply => (
               <CommentItem key={reply.id} comment={reply} depth={1} rootId={rootId} postId={postId}
-                onAuthor={onAuthor} onLikeComment={onLikeComment}
+                onAuthor={onAuthor} resolvePerson={resolvePerson}
+                onToggleFollow={onToggleFollow} onToggleBlock={onToggleBlock}
+                onLikeComment={onLikeComment}
                 onReplyComment={onReplyComment} onRequestDelete={onRequestDelete} />
             ))}
           </ul>
@@ -275,8 +307,9 @@ function CommentItem({ comment, depth = 0, rootId, postId, onAuthor, onLikeComme
   );
 }
 
-export interface MomentCardProps {
+export interface MomentCardProps extends AuthorTriggerProps {
   post: Moment;
+  /** Opens the full profile; reached from the author card, not the chip. */
   onAuthor: (name: string) => void;
   onToggleReaction: (id: string, kind: ReactionKind) => void;
   onComment: (id: string, text: string) => void;
@@ -286,11 +319,12 @@ export interface MomentCardProps {
   onDeletePost: (postId: string) => void;
 }
 
-export function MomentCard({ post, onAuthor, onToggleReaction, onComment, onLikeComment,
+export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onToggleBlock,
+  onToggleReaction, onComment, onLikeComment,
   onReplyComment, onDeleteComment, onDeletePost }: MomentCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(true);
-  const [allComments, setAllComments] = useState(false);
+  const [commentPage, setCommentPage] = useState(1);
   const [draft, setDraft] = useState('');
   const [confirmTarget, setConfirmTarget] = useState<'post' | MomentComment | null>(null);
   const longBody = post.text.length > EXPAND_THRESHOLD;
@@ -298,10 +332,11 @@ export function MomentCard({ post, onAuthor, onToggleReaction, onComment, onLike
     ? post.text
     : `${post.text.slice(0, EXPAND_THRESHOLD)}…`;
 
-  const needsFold = post.comments.length > COMMENT_FOLD;
-  const visibleComments = needsFold && !allComments
-    ? post.comments.slice(0, COMMENT_FOLD)
-    : post.comments;
+  // Communicative equality: comments have one order — newest first by time.
+  // Like counts are expression only and never reorder anyone's voice.
+  const sortedComments = [...post.comments].reverse();
+  const pagedComments = sortedComments.slice(0, commentPage * COMMENT_PAGE);
+  const remainingComments = sortedComments.length - pagedComments.length;
   const ownPost = post.author === VIEWER_NAME;
 
   const submitComment = () => {
@@ -310,7 +345,8 @@ export function MomentCard({ post, onAuthor, onToggleReaction, onComment, onLike
     onComment(post.id, text);
     setDraft('');
     setCommentsOpen(true);
-    setAllComments(true);
+    // A fresh comment is the newest one — the time order surfaces it on top.
+    setCommentPage(1);
   };
 
   const runConfirm = () => {
@@ -322,16 +358,19 @@ export function MomentCard({ post, onAuthor, onToggleReaction, onComment, onLike
   return (
     <article className="sk-post" data-post-id={post.id} data-acceptance-id="social-moment-card">
       <header className="sk-post-head">
-        <button type="button" className="sk-post-author"
-          aria-label={`查看 ${post.author} 的主页`}
-          onClick={() => onAuthor(post.author)}>
-          <Avatar name={post.author} background={post.tone} size={48}
-            style={{ borderRadius: 13 }} aria-hidden="true" />
-          <span className="sk-post-idcol">
-            <strong className="sk-post-name">{post.author}</strong>
-            <span className="sk-post-time">{post.at}</span>
-          </span>
-        </button>
+        <AuthorTrigger name={post.author} person={resolvePerson(post.author)}
+          station={post.station}
+          onOpenProfile={onAuthor} onToggleFollow={onToggleFollow} onToggleBlock={onToggleBlock}>
+          <button type="button" className="sk-post-author"
+            aria-label={`查看 ${post.author} 的名片`}>
+            <Avatar name={post.author} background={post.tone} size={48}
+              style={{ borderRadius: 13 }} aria-hidden="true" />
+            <span className="sk-post-idcol">
+              <strong className="sk-post-name">{post.author}</strong>
+              <span className="sk-post-time">{post.at}</span>
+            </span>
+          </button>
+        </AuthorTrigger>
         {ownPost && (
           <span className="sk-post-menu">
             <Menu placement="bottom" label="动态操作"
@@ -370,19 +409,24 @@ export function MomentCard({ post, onAuthor, onToggleReaction, onComment, onLike
       {commentsOpen && (
         <div className="sk-comments" data-comments-open="true">
           {post.comments.length > 0 && (
-            <ul className="sk-comment-list">
-              {visibleComments.map(comment => (
-                <CommentItem key={comment.id} comment={comment} rootId={comment.id} postId={post.id}
-                  onAuthor={onAuthor} onLikeComment={onLikeComment}
-                  onReplyComment={onReplyComment} onRequestDelete={setConfirmTarget} />
-              ))}
-            </ul>
-          )}
-          {needsFold && (
-            <button type="button" className="sk-comment-fold" data-comments-folded={allComments ? 'false' : 'true'}
-              onClick={() => setAllComments(value => !value)}>
-              {allComments ? '收起评论' : `展开全部 ${post.comments.length} 条评论`}
-            </button>
+            <>
+              <ul className="sk-comment-list">
+                {pagedComments.map(comment => (
+                  <CommentItem key={comment.id} comment={comment} rootId={comment.id} postId={post.id}
+                    onAuthor={onAuthor} resolvePerson={resolvePerson}
+                    onToggleFollow={onToggleFollow} onToggleBlock={onToggleBlock}
+                    onLikeComment={onLikeComment}
+                    onReplyComment={onReplyComment} onRequestDelete={setConfirmTarget} />
+                ))}
+              </ul>
+              {remainingComments > 0 && (
+                <button type="button" className="sk-comment-pager"
+                  data-comment-remaining={remainingComments}
+                  onClick={() => setCommentPage(page => page + 1)}>
+                  {`查看更早 ${remainingComments} 条评论`}
+                </button>
+              )}
+            </>
           )}
           <span className="sk-inline-composer" data-card-composer>
             <TextField aria-label="写评论" placeholder="写评论……"
