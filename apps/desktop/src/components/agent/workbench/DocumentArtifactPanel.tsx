@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { LazyMarkdown as Markdown } from '../../LazyMarkdown';
 import { chatMarkdownProps } from '../../messages/markdownConfig';
 import { useChatStore } from '../../../store/chat';
-import { useTaskArtifactStore } from '../../../store/taskArtifacts';
+import { useTaskArtifactStore, ArtifactStaleBaseError } from '../../../store/taskArtifacts';
 import type {
   ArtifactAcceptance,
   ArtifactCheck,
@@ -118,11 +118,13 @@ export function DocumentArtifactPanel() {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [staleCurrentVersionId, setStaleCurrentVersionId] = useState<string | null>(null);
   const [selection, setSelection] = useState('');
 
   useEffect(() => {
     setEditing(false);
     setError(null);
+    setStaleCurrentVersionId(null);
   }, [selectedVersionId, openArtifactId]);
 
   // Render-layer convergence independent of any single openPanel async chain:
@@ -218,10 +220,18 @@ export function DocumentArtifactPanel() {
     setComposerDraft,
   ]);
 
+  const handleViewLatest = useCallback(async () => {
+    if (!staleCurrentVersionId) return;
+    await selectVersion(staleCurrentVersionId);
+    setStaleCurrentVersionId(null);
+    setError(null);
+  }, [staleCurrentVersionId, selectVersion]);
+
   const handleSaveEdit = useCallback(async () => {
     if (!openArtifactId || !selectedVersionId || !draft.trim()) return;
     setBusy(true);
     setError(null);
+    setStaleCurrentVersionId(null);
     try {
       const response = await saveHumanEdit({
         conversationId: conversationKey,
@@ -232,11 +242,22 @@ export function DocumentArtifactPanel() {
       setEditing(false);
       await selectVersion(response.version!.versionId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (cause instanceof ArtifactStaleBaseError) {
+        // Keep the editor and the user's draft open; the store has re-read
+        // the winning current version. Surface it and offer to view latest.
+        setStaleCurrentVersionId(cause.currentVersionId);
+        setError(
+          t('chat.artifact.edit.conflictStale', {
+            version: cause.currentVersionId.slice(0, 8),
+          }),
+        );
+      } else {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
     } finally {
       setBusy(false);
     }
-  }, [openArtifactId, selectedVersionId, draft, conversationKey, saveHumanEdit, selectVersion]);
+  }, [openArtifactId, selectedVersionId, draft, conversationKey, saveHumanEdit, selectVersion, t]);
 
   const handleStructuralCheck = useCallback(async () => {
     if (!openArtifactId || !selectedVersionId) return;
@@ -381,6 +402,26 @@ export function DocumentArtifactPanel() {
 
       {editing ? (
         <Flexbox gap={8}>
+          {staleCurrentVersionId ? (
+            <Flexbox
+              horizontal
+              gap={8}
+              align="center"
+              justify="space-between"
+              data-pt-artifact-stale-banner
+              style={{
+                border: `1px solid ${token.colorWarningBorder}`,
+                background: token.colorWarningBg,
+                borderRadius: token.borderRadius,
+                padding: 8,
+              }}
+            >
+              <span style={{ fontSize: 12 }}>{error}</span>
+              <Button size="small" onClick={handleViewLatest} data-pt-artifact-view-latest>
+                {t('chat.artifact.edit.viewLatest')}
+              </Button>
+            </Flexbox>
+          ) : null}
           <textarea
             data-pt-artifact-editor
             value={draft}

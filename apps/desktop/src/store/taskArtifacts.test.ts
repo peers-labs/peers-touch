@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { api } from '../services/desktop_api';
-import { useTaskArtifactStore } from './taskArtifacts';
+import { ArtifactStaleBaseError, useTaskArtifactStore } from './taskArtifacts';
 
 vi.mock('../storage/desktopAgentChatCache', () => ({
   getDesktopAgentChatCache: vi.fn(),
@@ -174,4 +174,53 @@ it('records structural/human checks and accepts only the current version', async
 
   const accepted = await store.acceptCurrent('art-1', 'ver-1');
   expect(accepted.acceptance?.current).toBe(true);
+});
+
+it('re-reads current version and throws ArtifactStaleBaseError on a 409 human edit', async () => {
+  // The editor loaded ver-1; another revision advanced current to ver-2.
+  const conflict = Object.assign(
+    new Error('artifact base version is stale; current_version_id=ver-2'),
+    { code: 'CONFLICT' },
+  );
+  vi.mocked(api.claimTaskArtifactVersion).mockRejectedValueOnce(conflict as never);
+
+  // Readback returns the artifact now pointing at ver-2.
+  vi.mocked(api.listTaskArtifacts).mockResolvedValue({
+    artifacts: [{ ...artifactResponse().artifact, currentVersionId: 'ver-2', currentSeq: 2 }],
+  } as never);
+  vi.mocked(api.listTaskArtifactVersions).mockResolvedValue({
+    versions: [
+      artifactResponse().version,
+      { ...artifactResponse().version, versionId: 'ver-2', seq: 2, parentVersionId: 'ver-1' },
+    ],
+  } as never);
+  vi.mocked(api.getTaskArtifactVersionBody).mockResolvedValue({
+    version: { ...artifactResponse().version, versionId: 'ver-2', seq: 2 },
+    body: '# Site study (revised)',
+  } as never);
+
+  const store = useTaskArtifactStore.getState();
+  vi.mocked(api.claimTaskArtifactVersion).mockClear();
+  vi.mocked(api.listTaskArtifacts).mockClear();
+  vi.mocked(api.listTaskArtifactVersions).mockClear();
+  let caught: unknown;
+  try {
+    await store.saveHumanEdit({
+      conversationId,
+      artifactId: 'art-1',
+      expectedBaseVersionId: 'ver-1',
+      body: 'my conflicting edit',
+    });
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught).toBeInstanceOf(ArtifactStaleBaseError);
+  expect((caught as ArtifactStaleBaseError).currentVersionId).toBe('ver-2');
+
+  // Exactly one claim attempt; no fabricated success version.
+  expect(api.claimTaskArtifactVersion).toHaveBeenCalledTimes(1);
+  // The store re-read both the artifact list and its detail (current version).
+  expect(api.listTaskArtifacts).toHaveBeenCalled();
+  expect(api.listTaskArtifactVersions).toHaveBeenCalledWith('art-1');
 });

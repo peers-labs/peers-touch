@@ -1097,6 +1097,8 @@
   "chat.artifact.edit": "Edit",
   "chat.artifact.edit.cancel": "Cancel",
   "chat.artifact.edit.save": "Save as new version",
+  "chat.artifact.edit.conflictStale": "This document changed while you were editing. Latest version {{version}} was reloaded below; your edit was not saved. Review the latest content and re-apply your change.",
+  "chat.artifact.edit.viewLatest": "View latest version",
   "chat.artifact.review": "Review",
   "chat.artifact.check.structural": "Structural check",
   "chat.artifact.check.humanPass": "Human review · pass",

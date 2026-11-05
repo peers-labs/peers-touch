@@ -1097,6 +1097,8 @@
   "chat.artifact.edit": "编辑",
   "chat.artifact.edit.cancel": "取消",
   "chat.artifact.edit.save": "保存为新版本",
+  "chat.artifact.edit.conflictStale": "你编辑期间文档已被更新。下方已重新载入最新版本 {{version}}，你的修改未保存。请查看最新内容后重新应用修改。",
+  "chat.artifact.edit.viewLatest": "查看最新版本",
   "chat.artifact.review": "审阅",
   "chat.artifact.check.structural": "结构检查",
   "chat.artifact.check.humanPass": "人工审阅 · 通过",

@@ -26,6 +26,41 @@ export interface PendingFeedbackRef {
   kind: 'selection' | 'comment';
 }
 
+// Raised when a human edit loses optimistic concurrency: another revision
+// advanced the artifact after the editor loaded its base. The store has
+// already re-read the current version; the UI must keep the user's draft and
+// surface the newer version rather than showing a generic save failure.
+export class ArtifactStaleBaseError extends Error {
+  readonly artifactId: string;
+  readonly currentVersionId: string;
+
+  constructor(artifactId: string, currentVersionId: string) {
+    super(`artifact base version is stale; current_version_id=${currentVersionId}`);
+    this.name = 'ArtifactStaleBaseError';
+    this.artifactId = artifactId;
+    this.currentVersionId = currentVersionId;
+  }
+}
+
+// Station reports this with HTTP 409 / code CONFLICT and embeds the winning
+// current version id in the message. Matching both keeps detection robust to
+// transport layers that only propagate the message string.
+const STALE_BASE_PATTERN = /current_version_id=([A-Za-z0-9_-]+)/;
+
+export function isArtifactStaleBaseError(
+  error: unknown,
+): error is { code?: string; message: string } {
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: string }).code;
+  return code === 'CONFLICT' || STALE_BASE_PATTERN.test(error.message);
+}
+
+export function currentVersionIdFromError(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const match = error.message.match(STALE_BASE_PATTERN);
+  return match?.[1] ?? null;
+}
+
 interface TaskArtifactsState {
   artifactsByConversation: Record<string, LogicalArtifact[]>;
   claimedMessageIdsByConversation: Record<string, string[]>;
@@ -296,20 +331,47 @@ export const useTaskArtifactStore = createDesktopStore<TaskArtifactsState>(
     },
 
     saveHumanEdit: async ({ conversationId, artifactId, expectedBaseVersionId, body }) => {
-      const response: ClaimArtifactVersionResponse = await api.claimTaskArtifactVersion({
-        conversationId,
-        artifactId,
-        expectedBaseVersionId,
-        origin: 'ARTIFACT_VERSION_ORIGIN_HUMAN_EDIT',
-        body,
-        contentType: 'text/markdown',
-        clientIdempotencyKey: tempId(),
-      });
-      await Promise.all([
-        get().loadArtifacts(conversationId),
-        get().loadDetail(artifactId),
-      ]);
-      return response;
+      try {
+        const response: ClaimArtifactVersionResponse = await api.claimTaskArtifactVersion({
+          conversationId,
+          artifactId,
+          expectedBaseVersionId,
+          origin: 'ARTIFACT_VERSION_ORIGIN_HUMAN_EDIT',
+          body,
+          contentType: 'text/markdown',
+          clientIdempotencyKey: tempId(),
+        });
+        await Promise.all([
+          get().loadArtifacts(conversationId),
+          get().loadDetail(artifactId),
+        ]);
+        return response;
+      } catch (error) {
+        // Optimistic concurrency loss: another revision is current. Re-read
+        // the artifact + current version body so the UI shows the winning
+        // state, then surface a typed conflict WITHOUT fabricating a version
+        // or dropping the user's in-progress draft.
+        if (isArtifactStaleBaseError(error)) {
+          let currentVersionId = currentVersionIdFromError(error) ?? '';
+          try {
+            await Promise.all([
+              get().loadArtifacts(conversationId),
+              get().loadDetail(artifactId),
+            ]);
+            const latest = get()
+              .artifactsByConversation[conversationId]
+              ?.find((artifact) => artifact.artifactId === artifactId);
+            currentVersionId = latest?.currentVersionId || currentVersionId;
+          } catch (readbackError) {
+            log.warn('taskArtifacts', 'stale-base readback failed', {
+              artifactId,
+              error: readbackError instanceof Error ? readbackError.message : String(readbackError),
+            });
+          }
+          throw new ArtifactStaleBaseError(artifactId, currentVersionId);
+        }
+        throw error;
+      }
     },
 
     quoteSelectionToComposer: async ({
