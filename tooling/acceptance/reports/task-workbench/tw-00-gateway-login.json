@@ -1,9 +1,9 @@
 {
-  "ran_at": "2026-11-05T02:45:37.064Z",
+  "ran_at": "2026-11-05T04:24:15.066Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261102",
   "closure": "tw-00-gateway-login",
-  "source_commit": "a18c66b4ed356892e524ece721345e17417d62a3",
+  "source_commit": "75e6d1cf94348fc13b1cfc84ab553a8ef8741830",
   "station_url": "persisted-active",
   "pass": 3,
   "fail": 0,

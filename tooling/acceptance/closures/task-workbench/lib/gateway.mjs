@@ -11,6 +11,15 @@
 
 const GATE_TYPE_AUTH_LOGIN = 2;
 
+function safeParse(value) {
+  if (typeof value !== 'string') return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
 export class GatewayError extends Error {
   constructor(cmd, error) {
     super(`${cmd}: ${error?.message ?? 'unknown error'}`);
@@ -212,6 +221,12 @@ export class Gateway {
     return decoded?.conversations ?? decoded?.items ?? [];
   }
 
+  // Station-authoritative turn trace (JSON status string).
+  async turnTrace(turnId) {
+    const r = await this.cmd('agent_turn_trace_get', { turn_id: turnId });
+    return this.decode(r)?.entry ?? this.decode(r);
+  }
+
   async conversationMessages(conversationId, { limit = 50, afterSeq, beforeSeq } = {}) {
     const input = { conversation_id: conversationId, limit };
     if (Number.isInteger(afterSeq)) input.after_seq = afterSeq;
@@ -230,6 +245,84 @@ export class Gateway {
       throw new GatewayError(name, { message: 'missing proto_b64 in response' });
     }
     return decodeProtoB64(b64, schemaName);
+  }
+
+  // Same as proto() for arms that return AppResult<Vec<u8>> serialized as a
+  // raw JSON byte array (capability authority catalog/bindings/readiness).
+  async protoBytes(name, schemaName, input = {}) {
+    const { decodeProtoBytes } = await import('./proto.mjs');
+    const r = await this.cmd(name, input);
+    if (!Array.isArray(r?.data)) {
+      throw new GatewayError(name, { message: 'expected raw byte array payload' });
+    }
+    return decodeProtoBytes(r.data, schemaName);
+  }
+
+  // ── Actor-device engine bootstrap (headless onboarding) ─────────────────
+  // Password gateway login binds only the Station JWT. The GUI post-login
+  // flow additionally activates the actor-device messaging engine; headless
+  // harnesses must run the same activation before the capability supervisor
+  // can register a device capability session.
+  async deviceEngineActivate() {
+    const r = await this.cmd('agent_device_engine_activate');
+    return r?.data ?? null;
+  }
+
+  async executorSupervisorStart() {
+    const r = await this.cmd('agent_client_executor_supervisor_start');
+    return this.decode(r);
+  }
+
+  async capabilitySessions() {
+    const r = await this.cmd('agent_capability_sessions');
+    return this.decode(r)?.sessions ?? [];
+  }
+
+  // ── Capability authority (raw prost byte arms) ──────────────────────────
+  async capabilityManifests(sourceKinds = []) {
+    const r = await this.protoBytes(
+      'agent_capability_manifest_list',
+      'ListCapabilityManifests',
+      { source_kinds: sourceKinds },
+    );
+    return r.manifests ?? [];
+  }
+
+  async capabilityBindings(agentId) {
+    const r = await this.protoBytes(
+      'agent_capability_binding_list',
+      'ListAgentCapabilityBindings',
+      { agent_id: agentId },
+    );
+    return r.bindings ?? [];
+  }
+
+  async capabilityBindingUpsert(binding, expectedRevision = 0, idempotencyKey = crypto.randomUUID()) {
+    const r = await this.protoBytes(
+      'agent_capability_binding_upsert',
+      'UpsertAgentCapabilityBinding',
+      { binding, idempotency_key: idempotencyKey, expected_binding_revision: expectedRevision },
+    );
+    return r.binding ?? null;
+  }
+
+  async capabilityReadiness(agentId, { clientCapabilitySessionId, providerId, modelId } = {}) {
+    const input = { agent_id: agentId };
+    if (clientCapabilitySessionId) {
+      input.client_capability_session_id = clientCapabilitySessionId;
+    }
+    // Readiness resolves a runtime admission for the EXACT provider/model the
+    // turn will use; agents without a pinned default require both explicitly.
+    if (providerId && modelId) {
+      input.provider_id = providerId;
+      input.model_id = modelId;
+    }
+    const r = await this.protoBytes(
+      'agent_capability_readiness',
+      'GetCapabilityReadiness',
+      input,
+    );
+    return r.snapshot ?? null;
   }
 
   // ── Device-held terminal sessions (TW-D5, JSON) ──────────────────────────
@@ -457,6 +550,174 @@ export class Gateway {
     }
     if (buffer.trim()) ingest(buffer.trim());
     return { frames, stages, text, done, error, admission };
+  }
+
+  // Drives a governed multi-iteration tool turn. MANUAL policy parks the turn
+  // after every tool_approval_required frame: the initial SSE closes and the
+  // Station continuation worker resumes execution once the decision is
+  // submitted, with subsequent frames surfacing on /agent/turn/events. This
+  // driver therefore (1) streams the turn, (2) invokes decide(frame) for each
+  // approval and submits the returned intent, (3) re-anchors a replay stream
+  // at the last observed sequence and keeps going until a terminal frame.
+  //
+  // decide(frame) => { approved, answer?, expectedRevision? } | null (null
+  // leaves the approval parked and terminates the observation).
+  async runGovernedTurn(body, { decide, timeoutMs = 300_000 } = {}) {
+    const calls = [];
+    const approvals = [];
+    const decisions = [];
+    const results = [];
+    const frames = [];
+    let terminal = null;
+    let turnId = null;
+
+    const ingest = async (frame) => {
+      frames.push(frame);
+      if (frame.turnId) turnId = frame.turnId;
+      const event = frame._event ?? frame.type ?? frame.stage;
+      if (event === 'tool_call') {
+        calls.push({
+          toolCallId: frame.toolCallId,
+          toolName: frame.toolName,
+          arguments: safeParse(frame.arguments) ?? frame.arguments,
+          seq: frame.seq,
+        });
+      } else if (event === 'tool_result') {
+        const raw = frame.result ?? frame.content ?? '';
+        results.push({
+          toolCallId: frame.toolCallId,
+          raw,
+          parsed: safeParse(raw),
+          seq: frame.seq,
+        });
+      } else if (event === 'tool_approval_required') {
+        approvals.push(frame);
+        const intent = typeof decide === 'function'
+          ? await decide(frame, { calls, results, approvals })
+          : { approved: true };
+        if (!intent) return;
+        const decisionId = crypto.randomUUID();
+        const response = await this.cmd('agent_submit_tool_decision', {
+          approval_id: frame.approvalId,
+          tool_call_id: frame.toolCallId,
+          decision_id: decisionId,
+          expected_revision: Number(
+            intent.expectedRevision ?? frame.decisionRevision ?? 0,
+          ),
+          approved: intent.approved !== false,
+          idempotency_key: decisionId,
+          answer: intent.answer ?? '',
+        });
+        const status = this.decode(response);
+        decisions.push(status);
+      } else if (
+        frame.type === 'done'
+        || frame.type === 'error'
+        || /turn_completed|turn_failed|turn_interrupted/.test(String(frame.stage))
+      ) {
+        terminal = frame;
+      }
+    };
+
+    const initial = await this.runTurn(body, {
+      timeoutMs,
+      onFrame: (frame) => {
+        void ingest(frame);
+      },
+    });
+    if (initial.done) terminal = initial.done;
+    if (initial.error && !terminal) {
+      return {
+        ok: false,
+        transportError: initial.error,
+        turnId,
+        calls,
+        approvals,
+        decisions,
+        results,
+        frames,
+        terminal,
+      };
+    }
+
+    // Follow parked continuations until terminal. The replay stream is live
+    // (SafeRead): it catches up past afterSequence and then tracks the run.
+    let lastSeq = frames.reduce((max, frame) => Math.max(max, Number(frame.seq ?? 0)), 0);
+    let guard = 0;
+    while (!terminal && guard < 8) {
+      guard += 1;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let sawNewFrame = false;
+      try {
+        const response = await fetch(`${this.baseUrl}/agent/turn/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversation_id: body.conversation_id,
+            turn_id: turnId,
+            afterSequence: lastSeq,
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) {
+          throw new GatewayError('agent/turn/events', { message: `HTTP ${response.status}` });
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let index;
+          while ((index = buffer.indexOf('\n\n')) >= 0) {
+            const chunk = buffer.slice(0, index);
+            buffer = buffer.slice(index + 2);
+            let dataLine = null;
+            for (const line of chunk.split('\n')) {
+              if (line.startsWith('data:')) dataLine = line.slice(5).trimStart();
+            }
+            if (dataLine === null) continue;
+            let payload;
+            try {
+              payload = JSON.parse(dataLine);
+            } catch {
+              continue;
+            }
+            if (Number(payload.seq) > lastSeq) {
+              lastSeq = Number(payload.seq);
+              sawNewFrame = true;
+            }
+            await ingest(payload);
+            if (terminal) break;
+          }
+          if (terminal) break;
+        }
+      } finally {
+        clearTimeout(timer);
+        controller.abort();
+      }
+      // If the stream closed without a terminal frame and without new
+      // activity, stop rather than spin.
+      if (!terminal && !sawNewFrame) break;
+    }
+
+    const terminalStage = terminal?.stage
+      ?? (terminal?.type === 'error' ? 'error' : null)
+      ?? (terminal?.type === 'done' ? terminal.stage : null);
+    return {
+      ok: !!terminal && terminal.type !== 'error'
+        && !/turn_failed|turn_interrupted/.test(String(terminalStage)),
+      turnId,
+      terminalStage,
+      calls,
+      approvals,
+      decisions,
+      results,
+      frames,
+      terminal,
+    };
   }
 
   // SSE POST to /agent/turn/stream. Calls onEvent(rawDataString) for each SSE
