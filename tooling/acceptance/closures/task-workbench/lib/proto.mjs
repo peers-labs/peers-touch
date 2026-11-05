@@ -196,6 +196,16 @@ export const SCHEMAS = {
     8: { name: 'selected_client_session_id', type: 'string' },
     9: { name: 'capabilities', type: 'msg', repeated: true, schema: null },
   },
+  ArtifactFeedback: {
+    1: { name: 'feedback_id', type: 'string' },
+    2: { name: 'artifact_id', type: 'string' },
+    3: { name: 'base_version_id', type: 'string' },
+    4: { name: 'kind', type: 'v' },
+    5: { name: 'anchor_text', type: 'string' },
+    6: { name: 'instruction', type: 'string' },
+    7: { name: 'resulting_version_id', type: 'string' },
+    8: { name: 'created_by', type: 'string' },
+  },
 };
 
 // Wire nested-message schemas (filled after SCHEMAS declaration to allow
@@ -251,6 +261,12 @@ export const RESPONSE_SCHEMAS = {
   },
   GetCapabilityReadiness: {
     1: { name: 'snapshot', type: 'msg', schema: SCHEMAS.CapabilityReadinessSnapshot },
+  },
+  SubmitArtifactFeedback: {
+    1: { name: 'feedback', type: 'msg', schema: SCHEMAS.ArtifactFeedback },
+  },
+  ListArtifactFeedback: {
+    2: { name: 'feedback', type: 'msg', repeated: true, schema: SCHEMAS.ArtifactFeedback },
   },
 };
 

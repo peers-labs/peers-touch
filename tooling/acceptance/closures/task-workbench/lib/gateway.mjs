@@ -442,6 +442,30 @@ export class Gateway {
     return this.proto('agent_task_artifact_accept', 'AcceptArtifactVersion', input);
   }
 
+  async artifactFeedbackSubmit(input) {
+    return this.proto('agent_task_artifact_feedback_submit', 'SubmitArtifactFeedback', input);
+  }
+
+  async artifactFeedbackList(artifactId) {
+    const r = await this.proto('agent_task_artifact_feedback_list', 'ListArtifactFeedback', {
+      artifact_id: artifactId,
+    });
+    return r.feedback ?? [];
+  }
+
+  // Uploads raw bytes through the SAME OSS agent-attachment admission the GUI
+  // composer uses (mime override is authoritative for the text-inline gate).
+  // Returns the canonical attachment ref ({ attachment_id, object_ref, ... }).
+  async uploadAgentAttachment({ filename, mimeType, bytes, conversationId }) {
+    const r = await this.cmd('oss_upload_agent_attachment_bytes', {
+      filename,
+      mime_type: mimeType,
+      bytes: Array.from(bytes),
+      conversation_id: conversationId,
+    });
+    return this.decode(r);
+  }
+
   async artifactAcceptances(artifactId) {
     const r = await this.proto('agent_task_artifact_acceptance_list', 'ListArtifactAcceptances', {
       artifact_id: artifactId,
