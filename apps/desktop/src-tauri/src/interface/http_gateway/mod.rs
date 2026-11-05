@@ -3275,6 +3275,59 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None,
             ))
         }
+        // Headless bridge: provider credential vault. provider_update never
+        // overwrites secrets, so credential set/status/delete are separate
+        // authenticated calls to Station.
+        "provider_set_credential" => {
+            #[derive(serde::Deserialize)]
+            struct Input {
+                id: String,
+                api_key: String,
+            }
+            let input = match parse_args::<Input>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            match app_provider::station_api::set_credential(
+                state.station.client(),
+                &token,
+                &input.id,
+                &input.api_key,
+            ) {
+                Ok(status) => to_json(AppResult::success(json!({ "status": status }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("{error:?}"),
+                    None,
+                )),
+            }
+        }
+        "provider_credential_status" => {
+            let input = match parse_args::<ProviderIdInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            match app_provider::station_api::credential_status(
+                state.station.client(),
+                &token,
+                &input.id,
+            ) {
+                Ok(status) => to_json(AppResult::success(json!({ "status": status }))),
+                Err(error) => to_json(AppResult::<serde_json::Value>::fail(
+                    ErrorCode::InternalError,
+                    format!("{error:?}"),
+                    None,
+                )),
+            }
+        }
         "provider_list_available_models" => {
             let scope = match resolve_scope(state) {
                 Ok(s) => s,
