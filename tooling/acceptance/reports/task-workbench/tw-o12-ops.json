@@ -1,10 +1,10 @@
 {
-  "ran_at": "2026-11-05T11:56:12.903Z",
+  "ran_at": "2026-11-05T14:38:41.614Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261102",
   "closure": "tw-o12-ops",
   "outcome": "O12-device-ops",
-  "source_commit": "5b542a55c1e2007cd8bbf03cc7013868aabefd8f",
+  "source_commit": "f36e38b2535fe963eea7f512f567c7f37f730534",
   "station_url": "persisted-active",
   "provider_id": "ark",
   "model_id": "ep-20260623145021-n4xdm",
@@ -14,17 +14,17 @@
     {
       "id": "G1",
       "pass": true,
-      "evidence": "session=capability_session_5223643a7b59986ca96dfbf9 device=01M6FHJ46NZ6FJWW9Z217FGV7Q lease=capability_lease_65d231bd74395d9bf9f0efb9 granted=[clipboard.read,clipboard.write,filesystem.edit,filesystem.list,filesystem.read,filesystem.write,shell.allowlist,shell.execute,skill.resource.read]"
+      "evidence": "session=capability_session_57bc7b90be3be91d2e9aad94 device=01M6FHJ46NZ6FJWW9Z217FGV7Q lease=capability_lease_a71879f828e1164b0e92727a granted=[clipboard.read,clipboard.write,filesystem.edit,filesystem.list,filesystem.read,filesystem.write,shell.allowlist,shell.execute,skill.resource.read]"
     },
     {
       "id": "G2a",
       "pass": true,
-      "evidence": "bindings=filesystem.write:policy1:rev4 filesystem.edit:policy1:rev4 filesystem.read:policy1:rev4 filesystem.list:policy1:rev4 shell.allowlist:policy1:rev4"
+      "evidence": "bindings=clipboard.read:policy1:rev1 clipboard.write:policy1:rev1 filesystem.read:policy1:rev1 filesystem.list:policy1:rev1 filesystem.write:policy1:rev1 filesystem.edit:policy1:rev1 shell.execute:policy1:rev1 shell.allowlist:policy1:rev1"
     },
     {
       "id": "G2b",
       "pass": true,
-      "evidence": "snapshot=capability-readiness-476293ee532f3e93dae72027 selected=capability_session_5223643a7b59986ca96dfbf9 ready=[filesystem.edit:1,filesystem.list:1,filesystem.read:1,filesystem.write:1,shell.allowlist:1]"
+      "evidence": "snapshot=capability-readiness-d9c4f51982f109e45af15e6b selected=capability_session_57bc7b90be3be91d2e9aad94 ready=[filesystem.edit:1,filesystem.list:1,filesystem.read:1,filesystem.write:1,shell.allowlist:1]"
     },
     {
       "id": "G3",
@@ -54,12 +54,12 @@
     {
       "id": "G8",
       "pass": true,
-      "evidence": "final=\"The first grep exited with code 1 and the second grep exited with code 0, printing \\\"STATE=green\\\".\""
+      "evidence": "final=\"The first grep exited with code 1 (no match) and the second grep exited with code 0, printing \\\"STATE=green\\\".\""
     },
     {
       "id": "G9",
       "pass": true,
-      "evidence": "artifact=art_4a7fb4e47a184acf8fecc5c5 v=artver_e5dac8e9af6143fae6533fe3 claim=true commandCheck=true (stdoutSha=295ef1baa510) accepted=true"
+      "evidence": "artifact=art_a157854069869ce17d6dafc6 v=artver_6a91a7f1cbdfa830dddc8e41 claim=true commandCheck=true (stdoutSha=315a7b745eb8) accepted=true"
     }
   ],
   "evidence": {
@@ -70,9 +70,9 @@
       "version": 1
     },
     "capability_session": {
-      "id": "capability_session_5223643a7b59986ca96dfbf9",
+      "id": "capability_session_57bc7b90be3be91d2e9aad94",
       "device_id": "01M6FHJ46NZ6FJWW9Z217FGV7Q",
-      "lease_id": "capability_lease_65d231bd74395d9bf9f0efb9",
+      "lease_id": "capability_lease_a71879f828e1164b0e92727a",
       "granted": [
         "clipboard.read",
         "clipboard.write",
@@ -86,71 +86,71 @@
       ]
     },
     "readiness": {
-      "snapshot_id": "capability-readiness-476293ee532f3e93dae72027",
+      "snapshot_id": "capability-readiness-d9c4f51982f109e45af15e6b",
       "runtime_snapshot_id": "snap-00d7961804b4dc7fca7c9cc139791319",
       "capabilities": [
         {
           "capability_id": "filesystem.edit",
           "state": 1,
-          "binding_id": "capability-binding_19b184eb1c1298e166db43ad",
-          "binding_revision": 4,
+          "binding_id": "capability-binding_b7b8a328c6bdafc4f1d7faf5",
+          "binding_revision": 1,
           "reason_code": "capability_ready"
         },
         {
           "capability_id": "filesystem.list",
           "state": 1,
-          "binding_id": "capability-binding_923ac1b9a91e89d77baac777",
-          "binding_revision": 4,
+          "binding_id": "capability-binding_dee6a0f3e7515e1662d922ef",
+          "binding_revision": 1,
           "reason_code": "capability_ready"
         },
         {
           "capability_id": "filesystem.read",
           "state": 1,
-          "binding_id": "capability-binding_33ed3c3a4635f3d2a715b65e",
-          "binding_revision": 4,
+          "binding_id": "capability-binding_cc4872102af6800bacb12aee",
+          "binding_revision": 1,
           "reason_code": "capability_ready"
         },
         {
           "capability_id": "filesystem.write",
           "state": 1,
-          "binding_id": "capability-binding_eb11918fe57e6d8a66a12267",
-          "binding_revision": 4,
+          "binding_id": "capability-binding_e2e26e4d9ee26f39e4aa4376",
+          "binding_revision": 1,
           "reason_code": "capability_ready"
         },
         {
           "capability_id": "shell.allowlist",
           "state": 1,
-          "binding_id": "capability-binding_fb02ef707c7a9bdb8f3bb37d",
-          "binding_revision": 4,
+          "binding_id": "capability-binding_fd248d64f59604a1ad06b7ed",
+          "binding_revision": 1,
           "reason_code": "capability_ready"
         }
       ]
     },
     "workspace_root": "/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/a0ab024e3dbd0fc648ca933a4653c5b4",
-    "file_name": "o12ops-9f2581.txt",
-    "turn_id": "turn_339314b56916d962537c0f81",
+    "file_name": "o12ops-ac8c8c.txt",
+    "turn_id": "turn_63ef6df7886d4b935b115aaa",
     "terminal_stage": "turn_completed",
     "governance": {
       "approvals": [
         {
-          "seq": 43,
+          "seq": 12,
           "tool": "local_file_write",
-          "approval_id": "approval_2b8291bfe9ccd5a10c3a0534"
+          "approval_id": "approval_2b61eaf8f704a417de5ab7a4"
         },
         {
-          "seq": 70,
+          "seq": 36,
           "tool": "local_shell_exec",
-          "approval_id": "approval_9dff9d4b24559d7ca527a444"
+          "approval_id": "approval_fc6eed14d8fb5096a662d8c0"
         },
         {
-          "seq": 91,
+          "seq": 57,
           "tool": "local_file_edit",
-          "approval_id": "approval_d357ffd2802feb2c5a174caf"
+          "approval_id": "approval_c93d0885ef5bdb8ddf489361"
         },
         {
-          "seq": 103,
+          "seq": 69,
           "tool": "local_shell_exec",
-          "approval_id": "approval_4a4704381b6fd4e13f11d083"
+          "approval_id": "approval_9ed92986d5d33bf0d5f850aa"
         }
       ],
       "decisions": [
@@ -197,7 +197,7 @@
         "stdout": "",
         "failure_reason": "non-zero exit code",
         "artifact_sha": null,
-        "duration_ms": 50
+        "duration_ms": 51
       },
       {
         "tool": "local_file_edit",
@@ -221,13 +221,13 @@
     "trace": {
       "status": "TURN_STATUS_COMPLETED",
       "tool_iterations": 4,
-      "trace_id": "trace_51b0d6f737257e4228e80242",
+      "trace_id": "trace_952820d0dce2842bfe49de8b",
       "provider_calls": [
         {
           "cache_hit": false,
           "credential_id": "",
           "input_tokens": 0,
-          "latency_ms": "4477",
+          "latency_ms": "2101",
           "model": "doubao-seed-2-1-pro-260628",
           "output_tokens": 0,
           "provider": "ark"
@@ -236,7 +236,7 @@
           "cache_hit": false,
           "credential_id": "",
           "input_tokens": 0,
-          "latency_ms": "3550",
+          "latency_ms": "2399",
           "model": "doubao-seed-2-1-pro-260628",
           "output_tokens": 0,
           "provider": "ark"
@@ -245,7 +245,7 @@
           "cache_hit": false,
           "credential_id": "",
           "input_tokens": 0,
-          "latency_ms": "3074",
+          "latency_ms": "2094",
           "model": "doubao-seed-2-1-pro-260628",
           "output_tokens": 0,
           "provider": "ark"
@@ -254,7 +254,7 @@
           "cache_hit": false,
           "credential_id": "",
           "input_tokens": 0,
-          "latency_ms": "2755",
+          "latency_ms": "1966",
           "model": "doubao-seed-2-1-pro-260628",
           "output_tokens": 0,
           "provider": "ark"
@@ -263,7 +263,7 @@
           "cache_hit": false,
           "credential_id": "",
           "input_tokens": 0,
-          "latency_ms": "1795",
+          "latency_ms": "1798",
           "model": "doubao-seed-2-1-pro-260628",
           "output_tokens": 0,
           "provider": "ark"
@@ -279,13 +279,13 @@
         }
       ]
     },
-    "final_assistant_text": "The first grep exited with code 1 and the second grep exited with code 0, printing \"STATE=green\".",
+    "final_assistant_text": "The first grep exited with code 1 (no match) and the second grep exited with code 0, printing \"STATE=green\".",
     "artifact": {
-      "id": "art_4a7fb4e47a184acf8fecc5c5",
-      "version_id": "artver_e5dac8e9af6143fae6533fe3",
+      "id": "art_a157854069869ce17d6dafc6",
+      "version_id": "artver_6a91a7f1cbdfa830dddc8e41",
       "sha256": "96ec516e517ec5a613a612a18c65b45356ca8337deae0bd4b637e5619ddadc76",
-      "source_tool_call_id": "tool_call_e22d7f2fe37a62a3b13088fe",
-      "command_output_sha256": "295ef1baa51077367898840d2e8c59eda93923c3e8973c656d6edbd29bfd00c2"
+      "source_tool_call_id": "tool_call_4e59b6ca5f4fb4bf4444a978",
+      "command_output_sha256": "315a7b745eb810fc76012cd35fadccc317679ae0ba25b43500b6b39b55472f48"
     }
   }
 }

@@ -421,6 +421,77 @@ export class Gateway {
     return r.binding ?? null;
   }
 
+  // Tombstones one binding revision (the Station-correct way to disable: an
+  // upsert UPDATE needs the exact current revision and grows a new revision;
+  // DELETE tombstones the row and removes the capability from snapshots).
+  async capabilityBindingDelete(bindingId, expectedRevision, reason = 'headless acceptance scope switch') {
+    const r = await this.protoBytes('agent_capability_binding_delete', 'UpsertAgentCapabilityBinding', {
+      binding_id: bindingId,
+      expected_binding_revision: expectedRevision,
+      idempotency_key: crypto.randomUUID(),
+      reason,
+    });
+    return r.binding ?? null;
+  }
+
+  // Converges to exactly ONE live binding row per capability with the wanted
+  // enabled/policy state. Station upsert forbids updating with
+  // expected_revision=0, and multiple live rows for one capability break the
+  // single-row invariant; so every existing live row is tombstoned first and
+  // a fresh rev1 row is created.
+  async convergeBinding(agentId, capabilityId, { enabled, policy = 1, agentVersion }) {
+    const rows = await this.capabilityBindings(agentId);
+    const existing = rows.filter((b) => b.capability_id === capabilityId);
+    for (const row of existing) {
+      await this.capabilityBindingDelete(row.binding_id, Number(row.revision));
+    }
+    const created = await this.capabilityBindingUpsert({
+      agent_id: agentId,
+      capability_id: capabilityId,
+      capability_version: '1',
+      enabled,
+      approval_policy: policy,
+      expected_agent_version: agentVersion,
+    });
+    return created;
+  }
+
+  // Converges the GLOBAL tool-binding scope to exactly one execution family.
+  // Station forbids mixing desktop-device and workspace-sandbox families in a
+  // single turn (mixed execution targets), and multiple live rows per
+  // capability break readiness; so a closure first tombstones every live tool
+  // binding and then creates only the wanted set.
+  static TOOL_CAPABILITY_IDS = [
+    'clipboard.read', 'clipboard.write',
+    'filesystem.read', 'filesystem.list', 'filesystem.write', 'filesystem.edit',
+    'shell.execute', 'shell.allowlist',
+    'workspace.sandbox.filesystem.read', 'workspace.sandbox.filesystem.list',
+    'workspace.sandbox.filesystem.write', 'workspace.sandbox.filesystem.edit',
+    'workspace.sandbox.shell.execute', 'workspace.sandbox.shell.allowlist',
+  ];
+
+  async convergeToolScope(agentId, enabledIds, { policy = 1, agentVersion } = {}) {
+    const wanted = new Set(enabledIds);
+    const rows = await this.capabilityBindings(agentId);
+    for (const row of rows) {
+      if (Gateway.TOOL_CAPABILITY_IDS.includes(row.capability_id)) {
+        await this.capabilityBindingDelete(row.binding_id, Number(row.revision));
+      }
+    }
+    const created = [];
+    for (const capabilityId of enabledIds) {
+      created.push(await this.capabilityBindingUpsert({
+        agent_id: agentId,
+        capability_id: capabilityId,
+        capability_version: '1',
+        enabled: true,
+        approval_policy: policy,
+        expected_agent_version: agentVersion,
+      }));
+    }
+    return created;
+  }
+
   async capabilityReadiness(agentId, { clientCapabilitySessionId, providerId, modelId } = {}) {
     const input = { agent_id: agentId };
     if (clientCapabilitySessionId) {
@@ -487,7 +558,13 @@ export class Gateway {
 
   // ── Station terminal metadata + sandbox PTY (proto) ──────────────────────
   async stationTerminalCreate(input) {
-    return this.proto('agent_terminal_session_create', 'CreateTerminalSession', input);
+    // The Rust input requires device_id to be present even though
+    // WORKSPACE_SANDBOX sessions must send it empty (Station rejects a
+    // non-empty device on sandbox rows).
+    return this.proto('agent_terminal_session_create', 'CreateTerminalSession', {
+      device_id: '',
+      ...input,
+    });
   }
 
   async stationTerminalUpdate(input) {
@@ -512,9 +589,28 @@ export class Gateway {
     });
   }
 
+  // ── WORKSPACE_SANDBOX allocation + Station-owned PTY (WE-S6) ─────────────
   async resolveActiveSandboxes() {
     const r = await this.proto('agent_sandbox_resolve_active', 'ResolveActiveSandboxes', {});
     return r.sandboxes ?? [];
+  }
+
+  async sandboxPtyWrite(sessionId, data, { b64 = false } = {}) {
+    // The Rust write input is camelCase (sessionId/dataB64).
+    const r = await this.cmd('agent_sandbox_pty_write', {
+      sessionId,
+      dataB64: b64 ? data : Buffer.from(data, 'utf8').toString('base64'),
+    });
+    return r.data;
+  }
+
+  async sandboxPtyRead(sessionId, cursor = 0, maxBytes = 65536) {
+    // The Rust read input is also camelCase.
+    return this.proto('agent_sandbox_pty_read', 'SandboxPtyRead', {
+      sessionId,
+      cursor,
+      maxBytes: maxBytes,
+    });
   }
 
   // ── Logical artifact versions (TW-D3 / O04, proto) ───────────────────────
@@ -709,11 +805,15 @@ export class Gateway {
     const frames = [];
     let terminal = null;
     let turnId = null;
+    let continuationText = '';
 
     const ingest = async (frame) => {
       frames.push(frame);
       if (frame.turnId) turnId = frame.turnId;
       const event = frame._event ?? frame.type ?? frame.stage;
+      if (event === 'text' || frame._event === 'text' || frame.type === 'text') {
+        continuationText += frame.text ?? frame.delta ?? frame.content ?? '';
+      }
       if (event === 'tool_call') {
         calls.push({
           toolCallId: frame.toolCallId,
@@ -845,11 +945,15 @@ export class Gateway {
     const terminalStage = terminal?.stage
       ?? (terminal?.type === 'error' ? 'error' : null)
       ?? (terminal?.type === 'done' ? terminal.stage : null);
+    // Final assistant text can arrive on the initial stream or on a
+    // continuation stream after the last tool result.
+    const text = `${initial.text ?? ''}${continuationText}`;
     return {
       ok: !!terminal && terminal.type !== 'error'
         && !/turn_failed|turn_interrupted/.test(String(terminalStage)),
       turnId,
       terminalStage,
+      text,
       calls,
       approvals,
       decisions,

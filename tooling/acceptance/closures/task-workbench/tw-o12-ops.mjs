@@ -98,23 +98,21 @@ try {
     granted: grantedIds,
   };
 
-  // ---- G2: converge MANUAL bindings + READY readiness --------------------
-  const existing = await gw.capabilityBindings(agent.id);
-  const bindings = [];
-  for (const capabilityId of REQUIRED_CAPS) {
-    const current = existing.find((b) => b.capability_id === capabilityId && b.enabled);
-    const binding = await gw.capabilityBindingUpsert({
-      binding_id: current?.binding_id ?? '',
-      agent_id: agent.id,
-      capability_id: capabilityId,
-      capability_version: current?.capability_version ?? '1',
-      enabled: true,
-      approval_policy: APPROVAL_MANUAL,
-      expected_agent_version: Number(agent.version),
-    }, current?.revision ?? 0);
-    bindings.push(binding);
-  }
-  const bindingsManual = bindings.every((b) => b.enabled && b.approval_policy === APPROVAL_MANUAL);
+  // ---- G2: converge DESKTOP-DEVICE scope (MANUAL) + READY readiness -------
+  // Station forbids mixing device and workspace.sandbox families in one turn;
+  // tombstone all other live tool bindings first so this turn is device-only.
+  const DEVICE_SCOPE = [
+    'clipboard.read', 'clipboard.write',
+    'filesystem.read', 'filesystem.list', 'filesystem.write', 'filesystem.edit',
+    'shell.execute', 'shell.allowlist',
+  ];
+  const bindings = await gw.convergeToolScope(agent.id, DEVICE_SCOPE, {
+    policy: APPROVAL_MANUAL,
+    agentVersion: Number(agent.version),
+  });
+  const bindingsManual = bindings
+    .filter((b) => REQUIRED_CAPS.includes(b.capability_id))
+    .every((b) => b.enabled && b.approval_policy === APPROVAL_MANUAL);
   checks.record('G2a', bindingsManual,
     `bindings=${bindings.map((b) => `${b.capability_id}:policy${b.approval_policy}:rev${b.revision}`).join(' ')}`);
 

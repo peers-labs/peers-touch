@@ -92,6 +92,8 @@ export const SCHEMAS = {
     9: { name: 'status', type: 'v' },
     10: { name: 'exit_code', type: 's32' },
     11: { name: 'output_bytes', type: 'v' },
+    12: { name: 'created_at', type: 'msg', schema: {} },
+    13: { name: 'ended_at', type: 'msg', schema: {} },
     14: { name: 'execution_target', type: 'v' },
     15: { name: 'sandbox_ref', type: 'string' },
   },
@@ -212,6 +214,13 @@ export const SCHEMAS = {
     7: { name: 'lease', type: 'v' },
     8: { name: 'tabs', type: 'msg', repeated: true, schema: null },
   },
+  ActiveSandbox: {
+    1: { name: 'sandbox_ref', type: 'string' },
+    2: { name: 'agent_id', type: 'string' },
+    3: { name: 'workspace_root', type: 'string' },
+    4: { name: 'state', type: 'string' },
+    5: { name: 'usable', type: 'bool' },
+  },
   ArtifactFeedback: {
     1: { name: 'feedback_id', type: 'string' },
     2: { name: 'artifact_id', type: 'string' },
@@ -287,6 +296,20 @@ export const RESPONSE_SCHEMAS = {
   },
   CreateBrowserSession: {
     1: { name: 'session', type: 'msg', schema: SCHEMAS.BrowserSession },
+  },
+  ResolveActiveSandboxes: {
+    1: { name: 'sandboxes', type: 'msg', repeated: true, schema: SCHEMAS.ActiveSandbox },
+  },
+  SandboxPtyWrite: {
+    1: { name: 'bytes_written', type: 'v' },
+  },
+  SandboxPtyRead: {
+    1: { name: 'data', type: 'bytes' },
+    2: { name: 'next_cursor', type: 'v' },
+    3: { name: 'truncated', type: 'bool' },
+    4: { name: 'status', type: 'v' },
+    5: { name: 'exit_code', type: 's32' },
+    6: { name: 'output_bytes', type: 'v' },
   },
   ListBrowserSessions: {
     1: { name: 'sessions', type: 'msg', repeated: true, schema: SCHEMAS.BrowserSession },
