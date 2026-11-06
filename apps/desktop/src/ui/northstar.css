@@ -74,8 +74,14 @@
 
   color: var(--pt-text);
   font-family: var(--pt-font);
+  /* Own the full viewport instead of relying on a 100% parent chain: the
+     outer antd App wrapper has no intrinsic height, so width/height:100%
+     collapsed here and white-screened the whole app. */
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Shell frame ──────────────────────────────────────────────────────────
@@ -84,7 +90,8 @@
  * the rail is the material zone and the stage is the canvas. */
 .ds-shell {
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: row;
   overflow: hidden;
