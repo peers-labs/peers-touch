@@ -1,10 +1,10 @@
 {
-  "ran_at": "2026-11-06T13:17:56.648Z",
+  "ran_at": "2026-11-06T13:29:00.645Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261106-workspace-shell-access",
   "closure": "tw-workspace-shell-access",
   "outcome": "shell-authorization-gate",
-  "source_commit": "e432450454511b57a1fd09c6fc9eee006d9094a5",
+  "source_commit": "593f819e69bcd7faeee8b421a91e8dce1f76c420",
   "station_url": "persisted-active",
   "provider_id": "ark",
   "model_id": "ep-20260623145021-n4xdm",
@@ -46,7 +46,7 @@
   "evidence": {
     "provider_id": "ark",
     "model_id": "ep-20260623145021-n4xdm",
-    "session_id": "capability_session_72c4d60d6a577e3273c465f4",
+    "session_id": "capability_session_ae06a56790e434edbeafdd62",
     "agent": {
       "id": "agent_3861ccdcc387960116aa3478",
       "version": 1
