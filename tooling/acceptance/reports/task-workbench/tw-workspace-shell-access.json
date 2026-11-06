@@ -1,0 +1,115 @@
+{
+  "ran_at": "2026-11-06T13:17:56.648Z",
+  "mode": "desktop-native-headless-gateway",
+  "plan": "TW-20261106-workspace-shell-access",
+  "closure": "tw-workspace-shell-access",
+  "outcome": "shell-authorization-gate",
+  "source_commit": "e432450454511b57a1fd09c6fc9eee006d9094a5",
+  "station_url": "persisted-active",
+  "provider_id": "ark",
+  "model_id": "ep-20260623145021-n4xdm",
+  "strong_model": true,
+  "pass": 6,
+  "fail": 0,
+  "results": [
+    {
+      "id": "S1-readiness",
+      "pass": true,
+      "evidence": "ready=filesystem.edit,filesystem.list,filesystem.read,filesystem.write,shell.allowlist,shell.execute"
+    },
+    {
+      "id": "S1-standard-denies-pwd",
+      "pass": true,
+      "evidence": "stage=tool_batch_blocked sqlDenied=true"
+    },
+    {
+      "id": "S2-grant-full",
+      "pass": true,
+      "evidence": "shellAccess=full"
+    },
+    {
+      "id": "S2-full-allows-pwd",
+      "pass": true,
+      "evidence": "stage=turn_completed ok=true"
+    },
+    {
+      "id": "S2-full-allows-git-commit",
+      "pass": true,
+      "evidence": "stage=turn_completed committed=true"
+    },
+    {
+      "id": "S3-restore-relocks",
+      "pass": true,
+      "evidence": "stage=tool_batch_blocked sqlDenied=true"
+    }
+  ],
+  "evidence": {
+    "provider_id": "ark",
+    "model_id": "ep-20260623145021-n4xdm",
+    "session_id": "capability_session_72c4d60d6a577e3273c465f4",
+    "agent": {
+      "id": "agent_3861ccdcc387960116aa3478",
+      "version": 1
+    },
+    "s1": {
+      "attempts": [
+        {
+          "i": 1,
+          "stage": "turn_completed",
+          "hit": false,
+          "calls": [
+            "local_shell_safe"
+          ]
+        },
+        {
+          "i": 2,
+          "stage": "tool_batch_blocked",
+          "hit": true,
+          "calls": [
+            "local_shell_exec"
+          ]
+        }
+      ],
+      "errors": "CLIENT_CAPABILITY_COMMAND_NOT_ALLOWED"
+    },
+    "s2": {
+      "pwd": true,
+      "git_commit": true,
+      "s2a_attempts": [
+        {
+          "i": 1,
+          "stage": "turn_completed",
+          "hit": true,
+          "calls": [
+            "local_shell_exec"
+          ]
+        }
+      ],
+      "s2b_attempts": [
+        {
+          "i": 1,
+          "stage": "turn_completed",
+          "hit": true,
+          "calls": [
+            "local_shell_exec",
+            "local_shell_exec",
+            "local_shell_exec"
+          ]
+        }
+      ]
+    },
+    "s3": {
+      "attempts": [
+        {
+          "i": 1,
+          "stage": "tool_batch_blocked",
+          "hit": true,
+          "calls": [
+            "local_shell_exec"
+          ]
+        }
+      ],
+      "errors": "CLIENT_CAPABILITY_COMMAND_NOT_ALLOWED"
+    }
+  }
+}

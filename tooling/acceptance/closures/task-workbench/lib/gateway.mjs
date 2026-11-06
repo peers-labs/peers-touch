@@ -408,6 +408,12 @@ export class Gateway {
     return r.data;
   }
 
+  // Machine-local shell authorization for the live session.
+  async workspaceSetShellAccess(fullAccess) {
+    const r = await this.cmd('agent_workspace_set_shell_access', { fullAccess });
+    return r.data;
+  }
+
   // ── Actor-device engine bootstrap (headless onboarding) ─────────────────
   // Password gateway login binds only the Station JWT. The GUI post-login
   // flow additionally activates the actor-device messaging engine; headless
