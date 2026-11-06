@@ -8,6 +8,7 @@ import {
   FolderSymlink,
   Loader2,
   RotateCcw,
+  ShieldAlert,
   X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -17,13 +18,33 @@ import {
   type AgentWorkspaceChoice,
   type AgentWorkspaceState,
 } from '../../services/desktop_api';
+import {
+  CapabilityApprovalPolicy,
+  type AgentCapabilityBinding,
+} from '../../gen/proto/domain/agent/capability_pb';
+import { useAgentCapabilityStore } from '../../store/agentCapabilities';
 import { log } from '../../utils/logger';
 
-// One capability session has one active working directory. The selector is
-// the per-session authorization surface: picking a local project re-declares
-// workspace grants for the live capability session only; stopping the
-// session (app restart / logout) returns the worker to the private sandbox.
-export function WorkspaceSelector() {
+// Local capabilities that run inside the granted workspace and whose
+// approval policy Full Access relaxes (Station AUTO = no per-call prompt).
+const LOCAL_TOOL_CAPABILITIES = [
+  'filesystem.read',
+  'filesystem.list',
+  'filesystem.write',
+  'filesystem.edit',
+  'shell.execute',
+  'shell.allowlist',
+] as const;
+
+export interface WorkspaceSelectorProps {
+  agentId?: string;
+  agentVersion?: number;
+}
+
+// One capability session has one active working directory and one
+// machine-local shell authorization. Both are per-session grants the user
+// sets explicitly; neither Station nor the model can raise them.
+export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorProps) {
   const { t } = useTranslation(['chat', 'common']);
   const { token } = theme.useToken();
   const [state, setState] = useState<AgentWorkspaceState | null>(null);
@@ -32,12 +53,16 @@ export function WorkspaceSelector() {
   const [worktreeBase, setWorktreeBase] = useState<AgentWorkspaceChoice | null>(null);
   const [worktreeName, setWorktreeName] = useState('');
 
+  const manifests = useAgentCapabilityStore((s) => s.manifests);
+  const upsertBinding = useAgentCapabilityStore((s) => s.upsertBinding);
+  const bindings = useAgentCapabilityStore((s) =>
+    agentId ? s.bindingsByAgentId[agentId] ?? [] : [],
+  );
+
   const refresh = useCallback(async () => {
     try {
       setState(await api.agentWorkspaceList());
     } catch (error) {
-      // The capability surface is unavailable before identity/engine
-      // activation; the selector simply renders the default state.
       log.warn('workspace', 'load workspace state failed', { error: String(error) });
     }
   }, []);
@@ -70,6 +95,61 @@ export function WorkspaceSelector() {
     void run(api.agentWorkspaceActivate(locator)).then(() => setOpen(false));
   }, [run]);
 
+  // Converge the local tool capabilities' approval policy so Full Access is
+  // hands-free (AUTO) and Standard returns to per-call confirmation (MANUAL).
+  const convergeToolApprovals = useCallback(async (fullAccess: boolean) => {
+    if (!agentId || !agentVersion) return;
+    const policy = fullAccess
+      ? CapabilityApprovalPolicy.AUTO
+      : CapabilityApprovalPolicy.MANUAL;
+    await Promise.all(
+      LOCAL_TOOL_CAPABILITIES.map(async (capabilityId) => {
+        const manifest = manifests.find((m) => m.capabilityId === capabilityId);
+        const binding: AgentCapabilityBinding | undefined = bindings.find(
+          (b) => b.capabilityId === capabilityId,
+        );
+        if (!manifest || !binding || !binding.enabled) return;
+        if (binding.approvalPolicy === policy) return;
+        await upsertBinding({
+          bindingId: binding.bindingId,
+          agentId,
+          capabilityId,
+          capabilityVersion: manifest.version,
+          enabled: true,
+          approvalPolicy: policy,
+          expectedAgentVersion: agentVersion,
+          expectedBindingRevision: binding.revision,
+          idempotencyKey: crypto.randomUUID(),
+        });
+      }),
+    );
+  }, [agentId, agentVersion, bindings, manifests, upsertBinding]);
+
+  const setFullAccess = useCallback(async (fullAccess: boolean) => {
+    const next = await run(api.agentWorkspaceSetShellAccess(fullAccess));
+    if (!next) return;
+    try {
+      await convergeToolApprovals(fullAccess);
+    } catch (error) {
+      // Device grant already applied; a binding-convergence failure only
+      // means approvals stay manual. Surface it but do not roll the shell.
+      toast.error(t('chat.input.workspace.approvalConvergeFailed'));
+      log.warn('workspace', 'tool approval converge failed', { error: String(error) });
+    }
+    void refresh();
+  }, [convergeToolApprovals, refresh, run, t]);
+
+  const requestFullAccess = useCallback(() => {
+    Modal.confirm({
+      title: t('chat.input.workspace.fullAccessConfirmTitle'),
+      content: t('chat.input.workspace.fullAccessConfirmBody'),
+      okText: t('chat.input.workspace.fullAccessConfirmOk'),
+      okButtonProps: { danger: true },
+      cancelText: t('common.action.cancel'),
+      onOk: () => setFullAccess(true),
+    });
+  }, [setFullAccess, t]);
+
   const pickFolder = useCallback(async () => {
     let folder: string;
     try {
@@ -86,16 +166,7 @@ export function WorkspaceSelector() {
     void run(api.agentWorkspaceRemove(choice.locator));
   }, [run]);
 
-  const submitWorktree = useCallback(() => {
-    const base = worktreeBase;
-    const name = worktreeName.trim();
-    setWorktreeBase(null);
-    setWorktreeName('');
-    if (!base || !name) return;
-    void run(api.agentWorkspaceCreateWorktree(base.locator, name)).then((next) => {
-      if (next?.currentRoot) setOpen(false);
-    });
-  }, [run, worktreeBase, worktreeName]);
+  const fullAccess = state?.shellAccess === 'full';
 
   const currentLabel = useMemo(() => {
     if (!state?.currentRoot) return t('chat.input.workspace.sandbox');
@@ -117,6 +188,36 @@ export function WorkspaceSelector() {
         onClick: () => activate(null),
       },
       { type: 'divider' },
+      {
+        key: 'access-header',
+        type: 'group' as const,
+        label: t('chat.input.workspace.accessGroup'),
+        children: [
+          {
+            key: 'access-standard',
+            icon: <FolderOpen size={14} />,
+            label: (
+              <Flexbox horizontal align="center" justify="space-between" gap={8}>
+                <span>{t('chat.input.workspace.accessStandard')}</span>
+                {!fullAccess && <Tag color="success">{t('chat.input.workspace.active')}</Tag>}
+              </Flexbox>
+            ),
+            onClick: () => { if (fullAccess) void setFullAccess(false); },
+          },
+          {
+            key: 'access-full',
+            icon: <ShieldAlert size={14} />,
+            danger: true,
+            label: (
+              <Flexbox horizontal align="center" justify="space-between" gap={8}>
+                <span>{t('chat.input.workspace.accessFull')}</span>
+                {fullAccess && <Tag color="error">{t('chat.input.workspace.active')}</Tag>}
+              </Flexbox>
+            ),
+            onClick: () => { if (!fullAccess) requestFullAccess(); },
+          },
+        ],
+      },
       {
         key: 'choose',
         icon: <FolderSymlink size={14} />,
@@ -202,7 +303,7 @@ export function WorkspaceSelector() {
       );
     }
     return items;
-  }, [activate, pickFolder, removeChoice, state, t, token]);
+  }, [activate, fullAccess, pickFolder, removeChoice, requestFullAccess, setFullAccess, state, t, token]);
 
   return (
     <>
@@ -227,9 +328,9 @@ export function WorkspaceSelector() {
           title={state?.currentRoot ?? t('chat.input.workspace.title')}
           style={{
             height: 28,
-            border: `1px solid ${state?.currentRoot ? token.colorPrimary : '#ececec'}`,
-            background: state?.currentRoot ? token.colorPrimaryBg : '#ffffff',
-            color: state?.currentRoot ? token.colorPrimary : token.colorTextSecondary,
+            border: `1px solid ${state?.currentRoot || fullAccess ? token.colorPrimary : '#ececec'}`,
+            background: state?.currentRoot || fullAccess ? token.colorPrimaryBg : '#ffffff',
+            color: state?.currentRoot || fullAccess ? token.colorPrimary : token.colorTextSecondary,
             display: 'inline-flex',
             alignItems: 'center',
             gap: 4,
@@ -252,6 +353,14 @@ export function WorkspaceSelector() {
           >
             {currentLabel}
           </span>
+          {fullAccess && (
+            <ShieldAlert
+              size={12}
+              color={token.colorError}
+              style={{ flexShrink: 0 }}
+              aria-label={t('chat.input.workspace.accessFull')}
+            />
+          )}
         </button>
       </Dropdown>
       <Modal
@@ -259,7 +368,16 @@ export function WorkspaceSelector() {
         title={t('chat.input.workspace.createWorktree')}
         okText={t('chat.input.workspace.createWorktreeConfirm')}
         cancelText={t('common.action.cancel')}
-        onOk={submitWorktree}
+        onOk={() => {
+          const base = worktreeBase;
+          const name = worktreeName.trim();
+          setWorktreeBase(null);
+          setWorktreeName('');
+          if (!base || !name) return;
+          void run(api.agentWorkspaceCreateWorktree(base.locator, name)).then((next) => {
+            if (next?.currentRoot) setOpen(false);
+          });
+        }}
         onCancel={() => {
           setWorktreeBase(null);
           setWorktreeName('');
@@ -279,7 +397,15 @@ export function WorkspaceSelector() {
             placeholder={t('chat.input.workspace.worktreeNamePlaceholder')}
             maxLength={64}
             onChange={(event) => setWorktreeName(event.target.value)}
-            onPressEnter={submitWorktree}
+            onPressEnter={() => {
+              const base = worktreeBase;
+              const name = worktreeName.trim();
+              setWorktreeBase(null);
+              setWorktreeName('');
+              if (base && name) {
+                void run(api.agentWorkspaceCreateWorktree(base.locator, name));
+              }
+            }}
           />
           <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
             {t('chat.input.workspace.sessionScope')}

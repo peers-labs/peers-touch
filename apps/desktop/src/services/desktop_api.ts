@@ -4027,6 +4027,8 @@ export interface AgentWorkspaceState {
   // Canonical root granted to the live capability session; null = private
   // sandbox default.
   currentRoot: string | null;
+  // Machine-local shell authorization: "standard" (allowlist) | "full".
+  shellAccess: 'standard' | 'full';
   choices: AgentWorkspaceChoice[];
 }
 
@@ -7146,6 +7148,14 @@ export const api = {
     invokeRustData<{ locator: string | null }, AgentWorkspaceState>(
       'agent_workspace_activate',
       { locator },
+    ),
+
+  // full=true grants Full Access shell (arbitrary commands in the granted
+  // workspace) for this session; false restores the standard allowlist.
+  agentWorkspaceSetShellAccess: (fullAccess: boolean) =>
+    invokeRustData<{ fullAccess: boolean }, AgentWorkspaceState>(
+      'agent_workspace_set_shell_access',
+      { fullAccess },
     ),
 
   listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>

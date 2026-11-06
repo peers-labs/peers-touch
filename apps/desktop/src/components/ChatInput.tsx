@@ -935,7 +935,10 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
               boxShadow: COMPOSER_COLORS.toolButtonShadow,
             }}
           />
-          <WorkspaceSelector />
+          <WorkspaceSelector
+            agentId={selectedAgentData?.id}
+            agentVersion={selectedAgentData?.version}
+          />
         </Flexbox>
 
         <div style={{ flex: 1, minWidth: 8 }} />
