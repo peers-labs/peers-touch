@@ -130,44 +130,57 @@ done
 # Whitelist = meta key + the Class B keys; everything else remote is preserved.
 whitelist=("PEERS_REQUIRED_SECRET_KEYS" "${ship_keys[@]}")
 
-# Remote updater, fed the new KEY=VALUE body over SSH stdin. The whitelist of
-# key NAMES is passed as positional args (names are not secret), so no SendEnv
-# server support is needed. It preserves every existing line whose KEY= is not
-# in the whitelist, appends the new whitelisted values, and swaps the file
-# atomically at 0600.
+# Remote updater is passed as the ssh COMMAND (argv contains only logic, the
+# target PATH and whitelist key NAMES — never values). The new KEY=VALUE body
+# is base64-encoded and sent on STDIN ONLY, so there is no script/body stream
+# mixing. The remote side decodes stdin, preserves every existing line whose
+# KEY= is not whitelisted, appends the new values, and atomically replaces the
+# target at 0600. Its stdout prints ONLY a constant confirmation (no values).
 read -r -d '' REMOTE_UPDATER <<'REMOTE' || true
 set -eu
 target="$1"; shift
-keys_file="$(mktemp)"
-tmp_file="$(mktemp "$(dirname "$target")/.env.XXXXXX")"
-cleanup() { rm -f "$keys_file" "$tmp_file"; }
-trap cleanup EXIT
-for k in "$@"; do printf '%s\n' "$k"; done > "$keys_file"
-mkdir -p "$(dirname "$target")"
+# Expand a leading literal $HOME/~ on the REMOTE host. The deploy definition
+# stores this quoted ('$HOME/...') so local `source` does not expand it to the
+# operator machine's home; expansion must happen here, on the target.
+case "$target" in
+  '$HOME'*) target="$HOME${target#'$HOME'}" ;;
+  '~'*)    target="$HOME${target#'~'}" ;;
+esac
 umask 077
+dir="$(dirname "$target")"; mkdir -p "$dir"
+body="$(mktemp "$dir/.secbody.XXXXXX")"
+new="$(mktemp "$dir/.env.XXXXXX")"
+cleanup() { rm -f "$body" "$new"; }
+trap cleanup EXIT
+base64 -d > "$body"
+: > "$new"
 if [ -f "$target" ]; then
   while IFS= read -r old; do
     keep=1
-    while IFS= read -r kk; do
-      [ -z "$kk" ] && continue
-      case "$old" in "$kk="*) keep=0 ;; esac
-    done < "$keys_file"
+    for k in "$@"; do
+      case "$old" in "$k="*) keep=0 ;; esac
+    done
     [ "$keep" = 1 ] && printf '%s\n' "$old"
-  done < "$target"
+  done < "$target" > "$new"
 fi
-cat
+cat "$body" >> "$new"
+chmod 600 "$new"
+mv "$new" "$target"
+echo reconciled
 REMOTE
 
 log "shipping over SSH stdin -> $remote_file"
-# Whitelist key NAMES go as args; VALUES stay on stdin and never enter argv.
-# Remote `bash -s` reads the updater, then its trailing `cat` consumes the body.
+# Whitelist key NAMES go as args; VALUES travel base64 on stdin and never enter
+# argv. Remote stdout is the constant "reconciled"; no secret is printed.
 ssh_args=()
 for key in "${whitelist[@]}"; do ssh_args+=("$(printf '%q' "$key")"); done
-{ printf '%s\n' "$REMOTE_UPDATER"; cat "$body_file"; } | ssh \
+remote_out="$(base64 < "$body_file" | ssh \
   -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 \
   -o StrictHostKeyChecking=yes \
   "${PT_DEPLOY_USER}@${PT_DEPLOY_HOST}" \
-  "bash -s \"$remote_file\" ${ssh_args[*]}" \
+  "bash -c $(printf '%q' "$REMOTE_UPDATER") _ $(printf '%q' "$remote_file") ${ssh_args[*]}")" \
   || blocked SECRET_SHIP_FAILED "remote reconcile failed on $PT_DEPLOY_HOST"
+[[ "$remote_out" == "reconciled" ]] \
+  || blocked SECRET_SHIP_FAILED "unexpected remote reconcile response"
 
 log "reconcile complete: $remote_file (0600)"
