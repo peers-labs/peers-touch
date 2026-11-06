@@ -2,6 +2,8 @@
 
 状态：interaction contract accepted（Owner 2026-11-02 确认）。原型内全部执行为模拟（fixture/simulation/localStorage），是交互合同证据，不构成生产实现或运行证据。
 
+> peers-ui 重构参照（drafting，2026-11-06）：新能力（模型工具审批、能力 readiness、版本终态、人工接管）在 `@peers-touch/ui` 原语上的重构原型见 [peers-ui-refactor.md](./peers-ui-refactor.md)，入口同为 `?site=desktop&state=task-workbench`（当前分支构建）。
+
 ## 打开与评审
 
 地址：<http://10.37.246.80:3201/?site=desktop&state=task-workbench>。点击“全屏预览”。
