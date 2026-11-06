@@ -1,12 +1,9 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Button, Input, Spin, Typography } from 'antd';
-import { KeyRound, LogOut, RefreshCw } from 'lucide-react';
+import { Alert, Button, Icon, TextArea } from '@peers-touch/ui';
 
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { useMessagingRecoveryStore } from '../../store/messagingRecovery';
-
-const { Text, Title, Paragraph } = Typography;
 
 /**
  * Blocks the messaging-dependent chat surface when the local actor identity
@@ -73,123 +70,84 @@ export function MessagingRecoveryGate() {
 
   return (
     <div
+      className="sc-recovery"
       data-chat-recovery-gate="true"
       data-chat-recovery-backup={exists ? 'true' : 'false'}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        background: 'rgba(255, 255, 255, 0.92)',
-        backdropFilter: 'blur(2px)',
-      }}
     >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 460,
-          padding: '28px 28px 24px',
-          borderRadius: 16,
-          border: '1px solid rgba(0,0,0,0.08)',
-          background: '#fff',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.10)',
-        }}
-      >
-        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 12 }}>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 12,
-              background: '#fff2e8',
-              color: '#fa8c16',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flex: '0 0 auto',
-            }}
-          >
-            <KeyRound size={20} />
-          </div>
+      <div className="sc-recovery__card">
+        <div className="sc-recovery__head">
+          <span className="sc-recovery__glyph">
+            <Icon iconId="key-round" size={20} />
+          </span>
           <div>
-            <Title level={5} style={{ margin: 0 }}>
-              {t('chat.social.recovery.title')}
-            </Title>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              {t('chat.social.recovery.subtitle')}
-            </Text>
+            <h3 className="sc-recovery__title">{t('chat.social.recovery.title')}</h3>
+            <div className="sc-recovery__subtitle">{t('chat.social.recovery.subtitle')}</div>
           </div>
         </div>
 
-        <Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 16 }}>
+        <p className="sc-recovery__desc">
           {exists
             ? t('chat.social.recovery.backupAvailableDescription')
             : t('chat.social.recovery.noBackupDescription')}
-        </Paragraph>
+        </p>
 
         {errorMessage && (
           <Alert
+            className="sc-recovery__error"
             data-chat-recovery-error="true"
-            type="error"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={errorMessage}
+            tone="danger"
+            title={errorMessage}
           />
         )}
 
         {exists && (
           <>
-            <Input.TextArea
+            <TextArea
+              className="sc-recovery__phrase"
               data-chat-recovery-phrase="true"
               value={phrase}
               onChange={(event) => setPhrase(event.target.value)}
               placeholder={t('chat.social.recovery.phrasePlaceholder')}
-              autoSize={{ minRows: 3, maxRows: 5 }}
+              rows={3}
+              minimumRows={3}
               disabled={restoring}
-              style={{ marginBottom: 12 }}
             />
             <Button
+              actionId="chat.recovery.restore"
               data-chat-recovery-restore="true"
-              type="primary"
-              block
-              disabled={restoring || !phrase.trim()}
-              onClick={handleRestore}
-              icon={restoring ? <Spin size="small" /> : <KeyRound size={16} />}
+              emphasis="primary"
+              fullWidth
+              availability={restoring || !phrase.trim() ? { kind: 'disabled', reason: '' } : undefined}
+              execution={restoring ? 'pending' : 'idle'}
+              leading={restoring ? undefined : <Icon iconId="key-round" size={16} />}
+              onActivate={handleRestore}
             >
-              {restoring
-                ? t('chat.social.recovery.restoring')
-                : t('chat.social.recovery.restore')}
+              {restoring ? t('chat.social.recovery.restoring') : t('chat.social.recovery.restore')}
             </Button>
           </>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14, gap: 8 }}>
+        <div className="sc-recovery__footer">
           <Button
+            actionId="chat.recovery.retry"
             data-chat-recovery-retry="true"
-            type="text"
-            size="small"
-            icon={
-              <RefreshCw
-                size={14}
-                style={loading ? { animation: 'spin 1s linear infinite' } : undefined}
-              />
-            }
-            onClick={handleRetry}
-            disabled={restoring}
+            emphasis="quiet"
+            density="compact"
+            availability={restoring ? { kind: 'disabled', reason: '' } : undefined}
+            leading={<Icon iconId="refresh-cw" size={14} className={loading ? 'sc-recovery__spinning' : undefined} />}
+            onActivate={handleRetry}
           >
             {t('chat.social.recovery.retry')}
           </Button>
           <Button
+            actionId="chat.recovery.signout"
             data-chat-recovery-signout="true"
-            type="text"
-            size="small"
-            danger
-            icon={<LogOut size={14} />}
-            onClick={handleSignOut}
-            disabled={restoring}
+            emphasis="quiet"
+            tone="danger"
+            density="compact"
+            availability={restoring ? { kind: 'disabled', reason: '' } : undefined}
+            leading={<Icon iconId="log-out" size={14} />}
+            onActivate={handleSignOut}
           >
             {t('chat.social.recovery.signOut')}
           </Button>
