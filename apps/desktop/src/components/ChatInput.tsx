@@ -50,6 +50,7 @@ import { ProviderIcon } from './settings/ProviderIcon';
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
 import { SendControl } from './composer/SendControl';
+import { WorkspaceSelector } from './composer/WorkspaceSelector';
 import { log } from '../utils/logger';
 import type { AgentCapabilityBinding } from '../gen/proto/domain/agent/capability_pb';
 import { AgentCommandPalette } from './agent/AgentCommandPalette';
@@ -934,6 +935,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
               boxShadow: COMPOSER_COLORS.toolButtonShadow,
             }}
           />
+          <WorkspaceSelector />
         </Flexbox>
 
         <div style={{ flex: 1, minWidth: 8 }} />

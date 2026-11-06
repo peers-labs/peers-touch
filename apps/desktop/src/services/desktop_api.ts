@@ -4014,6 +4014,22 @@ export interface AgentCapabilitySessionList {
   }>;
 }
 
+export interface AgentWorkspaceChoice {
+  locator: string;
+  label: string;
+  isGit: boolean;
+  worktreeBase: string | null;
+  createdAtMs: number;
+  lastUsedMs: number;
+}
+
+export interface AgentWorkspaceState {
+  // Canonical root granted to the live capability session; null = private
+  // sandbox default.
+  currentRoot: string | null;
+  choices: AgentWorkspaceChoice[];
+}
+
 export interface AgentConversation {
   conversation_id: string;
   agent_id: string;
@@ -7098,6 +7114,38 @@ export const api = {
     invokeRustDataFromStatus<Record<string, never>, { available: boolean; state: string }>(
       'agent_client_executor_supervisor_stop',
       {},
+    ),
+
+  // ── Agent working directory selection (per-session authorization) ──────
+  agentWorkspaceList: () =>
+    invokeRustData<Record<string, never>, AgentWorkspaceState>(
+      'agent_workspace_list',
+      {},
+    ),
+
+  agentWorkspaceAddDirectory: (path: string) =>
+    invokeRustData<{ path: string }, AgentWorkspaceState>(
+      'agent_workspace_add_directory',
+      { path },
+    ),
+
+  agentWorkspaceCreateWorktree: (base: string, name: string) =>
+    invokeRustData<{ base: string; name: string }, AgentWorkspaceState>(
+      'agent_workspace_create_worktree',
+      { base, name },
+    ),
+
+  agentWorkspaceRemove: (locator: string) =>
+    invokeRustData<{ locator: string }, AgentWorkspaceState>(
+      'agent_workspace_remove',
+      { locator },
+    ),
+
+  // locator null restores the private sandbox root.
+  agentWorkspaceActivate: (locator: string | null) =>
+    invokeRustData<{ locator: string | null }, AgentWorkspaceState>(
+      'agent_workspace_activate',
+      { locator },
     ),
 
   listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
