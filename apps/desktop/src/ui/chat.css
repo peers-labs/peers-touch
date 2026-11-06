@@ -113,3 +113,128 @@
 .sc-recovery__footer { display: flex; justify-content: space-between; margin-top: 14px; gap: 8px; }
 .sc-recovery__spinning { animation: sc-spin 0.9s linear infinite; }
 @keyframes sc-spin { to { transform: rotate(360deg); } }
+
+/* ── Conversation session list ──────────────────────────────────────────── */
+.sc-sessions {
+  width: clamp(180px, 28vw, 280px);
+  min-width: 180px;
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--pt-border);
+  background: var(--pt-surface);
+  position: relative;
+}
+.sc-sessions__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+.sc-sessions__search { flex: 1; min-width: 0; }
+.sc-sessions__new {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+.sc-sessions__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sc-sessions__empty { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+/* A ContextMenu wrapper becomes each row's flex item. */
+.sc-sessions .pt-context-menu { display: block; width: 100%; }
+.sc-session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  height: 64px;
+  min-height: 64px;
+  padding: 10px 12px;
+  overflow: hidden;
+  border-radius: var(--pt-radius-md);
+  cursor: pointer;
+  background: transparent;
+  transition: background 0.15s;
+}
+.sc-session-row:hover { background: rgba(23, 26, 28, 0.04); }
+.sc-session-row.is-active { background: var(--pt-accentSubtle); }
+.sc-session-row__body { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+.sc-session-row__line { display: flex; align-items: center; gap: 6px; height: 20px; min-width: 0; }
+.sc-session-row__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pt-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-session-row__name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-session-row__time { font-size: 11px; color: var(--pt-muted); flex-shrink: 0; }
+.sc-session-row__sub {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  min-width: 0;
+}
+.sc-session-row__preview {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--pt-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-session-row__unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 28px;
+  min-width: 28px;
+  height: 20px;
+  margin-left: 8px;
+}
+.sc-session-row__group-glyph { color: var(--pt-secondary); flex-shrink: 0; display: inline-flex; }
+.sc-session-row__pin { color: var(--pt-accent); flex-shrink: 0; display: inline-flex; }
+.sc-session-row__muted { color: var(--pt-muted); flex-shrink: 0; display: inline-flex; }
+
+/* Inline list error (compact) */
+.sc-list-error {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 0 12px;
+  min-height: 32px;
+}
+.sc-list-error--block {
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 16px;
+  margin-top: 0;
+}
+.sc-list-error__glyph { flex-shrink: 0; display: inline-flex; }
+.sc-list-error__text { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--pt-secondary); }
+.sc-list-error--block .sc-list-error__text { flex: none; font-weight: 600; color: var(--pt-text); }
+
