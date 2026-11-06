@@ -43,6 +43,22 @@ try {
   const agentId = agents?.agents?.[0]?.id;
   if (!agentId) throw new Error('no agent available');
 
+  // Deterministic runtime: the local Ollama runtime runs no tools, so bring
+  // up the device capability engine and converge the agent to empty tool
+  // scope (plain chat), matching the real Desktop with the session selected.
+  await gw.deviceEngineActivate();
+  await gw.executorSupervisorStart();
+  let sessions = [];
+  for (let i = 0; i < 20 && sessions.length === 0; i += 1) {
+    await new Promise((r) => setTimeout(r, 1000));
+    sessions = await gw.capabilitySessions();
+  }
+  const capabilitySessionId = sessions[0]?.session_id;
+  if (!capabilitySessionId) throw new Error('no capability session after engine activation');
+  evidence.capability_session_id = capabilitySessionId;
+  const agentVersion = Number(agents?.agents?.[0]?.version ?? 0);
+  await gw.convergeToolScope(agentId, [], { policy: 1, agentVersion });
+
   const run = crypto.randomUUID().slice(0, 8);
   const conversation = await gw.conversationCreate(agentId, {
     providerId, modelName: modelId, title: `O03 replay ${run}`,
@@ -58,6 +74,7 @@ try {
       attachments: [], stream: true, effort: 'medium',
       context_window_size: 8192, max_retries: 0,
       provider: providerId, model: modelId,
+      client_capability_session_id: capabilitySessionId,
     });
     if (!r.ok || r.done?.stage !== 'turn_completed') {
       throw new Error(`setup turn failed: ${r.error ?? r.done?.stage}`);

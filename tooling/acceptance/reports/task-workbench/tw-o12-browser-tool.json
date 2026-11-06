@@ -1,10 +1,10 @@
 {
-  "ran_at": "2026-11-06T00:43:14.627Z",
+  "ran_at": "2026-11-06T01:18:05.309Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261102",
   "closure": "tw-o12-browser-tool",
   "outcome": "O12-browser-model-tool",
-  "source_commit": "aee0a9925",
+  "source_commit": "4dfcdc7b7",
   "station_url": "persisted-active",
   "provider_id": "ark",
   "model_id": "ep-20260623145021-n4xdm",
@@ -35,7 +35,7 @@
     {
       "id": "C5",
       "pass": true,
-      "evidence": "model-observed FAIL then PASS via browser tools (navigate+snapshot), not harness reads"
+      "evidence": "model observed via browser tools only: FAIL before edit=true, PASS after edit=true"
     },
     {
       "id": "C6",
@@ -106,16 +106,16 @@
       }
     ],
     "workspace_root": "/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/a0ab024e3dbd0fc648ca933a4653c5b4",
-    "page": "brw-618f24.html",
-    "url": "http://127.0.0.1:19464/brw-618f24.html",
-    "conversation_id": "conv_987b5e1ce2b22feae8489d36",
+    "page": "brw-3329bd.html",
+    "url": "http://127.0.0.1:19642/brw-3329bd.html",
+    "conversation_id": "conv_c0127a157cff74720bcb4c71",
     "tool_calls": [
       "browser_navigate",
       "local_file_edit",
       "browser_navigate"
     ],
-    "model_browser_session_id": "brows-01M6Q4V09FF6SNBK1WZB5GA8YK",
-    "held_conversation_id": "conv_149aae257b4ba68932b666ad",
-    "held_turn_id": "turn_92d4fdef2c7e7bdd07cff270"
+    "model_browser_session_id": "brows-01M6Q6WTHEK88CFECHE3QZWWQF",
+    "held_conversation_id": "conv_27a9ed96003fdb9eab4126ed",
+    "held_turn_id": "turn_3701fa9ee318c7ccb446b2ca"
   }
 }

@@ -1,15 +1,15 @@
 {
-  "ran_at": "2026-11-05T08:03:00.639Z",
+  "ran_at": "2026-11-06T01:55:53.090Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261102",
   "closure": "tw-o08-memory-recall",
   "outcome": "O08",
-  "source_commit": "e6a8d32970871703dd6cef331146489508db2769",
+  "source_commit": "4dfcdc7b7",
   "station_url": "persisted-active",
   "provider_id": "ark",
   "model_id": "ep-20260623145021-n4xdm",
   "strong_model": true,
-  "pass": 6,
+  "pass": 7,
   "fail": 0,
   "results": [
     {
@@ -20,7 +20,7 @@
     {
       "id": "M1",
       "pass": true,
-      "evidence": "candidate memoryId=mem_5e8e539024afea6a9e5e1219 status=candidate agentScoped=true"
+      "evidence": "candidate memoryId=mem_ae19d341c8da359540f59c9e status=candidate agentScoped=true"
     },
     {
       "id": "M2",
@@ -35,24 +35,33 @@
     {
       "id": "M4",
       "pass": true,
-      "evidence": "new task recall completed=true answer=\"ZEPHYR-D6DDAAA3\""
+      "evidence": "new task recall completed=true answer=\"ZEPHYR-EDD1B367\""
     },
     {
       "id": "M4b",
       "pass": true,
       "evidence": "marker absent from task2 own user history=true; recall therefore via injected memory"
+    },
+    {
+      "id": "M5",
+      "pass": true,
+      "evidence": "confirmed ZEPHYR residue after self-clean=0"
     }
   ],
   "evidence": {
-    "marker": "ZEPHYR-D6DDAAA3",
+    "capability_session_id": "capability_session_3c87247a29f140dd46191231",
+    "residue_rejected": 1,
+    "marker": "ZEPHYR-EDD1B367",
     "candidate": {
-      "id": "mem_5e8e539024afea6a9e5e1219",
+      "id": "mem_ae19d341c8da359540f59c9e",
       "status": "candidate",
-      "sourceTurnId": "turn_cb496f32afaaa9ab3a65a9a9"
+      "sourceTurnId": "turn_f20d1b1db1c5bcb9489436db"
     },
     "recall": {
-      "conversation_id": "conv_19088449a7d78e1625d21ca1",
-      "answer": "ZEPHYR-D6DDAAA3"
-    }
+      "conversation_id": "conv_648e9214c0898827be214f39",
+      "answer": "ZEPHYR-EDD1B367"
+    },
+    "post_run_residue_rejected": 0,
+    "post_run_confirmed_residue": 0
   }
 }

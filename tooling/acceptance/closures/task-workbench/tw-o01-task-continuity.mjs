@@ -29,7 +29,7 @@ const gw = new Gateway();
 const { account, password } = envActor();
 const evidence = { lines: [] };
 
-const turnBody = (conversationId, agentId, marker) => ({
+const turnBody = (conversationId, agentId, marker, capabilitySessionId) => ({
   client_idempotency_key: crypto.randomUUID(),
   conversation_id: conversationId,
   agent_id: agentId,
@@ -41,10 +41,11 @@ const turnBody = (conversationId, agentId, marker) => ({
   max_retries: 0,
   provider: providerId,
   model: modelId,
+  client_capability_session_id: capabilitySessionId,
 });
 
-async function runRealTurn(conversationId, agentId, marker) {
-  const result = await gw.runTurn(turnBody(conversationId, agentId, marker));
+async function runRealTurn(conversationId, agentId, marker, capabilitySessionId) {
+  const result = await gw.runTurn(turnBody(conversationId, agentId, marker, capabilitySessionId));
   return {
     ok: result.ok && result.done?.stage === 'turn_completed',
     turnId: result.done?.turnId ?? result.frames.find((f) => f.turnId)?.turnId ?? null,
@@ -59,6 +60,28 @@ try {
   const agents = await gw.agentsList();
   const agentId = agents?.agents?.[0]?.id;
   if (!agentId) throw new Error('no agent available');
+
+  // Station fail-closed readiness: a turn whose agent has client-native
+  // bindings must select a capability session, else it is rejected before
+  // execution (client_session_required). The real Desktop keeps the device
+  // engine active and auto-selects; headless journeys do the same.
+  await gw.deviceEngineActivate();
+  await gw.executorSupervisorStart();
+  let sessions = [];
+  for (let i = 0; i < 20 && sessions.length === 0; i += 1) {
+    await new Promise((r) => setTimeout(r, 1000));
+    sessions = await gw.capabilitySessions();
+  }
+  const capabilitySessionId = sessions[0]?.session_id;
+  if (!capabilitySessionId) throw new Error('no capability session after engine activation');
+  evidence.capability_session_id = capabilitySessionId;
+
+  // This journey uses the local Ollama runtime, which does not run tools.
+  // Converge the agent to an empty tool scope so the fail-closed admission
+  // (AGENT_4001: runtime does not support authorized tools) cannot reject
+  // plain-chat turns. Continuity semantics are independent of tool scope.
+  const agentVersion = Number(agents?.agents?.[0]?.version ?? 0);
+  await gw.convergeToolScope(agentId, [], { policy: 1, agentVersion });
 
   const run = crypto.randomUUID().slice(0, 8);
 
@@ -76,8 +99,8 @@ try {
     `lineA=${lineA?.conversation_id} lineB=${lineB?.conversation_id} distinct=${!!distinct}`);
 
   // ---- L2: first + follow-up turns accumulate on the SAME line -------------
-  const t1 = await runRealTurn(lineA.conversation_id, agentId, `A1-${run}`);
-  const t2 = await runRealTurn(lineA.conversation_id, agentId, `A2-${run}`);
+  const t1 = await runRealTurn(lineA.conversation_id, agentId, `A1-${run}`, capabilitySessionId);
+  const t2 = await runRealTurn(lineA.conversation_id, agentId, `A2-${run}`, capabilitySessionId);
   const msgsA = await gw.conversationMessages(lineA.conversation_id);
   const turnIdsA = [...new Set(msgsA.map((m) => m.turn_id).filter(Boolean))];
   const l2 =
@@ -91,7 +114,7 @@ try {
     `lineA two-turn history msgs=${msgsA.length} distinctTurns=${turnIdsA.length} turns=[${t1.turnId},${t2.turnId}]`);
 
   // ---- L3: the other line is independent; run its own turn -----------------
-  const tb1 = await runRealTurn(lineB.conversation_id, agentId, `B1-${run}`);
+  const tb1 = await runRealTurn(lineB.conversation_id, agentId, `B1-${run}`, capabilitySessionId);
   const msgsB = await gw.conversationMessages(lineB.conversation_id);
   const isolated =
     tb1.ok &&

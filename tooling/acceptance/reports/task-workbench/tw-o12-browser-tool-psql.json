@@ -2,16 +2,16 @@
   "plan": "TW-20261102",
   "closure": "tw-o12-browser-tool",
   "outcome": "O12-browser-model-tool-psql",
-  "source_commit": "aee0a9925",
+  "source_commit": "4dfcdc7b7",
   "source": "postgres://pt-tw-d1/peers peers_touch_tw_d1 (direct SQL, independent of gateway/SSE)",
-  "verified_at": "2026-11-06T00:44:07Z",
+  "verified_at": "2026-11-06T01:08:00Z",
   "conversations": {
-    "main": "conv_987b5e1ce2b22feae8489d36",
-    "human_takeover_held": "conv_149aae257b4ba68932b666ad"
+    "main": "conv_c0127a157cff74720bcb4c71",
+    "human_takeover_held": "conv_27a9ed96003fdb9eab4126ed"
   },
   "turns": [
     {
-      "conversation_id": "conv_987b5e1ce2b22feae8489d36",
+      "conversation_id": "conv_c0127a157cff74720bcb4c71",
       "tool_name": "browser_navigate",
       "capability_id": "browser.observe",
       "execution_owner": "client_capability",
@@ -20,7 +20,7 @@
       "conversation_bound_on_wire": true
     },
     {
-      "conversation_id": "conv_987b5e1ce2b22feae8489d36",
+      "conversation_id": "conv_c0127a157cff74720bcb4c71",
       "tool_name": "local_file_edit",
       "capability_id": "filesystem.edit",
       "execution_owner": "client_capability",
@@ -29,7 +29,7 @@
       "conversation_bound_on_wire": true
     },
     {
-      "conversation_id": "conv_987b5e1ce2b22feae8489d36",
+      "conversation_id": "conv_c0127a157cff74720bcb4c71",
       "tool_name": "browser_navigate",
       "capability_id": "browser.observe",
       "execution_owner": "client_capability",
@@ -38,7 +38,7 @@
       "conversation_bound_on_wire": true
     },
     {
-      "conversation_id": "conv_149aae257b4ba68932b666ad",
+      "conversation_id": "conv_27a9ed96003fdb9eab4126ed",
       "tool_name": "browser_navigate",
       "capability_id": "browser.observe",
       "execution_owner": "client_capability",
@@ -49,7 +49,7 @@
   ],
   "browser_session_truth": {
     "id": "brows-01M6Q4V09FF6SNBK1WZB5GA8YK",
-    "conversation_id": "conv_987b5e1ce2b22feae8489d36",
+    "conversation_id": "conv_c0127a157cff74720bcb4c71",
     "status_during_turn": "active",
     "lease_during_turn": "agent"
   },
@@ -59,9 +59,10 @@
   },
   "assertions": [
     "all browser_navigate calls persisted as capability_id browser.observe, owner client_capability, succeeded, approved, with the new conversation_id wire field populated",
-    "browser and filesystem tool calls interleave in one model turn (same device family); local_file_edit also succeeds",
-    "the human-takeover turn still dispatches the browser call to the device; bounded BROWSER_HUMAN_TAKEOVER_HELD result observed in the SSE trace (closure C8)",
-    "model-created browser session registered as Station truth bound to the conversation (active/agent at C7)",
-    "after the run both the Station truth row and the device worker are gone (closure C10; direct count = 0)"
+    "browser and filesystem tool calls interleave in one governed turn; local_file_edit also succeeds",
+    "the human-takeover held turn still dispatched browser_navigate to the device; bounded BROWSER_HUMAN_TAKEOVER_HELD observed in SSE (closure C8)",
+    "model-created browser session registered as Station truth bound to the conversation at C7 (active/agent)",
+    "C5 attributes markers per ordered tool call: FAIL seen only in a browser result before edit, PASS only in a browser result after edit; edit-diff echo can no longer false-pass",
+    "after the run both Station truth row and device worker are gone (closure C10; direct count = 0)"
   ]
 }

@@ -90,6 +90,7 @@ const evidence = { provider_id: providerId, model_id: modelId };
 let terminalId = null;
 let servicePort = 0;
 let modelSessionId = null;
+let mainGoverned = null;
 let pageName = null;
 
 try {
@@ -205,6 +206,7 @@ try {
     client_capability_session_id: session.session_id,
     requested_budget: { wall_time_ms: 300_000 },
   }, { timeoutMs: 360_000, decide: () => ({ approved: true }) });
+  mainGoverned = governed;
 
   const callNames = (governed.calls ?? []).map((c) => c.toolName);
   evidence.tool_calls = callNames;
@@ -220,15 +222,37 @@ try {
     `ok=${governed.ok} stage=${governed.terminalStage} navigates=${navigateCount} explicitSnapshots=${snapshotCount} edit=${!!editCall}`,
   );
 
-  const browserResults = (governed.results ?? []).map((r) => ({
-    toolCallId: r.toolCallId,
-    json: safeParse(r.raw),
+  // Attribute every result to its ordered tool call. C5 must prove the model
+  // OBSERVED both markers through browser tools in the right order — the
+  // local_file_edit bounded result itself echoes "BUILD_STATUS:PASS" in its
+  // unified diff, so a naive search across all results would pass even when
+  // the model skips the post-edit re-navigation (a real false positive seen
+  // on a merge-stamped rerun: calls were [navigate, edit] only).
+  const orderedCalls = governed.calls ?? [];
+  const resultName = new Map(orderedCalls.map((c) => [c.toolCallId, c.toolName]));
+  const resultIndex = new Map(orderedCalls.map((c, i) => [c.toolCallId, i]));
+  const editIndex = orderedCalls.findIndex((c) => c.toolName === 'local_file_edit');
+  const attributedResults = (governed.results ?? []).map((r) => ({
+    name: resultName.get(r.toolCallId) ?? 'unknown',
+    index: resultIndex.get(r.toolCallId) ?? -1,
+    rawJson: safeParse(r.raw),
   }));
-  const joinedResults = JSON.stringify(browserResults.map((r) => r.json));
+  const markerSeen = (entry, marker) => JSON.stringify(entry.rawJson ?? {}).includes(marker);
+  const browserObservationBefore = attributedResults.some((r) =>
+    r.name.startsWith('browser_')
+    && (editIndex < 0 || r.index < editIndex)
+    && markerSeen(r, 'BUILD_STATUS:FAIL')
+    && !markerSeen(r, 'BUILD_STATUS:PASS'));
+  const browserObservationAfter = attributedResults.some((r) =>
+    r.name.startsWith('browser_')
+    && editIndex >= 0
+    && r.index > editIndex
+    && markerSeen(r, 'BUILD_STATUS:PASS')
+    && !markerSeen(r, 'BUILD_STATUS:FAIL'));
   checks.record(
     'C5',
-    joinedResults.includes('BUILD_STATUS:FAIL') && joinedResults.includes('BUILD_STATUS:PASS'),
-    `model-observed FAIL then PASS via browser tools (navigate+snapshot), not harness reads`,
+    browserObservationBefore && browserObservationAfter,
+    `model observed via browser tools only: FAIL before edit=${browserObservationBefore}, PASS after edit=${browserObservationAfter}`,
   );
 
   const disk = fs.readFileSync(pagePath, 'utf8');
@@ -239,8 +263,8 @@ try {
   );
 
   // The model-created session is Station truth bound to THIS conversation.
-  modelSessionId = browserResults
-    .map((r) => r.json?.session_id)
+  modelSessionId = attributedResults
+    .map((r) => r.rawJson?.session_id)
     .find((id) => typeof id === 'string' && id.startsWith('brows-')) ?? null;
   evidence.model_browser_session_id = modelSessionId;
   const stationSessions = await gw.browserStationList(conversation.conversation_id);
@@ -313,6 +337,13 @@ try {
   // instead of swallowed so a cleanup regression cannot pass silently.
   const cleanupErrors = [];
   try {
+    // Recover the session even when the body threw before modelSessionId was
+    // assigned — a failed assertion must never leak a browser resource.
+    if (!modelSessionId && mainGoverned) {
+      modelSessionId = (mainGoverned.results ?? [])
+        .map((r) => safeParse(r.raw)?.session_id)
+        .find((id) => typeof id === 'string' && id.startsWith('brows-')) ?? null;
+    }
     if (modelSessionId) {
       await gw.browserRelease(modelSessionId).catch((error) => {
         cleanupErrors.push(`release: ${String(error?.message ?? error).slice(0, 200)}`);
