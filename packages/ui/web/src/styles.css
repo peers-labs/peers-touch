@@ -148,8 +148,14 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-switch:disabled{opacity:.55;cursor:not-allowed}
 .pt-select-trigger{width:100%;display:flex;justify-content:space-between;font-weight:400;min-width:0}
 .pt-select-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pt-select-options{max-height:280px;overflow:auto}
-.pt-select-option{display:flex;align-items:center;gap:var(--pt-space-xs);width:100%;min-height:var(--pt-control-row);padding:0 var(--pt-space-xs);border:0;border-radius:var(--pt-radius-sm);text-align:left;background:transparent;color:var(--pt-text);cursor:pointer}
+/* The options panel shrink-fits its widest item (max-content) while never
+   going narrower than the trigger (panel min-width, set per-instance). A
+   fixed floor here is what produced ~150px of dead space beside 2-character
+   options. */
+.pt-select-popover{min-width:0;padding:var(--pt-space-xxs)}
+.pt-select-panel{width:max-content;min-width:100%}
+.pt-select-options{max-height:280px;overflow:auto;width:max-content;min-width:100%}
+.pt-select-option{display:flex;align-items:center;gap:var(--pt-space-xs);width:100%;min-height:var(--pt-control-row);padding:0 var(--pt-space-xs);border:0;border-radius:var(--pt-radius-sm);text-align:left;background:transparent;color:var(--pt-text);cursor:pointer;white-space:nowrap}
 /* Ghost select: inside a flat settings/list row the trigger is a quiet
    action, not a bordered input box. Resting state is transparent; only hover
    /open paints the neutral well. The field-box appearance stays available

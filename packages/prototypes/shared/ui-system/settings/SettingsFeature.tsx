@@ -22,6 +22,7 @@ import {
   ScrollText, Search as SearchIcon, Send, Server, Settings as SettingsIcon, SlidersHorizontal,
   Sparkles, User, Wrench,
 } from 'lucide-react';
+import { Segmented } from '@peers-touch/ui';
 import { makeTranslate, usePrefs } from '../prefs';
 import type { StringKey } from '../prefs';
 import { AccountSection } from './sections/AccountSection';
@@ -161,25 +162,25 @@ export function SettingsFeature({ navigation }: { navigation?: SettingsNavigatio
 
   return (
     <div className="sk-settings" data-ui-locale={locale}>
-      {/* Level 1 — group tabs (desktop Settings IA: text tabs + 2px indicator) */}
-      <div className="sk-settings-tabbar" role="tablist" aria-label={t('settings.groupsAria')}>
-        {GROUPS.map(entry => {
-          const Icon = entry.icon;
-          const active = entry.key === group;
-          return (
-            <button key={entry.key} type="button" role="tab" aria-selected={active}
-              className={`sk-settings-tab${active ? ' is-active' : ''}`}
-              data-settings-group={entry.key}
-              onClick={() => switchGroup(entry.key)}>
-              <Icon size={15} />
-              {t(entry.labelKey)}
-              {active && <i className="sk-settings-tab-indicator" />}
-            </button>
-          );
-        })}
+      {/* Level-2 surface partition — the SAME segmented-island grammar as
+          moments 动态/圈友 and chat 消息/联系人 (one component, one geometry
+          across modules; see ui-identity components.md §5/§9). Settings keeps
+          an extra level below it (the plain section sidebar). */}
+      <div className="sk-settings-subbar">
+        <Segmented<SettingsGroup> className="sk-settings-groups" density="compact" aria-label={t('settings.groupsAria')}
+          value={group} onValueChange={value => switchGroup((value ?? 'general') as SettingsGroup)}
+          options={GROUPS.map(entry => {
+            const Icon = entry.icon;
+            return {
+              value: entry.key,
+              label: t(entry.labelKey),
+              leading: <Icon size={13} />,
+              attributes: { 'data-settings-group': entry.key } as Record<string, string>,
+            };
+          })} />
       </div>
 
-      {/* Level 2 + 3 */}
+      {/* Section sidebar + content */}
       <div className="sk-settings-body">
         <nav className="sk-settings-sidebar" aria-label={t('settings.sectionsAria')}>
           {activeGroup.sections.map(entry => {

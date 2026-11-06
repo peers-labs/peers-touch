@@ -13,12 +13,13 @@
  * and settings observe the same values; PIN auto-lock minutes stay local.
  */
 import { useState } from 'react';
-import { Bell, CheckCircle2, Eye, KeyRound, Lock, ShieldAlert, Upload } from 'lucide-react';
-import { Alert, Button, CopyButton, Dialog, ListRow, ListSection, Select, Segmented, Switch, TextArea } from '@peers-touch/ui';
+import { Bell, Eye, KeyRound, Lock, Upload } from 'lucide-react';
+import { Button, CopyButton, Dialog, ListRow, ListSection, Select, Segmented, Switch, TextArea } from '@peers-touch/ui';
 import {
   makeTranslate, setPrefs, usePrefs,
   type DensityMode, type NotificationPrefs, type Prefs, type ThemeMode, type Translate,
 } from '../../prefs';
+import { SettingsSection } from '../SettingsPrimitives';
 import '../settings.css';
 
 const HEADING_ICON = 14;
@@ -161,20 +162,36 @@ function RecoveryBlock() {
 
   return (
     <>
-      <ListSection inset icon={<ShieldAlert size={HEADING_ICON} strokeWidth={1.8} />}
-        title={t('security.title')} description={t('security.subtitle')}>
-        <div className="sk-recovery-status">
-          <span className="sk-recovery-head">
-            {backupExists
-              ? <CheckCircle2 size={16} className="is-ok" />
-              : <ShieldAlert size={16} className="is-warn" />}
-            <strong>{t('security.backupStatus')}</strong>
-          </span>
-          {backupExists
-            ? <span className="sk-recovery-meta">{t('security.lastBackup', { time: lastBackup })}</span>
-            : <Alert variant="inline" tone="warning" title={t('security.noBackupTitle')} description={t('security.noBackupDesc')} />}
-          {restored && <Alert variant="inline" tone="success" title={t('security.restoredTitle')} description={t('security.restoredDesc')} />}
+      <SettingsSection icon={KeyRound} title={t('security.title')} subtitle={t('security.subtitle')}
+        extra={
+          <Button actionId="security.restore-open" emphasis="quiet" density="compact"
+            label={t('security.restoreOpen')}
+            onActivate={() => { setRestored(false); setRestoreOpen(true); }} />
+        }>
+        {/* Backup status is one quiet label/value row, never a nested warning
+            callout: "no backup yet" is the default empty state, not a fault.
+            A small status dot is the only tone; no triangle, no inset rail. */}
+        <div className="sk-settings-row">
+          <div className="sk-settings-row-text">
+            <span className="sk-settings-row-label">{t('security.backupStatus')}</span>
+            <span className="sk-settings-row-desc">{t('security.noBackupDesc')}</span>
+          </div>
+          <div className="sk-settings-row-control">
+            <span className={`sk-recovery-state${backupExists ? ' is-backed' : ''}`} data-recovery-state={backupExists ? 'backed' : 'none'}>
+              <i className="sk-recovery-dot" aria-hidden="true" />
+              {backupExists ? t('security.lastBackup', { time: lastBackup }) : t('security.noBackupTitle')}
+            </span>
+          </div>
         </div>
+        {restored && (
+          <div className="sk-settings-row" data-recovery-restored>
+            <div className="sk-settings-row-text">
+              <span className="sk-settings-row-label">{t('security.restoredTitle')}</span>
+              <span className="sk-settings-row-desc">{t('security.restoredDesc')}</span>
+            </div>
+          </div>
+        )}
+
         <div className="sk-settings-row is-vertical">
           <div className="sk-settings-row-text">
             <span className="sk-settings-row-label">{t('security.keyLabel')}</span>
@@ -195,6 +212,9 @@ function RecoveryBlock() {
             )}
           </div>
         </div>
+        {/* Forward path only: create-backup stays the ink primary action next
+            to the key it acts on. Restore is the separate reverse entry in the
+            section header, not a sibling posing as the same flow. */}
         <div className="sk-recovery-actions">
           <Button actionId="security.backup-create" emphasis="primary" leading={<Upload size={14} />}
             label={t('security.createBackup')} execution={creating ? 'pending' : 'idle'}
@@ -202,10 +222,8 @@ function RecoveryBlock() {
               ? { kind: 'disabled', reason: phrase ? t('security.creating') : t('security.generateFirst') }
               : undefined}
             onActivate={createBackup} />
-          <Button actionId="security.restore-open" emphasis="secondary" label={t('security.restoreOpen')}
-            onActivate={() => { setRestored(false); setRestoreOpen(true); }} />
         </div>
-      </ListSection>
+      </SettingsSection>
 
       <Dialog open={restoreOpen} onDismiss={() => setRestoreOpen(false)} title={t('security.dialogTitle')}
         width={460} closeLabel={t('common.close')}

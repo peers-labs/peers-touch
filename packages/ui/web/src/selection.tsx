@@ -99,7 +99,20 @@ export function Select<T extends string | number>({
 }: SelectProps<T>) {
   const [local, setLocal] = useState<T | readonly T[] | undefined>(defaultValue), value = controlled ?? local;
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [active, setActive] = useState(0);
+  const [menuMinWidth, setMenuMinWidth] = useState<number>();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [created,setCreated]=useState<SelectionOption<T>[]>([]);
+  // The dropdown hugs its content but never shrinks below the trigger: a
+  // fixed arbitrary px floor would leave a sea of dead space next to short
+  // options (see components.md §9). Width is therefore max(trigger, widest
+  // item), measured at open from the live trigger rect.
+  const handleOpenChange = (next: boolean) => {
+    if (next) {
+      const trigger = rootRef.current?.querySelector<HTMLElement>('.pt-select-trigger');
+      if (trigger) setMenuMinWidth(trigger.getBoundingClientRect().width);
+    }
+    setOpen(next);
+  };
   const allOptions=[...options,...created.filter(entry=>!options.some(option=>option.value===entry.value))];
   const list = useRef<HTMLDivElement>(null), id = useId();
   const selected = (v: T) => Array.isArray(value) ? value.includes(v) : value === v;
@@ -107,9 +120,9 @@ export function Select<T extends string | number>({
   const setValue = (v: T | T[] | undefined) => { setLocal(v); onValueChange?.(v); };
   const captions = allOptions.filter(option => selected(option.value));
   const caption = captions.length ? captions.map((option,index) => <span key={option.value}>{index ? ', ' : ''}{option.label}</span>) : placeholder;
-  return <div {...props} className={`pt-select ${className}`} data-appearance={appearance} style={style}>
-    <Popover open={open} onOpenChange={setOpen} label={label}
-      content={<div style={{ minWidth: 220 }} onKeyDown={event => {
+  return <div {...props} ref={rootRef} className={`pt-select ${className}`} data-appearance={appearance} style={style}>
+    <Popover open={open} onOpenChange={handleOpenChange} label={label} className="pt-select-popover"
+      content={<div className="pt-select-panel" style={menuMinWidth ? { minWidth: menuMinWidth } : undefined} onKeyDown={event => {
         const fromInput = event.target instanceof HTMLInputElement;
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)
           || (fromInput && (event.key === 'Home' || event.key === 'End'))) return;
@@ -184,6 +197,7 @@ export function Segmented<T extends string | number>({ options, value, onValueCh
       return <Button key={option.value} actionId={`segment.${option.value}`} density={density}
       emphasis="quiet" aria-pressed={value === option.value}
       availability={disabled ? { kind: 'disabled', reason: 'Selection is unavailable' } : option.availability}
+      {...option.attributes}
       onActivate={() => onValueChange?.(option.value)}>{option.leading}{option.label}</Button>; })}
   </div>;
 }

@@ -427,18 +427,26 @@ async function checkOracle(page, anchor, oracle) {
     case 'edgesAlign': {
       // Two independent elements must share one edge coordinate (e.g. the
       // composer pill and the message stream starting on the same left line).
+      // Optional signed `inset`: the target edge sits this many px INSIDE the
+      // peer edge (right/bottom: peer - target; left/top: target - peer),
+      // e.g. a floating overlay anchored just inside a card boundary instead
+      // of sitting flush on the hairline.
       const peerBase = oracle.scope === 'global' ? page : scope;
       const [a, b] = await Promise.all([one(), peerBase.locator(oracle.peer).first()]);
       const [ra, rb] = await Promise.all([a.boundingBox(), b.boundingBox()]);
       const tol = oracle.tolerance ?? 1;
+      const inset = oracle.inset ?? 0;
       if (!ra || !rb) return { pass: false, offenders: ['node has no rect'] };
       const edgeOf = (r, edge) => ({
         left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height,
       })[edge ?? 'top'];
-      const delta = Math.abs(edgeOf(ra, oracle.edge) - edgeOf(rb, oracle.edge));
+      const edge = oracle.edge ?? 'top';
+      const ea = edgeOf(ra, edge), eb = edgeOf(rb, edge);
+      const gap = (edge === 'right' || edge === 'bottom') ? eb - ea : ea - eb;
+      const drift = Math.abs(gap - inset);
       return {
-        pass: delta <= tol,
-        offenders: delta > tol ? [`${oracle.edge} edges differ by ${Math.round(delta)}`] : [],
+        pass: drift <= tol,
+        offenders: drift > tol ? [`${edge} inset ${Math.round(gap)}px ≠ ${inset}px`] : [],
       };
     }
     case 'sameWidth': {
@@ -543,6 +551,40 @@ async function checkOracle(page, anchor, oracle) {
         };
       });
     }
+    case 'hugsContent': {
+      // Content-proportion gate for menus/selects: the floating surface must
+      // be exactly max(anchor width, widest item width) — never an arbitrary
+      // fixed floor that paints dead space beside short options. Item
+      // intrinsic width is reconstructed from its children (the rendered row
+      // is stretched to the menu, so its own clientWidth cannot be used).
+      const popNode = await one();
+      return popNode.evaluate((pop, spec) => {
+        const q = sel => pop.ownerDocument.querySelector(sel);
+        const anchor = q(spec.anchor);
+        const items = [...pop.ownerDocument.querySelectorAll(spec.items)];
+        if (!anchor || !items.length) return { pass: false, offenders: ['anchor or items missing'] };
+        const itemIntrinsic = (item) => {
+          const ics = getComputedStyle(item);
+          const gap = parseFloat(ics.columnGap || ics.gap || '0');
+          const kids = [...item.children].filter(c => c.getBoundingClientRect().width > 0);
+          const content = kids.reduce((sum, kid) => sum + kid.getBoundingClientRect().width, 0)
+            + gap * Math.max(0, kids.length - 1);
+          return content + parseFloat(ics.paddingLeft) + parseFloat(ics.paddingRight);
+        };
+        // Popover border box = inner floor + its own horizontal padding.
+        const pcs = getComputedStyle(pop);
+        const popPad = parseFloat(pcs.paddingLeft) + parseFloat(pcs.paddingRight);
+        const inner = Math.max(anchor.getBoundingClientRect().width, ...items.map(itemIntrinsic));
+        const expected = inner + popPad;
+        const borderBox = pop.getBoundingClientRect().width;
+        const tol = spec.tolerance ?? 4;
+        return {
+          pass: Math.abs(borderBox - expected) <= tol,
+          borderBox: Math.round(borderBox), expected: Math.round(expected),
+          offenders: Math.abs(borderBox - expected) <= tol ? [] : [`menu ${Math.round(borderBox)}px vs content/anchor ${Math.round(expected)}px`],
+        };
+      }, { anchor: oracle.anchor, items: oracle.items, tolerance: oracle.tolerance });
+    }
     case 'widthSweep': {
       // Continuous fluidity gate, not hand-picked breakpoints: resize the
       // viewport across every width in [from,to] by `step` and assert the
@@ -558,6 +600,7 @@ async function checkOracle(page, anchor, oracle) {
       const aligns = oracle.align ?? [];
       const overflowHosts = oracle.noOverflow ?? [];
       const singleLineSelectors = oracle.singleLine ?? [];
+      const styles = oracle.computedStyles ?? [];
       const scrolls = oracle.scroll ?? [];
       const startSize = page.viewportSize();
       const offenders = [];
@@ -570,8 +613,9 @@ async function checkOracle(page, anchor, oracle) {
             await page.locator(s.target).first().evaluate((el, top) => { el.scrollTop = top; }, s.top);
           }
           if (scrolls.length) await page.waitForTimeout(40);
-          const result = await page.evaluate(({ aligns, overflowHosts, singleLineSelectors }) => {
+          const result = await page.evaluate(({ aligns, overflowHosts, singleLineSelectors, styles }) => {
             const fails = [];
+            const norm = s => String(s).replace(/\s+/g, '');
             const box = sel => document.querySelector(sel)?.getBoundingClientRect() ?? null;
             const isSingleLine = (el) => {
               const cs = getComputedStyle(el);
@@ -588,9 +632,15 @@ async function checkOracle(page, anchor, oracle) {
             for (const a of aligns) {
               const ra = box(a.target), rb = box(a.peer);
               if (!ra || !rb) { fails.push(`${a.target}|${a.peer}:missing`); continue; }
-              const edge = r => ({ left: r.x, right: r.x + r.width, top: r.y, bottom: r.y + r.height })[a.edge ?? 'right'];
-              const delta = Math.abs(edge(ra) - edge(rb));
-              if (delta > (a.tolerance ?? 1)) fails.push(`${a.edge} ${a.target} vs ${a.peer}: ${Math.round(delta)}px`);
+              const edgeName = a.edge ?? 'right';
+              const edge = r => ({ left: r.x, right: r.x + r.width, top: r.y, bottom: r.y + r.height })[edgeName];
+              // Optional inset: target edge sits this many px inside the peer
+              // edge (right/bottom: peer - target; left/top: target - peer).
+              const inset = a.inset ?? 0;
+              const ea = edge(ra), eb = edge(rb);
+              const gap = (edgeName === 'right' || edgeName === 'bottom') ? eb - ea : ea - eb;
+              const delta = Math.abs(gap - inset);
+              if (delta > (a.tolerance ?? 1)) fails.push(`${a.edge} ${a.target} vs ${a.peer}: inset ${Math.round(gap)}px ≠ ${inset}px`);
             }
             for (const sel of overflowHosts) {
               const el = document.querySelector(sel);
@@ -601,8 +651,14 @@ async function checkOracle(page, anchor, oracle) {
               if (!nodes.length) { fails.push(`${sel}:missing`); continue; }
               if (!Array.from(nodes).every(isSingleLine)) fails.push(`multiline ${sel} (${nodes.length})`);
             }
+            for (const st of styles) {
+              const el = document.querySelector(st.target);
+              if (!el) { fails.push(`${st.target}:missing`); continue; }
+              const value = norm(getComputedStyle(el)[st.prop] ?? '');
+              if (value !== norm(st.equals)) fails.push(`${st.target}.${st.prop}=${value} expected ${st.equals}`);
+            }
             return fails;
-          }, { aligns, overflowHosts, singleLineSelectors });
+          }, { aligns, overflowHosts, singleLineSelectors, styles });
           for (const f of result) offenders.push(`w${width}: ${f}`);
           if (offenders.length >= 12) break;
         }

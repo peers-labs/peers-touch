@@ -30,29 +30,17 @@
   --pt-list-heading-icon-display: none;
 }
 
-/* Level 1 — transparent text tabs, never SaaS pill chips. */
-.sk-settings-tabbar {
-  flex-shrink: 0; height: 48px;
-  display: flex; align-items: stretch; gap: 0;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--sk-card-border);
-  overflow-x: auto;
+/* Level-2 surface partition: one rhythm band identical to the moments and
+   chat sub-bars (8/14/10 insets) hosting the shared Segmented island. */
+.sk-settings-subbar {
+  flex-shrink: 0;
+  display: flex; align-items: center;
+  padding: 8px 14px 10px;
 }
-.sk-settings-tab {
-  position: relative;
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-  height: 48px; padding: 0 14px;
-  border: 0; background: transparent; cursor: pointer;
-  color: var(--sk-text-2);
-  font-family: inherit; font-size: 13px; font-weight: 500;
-  transition: color 160ms var(--sk-set-ease);
-}
-.sk-settings-tab:hover { color: var(--sk-text); }
-.sk-settings-tab.is-active { color: var(--sk-primary); font-weight: 650; }
-.sk-settings-tab-indicator {
-  position: absolute; left: 14px; right: 14px; bottom: 0; height: 2px;
-  border-radius: 2px 2px 0 0; background: var(--sk-primary);
-}
+/* The group island is the default-density Segmented, same geometry as
+   .sk-scope-island (44px island / 36px targets / 14px). It scrolls internally
+   if five groups ever outgrow the column instead of wrapping. */
+.sk-settings-groups { flex: 0 0 auto; }
 
 .sk-settings-body { flex: 1; min-height: 0; display: flex; }
 
@@ -328,11 +316,17 @@
 .sk-device-status { font-size: 13.5px; color: var(--sk-text-2); padding: 24px 0; }
 
 /* ── Security ────────────────────────────────────────────── */
-.sk-recovery-status { display: flex; flex-direction: column; gap: 10px; }
-.sk-recovery-head { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--sk-text); }
-.sk-recovery-head .is-ok { color: var(--sk-success); }
-.sk-recovery-head .is-warn { color: var(--sk-warning); }
-.sk-recovery-meta { font-size: 12px; color: var(--sk-text-3); }
+/* Quiet label/value status: one small dot + a single line of text. The
+   unbacked default is neutral gray (empty state, not a warning); backed is
+   pine. No triangle icon, no inset tone rail, no nested callout. */
+.sk-recovery-state {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; color: var(--sk-text-3); white-space: nowrap;
+}
+.sk-recovery-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sk-text-3); flex: 0 0 auto; }
+.sk-recovery-state.is-backed { color: var(--sk-text-2); }
+.sk-recovery-state.is-backed .sk-recovery-dot { background: var(--sk-accent); }
+[data-recovery-restored] .sk-settings-row-label { color: var(--sk-accent); }
 .sk-recovery-phrase { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .sk-recovery-phrase ol {
   list-style: none; margin: 0; padding: 12px; display: grid; width: 100%;

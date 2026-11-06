@@ -100,6 +100,21 @@
           "type": "computedStyle",
           "target": ".sk-rail .sk-rail-icon.is-active",
           "prop": "backgroundColor",
+          "equals": "rgb(47, 106, 80)"
+        },
+        {
+          "id": "rail-self-avatar-pine",
+          "type": "computedStyle",
+          "target": ".sk-rail .sk-rail-avatar",
+          "prop": "backgroundColor",
+          "equals": "rgb(47, 106, 80)"
+        },
+        {
+          "id": "rail-action-stays-ink",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-moments-subbar .sk-subbar-add",
+          "prop": "backgroundColor",
           "equals": "rgb(26, 29, 32)"
         },
         {
@@ -140,6 +155,16 @@
           "id": "identity-rounded-square",
           "type": "roundedSquareAll",
           "target": ".sk-rail-avatar"
+        },
+        {
+          "id": "rail-stays-vertical-at-any-width",
+          "type": "widthSweep",
+          "from": 360, "to": 2880, "step": 24, "height": 800,
+          "computedStyles": [
+            { "target": ".sk-shell", "prop": "flexDirection", "equals": "row" },
+            { "target": ".sk-rail", "prop": "flexDirection", "equals": "column" },
+            { "target": ".sk-rail", "prop": "width", "equals": "60px" }
+          ]
         }
       ],
       "finalizers": []
@@ -578,7 +603,7 @@
           "id": "settings-frame",
           "type": "exists",
           "scope": "global",
-          "target": ".sk-settings-tabbar"
+          "target": ".sk-settings-groups"
         },
         {
           "id": "seven-notify-switches",
@@ -7923,7 +7948,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-never-overflows-under-squeeze",
-      "title": "动态面任意窗口宽度（700–2880 连续扫描，含回顶态）零横向溢出：排序/回顶胶囊右缘与卡片右缘逐像素一致",
+      "title": "动态面任意窗口宽度（700–2880 连续扫描，含回顶态）零横向溢出：排序/回顶胶囊锚定卡片右缘内侧 14px，投影不越卡",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-rail-target='moments']" },
@@ -7935,7 +7960,7 @@
           "type": "widthSweep",
           "from": 700, "to": 2880, "step": 24, "height": 900,
           "align": [
-            { "target": ".sk-feed-sort-pill", "peer": ".sk-post", "edge": "right", "tolerance": 1 }
+            { "target": ".sk-feed-sort-pill", "peer": ".sk-post", "edge": "right", "inset": 14, "tolerance": 1 }
           ],
           "noOverflow": [".sk-moments-scroll"],
           "singleLine": [".sk-post:first-of-type .sk-post-name"]
@@ -7946,7 +7971,7 @@
           "from": 700, "to": 2880, "step": 24, "height": 900,
           "scroll": [{ "target": ".sk-moments-scroll", "top": 600 }],
           "align": [
-            { "target": ".sk-feed-sort-pill", "peer": ".sk-post", "edge": "right", "tolerance": 1 }
+            { "target": ".sk-feed-sort-pill", "peer": ".sk-post", "edge": "right", "inset": 14, "tolerance": 1 }
           ],
           "noOverflow": [".sk-moments-scroll"]
         }
@@ -8013,12 +8038,13 @@
         },
         {
           "op": "expect",
-          "id": "right-edge-anchored-in-top-mode",
+          "id": "right-edge-inset-card-in-top-mode",
           "oracle": {
             "type": "edgesAlign",
             "target": ".sk-feed-sort-pill",
             "peer": ".sk-moments-scroll .sk-post:first-of-type",
             "edge": "right",
+            "inset": 14,
             "tolerance": 1
           }
         },
@@ -8115,11 +8141,12 @@
           "equals": "hidden"
         },
         {
-          "id": "right-edge-anchored-after-restore",
+          "id": "right-edge-inset-card-after-restore",
           "type": "edgesAlign",
           "target": ".sk-feed-sort-pill",
           "peer": ".sk-moments-scroll .sk-post:first-of-type",
           "edge": "right",
+          "inset": 14,
           "tolerance": 1
         },
         {
@@ -9176,8 +9203,36 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.level2-tabs-symmetric",
+      "title": "跨模块对称：动态/消息/设置三个面的二级分区切换是同一个 compact Segmented 岛——岛 36、目标 28、12 号、圆角 6，逐面一致",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='moments']" },
+        { "op": "wait", "ms": 180 },
+        { "op": "expect", "id": "moments-target-h", "oracle": { "type": "computedStyle", "target": ".sk-scope-island .pt-button[aria-pressed='true']", "prop": "height", "equals": "28px" } },
+        { "op": "expect", "id": "moments-target-fs", "oracle": { "type": "computedStyle", "target": ".sk-scope-island .pt-button[aria-pressed='true']", "prop": "fontSize", "equals": "12px" } },
+        { "op": "expect", "id": "moments-island-h", "oracle": { "type": "computedStyle", "target": ".sk-scope-island", "prop": "height", "equals": "36px" } },
+
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "wait", "ms": 180 },
+        { "op": "expect", "id": "chat-target-h", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-chat-subnav .pt-button[aria-pressed='true']", "prop": "height", "equals": "28px" } },
+        { "op": "expect", "id": "chat-target-fs", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-chat-subnav .pt-button[aria-pressed='true']", "prop": "fontSize", "equals": "12px" } },
+        { "op": "expect", "id": "chat-island-h", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-chat-subnav", "prop": "height", "equals": "36px" } },
+
+        { "op": "click", "target": "[data-rail-target='settings']" },
+        { "op": "wait", "ms": 180 },
+        { "op": "expect", "id": "settings-target-h", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-settings-groups .pt-button[aria-pressed='true']", "prop": "height", "equals": "28px" } },
+        { "op": "expect", "id": "settings-target-fs", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-settings-groups .pt-button[aria-pressed='true']", "prop": "fontSize", "equals": "12px" } },
+        { "op": "expect", "id": "settings-island-h", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-settings-groups", "prop": "height", "equals": "36px" } }
+      ],
+      "oracles": [],
+      "finalizers": [
+        { "op": "clickGlobal", "target": "[data-settings-group='general']" }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.settings-frame",
-      "title": "增量23：齿轮进入设置——下划线分组 tab（非 SaaS 药丸）、5 组、通用组 4 分区、默认账号身份卡、发丝仅在 tab 栏底",
+      "title": "齿轮进入设置——二级分区 Segmented 岛（与动态/聊天同构）、5 组、通用组 4 分区、默认账号身份卡；三级为朴素分区侧栏",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -9191,23 +9246,40 @@
       ],
       "oracles": [
         {
-          "id": "tab-underline-form",
-          "type": "computedStyle",
-          "prop": "borderBottomWidth",
-          "target": ".sk-settings-tabbar",
-          "equals": "1px"
-        },
-        {
-          "id": "no-pill-container",
-          "type": "missing",
+          "id": "group-island-form",
+          "type": "exists",
           "scope": "global",
-          "target": ".sk-settings-groups"
+          "target": ".sk-settings-groups.pt-segmented"
         },
         {
           "id": "five-groups",
           "type": "count",
-          "target": ".sk-settings-tab",
+          "target": ".sk-settings-groups .pt-button",
           "equals": 5
+        },
+        {
+          "id": "group-target-canonical-height",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-settings-groups .pt-button[aria-pressed='true']",
+          "prop": "height",
+          "equals": "28px"
+        },
+        {
+          "id": "group-target-canonical-font",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-settings-groups .pt-button[aria-pressed='true']",
+          "prop": "fontSize",
+          "equals": "12px"
+        },
+        {
+          "id": "group-island-canonical-height",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-settings-groups",
+          "prop": "height",
+          "equals": "36px"
         },
         {
           "id": "general-four-sides",
@@ -9233,11 +9305,6 @@
           "type": "missing",
           "scope": "global",
           "target": "[data-settings-section='applets']"
-        },
-        {
-          "id": "active-tab-indicator",
-          "type": "exists",
-          "target": ".sk-settings-tab.is-active .sk-settings-tab-indicator"
         },
         {
           "id": "craft-clean",
@@ -9633,6 +9700,30 @@
         {
           "op": "wait",
           "ms": 800
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[aria-label='自动锁定']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "id": "autolock-menu-hugs-content",
+          "oracle": {
+            "type": "hugsContent",
+            "scope": "global",
+            "target": ".pt-select-popover",
+            "anchor": "[aria-label='自动锁定']",
+            "items": ".pt-select-option",
+            "tolerance": 4
+          }
+        },
+        {
+          "op": "press",
+          "key": "Escape"
         }
       ],
       "oracles": [
@@ -9655,8 +9746,28 @@
         {
           "id": "backup-created",
           "type": "textContains",
-          "target": ".sk-recovery-meta",
+          "target": ".sk-recovery-state",
           "contains": "最近备份"
+        },
+        {
+          "id": "backup-state-backed-pine",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-recovery-state.is-backed .sk-recovery-dot",
+          "prop": "backgroundColor",
+          "equals": "rgb(47, 106, 80)"
+        },
+        {
+          "id": "no-nested-warning-callout",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-settings-section:has(.sk-recovery-state) .pt-alert"
+        },
+        {
+          "id": "restore-entry-in-section-header",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-settings-section-extra [data-action-id='security.restore-open']"
         }
       ],
       "finalizers": [

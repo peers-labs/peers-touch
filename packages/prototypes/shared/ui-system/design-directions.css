@@ -206,7 +206,9 @@
   padding: 0; border: 0; border-radius: 12px;
   display: grid; place-items: center; cursor: pointer;
   font-size: 17px; font-weight: 700; line-height: 1;
-  color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
+  /* Self identity is pine across the whole product (identity palette
+     VIEWER_TONE), never the ink action color. */
+  color: var(--sk-on-accent); background: var(--sk-accent);
   box-shadow: 0 10px 22px -12px rgba(20,24,22,.45);
   /* Quiet wash only: no transform/box-shadow animation. Moving the hit target
      under the cursor flickers at the tile edge, and animating shadow over the
@@ -216,13 +218,13 @@
 /* Hover stays a PINE tile: lighten the pine fill slightly, never swap it for
    the near-white quiet wash (that read as the tile flashing white on hover). */
 .sk-rail .sk-rail-avatar:hover {
-  color: var(--sk-btn-primary-ink);
-  background: color-mix(in srgb, var(--sk-btn-primary-bg) 86%, #ffffff);
+  color: var(--sk-on-accent);
+  background: color-mix(in srgb, var(--sk-accent) 86%, #ffffff);
 }
 /* While its identity card is open the tile stays the active pine mark. */
 .sk-rail .sk-rail-avatar[aria-expanded='true'] {
-  color: var(--sk-btn-primary-ink);
-  background: var(--sk-btn-primary-bg);
+  color: var(--sk-on-accent);
+  background: var(--sk-accent);
 }
 .sk-rail .sk-rail-avatar:focus-visible { outline: var(--sk-focus-ring); outline-offset: 2px; }
 .sk-rail-group { display: flex; flex-direction: column; gap: 4px; }
@@ -247,9 +249,13 @@
 .sk-rail .sk-rail-entry .sk-rail-icon:hover {
   color: var(--sk-text); background: var(--sk-btn-quiet-bg-hover);
 }
+/* The selected rail target is "where you are" — an identity/location mark,
+   not an action — so it paints pine (--sk-accent), not the ink action color.
+   Ink stays on action buttons (compose +, dialog confirm/generate). At most
+   two pine marks coexist: self avatar + current surface. */
 .sk-rail .sk-rail-group .sk-rail-icon.is-active,
 .sk-rail .sk-rail-entry .sk-rail-icon.is-active {
-  color: var(--sk-btn-primary-ink); background: var(--sk-btn-primary-bg);
+  color: var(--sk-on-accent); background: var(--sk-accent);
   box-shadow: var(--sk-btn-primary-shadow);
 }
 
@@ -469,23 +475,18 @@
   .sk-conv-rail { display: none; }
 }
 
+/* The icon rail is a permanent 60px vertical surface at EVERY window width
+   (WeChat-desktop parity): it never rotates into a horizontal top bar. A
+   ≤760 rotation produced a detached avatar tile + vertical divider + a wide
+   empty middle, and made the settings/notification anchors jump from the
+   rail bottom to the top-right as the width crossed one pixel. Narrow windows
+   only reclaim the stage padding; the workbench column keeps shrinking via
+   its own min-width:0 chain and in-surface container queries. */
 @media (max-width: 760px) {
   .sk-page { padding: 0; }
-  .sk-shell { height: auto; min-height: 100vh; border-radius: 0; border: 0; box-shadow: none; flex-direction: column; }
-  /* Spatial rotation: vertical gravity (top group / spacer / bottom group)
-     rotates into horizontal gravity (left cluster / spacer / right cluster).
-     Element ORDER is unchanged; the two functional groups stay visually
-     separated instead of collapsing into one centered row. */
-  .sk-rail {
-    width: 100%; flex-direction: row; justify-content: flex-start; gap: 6px; padding: 8px 12px;
-  }
-  .sk-rail-avatar { margin: 0; }
-  .sk-rail-spacer {
-    display: block; flex: 1 1 auto; min-width: 16px;
-    align-self: center; height: 22px;
-    border-left: 1px solid var(--sk-card-border);
-  }
-  .sk-rail-group { flex-direction: row; }
+  /* Fill the viewport edge-to-edge but keep the ROW geometry: the rail stays
+     a full-height 60px vertical surface, the shell never stacks. */
+  .sk-shell { height: 100vh; min-height: 100vh; border-radius: 0; border: 0; box-shadow: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sk-shell *, .sk-switcher * { animation: none !important; transition: none !important; }
