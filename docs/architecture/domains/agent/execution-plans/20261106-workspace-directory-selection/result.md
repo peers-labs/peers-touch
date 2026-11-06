@@ -52,14 +52,33 @@
 - grant 重建完全复用既有 `refresh_workspace_grants`：确定性 ID（含 locator 哈希）、24h lease skew、Station 端 upsert。
 - worktree 创建固定命令形式 + 名称白名单 `[A-Za-z0-9_-]{1,64}`；本轮修复实现缺陷：`git worktree add` 新建分支选项是 `-b`（误用 `--branch`，首轮 C5 失败即此）。
 
-## 5. 偏差与边界
+## 5. 命令授权档（Full Access）— 后续追加切片
+
+计划最初沿用「agent git 写禁令」旧设定。评审确认那是设备端**硬编码白名单**、与 Trae 式「Manual / Full Access」是两道独立闸门后，追加了用户可配置的命令授权：
+
+- 设备端 `ShellMode { Standard, FullAccess }`：
+  - Standard＝原硬白名单（find/grep/rg/cat/ls/make/pnpm/npm/go/cargo/git + 写类子命令禁令 + argv containment）。
+  - Full Access＝execvp 直接执行任意 argv（含 git commit/push、依赖安装、`pwd` 等），cwd 仍钉在授权工作目录；不经 shell，argv 非注入向量。shell 超时 60s→10min、输出 64KB→1MB，构建/测试可跑。
+  - 授权是本机用户每会话动作，存于 desktop worker 的 actor/device atomic，**Station/模型/工具信封都无法自行提权**；切换项目或重启回到 Standard。
+- composer 工作目录菜单新增「Agent 权限」段（Standard / Full Access，Full Access 二次危险确认）；开启时同时把六个本地工具能力 binding 收敛到 Station AUTO（免逐条审批），关闭回到 MANUAL。
+- 验收 `tw-workspace-shell-access` S1–S3（6/6，强模型）：Standard 拒绝 `pwd`（`CLIENT_CAPABILITY_COMMAND_NOT_ALLOWED` + 批次 blocked）；Full Access 下 `pwd` 与 `git add/commit` 成功（commit 真实进入 git log）；恢复 Standard 后 `pwd` 再次被拒。
+- 提交：`17de4ab91`（Rust）、`87ca5e348`（UI/AUTO）、`31f4f64fc`（闭包 S1–S3）。
+
+## 6. 偏差与边界
 
 - **station-sandbox 生产入口延后**：渲染侧没有「把会话工具作用域收敛到 `workspace.sandbox.*`」的生产 action（目前仅 headless gateway 闭包使用）。把裸 binding upsert 直接塞进 composer 会绕过 agent capability store，需要独立设计（绑定版本/readiness/收敛事务）。本切片选择器只交付两个本地目标；Station 沙箱目标沿用既有 Terminal/sandbox 面。
-- 未做 Station 文件树浏览、跨会话持久授权、agent git 写放开；不改 readiness 快照/信封 proto。
-- 已知测试环境噪音：cell 内 `cargo test desktop_executor_worker` 有 1 个既有 MCP keyring I/O 失败（与本改动无关）；新增 `workspace_choices` 3 单测全部通过。
+- 未做 Station 文件树浏览、跨会话持久授权；不改 readiness 快照/信封 proto。
+- Full Access 仍把命令 cwd 限在工作目录，不做整盘授权；不放开文件工具的 root containment（`..`/绝对路径仍 fail-closed）。
+- 已知测试环境噪音：cell 内 `cargo test desktop_executor_worker` 有 1 个既有 MCP keyring I/O 失败（与本改动无关）；`tools` 模块 `file_write_and_edit_stay_inside_workspace` 在干净 HEAD 即失败（工具不自动建父目录、测试写 `docs/` 子目录），均非本切片引入；新增 `workspace_choices` 3 单测与 shell 分支测试通过。
+- 高负载下「恢复沙箱」偶发命中 10s 激活队列窗口，重试即成功（闭包已带激活重试）；可后续在 UI 对 activate 做一次自动重试。
 
-## 6. 后续
+## 7. Linux 构建地板（影响「本机直接跑」）
+
+Tauri 2 硬性依赖 `webkit2gtk-4.1` + `libsoup-3.0`（见 `tooling/devctl/desktop-install.mjs`）。Ubuntu 20.04（focal）官方/内部镜像均不提供这两个包（focal 只有 webkit2gtk-4.0、无 soup3），因此 **20.04 无法原生构建/运行 desktop app**；受支持的 Linux 地板是 Ubuntu 22.04+。本次验收在 Ubuntu 24.04 cell 内构建运行。要在本机 GUI 使用，需要 22.04+/macOS/Windows，或在 24.04 容器内做 X11 透传。
+
+## 8. 后续
 
 1. 生产 station-sandbox 选择器：在 agent capability store 增加 sandbox 收敛 action（绑定收敛 + readiness 等待），composer 补第三态。
-2. 当前根在 worker 身份变化（重新登录）后的 UI 主动刷新（worker 重注册事件）。
+2. 当前根在 worker 身份变化（重新登录）后的 UI 主动刷新（worker 重注册事件）；activate 失败一次自动重试。
 3. 目录被外部删除后，选择记录保留但激活回沙箱；可在选择器上对失效记录做标记。
+4. 文件工具可选「自动创建父目录」（修 §6 的既有测试不一致）。
