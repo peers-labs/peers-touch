@@ -6,7 +6,9 @@
  *      primary bottom indicator on the active tab and one hairline under the
  *      whole bar (NOT SaaS pill chips).
  *   2. Left sidebar: plain section items with icon+label, active wash.
- *   3. Right: scrollable content, sections composed with peers-ui only.
+ *   3. Right: grouped white cards directly (no article page heading; the
+ *      active rail item is the subject), composed with peers-ui only
+ *      (ListSection inset wells / SettingsSection cards).
  *
  * Groups: General / Network / AI / Channels / Advanced. Applets were removed
  * by product decision. Preferences (language/layout/notifications/privacy/
@@ -20,6 +22,7 @@ import {
   ScrollText, Search as SearchIcon, Send, Server, Settings as SettingsIcon, SlidersHorizontal,
   Sparkles, User, Wrench,
 } from 'lucide-react';
+import { Segmented } from '@peers-touch/ui';
 import { makeTranslate, usePrefs } from '../prefs';
 import type { StringKey } from '../prefs';
 import { AccountSection } from './sections/AccountSection';
@@ -74,6 +77,7 @@ const GROUPS: GroupDef[] = [
       { key: 'memory', labelKey: 'sec.memory', icon: HardDrive },
       { key: 'skills', labelKey: 'sec.skills', icon: ScrollText },
       { key: 'mcp', labelKey: 'sec.mcp', icon: Plug },
+      { key: 'cron', labelKey: 'sec.cron', icon: Clock3 },
     ],
   },
   {
@@ -89,7 +93,6 @@ const GROUPS: GroupDef[] = [
       { key: 'storage', labelKey: 'sec.dataStorage', icon: Database },
       { key: 'statistics', labelKey: 'sec.statistics', icon: MonitorSmartphone },
       { key: 'logs', labelKey: 'sec.logs', icon: ScrollText },
-      { key: 'cron', labelKey: 'sec.cron', icon: Clock3 },
       { key: 'command-menu', labelKey: 'sec.commandMenu', icon: CommandIcon },
       { key: 'about', labelKey: 'sec.about', icon: Info },
     ],
@@ -159,25 +162,25 @@ export function SettingsFeature({ navigation }: { navigation?: SettingsNavigatio
 
   return (
     <div className="sk-settings" data-ui-locale={locale}>
-      {/* Level 1 — group tabs (desktop Settings IA: text tabs + 2px indicator) */}
-      <div className="sk-settings-tabbar" role="tablist" aria-label={t('settings.groupsAria')}>
-        {GROUPS.map(entry => {
-          const Icon = entry.icon;
-          const active = entry.key === group;
-          return (
-            <button key={entry.key} type="button" role="tab" aria-selected={active}
-              className={`sk-settings-tab${active ? ' is-active' : ''}`}
-              data-settings-group={entry.key}
-              onClick={() => switchGroup(entry.key)}>
-              <Icon size={15} />
-              {t(entry.labelKey)}
-              {active && <i className="sk-settings-tab-indicator" />}
-            </button>
-          );
-        })}
+      {/* Level-2 surface partition — the SAME segmented-island grammar as
+          moments 动态/圈友 and chat 消息/联系人 (one component, one geometry
+          across modules; see ui-identity components.md §5/§9). Settings keeps
+          an extra level below it (the plain section sidebar). */}
+      <div className="sk-settings-subbar">
+        <Segmented<SettingsGroup> className="sk-settings-groups" density="compact" aria-label={t('settings.groupsAria')}
+          value={group} onValueChange={value => switchGroup((value ?? 'general') as SettingsGroup)}
+          options={GROUPS.map(entry => {
+            const Icon = entry.icon;
+            return {
+              value: entry.key,
+              label: t(entry.labelKey),
+              leading: <Icon size={13} />,
+              attributes: { 'data-settings-group': entry.key } as Record<string, string>,
+            };
+          })} />
       </div>
 
-      {/* Level 2 + 3 */}
+      {/* Section sidebar + content */}
       <div className="sk-settings-body">
         <nav className="sk-settings-sidebar" aria-label={t('settings.sectionsAria')}>
           {activeGroup.sections.map(entry => {
@@ -196,6 +199,9 @@ export function SettingsFeature({ navigation }: { navigation?: SettingsNavigatio
           })}
         </nav>
 
+        {/* No article-style page heading: the active item in the section rail
+            already identifies the surface; content opens straight into its
+            grouped cards. */}
         <div className="sk-settings-scroll">
           {renderSection(activeSection.key)}
         </div>

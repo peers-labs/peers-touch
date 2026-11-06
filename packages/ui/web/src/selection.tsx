@@ -1,4 +1,4 @@
-import { Children, isValidElement, forwardRef, useId, useRef, useState, type CSSProperties, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Children, isValidElement, forwardRef, useEffect, useId, useRef, useState, type CSSProperties, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import type { Availability, ChoiceOption, Density } from '@peers-touch/ui-contracts';
 import { nextEnabledIndex } from '@peers-touch/ui-semantics';
 import { Button } from './actions';
@@ -87,16 +87,32 @@ export interface SelectProps<T extends string | number = string> extends Omit<HT
   onValueChange?: (value: T | T[] | undefined) => void;
   multiple?: boolean; searchable?: boolean; placeholder?: string; label?: string;
   disabled?: boolean; density?: Density; clearable?: boolean;
+  /** field = bordered input box for real forms; ghost = quiet row action
+      (transparent at rest, well on hover/open) for flat settings lists. */
+  appearance?: 'field' | 'ghost';
   onQueryChange?: (query: string) => void; pending?: boolean; emptyLabel?: string; pendingLabel?: string; createValue?:(query:string)=>T;
 }
 export function Select<T extends string | number>({
   options, value: controlled, defaultValue, onValueChange, multiple, searchable, placeholder = 'Select',
-  label, disabled, density, clearable, onQueryChange, pending, createValue, emptyLabel = 'No options', pendingLabel, className = '', style,
+  label, disabled, density, clearable, appearance = 'field', onQueryChange, pending, createValue, emptyLabel = 'No options', pendingLabel, className = '', style,
   id: controlId, 'aria-describedby': describedBy, 'aria-invalid': invalid, ...props
 }: SelectProps<T>) {
   const [local, setLocal] = useState<T | readonly T[] | undefined>(defaultValue), value = controlled ?? local;
   const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [active, setActive] = useState(0);
+  const [menuMinWidth, setMenuMinWidth] = useState<number>();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [created,setCreated]=useState<SelectionOption<T>[]>([]);
+  // The dropdown hugs its content but never shrinks below the trigger: a
+  // fixed arbitrary px floor would leave a sea of dead space next to short
+  // options (see components.md §9). Width is therefore max(trigger, widest
+  // item), measured at open from the live trigger rect.
+  const handleOpenChange = (next: boolean) => {
+    if (next) {
+      const trigger = rootRef.current?.querySelector<HTMLElement>('.pt-select-trigger');
+      if (trigger) setMenuMinWidth(trigger.getBoundingClientRect().width);
+    }
+    setOpen(next);
+  };
   const allOptions=[...options,...created.filter(entry=>!options.some(option=>option.value===entry.value))];
   const list = useRef<HTMLDivElement>(null), id = useId();
   const selected = (v: T) => Array.isArray(value) ? value.includes(v) : value === v;
@@ -104,9 +120,9 @@ export function Select<T extends string | number>({
   const setValue = (v: T | T[] | undefined) => { setLocal(v); onValueChange?.(v); };
   const captions = allOptions.filter(option => selected(option.value));
   const caption = captions.length ? captions.map((option,index) => <span key={option.value}>{index ? ', ' : ''}{option.label}</span>) : placeholder;
-  return <div {...props} className={`pt-select ${className}`} style={style}>
-    <Popover open={open} onOpenChange={setOpen} label={label}
-      content={<div style={{ minWidth: 220 }} onKeyDown={event => {
+  return <div {...props} ref={rootRef} className={`pt-select ${className}`} data-appearance={appearance} style={style}>
+    <Popover open={open} onOpenChange={handleOpenChange} label={label} className="pt-select-popover"
+      content={<div className="pt-select-panel" style={menuMinWidth ? { minWidth: menuMinWidth } : undefined} onKeyDown={event => {
         const fromInput = event.target instanceof HTMLInputElement;
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)
           || (fromInput && (event.key === 'Home' || event.key === 'End'))) return;
@@ -142,7 +158,7 @@ export function Select<T extends string | number>({
         </div>
         {clearable && <Button actionId="select.clear" label="Clear" emphasis="quiet" onActivate={() => setValue(multiple ? [] : undefined)} />}
       </div>}>
-      <Button actionId="select.open" className="pt-select-trigger" density={density}
+      <Button actionId="select.open" className="pt-select-trigger" density={density ?? (appearance === 'ghost' ? 'compact' : undefined)}
         availability={disabled ? { kind: 'disabled', reason: 'Selection is unavailable' } : undefined}
         id={controlId} role="combobox" aria-haspopup="listbox" aria-controls={id} aria-label={label}
         aria-describedby={describedBy} aria-invalid={invalid} trailing={<Icon iconId="chevron-down" />}>
@@ -151,14 +167,37 @@ export function Select<T extends string | number>({
     </Popover>
   </div>;
 }
-export interface SegmentedProps<T extends string | number> extends RadioGroupProps<T> { density?: Density; fullWidth?: boolean; className?: string }
-export function Segmented<T extends string | number>({ options, value, onValueChange, disabled, label, style, fullWidth, density, className = '' }: SegmentedProps<T>) {
-  return <div className={`pt-segmented ${className}`} role="group" aria-label={label} data-full-width={fullWidth || undefined}
+export interface SegmentedProps<T extends string | number> extends RadioGroupProps<T> {
+  density?: Density; fullWidth?: boolean; className?: string;
+  /** Island mode: the group stays on ONE line and scrolls horizontally
+      1 instead of wrapping — used when a narrow container must preserve the
+      peer elements' relative positions under spatial squeeze. */
+  scrollable?: boolean;
+}
+export function Segmented<T extends string | number>({ options, value, onValueChange, disabled, label, style, fullWidth, density, scrollable, className = '' }: SegmentedProps<T>) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  // Keep the active option revealed when the island is scrolled or the value
+  // changes (e.g. restored tab), without moving any sibling outside the group.
+  useEffect(() => {
+    if (!scrollable || !ref.current) return;
+    const host = ref.current;
+    const active = host.querySelector<HTMLElement>('.pt-button[aria-pressed="true"]');
+    if (!active) return;
+    // Reveal the active option WITHOUT scrolling any ancestor: adjust only
+    // the island's own scrollLeft by the overflow delta.
+    const h = host.getBoundingClientRect();
+    const a = active.getBoundingClientRect();
+    if (a.left < h.left) host.scrollLeft -= h.left - a.left;
+    else if (a.right > h.right) host.scrollLeft += a.right - h.right;
+  }, [scrollable, value]);
+  return <div ref={ref} className={`pt-segmented ${className}`} role="group" aria-label={label}
+    data-full-width={fullWidth || undefined} data-scrollable={scrollable || undefined}
     style={{ width: fullWidth ? '100%' : undefined, ...style }}>
     {options.map(entry => { const option = typeof entry === 'object' ? entry : {value:entry,label:String(entry)};
       return <Button key={option.value} actionId={`segment.${option.value}`} density={density}
       emphasis="quiet" aria-pressed={value === option.value}
       availability={disabled ? { kind: 'disabled', reason: 'Selection is unavailable' } : option.availability}
+      {...option.attributes}
       onActivate={() => onValueChange?.(option.value)}>{option.leading}{option.label}</Button>; })}
   </div>;
 }

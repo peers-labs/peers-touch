@@ -96,6 +96,36 @@
           "equals": 5
         },
         {
+          "id": "rail-active-filled",
+          "type": "computedStyle",
+          "target": ".sk-rail .sk-rail-icon.is-active",
+          "prop": "backgroundColor",
+          "equals": "rgb(47, 106, 80)"
+        },
+        {
+          "id": "rail-self-avatar-pine",
+          "type": "computedStyle",
+          "target": ".sk-rail .sk-rail-avatar",
+          "prop": "backgroundColor",
+          "equals": "rgb(47, 106, 80)"
+        },
+        {
+          "id": "rail-action-stays-ink",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-moments-subbar .sk-subbar-add",
+          "prop": "backgroundColor",
+          "equals": "rgb(26, 29, 32)"
+        },
+        {
+          "id": "rail-inactive-transparent",
+          "type": "computedStyle",
+          "all": true,
+          "target": ".sk-rail .sk-rail-icon:not(.is-active)",
+          "prop": "backgroundColor",
+          "equals": "rgba(0, 0, 0, 0)"
+        },
+        {
           "id": "rail-width",
           "type": "computedStyle",
           "target": ".sk-rail",
@@ -125,6 +155,16 @@
           "id": "identity-rounded-square",
           "type": "roundedSquareAll",
           "target": ".sk-rail-avatar"
+        },
+        {
+          "id": "rail-stays-vertical-at-any-width",
+          "type": "widthSweep",
+          "from": 360, "to": 2880, "step": 24, "height": 800,
+          "computedStyles": [
+            { "target": ".sk-shell", "prop": "flexDirection", "equals": "row" },
+            { "target": ".sk-rail", "prop": "flexDirection", "equals": "column" },
+            { "target": ".sk-rail", "prop": "width", "equals": "60px" }
+          ]
         }
       ],
       "finalizers": []
@@ -147,14 +187,54 @@
           "equals": "0px"
         },
         {
-          "id": "head-no-bottom-border",
-          "type": "computedStyle",
-          "target": ".sk-feed-head",
-          "prop": "borderBottomWidth",
-          "equals": "0px"
+          "id": "no-article-feed-head",
+          "type": "missing",
+          "target": ".sk-feed-head"
         }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.overlay-clips-to-shell",
+      "title": "原语浮层边界：消息轨新建菜单展开后整条 menu 收在 .sk-shell 裁剪框内，不越出外页",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='chat']"
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='sk.new-menu']"
+        },
+        {
+          "op": "wait",
+          "ms": 160
+        }
+      ],
+      "oracles": [
+        {
+          "id": "menu-open",
+          "type": "exists",
+          "scope": "global",
+          "target": ".pt-overlay.pt-menu"
+        },
+        {
+          "id": "menu-within-shell",
+          "type": "craftBattery",
+          "root": "body"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        }
+      ]
     },
     {
       "id": "ui.prototype.north-star.global-search-open",
@@ -523,7 +603,7 @@
           "id": "settings-frame",
           "type": "exists",
           "scope": "global",
-          "target": ".sk-settings-tabbar"
+          "target": ".sk-settings-groups"
         },
         {
           "id": "seven-notify-switches",
@@ -925,6 +1005,14 @@
           "id": "composer-textarea",
           "type": "exists",
           "target": ".sk-composer textarea"
+        },
+        {
+          "id": "composer-lead-aligns-stream",
+          "type": "edgesAlign",
+          "target": ".sk-composer",
+          "peer": ".sk-msg-stream",
+          "edge": "left",
+          "tolerance": 1
         },
         {
           "id": "send-disabled-when-empty",
@@ -2110,6 +2198,23 @@
           "equals": "52px"
         },
         {
+          "id": "band-flush-with-pane-top",
+          "type": "edgesAlign",
+          "target": ".sk-chat-head",
+          "peer": ".sk-conv-view",
+          "edge": "top",
+          "tolerance": 0
+        },
+        {
+          "id": "head-band-aligns-with-rail",
+          "type": "anchoredTo",
+          "target": ".sk-chat-head",
+          "owner": ".sk-rail-header",
+          "side": "right",
+          "align": "top",
+          "tolerance": 1
+        },
+        {
           "id": "borderless-action",
           "type": "computedStyle",
           "all": true,
@@ -2146,6 +2251,76 @@
         }
       ],
       "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.chat-reflows-under-squeeze",
+      "title": "极端窄宽（560/400）：会话单栏回流填满，不横向溢出、不裁剪气泡与状态，资料侧拉满幅",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "click", "target": ".sk-conv-row.is-pinned-row" },
+        { "op": "wait", "ms": 250 },
+        { "op": "viewport", "width": 560, "height": 860 },
+        { "op": "expect",
+          "oracle": {
+            "id": "single-pane-fills-at-560",
+            "type": "edgesAlign",
+            "target": ".sk-chat-main",
+            "peer": ".sk-chat-feature",
+            "edge": "left",
+            "tolerance": 2
+          }
+        },
+        { "op": "expect",
+          "oracle": {
+            "id": "main-right-fills-at-560",
+            "type": "edgesAlign",
+            "target": ".sk-chat-main",
+            "peer": ".sk-chat-feature",
+            "edge": "right",
+            "tolerance": 2
+          }
+        },
+        { "op": "expect",
+          "oracle": {
+            "id": "no-overflow-at-560",
+            "type": "overflow",
+            "target": ".sk-chat-feature"
+          }
+        },
+        { "op": "click", "target": "[data-action-id='chat.open-info']" },
+        { "op": "wait", "ms": 300 },
+        { "op": "expect",
+          "oracle": {
+            "id": "detail-sheet-full-bleed-at-560",
+            "type": "edgesAlign",
+            "target": ".sk-side-sheet",
+            "peer": ".sk-chat-main",
+            "edge": "left",
+            "tolerance": 2
+          }
+        },
+        { "op": "viewport", "width": 400, "height": 860 },
+        { "op": "expect",
+          "oracle": {
+            "id": "no-overflow-at-400",
+            "type": "overflow",
+            "target": ".sk-chat-feature"
+          }
+        },
+        { "op": "expect",
+          "oracle": {
+            "id": "self-avatar-inside-pane-at-400",
+            "type": "containedIn",
+            "target": ".sk-msg-me .sk-msg-avatar-self",
+            "owner": ".sk-chat-feature"
+          }
+        }
+      ],
+      "oracles": [],
+      "finalizers": [
+        { "op": "viewport", "width": 1360, "height": 900 }
+      ]
     },
     {
       "id": "ui.prototype.north-star.call-audio",
@@ -3730,7 +3905,7 @@
             "id": "plain-icons",
             "type": "count",
             "target": "[data-detail-panel] .sk-detail-icon",
-            "gte": 7
+            "gte": 5
           }
         },
         {
@@ -3804,14 +3979,63 @@
           "target": "[data-action-id='profile.manage-members']"
         },
         {
+          "id": "add-member-is-icon-tile",
+          "type": "computedStyle",
+          "target": ".sk-profile-add-tile",
+          "prop": "width",
+          "equals": "38px"
+        },
+        {
+          "id": "add-member-tile-has-glyph-no-text",
+          "type": "count",
+          "target": ".sk-profile-add-tile svg",
+          "equals": 1
+        },
+        {
+          "id": "manage-is-icon-tile",
+          "type": "computedStyle",
+          "target": ".sk-profile-manage-tile",
+          "prop": "width",
+          "equals": "38px"
+        },
+        {
+          "id": "manage-tile-has-glyph-no-text",
+          "type": "count",
+          "target": ".sk-profile-manage-tile svg",
+          "equals": 1
+        },
+        {
+          "id": "member-actions-live-in-grid-not-text-row",
+          "type": "count",
+          "target": ".sk-profile-members .sk-profile-member-tile",
+          "equals": 2
+        },
+        {
           "id": "nickname-row",
           "type": "exists",
           "target": "[data-profile-nickname]"
         },
         {
-          "id": "background-row",
+          "id": "background-entry",
           "type": "exists",
           "target": "[data-profile-background]"
+        },
+        {
+          "id": "search-entry",
+          "type": "exists",
+          "target": "[data-profile-search]"
+        },
+        {
+          "id": "bg-search-are-header-icons",
+          "type": "count",
+          "target": ".sk-side-head-actions [data-action-id='profile.background'], .sk-side-head-actions [data-action-id='profile.search']",
+          "equals": 2
+        },
+        {
+          "id": "bg-search-no-longer-rows",
+          "type": "count",
+          "target": ".sk-setting-row [data-profile-background], .sk-setting-row [data-profile-search]",
+          "equals": 0
         },
         {
           "id": "two-switches",
@@ -4257,6 +4481,26 @@
             "target": ".sk-conv-view",
             "attr": "data-chat-background",
             "equals": "mint"
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "wallpaper-full-bleed-not-card",
+            "type": "computedStyle",
+            "target": ".sk-msg-stream",
+            "prop": "borderTopLeftRadius",
+            "equals": "0px"
+          }
+        },
+        {
+          "op": "expect",
+          "oracle": {
+            "id": "wallpaper-paints-column-not-stream",
+            "type": "computedStyle",
+            "target": ".sk-msg-stream",
+            "prop": "backgroundImage",
+            "equals": "none"
           }
         },
         {
@@ -4923,7 +5167,7 @@
     },
     {
       "id": "ui.prototype.north-star.message-menu-peer-geometry",
-      "title": "他人消息菜单：Feishu 密度（180 宽/32 行/13 字）+ 三组分区，含多选/稍后处理/举报/仅对我隐藏，无编辑撤回",
+      "title": "他人消息菜单：Feishu 密度（180 宽/30 行/13 字）+ 三组分区，含多选/稍后处理/举报/仅对我隐藏，无编辑撤回",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -4957,13 +5201,13 @@
           "equals": "180px"
         },
         {
-          "id": "row-32",
+          "id": "row-30",
           "type": "computedStyle",
           "scope": "global",
           "target": ".pt-menu .pt-menu-item",
           "prop": "minHeight",
           "all": true,
-          "equals": "32px"
+          "equals": "30px"
         },
         {
           "id": "font-13",
@@ -6652,7 +6896,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-feed",
-      "title": "增量4/41：动态子系统首页——3 范围 Segmented/就近搜索/发动态 CTA/3 张完整卡片（48 头像、信任行、图片、评论预览、反应条、加载更多），工艺电池全清",
+      "title": "增量4/41：动态子系统——动态/圈友 2 范围 Segmented、合并时间线（本地+联邦）、最新/热门浮动全局视角（默认最新时间序）、就近搜索、图标发动态入口、3 张首页卡片，工艺电池全清",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -6669,16 +6913,10 @@
           "equals": "page"
         },
         {
-          "id": "feed-title",
-          "type": "textContains",
-          "target": ".sk-feed-head h1",
-          "contains": "朋友圈动态"
-        },
-        {
           "id": "scope-segmented",
           "type": "count",
           "target": ".sk-moments-subbar .pt-segmented .pt-button",
-          "equals": 3
+          "equals": 2
         },
         {
           "id": "scope-search-bound-to-feed",
@@ -6686,6 +6924,55 @@
           "target": ".sk-scope-search",
           "attr": "data-scope-search",
           "equals": "feed"
+        },
+        {
+          "id": "search-placeholder-fits",
+          "type": "placeholderFits",
+          "target": ".sk-scope-search"
+        },
+        {
+          "id": "add-tile-fixed-38",
+          "type": "computedStyle",
+          "target": ".sk-subbar-add",
+          "prop": "width",
+          "equals": "38px"
+        },
+        {
+          "id": "compose-icon-only",
+          "type": "resolvedText",
+          "target": "[data-action-id='moments.compose']",
+          "equals": ""
+        },
+        {
+          "id": "feed-sort-floating-chip",
+          "type": "exists",
+          "target": ".sk-moments-scroll .sk-feed-sort-float .sk-feed-sort-pill"
+        },
+        {
+          "id": "feed-sort-two-options",
+          "type": "count",
+          "target": ".sk-feed-sort-float .pt-segmented .pt-button",
+          "equals": 2
+        },
+        {
+          "id": "feed-sort-owns-no-row",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-float",
+          "prop": "height",
+          "equals": "0px"
+        },
+        {
+          "id": "feed-sort-is-sticky",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-float",
+          "prop": "position",
+          "equals": "sticky"
+        },
+        {
+          "id": "feed-default-time-order",
+          "type": "textContains",
+          "target": ".sk-moments-scroll .sk-post:first-of-type .sk-post-name",
+          "contains": "林晚"
         },
         {
           "id": "no-people-surface",
@@ -6766,10 +7053,16 @@
           "target": "[data-action-id='moments.load-more']"
         },
         {
-          "id": "scope-hint",
-          "type": "textContains",
-          "target": ".sk-moments-hint",
-          "contains": "关注"
+          "id": "scope-subbar-one-line",
+          "type": "computedStyle",
+          "target": ".sk-moments-subbar",
+          "prop": "flexWrap",
+          "contains": "nowrap"
+        },
+        {
+          "id": "scope-island-scrollable",
+          "type": "exists",
+          "target": ".sk-scope-island[data-scrollable]"
         },
         {
           "id": "craft-clean",
@@ -6780,7 +7073,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-load-more",
-      "title": "加载更多：3→6 张卡片，按钮消失并出现结尾标识",
+      "title": "合并时间线分页：3→6（按钮仍在，含联邦动态）→8，按钮消失并出现结尾标识",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -6790,14 +7083,35 @@
         {
           "op": "click",
           "target": "[data-action-id='moments.load-more']"
+        },
+        {
+          "op": "expect",
+          "id": "six-posts",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-post",
+            "equals": 6
+          }
+        },
+        {
+          "op": "expect",
+          "id": "load-more-still",
+          "oracle": {
+            "type": "exists",
+            "target": "[data-action-id='moments.load-more']"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='moments.load-more']"
         }
       ],
       "oracles": [
         {
-          "id": "six-posts",
+          "id": "eight-posts",
           "type": "count",
           "target": ".sk-post",
-          "equals": 6
+          "equals": 8
         },
         {
           "id": "load-more-gone",
@@ -7140,7 +7454,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-inline-comments",
-      "title": "增量31：评论默认在卡片内全显并可直接回复，不跳详情页",
+      "title": "增量31：评论默认在卡片内按最新排序首页呈现并可直接回复，不跳详情页；新发评论置顶",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -7180,9 +7494,9 @@
           "equals": 4
         },
         {
-          "id": "last-comment",
+          "id": "fresh-comment-on-top",
           "type": "textContains",
-          "target": ".sk-post:nth-of-type(2) .sk-comment-item:last-of-type .sk-comment-text",
+          "target": ".sk-post:nth-of-type(2) .sk-comment-list > .sk-comment-item:first-child .sk-comment-text",
           "contains": "书架见"
         },
         {
@@ -7266,8 +7580,8 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.moments-comment-fold",
-      "title": "增量31：评论超过 10 条默认折叠为 10 条，展开后全显",
+      "id": "ui.prototype.north-star.moments-comment-pagination",
+      "title": "评论时间序唯一（交流平权：无排序控件、赞不参与排序）与游标分页——首页 5 条且头条为最新评论，逐页 5→10→11 全显",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -7280,7 +7594,58 @@
         },
         {
           "op": "expect",
-          "id": "folded-ten",
+          "id": "newest-page-five",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-post:first-of-type .sk-comment-list > .sk-comment-item",
+            "equals": 5
+          }
+        },
+        {
+          "op": "expect",
+          "id": "newest-head-is-newest-seed",
+          "oracle": {
+            "type": "exists",
+            "target": ".sk-post:first-of-type .sk-comment-list > .sk-comment-item:first-child[data-comment-id='mo-1-c11']"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "no-comment-sort-control",
+          "oracle": {
+            "type": "missing",
+            "target": ".sk-post:first-of-type .sk-comment-sort"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "no-most-liked-option",
+          "oracle": {
+            "type": "missing",
+            "target": "[data-action-id='segment.liked']"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "pager-remaining-six",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-post:first-of-type .sk-comment-pager",
+            "attr": "data-comment-remaining",
+            "equals": "6"
+          }
+        },
+        {
+          "op": "click",
+          "target": ".sk-post:first-of-type .sk-comment-pager"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "page-two-ten",
           "oracle": {
             "type": "count",
             "target": ".sk-post:first-of-type .sk-comment-list > .sk-comment-item",
@@ -7288,16 +7653,8 @@
           }
         },
         {
-          "op": "expect",
-          "id": "nested-reply-visible-folded",
-          "oracle": {
-            "type": "exists",
-            "target": ".sk-post:first-of-type [data-comment-id='mo-1-c1-r1']"
-          }
-        },
-        {
           "op": "click",
-          "target": ".sk-post:first-of-type .sk-comment-fold"
+          "target": ".sk-post:first-of-type .sk-comment-pager"
         },
         {
           "op": "wait",
@@ -7306,12 +7663,7 @@
       ],
       "oracles": [
         {
-          "id": "fold-toggle-present",
-          "type": "exists",
-          "target": ".sk-post:first-of-type .sk-comment-fold"
-        },
-        {
-          "id": "expanded-eleven",
+          "id": "page-three-eleven",
           "type": "count",
           "target": ".sk-post:first-of-type .sk-comment-list > .sk-comment-item",
           "equals": 11
@@ -7323,10 +7675,14 @@
           "equals": 12
         },
         {
-          "id": "toggle-label-collapses",
-          "type": "textContains",
-          "target": ".sk-post:first-of-type .sk-comment-fold",
-          "contains": "收起评论"
+          "id": "nested-reply-visible-when-paged",
+          "type": "exists",
+          "target": ".sk-post:first-of-type [data-comment-id='mo-1-c1-r1']"
+        },
+        {
+          "id": "pager-gone-after-last-page",
+          "type": "missing",
+          "target": ".sk-post:first-of-type .sk-comment-pager"
         }
       ],
       "finalizers": []
@@ -7397,6 +7753,22 @@
         {
           "op": "wait",
           "ms": 200
+        },
+        {
+          "op": "click",
+          "target": ".sk-post:first-of-type .sk-comment-pager"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "click",
+          "target": ".sk-post:first-of-type .sk-comment-pager"
+        },
+        {
+          "op": "wait",
+          "ms": 120
         },
         {
           "op": "click",
@@ -7504,8 +7876,8 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.moments-explore",
-      "title": "探索范围：联邦公开动态带远端站点信任信息，发动态 CTA 隐藏",
+      "id": "ui.prototype.north-star.moments-feed-order-view",
+      "title": "信息流视角：默认最新首条为林晚；主动切热门后全流按反应总数降序、首条为阿砚（121），切回最新复原——热门是读者自选视角，不是默认排序",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -7513,27 +7885,321 @@
           "target": "[data-rail-target='moments']"
         },
         {
+          "op": "expect",
+          "id": "recent-first",
+          "oracle": {
+            "type": "textContains",
+            "target": ".sk-post:first-of-type .sk-post-name",
+            "contains": "林晚"
+          }
+        },
+        {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
+          "target": ".sk-feed-sort-float [data-action-id='segment.hot']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "hot-pressed",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-feed-sort-float [data-action-id='segment.hot']",
+            "attr": "aria-pressed",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "hot-first-ayan",
+          "oracle": {
+            "type": "textContains",
+            "target": ".sk-post:first-of-type .sk-post-name",
+            "contains": "阿砚"
+          }
+        },
+        {
+          "op": "click",
+          "target": ".sk-feed-sort-float [data-action-id='segment.recent']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
         }
       ],
       "oracles": [
         {
-          "id": "two-remote-posts",
+          "id": "recent-restored-first",
+          "type": "textContains",
+          "target": ".sk-post:first-of-type .sk-post-name",
+          "contains": "林晚"
+        },
+        {
+          "id": "recent-pressed-again",
+          "type": "attr",
+          "target": ".sk-feed-sort-float [data-action-id='segment.recent']",
+          "attr": "aria-pressed",
+          "equals": "true"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-never-overflows-under-squeeze",
+      "title": "动态面任意窗口宽度（700–2880 连续扫描，含回顶态）零横向溢出：排序/回顶胶囊锚定卡片右缘内侧 14px，投影不越卡",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='moments']" },
+        { "op": "wait", "ms": 150 }
+      ],
+      "oracles": [
+        {
+          "id": "fluid-at-top",
+          "type": "widthSweep",
+          "from": 700, "to": 2880, "step": 24, "height": 900,
+          "align": [
+            { "target": ".sk-feed-sort-pill", "peer": ".sk-post", "edge": "right", "inset": 14, "tolerance": 1 }
+          ],
+          "noOverflow": [".sk-moments-scroll"],
+          "singleLine": [".sk-post:first-of-type .sk-post-name"]
+        },
+        {
+          "id": "fluid-scrolled-top-mode",
+          "type": "widthSweep",
+          "from": 700, "to": 2880, "step": 24, "height": 900,
+          "scroll": [{ "target": ".sk-moments-scroll", "top": 600 }],
+          "align": [
+            { "target": ".sk-feed-sort-pill", "peer": ".sk-post", "edge": "right", "inset": 14, "tolerance": 1 }
+          ],
+          "noOverflow": [".sk-moments-scroll"]
+        }
+      ],
+      "finalizers": [
+        { "op": "viewport", "width": 1360, "height": 900 }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.moments-feed-sort-morphs-to-top",
+      "title": "排序胶囊仅在最顶有效：下滑后变形为「回顶」，点击平滑回顶后再变回最新/热门胶囊",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "expect",
+          "id": "sorter-at-top",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-feed-sort-float",
+            "attr": "data-feed-mode",
+            "equals": "sort"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "options-visible-at-top",
+          "oracle": {
+            "type": "visible",
+            "target": ".sk-feed-sort-options"
+          }
+        },
+        {
+          "op": "scroll",
+          "target": ".sk-moments-scroll",
+          "deltaY": 600
+        },
+        {
+          "op": "wait",
+          "ms": 420
+        },
+        {
+          "op": "expect",
+          "id": "morphed-to-back-to-top",
+          "oracle": {
+            "type": "attr",
+            "target": ".sk-feed-sort-float",
+            "attr": "data-feed-mode",
+            "equals": "top"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "compact-36px",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-feed-sort-pill",
+            "prop": "width",
+            "equals": "36px"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "right-edge-inset-card-in-top-mode",
+          "oracle": {
+            "type": "edgesAlign",
+            "target": ".sk-feed-sort-pill",
+            "peer": ".sk-moments-scroll .sk-post:first-of-type",
+            "edge": "right",
+            "inset": 14,
+            "tolerance": 1
+          }
+        },
+        {
+          "op": "expect",
+          "id": "tile-icon-rendered",
+          "oracle": {
+            "type": "count",
+            "target": ".sk-feed-sort-top svg",
+            "equals": 1
+          }
+        },
+        {
+          "op": "expect",
+          "id": "tile-visible-in-top-mode",
+          "oracle": {
+            "type": "visible",
+            "target": ".sk-feed-sort-top"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "options-hidden-in-top-mode",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-feed-sort-options",
+            "prop": "visibility",
+            "equals": "hidden"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "options-stay-one-line-clipped",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-feed-sort-options",
+            "prop": "height",
+            "equals": "28px"
+          }
+        },
+        {
+          "op": "click",
+          "target": "[data-action-id='feed.back-to-top']"
+        },
+        {
+          "op": "wait",
+          "ms": 750
+        }
+      ],
+      "oracles": [
+        {
+          "id": "scrolled-to-top",
+          "type": "scrollTop",
+          "target": ".sk-moments-scroll",
+          "lte": 4
+        },
+        {
+          "id": "sorter-restored",
+          "type": "attr",
+          "target": ".sk-feed-sort-float",
+          "attr": "data-feed-mode",
+          "equals": "sort"
+        },
+        {
+          "id": "options-visible-again",
+          "type": "visible",
+          "target": ".sk-feed-sort-options"
+        },
+        {
+          "id": "two-options-present",
           "type": "count",
-          "target": ".sk-post",
+          "target": ".sk-feed-sort-float .sk-feed-sort-options .pt-button",
           "equals": 2
         },
         {
-          "id": "remote-station",
-          "type": "textContains",
-          "target": ".sk-post:first-of-type .sk-trust",
-          "contains": "松绿书屋站"
+          "id": "sorter-width-restored",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-pill",
+          "prop": "width",
+          "equals": "112px"
         },
         {
-          "id": "no-compose",
-          "type": "missing",
-          "target": ".sk-compose-open"
+          "id": "options-one-line-after-restore",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-options",
+          "prop": "height",
+          "equals": "28px"
+        },
+        {
+          "id": "tile-hidden-in-sort-mode",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-top",
+          "prop": "visibility",
+          "equals": "hidden"
+        },
+        {
+          "id": "right-edge-inset-card-after-restore",
+          "type": "edgesAlign",
+          "target": ".sk-feed-sort-pill",
+          "peer": ".sk-moments-scroll .sk-post:first-of-type",
+          "edge": "right",
+          "inset": 14,
+          "tolerance": 1
+        },
+        {
+          "id": "capsule-rounded-rect",
+          "type": "computedStyle",
+          "target": ".sk-feed-sort-pill",
+          "prop": "borderTopLeftRadius",
+          "equals": "12px"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.moments-subbar-chrome-stable",
+      "title": "子栏右侧 chrome 跨范围恒定：动态⇄圈友切换时搜索槽与加号槽的 x/y/宽/高完全不动，占位符不变，仅 data-scope-search 切换",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "chrome-pixel-stable",
+          "type": "geometryStableAcross",
+          "target": ".sk-scope-wrap",
+          "peers": [".sk-subbar-add"],
+          "steps": [
+            ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)",
+            ".sk-moments-subbar .pt-segmented .pt-button:nth-child(1)",
+            ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
+          ],
+          "tolerance": 1
+        },
+        {
+          "id": "add-action-flips-in-same-slot",
+          "type": "exists",
+          "target": "[data-action-id='circle.open-create']"
+        },
+        {
+          "id": "scope-flipped-to-circles",
+          "type": "attr",
+          "target": ".sk-scope-search",
+          "attr": "data-scope-search",
+          "equals": "circles"
+        },
+        {
+          "id": "placeholder-one-string",
+          "type": "attr",
+          "target": ".sk-scope-search",
+          "attr": "placeholder",
+          "equals": "搜索动态与圈友"
         }
       ],
       "finalizers": []
@@ -7592,8 +8258,8 @@
       "finalizers": []
     },
     {
-      "id": "ui.prototype.north-star.moments-search-explore",
-      "title": "增量41 信息就近：切到探索，同一搜索框过滤联邦公开动态（植物→1 条阿砚）",
+      "id": "ui.prototype.north-star.moments-search-federated",
+      "title": "信息就近：合并时间线内同一搜索框直达联邦公开动态（植物→1 条阿砚·松绿书屋站）",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -7601,17 +8267,13 @@
           "target": "[data-rail-target='moments']"
         },
         {
-          "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
-        },
-        {
           "op": "expect",
-          "id": "search-bound-explore",
+          "id": "search-bound-feed",
           "oracle": {
             "type": "attr",
             "target": ".sk-scope-search",
             "attr": "data-scope-search",
-            "equals": "explore"
+            "equals": "feed"
           }
         },
         {
@@ -7634,6 +8296,12 @@
           "contains": "阿砚"
         },
         {
+          "id": "matched-station",
+          "type": "textContains",
+          "target": ".sk-moments-scroll > .sk-post:first-of-type .sk-trust",
+          "contains": "松绿书屋站"
+        },
+        {
           "id": "no-end-marker-while-searching",
           "type": "missing",
           "target": ".sk-feed-end"
@@ -7652,7 +8320,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
         },
         {
           "op": "expect",
@@ -7702,7 +8370,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
         }
       ],
       "oracles": [
@@ -7733,7 +8401,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
         },
         {
           "op": "expect",
@@ -7800,7 +8468,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
         },
         {
           "op": "click",
@@ -7890,7 +8558,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
         },
         {
           "op": "click",
@@ -7962,7 +8630,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
         },
         {
           "op": "click",
@@ -8025,7 +8693,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(3)"
+          "target": ".sk-moments-subbar .pt-segmented .pt-button:nth-child(2)"
         },
         {
           "op": "click",
@@ -8114,7 +8782,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-profile",
-      "title": "头像进个人页：72 方圆身份头、作者动态列表；返回回首页流",
+      "title": "名片「查看主页」进个人页：72 方圆身份头、作者动态列表；返回回首页流",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -8124,6 +8792,11 @@
         {
           "op": "click",
           "target": ".sk-post:first-of-type .sk-post-author"
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-action-id='author.open-profile']"
         },
         {
           "op": "click",
@@ -8152,7 +8825,7 @@
     },
     {
       "id": "ui.prototype.north-star.moments-profile-content",
-      "title": "个人页内容断言（不返回）：72px 头像、姓名、本人 1 条动态",
+      "title": "名片进个人页内容断言（不返回）：72px 头像、姓名、本人 1 条动态",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -8162,6 +8835,11 @@
         {
           "op": "click",
           "target": ".sk-post:first-of-type .sk-post-author"
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-action-id='author.open-profile']"
         }
       ],
       "oracles": [
@@ -8200,8 +8878,361 @@
       "finalizers": []
     },
     {
+      "id": "ui.prototype.north-star.moments-author-card-post",
+      "title": "帖子作者弹快捷名片：不跳主页，可关注/拉黑/查看主页",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-post:first-of-type .sk-post-author"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "card-open",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card"
+        },
+        {
+          "id": "card-name",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-author-card",
+          "attr": "data-author-name",
+          "equals": "林晚"
+        },
+        {
+          "id": "card-other-person",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-author-card",
+          "attr": "data-author-self",
+          "equals": "false"
+        },
+        {
+          "id": "profile-not-open",
+          "type": "missing",
+          "target": ".sk-profile"
+        },
+        {
+          "id": "follow-entry",
+          "type": "exists",
+          "scope": "global",
+          "target": "[data-action-id='author.follow.p-linwan']"
+        },
+        {
+          "id": "recent-moments-section",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card .sk-author-moments"
+        },
+        {
+          "id": "recent-moment-tiles",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-author-card .sk-author-moment-tile",
+          "gte": 1
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.chat-message-avatar-identity-card",
+      "title": "聊天消息头像点开同款身份名片：含最近动态/发消息，查看主页跨到动态面",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "click", "target": ".sk-conv-row.is-pinned-row" },
+        { "op": "wait", "ms": 250 },
+        { "op": "click", "target": ".sk-msg-stream .sk-msg-peer .sk-msg-avatar" },
+        { "op": "wait", "ms": 300 }
+      ],
+      "oracles": [
+        {
+          "id": "card-open",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card"
+        },
+        {
+          "id": "card-has-recent-moments",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card .sk-author-moments"
+        },
+        {
+          "id": "message-action-present",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-message]"
+        },
+        {
+          "id": "open-profile-present",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-open='profile']"
+        },
+        {
+          "id": "card-on-screen-not-clipped",
+          "type": "containedIn",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-open='profile']",
+          "owner": "body"
+        }
+      ],
+      "finalizers": [
+        { "op": "press", "key": "Escape" }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.moments-author-card-self",
+      "title": "评论区自己的名字弹自我名片：只给查看我的主页，无关注/拉黑",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-post:first-of-type .sk-comment-list .sk-comment-item:nth-child(1) .sk-comment-author"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "self-card-open",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-author-card"
+        },
+        {
+          "id": "self-mark",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-author-card",
+          "attr": "data-author-self",
+          "equals": "true"
+        },
+        {
+          "id": "no-follow-for-self",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-follow]"
+        },
+        {
+          "id": "open-self-profile-entry",
+          "type": "textContains",
+          "scope": "global",
+          "target": ".sk-author-card [data-action-id='author.open-profile']",
+          "contains": "查看我的主页"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.moments-author-card-other",
+      "title": "评论头像弹他人名片：取关即时生效，查看主页才离开当前流",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-post:first-of-type .sk-comment-list .sk-comment-item:nth-child(2) .sk-comment-avatar"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "other-card-name",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-author-card",
+          "attr": "data-author-name",
+          "equals": "陈屿"
+        },
+        {
+          "id": "follow-initially-on",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-follow]",
+          "attr": "data-author-follow",
+          "equals": "on"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.moments-author-card-unknown",
+      "title": "无档案陌生人名片：身份+站点+查看主页，不展示关注动作",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='moments']"
+        },
+        {
+          "op": "click",
+          "target": ".sk-post:first-of-type .sk-comment-list .sk-comment-item:nth-child(4) .sk-comment-author"
+        }
+      ],
+      "oracles": [
+        {
+          "id": "unknown-card",
+          "type": "attr",
+          "scope": "global",
+          "target": ".sk-author-card",
+          "attr": "data-author-seeded",
+          "equals": "false"
+        },
+        {
+          "id": "no-follow-for-unknown",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-author-card [data-author-follow]"
+        }
+      ],
+      "finalizers": [
+        {
+          "op": "press",
+          "key": "Escape"
+        }
+      ]
+    },
+    {
+      "id": "ui.prototype.north-star.rail-self-floating-card",
+      "title": "侧栏自我头像弹浮动名片卡（不是页面）：头像/林野/@linye/统计/管理账号，无 profile 页",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-self]"
+        },
+        {
+          "op": "wait",
+          "ms": 120
+        },
+        {
+          "op": "expect",
+          "id": "manage-routes-to-account",
+          "oracle": {
+            "type": "attr",
+            "target": "[data-rail-self]",
+            "attr": "aria-expanded",
+            "equals": "true"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "floating-card-open",
+          "oracle": {
+            "type": "exists",
+            "scope": "global",
+            "target": "[data-self-card]"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "card-name",
+          "oracle": {
+            "type": "textContains",
+            "scope": "global",
+            "target": "[data-self-card] .sk-self-card-name",
+            "contains": "林野"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "card-stats",
+          "oracle": {
+            "type": "count",
+            "scope": "global",
+            "target": "[data-self-card] .sk-self-card-stat",
+            "equals": 3
+          }
+        },
+        {
+          "op": "click",
+          "scope": "global",
+          "target": "[data-action-id='rail.self.manage']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "oracles": [
+        {
+          "id": "card-closed-after-manage",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-self-card]"
+        },
+        {
+          "id": "no-profile-page",
+          "type": "missing",
+          "target": ".sk-profile"
+        },
+        {
+          "id": "manage-opens-settings-account",
+          "type": "exists",
+          "target": "[data-profile-identity]"
+        }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.north-star.level2-tabs-symmetric",
+      "title": "跨模块对称：动态/消息/设置三个面的二级分区切换是同一个 compact Segmented 岛——岛 36、目标 28、12 号、圆角 6，逐面一致",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "click", "target": "[data-rail-target='moments']" },
+        { "op": "wait", "ms": 180 },
+        { "op": "expect", "id": "moments-target-h", "oracle": { "type": "computedStyle", "target": ".sk-scope-island .pt-button[aria-pressed='true']", "prop": "height", "equals": "28px" } },
+        { "op": "expect", "id": "moments-target-fs", "oracle": { "type": "computedStyle", "target": ".sk-scope-island .pt-button[aria-pressed='true']", "prop": "fontSize", "equals": "12px" } },
+        { "op": "expect", "id": "moments-island-h", "oracle": { "type": "computedStyle", "target": ".sk-scope-island", "prop": "height", "equals": "36px" } },
+
+        { "op": "click", "target": "[data-rail-target='chat']" },
+        { "op": "wait", "ms": 180 },
+        { "op": "expect", "id": "chat-target-h", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-chat-subnav .pt-button[aria-pressed='true']", "prop": "height", "equals": "28px" } },
+        { "op": "expect", "id": "chat-target-fs", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-chat-subnav .pt-button[aria-pressed='true']", "prop": "fontSize", "equals": "12px" } },
+        { "op": "expect", "id": "chat-island-h", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-chat-subnav", "prop": "height", "equals": "36px" } },
+
+        { "op": "click", "target": "[data-rail-target='settings']" },
+        { "op": "wait", "ms": 180 },
+        { "op": "expect", "id": "settings-target-h", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-settings-groups .pt-button[aria-pressed='true']", "prop": "height", "equals": "28px" } },
+        { "op": "expect", "id": "settings-target-fs", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-settings-groups .pt-button[aria-pressed='true']", "prop": "fontSize", "equals": "12px" } },
+        { "op": "expect", "id": "settings-island-h", "oracle": { "type": "computedStyle", "scope": "global", "target": ".sk-settings-groups", "prop": "height", "equals": "36px" } }
+      ],
+      "oracles": [],
+      "finalizers": [
+        { "op": "clickGlobal", "target": "[data-settings-group='general']" }
+      ]
+    },
+    {
       "id": "ui.prototype.north-star.settings-frame",
-      "title": "增量23：齿轮进入设置——下划线分组 tab（非 SaaS 药丸）、5 组、通用组 4 分区、默认账号身份卡、发丝仅在 tab 栏底",
+      "title": "齿轮进入设置——二级分区 Segmented 岛（与动态/聊天同构）、5 组、通用组 4 分区、默认账号身份卡；三级为朴素分区侧栏",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -8215,23 +9246,40 @@
       ],
       "oracles": [
         {
-          "id": "tab-underline-form",
-          "type": "computedStyle",
-          "prop": "borderBottomWidth",
-          "target": ".sk-settings-tabbar",
-          "equals": "1px"
-        },
-        {
-          "id": "no-pill-container",
-          "type": "missing",
+          "id": "group-island-form",
+          "type": "exists",
           "scope": "global",
-          "target": ".sk-settings-groups"
+          "target": ".sk-settings-groups.pt-segmented"
         },
         {
           "id": "five-groups",
           "type": "count",
-          "target": ".sk-settings-tab",
+          "target": ".sk-settings-groups .pt-button",
           "equals": 5
+        },
+        {
+          "id": "group-target-canonical-height",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-settings-groups .pt-button[aria-pressed='true']",
+          "prop": "height",
+          "equals": "28px"
+        },
+        {
+          "id": "group-target-canonical-font",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-settings-groups .pt-button[aria-pressed='true']",
+          "prop": "fontSize",
+          "equals": "12px"
+        },
+        {
+          "id": "group-island-canonical-height",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-settings-groups",
+          "prop": "height",
+          "equals": "36px"
         },
         {
           "id": "general-four-sides",
@@ -8259,11 +9307,6 @@
           "target": "[data-settings-section='applets']"
         },
         {
-          "id": "active-tab-indicator",
-          "type": "exists",
-          "target": ".sk-settings-tab.is-active .sk-settings-tab-indicator"
-        },
-        {
           "id": "craft-clean",
           "type": "craftBattery"
         }
@@ -8272,7 +9315,7 @@
     },
     {
       "id": "ui.prototype.north-star.settings-groups",
-      "title": "增量23：五个分组的二级分区数量与真身 IA 一致（4/3/6/2/6）",
+      "title": "增量23：五个分组的二级分区数量与真身 IA 一致（4/3/7/2/5）",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -8322,7 +9365,7 @@
           "type": "count",
           "scope": "global",
           "target": ".sk-settings-sidebar [data-settings-section]",
-          "equals": 6
+          "equals": 5
         },
         {
           "id": "advanced-labels",
@@ -8330,6 +9373,12 @@
           "scope": "global",
           "target": ".sk-settings-sidebar",
           "contains": "命令面板"
+        },
+        {
+          "id": "advanced-no-cron",
+          "type": "missing",
+          "scope": "global",
+          "target": "[data-settings-section='cron']"
         },
         {
           "id": "no-applets",
@@ -8377,6 +9426,44 @@
         }
       ],
       "oracles": [
+        {
+          "id": "identity-one-tile",
+          "type": "exists",
+          "target": ".sk-identity[data-profile-identity] .sk-banner"
+        },
+        {
+          "id": "identity-avatar-overlaps-banner",
+          "type": "computedStyle",
+          "target": ".sk-identity-avatar",
+          "prop": "marginTop",
+          "contains": "-38px"
+        },
+        {
+          "id": "identity-avatar-white-ring",
+          "type": "computedStyle",
+          "target": ".sk-identity-avatar .pt-avatar",
+          "prop": "boxShadow",
+          "contains": "0px0px0px4px"
+        },
+        {
+          "id": "identity-banner-height",
+          "type": "computedStyle",
+          "target": ".sk-identity .sk-banner",
+          "prop": "height",
+          "equals": "120px"
+        },
+        {
+          "id": "identity-change-markers-rounded-square",
+          "type": "roundedSquareAll",
+          "target": ".sk-identity [data-icon-only=true] .pt-file-button"
+        },
+        {
+          "id": "identity-avatar-camera-contained",
+          "type": "containedIn",
+          "target": ".sk-identity-avatar-action",
+          "owner": ".sk-identity-avatar",
+          "tolerance": 0
+        },
         {
           "id": "two-quiet-copy",
           "type": "count",
@@ -8426,6 +9513,73 @@
           "ms": 100
         }
       ]
+    },
+    {
+      "id": "ui.prototype.north-star.settings-identity-edit-on-hover",
+      "title": "身份编辑（铅笔）图标静息隐藏、不截获点击；hover 头图/头像或键盘聚焦才柔和显现",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        {
+          "op": "click",
+          "target": "[data-rail-target='settings']"
+        },
+        {
+          "op": "wait",
+          "ms": 150
+        },
+        {
+          "op": "expect",
+          "id": "banner-edit-hidden-at-rest",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-banner-action",
+            "prop": "opacity",
+            "equals": "0"
+          }
+        },
+        {
+          "op": "expect",
+          "id": "avatar-edit-hidden-at-rest",
+          "oracle": {
+            "type": "computedStyle",
+            "target": ".sk-identity-avatar-action",
+            "prop": "opacity",
+            "equals": "0"
+          }
+        },
+        {
+          "op": "hover",
+          "target": ".sk-banner"
+        },
+        {
+          "op": "wait",
+          "ms": 280
+        }
+      ],
+      "oracles": [
+        {
+          "id": "banner-edit-revealed-on-hover",
+          "type": "computedStyle",
+          "target": ".sk-banner-action",
+          "prop": "opacity",
+          "equals": "1"
+        },
+        {
+          "id": "banner-edit-uses-pencil",
+          "type": "attr",
+          "target": ".sk-banner-action svg path:first-child",
+          "attr": "d",
+          "contains": "21.174"
+        },
+        {
+          "id": "avatar-edit-uses-pencil",
+          "type": "attr",
+          "target": ".sk-identity-avatar-action svg path:first-child",
+          "attr": "d",
+          "contains": "21.174"
+        }
+      ],
+      "finalizers": []
     },
     {
       "id": "ui.prototype.north-star.settings-notifications",
@@ -8546,6 +9700,30 @@
         {
           "op": "wait",
           "ms": 800
+        },
+        {
+          "op": "clickGlobal",
+          "target": "[aria-label='自动锁定']"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "expect",
+          "id": "autolock-menu-hugs-content",
+          "oracle": {
+            "type": "hugsContent",
+            "scope": "global",
+            "target": ".pt-select-popover",
+            "anchor": "[aria-label='自动锁定']",
+            "items": ".pt-select-option",
+            "tolerance": 4
+          }
+        },
+        {
+          "op": "press",
+          "key": "Escape"
         }
       ],
       "oracles": [
@@ -8568,8 +9746,28 @@
         {
           "id": "backup-created",
           "type": "textContains",
-          "target": ".sk-recovery-meta",
+          "target": ".sk-recovery-state",
           "contains": "最近备份"
+        },
+        {
+          "id": "backup-state-backed-pine",
+          "type": "computedStyle",
+          "scope": "global",
+          "target": ".sk-recovery-state.is-backed .sk-recovery-dot",
+          "prop": "backgroundColor",
+          "equals": "rgb(47, 106, 80)"
+        },
+        {
+          "id": "no-nested-warning-callout",
+          "type": "missing",
+          "scope": "global",
+          "target": ".sk-settings-section:has(.sk-recovery-state) .pt-alert"
+        },
+        {
+          "id": "restore-entry-in-section-header",
+          "type": "exists",
+          "scope": "global",
+          "target": ".sk-settings-section-extra [data-action-id='security.restore-open']"
         }
       ],
       "finalizers": [
@@ -8665,14 +9863,24 @@
           "type": "computedStyle",
           "target": "[aria-label='消息对齐'] .pt-button[aria-pressed='true']",
           "prop": "color",
-          "contains": "rgb(13, 16, 13)"
+          "contains": "rgb(26, 29, 32)"
         },
         {
           "id": "appearance-no-cold-saas-grey",
           "type": "computedStyleNone",
-          "target": ".sk-settings-section[aria-label='外观与语言']",
+          "target": ".sk-settings-scroll .pt-list-section[data-inset] .pt-list-body",
           "props": ["backgroundColor"],
           "banned": ["rgb(233, 236, 242)"]
+        },
+        {
+          "id": "appearance-card-grouped",
+          "type": "exists",
+          "target": ".sk-settings-scroll .pt-list-section[data-inset] .pt-list-body"
+        },
+        {
+          "id": "appearance-no-article-pagehead",
+          "type": "missing",
+          "target": ".sk-settings-pagehead"
         }
       ],
       "finalizers": []
@@ -8782,7 +9990,7 @@
           "type": "computedStyle",
           "target": "[data-message-id='m2'] .sk-msg-bubble",
           "prop": "backgroundColor",
-          "contains": "rgb(13, 16, 13)"
+          "contains": "rgb(26, 29, 32)"
         }
       ],
       "finalizers": [
@@ -9648,73 +10856,86 @@
     },
     {
       "id": "ui.prototype.north-star.settings-bots",
-      "title": "增量23：通道›机器人——2 种子状态标签、停用切换、新建对话框真实增行",
+      "title": "通道›机器人：种子状态/凭据签发（入口+一次性密钥+curl）/轮换/吊销两段态；任意宽度状态标签与名单行不竖排",
       "level": "L3_DYNAMIC",
       "operations": [
-        {
-          "op": "click",
-          "target": "[data-rail-target='settings']"
-        },
-        {
-          "op": "wait",
-          "ms": 150
-        },
-        {
-          "op": "click",
-          "target": "[data-settings-group='channels']"
-        },
-        {
-          "op": "wait",
-          "ms": 150
-        }
+        { "op": "click", "target": "[data-rail-target='settings']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "click", "target": "[data-settings-group='channels']" },
+        { "op": "wait", "ms": 150 },
+
+        { "op": "expect", "id": "two-bots", "oracle": { "type": "count", "scope": "global", "target": "[data-bot]", "equals": 2 } },
+        { "op": "expect", "id": "build-active", "oracle": { "type": "textContains", "scope": "global", "target": "[data-bot='bot-build']", "contains": "运行中" } },
+        { "op": "expect", "id": "release-disabled", "oracle": { "type": "textContains", "scope": "global", "target": "[data-bot='bot-release']", "contains": "已停用" } },
+
+        { "op": "clickGlobal", "target": "[data-action-id='bot.create-open']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "type", "scope": "global", "target": "[data-bot-name]", "value": "Nightly Bot" },
+        { "op": "expect", "id": "create-confirm-enabled", "oracle": { "type": "enabled", "scope": "global", "target": "[data-action-id='bot.create-confirm']" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.create-confirm']" },
+        { "op": "wait", "ms": 200 },
+        { "op": "expect", "id": "credential-dialog-shown", "oracle": { "type": "exists", "scope": "global", "target": "[data-bot-credential]" } },
+        { "op": "expect", "id": "credential-ingress-path", "oracle": { "type": "attr", "scope": "global", "target": "[data-bot-cred-ingress]", "attr": "value", "equals": "/v1/message-publishing/program/nightly-bot" } },
+        { "op": "expect", "id": "credential-secret-masked", "oracle": { "type": "attr", "scope": "global", "target": "[data-bot-cred-secret]", "attr": "type", "equals": "password" } },
+        { "op": "expect", "id": "credential-curl-has-path", "oracle": { "type": "textContains", "scope": "global", "target": "[data-bot-cred-curl]", "contains": "/v1/message-publishing/program/nightly-bot" } },
+        { "op": "expect", "id": "credential-curl-has-bearer", "oracle": { "type": "textContains", "scope": "global", "target": "[data-bot-cred-curl]", "contains": "ptb_" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.cred-reveal']" },
+        { "op": "wait", "ms": 100 },
+        { "op": "expect", "id": "credential-secret-revealed", "oracle": { "type": "attr", "scope": "global", "target": "[data-bot-cred-secret]", "attr": "type", "equals": "text" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.cred-done']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "expect", "id": "credential-dialog-closed", "oracle": { "type": "missing", "scope": "global", "target": "[data-bot-credential]" } },
+
+        { "op": "clickGlobal", "target": ".sk-bot-row:last-child [data-action-id$='.rotate']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "expect", "id": "rotate-dialog-shown", "oracle": { "type": "textContains", "scope": "global", "target": ".pt-dialog-body", "contains": "Nightly Bot" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.rotate-confirm']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "expect", "id": "new-secret-dialog-shown", "oracle": { "type": "exists", "scope": "global", "target": "[data-bot-credential]" } },
+        { "op": "expect", "id": "rotate-has-no-ingress", "oracle": { "type": "missing", "scope": "global", "target": "[data-bot-cred-ingress]" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.cred-done']" },
+        { "op": "wait", "ms": 150 },
+
+        { "op": "clickGlobal", "target": ".sk-bot-row:last-child [data-action-id$='.revoke']" },
+        { "op": "wait", "ms": 150 },
+        { "op": "expect", "id": "revoke-dialog-shown", "oracle": { "type": "textContains", "scope": "global", "target": ".pt-dialog-body", "contains": "Nightly Bot" } },
+        { "op": "clickGlobal", "target": "[data-action-id='bot.revoke-confirm']" },
+        { "op": "wait", "ms": 150 }
       ],
       "oracles": [
         {
-          "id": "two-bots",
+          "id": "bot-rows-fluid-at-any-width",
+          "type": "widthSweep",
+          "from": 700, "to": 2880, "step": 24, "height": 900,
+          "noOverflow": [".sk-settings-scroll"],
+          "singleLine": [".sk-bot-row .pt-tag", ".sk-bot-title strong", ".sk-bot-meta code"]
+        },
+        {
+          "id": "three-bots-after-create",
           "type": "count",
+          "scope": "global",
           "target": "[data-bot]",
-          "equals": 2
+          "equals": 3
         },
         {
-          "id": "build-active",
+          "id": "new-row-revoked",
           "type": "textContains",
-          "target": "[data-bot='bot-build']",
-          "contains": "运行中"
+          "scope": "global",
+          "target": ".sk-bot-row:last-child",
+          "contains": "已吊销"
         },
         {
-          "id": "release-disabled",
-          "type": "textContains",
-          "target": "[data-bot='bot-release']",
-          "contains": "已停用"
+          "id": "revoked-row-has-no-actions",
+          "type": "count",
+          "scope": "global",
+          "target": ".sk-bot-row:last-child .sk-bot-actions > *",
+          "equals": 0
         }
       ],
       "finalizers": [
-        {
-          "op": "clickGlobal",
-          "target": "[data-action-id='bot.create-open']"
-        },
-        {
-          "op": "wait",
-          "ms": 200
-        },
-        {
-          "op": "type",
-          "scope": "global",
-          "target": "[data-bot-name]",
-          "value": "Nightly Bot"
-        },
-        {
-          "op": "clickGlobal",
-          "target": "[data-action-id='bot.create-confirm']"
-        },
-        {
-          "op": "wait",
-          "ms": 150
-        },
-        {
-          "op": "clickGlobal",
-          "target": "[data-settings-group='general']"
-        }
+        { "op": "viewport", "width": 1360, "height": 900 },
+        { "op": "wait", "ms": 100 },
+        { "op": "clickGlobal", "target": "[data-settings-group='general']" }
       ]
     },
     {
@@ -9757,8 +10978,8 @@
         {
           "op": "type",
           "scope": "global",
-          "target": "input[data-channel-domain]",
-          "value": "hezuo.feishu.cn"
+          "target": "input[data-channel-app-name]",
+          "value": "hezuo"
         },
         {
           "op": "clickGlobal",
@@ -9996,7 +11217,7 @@
     },
     {
       "id": "ui.prototype.north-star.settings-cron",
-      "title": "增量23：高级›定时任务——两条固定任务开关，默认一运行一暂停",
+      "title": "AI›定时任务——全局只读任务列表，无开关，默认两运行一暂停",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -10009,7 +11230,7 @@
         },
         {
           "op": "click",
-          "target": "[data-settings-group='advanced']"
+          "target": "[data-settings-group='ai']"
         },
         {
           "op": "wait",
@@ -10026,24 +11247,30 @@
       ],
       "oracles": [
         {
-          "id": "two-task-switches",
+          "id": "three-task-rows",
           "type": "count",
-          "target": "[data-task] .pt-switch, [data-task].pt-switch",
-          "equals": 2
+          "target": ".sk-cron-registry-row",
+          "equals": 3
+        },
+        {
+          "id": "no-inline-toggles",
+          "type": "count",
+          "target": ".sk-cron-registry .pt-switch",
+          "equals": 0
         },
         {
           "id": "daily-active",
           "type": "attr",
           "target": "[data-task='daily']",
-          "attr": "aria-checked",
-          "equals": "true"
+          "attr": "data-task-state",
+          "equals": "active"
         },
         {
           "id": "weekly-paused",
           "type": "attr",
           "target": "[data-task='weekly']",
-          "attr": "aria-checked",
-          "equals": "false"
+          "attr": "data-task-state",
+          "equals": "paused"
         }
       ],
       "finalizers": [

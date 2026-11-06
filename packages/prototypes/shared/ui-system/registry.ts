@@ -31,7 +31,8 @@ export interface CapabilityRecord {
 
 export type CategoryId =
   | 'action' | 'input' | 'selection' | 'form' | 'overlay' | 'feedback'
-  | 'data' | 'navigation' | 'layout' | 'content' | 'identity' | 'code' | 'advanced';
+  | 'data' | 'navigation' | 'layout' | 'content' | 'identity' | 'code' | 'advanced'
+  | 'runtime';
 
 export const CATEGORIES: { id: CategoryId; title: string }[] = [
   { id: 'action', title: '动作' },
@@ -47,6 +48,7 @@ export const CATEGORIES: { id: CategoryId; title: string }[] = [
   { id: 'identity', title: '身份与媒体' },
   { id: 'code', title: '代码与图表' },
   { id: 'advanced', title: '高级输入与运行时' },
+  { id: 'runtime', title: '运行时' },
 ];
 
 const CHAT = '桌面原型 · 消息';
@@ -63,6 +65,7 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['action', 'CopyButton', '复制按钮'],
   ['action', 'DownloadButton', '下载按钮'],
   ['action', 'ActionGroup', '动作组容器'],
+  ['action', 'SplitButton', '主操作 + 备选菜单的分裂按钮'],
   // input
   ['input', 'TextField', '单行输入'],
   ['input', 'TextArea', '多行输入'],
@@ -105,6 +108,7 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['overlay', 'Popover', '弹出层'],
   ['overlay', 'Tooltip', '文字气泡'],
   ['overlay', 'Menu', '下拉菜单'],
+  ['overlay', 'ContextMenu', '右键上下文菜单'],
   ['overlay', 'ConfirmAction', '危险二次确认'],
   ['overlay', 'CommandPalette', '命令面板'],
   ['overlay', 'FloatingPanel', '浮动面板'],
@@ -125,6 +129,8 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['data', 'List', '列表'],
   ['data', 'ListItem', '列表行'],
   ['data', 'ListItemMeta', '列表行元信息'],
+  ['content', 'ListSection', '扁平设置分区（quiet 标题）'],
+  ['content', 'ListRow', '扁平设置行（标题/描述/控件槽）'],
   ['data', 'DataTable', '数据表'],
   ['data', 'VirtualList', '虚拟列表'],
   ['data', 'Pagination', '分页'],
@@ -137,6 +143,7 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['navigation', 'Breadcrumb', '面包屑'],
   ['navigation', 'Steps', '步骤条'],
   ['navigation', 'SideNav', '侧边导航'],
+  ['navigation', 'Tree', '树形导航'],
   ['navigation', 'SectionNav', '区块导航'],
   ['navigation', 'PageHeader', '页头'],
   ['navigation', 'NavigationToggle', '导航开合'],
@@ -179,6 +186,7 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['identity', 'Carousel', '轮播'],
   // code
   ['code', 'CodeBlock', '代码块'],
+  ['code', 'CodeSnippet', '行内/小段代码片'],
   ['code', 'CodeEditor', '代码编辑器'],
   ['code', 'CodeDiff', '差异对比'],
   ['code', 'DiagramPreview', '图表预览'],
@@ -196,6 +204,16 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['advanced', 'CalendarView', '日历'],
   ['advanced', 'GuideStep', '引导步骤'],
   ['advanced', 'ResizableNavigationRail', '可缩放导航轨'],
+  // runtime — mostly behaviour-only primitives; the board explains them
+  // through their contract rather than faking a standalone visual control.
+  ['runtime', 'UIProvider', '主题令牌提供者（应用根）'],
+  ['runtime', 'useUITokens', '令牌读取 hook'],
+  ['runtime', 'FocusBoundary', '焦点圈定与还原'],
+  ['runtime', 'RenderSuspension', '隐藏时保留视图状态（Activity）'],
+  ['runtime', 'MotionPolicy', '动效偏好提供者'],
+  ['runtime', 'useMotionPolicy', '动效偏好 hook'],
+  ['runtime', 'FontAssets', '授权字体资产加载'],
+  ['runtime', 'ViewErrorBoundary', '局部视图错误边界'],
 ];
 
 /** Vetted: has a reviewed specimen AND is consumed by a prototype surface. */
@@ -220,6 +238,8 @@ const VETTED_CONSUMERS: Record<string, string[]> = {
   AvatarGroup: [CHAT, MOMENTS],
   CopyButton: [SETTINGS],
   QrCode: [SETTINGS],
+  ListSection: [SETTINGS],
+  ListRow: [SETTINGS],
 };
 
 /** Registered gaps — hand-rolled in prototypes today, awaiting promotion. */
@@ -229,7 +249,6 @@ const GAPS: Array<[CategoryId, CapabilityKind, string, string, string, string?]>
   ['advanced', 'primitive', 'VoiceRecorder', '语音录制与波形（富输入）', CHAT],
   ['navigation', 'composition', 'CommandSurface', '封闭域命令浮层（搜索/命令面板）', CHAT],
   ['data', 'composition', 'ConversationRow', '会话行（头像/摘要/未读/置顶/静音）', CHAT],
-  ['form', 'composition', 'SettingRow', '设置行（标题/描述/控件/危险态）', SETTINGS],
 ];
 
 function build(): CapabilityRecord[] {
@@ -262,6 +281,6 @@ export const SPECIMEN_IDS: readonly string[] = Object.keys(VETTED_CONSUMERS);
 
 export const STATUS_LABEL: Record<CapabilityStatus, string> = {
   vetted: '已验收',
-  implemented: '已实现 · 待样本',
+  implemented: '已实现 · 待消费',
   gap: '缺口已登记',
 };

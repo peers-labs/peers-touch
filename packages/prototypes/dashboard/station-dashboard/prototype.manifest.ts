@@ -1,5 +1,5 @@
 import type { PrototypeManifest } from "../../portal/src/registry/types";
-import { isModelWireflow } from '../../shared/modelServiceWireflow';
+import { isModelWireflow } from '../../shared/modelServiceWireflowState';
 
 const manifest = {
   id: "station-dashboard",

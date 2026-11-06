@@ -45,12 +45,7 @@ export function StationSelector({
   return (
     <section className="mp-station-selector">
       <div className="mp-station-selector-header">
-        <div>
-          <Text strong>{t('mobile.station.your')}</Text>
-          <Text className="mp-station-helper" tone="secondary">
-            Tap a recent Station to change the target
-          </Text>
-        </div>
+        <Text strong>{t('mobile.station.your')}</Text>
         <span className={`mp-station-selection-state ${activeUrl ? 'selected' : ''}`}>
           {activeUrl ? 'Selected' : 'Required'}
         </span>

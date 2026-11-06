@@ -151,14 +151,14 @@ export function SpecimenBoard({ condition }: { condition: Condition }) {
         </Card>
 
         <Card id="Avatar" title="头像与头像组" consumed={consumers('Avatar')}>
-          <Avatar name="林晚" size={48} background="#c98a5a" />
-          <Avatar name="陈屿" size={36} background="#3f6550" />
+          <Avatar name="林晚" size={48} background="#2f6a50" />
+          <Avatar name="陈屿" size={36} background="#3d434a" />
         </Card>
 
         <Card id="AvatarGroup" title="头像组" consumed={consumers('AvatarGroup')}>
           <AvatarGroup>
-            <Avatar name="周禾" size={32} background="#5f7d5a" />
-            <Avatar name="苏禾" size={32} background="#5d5a44" />
+            <Avatar name="周禾" size={32} background="#3d434a" />
+            <Avatar name="苏禾" size={32} background="#3d434a" />
             <Avatar size={32} fallback="+3" />
           </AvatarGroup>
         </Card>

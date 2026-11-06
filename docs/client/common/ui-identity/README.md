@@ -112,6 +112,15 @@ Patterns are reusable surface contracts across modules:
 - Use antd only when the component is necessary and visually normalized into this identity.
 - Do not mix component-library defaults directly on one surface.
 - Do not define raw visual values in page code when a token or shared component rule exists.
+- **The app/page/prototype layer composes primitives; it never defines them.**
+  It is forbidden outside `packages/ui` to write CSS targeting peers-ui
+  classes (`.pt-*`) that restyles a control, or JS that re-implements a
+  control's visual state (`.style.*` chrome writes, `classList` hover/focus/
+  pressed toggling, hand-rolled open/position/animation of floating layers).
+  Missing capability is promoted to the primitive as a token/variant, never
+  worked around in page CSS. Enforced by
+  `tooling/scripts/review/primitive-layer-guard.mjs`; see
+  `docs/knowledge/invariants/app-layer-must-not-restyle-primitives.md`.
 - Do not make user-facing UI text outside the i18n system.
 - Do not hide trust, audience, station, or privacy state when it changes what the user can safely do.
 - Do not claim award readiness or report a self-assigned craft score; use

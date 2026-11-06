@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider, ToastHost } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
+import { UIProvider } from '@peers-touch/ui';
+import './ui/northstar.css';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
 import { ErrorBoundary } from './kernel/ErrorBoundary';
@@ -153,7 +155,9 @@ async function bootstrap() {
               },
             }}
           >
-            {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
+            <UIProvider theme="light" className="ds-theme">
+              {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
+            </UIProvider>
             <ToastHost />
           </ThemeProvider>
         </I18nextProvider>

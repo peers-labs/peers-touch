@@ -74,6 +74,20 @@ if rg -q '^\[code-structure\]$' <<< "$route_output"; then
 fi
 
 echo
+echo "== Primitive layer boundary =="
+# App/prototype layers compose peers-ui; they must not restyle .pt-*
+# primitives or re-implement their state machinery. Ratcheted baseline,
+# see docs/knowledge/invariants/app-layer-must-not-restyle-primitives.md.
+node tooling/scripts/review/primitive-layer-guard.mjs
+
+echo
+echo "== Mobile surface boundary =="
+# Product surface (mobile/chat/src/app) and the evidence harness
+# (MobilePrototype/mp-*) have different machine-locked contracts; views must
+# not cross-import. Sharing is via @peers-touch/ui and pure app/model.
+node tooling/scripts/review/mobile-surface-boundary.mjs
+
+echo
 echo "== Frontend runtime registry =="
 node tooling/scripts/check-frontend-runtime-registry.mjs --range "$diff_range"
 

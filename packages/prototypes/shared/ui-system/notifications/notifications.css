@@ -104,8 +104,8 @@
 .sk-notif-item:hover .sk-notif-actions,
 .sk-notif-item:focus-within .sk-notif-actions { opacity: 1; }
 .sk-notif-actions .pt-icon-button.is-danger:hover {
-  color: #b0413a;
-  background: color-mix(in srgb, #b0413a 10%, transparent);
+  color: var(--sk-danger);
+  background: color-mix(in srgb, var(--sk-danger) 10%, transparent);
 }
 
 .sk-notif-empty { padding: 28px 0; }

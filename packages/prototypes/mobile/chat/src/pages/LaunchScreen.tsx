@@ -31,7 +31,6 @@ export function LaunchScreen({
         <header className="mp-launch-brand">
           <img src={logo} alt="Peers Touch" className="mp-launch-brand-logo" />
           <div className="mp-launch-brand-copy">
-            <span>Peers</span>
             <h1 id="mp-launch-title">{t('mobile.launch.connectStation')}</h1>
             <p>{t('mobile.launch.chooseRecent')}</p>
           </div>

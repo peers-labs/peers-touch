@@ -56,7 +56,7 @@ import {
 } from "./prototypeData";
 import "./index.css";
 import { ModelServiceAdminWireflow, ModelServiceWireflowTheme } from '../../../shared/ModelServiceWireflow';
-import { isModelWireflow } from '../../../shared/modelServiceWireflow';
+import { isModelWireflow } from '../../../shared/modelServiceWireflowState';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;

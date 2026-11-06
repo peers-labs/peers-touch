@@ -6,8 +6,13 @@
  * state. Kits sit above 样本 (single-component state matrices) and below the
  * prototypes (full surfaces). A kit proves the library can carry a recurring
  * interaction before the prototype is allowed to hand-roll it.
+ *
+ * Shape grammar: each kit is one card on the recessed canvas; its composition
+ * lives inside a bounded STAGE (never a full-width band with a sea of empty
+ * space). Layout classes are page-owned `nb-kit-*` (no .pt-* restyle); the
+ * kit only composes primitives through their public API.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   ActionGroup, Alert, Avatar, Badge, Button, Dialog, Empty, EmojiArtwork, Field,
   FileTypeGlyph, GroupAvatar, Icon, IconButton, List, ListItem, ListItemMeta, Menu,
@@ -15,30 +20,29 @@ import {
   TextArea, TextField, ToastHost, Tooltip, createToastChannel,
 } from '@peers-touch/ui';
 
-function Kit({ id, index, title, sub, children }: {
-  id: string; index: string; title: string; sub: string; children: React.ReactNode;
+function Kit({ id, index, title, sub, wide, stageClassName, children }: {
+  id: string; index: string; title: string; sub: string; wide?: boolean;
+  stageClassName?: string; children: ReactNode;
 }) {
   return (
-    <section className="nb-section" data-kit={id}>
-      <header className="nb-section-head">
-        <Text index={index} />
-        <div>
-          <h2 style={{ margin: 0, fontSize: 14.5, fontWeight: 650 }}>{title}</h2>
-          <p style={{ margin: '2px 0 0' }}>{sub}</p>
+    <article className={`nb-kit-card${wide ? ' is-wide' : ''}`} data-kit={id}>
+      <header className="nb-kit-head">
+        <span className="nb-kit-index">{index}</span>
+        <div className="nb-kit-titles">
+          <h2>{title}</h2>
+          <p>{sub}</p>
         </div>
       </header>
-      <div className="nb-section-body">{children}</div>
-    </section>
+      <div className={`nb-kit-stage${stageClassName ? ` ${stageClassName}` : ''}`}>{children}</div>
+    </article>
   );
 }
-function Text({ index }: { index: string }) {
-  return <span style={{ fontSize: 11, color: 'var(--pt-muted)', fontFamily: 'var(--pt-mono, monospace)', minWidth: 22 }}>{index}</span>;
-}
 
+// Identity tiles follow the pine-on-neutral discipline: others are ink.
 const neighbors = [
-  { id: 'p-zhouhe', name: '周禾', desc: '共享书架轮值 · 本站', tone: '#5f7d5a' },
-  { id: 'p-chenyu', name: '陈屿', desc: '风筝夜拍 · 本站', tone: '#3f6550' },
-  { id: 'p-ayan', name: '阿砚', desc: '植物医院 · 松绿书屋站', tone: '#7a6a92' },
+  { id: 'p-zhouhe', name: '周禾', desc: '共享书架轮值 · 本站', tone: '#3d434a' },
+  { id: 'p-chenyu', name: '陈屿', desc: '风筝夜拍 · 本站', tone: '#3d434a' },
+  { id: 'p-ayan', name: '阿砚', desc: '植物医院 · 松绿书屋站', tone: '#3d434a' },
 ];
 
 export function KitBoard() {
@@ -67,10 +71,11 @@ export function KitBoard() {
   const [page, setPage] = useState(1);
 
   return (
-    <div className="nb-canvas" data-nb-kits>
-      <Kit id="action" index="01" title="动作套件" sub="一个对象上的主/次/安静/危险动作、图标动作组与复制，层级只靠 emphasis 与 tone。">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="nb-canvas nb-kits" data-nb-kits>
+      <Kit id="action" index="01" title="动作套件"
+        sub="一个对象上的主/次/安静/危险动作、图标动作组与复制，层级只靠 emphasis 与 tone。">
+        <div className="nb-kit-stack">
+          <div className="nb-kit-row">
             <Button actionId="kit.primary" emphasis="primary" onActivate={() => notify('已加入生活圈')}>加入生活圈</Button>
             <Button actionId="kit.secondary" onActivate={() => notify('已发送招呼')}>打个招呼</Button>
             <Button actionId="kit.quiet" emphasis="quiet">查看主页</Button>
@@ -93,9 +98,9 @@ export function KitBoard() {
         </div>
       </Kit>
 
-      <Kit id="form" index="02" title="表单套件" sub="Field 承载标签/描述/校验，TextField/TextArea/Switch/Segmented/Select 组合为一张邻居备注卡。">
-        <form onSubmit={e => { e.preventDefault(); setSaved(note || '(空)'); notify('备注已保存'); }}
-          style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 460 }}>
+      <Kit id="form" index="02" title="表单套件"
+        sub="Field 承载标签/描述/校验，TextField/TextArea/Switch/Segmented/Select 组合为一张邻居备注卡。">
+        <form className="nb-kit-form" onSubmit={e => { e.preventDefault(); setSaved(note || '(空)'); notify('备注已保存'); }}>
           <Field label="备注名" description="只在你的站点可见">
             <TextField value={note} onChange={e => setNote(e.target.value)} placeholder="例如：书架轮值的周禾" clearable onClear={() => setNote('')} />
           </Field>
@@ -109,15 +114,16 @@ export function KitBoard() {
           <Field label="默认可见动态"><Select value={scope} onValueChange={v => setScope(String(v))}
             options={[{ value: 'local', label: '本站' }, { value: 'federated', label: '联邦可达' }]} /></Field>
           <Switch checked={notifyMe} onCheckedChange={setNotifyMe} label="对方发动态时提醒我" />
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="nb-kit-row nb-kit-form-foot">
             <Button actionId="kit.form.save" behavior="submit" emphasis="primary">保存备注</Button>
-            {saved && <span style={{ fontSize: 12, color: 'var(--pt-secondary)' }} role="status">已保存：{saved}</span>}
+            {saved && <span className="nb-kit-saved" role="status">已保存：{saved}</span>}
           </div>
         </form>
       </Kit>
 
-      <Kit id="overlay" index="03" title="浮层套件" sub="Tooltip 解释、Popover 轻动作、Menu 多动作、Dialog 破坏性确认；焦点陷阱与 Esc 由库统一。">
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+      <Kit id="overlay" index="03" title="浮层套件" stageClassName="nb-kit-stage-overlay"
+        sub="Tooltip 解释、Popover 轻动作、Menu 多动作、Dialog 破坏性确认；焦点陷阱与 Esc 由库统一。">
+        <div className="nb-kit-row">
           <Tooltip label="两跳外 · 经周禾可达" placement="top">
             <Button actionId="kit.tip" emphasis="secondary">信任路径</Button>
           </Tooltip>
@@ -138,14 +144,13 @@ export function KitBoard() {
         </div>
       </Kit>
 
-      <Kit id="feedback" index="04" title="反馈套件" sub="非阻断 Alert、可推进 Progress、空状态与动作结果；Toast 走独立通道。">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {alertOn && <Alert tone="warning" title="跨站连接尚未验证" description="验证前联邦动态不会送达。"
+      <Kit id="feedback" index="04" title="反馈套件"
+        sub="非阻断 inline Alert、可推进 Progress、空状态与动作结果；Toast 走独立通道。">
+        <div className="nb-kit-stack">
+          {alertOn && <Alert tone="warning" variant="inline" title="跨站连接尚未验证" description="验证前联邦动态不会送达。"
             dismissLabel="关闭" onDismiss={() => setAlertOn(false)} />}
-          <div style={{ maxWidth: 420 }}>
-            <Progress value={progress} label={`书架同步 · ${progress}%`} />
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Progress value={progress} label={`书架同步 · ${progress}%`} />
+          <div className="nb-kit-row">
             <Button actionId="kit.progress" emphasis="secondary" onActivate={() => setProgress(p => p >= 100 ? 0 : p + 14)}>推进 14%</Button>
             <Button actionId="kit.toast" onActivate={() => notify('已保存到本站点')}>触发轻提示</Button>
           </div>
@@ -154,37 +159,41 @@ export function KitBoard() {
         <ToastHost channel={channel} />
       </Kit>
 
-      <Kit id="list" index="05" title="列表套件" sub="Tabs 切作用域，List/ListItemMeta 承载人与会话，Tag/Badge 表达状态与未读。">
-        <div style={{ maxWidth: 520 }}>
+      <Kit id="list" index="05" title="列表套件"
+        sub="Tabs 切作用域，List/ListItemMeta 承载人与会话，Tag/Badge 表达状态与未读。">
+        <div className="nb-kit-list">
           <Tabs value={tab} onValueChange={setTab} items={[
             { id: 'chats', label: '会话', content: <List items={neighbors} itemKey={n => n.id}
-              renderItem={n => <ListItem actions={<Button actionId={`kit.open.${n.id}`} emphasis="quiet">打开</Button>}>
+              renderItem={n => <ListItem actions={<Button actionId={`kit.open.${n.id}`} emphasis="quiet" density="compact">打开</Button>}>
                 <ListItemMeta avatar={<Avatar name={n.name} size={34} background={n.tone} />}
-                  title={<span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{n.name}
+                  title={<span className="nb-kit-person">{n.name}
                     {n.id === 'p-ayan' && <Tag tone="info">联邦</Tag>}</span>}
                   description={<span>{n.desc}</span>} />
               </ListItem>} /> },
-            { id: 'requests', label: '邻居请求', content: <div style={{ padding: 12 }}>
+            { id: 'requests', label: '邻居请求', content: <div className="nb-kit-request">
               <Badge count={1} label="1 条待入站"><Tag tone="warning">待处理</Tag></Badge>
-              <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--pt-muted)' }}>阿砚 想加入小区生活圈</p>
+              <p>阿砚 想加入小区生活圈</p>
             </div> },
           ]} />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-            <Pagination page={page} total={84} pageSize={20} onPageChange={setPage} />
+          <div className="nb-kit-pager">
+            <Pagination page={page} total={84} pageSize={20} onPageChange={setPage}
+              previousLabel="上一页" nextLabel="下一页" />
           </div>
         </div>
       </Kit>
 
-      <Kit id="identity" index="06" title="身份与媒体套件" sub="身份色字头像、组头像、二维码、表情艺术字与文件类型标，全部走语义资产。">
-        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Avatar name="林" size={48} background="#c98a5a" />
-          <Avatar name="陈" size={40} background="#3f6550" />
-          <GroupAvatar name="小区生活群" size={44} members={[
+      <Kit id="identity" index="06" title="身份与媒体套件"
+        sub="身份色字头像、组头像、二维码、表情艺术字与文件类型标，全部走语义资产。">
+        <div className="nb-kit-row nb-kit-identity">
+          <Avatar name="林" size={44} background="#2f6a50" />
+          <Avatar name="陈" size={36} background="#3d434a" />
+          <GroupAvatar name="小区生活群" size={40} members={[
             { id: '1', name: '周禾' }, { id: '2', name: '苏禾' }, { id: '3', name: '林晚' },
           ]} />
-          <QrCode value="peers://approve/device/4f2a" size={112} label="设备关联二维码" />
+          <span className="nb-kit-identity-sep" />
           <EmojiArtwork emoji="🌿" label="植物" />
-          <FileTypeGlyph mimeType="application/pdf" filename="书架公约.pdf" size={28} />
+          <FileTypeGlyph mimeType="application/pdf" filename="书架公约.pdf" size={24} />
+          <QrCode value="peers://approve/device/4f2a" size={92} label="设备关联二维码" />
         </div>
       </Kit>
     </div>

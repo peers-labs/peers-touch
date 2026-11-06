@@ -13,6 +13,13 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Button, Text, northStarTheme } from '@peers-touch/ui';
 import { CAPABILITIES, CATEGORIES, STATUS_LABEL, byStatus, type CapabilityRecord } from './registry';
+import { ElementSamples, type SampleCondition } from './ElementSamples';
+
+const SAMPLE_CONDITIONS: { value: SampleCondition; label: string }[] = [
+  { value: 'normal', label: '标准' },
+  { value: 'long', label: '长文案' },
+  { value: 'disabled', label: '禁用' },
+];
 
 function useResolvedVar(varName: string, pseudo: 'color' | 'radius' | 'shadow' = 'color') {
   const ref = useRef<HTMLSpanElement>(null);
@@ -129,6 +136,7 @@ function CategoryGroup({ category, records }: { category: string; records: Capab
 }
 
 export function FoundationBoard() {
+  const [condition, setCondition] = useState<SampleCondition>('normal');
   const counts = {
     vetted: byStatus('vetted').length,
     implemented: byStatus('implemented').length,
@@ -143,7 +151,7 @@ export function FoundationBoard() {
           <p>
             令牌当前为候选主题 <code>{northStarTheme.id}</code>（{northStarTheme.status} · 仅限原型与样本），
             由桌面原型人审通过的松绿玻璃语法晋升而来；生产默认仍是冷墨主题，两套并存，不隐式替换。
-            能力登记只列真实存在的组件：已验收 {counts.vetted}、待样本 {counts.implemented}、缺口 {counts.gap}。
+            能力登记只列真实存在的组件：已验收 {counts.vetted}（有样本且被原型消费）、实样待消费 {counts.implemented}（下方组件实样可跑、尚未被原型消费）、缺口 {counts.gap}。
           </p>
         </div>
       </header>
@@ -182,6 +190,23 @@ export function FoundationBoard() {
             <GeomDemo token="--pt-shadow-float" />
           </div>
         </Section>
+
+        <section className="nb-section" data-nb-section="组件实样">
+          <header className="nb-section-head nb-samples-head">
+            <div>
+              <h2>组件实样</h2>
+              <p>登记册里每一件可渲染组件都在此渲染真实原语（非仿画）；同一条件开关检验标准态、长文案与禁用态。已验收还需被原型消费，未消费的实样只证明「库里能跑」。</p>
+            </div>
+            <span className="nb-condition-switch" role="group" aria-label="实样条件">
+              {SAMPLE_CONDITIONS.map(opt => (
+                <Button key={opt.value} actionId={`elements.condition.${opt.value}`}
+                  emphasis={condition === opt.value ? 'secondary' : 'quiet'}
+                  aria-pressed={condition === opt.value} onActivate={() => setCondition(opt.value)}>{opt.label}</Button>
+              ))}
+            </span>
+          </header>
+          <ElementSamples condition={condition} />
+        </section>
 
         <section className="nb-section">
           <header className="nb-section-head">

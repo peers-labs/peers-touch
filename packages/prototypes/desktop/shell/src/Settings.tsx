@@ -97,7 +97,7 @@ import { toast } from '../../shared/Toast';
 import { BotChannels } from './BotChannels';
 import { LarkChannels } from './LarkChannels';
 import { ModelServiceConsumerWireflow, ModelServiceWireflowTheme } from '../../../shared/ModelServiceWireflow';
-import { isModelWireflow } from '../../../shared/modelServiceWireflow';
+import { isModelWireflow } from '../../../shared/modelServiceWireflowState';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DESIGN SYSTEM (canonical atoms — ui-identity components.md §3 scale)
@@ -554,8 +554,9 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
 
   return (
     <SettingsContainer>
-      {/* Identity: cover banner + avatar seated on its lower edge. The avatar
-          overlaps by exactly its 4px ring, so the face is never cropped. */}
+      {/* Identity: cover banner + avatar seated on its lower edge. The 72px
+          avatar overlaps the 124px banner by ~34px with a 4px white ring;
+          one shared profile geometry with the north-star identity card. */}
       <section
         data-profile-identity
         style={{
@@ -648,8 +649,8 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
         </div>
 
         <div style={{ padding: '0 20px 18px' }}>
-          {/* 72px avatar on a 124px banner; 4px overlap == ring width, face fully visible */}
-          <div style={{ marginTop: -4 }}>
+          {/* 72px avatar on a 124px banner; ~34px overlap, face fully visible */}
+          <div style={{ marginTop: -34 }}>
             <div style={{
               // The separation ring must paint above the positioned cover.
               position: 'relative', zIndex: 1,

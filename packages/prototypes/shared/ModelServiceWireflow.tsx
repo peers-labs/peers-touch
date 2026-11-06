@@ -6,7 +6,7 @@ import {
   publishWireModels, resetWireGraph, revokeWireActor, saveWireAPI, serviceStep,
   subscribeWireGraph, verifyWireModel, visibleModels, resolveWireService,
   type WireActor, type WireGraph, type WireService,
-} from './modelServiceWireflow';
+} from './modelServiceWireflowState';
 import { createAntdTokenTheme } from './design-tokens/antd';
 import CLIProfileWireEditor from './CLIProfileWireEditor';
 

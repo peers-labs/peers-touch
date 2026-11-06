@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Alert, Button, Collapse, Form, Input, InputNumber, Modal, Select, Space } from 'antd';
-import { addWireProfile, defaultWireProfile, removeWireProfile, saveWireProfile, type WireGraph, type WireService } from './modelServiceWireflow';
+import { addWireProfile, defaultWireProfile, removeWireProfile, saveWireProfile, type WireGraph, type WireService } from './modelServiceWireflowState';
 
 export default function CLIProfileWireEditor({ item, graph, onSelect }: { item: WireService; graph: WireGraph; onSelect: (id: string) => void }) {
   const [creating, setCreating] = useState(false);

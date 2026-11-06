@@ -148,6 +148,9 @@ importers:
       '@peers-touch/sdk-ts':
         specifier: workspace:*
         version: link:../../packages/sdk/ts
+      '@peers-touch/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui/web
       '@peers-touch/ui-desktop':
         specifier: workspace:*
         version: link:../../packages/ui/desktop
@@ -1037,6 +1040,9 @@ importers:
       '@peers-touch/prototype-desktop-atelier':
         specifier: workspace:*
         version: link:../applets/atelier
+      '@peers-touch/ui':
+        specifier: workspace:*
+        version: link:../../../ui/web
       antd:
         specifier: ^6.3.1
         version: 6.5.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

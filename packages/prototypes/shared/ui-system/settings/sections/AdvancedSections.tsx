@@ -11,7 +11,7 @@ import {
   ChevronDown, ChevronRight, Clock3, Command as CommandIcon,
   Cpu, Database, Flame, HelpCircle, Info, MessageSquare, ScrollText, Send, Trash2,
 } from 'lucide-react';
-import { Button, Dialog, Empty, Switch, Tag, TextField } from '@peers-touch/ui';
+import { Button, Dialog, Empty, Tag, TextField } from '@peers-touch/ui';
 import { makeTranslate, usePrefs, type StringKey, type Translate } from '../../prefs';
 import { SettingsRow, SettingsSection } from '../SettingsPrimitives';
 import '../settings.css';
@@ -204,20 +204,49 @@ export function LogsSection() {
   );
 }
 
-/* ── Scheduled tasks (desktop CronJobsSection) ───────────────────────── */
+/* ── Scheduled tasks — global read-only registry ───────────────────────
+   Creation and editing live with the owning Agent; settings only shows what
+   exists across all Agents. No toggles, no add button here. */
+
+interface CronTaskSeed {
+  id: string;
+  titleKey: StringKey;
+  scheduleKey: StringKey;
+  ownerKey: StringKey;
+  active: boolean;
+}
+
+const CRON_TASKS: CronTaskSeed[] = [
+  { id: 'daily', titleKey: 'task.daily', scheduleKey: 'task.dailyDesc', ownerKey: 'task.owner.daily', active: true },
+  { id: 'report', titleKey: 'task.report', scheduleKey: 'task.reportDesc', ownerKey: 'task.owner.report', active: true },
+  { id: 'weekly', titleKey: 'task.weekly', scheduleKey: 'task.weeklyDesc', ownerKey: 'task.owner.weekly', active: false },
+];
 
 export function CronJobsSection() {
   const { t } = useT();
-  const [daily, setDaily] = useState(true);
-  const [weekly, setWeekly] = useState(false);
   return (
-    <SettingsSection icon={Clock3} title={t('task.title')}>
-      <SettingsRow label={t('task.daily')} description={t('task.dailyDesc')}>
-        <Switch2 checked={daily} label={t('task.active')} onChange={setDaily} data-task="daily" />
-      </SettingsRow>
-      <SettingsRow label={t('task.weekly')} description={t('task.weeklyDesc')}>
-        <Switch2 checked={weekly} label={t('task.weekly')} onChange={setWeekly} data-task="weekly" />
-      </SettingsRow>
+    <SettingsSection icon={Clock3} title={t('task.title')} subtitle={t('task.subtitle')}>
+      <div className="sk-cron-registry">
+        <div className="sk-cron-registry-head">
+          <span>{t('task.columnOwner')}</span>
+          <span>{t('task.columnSchedule')}</span>
+          <span>{t('task.columnStatus')}</span>
+        </div>
+        {CRON_TASKS.map(task => (
+          <div className="sk-cron-registry-row" key={task.id} data-task={task.id}
+            data-task-state={task.active ? 'active' : 'paused'}>
+            <span className="sk-cron-registry-id">
+              <strong>{t(task.titleKey)}</strong>
+              <span className="sk-cron-registry-owner">{t(task.ownerKey)}</span>
+            </span>
+            <span className="sk-cron-registry-schedule">{t(task.scheduleKey)}</span>
+            <span className="sk-cron-registry-state">
+              <i />
+              {task.active ? t('task.active') : t('task.paused')}
+            </span>
+          </div>
+        ))}
+      </div>
     </SettingsSection>
   );
 }
@@ -312,10 +341,3 @@ export function AboutSection() {
   );
 }
 
-/* ── atoms ───────────────────────────────────────────────────────────── */
-
-function Switch2({ checked, label, onChange, ...rest }: {
-  checked: boolean; label: string; onChange: (v: boolean) => void;
-} & Record<string, unknown>) {
-  return <Switch checked={checked} aria-label={label} onCheckedChange={onChange} {...rest} />;
-}
