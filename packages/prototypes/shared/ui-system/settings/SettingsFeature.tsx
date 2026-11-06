@@ -6,7 +6,9 @@
  *      primary bottom indicator on the active tab and one hairline under the
  *      whole bar (NOT SaaS pill chips).
  *   2. Left sidebar: plain section items with icon+label, active wash.
- *   3. Right: scrollable content, sections composed with peers-ui only.
+ *   3. Right: grouped white cards directly (no article page heading; the
+ *      active rail item is the subject), composed with peers-ui only
+ *      (ListSection inset wells / SettingsSection cards).
  *
  * Groups: General / Network / AI / Channels / Advanced. Applets were removed
  * by product decision. Preferences (language/layout/notifications/privacy/
@@ -74,6 +76,7 @@ const GROUPS: GroupDef[] = [
       { key: 'memory', labelKey: 'sec.memory', icon: HardDrive },
       { key: 'skills', labelKey: 'sec.skills', icon: ScrollText },
       { key: 'mcp', labelKey: 'sec.mcp', icon: Plug },
+      { key: 'cron', labelKey: 'sec.cron', icon: Clock3 },
     ],
   },
   {
@@ -89,7 +92,6 @@ const GROUPS: GroupDef[] = [
       { key: 'storage', labelKey: 'sec.dataStorage', icon: Database },
       { key: 'statistics', labelKey: 'sec.statistics', icon: MonitorSmartphone },
       { key: 'logs', labelKey: 'sec.logs', icon: ScrollText },
-      { key: 'cron', labelKey: 'sec.cron', icon: Clock3 },
       { key: 'command-menu', labelKey: 'sec.commandMenu', icon: CommandIcon },
       { key: 'about', labelKey: 'sec.about', icon: Info },
     ],
@@ -196,6 +198,9 @@ export function SettingsFeature({ navigation }: { navigation?: SettingsNavigatio
           })}
         </nav>
 
+        {/* No article-style page heading: the active item in the section rail
+            already identifies the surface; content opens straight into its
+            grouped cards. */}
         <div className="sk-settings-scroll">
           {renderSection(activeSection.key)}
         </div>

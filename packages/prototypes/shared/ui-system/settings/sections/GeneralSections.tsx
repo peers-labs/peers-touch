@@ -2,18 +2,26 @@
  * General-group sections (desktop Settings.tsx parity):
  * Notifications, Privacy & Security, Appearance & Language.
  *
+ * Shape grammar: these are flat preference surfaces. Section/heading and the
+ * label-left/control-right row come from the peers-ui ListSection/ListRow
+ * primitives (full-bleed hairlines, zero per-row chrome); in-row selects are
+ * the quiet ghost variant and status notices are inline alerts. This module
+ * only composes primitives and owns genuinely specialized layout (the 24-word
+ * recovery phrase); it never restyles a `.pt-*` primitive.
+ *
  * Toggles/segmented choices persist through the shared prefs module so chat
  * and settings observe the same values; PIN auto-lock minutes stay local.
  */
 import { useState } from 'react';
-import { Bell, CheckCircle2, Eye, KeyRound, Lock, ShieldAlert, SlidersHorizontal, Upload } from 'lucide-react';
-import { Alert, Button, CopyButton, Dialog, Select, Segmented, Switch, TextArea } from '@peers-touch/ui';
+import { Bell, CheckCircle2, Eye, KeyRound, Lock, ShieldAlert, Upload } from 'lucide-react';
+import { Alert, Button, CopyButton, Dialog, ListRow, ListSection, Select, Segmented, Switch, TextArea } from '@peers-touch/ui';
 import {
   makeTranslate, setPrefs, usePrefs,
   type DensityMode, type NotificationPrefs, type Prefs, type ThemeMode, type Translate,
 } from '../../prefs';
-import { SettingsRow, SettingsSection } from '../SettingsPrimitives';
 import '../settings.css';
+
+const HEADING_ICON = 14;
 
 function useGeneralPrefs(): { t: Translate; prefs: Prefs } {
   const prefs = usePrefs();
@@ -36,24 +44,23 @@ export function NotificationsSection() {
   ];
   return (
     <>
-      <SettingsSection icon={Bell} title={t('settings.notifyWhat')} subtitle={t('settings.notifyWhatSubtitle')}>
+      <ListSection inset icon={<Bell size={HEADING_ICON} strokeWidth={1.8} />}
+        title={t('settings.notifyWhat')} description={t('settings.notifyWhatSubtitle')}>
         {rows.map(row => (
-          <SettingsRow key={row.key} label={row.label} description={row.desc}>
-            <Switch checked={prefs.notifications[row.key]} aria-label={row.label}
-              data-notify={row.key} onCheckedChange={() => flip(row.key)} />
-          </SettingsRow>
+          <ListRow key={row.key} label={row.label} description={row.desc}
+            control={<Switch checked={prefs.notifications[row.key]} aria-label={row.label}
+              data-notify={row.key} onCheckedChange={() => flip(row.key)} />} />
         ))}
-      </SettingsSection>
-      <SettingsSection icon={Bell} title={t('settings.notifyDelivery')} subtitle={t('settings.notifyDeliverySubtitle')}>
-        <SettingsRow label={t('settings.n.inApp')} description={t('settings.n.inAppDesc')}>
-          <Switch checked={prefs.notifications.inApp} aria-label={t('settings.n.inApp')}
-            data-notify="inApp" onCheckedChange={() => flip('inApp')} />
-        </SettingsRow>
-        <SettingsRow label={t('settings.n.sound')} description={t('settings.n.soundDesc')}>
-          <Switch checked={prefs.notifications.sound} aria-label={t('settings.n.sound')}
-            data-notify="sound" onCheckedChange={() => flip('sound')} />
-        </SettingsRow>
-      </SettingsSection>
+      </ListSection>
+      <ListSection inset icon={<Bell size={HEADING_ICON} strokeWidth={1.8} />}
+        title={t('settings.notifyDelivery')} description={t('settings.notifyDeliverySubtitle')}>
+        <ListRow label={t('settings.n.inApp')} description={t('settings.n.inAppDesc')}
+          control={<Switch checked={prefs.notifications.inApp} aria-label={t('settings.n.inApp')}
+            data-notify="inApp" onCheckedChange={() => flip('inApp')} />} />
+        <ListRow label={t('settings.n.sound')} description={t('settings.n.soundDesc')}
+          control={<Switch checked={prefs.notifications.sound} aria-label={t('settings.n.sound')}
+            data-notify="sound" onCheckedChange={() => flip('sound')} />} />
+      </ListSection>
     </>
   );
 }
@@ -69,21 +76,21 @@ export function PrivacySection() {
   };
   return (
     <>
-      <SettingsSection icon={Lock} title={t('privacy.appAccess')} subtitle={t('privacy.appAccessDesc')}>
-        <SettingsRow label={t('privacy.pinLock')} description={t('privacy.pinLockDesc')}>
-          <Switch checked={privacy.pinLock} aria-label={t('privacy.pinLock')}
-            data-privacy="pinLock" onCheckedChange={() => flip('pinLock')} />
-        </SettingsRow>
+      <ListSection inset icon={<Lock size={HEADING_ICON} strokeWidth={1.8} />}
+        title={t('privacy.appAccess')} description={t('privacy.appAccessDesc')}>
+        <ListRow label={t('privacy.pinLock')} description={t('privacy.pinLockDesc')}
+          control={<Switch checked={privacy.pinLock} aria-label={t('privacy.pinLock')}
+            data-privacy="pinLock" onCheckedChange={() => flip('pinLock')} />} />
         {privacy.pinLock && (
-          <div className="sk-inline-actions">
+          <div className="sk-inline-actions sk-pin-manage">
             <Button actionId="privacy.change-pin" emphasis="quiet" density="compact"
               label={t('privacy.changePin')} />
             <Button actionId="privacy.remove-pin" emphasis="quiet" density="compact" tone="danger"
               label={t('privacy.removePin')} onActivate={() => flip('pinLock')} />
           </div>
         )}
-        <SettingsRow label={t('privacy.autoLock')} description={t('privacy.autoLockDesc')}>
-          <Select<'1m' | '5m' | '15m' | 'never'> aria-label={t('privacy.autoLock')}
+        <ListRow label={t('privacy.autoLock')} description={t('privacy.autoLockDesc')}
+          control={<Select<'1m' | '5m' | '15m' | 'never'> appearance="ghost" aria-label={t('privacy.autoLock')}
             value={autoLock as '1m' | '5m' | '15m' | 'never'}
             onValueChange={value => setAutoLock((Array.isArray(value) ? value[0] : value) ?? '5m')}
             options={[
@@ -91,19 +98,17 @@ export function PrivacySection() {
               { value: '5m', label: t('privacy.lock.5m') },
               { value: '15m', label: t('privacy.lock.15m') },
               { value: 'never', label: t('privacy.lock.never') },
-            ]} />
-        </SettingsRow>
-      </SettingsSection>
-      <SettingsSection icon={Eye} title={t('privacy.visibility')} subtitle={t('privacy.visibilityDesc')}>
-        <SettingsRow label={t('privacy.online')} description={t('privacy.onlineDesc')}>
-          <Switch checked={privacy.onlineVisible} aria-label={t('privacy.online')}
-            data-privacy="online" onCheckedChange={() => flip('onlineVisible')} />
-        </SettingsRow>
-        <SettingsRow label={t('privacy.readReceipts')} description={t('privacy.readReceiptsDesc')}>
-          <Switch checked={privacy.readReceipts} aria-label={t('privacy.readReceipts')}
-            data-privacy="readReceipts" onCheckedChange={() => flip('readReceipts')} />
-        </SettingsRow>
-      </SettingsSection>
+            ]} />} />
+      </ListSection>
+      <ListSection inset icon={<Eye size={HEADING_ICON} strokeWidth={1.8} />}
+        title={t('privacy.visibility')} description={t('privacy.visibilityDesc')}>
+        <ListRow label={t('privacy.online')} description={t('privacy.onlineDesc')}
+          control={<Switch checked={privacy.onlineVisible} aria-label={t('privacy.online')}
+            data-privacy="online" onCheckedChange={() => flip('onlineVisible')} />} />
+        <ListRow label={t('privacy.readReceipts')} description={t('privacy.readReceiptsDesc')}
+          control={<Switch checked={privacy.readReceipts} aria-label={t('privacy.readReceipts')}
+            data-privacy="readReceipts" onCheckedChange={() => flip('readReceipts')} />} />
+      </ListSection>
 
       <RecoveryBlock />
     </>
@@ -156,7 +161,8 @@ function RecoveryBlock() {
 
   return (
     <>
-      <SettingsSection icon={ShieldAlert} title={t('security.title')} subtitle={t('security.subtitle')}>
+      <ListSection inset icon={<ShieldAlert size={HEADING_ICON} strokeWidth={1.8} />}
+        title={t('security.title')} description={t('security.subtitle')}>
         <div className="sk-recovery-status">
           <span className="sk-recovery-head">
             {backupExists
@@ -166,23 +172,29 @@ function RecoveryBlock() {
           </span>
           {backupExists
             ? <span className="sk-recovery-meta">{t('security.lastBackup', { time: lastBackup })}</span>
-            : <Alert tone="warning" title={t('security.noBackupTitle')} description={t('security.noBackupDesc')} />}
-          {restored && <Alert tone="success" title={t('security.restoredTitle')} description={t('security.restoredDesc')} />}
+            : <Alert variant="inline" tone="warning" title={t('security.noBackupTitle')} description={t('security.noBackupDesc')} />}
+          {restored && <Alert variant="inline" tone="success" title={t('security.restoredTitle')} description={t('security.restoredDesc')} />}
         </div>
-        <SettingsRow label={t('security.keyLabel')} description={t('security.keyDesc')} vertical>
-          {phrase ? (
-            <div className="sk-recovery-phrase">
-              <ol data-phrase-words={phrase.length}>
-                {phrase.map((word, index) => <li key={`${word}-${index}`}><em>{index + 1}</em>{word}</li>)}
-              </ol>
-              <CopyButton actionId="security.copy-phrase" text={phrase.join(' ')}
-                label={t('security.copyPhrase')} copiedLabel={t('account.copied')} />
-            </div>
-          ) : (
-            <Button actionId="security.generate" emphasis="secondary" leading={<KeyRound size={14} />}
-              label={t('security.generate')} execution={generating ? 'pending' : 'idle'} onActivate={generate} />
-          )}
-        </SettingsRow>
+        <div className="sk-settings-row is-vertical">
+          <div className="sk-settings-row-text">
+            <span className="sk-settings-row-label">{t('security.keyLabel')}</span>
+            <span className="sk-settings-row-desc">{t('security.keyDesc')}</span>
+          </div>
+          <div className="sk-settings-row-control">
+            {phrase ? (
+              <div className="sk-recovery-phrase">
+                <ol data-phrase-words={phrase.length}>
+                  {phrase.map((word, index) => <li key={`${word}-${index}`}><em>{index + 1}</em>{word}</li>)}
+                </ol>
+                <CopyButton actionId="security.copy-phrase" text={phrase.join(' ')}
+                  label={t('security.copyPhrase')} copiedLabel={t('account.copied')} />
+              </div>
+            ) : (
+              <Button actionId="security.generate" emphasis="secondary" leading={<KeyRound size={14} />}
+                label={t('security.generate')} execution={generating ? 'pending' : 'idle'} onActivate={generate} />
+            )}
+          </div>
+        </div>
         <div className="sk-recovery-actions">
           <Button actionId="security.backup-create" emphasis="primary" leading={<Upload size={14} />}
             label={t('security.createBackup')} execution={creating ? 'pending' : 'idle'}
@@ -193,7 +205,7 @@ function RecoveryBlock() {
           <Button actionId="security.restore-open" emphasis="secondary" label={t('security.restoreOpen')}
             onActivate={() => { setRestored(false); setRestoreOpen(true); }} />
         </div>
-      </SettingsSection>
+      </ListSection>
 
       <Dialog open={restoreOpen} onDismiss={() => setRestoreOpen(false)} title={t('security.dialogTitle')}
         width={460} closeLabel={t('common.close')}
@@ -223,9 +235,9 @@ function RecoveryBlock() {
 export function AppearanceSection() {
   const { t, prefs } = useGeneralPrefs();
   return (
-    <SettingsSection icon={SlidersHorizontal} title={t('appearance.title')} subtitle={t('appearance.subtitle')}>
-      <SettingsRow label={t('appearance.theme')} description={t('appearance.themeDesc')}>
-        <Segmented<ThemeMode>
+    <ListSection inset title={t('appearance.title')}>
+      <ListRow label={t('appearance.theme')} description={t('appearance.themeDesc')}
+        control={<Segmented<ThemeMode>
           label={t('appearance.theme')}
           options={[
             { value: 'system', label: t('appearance.theme.system') },
@@ -233,42 +245,36 @@ export function AppearanceSection() {
             { value: 'dark', label: t('appearance.theme.dark') },
           ]}
           value={prefs.theme}
-          onValueChange={value => setPrefs({ theme: value ?? 'system' })} />
-      </SettingsRow>
-      <SettingsRow label={t('appearance.density')} description={t('appearance.densityDesc')}>
-        <Segmented<DensityMode>
+          onValueChange={value => setPrefs({ theme: value ?? 'system' })} />} />
+      <ListRow label={t('appearance.density')} description={t('appearance.densityDesc')}
+        control={<Segmented<DensityMode>
           label={t('appearance.density')}
           options={[
             { value: 'comfortable', label: t('appearance.density.comfortable') },
             { value: 'compact', label: t('appearance.density.compact') },
           ]}
           value={prefs.density}
-          onValueChange={value => setPrefs({ density: value ?? 'comfortable' })} />
-      </SettingsRow>
-      <SettingsRow label={t('settings.messageLayout')} description={t('settings.messageLayoutHint')}>
-        <Segmented
+          onValueChange={value => setPrefs({ density: value ?? 'comfortable' })} />} />
+      <ListRow label={t('settings.messageLayout')} description={t('settings.messageLayoutHint')}
+        control={<Segmented
           label={t('settings.messageLayout')}
           options={[
             { value: 'sides', label: t('settings.messageLayoutSides') },
             { value: 'left', label: t('settings.messageLayoutLeft') },
           ]}
           value={prefs.messageLayout}
-          onValueChange={value => setPrefs({ messageLayout: (value ?? 'sides') as 'sides' | 'left' })} />
-      </SettingsRow>
+          onValueChange={value => setPrefs({ messageLayout: (value ?? 'sides') as 'sides' | 'left' })} />} />
       {prefs.messageLayout === 'sides' && (
-        <SettingsRow className="sk-settings-subrow"
-          label={t('settings.hideOwnAvatar')} description={t('settings.hideOwnAvatarHint')}>
-          <Switch checked={prefs.hideOwnAvatarInSides} aria-label={t('settings.hideOwnAvatar')}
+        <ListRow label={t('settings.hideOwnAvatar')} description={t('settings.hideOwnAvatarHint')}
+          control={<Switch checked={prefs.hideOwnAvatarInSides} aria-label={t('settings.hideOwnAvatar')}
             data-hide-own-avatar-switch
-            onCheckedChange={value => setPrefs({ hideOwnAvatarInSides: value })} />
-        </SettingsRow>
+            onCheckedChange={value => setPrefs({ hideOwnAvatarInSides: value })} />} />
       )}
-      <SettingsRow label={t('settings.language')} description={t('settings.languageHint')}>
-        <Select<'zh-CN' | 'en'> aria-label={t('settings.language')}
+      <ListRow label={t('settings.language')} description={t('settings.languageHint')}
+        control={<Select<'zh-CN' | 'en'> appearance="ghost" aria-label={t('settings.language')}
           options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en', label: 'English' }]}
           value={prefs.locale}
-          onValueChange={value => setPrefs({ locale: (Array.isArray(value) ? value[0] : value) ?? 'zh-CN' })} />
-      </SettingsRow>
-    </SettingsSection>
+          onValueChange={value => setPrefs({ locale: (Array.isArray(value) ? value[0] : value) ?? 'zh-CN' })} />} />
+    </ListSection>
   );
 }

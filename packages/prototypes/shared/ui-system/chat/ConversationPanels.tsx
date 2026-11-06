@@ -13,9 +13,9 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useDismissOutside } from '../use-dismiss-outside';
 import {
-  BellOff, Bookmark, ChevronLeft, ChevronRight, Eraser, File as FileIcon,
-  Image as ImageIcon, LogOut, Phone, Pin, Search, Smartphone, Trash2,
-  UserPlus, Users, Video,
+  BellOff, Bookmark, ChevronLeft, Eraser, File as FileIcon,
+  Image as ImageIcon, LogOut, Phone, Pin, Smartphone, Trash2,
+  Users, Video,
 } from 'lucide-react';
 import {
   Avatar, Button, Checkbox, Dialog, Empty, IconButton, Switch, TextArea, TextField, Toggle,
@@ -225,8 +225,18 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
       data-my-role={myRole}>
       <div className="sk-side-head">
         <strong>{isGroup ? t('profile.titleGroup') : t('profile.titlePerson')}</strong>
-        <IconButton iconId="close" iconSize={16} label={t('profile.close')} actionId="chat.info-close"
-          emphasis="quiet" density="compact" onActivate={onClose} />
+        {/* Background + message search are header icon actions (self-evident
+            glyphs next to close), not two full settings rows. */}
+        <span className="sk-side-head-actions">
+          <IconButton className="sk-side-head-action" iconId="search" iconSize={16} label={t('profile.findMessages')}
+            actionId="profile.search" data-profile-search
+            emphasis="quiet" density="compact" onActivate={onSearchMessages} />
+          <IconButton className="sk-side-head-action" iconId="image" iconSize={16} label={t('profile.chatBackground')}
+            actionId="profile.background" data-profile-background
+            emphasis="quiet" density="compact" onActivate={() => setBackgroundOpen(true)} />
+          <IconButton className="sk-side-head-action" iconId="close" iconSize={16} label={t('profile.close')} actionId="chat.info-close"
+            emphasis="quiet" density="compact" onActivate={onClose} />
+        </span>
       </div>
 
       <div className="sk-side-body">
@@ -303,31 +313,33 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
                   )}
                 </div>
               ))}
-            </div>
-            {(canManage || members.length > 8) && (
-              <div className="sk-profile-member-actions">
-                {canManage && (
-                  <Button emphasis="quiet" density="compact" className="sk-profile-add"
-                    actionId="profile.add-member-open"
-                    leading={<UserPlus size={13} />} label={t('profile.addMember')}
+              {/* Member actions are avatar-sized icon tiles IN the grid (WeChat
+                  parity), never a dashed full-width row + text links below:
+                  a dashed add tile, then a quiet manage tile. */}
+              {canManage && (
+                <div className="sk-profile-member-tile">
+                  <IconButton className="sk-profile-add-tile" iconId="user-plus" iconSize={18}
+                    actionId="profile.add-member-open" label={t('profile.addMember')}
                     availability={addCandidates.length === 0
                       ? { kind: 'disabled', reason: t('profile.addMemberEmpty') }
                       : undefined}
                     onActivate={() => { setAddSelected(new Set()); setAddOpen(true); }} />
-                )}
-                <span className="sk-profile-member-links">
-                  {members.length > 8 && (
-                    <Button emphasis="quiet" density="compact" className="sk-profile-link"
-                      actionId="profile.see-all"
-                      label={showAll ? t('profile.showLess') : t('profile.seeAll')}
-                      onActivate={() => setShowAll(v => !v)} />
-                  )}
-                  {canManage && (
-                    <Button emphasis="quiet" density="compact" className="sk-profile-link"
-                      actionId="profile.manage-members" label={t('profile.manageMembers')}
-                      onActivate={() => setManageOpen(true)} />
-                  )}
-                </span>
+                </div>
+              )}
+              {canManage && (
+                <div className="sk-profile-member-tile">
+                  <IconButton className="sk-profile-manage-tile" iconId="settings" iconSize={17}
+                    actionId="profile.manage-members" label={t('profile.manageMembers')}
+                    onActivate={() => setManageOpen(true)} />
+                </div>
+              )}
+            </div>
+            {members.length > 8 && (
+              <div className="sk-profile-member-actions">
+                <Button emphasis="quiet" density="compact" className="sk-profile-link"
+                  actionId="profile.see-all"
+                  label={showAll ? t('profile.showLess') : t('profile.seeAll')}
+                  onActivate={() => setShowAll(v => !v)} />
               </div>
             )}
           </section>
@@ -375,18 +387,6 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
               data-profile-pinned={conversation.pinned ? 'true' : 'false'}
               onCheckedChange={onTogglePin} />
           </div>
-          <Button emphasis="quiet" className="sk-setting-row" actionId="profile.background"
-            data-profile-background
-            leading={<span className="sk-detail-icon"><ImageIcon size={15} /></span>}
-            trailing={<ChevronRight size={15} className="sk-setting-chevron" />}
-            label={t('profile.chatBackground')}
-            onActivate={() => setBackgroundOpen(true)} />
-          <Button emphasis="quiet" className="sk-setting-row" actionId="profile.search"
-            data-profile-search
-            leading={<span className="sk-detail-icon"><Search size={15} /></span>}
-            trailing={<ChevronRight size={15} className="sk-setting-chevron" />}
-            label={t('profile.findMessages')}
-            onActivate={onSearchMessages} />
         </section>
 
         {/* Marked for later — personal, this-device-only bookmarks */}
@@ -704,8 +704,10 @@ export function ThreadSheet({ root, peerName, initialReplies, onClose, onReply }
     <aside ref={sheetRef} className="sk-side-sheet sk-thread-sheet" aria-label={t('thread.aria')} data-thread-panel="true">
       <div className="sk-side-head">
         <strong>{t('thread.title', { n: replies.length })}</strong>
-        <IconButton iconId="close" iconSize={15} label={t('thread.close')} actionId="thread.close"
-          emphasis="quiet" density="compact" onActivate={onClose} />
+        <span className="sk-side-head-actions">
+          <IconButton className="sk-side-head-action" iconId="close" iconSize={15} label={t('thread.close')} actionId="thread.close"
+            emphasis="quiet" density="compact" onActivate={onClose} />
+        </span>
       </div>
       <div className="sk-side-body">
         <div className="sk-thread-root">

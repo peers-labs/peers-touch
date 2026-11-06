@@ -159,11 +159,11 @@
   overflow: hidden;
 }
 .nb-card-head {
-  display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
   padding: 12px 15px;
   border-bottom: 1px solid var(--pt-border);
 }
-.nb-card-head strong { font-size: 13px; font-weight: 650; }
+.nb-card-head strong { font-size: 13px; font-weight: 650; min-width: 0; }
 .nb-card-head code {
   font-family: var(--pt-mono, ui-monospace, Menlo, monospace);
   font-size: 10px; color: var(--pt-muted);
@@ -183,6 +183,81 @@
 .nb-card-stage[data-align="column"] { flex-direction: column; align-items: stretch; }
 .nb-card-note { font-size: 11.5px; line-height: 1.6; color: var(--pt-muted); margin: 0; }
 .nb-consumed { display: flex; gap: 5px; flex-wrap: wrap; }
+
+/* ---- kits (product-task pattern cards) ---- */
+.nb-kits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.nb-kit-card {
+  background: var(--pt-surface);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-lg);
+  box-shadow: var(--pt-shadow-rest);
+  display: flex; flex-direction: column; min-width: 0;
+}
+.nb-kit-card.is-wide { grid-column: 1 / -1; }
+.nb-kit-head {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid var(--pt-border);
+}
+.nb-kit-index {
+  flex-shrink: 0; margin-top: 1px;
+  font-family: var(--pt-mono, ui-monospace, Menlo, monospace);
+  font-size: 11px; color: var(--pt-muted);
+}
+.nb-kit-titles { min-width: 0; }
+.nb-kit-titles h2 { margin: 0; font-size: 13.5px; font-weight: 650; }
+.nb-kit-titles p { margin: 3px 0 0; font-size: 12px; line-height: 1.55; color: var(--pt-muted); }
+
+/* The bounded recessed stage: compositions live on the canvas tone inside the
+   reading card, so a kit never becomes a full-width band of empty space. */
+.nb-kit-stage {
+  background: var(--pt-canvas);
+  padding: 16px; border-radius: 0 0 var(--pt-radius-lg) var(--pt-radius-lg);
+}
+.nb-kit-stack { display: flex; flex-direction: column; gap: 12px; }
+.nb-kit-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.nb-kit-form { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }
+.nb-kit-form-foot { margin-top: 2px; }
+.nb-kit-saved { font-size: 12px; color: var(--pt-secondary); }
+/* Reserve room so a downward popover/menu lands inside the stage gap instead
+   of covering the next kit's heading. */
+.nb-kit-stage-overlay { min-height: 200px; display: flex; align-items: flex-start; }
+.nb-kit-list { width: 100%; }
+.nb-kit-request { padding: 12px 4px 4px; }
+.nb-kit-request p { margin: 10px 0 0; font-size: 12px; color: var(--pt-muted); }
+.nb-kit-pager { display: flex; justify-content: flex-end; margin-top: 10px; }
+.nb-kit-identity { gap: 14px; }
+.nb-kit-identity-sep { width: 1px; align-self: stretch; background: var(--pt-border); margin: 2px 2px; }
+@media (max-width: 980px) {
+  .nb-kits { grid-template-columns: 1fr; }
+  .nb-kit-card.is-wide { grid-column: auto; }
+}
+
+/* ---- base-elements live samples ---- */
+.nb-samples-head { align-items: flex-start; justify-content: space-between; gap: 18px; }
+.nb-samples-head > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.nb-condition-switch {
+  flex-shrink: 0; display: inline-flex; gap: 2px;
+  background: var(--pt-subtle); border: 1px solid var(--pt-border);
+  border-radius: 999px; padding: 3px;
+}
+.nb-elements { display: flex; flex-direction: column; gap: 26px; padding: 16px 18px 8px; }
+.nb-element-group { display: flex; flex-direction: column; gap: 12px; }
+.nb-element-group-title {
+  margin: 0; display: flex; align-items: baseline; gap: 8px;
+  font-size: 12px; font-weight: 650; letter-spacing: .04em;
+  color: var(--pt-secondary); text-transform: uppercase;
+}
+.nb-element-group-title em { font-style: normal; font-size: 11px; font-weight: 500; color: var(--pt-muted); }
+.nb-element-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.nb-element-card .nb-element-kind {
+  font-size: 10px; color: var(--pt-muted);
+  border: 1px solid var(--pt-border); border-radius: 5px; padding: 1px 6px;
+}
+.nb-element-card .nb-status[data-status="implemented"] {
+  color: var(--pt-secondary);
+}
+.nb-element-stage-wrap { align-items: flex-start; }
+.nb-element-stage { width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* ---- philosophy ---- */
 .nb-article {

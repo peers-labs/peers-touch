@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Globe, Search, ShieldCheck } from 'lucide-react';
 import { Alert, Avatar, Button, Checkbox, Dialog, Empty, IconButton, Segmented, Tag, TextField } from '@peers-touch/ui';
 import type { Conversation, FederatedActor, Person } from './chat-data';
+import { IDENTITY_INK, IDENTITY_PINE } from './chat-data';
 import { useT } from '../prefs';
 
 /* ── Find people ──────────────────────────────────────── */
@@ -198,8 +199,8 @@ export function CreateGroupDialog({ open, people, onDismiss, onCreate }: {
       const members = people.filter(p => selected.has(p.id)).map(p => ({ name: p.name, tone: p.tone }));
       onCreate({
         id: `local-${Date.now()}`, name: name.trim(), last: t('group.createdLast'), lastAt: t('time.justNow'),
-        lastTs: Date.now(), unread: 0, tone: '#7d8c4a', kind: 'group',
-        members: [{ name: '林野', tone: '#22302a', role: 'owner' }, ...members],
+        lastTs: Date.now(), unread: 0, tone: IDENTITY_INK, kind: 'group',
+        members: [{ name: '林野', tone: IDENTITY_PINE, role: 'owner' }, ...members],
       });
       close();
     }, 600);

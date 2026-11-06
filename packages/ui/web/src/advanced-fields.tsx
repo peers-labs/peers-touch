@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type HTMLAttributes, type ReactNode } from 'react';
+import type { IconId } from '@peers-touch/ui-assets';
 import type { ChoiceOption, QueryProjection } from '@peers-touch/ui-contracts';
 import { nextEnabledIndex } from '@peers-touch/ui-semantics';
 import { Button, ActionGroup, Toggle } from './actions';
@@ -116,19 +117,20 @@ export function ImageChoice({items,value,onValueChange,label}: {items:readonly {
   return <div role="group" aria-label={label} className="pt-image-choices">{items.map(item=><Toggle key={item.id} actionId={`image-choice.${item.id}`}
     aria-label={item.label} selected={value===item.id} onSelectedChange={()=>onValueChange(item.id)}>{item.artwork}<span>{item.label}</span></Toggle>)}</div>;
 }
-export interface FilePickerProps {label:string;accept?:string;multiple?:boolean;disabled?:boolean;maximumBytes?:number;onFiles:(files:readonly File[])=>void;onRejected?:(reason:string)=>void;}
+export interface FilePickerProps {label:string;iconId?:IconId;iconOnly?:boolean;accept?:string;multiple?:boolean;disabled?:boolean;maximumBytes?:number;onFiles:(files:readonly File[])=>void;onRejected?:(reason:string)=>void;}
 // The native file input is always visually hidden (still keyboard-operable);
 // the visible affordance is a token-styled custom button. A raw
 // "Choose File / No file chosen" control is forbidden by the craft contract.
-function HiddenFileInput({accept,multiple,disabled,maximumBytes,onFiles,onRejected}:Omit<FilePickerProps,'label'>) {
+function HiddenFileInput({label,accept,multiple,disabled,maximumBytes,onFiles,onRejected}:Omit<FilePickerProps,'iconId'|'iconOnly'|'label'>&{label?:string}) {
   return <input type="file" className="pt-sr-only" accept={accept} multiple={multiple} disabled={disabled}
+    aria-label={label}
     onChange={event=>{const files=[...(event.target.files??[])];if(maximumBytes&&files.some(f=>f.size>maximumBytes))onRejected?.('File exceeds the size limit.');
       else onFiles(files);event.target.value='';}}/>;
 }
-export function FilePicker({label,...inputProps}:FilePickerProps) {
-  return <label className="pt-file-picker" data-disabled={inputProps.disabled||undefined}>
-    <HiddenFileInput {...inputProps}/>
-    <span className="pt-file-button" aria-hidden="true"><Icon iconId="upload" size={15}/>{label}</span>
+export function FilePicker({label,iconId='upload',iconOnly=false,...inputProps}:FilePickerProps) {
+  return <label className="pt-file-picker" data-icon-only={iconOnly||undefined} data-disabled={inputProps.disabled||undefined}>
+    <HiddenFileInput label={label} {...inputProps}/>
+    <span className="pt-file-button" aria-hidden="true"><Icon iconId={iconId} size={15}/>{iconOnly?null:label}</span>
   </label>;
 }
 export function FileDropzone({children,label,disabled,...inputProps}:FilePickerProps&{children?:ReactNode}) {

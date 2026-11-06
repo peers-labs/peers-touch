@@ -3,14 +3,14 @@
  *
  * Desktop Settings IA parity: Identity → Public profile → Relationships
  * (blocked users). Authorized devices and the QR linking flow live under
- * Network › Your Station (LinkedDevices). The banner is its own tile so the
- * avatar never overlaps the tinted gradient; copy stays a quiet icon button
- * — identity content carries the visual weight.
+ * Network › Your Station (LinkedDevices). Identity is one tile: the banner
+ * bleeds to the card's top corners and the avatar overlaps its lower edge
+ * with a card-colored separation ring (reference profile geometry).
  */
-import { useRef, useState } from 'react';
-import { Camera, ChevronDown, ChevronRight, Link2, Plus, Trash2, Users } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, Link2, Plus, Trash2, Users } from 'lucide-react';
 import {
-  Avatar, Button, IconButton, Select, Tag, TextArea, TextField,
+  Avatar, Button, FilePicker, IconButton, Select, Tag, TextArea, TextField,
 } from '@peers-touch/ui';
 import { useT } from '../../prefs';
 import { SettingsRow, SettingsSection } from '../SettingsPrimitives';
@@ -30,8 +30,9 @@ const INITIAL_BLOCKED = [
   { id: 'bl-3', name: 'Noise Account' },
 ];
 
-function readImage(file: File | undefined): Promise<string> {
+function readImageFile(files: readonly File[]): Promise<string> {
   return new Promise((resolve, reject) => {
+    const file = files[0];
     if (!file) {
       reject(new Error('no file'));
       return;
@@ -41,20 +42,6 @@ function readImage(file: File | undefined): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('read failed'));
     reader.readAsDataURL(file);
   });
-}
-
-function ImagePick({ label, onPick, actionId }: {
-  label: string; onPick: (dataUrl: string) => void; actionId: string;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  return (
-    <>
-      <input ref={inputRef} type="file" accept="image/*" hidden
-        onChange={event => { const file = event.target.files?.[0]; if (file) void readImage(file).then(onPick); event.target.value = ''; }} />
-      <Button actionId={actionId} emphasis="quiet" density="compact" leading={<Camera size={13} />}
-        label={label} onActivate={() => inputRef.current?.click()} />
-    </>
-  );
 }
 
 export function AccountSection() {
@@ -78,51 +65,61 @@ export function AccountSection() {
   };
   const addLink = () => setLinks(list => [...list, { id: `local-${Date.now()}`, label: '', url: '' }]);
 
+  const applyImage = (setter: (value: string) => void) => (files: readonly File[]) => {
+    void readImageFile(files).then(setter).catch(() => undefined);
+  };
+
   return (
     <>
-      {/* Identity */}
+      {/* Identity — one tile, avatar overlaps the banner's lower edge. */}
       <SettingsSection title={t('account.identity')} subtitle={t('account.identitySubtitle')}>
-        <div className="sk-banner" data-has-image={banner ? 'true' : 'false'}>
-          {banner && <img src={banner} alt="" />}
-          <div className="sk-banner-action">
-            <ImagePick actionId="account.pick-banner" label={t('account.bannerChange')} onPick={setBanner} />
+        <div className="sk-identity" data-profile-identity>
+          <div className="sk-banner" data-has-image={banner ? 'true' : 'false'}>
+            {banner && <img src={banner} alt="" />}
+            <span className="sk-banner-action">
+              <FilePicker iconOnly iconId="edit" accept="image/*" label={t('account.bannerChange')}
+                onFiles={applyImage(setBanner)} />
+            </span>
           </div>
-        </div>
-        <div className="sk-identity-card" data-profile-identity>
-          <div className="sk-identity-row">
-            <div className="sk-identity-avatar">
-              <Avatar name={displayName} source={avatar || undefined} background="#22302a"
-                size={80} style={{ borderRadius: 22 }} />
-              <ImagePick actionId="account.pick-image" label={t('account.avatarChange')} onPick={setAvatar} />
-            </div>
-            <div className="sk-identity-meta">
-              <div className="sk-identity-names">
-                <strong>{displayName || t('account.unnamed')}</strong>
-                <Tag tone="info">@{displayName ? 'linye' : ''}</Tag>
-                <Tag>{t('account.localIdentity')}</Tag>
+          <div className="sk-identity-card">
+            <div className="sk-identity-row">
+              <div className="sk-identity-avatar">
+                <Avatar name={displayName} source={avatar || undefined} background="#2f6a50"
+                  size={80} style={{ borderRadius: 22 }} />
+                <span className="sk-identity-avatar-action">
+                  <FilePicker iconOnly iconId="edit" accept="image/*" label={t('account.avatarChange')}
+                    onFiles={applyImage(setAvatar)} />
+                </span>
               </div>
-              <div className="sk-identity-stats">
-                <span><strong>12</strong> {t('account.statsPosts')}</span>
-                <span><strong>86</strong> {t('account.statsFollows')}</span>
-                <span><strong>104</strong> {t('account.statsFollowers')}</span>
-                <span className="sk-identity-joined">{t('account.joined', { date: '2025-10' })}</span>
+              <div className="sk-identity-meta">
+                <div className="sk-identity-names">
+                  <strong>{displayName || t('account.unnamed')}</strong>
+                  <Tag tone="info">@{displayName ? 'linye' : ''}</Tag>
+                  <Tag>{t('account.localIdentity')}</Tag>
+                </div>
+                <div className="sk-identity-stats">
+                  <span><strong>12</strong> {t('account.statsPosts')}</span>
+                  <span><strong>86</strong> {t('account.statsFollows')}</span>
+                  <span><strong>104</strong> {t('account.statsFollowers')}</span>
+                  <span className="sk-identity-joined">{t('account.joined', { date: '2025-10' })}</span>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="sk-identity-fields">
-            <div className="sk-identity-field">
-              <span>{t('account.usernamePreferred')}</span>
-              <code>@linye</code>
-              <IconButton iconId="copy" iconSize={13} density="compact" emphasis="quiet"
-                actionId="account.copy-username" label={t('account.copy')}
-                onActivate={() => { void navigator.clipboard?.writeText('linye'); }} />
-            </div>
-            <div className="sk-identity-field">
-              <span>PTID</span>
-              <code>ptid:3f9a7c21:8c2e04ab</code>
-              <IconButton iconId="copy" iconSize={13} density="compact" emphasis="quiet"
-                actionId="account.copy-ptid" label={t('account.copy')}
-                onActivate={() => { void navigator.clipboard?.writeText('ptid:3f9a7c21:8c2e04ab'); }} />
+            <div className="sk-identity-fields">
+              <div className="sk-identity-field">
+                <span>{t('account.usernamePreferred')}</span>
+                <code>@linye</code>
+                <IconButton iconId="copy" iconSize={13} density="compact" emphasis="quiet"
+                  actionId="account.copy-username" label={t('account.copy')}
+                  onActivate={() => { void navigator.clipboard?.writeText('linye'); }} />
+              </div>
+              <div className="sk-identity-field">
+                <span>PTID</span>
+                <code>ptid:3f9a7c21:8c2e04ab</code>
+                <IconButton iconId="copy" iconSize={13} density="compact" emphasis="quiet"
+                  actionId="account.copy-ptid" label={t('account.copy')}
+                  onActivate={() => { void navigator.clipboard?.writeText('ptid:3f9a7c21:8c2e04ab'); }} />
+              </div>
             </div>
           </div>
         </div>
