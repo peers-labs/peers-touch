@@ -85,7 +85,6 @@ function OverlayLayer({
       const minLeft = clip ? Math.max(gap, clip.left + gap) : gap;
       const maxLeft = clip ? Math.min(win.innerWidth - r.width - gap, clip.right - r.width - gap)
         : win.innerWidth - r.width - gap;
-      const minTop = clip ? Math.max(gap, clip.top + gap) : gap;
       const maxTop = clip ? Math.min(win.innerHeight - r.height - gap, clip.bottom - r.height - gap)
         : win.innerHeight - r.height - gap;
       // Viewport wins over the clip frame vertically. The frame is a scroll

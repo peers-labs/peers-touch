@@ -1,0 +1,283 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Desktop north-star skin.
+ *
+ * Single skin entry for the real desktop's peers-ui migration. peers-ui's
+ * UIProvider injects the default --pt-* tokens on .pt-ui; this file re-themes
+ * them on `.pt-ui.ds-theme` to the north-star "neutral paper + ink action +
+ * pine identity" grammar so every peers-ui primitive inherits the product
+ * look without per-component color overrides.
+ *
+ * Role split (do not collapse):
+ *   --pt-primary  ink  — actions (primary buttons, the compose "+").
+ *   --pt-accent   pine — identity / current-location (self avatar, the active
+ *                        rail target). At most two pine marks share a screen.
+ *
+ * The shell geometry (.ds-shell / .ds-rail / .ds-stage) mirrors the
+ * prototype frame but lives here, namespaced for the production window.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+.pt-ui.ds-theme {
+  /* Surfaces */
+  --pt-canvas: #f4f5f4;
+  --pt-surface: #ffffff;
+  --pt-subtle: #eef0f0;
+  --pt-raised: #ffffff;
+  --pt-overlay: #ffffff;
+
+  /* Text */
+  --pt-text: #171a1c;
+  --pt-secondary: #5d6368;
+  --pt-muted: #8a9096;
+
+  /* Ink = action */
+  --pt-primary: #1a1d20;
+  --pt-primaryHover: #2b2f33;
+  --pt-onPrimary: #ffffff;
+  --pt-primarySubtle: rgba(26, 29, 32, 0.08);
+
+  /* Pine = identity / current location */
+  --pt-accent: #2f6a50;
+  --pt-accentHover: #35775b;
+  --pt-onAccent: #ffffff;
+  --pt-accentSubtle: rgba(47, 106, 80, 0.12);
+
+  /* Trust hues stay skin-independent. */
+  --pt-success: #1f7d52;
+  --pt-warning: #9a5f00;
+  --pt-danger: #c0392f;
+  --pt-info: #2469a8;
+  --pt-successSubtle: #eaf7ef;
+  --pt-warningSubtle: #fff5e1;
+  --pt-dangerSubtle: #fceeee;
+  --pt-infoSubtle: #eaf3fc;
+
+  --pt-border: rgba(22, 26, 24, 0.10);
+  --pt-borderStrong: rgba(22, 26, 24, 0.18);
+  --pt-focus: rgba(47, 106, 80, 0.34);
+  --pt-scrim: rgba(17, 20, 18, 0.4);
+
+  --pt-ownBubble: #1a1d20;
+  --pt-peerBubble: #ffffff;
+
+  --pt-radius-sm: 8px;
+  --pt-radius-md: 10px;
+  --pt-radius-lg: 14px;
+  --pt-radius-xl: 18px;
+  --pt-radius-2xl: 22px;
+
+  --pt-font: Manrope, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  --pt-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --pt-shadow-rest: 0 1px 2px rgba(20, 24, 22, 0.05), 0 2px 8px -3px rgba(20, 24, 22, 0.08);
+  --pt-shadow-soft: 0 4px 14px rgba(20, 24, 22, 0.10);
+  --pt-shadow-float: 0 18px 48px -12px rgba(20, 24, 22, 0.28);
+
+  color: var(--pt-text);
+  font-family: var(--pt-font);
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Shell frame ──────────────────────────────────────────────────────────
+ * Full-bleed production window: a constant 60px icon rail beside a flexible
+ * content stage. Unlike the centered prototype card there is no outer margin;
+ * the rail is the material zone and the stage is the canvas. */
+.ds-shell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--pt-canvas);
+  color: var(--pt-text);
+}
+
+.ds-rail {
+  width: 60px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 0;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.55);
+  border-right: 1px solid var(--pt-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.ds-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: var(--pt-canvas);
+}
+
+/* Rail groups */
+.ds-rail-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ds-rail-spacer { flex: 1; }
+.ds-rail-entry { position: relative; display: inline-flex; }
+
+/* Self identity tile: peers-ui Button reshaped to the 44px rounded square.
+ * The avatar image/fallback fills the tile (real profile material wins — we
+ * never repaint a user photo into a pine block). The rail-scoped selectors
+ * deliberately outrank the library button chrome. */
+.ds-rail .ds-rail-avatar.pt-button {
+  width: 44px;
+  height: 44px;
+  min-height: 0;
+  margin-bottom: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: transparent;
+  box-shadow: 0 8px 20px -14px rgba(20, 24, 22, 0.5);
+  transition: box-shadow 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ds-rail .ds-rail-avatar.pt-button:hover {
+  box-shadow: 0 12px 26px -12px rgba(20, 24, 22, 0.6);
+}
+.ds-rail .ds-rail-avatar.pt-button > .pt-button-content { width: 100%; height: 100%; display: grid; place-items: center; }
+.ds-rail .ds-rail-avatar.pt-button:focus-visible { outline: 2px solid var(--pt-focus); outline-offset: 2px; }
+
+/* Nav tiles: fixed 38px squares. Neutralized peers-ui IconButton chrome. */
+.ds-rail .ds-rail-group .pt-icon-button,
+.ds-rail .ds-rail-entry .pt-icon-button {
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--pt-secondary);
+  background: transparent;
+  transition: background-color 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ds-rail .ds-rail-group .pt-icon-button:hover,
+.ds-rail .ds-rail-entry .pt-icon-button:hover {
+  color: var(--pt-text);
+  background: rgba(23, 26, 28, 0.06);
+}
+/* Current surface = pine "where you are", scoped at 0,4,0 to beat the
+ * geometry/base rule above (same fix as the prototype rail). */
+.ds-rail .ds-rail-group .pt-icon-button[aria-current='page'],
+.ds-rail .ds-rail-entry .pt-icon-button[aria-current='page'] {
+  color: var(--pt-onAccent);
+  background: var(--pt-accent);
+  box-shadow: 0 10px 24px -14px rgba(20, 24, 22, 0.55);
+}
+
+/* Unread corner badge: keep peers-ui Badge but skin its count pill to the
+ * danger red and pin it to the 38px nav tile (library default is -6/-8 and
+ * ink-filled, sized for an 18px control). */
+.ds-rail-entry .pt-badge { position: relative; }
+.ds-rail-entry .pt-badge:has(> .pt-icon-button) > .pt-badge-count {
+  top: -4px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  font-size: 10px;
+  background: var(--pt-danger);
+  color: #fff;
+  border: 1.5px solid var(--pt-canvas);
+}
+.ds-rail .ds-rail-group .pt-icon-button:focus-visible,
+.ds-rail .ds-rail-entry .pt-icon-button:focus-visible {
+  outline: 2px solid var(--pt-focus);
+  outline-offset: 2px;
+}
+/* Open bell is a neutral wash, never the pine "current surface" mark. */
+.ds-rail .ds-rail-group .pt-icon-button[aria-expanded='true'] {
+  color: var(--pt-text);
+  background: rgba(23, 26, 28, 0.08);
+}
+
+/* ── Notification popover panel ─────────────────────────────────────────── */
+.ds-notify-panel {
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.ds-notify-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 6px 10px 12px;
+  border-bottom: 1px solid var(--pt-border);
+}
+.ds-notify-title { font-size: 14px; font-weight: 600; color: var(--pt-text); }
+.ds-notify-list {
+  overflow-y: auto;
+  max-height: 420px;
+  min-height: 120px;
+}
+.ds-notify-empty { padding: 40px 0; }
+.ds-notify-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--pt-border);
+}
+.ds-notify-item.is-unread { background: var(--pt-primarySubtle); }
+.ds-notify-item[data-notification-target='social-comment'] { cursor: pointer; }
+.ds-notify-glyph {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: var(--pt-accent);
+  background: var(--pt-accentSubtle);
+}
+.ds-notify-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ds-notify-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.ds-notify-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-notify-item.is-unread .ds-notify-name { font-weight: 600; }
+.ds-notify-time { font-size: 11px; color: var(--pt-muted); flex-shrink: 0; }
+.ds-notify-text {
+  font-size: 12px;
+  color: var(--pt-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-notify-foot { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+.ds-notify-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--pt-radius-full);
+  color: var(--pt-muted);
+  background: var(--pt-subtle);
+}
+.ds-notify-actions { margin-left: auto; display: inline-flex; gap: 2px; }
+
+/* Self profile card popover: zero padding so the card's own banner/material
+ * bleeds to the rounded corners. */
+.pt-overlay.ds-self-popover { padding: 0; overflow: hidden; border-radius: 14px; }

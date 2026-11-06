@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActionIcon, Popover, Tooltip } from '@lobehub/ui';
-import { Badge, theme } from 'antd';
-import { Flexbox } from 'react-layout-kit';
+import { Badge, Empty, Icon, IconButton, Popover, Tooltip } from '@peers-touch/ui';
 import type { TFunction } from 'i18next';
-import {
-  Bell,
-  Check,
-  CheckCheck,
-  MessageSquareText,
-  Trash2,
-  UserCheck,
-  UserPlus,
-} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNotificationStore } from '../store/notification';
 import { eventBus } from '../kernel/events';
@@ -56,7 +45,6 @@ function formatTimeAgo(dateStr: string, t: TFunction): string {
 }
 
 export function NotificationBell() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('moments');
   const notifications = useNotificationStore((s) => s.notifications);
   const unreadTotal = useNotificationStore((s) => s.unreadTotal);
@@ -110,69 +98,43 @@ export function NotificationBell() {
     if (item.status === 1) void markRead([item.id]);
   }, [markRead, openCommentMention]);
 
-  return (
-    <Popover
-      open={open}
-      onOpenChange={setOpen}
-      placement="rightBottom"
-      trigger="click"
-      content={
-        <div
-          style={{ width: 380, maxHeight: 480, display: 'flex', flexDirection: 'column' }}
-        >
-          <Flexbox
-            horizontal
-            align="center"
-            justify="space-between"
-            style={{ padding: '12px 14px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}
-          >
-            <span style={{ fontWeight: 600, fontSize: 14 }}>
-              {t('moments.notification.title')}
-            </span>
-            <Tooltip title={t('moments.notification.markAllRead')}>
-              <ActionIcon
-                icon={CheckCheck}
-                size="small"
-                aria-label={t('moments.notification.markAllRead')}
-                onClick={() => markAllRead()}
-              />
-            </Tooltip>
-          </Flexbox>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {notifications.length === 0 ? (
-              <Flexbox align="center" justify="center" style={{ padding: '40px 0' }}>
-                <span style={{ color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
-                  {t('moments.notification.empty')}
-                </span>
-              </Flexbox>
-            ) : (
-              notifications.map((item) => (
-                <NotificationItem
-                  key={item.id}
-                  item={item}
-                  t={t}
-                  onActivate={handleItemActivation}
-                  onMarkRead={() => markRead([item.id])}
-                  onDelete={() => deleteNotifications([item.id])}
-                />
-              ))
-            )}
-          </div>
-        </div>
-      }
-    >
-      <div>
-        <Badge count={unreadTotal} size="small" offset={[-2, 2]}>
-          <ActionIcon
-            icon={Bell}
-            size="large"
-            active={open}
-            title={t('moments.notification.title')}
-            aria-label={t('moments.notification.title')}
-          />
-        </Badge>
+  const panel = (
+    <div className="ds-notify-panel">
+      <div className="ds-notify-head">
+        <span className="ds-notify-title">{t('moments.notification.title')}</span>
+        <Tooltip label={t('moments.notification.markAllRead')} placement="left">
+          <IconButton actionId="notification.mark-all-read" iconId="check-check" iconSize={15}
+            density="compact" label={t('moments.notification.markAllRead')}
+            onClick={() => markAllRead()} />
+        </Tooltip>
       </div>
-    </Popover>
+      <div className="ds-notify-list">
+        {notifications.length === 0
+          ? <Empty className="ds-notify-empty" description={t('moments.notification.empty')} />
+          : notifications.map((item) => (
+            <NotificationItem
+              key={item.id}
+              item={item}
+              t={t}
+              onActivate={handleItemActivation}
+              onMarkRead={() => markRead([item.id])}
+              onDelete={() => deleteNotifications([item.id])}
+            />
+          ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <span className="ds-rail-entry">
+      <Popover open={open} onOpenChange={setOpen} placement="right-bottom"
+        label={t('moments.notification.title')} content={panel}>
+        <Badge count={unreadTotal} tone="danger" label={t('moments.notification.title')}>
+          <IconButton actionId="notification.open" iconId="bell" iconSize={19}
+            label={t('moments.notification.title')} aria-expanded={open || undefined} />
+        </Badge>
+      </Popover>
+    </span>
   );
 }
 
@@ -189,7 +151,6 @@ function NotificationItem({
   onMarkRead: () => void;
   onDelete: () => void;
 }) {
-  const { token } = theme.useToken();
   const isUnread = item.status === 1;
   const mention = isCommentMention(item);
 
@@ -200,109 +161,40 @@ function NotificationItem({
     : '';
 
   return (
-    <Flexbox
-      horizontal
-      gap={10}
-      align="flex-start"
+    <div
+      className={`ds-notify-item${isUnread ? ' is-unread' : ''}`}
       data-notification-type={item.type}
       data-notification-target={item.targetType}
       onClick={() => onActivate(item)}
-      style={{
-        padding: '10px 14px',
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        background: isUnread ? token.colorFillQuaternary : 'transparent',
-        cursor: mention ? 'pointer' : 'default',
-      }}
+      role={mention ? 'button' : undefined}
+      tabIndex={mention ? 0 : undefined}
     >
-      <div
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: '50%',
-          background: token.colorFillSecondary,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        {notificationIcon(item)}
-      </div>
-      <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
-        <Flexbox horizontal justify="space-between" align="center" style={{ minWidth: 0 }}>
-          <span
-            style={{
-              fontWeight: isUnread ? 600 : 400,
-              fontSize: 13,
-              color: token.colorText,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flex: 1,
-            }}
-          >
-            {title}
-          </span>
-          <span style={{ fontSize: 11, color: token.colorTextQuaternary, marginLeft: 8, flexShrink: 0 }}>
-            {formatTimeAgo(item.createdAt, t)}
-          </span>
-        </Flexbox>
-        {body && (
-          <span
-            style={{
-              fontSize: 12,
-              color: token.colorTextSecondary,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {body}
-          </span>
-        )}
-        <Flexbox horizontal gap={4} style={{ marginTop: 2 }}>
-          {categoryLabel && (
-            <span
-              style={{
-                fontSize: 10,
-                padding: '1px 6px',
-                background: token.colorFillTertiary,
-                borderRadius: 3,
-                color: token.colorTextQuaternary,
-              }}
-            >
-              {categoryLabel}
-            </span>
-          )}
-          <Flexbox horizontal gap={4} style={{ marginLeft: 'auto' }}>
+      <span className="ds-notify-glyph">{notificationIcon(item)}</span>
+      <span className="ds-notify-body">
+        <span className="ds-notify-line">
+          <span className="ds-notify-name">{title}</span>
+          <span className="ds-notify-time">{formatTimeAgo(item.createdAt, t)}</span>
+        </span>
+        {body && <span className="ds-notify-text">{body}</span>}
+        <span className="ds-notify-foot">
+          {categoryLabel && <span className="ds-notify-tag">{categoryLabel}</span>}
+          <span className="ds-notify-actions">
             {isUnread && (
-              <Tooltip title={t('moments.notification.markRead')}>
-                <ActionIcon
-                  icon={Check}
-                  size="small"
-                  aria-label={t('moments.notification.markRead')}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onMarkRead();
-                  }}
-                />
+              <Tooltip label={t('moments.notification.markRead')} placement="left">
+                <IconButton actionId="notification.mark-read" iconId="check" iconSize={14}
+                  density="compact" label={t('moments.notification.markRead')}
+                  onClick={(event) => { event.stopPropagation(); onMarkRead(); }} />
               </Tooltip>
             )}
-            <Tooltip title={t('moments.notification.delete')}>
-              <ActionIcon
-                icon={Trash2}
-                size="small"
-                aria-label={t('moments.notification.delete')}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDelete();
-                }}
-              />
+            <Tooltip label={t('moments.notification.delete')} placement="left">
+              <IconButton actionId="notification.delete" iconId="delete" iconSize={14}
+                density="compact" label={t('moments.notification.delete')}
+                onClick={(event) => { event.stopPropagation(); onDelete(); }} />
             </Tooltip>
-          </Flexbox>
-        </Flexbox>
-      </Flexbox>
-    </Flexbox>
+          </span>
+        </span>
+      </span>
+    </div>
   );
 }
 
@@ -323,13 +215,13 @@ function defaultTitle(item: NotificationData, t: TFunction): string {
 function notificationIcon(item: NotificationData) {
   switch (item.type) {
     case TYPE_FRIEND_REQUEST:
-      return <UserPlus size={16} color="var(--ant-color-primary, #1677ff)" />;
+      return <Icon iconId="user-plus" size={16} />;
     case TYPE_FRIEND_ACCEPTED:
-      return <UserCheck size={16} color="var(--ant-color-primary, #1677ff)" />;
+      return <Icon iconId="user-check" size={16} />;
     case TYPE_SOCIAL_COMMENT_MENTION:
-      return <MessageSquareText size={16} color="var(--ant-color-primary, #1677ff)" />;
+      return <Icon iconId="message-square-text" size={16} />;
     default:
-      return <Bell size={16} />;
+      return <Icon iconId="bell" size={16} />;
   }
 }
 
