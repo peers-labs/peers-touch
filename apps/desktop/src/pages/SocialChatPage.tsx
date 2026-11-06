@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { theme, Tooltip } from 'antd';
-import { MessageCircle, Contact } from 'lucide-react';
+import { IconButton, Tooltip } from '@peers-touch/ui';
+import type { IconId } from '@peers-touch/ui';
 import { ChatSessionList } from '../components/chat/ChatSessionList';
 import { MessagingRecoveryGate } from '../components/chat/MessagingRecoveryGate';
 import { ChatContactsPanel } from '../components/chat/ChatContactsPanel';
@@ -53,7 +52,6 @@ interface OwnedContactSelection {
 //     docs/client/desktop/runtime-projections.md.
 
 export function SocialChatPage() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     showDetail,
@@ -258,77 +256,37 @@ export function SocialChatPage() {
     };
   }, []);
 
-  const subNavItems: { key: ChatSubPage; icon: typeof MessageCircle; label: string }[] = [
-    { key: 'chats', icon: MessageCircle, label: t('chat.social.subNav.chats') },
-    { key: 'contacts', icon: Contact, label: t('chat.social.subNav.contacts') },
+  const subNavItems: { key: ChatSubPage; iconId: IconId; label: string }[] = [
+    { key: 'chats', iconId: 'message-circle', label: t('chat.social.subNav.chats') },
+    { key: 'contacts', iconId: 'contact', label: t('chat.social.subNav.contacts') },
   ];
 
   return (
-    <Flexbox
+    <div
+      className="sc-chat"
       data-social-chat-layout
       data-chat-active-peer-ptid={activePeerDid ?? ''}
       data-chat-side-panel-open={openThreadRootUlid || showDetail ? 'true' : 'false'}
-      horizontal
-      style={{ position: 'relative', height: '100%', minHeight: 0, width: '100%', overflowX: 'auto', overflowY: 'hidden' }}
     >
-      <style>
-        {`
-          @media (max-width: 960px) {
-            [data-social-chat-layout][data-chat-side-panel-open='true'] {
-              overflow-x: hidden !important;
-            }
-            [data-social-chat-layout][data-chat-side-panel-open='true']
-              > [data-chat-conversation-list-shell] {
-              display: none !important;
-            }
-            [data-social-chat-layout][data-chat-side-panel-open='true']
-              > [data-chat-conversation-pane] {
-              min-width: 0 !important;
-            }
-          }
-        `}
-      </style>
       {/* Sub-navigation: thin vertical icon bar */}
-      <Flexbox
-        gap={4}
-        align="center"
-        style={{
-          width: 48,
-          minWidth: 48,
-          height: '100%',
-          paddingTop: 12,
-          borderRight: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer,
-        }}
-      >
-        {subNavItems.map(({ key, icon: Icon, label }) => {
-          const isActive = subPage === key;
-          return (
-            <Tooltip key={key} title={label} placement="right">
-              <Flexbox
-                data-chat-subpage={key}
-                align="center"
-                justify="center"
-                onClick={() => {
-                  if (key === 'contacts') setContactsMounted(true);
-                  setSubPage(key);
-                }}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  background: isActive ? token.colorPrimaryBg : 'transparent',
-                  color: isActive ? token.colorPrimary : token.colorTextTertiary,
-                  transition: 'all 0.2s',
-                }}
-              >
-                <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
-              </Flexbox>
-            </Tooltip>
-          );
-        })}
-      </Flexbox>
+      <nav className="sc-chat__subnav" aria-label={t('chat.social.subNav.chats')}>
+        {subNavItems.map(({ key, iconId, label }) => (
+          <Tooltip key={key} label={label} placement="right">
+            <IconButton
+              actionId={`chat.subpage.${key}`}
+              iconId={iconId}
+              iconSize={20}
+              label={label}
+              data-chat-subpage={key}
+              aria-current={subPage === key ? 'page' : undefined}
+              onClick={() => {
+                if (key === 'contacts') setContactsMounted(true);
+                setSubPage(key);
+              }}
+            />
+          </Tooltip>
+        ))}
+      </nav>
 
       {/* Left panel: keep both mounted once visited, toggle visibility */}
       <div
@@ -401,6 +359,6 @@ export function SocialChatPage() {
           stays inactive. Project an explicit recovery action instead of a
           half-working conversation surface. */}
       <MessagingRecoveryGate />
-    </Flexbox>
+    </div>
   );
 }

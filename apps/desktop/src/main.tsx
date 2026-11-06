@@ -4,6 +4,7 @@ import { ThemeProvider, ToastHost } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
 import { UIProvider } from '@peers-touch/ui';
 import './ui/northstar.css';
+import './ui/chat.css';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
 import { ErrorBoundary } from './kernel/ErrorBoundary';

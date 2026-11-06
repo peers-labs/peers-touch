@@ -1,0 +1,72 @@
+/* Social chat surface chrome (north-star migration).
+ * Owns ONLY the page-level layout: the thin chats/contacts sub-rail and the
+ * horizontal surface flex. Inner panels keep their own styles for now and are
+ * migrated file-by-file. Tokens come from .pt-ui.ds-theme (northstar.css). */
+
+.sc-chat {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--pt-canvas);
+  color: var(--pt-text);
+}
+
+.sc-chat__subnav {
+  width: 48px;
+  min-width: 48px;
+  height: 100%;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border-right: 1px solid var(--pt-border);
+  background: var(--pt-surface);
+  flex-shrink: 0;
+}
+
+/* Sub-rail tiles reuse the peers-ui IconButton, neutralized to 36px squares.
+ * Active state is a subtle accent wash (secondary surface nav inside chat,
+ * not the outer rail's pine "current location"). */
+.sc-chat__subnav .pt-icon-button {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pt-radius-md);
+  display: grid;
+  place-items: center;
+  color: var(--pt-muted);
+  background: transparent;
+  transition: background-color 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sc-chat__subnav .pt-icon-button:hover {
+  color: var(--pt-text);
+  background: rgba(23, 26, 28, 0.06);
+}
+.sc-chat__subnav .pt-icon-button[aria-current='page'] {
+  color: var(--pt-accent);
+  background: var(--pt-accentSubtle);
+}
+
+@media (max-width: 960px) {
+  .sc-chat[data-chat-side-panel-open='true'] {
+    overflow-x: hidden;
+  }
+  .sc-chat[data-chat-side-panel-open='true']
+    > [data-chat-conversation-list-shell] {
+    display: none !important;
+  }
+  .sc-chat[data-chat-side-panel-open='true']
+    > [data-chat-conversation-pane] {
+    min-width: 0 !important;
+  }
+}
