@@ -5,7 +5,7 @@ use crate::proto::chat::{
 };
 use crate::store::MessagingRepository;
 
-use super::ClaimedItemConsumer;
+use super::{ClaimedItemConsumer, ConsumeError, ItemRejectionCode};
 use prost::Message;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -89,7 +89,11 @@ impl<R: MessagingRepository> DeliveryReceiptProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -107,7 +111,17 @@ impl<R: MessagingRepository> DeliveryReceiptProcessor<R> {
         {
             return Ok(());
         }
-        match decode_device_receipt_payload(item, &self.endpoint.ptid, &self.endpoint.device_id)? {
+        let decoded = decode_device_receipt_payload(
+            item,
+            &self.endpoint.ptid,
+            &self.endpoint.device_id,
+        )
+        .map_err(|error| {
+            // Receipt bytes are self-describing: malformed or mis-bound
+            // content can never become valid on retry.
+            ConsumeError::rejected(ItemRejectionCode::PayloadInvalid, error)
+        })?;
+        match decoded {
             DeviceReceiptPayload::ActorReadCursor(cursor) => {
                 self.store
                     .commit_actor_read_cursor(&ActorReadReceiveCommit {
@@ -143,7 +157,11 @@ impl<R: MessagingRepository> DeliveryReceiptProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for DeliveryReceiptProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.process(item, consumer_epoch)
     }
 }

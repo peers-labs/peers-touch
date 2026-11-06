@@ -22,7 +22,7 @@ use messaging_core::contracts::{
     MemberAuthorityReceiveCommit, MlsApplicationReceiveCommit, MlsConversationProjection,
     MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit,
     PendingMlsKeyPackage, PendingMlsTransitionState, PublicEventReceiveCommit, ReceiveCommitResult,
-    ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
+    RejectedItemReceiveCommit, ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
 };
 use messaging_core::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey};
 use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyRepository};
@@ -7732,6 +7732,72 @@ impl MessagingRepository for MobileMessagingStore {
         commit: &SkippedEndpointReceiveCommit,
     ) -> Result<ReceiveCommitResult, String> {
         self.commit_observe_only_receive(commit.into())
+    }
+
+    fn commit_rejected_endpoint_payload(
+        &self,
+        commit: &RejectedItemReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
+        if commit.item_id.trim().is_empty()
+            || commit.event_id.trim().is_empty()
+            || commit.conversation_id.trim().is_empty()
+            || commit.lane_sequence <= 0
+            || commit.consumer_epoch == 0
+            || commit.payload_sha256.len() != 32
+            || commit.reject_code.trim().is_empty()
+            || commit.receipt_id.trim().is_empty()
+            || commit.receipt_bytes.is_empty()
+            || commit.rejected_at_unix_ms <= 0
+        {
+            return Err("mobile messaging rejected-item receive is incomplete".to_string());
+        }
+        self.with_transaction(|transaction| {
+            // Marker + lane cursor + claimed-item state transition, with no
+            // authority-chain advance and no projection.
+            let result = Self::commit_claimed_item(
+                transaction,
+                commit.item_id,
+                commit.event_id,
+                commit.conversation_id,
+                commit.lane_sequence,
+                commit.consumer_epoch,
+                commit.payload_sha256,
+                commit.rejected_at_unix_ms,
+            )?;
+            if result == ReceiveCommitResult::AlreadyCommitted {
+                return Ok(result);
+            }
+            transaction
+                .execute(
+                    "INSERT INTO messaging_rejected_items(
+                        item_id, event_id, conversation_id, lane_sequence,
+                        consumer_epoch, payload_sha256, reject_code, reject_detail,
+                        receipt_id, receipt_bytes, rejected_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![
+                        commit.item_id,
+                        commit.event_id,
+                        commit.conversation_id,
+                        commit.lane_sequence,
+                        i64::try_from(commit.consumer_epoch)
+                            .map_err(|_| "consumer epoch exceeds i64".to_string())?,
+                        commit.payload_sha256,
+                        commit.reject_code,
+                        commit.reject_detail,
+                        commit.receipt_id,
+                        commit.receipt_bytes,
+                        commit.rejected_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "UPDATE messaging_inbox_items SET state = 'rejected' WHERE item_id = ?1",
+                    params![commit.item_id],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(ReceiveCommitResult::Committed)
+        })
     }
 
     fn commit_direct_edit(&self, commit: &DirectEditCommit) -> Result<ReceiveCommitResult, String> {

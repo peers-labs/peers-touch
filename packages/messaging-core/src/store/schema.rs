@@ -319,6 +319,24 @@ CREATE TABLE IF NOT EXISTS messaging_consumption_markers (
     payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
     consumed_at_unix_ms INTEGER NOT NULL
 );
+-- Local dead-letter ledger for inbox items that failed deterministic content
+-- validation. The raw payload stays in messaging_inbox_items and the lane
+-- cursor advances normally (normal ack), so a poison conversation cannot
+-- head-of-line-block every other conversation; the record keeps the reason
+-- and receipt for inspection or later reprocessing.
+CREATE TABLE IF NOT EXISTS messaging_rejected_items (
+    item_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    lane_sequence INTEGER NOT NULL,
+    consumer_epoch INTEGER NOT NULL,
+    payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
+    reject_code TEXT NOT NULL,
+    reject_detail TEXT NOT NULL DEFAULT '',
+    receipt_id TEXT NOT NULL,
+    receipt_bytes BLOB NOT NULL,
+    rejected_at_unix_ms INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS messaging_lane_cursor (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     lane_sequence INTEGER NOT NULL,

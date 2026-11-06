@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/bot/bot.proto.
  */
 export const file_domain_bot_bot: GenFile = /*@__PURE__*/
-  fileDesc("ChRkb21haW4vYm90L2JvdC5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwuYm90LnYxIrkBCgNCb3QSEAoIYm90X3B0aWQYASABKAkSEgoKb3duZXJfcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjEKBXN0YXRlGAQgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlEksKEHB1Ymxpc2hpbmdfZ3JhbnQYBSABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2VQdWJsaXNoaW5nR3JhbnQiQAoQQ3JlYXRlQm90UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKBmF2YXRhchgCIAEoCUgAiAEBQgkKB19hdmF0YXIiZAoRQ3JlYXRlQm90UmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdBITCgtpbmdyZXNzX3VybBgCIAEoCRIOCgZzZWNyZXQYAyABKAkiKgoWUm90YXRlQm90U2VjcmV0UmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCSIpChdSb3RhdGVCb3RTZWNyZXRSZXNwb25zZRIOCgZzZWNyZXQYASABKAkiYAoSU2V0Qm90U3RhdGVSZXF1ZXN0EhAKCGJvdF9wdGlkGAEgASgJEjgKDHRhcmdldF9zdGF0ZRgCIAEoDjIiLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3RTdGF0ZSJBChNTZXRCb3RTdGF0ZVJlc3BvbnNlEioKA2JvdBgBIAEoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QiEwoRTGlzdE15Qm90c1JlcXVlc3QiQQoSTGlzdE15Qm90c1Jlc3BvbnNlEisKBGJvdHMYASADKAsyHS5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90IkgKFFNldEJvdFByb2ZpbGVSZXF1ZXN0EhAKCGJvdF9wdGlkGAEgASgJEhMKBmF2YXRhchgCIAEoCUgAiAEBQgkKB19hdmF0YXIiQwoVU2V0Qm90UHJvZmlsZVJlc3BvbnNlEioKA2JvdBgBIAEoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QqfwoIQm90U3RhdGUSGQoVQk9UX1NUQVRFX1VOU1BFQ0lGSUVEEAASEwoPQk9UX1NUQVRFX0RSQUZUEAESFAoQQk9UX1NUQVRFX0FDVElWRRACEhYKEkJPVF9TVEFURV9ESVNBQkxFRBADEhUKEUJPVF9TVEFURV9SRVZPS0VEEARCSVpHZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9ib3QvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_domain_chat_publishing]);
+  fileDesc("ChRkb21haW4vYm90L2JvdC5wcm90bxIYcGVlcnNfdG91Y2gubW9kZWwuYm90LnYxIvsBCgNCb3QSEAoIYm90X3B0aWQYASABKAkSEgoKb3duZXJfcHRpZBgCIAEoCRIMCgRuYW1lGAMgASgJEjEKBXN0YXRlGAQgASgOMiIucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdFN0YXRlEksKEHB1Ymxpc2hpbmdfZ3JhbnQYBSABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLk1lc3NhZ2VQdWJsaXNoaW5nR3JhbnQSQAoNYWdlbnRfYmluZGluZxgGIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3RBZ2VudEJpbmRpbmcikwEKD0JvdEFnZW50QmluZGluZxIQCghib3RfcHRpZBgBIAEoCRISCgpvd25lcl9wdGlkGAIgASgJEhAKCGFnZW50X2lkGAMgASgJEg8KB2VuYWJsZWQYBCABKAgSDwoHdmVyc2lvbhgFIAEoAxISCgpjcmVhdGVkX2F0GAYgASgJEhIKCnVwZGF0ZWRfYXQYByABKAkiagoZU2V0Qm90QWdlbnRCaW5kaW5nUmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRIPCgdlbmFibGVkGAMgASgIEhgKEGV4cGVjdGVkX3ZlcnNpb24YBCABKAMiWAoaU2V0Qm90QWdlbnRCaW5kaW5nUmVzcG9uc2USOgoHYmluZGluZxgBIAEoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3RBZ2VudEJpbmRpbmciLQoZR2V0Qm90QWdlbnRCaW5kaW5nUmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCSJnChpHZXRCb3RBZ2VudEJpbmRpbmdSZXNwb25zZRI6CgdiaW5kaW5nGAEgASgLMikucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdEFnZW50QmluZGluZxINCgVib3VuZBgCIAEoCCIdChtMaXN0Qm90QWdlbnRCaW5kaW5nc1JlcXVlc3QiWwocTGlzdEJvdEFnZW50QmluZGluZ3NSZXNwb25zZRI7CghiaW5kaW5ncxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3RBZ2VudEJpbmRpbmciSgocRGVsZXRlQm90QWdlbnRCaW5kaW5nUmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCRIYChBleHBlY3RlZF92ZXJzaW9uGAIgASgDIjAKHURlbGV0ZUJvdEFnZW50QmluZGluZ1Jlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgiQAoQQ3JlYXRlQm90UmVxdWVzdBIMCgRuYW1lGAEgASgJEhMKBmF2YXRhchgCIAEoCUgAiAEBQgkKB19hdmF0YXIiZAoRQ3JlYXRlQm90UmVzcG9uc2USKgoDYm90GAEgASgLMh0ucGVlcnNfdG91Y2gubW9kZWwuYm90LnYxLkJvdBITCgtpbmdyZXNzX3VybBgCIAEoCRIOCgZzZWNyZXQYAyABKAkiKgoWUm90YXRlQm90U2VjcmV0UmVxdWVzdBIQCghib3RfcHRpZBgBIAEoCSIpChdSb3RhdGVCb3RTZWNyZXRSZXNwb25zZRIOCgZzZWNyZXQYASABKAkiYAoSU2V0Qm90U3RhdGVSZXF1ZXN0EhAKCGJvdF9wdGlkGAEgASgJEjgKDHRhcmdldF9zdGF0ZRgCIAEoDjIiLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3RTdGF0ZSJBChNTZXRCb3RTdGF0ZVJlc3BvbnNlEioKA2JvdBgBIAEoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QiEwoRTGlzdE15Qm90c1JlcXVlc3QiQQoSTGlzdE15Qm90c1Jlc3BvbnNlEisKBGJvdHMYASADKAsyHS5wZWVyc190b3VjaC5tb2RlbC5ib3QudjEuQm90IkgKFFNldEJvdFByb2ZpbGVSZXF1ZXN0EhAKCGJvdF9wdGlkGAEgASgJEhMKBmF2YXRhchgCIAEoCUgAiAEBQgkKB19hdmF0YXIiQwoVU2V0Qm90UHJvZmlsZVJlc3BvbnNlEioKA2JvdBgBIAEoCzIdLnBlZXJzX3RvdWNoLm1vZGVsLmJvdC52MS5Cb3QqfwoIQm90U3RhdGUSGQoVQk9UX1NUQVRFX1VOU1BFQ0lGSUVEEAASEwoPQk9UX1NUQVRFX0RSQUZUEAESFAoQQk9UX1NUQVRFX0FDVElWRRACEhYKEkJPVF9TVEFURV9ESVNBQkxFRBADEhUKEUJPVF9TVEFURV9SRVZPS0VEEARCSVpHZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vYXBwL3N1YnNlcnZlci9ib3QvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_domain_chat_publishing]);
 
 /**
  * @generated from message peers_touch.model.bot.v1.Bot
@@ -42,6 +42,14 @@ export type Bot = Message<"peers_touch.model.bot.v1.Bot"> & {
    * @generated from field: peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 5;
    */
   publishingGrant?: MessagePublishingGrant | undefined;
+
+  /**
+   * agent_binding is set only when the bot is bound to a Station Agent for
+   * automatic replies; an unbound bot only receives inbound messages.
+   *
+   * @generated from field: peers_touch.model.bot.v1.BotAgentBinding agent_binding = 6;
+   */
+  agentBinding?: BotAgentBinding | undefined;
 };
 
 /**
@@ -50,6 +58,216 @@ export type Bot = Message<"peers_touch.model.bot.v1.Bot"> & {
  */
 export const BotSchema: GenMessage<Bot> = /*@__PURE__*/
   messageDesc(file_domain_bot_bot, 0);
+
+/**
+ * BotAgentBinding binds a bot's inbound publishing messages to a Station
+ * Agent. The binding is the single switch for automatic replies; it defaults
+ * to absent (no reply). Historical turns are never rewritten when it changes.
+ *
+ * @generated from message peers_touch.model.bot.v1.BotAgentBinding
+ */
+export type BotAgentBinding = Message<"peers_touch.model.bot.v1.BotAgentBinding"> & {
+  /**
+   * @generated from field: string bot_ptid = 1;
+   */
+  botPtid: string;
+
+  /**
+   * @generated from field: string owner_ptid = 2;
+   */
+  ownerPtid: string;
+
+  /**
+   * @generated from field: string agent_id = 3;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: bool enabled = 4;
+   */
+  enabled: boolean;
+
+  /**
+   * @generated from field: int64 version = 5;
+   */
+  version: bigint;
+
+  /**
+   * @generated from field: string created_at = 6;
+   */
+  createdAt: string;
+
+  /**
+   * @generated from field: string updated_at = 7;
+   */
+  updatedAt: string;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.BotAgentBinding.
+ * Use `create(BotAgentBindingSchema)` to create a new message.
+ */
+export const BotAgentBindingSchema: GenMessage<BotAgentBinding> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 1);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.SetBotAgentBindingRequest
+ */
+export type SetBotAgentBindingRequest = Message<"peers_touch.model.bot.v1.SetBotAgentBindingRequest"> & {
+  /**
+   * @generated from field: string bot_ptid = 1;
+   */
+  botPtid: string;
+
+  /**
+   * @generated from field: string agent_id = 2;
+   */
+  agentId: string;
+
+  /**
+   * @generated from field: bool enabled = 3;
+   */
+  enabled: boolean;
+
+  /**
+   * @generated from field: int64 expected_version = 4;
+   */
+  expectedVersion: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.SetBotAgentBindingRequest.
+ * Use `create(SetBotAgentBindingRequestSchema)` to create a new message.
+ */
+export const SetBotAgentBindingRequestSchema: GenMessage<SetBotAgentBindingRequest> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 2);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.SetBotAgentBindingResponse
+ */
+export type SetBotAgentBindingResponse = Message<"peers_touch.model.bot.v1.SetBotAgentBindingResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.bot.v1.BotAgentBinding binding = 1;
+   */
+  binding?: BotAgentBinding | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.SetBotAgentBindingResponse.
+ * Use `create(SetBotAgentBindingResponseSchema)` to create a new message.
+ */
+export const SetBotAgentBindingResponseSchema: GenMessage<SetBotAgentBindingResponse> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 3);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.GetBotAgentBindingRequest
+ */
+export type GetBotAgentBindingRequest = Message<"peers_touch.model.bot.v1.GetBotAgentBindingRequest"> & {
+  /**
+   * @generated from field: string bot_ptid = 1;
+   */
+  botPtid: string;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.GetBotAgentBindingRequest.
+ * Use `create(GetBotAgentBindingRequestSchema)` to create a new message.
+ */
+export const GetBotAgentBindingRequestSchema: GenMessage<GetBotAgentBindingRequest> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 4);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.GetBotAgentBindingResponse
+ */
+export type GetBotAgentBindingResponse = Message<"peers_touch.model.bot.v1.GetBotAgentBindingResponse"> & {
+  /**
+   * binding is empty (zero value) when the bot is not bound.
+   *
+   * @generated from field: peers_touch.model.bot.v1.BotAgentBinding binding = 1;
+   */
+  binding?: BotAgentBinding | undefined;
+
+  /**
+   * @generated from field: bool bound = 2;
+   */
+  bound: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.GetBotAgentBindingResponse.
+ * Use `create(GetBotAgentBindingResponseSchema)` to create a new message.
+ */
+export const GetBotAgentBindingResponseSchema: GenMessage<GetBotAgentBindingResponse> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 5);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.ListBotAgentBindingsRequest
+ */
+export type ListBotAgentBindingsRequest = Message<"peers_touch.model.bot.v1.ListBotAgentBindingsRequest"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.ListBotAgentBindingsRequest.
+ * Use `create(ListBotAgentBindingsRequestSchema)` to create a new message.
+ */
+export const ListBotAgentBindingsRequestSchema: GenMessage<ListBotAgentBindingsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 6);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.ListBotAgentBindingsResponse
+ */
+export type ListBotAgentBindingsResponse = Message<"peers_touch.model.bot.v1.ListBotAgentBindingsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.bot.v1.BotAgentBinding bindings = 1;
+   */
+  bindings: BotAgentBinding[];
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.ListBotAgentBindingsResponse.
+ * Use `create(ListBotAgentBindingsResponseSchema)` to create a new message.
+ */
+export const ListBotAgentBindingsResponseSchema: GenMessage<ListBotAgentBindingsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 7);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.DeleteBotAgentBindingRequest
+ */
+export type DeleteBotAgentBindingRequest = Message<"peers_touch.model.bot.v1.DeleteBotAgentBindingRequest"> & {
+  /**
+   * @generated from field: string bot_ptid = 1;
+   */
+  botPtid: string;
+
+  /**
+   * @generated from field: int64 expected_version = 2;
+   */
+  expectedVersion: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.DeleteBotAgentBindingRequest.
+ * Use `create(DeleteBotAgentBindingRequestSchema)` to create a new message.
+ */
+export const DeleteBotAgentBindingRequestSchema: GenMessage<DeleteBotAgentBindingRequest> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 8);
+
+/**
+ * @generated from message peers_touch.model.bot.v1.DeleteBotAgentBindingResponse
+ */
+export type DeleteBotAgentBindingResponse = Message<"peers_touch.model.bot.v1.DeleteBotAgentBindingResponse"> & {
+  /**
+   * @generated from field: bool deleted = 1;
+   */
+  deleted: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.bot.v1.DeleteBotAgentBindingResponse.
+ * Use `create(DeleteBotAgentBindingResponseSchema)` to create a new message.
+ */
+export const DeleteBotAgentBindingResponseSchema: GenMessage<DeleteBotAgentBindingResponse> = /*@__PURE__*/
+  messageDesc(file_domain_bot_bot, 9);
 
 /**
  * @generated from message peers_touch.model.bot.v1.CreateBotRequest
@@ -71,7 +289,7 @@ export type CreateBotRequest = Message<"peers_touch.model.bot.v1.CreateBotReques
  * Use `create(CreateBotRequestSchema)` to create a new message.
  */
 export const CreateBotRequestSchema: GenMessage<CreateBotRequest> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 1);
+  messageDesc(file_domain_bot_bot, 10);
 
 /**
  * @generated from message peers_touch.model.bot.v1.CreateBotResponse
@@ -98,7 +316,7 @@ export type CreateBotResponse = Message<"peers_touch.model.bot.v1.CreateBotRespo
  * Use `create(CreateBotResponseSchema)` to create a new message.
  */
 export const CreateBotResponseSchema: GenMessage<CreateBotResponse> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 2);
+  messageDesc(file_domain_bot_bot, 11);
 
 /**
  * @generated from message peers_touch.model.bot.v1.RotateBotSecretRequest
@@ -115,7 +333,7 @@ export type RotateBotSecretRequest = Message<"peers_touch.model.bot.v1.RotateBot
  * Use `create(RotateBotSecretRequestSchema)` to create a new message.
  */
 export const RotateBotSecretRequestSchema: GenMessage<RotateBotSecretRequest> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 3);
+  messageDesc(file_domain_bot_bot, 12);
 
 /**
  * @generated from message peers_touch.model.bot.v1.RotateBotSecretResponse
@@ -132,7 +350,7 @@ export type RotateBotSecretResponse = Message<"peers_touch.model.bot.v1.RotateBo
  * Use `create(RotateBotSecretResponseSchema)` to create a new message.
  */
 export const RotateBotSecretResponseSchema: GenMessage<RotateBotSecretResponse> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 4);
+  messageDesc(file_domain_bot_bot, 13);
 
 /**
  * @generated from message peers_touch.model.bot.v1.SetBotStateRequest
@@ -154,7 +372,7 @@ export type SetBotStateRequest = Message<"peers_touch.model.bot.v1.SetBotStateRe
  * Use `create(SetBotStateRequestSchema)` to create a new message.
  */
 export const SetBotStateRequestSchema: GenMessage<SetBotStateRequest> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 5);
+  messageDesc(file_domain_bot_bot, 14);
 
 /**
  * @generated from message peers_touch.model.bot.v1.SetBotStateResponse
@@ -171,7 +389,7 @@ export type SetBotStateResponse = Message<"peers_touch.model.bot.v1.SetBotStateR
  * Use `create(SetBotStateResponseSchema)` to create a new message.
  */
 export const SetBotStateResponseSchema: GenMessage<SetBotStateResponse> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 6);
+  messageDesc(file_domain_bot_bot, 15);
 
 /**
  * @generated from message peers_touch.model.bot.v1.ListMyBotsRequest
@@ -184,7 +402,7 @@ export type ListMyBotsRequest = Message<"peers_touch.model.bot.v1.ListMyBotsRequ
  * Use `create(ListMyBotsRequestSchema)` to create a new message.
  */
 export const ListMyBotsRequestSchema: GenMessage<ListMyBotsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 7);
+  messageDesc(file_domain_bot_bot, 16);
 
 /**
  * @generated from message peers_touch.model.bot.v1.ListMyBotsResponse
@@ -201,7 +419,7 @@ export type ListMyBotsResponse = Message<"peers_touch.model.bot.v1.ListMyBotsRes
  * Use `create(ListMyBotsResponseSchema)` to create a new message.
  */
 export const ListMyBotsResponseSchema: GenMessage<ListMyBotsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 8);
+  messageDesc(file_domain_bot_bot, 17);
 
 /**
  * @generated from message peers_touch.model.bot.v1.SetBotProfileRequest
@@ -223,7 +441,7 @@ export type SetBotProfileRequest = Message<"peers_touch.model.bot.v1.SetBotProfi
  * Use `create(SetBotProfileRequestSchema)` to create a new message.
  */
 export const SetBotProfileRequestSchema: GenMessage<SetBotProfileRequest> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 9);
+  messageDesc(file_domain_bot_bot, 18);
 
 /**
  * @generated from message peers_touch.model.bot.v1.SetBotProfileResponse
@@ -240,7 +458,7 @@ export type SetBotProfileResponse = Message<"peers_touch.model.bot.v1.SetBotProf
  * Use `create(SetBotProfileResponseSchema)` to create a new message.
  */
 export const SetBotProfileResponseSchema: GenMessage<SetBotProfileResponse> = /*@__PURE__*/
-  messageDesc(file_domain_bot_bot, 10);
+  messageDesc(file_domain_bot_bot, 19);
 
 /**
  * Bot is an optional product form over the generic message-publishing grant.

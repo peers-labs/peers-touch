@@ -52,8 +52,8 @@ use messaging_core::identity::{
 };
 use messaging_core::inbox::{
     CommandResultProcessor, ConversationStateProcessor, DeliveryReceiptProcessor,
-    DirectMessageProcessor, DrainProgress, MessagingItemConsumer, PublicEventProcessor, QueueDrain,
-    ServicePlaintextProcessor, SkippedPayloadProcessor,
+    DirectMessageProcessor, DrainProgress, MessagingItemConsumer, PublicEventProcessor,
+    QuarantiningConsumer, QueueDrain, ServicePlaintextProcessor, SkippedPayloadProcessor,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -464,7 +464,10 @@ fn checkpoint_fresh_direct_receiver(
     Ok(bootstrapped)
 }
 
-type CoreItemConsumer = MessagingItemConsumer<MessagingStore, MlsItemProcessor<MessagingStore>>;
+type CoreItemConsumer = QuarantiningConsumer<
+    MessagingItemConsumer<MessagingStore, MlsItemProcessor<MessagingStore>>,
+    MessagingStore,
+>;
 
 pub struct MessagingEngine {
     station_client: StationClient,
@@ -713,16 +716,36 @@ impl MessagingEngine {
             core_endpoint.clone(),
             now_unix_ms,
         )?;
-        let consumer = Arc::new(MessagingItemConsumer::new(
-            direct,
-            mls,
-            PublicEventProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
-            ConversationStateProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
-            command_result,
-            DeliveryReceiptProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
-            ServicePlaintextProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
-            SkippedPayloadProcessor::new(store.clone(), core_endpoint, now_unix_ms)?,
-        ));
+        let consumer = Arc::new(
+            QuarantiningConsumer::new(
+                store.clone(),
+                core_endpoint.clone(),
+                MessagingItemConsumer::new(
+                    direct,
+                    mls,
+                    PublicEventProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
+                    ConversationStateProcessor::new(
+                        store.clone(),
+                        core_endpoint.clone(),
+                        now_unix_ms,
+                    )?,
+                    command_result,
+                    DeliveryReceiptProcessor::new(
+                        store.clone(),
+                        core_endpoint.clone(),
+                        now_unix_ms,
+                    )?,
+                    ServicePlaintextProcessor::new(
+                        store.clone(),
+                        core_endpoint.clone(),
+                        now_unix_ms,
+                    )?,
+                    SkippedPayloadProcessor::new(store.clone(), core_endpoint, now_unix_ms)?,
+                ),
+                now_unix_ms,
+            )
+            .map_err(|error| format!("messaging quarantine consumer init failed: {error}"))?,
+        );
         Ok(Self {
             station_client,
             profile_id,
@@ -1970,6 +1993,13 @@ impl MessagingEngine {
             }));
         }
         let progress = drain.drain_once(cursor, consumer_epoch)?;
+        if progress.quarantined > 0 {
+            tracing::warn!(
+                quarantined = progress.quarantined,
+                cursor = progress.cursor,
+                "messaging drain quarantined permanently invalid inbox items and acked past them"
+            );
+        }
         if let Err(error) = self.resume_redaction_file_cleanup() {
             tracing::warn!(error = %error, "messaging redaction file cleanup remains pending");
         }
@@ -2373,33 +2403,20 @@ impl MessagingEngine {
                 }
             }
         }
-        let ready_draft = self
-            .store
-            .message_draft(&message_id)?
-            .ok_or_else(|| "messaging completed draft is unavailable".to_string())?;
-        match self.prepare_message_draft(token, &ready_draft) {
-            Ok(command_id) => Ok(SubmitMessageOutcome {
-                command_id: Some(command_id),
-                message_id,
-                attachment_ids,
-                state: "pending",
-            }),
-            Err(error) => {
-                tracing::warn!(
-                    conversation_id = %ready_draft.conversation_id,
-                    message_id = %ready_draft.message_id,
-                    error = %error,
-                    "messaging message draft preparation deferred"
-                );
-                self.schedule_message_draft_retry(&ready_draft, now_unix_ms())?;
-                Ok(SubmitMessageOutcome {
-                    command_id: None,
-                    message_id,
-                    attachment_ids,
-                    state: "draft",
-                })
-            }
-        }
+        // MP-D33 admission boundary: submit only has to make the message
+        // durable. Plan resolution and crypto preparation perform Station
+        // calls and inbound queue drainage, so they belong to the lifecycle
+        // worker (resume_message_draft_once); running them inline made the
+        // send IPC block on Enter for the full plan-convergence deadline and
+        // couple sender latency to unrelated inbox items. The fresh draft is
+        // already due (next_attempt_at = creation time), and the caller wakes
+        // the worker immediately after this admission.
+        Ok(SubmitMessageOutcome {
+            command_id: None,
+            message_id,
+            attachment_ids,
+            state: "draft",
+        })
     }
 
     /// Renderer-facing MP-D33 reconciliation read: return the admission for a

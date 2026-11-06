@@ -546,6 +546,26 @@ pub struct SkippedEndpointReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+/// Dead-letter commit for a claimed item that failed deterministic content
+/// validation. Unlike observe-only commits it neither advances the authority
+/// hash chain nor creates a projection: it records the rejection, writes the
+/// consumption marker (so replays short-circuit) and advances the lane
+/// cursor, letting the drain ack past a poison conversation without stalling
+/// deliveries for every other conversation.
+pub struct RejectedItemReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub reject_code: &'a str,
+    pub reject_detail: &'a str,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub rejected_at_unix_ms: i64,
+}
+
 pub struct DirectReceiveCommit<'a> {
     pub item_id: &'a str,
     pub event_id: &'a str,

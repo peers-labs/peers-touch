@@ -218,6 +218,7 @@ Pick one based on intent:
 - [`pitfalls/mobile-proto-regen-import-closure.md`](pitfalls/mobile-proto-regen-import-closure.md) — shipping one regenerated mobile proto file without its import closure breaks tsc; regen to a staging dir and sync the closure, not a single file.
 - [`pitfalls/global-personalization-leaks-across-actors.md`](pitfalls/global-personalization-leaks-across-actors.md) — app-global/OS-user settings stores survived logout and rendered actor A's language/theme/personalization to actor B on the same device.
 - [`pitfalls/peer-avatar-ephemeral-projection-flicker.md`](pitfalls/peer-avatar-ephemeral-projection-flicker.md) — the rotating station-resource projection token must never become the renderer avatar cache identity; the peer profile edge exposes canonical `avatar_identity` alongside the projected render URL.
+- [`pitfalls/device-inbox-poison-item-head-of-line-blocking.md`](pitfalls/device-inbox-poison-item-head-of-line-blocking.md) — a deterministically invalid inbox item (and an over-strict receiver invariant) must be quarantined and acked, never retried forever; submit must not inline the inbound drain.
 
 ### Playbooks
 

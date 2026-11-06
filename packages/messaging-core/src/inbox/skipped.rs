@@ -5,7 +5,7 @@ use crate::proto::chat::{
 };
 use crate::store::MessagingRepository;
 
-use super::ClaimedItemConsumer;
+use super::{ClaimedItemConsumer, ConsumeError};
 use prost::Message;
 use std::sync::Arc;
 
@@ -121,7 +121,11 @@ impl<R: MessagingRepository> SkippedPayloadProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for SkippedPayloadProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
-        self.process(item, consumer_epoch)
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
+        self.process(item, consumer_epoch).map_err(ConsumeError::from)
     }
 }

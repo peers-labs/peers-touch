@@ -1,7 +1,8 @@
 use crate::inbox::{
     ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor, CommandResultRepository,
-    ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor,
-    PublicEventProcessor, ServicePlaintextProcessor, SkippedPayloadProcessor,
+    ConsumeError, ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor,
+    ItemRejectionCode, PublicEventProcessor, ServicePlaintextProcessor,
+    SkippedPayloadProcessor,
 };
 use crate::proto::chat::{
     conversation_event, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
@@ -95,20 +96,36 @@ where
     R: MessagingRepository + CommandResultRepository,
     M: MlsItemConsumer + CommandResultLifecycle,
 {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
-        let payload_type = DeviceInboxPayloadType::try_from(item.payload_type)
-            .map_err(|_| "messaging queue payload type is invalid".to_string())?;
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), ConsumeError> {
+        let payload_type = DeviceInboxPayloadType::try_from(item.payload_type).map_err(|_| {
+            ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging queue payload type is invalid",
+            )
+        })?;
         if payload_type == DeviceInboxPayloadType::DeviceReceipt {
             return self.delivery_receipt.consume(item, consumer_epoch);
         }
         if payload_type == DeviceInboxPayloadType::CommandResult {
-            return self.command_result.consume(item, consumer_epoch);
+            return self
+                .command_result
+                .consume(item, consumer_epoch)
+                .map_err(ConsumeError::from);
         }
         if payload_type != DeviceInboxPayloadType::ConversationEvent {
-            return Err("messaging consumer received unsupported queue payload type".to_string());
+            return Err(ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging consumer received unsupported queue payload type",
+            ));
         }
-        let delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice())
-            .map_err(|_| "messaging consumer delivery payload is invalid".to_string())?;
+        let delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice()).map_err(
+            |_| {
+                ConsumeError::rejected(
+                    ItemRejectionCode::PayloadInvalid,
+                    "messaging consumer delivery payload is invalid",
+                )
+            },
+        )?;
         let payload_kind = match PreparedEndpointPayloadKind::try_from(delivery.payload_kind) {
             Ok(kind) => kind,
             // Forward compatibility: an endpoint payload kind this build does
@@ -120,18 +137,23 @@ where
             PreparedEndpointPayloadKind::DirectCiphertext => {
                 self.direct.consume(item, consumer_epoch)
             }
-            PreparedEndpointPayloadKind::MlsApplication => {
-                self.mls.consume_application(item, consumer_epoch)
-            }
-            PreparedEndpointPayloadKind::MlsCommit | PreparedEndpointPayloadKind::MlsWelcome => {
-                self.mls.consume_transition(item, consumer_epoch)
-            }
-            PreparedEndpointPayloadKind::MlsRetirement => {
-                self.mls.consume_retirement(item, consumer_epoch)
-            }
+            PreparedEndpointPayloadKind::MlsApplication => self
+                .mls
+                .consume_application(item, consumer_epoch)
+                .map_err(ConsumeError::from),
+            PreparedEndpointPayloadKind::MlsCommit | PreparedEndpointPayloadKind::MlsWelcome => self
+                .mls
+                .consume_transition(item, consumer_epoch)
+                .map_err(ConsumeError::from),
+            PreparedEndpointPayloadKind::MlsRetirement => self
+                .mls
+                .consume_retirement(item, consumer_epoch)
+                .map_err(ConsumeError::from),
             PreparedEndpointPayloadKind::PublicEvent => {
                 if is_mls_sender_public_event(&delivery) {
-                    self.mls.consume_sender_transition(item, consumer_epoch)
+                    self.mls
+                        .consume_sender_transition(item, consumer_epoch)
+                        .map_err(ConsumeError::from)
                 } else {
                     self.public_event.consume(item, consumer_epoch)
                 }
@@ -142,9 +164,10 @@ where
             PreparedEndpointPayloadKind::DirectServicePlaintext => {
                 self.service_plaintext.consume(item, consumer_epoch)
             }
-            PreparedEndpointPayloadKind::Unspecified => {
-                Err("messaging consumer endpoint payload kind is unsupported".to_string())
-            }
+            PreparedEndpointPayloadKind::Unspecified => Err(ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging consumer endpoint payload kind is unsupported",
+            )),
         }
     }
 }

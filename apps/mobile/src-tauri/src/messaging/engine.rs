@@ -30,8 +30,8 @@ use messaging_core::identity::{
 use messaging_core::inbox::{
     AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultProcessor, ConsumerEpochObserver,
     ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor, DrainProgress,
-    MessagingItemConsumer, PublicEventProcessor, QueueDrain, ServicePlaintextProcessor,
-    SkippedPayloadProcessor,
+    MessagingItemConsumer, PublicEventProcessor, QuarantiningConsumer, QueueDrain,
+    ServicePlaintextProcessor, SkippedPayloadProcessor,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -406,7 +406,10 @@ fn validate_attachment_content_metadata(
 }
 
 type CoreItemConsumer =
-    MessagingItemConsumer<MobileMessagingStore, MlsItemProcessor<MobileMessagingStore>>;
+    QuarantiningConsumer<
+        MessagingItemConsumer<MobileMessagingStore, MlsItemProcessor<MobileMessagingStore>>,
+        MobileMessagingStore,
+    >;
 
 pub struct MobileMessagingEngine {
     profile_id: String,
@@ -594,16 +597,26 @@ impl MobileMessagingEngine {
         )?);
         let command_result =
             CommandResultProcessor::new(store.clone(), mls.clone(), endpoint.clone(), now_unix_ms)?;
-        let consumer = Arc::new(MessagingItemConsumer::new(
-            direct,
-            mls,
-            PublicEventProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-            ConversationStateProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-            command_result,
-            DeliveryReceiptProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-            ServicePlaintextProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-            SkippedPayloadProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
-        ));
+        let consumer = Arc::new(
+            QuarantiningConsumer::new(
+                store.clone(),
+                endpoint.clone(),
+                MessagingItemConsumer::new(
+                    direct,
+                    mls,
+                    PublicEventProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                    ConversationStateProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                    command_result,
+                    DeliveryReceiptProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                    ServicePlaintextProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                    SkippedPayloadProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+                ),
+                now_unix_ms,
+            )
+            .map_err(|error| {
+                format!("mobile messaging quarantine consumer init failed: {error}")
+            })?,
+        );
         let consumer_id = random_consumer_id();
 
         Ok(Self {
@@ -2977,7 +2990,9 @@ impl MobileMessagingEngine {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        self.consumer.consume(item, consumer_epoch)
+        self.consumer
+            .consume(item, consumer_epoch)
+            .map_err(|error| error.to_string())
     }
 
     pub fn drain_once(&self) -> Result<DrainProgress, String> {
@@ -3014,6 +3029,13 @@ impl MobileMessagingEngine {
             drain = drain.with_acknowledged_item_observer(observer);
         }
         let progress = drain.drain_once(cursor, expected_epoch)?;
+        if progress.quarantined > 0 {
+            log::warn!(
+                "mobile messaging drain quarantined {} permanently invalid inbox items at cursor {}",
+                progress.quarantined,
+                progress.cursor
+            );
+        }
         if let Err(error) = self.resume_redaction_file_cleanup() {
             log::warn!("mobile messaging redaction file cleanup remains pending: {error}");
         }

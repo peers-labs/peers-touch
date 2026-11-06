@@ -2,8 +2,8 @@
 // @generated from file domain/chat/receipt.proto (package peers_touch.model.chat.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { CryptoEndpoint } from "./endpoint_pb";
 import { file_domain_chat_endpoint } from "./endpoint_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/chat/receipt.proto.
  */
 export const file_domain_chat_receipt: GenFile = /*@__PURE__*/
-  fileDesc("Chlkb21haW4vY2hhdC9yZWNlaXB0LnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIo4CChhEZXZpY2VDb25zdW1wdGlvblJlY2VpcHQSEgoKcmVjZWlwdF9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSEAoIZXZlbnRfaWQYAyABKAkSOwoIY29uc3VtZXIYBCABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EhYKDmV2ZW50X3NlcXVlbmNlGAUgASgDEhUKDWxhbmVfc2VxdWVuY2UYBiABKAMSFgoOcGF5bG9hZF9zaGEyNTYYByABKAwSLwoLY29uc3VtZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIosBCg9BY3RvclJlYWRDdXJzb3ISFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhMKC3JlYWRlcl9wdGlkGAIgASgJEhoKEmxhc3RfcmVhZF9zZXF1ZW5jZRgDIAEoAxIuCgp1cGRhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKhAgofRmVkZXJhdGVkQ29udmVyc2F0aW9uUmVhZEN1cnNvchIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRIVCg1mZWRlcmF0aW9uX2lkGAIgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgDIAEoCRIhChlhdXRob3JpdHlfc3RhdGlvbl9wZWVyX2lkGAQgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgFIAEoBBI5CgZyZWFkZXIYBiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EiMKG3JlYWRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgHIAEoCRIaChJsYXN0X3JlYWRfc2VxdWVuY2UYCCABKAMi8wEKGE1lc3NhZ2VEZWxpdmVyeUFnZ3JlZ2F0ZRIXCg9jb252ZXJzYXRpb25faWQYASABKAkSEAoIZXZlbnRfaWQYAiABKAkSFgoOZXZlbnRfc2VxdWVuY2UYAyABKAMSHQoVcmVxdWlyZWRfZGV2aWNlX2NvdW50GAQgASgNEh0KFWNvbnN1bWVkX2RldmljZV9jb3VudBgFIAEoDRIcChRyZXZva2VkX2RldmljZV9jb3VudBgGIAEoDRIRCglkZWxpdmVyZWQYByABKAgSFwoPZnVsbHlfZGVsaXZlcmVkGAggASgIEgwKBHJlYWQYCSABKAgiYQojU3VibWl0Q29udmVyc2F0aW9uUmVhZEN1cnNvclJlcXVlc3QSOgoGY3Vyc29yGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5BY3RvclJlYWRDdXJzb3IiYgokU3VibWl0Q29udmVyc2F0aW9uUmVhZEN1cnNvclJlc3BvbnNlEjoKBmN1cnNvchgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQWN0b3JSZWFkQ3Vyc29yInAKKFN1Ym1pdENvbnZlcnNhdGlvbkRlbGl2ZXJ5UmVjZWlwdFJlcXVlc3QSRAoHcmVjZWlwdBgBIAEoCzIzLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuRGV2aWNlQ29uc3VtcHRpb25SZWNlaXB0InIKKVN1Ym1pdENvbnZlcnNhdGlvbkRlbGl2ZXJ5UmVjZWlwdFJlc3BvbnNlEkUKCGRlbGl2ZXJ5GAEgASgLMjMucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5NZXNzYWdlRGVsaXZlcnlBZ2dyZWdhdGVCR1pFZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvY2hhdDtjaGF0YgZwcm90bzM", [file_domain_chat_endpoint, file_google_protobuf_timestamp]);
+  fileDesc("Chlkb21haW4vY2hhdC9yZWNlaXB0LnByb3RvEhlwZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxIo4CChhEZXZpY2VDb25zdW1wdGlvblJlY2VpcHQSEgoKcmVjZWlwdF9pZBgBIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAiABKAkSEAoIZXZlbnRfaWQYAyABKAkSOwoIY29uc3VtZXIYBCABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EhYKDmV2ZW50X3NlcXVlbmNlGAUgASgDEhUKDWxhbmVfc2VxdWVuY2UYBiABKAMSFgoOcGF5bG9hZF9zaGEyNTYYByABKAwSLwoLY29uc3VtZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIuACChlEZXZpY2VSZWplY3RlZEl0ZW1SZWNlaXB0EhIKCnJlY2VpcHRfaWQYASABKAkSDwoHaXRlbV9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSEAoIZXZlbnRfaWQYBCABKAkSOwoIY29uc3VtZXIYBSABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkNyeXB0b0VuZHBvaW50EhUKDWxhbmVfc2VxdWVuY2UYBiABKAMSFgoOcGF5bG9hZF9zaGEyNTYYByABKAwSRgoGcmVhc29uGAggASgOMjYucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5EZXZpY2VJbmJveEl0ZW1SZWplY3RSZWFzb24SDgoGZGV0YWlsGAkgASgJEi8KC3JlamVjdGVkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKLAQoPQWN0b3JSZWFkQ3Vyc29yEhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRITCgtyZWFkZXJfcHRpZBgCIAEoCRIaChJsYXN0X3JlYWRfc2VxdWVuY2UYAyABKAMSLgoKdXBkYXRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAioQIKH0ZlZGVyYXRlZENvbnZlcnNhdGlvblJlYWRDdXJzb3ISFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SFQoNZmVkZXJhdGlvbl9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgEIAEoCRIXCg9hdXRob3JpdHlfZXBvY2gYBSABKAQSOQoGcmVhZGVyGAYgASgLMikucGVlcnNfdG91Y2gubW9kZWwuY2hhdC52MS5DcnlwdG9FbmRwb2ludBIjChtyZWFkZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYByABKAkSGgoSbGFzdF9yZWFkX3NlcXVlbmNlGAggASgDIvMBChhNZXNzYWdlRGVsaXZlcnlBZ2dyZWdhdGUSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEhAKCGV2ZW50X2lkGAIgASgJEhYKDmV2ZW50X3NlcXVlbmNlGAMgASgDEh0KFXJlcXVpcmVkX2RldmljZV9jb3VudBgEIAEoDRIdChVjb25zdW1lZF9kZXZpY2VfY291bnQYBSABKA0SHAoUcmV2b2tlZF9kZXZpY2VfY291bnQYBiABKA0SEQoJZGVsaXZlcmVkGAcgASgIEhcKD2Z1bGx5X2RlbGl2ZXJlZBgIIAEoCBIMCgRyZWFkGAkgASgIImEKI1N1Ym1pdENvbnZlcnNhdGlvblJlYWRDdXJzb3JSZXF1ZXN0EjoKBmN1cnNvchgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuQWN0b3JSZWFkQ3Vyc29yImIKJFN1Ym1pdENvbnZlcnNhdGlvblJlYWRDdXJzb3JSZXNwb25zZRI6CgZjdXJzb3IYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkFjdG9yUmVhZEN1cnNvciJwCihTdWJtaXRDb252ZXJzYXRpb25EZWxpdmVyeVJlY2VpcHRSZXF1ZXN0EkQKB3JlY2VpcHQYASABKAsyMy5wZWVyc190b3VjaC5tb2RlbC5jaGF0LnYxLkRldmljZUNvbnN1bXB0aW9uUmVjZWlwdCJyCilTdWJtaXRDb252ZXJzYXRpb25EZWxpdmVyeVJlY2VpcHRSZXNwb25zZRJFCghkZWxpdmVyeRgBIAEoCzIzLnBlZXJzX3RvdWNoLm1vZGVsLmNoYXQudjEuTWVzc2FnZURlbGl2ZXJ5QWdncmVnYXRlKvEBChtEZXZpY2VJbmJveEl0ZW1SZWplY3RSZWFzb24SLworREVWSUNFX0lOQk9YX0lURU1fUkVKRUNUX1JFQVNPTl9VTlNQRUNJRklFRBAAEjMKL0RFVklDRV9JTkJPWF9JVEVNX1JFSkVDVF9SRUFTT05fUEFZTE9BRF9JTlZBTElEEAESNAowREVWSUNFX0lOQk9YX0lURU1fUkVKRUNUX1JFQVNPTl9JTlRFR1JJVFlfRkFJTEVEEAISNgoyREVWSUNFX0lOQk9YX0lURU1fUkVKRUNUX1JFQVNPTl9SRUNJUElFTlRfTUlTTUFUQ0gQA0JHWkVnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9jaGF0O2NoYXRiBnByb3RvMw", [file_domain_chat_endpoint, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.chat.v1.DeviceConsumptionReceipt
@@ -69,6 +69,68 @@ export const DeviceConsumptionReceiptSchema: GenMessage<DeviceConsumptionReceipt
   messageDesc(file_domain_chat_receipt, 0);
 
 /**
+ * @generated from message peers_touch.model.chat.v1.DeviceRejectedItemReceipt
+ */
+export type DeviceRejectedItemReceipt = Message<"peers_touch.model.chat.v1.DeviceRejectedItemReceipt"> & {
+  /**
+   * @generated from field: string receipt_id = 1;
+   */
+  receiptId: string;
+
+  /**
+   * @generated from field: string item_id = 2;
+   */
+  itemId: string;
+
+  /**
+   * @generated from field: string conversation_id = 3;
+   */
+  conversationId: string;
+
+  /**
+   * @generated from field: string event_id = 4;
+   */
+  eventId: string;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.CryptoEndpoint consumer = 5;
+   */
+  consumer?: CryptoEndpoint | undefined;
+
+  /**
+   * @generated from field: int64 lane_sequence = 6;
+   */
+  laneSequence: bigint;
+
+  /**
+   * @generated from field: bytes payload_sha256 = 7;
+   */
+  payloadSha256: Uint8Array;
+
+  /**
+   * @generated from field: peers_touch.model.chat.v1.DeviceInboxItemRejectReason reason = 8;
+   */
+  reason: DeviceInboxItemRejectReason;
+
+  /**
+   * @generated from field: string detail = 9;
+   */
+  detail: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp rejected_at = 10;
+   */
+  rejectedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.chat.v1.DeviceRejectedItemReceipt.
+ * Use `create(DeviceRejectedItemReceiptSchema)` to create a new message.
+ */
+export const DeviceRejectedItemReceiptSchema: GenMessage<DeviceRejectedItemReceipt> = /*@__PURE__*/
+  messageDesc(file_domain_chat_receipt, 1);
+
+/**
  * @generated from message peers_touch.model.chat.v1.ActorReadCursor
  */
 export type ActorReadCursor = Message<"peers_touch.model.chat.v1.ActorReadCursor"> & {
@@ -98,7 +160,7 @@ export type ActorReadCursor = Message<"peers_touch.model.chat.v1.ActorReadCursor
  * Use `create(ActorReadCursorSchema)` to create a new message.
  */
 export const ActorReadCursorSchema: GenMessage<ActorReadCursor> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 1);
+  messageDesc(file_domain_chat_receipt, 2);
 
 /**
  * @generated from message peers_touch.model.chat.v1.FederatedConversationReadCursor
@@ -150,7 +212,7 @@ export type FederatedConversationReadCursor = Message<"peers_touch.model.chat.v1
  * Use `create(FederatedConversationReadCursorSchema)` to create a new message.
  */
 export const FederatedConversationReadCursorSchema: GenMessage<FederatedConversationReadCursor> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 2);
+  messageDesc(file_domain_chat_receipt, 3);
 
 /**
  * @generated from message peers_touch.model.chat.v1.MessageDeliveryAggregate
@@ -207,7 +269,7 @@ export type MessageDeliveryAggregate = Message<"peers_touch.model.chat.v1.Messag
  * Use `create(MessageDeliveryAggregateSchema)` to create a new message.
  */
 export const MessageDeliveryAggregateSchema: GenMessage<MessageDeliveryAggregate> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 3);
+  messageDesc(file_domain_chat_receipt, 4);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationReadCursorRequest
@@ -224,7 +286,7 @@ export type SubmitConversationReadCursorRequest = Message<"peers_touch.model.cha
  * Use `create(SubmitConversationReadCursorRequestSchema)` to create a new message.
  */
 export const SubmitConversationReadCursorRequestSchema: GenMessage<SubmitConversationReadCursorRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 4);
+  messageDesc(file_domain_chat_receipt, 5);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationReadCursorResponse
@@ -241,7 +303,7 @@ export type SubmitConversationReadCursorResponse = Message<"peers_touch.model.ch
  * Use `create(SubmitConversationReadCursorResponseSchema)` to create a new message.
  */
 export const SubmitConversationReadCursorResponseSchema: GenMessage<SubmitConversationReadCursorResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 5);
+  messageDesc(file_domain_chat_receipt, 6);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptRequest
@@ -258,7 +320,7 @@ export type SubmitConversationDeliveryReceiptRequest = Message<"peers_touch.mode
  * Use `create(SubmitConversationDeliveryReceiptRequestSchema)` to create a new message.
  */
 export const SubmitConversationDeliveryReceiptRequestSchema: GenMessage<SubmitConversationDeliveryReceiptRequest> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 6);
+  messageDesc(file_domain_chat_receipt, 7);
 
 /**
  * @generated from message peers_touch.model.chat.v1.SubmitConversationDeliveryReceiptResponse
@@ -275,4 +337,40 @@ export type SubmitConversationDeliveryReceiptResponse = Message<"peers_touch.mod
  * Use `create(SubmitConversationDeliveryReceiptResponseSchema)` to create a new message.
  */
 export const SubmitConversationDeliveryReceiptResponseSchema: GenMessage<SubmitConversationDeliveryReceiptResponse> = /*@__PURE__*/
-  messageDesc(file_domain_chat_receipt, 7);
+  messageDesc(file_domain_chat_receipt, 8);
+
+/**
+ * Device-local disposition of an inbox item that failed deterministic
+ * validation and was quarantined so the contiguous device lane can ack past
+ * it. This receipt is never submitted to the authority Station; it anchors
+ * the local dead-letter record for later inspection or reprocessing.
+ *
+ * @generated from enum peers_touch.model.chat.v1.DeviceInboxItemRejectReason
+ */
+export enum DeviceInboxItemRejectReason {
+  /**
+   * @generated from enum value: DEVICE_INBOX_ITEM_REJECT_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DEVICE_INBOX_ITEM_REJECT_REASON_PAYLOAD_INVALID = 1;
+   */
+  PAYLOAD_INVALID = 1,
+
+  /**
+   * @generated from enum value: DEVICE_INBOX_ITEM_REJECT_REASON_INTEGRITY_FAILED = 2;
+   */
+  INTEGRITY_FAILED = 2,
+
+  /**
+   * @generated from enum value: DEVICE_INBOX_ITEM_REJECT_REASON_RECIPIENT_MISMATCH = 3;
+   */
+  RECIPIENT_MISMATCH = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.chat.v1.DeviceInboxItemRejectReason.
+ */
+export const DeviceInboxItemRejectReasonSchema: GenEnum<DeviceInboxItemRejectReason> = /*@__PURE__*/
+  enumDesc(file_domain_chat_receipt, 0);

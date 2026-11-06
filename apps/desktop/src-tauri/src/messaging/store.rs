@@ -36,6 +36,7 @@ use messaging_core::contracts::{
     PendingMlsTransitionState as CorePendingMlsTransitionState,
     PublicEventReceiveCommit as CorePublicEventReceiveCommit,
     ReceiveCommitResult as CoreReceiveCommitResult,
+    RejectedItemReceiveCommit as CoreRejectedItemReceiveCommit,
     ServicePlaintextReceiveCommit as CoreServicePlaintextReceiveCommit,
     SkippedEndpointReceiveCommit as CoreSkippedEndpointReceiveCommit,
 };
@@ -54,7 +55,7 @@ use messaging_core::identity::{
     DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
-use messaging_core::inbox::CommandResultRepository;
+use messaging_core::inbox::{mark_item_rejection, CommandResultRepository, ItemRejectionCode};
 use messaging_core::outbox::{
     CommandOutboxEntry, DeliveryReceiptOutboxEntry, DeliveryReceiptRepository,
     MetadataInteractionCommit, MetadataInteractionRepository,
@@ -502,6 +503,23 @@ pub struct SkippedEndpointReceiveCommit<'a> {
     pub receipt_id: &'a str,
     pub receipt_bytes: &'a [u8],
     pub consumed_at_unix_ms: i64,
+}
+
+/// Dead-letter commit for an inbox item that failed deterministic content
+/// validation: rejection record plus lane cursor advance without an
+/// authority-chain advance or a projection.
+pub struct RejectedItemReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub reject_code: &'a str,
+    pub reject_detail: &'a str,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub rejected_at_unix_ms: i64,
 }
 
 pub enum InteractionMutation<'a> {
@@ -8154,6 +8172,149 @@ impl MessagingStore {
         self.commit_receive_core(&core, ReceiveFailPoint::None, |_| Ok(()))
     }
 
+    /// Dead-letter a claimed inbox item whose content failed deterministic
+    /// validation. Records the rejection, writes the consumption marker and
+    /// advances the lane cursor without touching the authority hash chain or
+    /// creating a projection, so the drain can ack past a poison item.
+    pub fn commit_rejected_endpoint_payload(
+        &self,
+        input: &RejectedItemReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        if input.item_id.trim().is_empty()
+            || input.event_id.trim().is_empty()
+            || input.conversation_id.trim().is_empty()
+            || input.lane_sequence <= 0
+            || input.consumer_epoch == 0
+            || input.payload_sha256.len() != 32
+            || input.reject_code.trim().is_empty()
+            || input.receipt_id.trim().is_empty()
+            || input.receipt_bytes.is_empty()
+            || input.rejected_at_unix_ms <= 0
+        {
+            return Err("messaging rejected-item receive input is incomplete".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+
+        let existing_hash = transaction
+            .query_row(
+                "SELECT payload_sha256 FROM messaging_consumption_markers WHERE item_id = ?1",
+                params![input.item_id],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(existing_hash) = existing_hash {
+            if existing_hash == input.payload_sha256 {
+                return Ok(ReceiveCommitResult::AlreadyCommitted);
+            }
+            return Err("messaging consumption marker payload hash mismatch".to_string());
+        }
+
+        let claimed = transaction
+            .query_row(
+                "SELECT event_id, conversation_id, lane_sequence, consumer_epoch, payload_sha256
+                 FROM messaging_inbox_items WHERE item_id = ?1 AND state = 'claimed'",
+                params![input.item_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging claimed inbox item is unavailable".to_string())?;
+        if claimed.0 != input.event_id
+            || claimed.1 != input.conversation_id
+            || claimed.2 != input.lane_sequence
+            || claimed.3
+                != i64::try_from(input.consumer_epoch)
+                    .map_err(|_| "consumer epoch exceeds i64".to_string())?
+            || claimed.4 != input.payload_sha256
+        {
+            return Err("messaging claimed inbox item binding mismatch".to_string());
+        }
+
+        let cursor = transaction
+            .query_row(
+                "SELECT lane_sequence, consumer_epoch FROM messaging_lane_cursor WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let epoch = i64::try_from(input.consumer_epoch)
+            .map_err(|_| "consumer epoch exceeds i64".to_string())?;
+        if input.lane_sequence != cursor.map(|value| value.0 + 1).unwrap_or(1)
+            || cursor.map(|value| epoch < value.1).unwrap_or(false)
+        {
+            return Err("messaging receive is not the next fenced lane item".to_string());
+        }
+
+        transaction
+            .execute(
+                "INSERT INTO messaging_rejected_items(
+                    item_id, event_id, conversation_id, lane_sequence,
+                    consumer_epoch, payload_sha256, reject_code, reject_detail,
+                    receipt_id, receipt_bytes, rejected_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    input.item_id,
+                    input.event_id,
+                    input.conversation_id,
+                    input.lane_sequence,
+                    epoch,
+                    input.payload_sha256,
+                    input.reject_code,
+                    input.reject_detail,
+                    input.receipt_id,
+                    input.receipt_bytes,
+                    input.rejected_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_consumption_markers(
+                    item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    input.item_id,
+                    input.event_id,
+                    input.conversation_id,
+                    input.payload_sha256,
+                    input.rejected_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_lane_cursor(id, lane_sequence, consumer_epoch, updated_at_unix_ms)
+                 VALUES (1, ?1, ?2, ?3)
+                 ON CONFLICT(id) DO UPDATE SET
+                    lane_sequence=excluded.lane_sequence,
+                    consumer_epoch=excluded.consumer_epoch,
+                    updated_at_unix_ms=excluded.updated_at_unix_ms",
+                params![input.lane_sequence, epoch, input.rejected_at_unix_ms],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE messaging_inbox_items SET state = 'rejected' WHERE item_id = ?1",
+                params![input.item_id],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(ReceiveCommitResult::Committed)
+    }
+
     pub fn commit_interaction_event(
         &self,
         input: &InteractionReceiveCommit<'_>,
@@ -11586,6 +11747,28 @@ impl MessagingRepository for MessagingStore {
         )?)
     }
 
+    fn commit_rejected_endpoint_payload(
+        &self,
+        commit: &CoreRejectedItemReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        map_receive_result(MessagingStore::commit_rejected_endpoint_payload(
+            self,
+            &RejectedItemReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                reject_code: commit.reject_code,
+                reject_detail: commit.reject_detail,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                rejected_at_unix_ms: commit.rejected_at_unix_ms,
+            },
+        )?)
+    }
+
     fn load_signed_prekey(&self, id: i32) -> Result<[u8; 32], String> {
         MessagingStore::load_signed_prekey(self, id)
     }
@@ -12859,8 +13042,15 @@ fn validate_conversation_projection(
     projection: &ConversationProjection,
     conversation_id: &str,
 ) -> Result<(), String> {
+    // Projection invariants are deterministic on the claimed bytes: a
+    // violation can never be repaired by a retry, so failures carry the
+    // permanent-rejection marker. The inbox consumer quarantines and acks
+    // such items instead of blocking the whole device lane on them.
+    let reject = |message: &'static str| {
+        mark_item_rejection(ItemRejectionCode::PayloadInvalid, message)
+    };
     let kind = ConversationKind::try_from(projection.kind)
-        .map_err(|_| "messaging conversation-state kind is invalid".to_string())?;
+        .map_err(|_| reject("messaging conversation-state kind is invalid"))?;
     if projection.conversation_id != conversation_id
         || projection.authority_station_id.trim().is_empty()
         || (kind == ConversationKind::Group
@@ -12873,7 +13063,9 @@ fn validate_conversation_projection(
         || projection.updated_at_unix_ms <= 0
         || !projection.active
     {
-        return Err("messaging conversation-state receive input is incomplete".to_string());
+        return Err(reject(
+            "messaging conversation-state receive input is incomplete",
+        ));
     }
     let mut previous = None;
     for member in &projection.members {
@@ -12886,22 +13078,33 @@ fn validate_conversation_projection(
                 .as_ref()
                 .is_some_and(|value: &&String| value.as_str() >= member.ptid.as_str())
         {
-            return Err("messaging conversation members are not strictly sorted".to_string());
+            return Err(reject("messaging conversation members are not strictly sorted"));
         }
         previous = Some(&member.ptid);
     }
     match kind {
         ConversationKind::Direct => {
-            if projection.members.len() != 2
-                || projection.members[0].ptid != projection.owner_ptid
+            // Two shapes are valid: a two-actor Direct with the owner first,
+            // and a self-direct (Saved Messages) whose sole member is the
+            // owner. Every Direct member carries the plain Member role.
+            let membership_valid = match projection.members.len() {
+                2 => {
+                    projection.members[0].ptid == projection.owner_ptid
+                        && projection.members[0].ptid.as_str()
+                            < projection.members[1].ptid.as_str()
+                }
+                1 => projection.members[0].ptid == projection.owner_ptid,
+                _ => false,
+            };
+            if !membership_valid
                 || projection
                     .members
                     .iter()
                     .any(|member| member.role != MemberRole::Member as i32)
             {
-                return Err(
-                    "messaging Direct conversation membership projection is invalid".to_string(),
-                );
+                return Err(reject(
+                    "messaging Direct conversation membership projection is invalid",
+                ));
             }
         }
         ConversationKind::Group => {
@@ -12915,7 +13118,7 @@ fn validate_conversation_projection(
                     member.ptid == projection.owner_ptid && member.role == MemberRole::Owner as i32
                 })
             {
-                return Err("messaging Group owner role is not projected".to_string());
+                return Err(reject("messaging Group owner role is not projected"));
             }
         }
         ConversationKind::Unspecified => unreachable!(),
@@ -17281,6 +17484,163 @@ mod tests {
         assert_eq!(persisted.description, projection.description);
         assert_eq!(persisted.avatar_object_id, projection.avatar_object_id);
         assert_eq!(persisted.members, projection.members);
+    }
+
+    #[test]
+    fn self_direct_conversation_projection_accepts_singleton_owner_member() {
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = ConversationProjection {
+            conversation_id: "direct-self-1".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: String::new(),
+            kind: ConversationKind::Direct as i32,
+            name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![ConversationMemberProjection {
+                ptid: "ptid:alice".to_string(),
+                role: MemberRole::Member as i32,
+                ..Default::default()
+            }],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 100,
+        };
+
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
+        let persisted = &store.conversation_projections().unwrap()[0];
+        assert_eq!(persisted.members.len(), 1);
+        assert_eq!(persisted.members[0].ptid, "ptid:alice");
+
+        // A singleton member that is not the owner must still fail closed.
+        let invalid = ConversationProjection {
+            conversation_id: "direct-self-bad".to_string(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![ConversationMemberProjection {
+                ptid: "ptid:bob".to_string(),
+                role: MemberRole::Member as i32,
+                ..Default::default()
+            }],
+            ..projection.clone()
+        };
+        assert_eq!(
+            store
+                .bootstrap_conversation_projection(&invalid)
+                .unwrap_err(),
+            mark_item_rejection(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct conversation membership projection is invalid",
+            )
+        );
+    }
+
+    #[test]
+    fn rejected_endpoint_payload_advances_lane_without_authority_chain_or_projection() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .persist_claimed_item(
+                "poison-item",
+                "poison-event",
+                "direct-self-poison",
+                1,
+                7,
+                &[11; 32],
+                b"poison-delivery",
+                201,
+            )
+            .unwrap();
+        store
+            .persist_claimed_item(
+                "healthy-item",
+                "healthy-event",
+                "direct-other",
+                2,
+                7,
+                &[12; 32],
+                b"healthy-delivery",
+                202,
+            )
+            .unwrap();
+
+        let first = RejectedItemReceiveCommit {
+            item_id: "poison-item",
+            event_id: "poison-event",
+            conversation_id: "direct-self-poison",
+            lane_sequence: 1,
+            consumer_epoch: 7,
+            payload_sha256: &[11; 32],
+            reject_code: "PAYLOAD_INVALID",
+            reject_detail: "messaging Direct conversation membership projection is invalid",
+            receipt_id: "device-rejected:poison-item",
+            receipt_bytes: b"poison-receipt",
+            rejected_at_unix_ms: 201,
+        };
+        assert_eq!(
+            store.commit_rejected_endpoint_payload(&first).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        // Idempotent replay (crash before Station ack) short-circuits.
+        assert_eq!(
+            store.commit_rejected_endpoint_payload(&first).unwrap(),
+            ReceiveCommitResult::AlreadyCommitted
+        );
+
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 7));
+        assert!(store
+            .consumption_marker_matches("poison-item", &[11; 32])
+            .unwrap());
+        let (code, detail, state): (String, String, String) = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT reject_code, reject_detail, state
+                 FROM messaging_rejected_items
+                 JOIN messaging_inbox_items USING(item_id)
+                 WHERE item_id = 'poison-item'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(code, "PAYLOAD_INVALID");
+        assert_eq!(
+            detail,
+            "messaging Direct conversation membership projection is invalid"
+        );
+        assert_eq!(state, "rejected");
+        let authority_rows: i64 = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_authority_events WHERE conversation_id = 'direct-self-poison'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(authority_rows, 0, "rejected items never advance the authority chain");
+
+        // The next lane item from a different conversation commits normally.
+        let second = RejectedItemReceiveCommit {
+            item_id: "healthy-item",
+            event_id: "healthy-event",
+            conversation_id: "direct-other",
+            lane_sequence: 2,
+            consumer_epoch: 7,
+            payload_sha256: &[12; 32],
+            reject_code: "INTEGRITY_FAILED",
+            reject_detail: "messaging Direct ciphertext hash mismatch",
+            receipt_id: "device-rejected:healthy-item",
+            receipt_bytes: b"healthy-receipt",
+            rejected_at_unix_ms: 202,
+        };
+        assert_eq!(
+            store.commit_rejected_endpoint_payload(&second).unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        assert_eq!(store.lane_checkpoint().unwrap(), (2, 7));
     }
 
     #[test]

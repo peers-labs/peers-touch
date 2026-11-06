@@ -17,7 +17,7 @@ use prost::Message;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
-use super::ClaimedItemConsumer;
+use super::{ClaimedItemConsumer, ConsumeError, ItemRejectionCode};
 
 pub struct DirectMessageProcessor<R: MessagingRepository> {
     store: Arc<R>,
@@ -61,7 +61,10 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), ConsumeError> {
+        let reject = |code: ItemRejectionCode, message: &'static str| {
+            ConsumeError::rejected(code, message)
+        };
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -79,35 +82,58 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
         {
             return Ok(());
         }
-        if DeviceInboxPayloadType::try_from(item.payload_type)
-            .map_err(|_| "messaging Direct queue payload type is invalid".to_string())?
-            != DeviceInboxPayloadType::ConversationEvent
+        if DeviceInboxPayloadType::try_from(item.payload_type).map_err(|_| {
+            reject(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct queue payload type is invalid",
+            )
+        })? != DeviceInboxPayloadType::ConversationEvent
         {
-            return Err("messaging Direct processor received wrong queue payload type".to_string());
+            return Err(reject(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct processor received wrong queue payload type",
+            ));
         }
 
         let delivery =
-            verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)?;
-        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-            .map_err(|_| "messaging Direct payload kind is invalid".to_string())?
-            != PreparedEndpointPayloadKind::DirectCiphertext
+            verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)
+                .map_err(|error| {
+                    // Pure cryptographic binding/hash verification: identical
+                    // bytes can never become deliverable on retry.
+                    ConsumeError::rejected(ItemRejectionCode::IntegrityFailed, error)
+                })?;
+        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind).map_err(|_| {
+            reject(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct payload kind is invalid",
+            )
+        })? != PreparedEndpointPayloadKind::DirectCiphertext
         {
-            return Err("messaging Direct processor received non-Direct payload".to_string());
+            return Err(reject(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct processor received non-Direct payload",
+            ));
         }
-        let event = delivery
-            .event
-            .as_ref()
-            .ok_or_else(|| "messaging Direct delivery has no event".to_string())?;
+        let event = delivery.event.as_ref().ok_or_else(|| {
+            reject(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct delivery has no event",
+            )
+        })?;
         let (message_id, is_edit, message_sender, reply_to_message_id, thread_root_message_id) =
             match event.payload.as_ref() {
                 Some(conversation_event::Payload::MessageCommitted(message)) => {
-                    if MessagingContentKind::try_from(message.content_kind)
-                        .map_err(|_| "messaging Direct content kind is invalid".to_string())?
-                        != MessagingContentKind::Text
+                    if MessagingContentKind::try_from(message.content_kind).map_err(|_| {
+                        reject(
+                            ItemRejectionCode::PayloadInvalid,
+                            "messaging Direct content kind is invalid",
+                        )
+                    })? != MessagingContentKind::Text
                     {
-                        return Err(
-                            "messaging Direct processor only accepts text projections".to_string()
-                        );
+                        return Err(reject(
+                            ItemRejectionCode::PayloadInvalid,
+                            "messaging Direct processor only accepts text projections",
+                        ));
                     }
                     (
                         message.message_id.as_str(),
@@ -121,12 +147,16 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
                 }
                 Some(conversation_event::Payload::MessageForwarded(message)) => {
                     if MessagingContentKind::try_from(message.content_kind).map_err(|_| {
-                        "messaging Direct forward content kind is invalid".to_string()
+                        reject(
+                            ItemRejectionCode::PayloadInvalid,
+                            "messaging Direct forward content kind is invalid",
+                        )
                     })? != MessagingContentKind::Text
                     {
-                        return Err(
-                            "messaging Direct processor only accepts text projections".to_string()
-                        );
+                        return Err(reject(
+                            ItemRejectionCode::PayloadInvalid,
+                            "messaging Direct processor only accepts text projections",
+                        ));
                     }
                     (
                         message.destination_message_id.as_str(),
@@ -138,72 +168,114 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
                 }
                 Some(conversation_event::Payload::MessageEdited(fact)) => {
                     if fact.message_id.trim().is_empty() {
-                        return Err("messaging Direct edit has no message ID".to_string());
+                        return Err(reject(
+                            ItemRejectionCode::PayloadInvalid,
+                            "messaging Direct edit has no message ID",
+                        ));
                     }
                     (fact.message_id.as_str(), true, None, None, None)
                 }
-                _ => return Err("messaging Direct delivery has unsupported event type".to_string()),
+                _ => {
+                    return Err(reject(
+                        ItemRejectionCode::PayloadInvalid,
+                        "messaging Direct delivery has unsupported event type",
+                    ))
+                }
             };
         let direct = DirectDeviceCiphertext::decode(delivery.endpoint_payload.as_slice())
-            .map_err(|_| "messaging Direct ciphertext payload is invalid".to_string())?;
+            .map_err(|_| {
+                reject(
+                    ItemRejectionCode::PayloadInvalid,
+                    "messaging Direct ciphertext payload is invalid",
+                )
+            })?;
         if let Some(init) = direct.session_init.as_ref() {
             if delivery.sender_actor_identity_public_key.len() != 32
                 || init.sender_identity_key != delivery.sender_actor_identity_public_key
             {
-                return Err("messaging Direct sender identity is not authority-bound".to_string());
+                return Err(reject(
+                    ItemRejectionCode::IntegrityFailed,
+                    "messaging Direct sender identity is not authority-bound",
+                ));
             }
         }
         if !is_edit {
-            let sender = message_sender
-                .ok_or_else(|| "messaging Direct event has no message sender".to_string())?;
-            validate_direct_bindings(event, message_id, sender, &direct, &self.endpoint)?;
+            let sender = message_sender.ok_or_else(|| {
+                reject(
+                    ItemRejectionCode::PayloadInvalid,
+                    "messaging Direct event has no message sender",
+                )
+            })?;
+            validate_direct_bindings(event, message_id, sender, &direct, &self.endpoint)
+                .map_err(|error| {
+                    ConsumeError::rejected(ItemRejectionCode::RecipientMismatch, error)
+                })?;
         }
 
-        let ratchet = direct
-            .ratchet_ciphertext
-            .as_ref()
-            .ok_or_else(|| "messaging Direct ratchet ciphertext is missing".to_string())?;
+        let ratchet = direct.ratchet_ciphertext.as_ref().ok_or_else(|| {
+            reject(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct ratchet ciphertext is missing",
+            )
+        })?;
         let ratchet_bytes = ratchet.encode_to_vec();
         if direct.ciphertext_sha256.len() != 32
             || Sha256::digest(&ratchet_bytes).as_slice() != direct.ciphertext_sha256
         {
-            return Err("messaging Direct ciphertext hash mismatch".to_string());
+            return Err(reject(
+                ItemRejectionCode::IntegrityFailed,
+                "messaging Direct ciphertext hash mismatch",
+            ));
         }
         let wire = DrCiphertextWire {
             version: ratchet.wire_version,
-            sender_dh: fixed_bytes(
-                "sender ratchet public key",
-                &ratchet.sender_ratchet_public_key,
-            )?,
+            sender_dh: fixed_bytes("sender ratchet public key", &ratchet.sender_ratchet_public_key)
+                .map_err(|error| ConsumeError::rejected(ItemRejectionCode::PayloadInvalid, error))?,
             n_send: ratchet.message_counter,
             n_prev: ratchet.previous_chain_length,
-            nonce: fixed_bytes("Direct ciphertext nonce", &ratchet.nonce)?,
+            nonce: fixed_bytes("Direct ciphertext nonce", &ratchet.nonce)
+                .map_err(|error| ConsumeError::rejected(ItemRejectionCode::PayloadInvalid, error))?,
             ciphertext: ratchet.ciphertext.clone(),
         };
         if wire.ciphertext.is_empty() {
-            return Err("messaging Direct ciphertext is empty".to_string());
+            return Err(reject(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging Direct ciphertext is empty",
+            ));
         }
 
+        // Session establishment needs local key material and ratchet decryption
+        // depends on per-conversation state, so their failures stay
+        // retryable: a missing prekey or a gap closed by a later item must not
+        // be mistaken for a poison payload.
         let (mut dr_session, consumed_one_time_prekey_id) =
             match self.store.load_direct_session(&direct.session_id)? {
                 Some(s) => {
                     if let Some(init) = direct.session_init.as_ref() {
-                        validate_session_init(&direct, init, &self.endpoint)?;
+                        validate_session_init(&direct, init, &self.endpoint).map_err(|error| {
+                            ConsumeError::rejected(ItemRejectionCode::IntegrityFailed, error)
+                        })?;
                         if init.sender_identity_key != s.peer_identity_key {
-                            return Err("messaging Direct repeated session init identity mismatch"
-                                .to_string());
+                            return Err(ConsumeError::rejected(
+                                ItemRejectionCode::IntegrityFailed,
+                                "messaging Direct repeated session init identity mismatch",
+                            ));
                         }
                     }
                     (s, None)
                 }
                 None => self.prepare_receiver_session(&direct, now)?,
             };
-        validate_session_binding(&dr_session, event, &direct, &self.endpoint)?;
+        validate_session_binding(&dr_session, event, &direct, &self.endpoint).map_err(
+            |error| ConsumeError::rejected(ItemRejectionCode::RecipientMismatch, error),
+        )?;
         let skipped = self.store.load_direct_skipped_keys(&direct.session_id)?;
         let aad = encode_direct_ciphertext_aad(event.conversation_id.as_str(), &direct);
         let outcome = double_ratchet::decrypt(&dr_session.ratchet, &wire, &skipped, &aad)
-            .map_err(|error| format!("messaging Direct decrypt failed: {error}"))?;
-        let private_content = decode_message_private_content(&outcome.plaintext)?;
+            .map_err(|error| ConsumeError::retry(format!("messaging Direct decrypt failed: {error}")))?;
+        let private_content = decode_message_private_content(&outcome.plaintext).map_err(
+            |error| ConsumeError::rejected(ItemRejectionCode::PayloadInvalid, error),
+        )?;
         dr_session.ratchet = outcome.advanced_state;
         dr_session.updated_at_unix_ms = now;
 
@@ -399,7 +471,11 @@ impl<R: MessagingRepository> DirectMessageProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for DirectMessageProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.process(item, consumer_epoch)
     }
 }

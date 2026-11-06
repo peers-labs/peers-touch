@@ -10,7 +10,7 @@ use crate::proto::chat::{
 };
 use crate::store::MessagingRepository;
 
-use super::ClaimedItemConsumer;
+use super::{ClaimedItemConsumer, ConsumeError, ItemRejectionCode};
 use prost::Message;
 use std::sync::Arc;
 
@@ -64,7 +64,7 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), ConsumeError> {
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -82,40 +82,75 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
         {
             return Ok(());
         }
-        let delivery =
-            verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)?;
+        let delivery = verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)
+            .map_err(|error| {
+                // Pure cryptographic binding/hash verification: the same bytes
+                // can never become valid on retry.
+                ConsumeError::rejected(ItemRejectionCode::IntegrityFailed, error)
+            })?;
         if PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-            .map_err(|_| "messaging conversation-state payload kind is invalid".to_string())?
+            .map_err(|_| {
+                ConsumeError::rejected(
+                    ItemRejectionCode::PayloadInvalid,
+                    "messaging conversation-state payload kind is invalid",
+                )
+            })?
             != PreparedEndpointPayloadKind::ConversationState
         {
-            return Err("messaging conversation-state payload kind mismatch".to_string());
+            return Err(ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging conversation-state payload kind mismatch",
+            ));
         }
-        let event = delivery
-            .event
-            .as_ref()
-            .ok_or_else(|| "messaging conversation-state event is missing".to_string())?;
+        let event = delivery.event.as_ref().ok_or_else(|| {
+            ConsumeError::rejected(
+                ItemRejectionCode::PayloadInvalid,
+                "messaging conversation-state event is missing",
+            )
+        })?;
         let marker = ConversationStateMarker::decode(delivery.endpoint_payload.as_slice())
-            .map_err(|_| "messaging conversation-state marker is invalid".to_string())?;
+            .map_err(|_| {
+                ConsumeError::rejected(
+                    ItemRejectionCode::PayloadInvalid,
+                    "messaging conversation-state marker is invalid",
+                )
+            })?;
         if marker.conversation_id != event.conversation_id || marker.event_id != event.event_id {
-            return Err("messaging conversation-state marker binding mismatch".to_string());
+            return Err(ConsumeError::rejected(
+                ItemRejectionCode::RecipientMismatch,
+                "messaging conversation-state marker binding mismatch",
+            ));
         }
         let created = match event.payload.as_ref() {
             Some(conversation_event::Payload::ConversationCreated(created)) => created,
-            _ => return Err("messaging conversation-state event is unsupported".to_string()),
+            _ => {
+                return Err(ConsumeError::rejected(
+                    ItemRejectionCode::PayloadInvalid,
+                    "messaging conversation-state event is unsupported",
+                ))
+            }
         };
-        let post_state = validate_conversation_created_scope(created)?;
+        let post_state = validate_conversation_created_scope(created).map_err(|error| {
+            ConsumeError::rejected(ItemRejectionCode::PayloadInvalid, error)
+        })?;
         if !created
             .members
             .iter()
             .any(|member| member.ptid == self.endpoint.ptid)
         {
-            return Err("messaging recipient is not a conversation member".to_string());
+            return Err(ConsumeError::rejected(
+                ItemRejectionCode::RecipientMismatch,
+                "messaging recipient is not a conversation member",
+            ));
         }
         let members = post_state
             .active_members
             .iter()
             .map(authority_member_projection)
-            .collect::<Result<Vec<_>, String>>()?;
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(|error| {
+                ConsumeError::rejected(ItemRejectionCode::PayloadInvalid, error)
+            })?;
         let projection = ConversationProjection {
             conversation_id: event.conversation_id.clone(),
             authority_station_id: event.authority_station_peer_id.clone(),
@@ -195,7 +230,11 @@ fn authority_member_projection(
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for ConversationStateProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.process(item, consumer_epoch)
     }
 }

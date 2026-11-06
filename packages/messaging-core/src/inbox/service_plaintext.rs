@@ -10,7 +10,7 @@ use crate::proto::chat::{
 };
 use crate::store::MessagingRepository;
 
-use super::ClaimedItemConsumer;
+use super::{ClaimedItemConsumer, ConsumeError, ItemRejectionCode};
 use prost::Message;
 use std::sync::Arc;
 
@@ -47,7 +47,14 @@ impl<R: MessagingRepository> ServicePlaintextProcessor<R> {
         })
     }
 
-    fn process(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn process(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
+        let reject = |message: &'static str| {
+            ConsumeError::rejected(ItemRejectionCode::PayloadInvalid, message)
+        };
         let now = (self.clock)();
         self.store.persist_claimed_item(
             &item.item_id,
@@ -65,77 +72,78 @@ impl<R: MessagingRepository> ServicePlaintextProcessor<R> {
         {
             return Ok(());
         }
-        if DeviceInboxPayloadType::try_from(item.payload_type)
-            .map_err(|_| "messaging service-plaintext queue payload type is invalid".to_string())?
-            != DeviceInboxPayloadType::ConversationEvent
+        if DeviceInboxPayloadType::try_from(item.payload_type).map_err(|_| {
+            reject("messaging service-plaintext queue payload type is invalid")
+        })? != DeviceInboxPayloadType::ConversationEvent
         {
-            return Err(
-                "messaging service-plaintext processor received wrong queue payload type"
-                    .to_string(),
-            );
+            return Err(reject(
+                "messaging service-plaintext processor received wrong queue payload type",
+            ));
         }
 
         let delivery =
-            verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)?;
-        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-            .map_err(|_| "messaging service-plaintext payload kind is invalid".to_string())?
-            != PreparedEndpointPayloadKind::DirectServicePlaintext
+            verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)
+                .map_err(|error| {
+                    ConsumeError::rejected(ItemRejectionCode::IntegrityFailed, error)
+                })?;
+        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind).map_err(|_| {
+            reject("messaging service-plaintext payload kind is invalid")
+        })? != PreparedEndpointPayloadKind::DirectServicePlaintext
         {
-            return Err(
-                "messaging service-plaintext processor received wrong endpoint payload kind"
-                    .to_string(),
-            );
+            return Err(reject(
+                "messaging service-plaintext processor received wrong endpoint payload kind",
+            ));
         }
-        let event = delivery
-            .event
-            .as_ref()
-            .ok_or_else(|| "messaging service-plaintext delivery has no event".to_string())?;
+        let event = delivery.event.as_ref().ok_or_else(|| {
+            reject("messaging service-plaintext delivery has no event")
+        })?;
         let message = match event.payload.as_ref() {
             Some(conversation_event::Payload::MessageCommitted(message)) => message,
             _ => {
-                return Err(
-                    "messaging service-plaintext delivery has unsupported event type".to_string(),
-                )
+                return Err(reject(
+                    "messaging service-plaintext delivery has unsupported event type",
+                ))
             }
         };
         if MessagingContentKind::try_from(message.content_kind)
-            .map_err(|_| "messaging service-plaintext content kind is invalid".to_string())?
+            .map_err(|_| reject("messaging service-plaintext content kind is invalid"))?
             != MessagingContentKind::System
             || MessageDeliverySecurity::try_from(message.delivery_security)
-                .map_err(|_| "messaging service-plaintext security marker is invalid".to_string())?
+                .map_err(|_| reject("messaging service-plaintext security marker is invalid"))?
                 != MessageDeliverySecurity::ServicePlaintext
         {
-            return Err(
-                "messaging service-plaintext fact must be SYSTEM/SERVICE_PLAINTEXT".to_string(),
-            );
+            return Err(reject(
+                "messaging service-plaintext fact must be SYSTEM/SERVICE_PLAINTEXT",
+            ));
         }
         if message.message_id.trim().is_empty() {
-            return Err("messaging service-plaintext fact has no message ID".to_string());
+            return Err(reject("messaging service-plaintext fact has no message ID"));
         }
         let sender = message
             .sender
             .as_ref()
-            .ok_or_else(|| "messaging service-plaintext fact has no sender".to_string())?;
+            .ok_or_else(|| reject("messaging service-plaintext fact has no sender"))?;
         if event.actor.as_ref() != Some(sender)
             || sender.ptid.trim().is_empty()
             || sender.device_id != SERVICE_SYSTEM_DEVICE_ID
         {
-            return Err(
-                "messaging service-plaintext sender is not the reserved system endpoint"
-                    .to_string(),
-            );
+            return Err(reject(
+                "messaging service-plaintext sender is not the reserved system endpoint",
+            ));
         }
 
         let payload = DirectServicePlaintextPayload::decode(delivery.endpoint_payload.as_slice())
-            .map_err(|_| "messaging service-plaintext payload is invalid".to_string())?;
+            .map_err(|_| reject("messaging service-plaintext payload is invalid"))?;
         let content = payload
             .message_content
-            .ok_or_else(|| "messaging service-plaintext payload has no content".to_string())?;
+            .ok_or_else(|| reject("messaging service-plaintext payload has no content"))?;
         if content.fallback_text.trim().is_empty() || content.primary.is_none() {
-            return Err("messaging service-plaintext content is incomplete".to_string());
+            return Err(reject("messaging service-plaintext content is incomplete"));
         }
         if payload.source_namespace.trim().is_empty() {
-            return Err("messaging service-plaintext source namespace is required".to_string());
+            return Err(reject(
+                "messaging service-plaintext source namespace is required",
+            ));
         }
 
         let committed_at_unix_ms = event
@@ -205,7 +213,11 @@ impl<R: MessagingRepository> ServicePlaintextProcessor<R> {
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for ServicePlaintextProcessor<R> {
-    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+    fn consume(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), ConsumeError> {
         self.process(item, consumer_epoch)
     }
 }
