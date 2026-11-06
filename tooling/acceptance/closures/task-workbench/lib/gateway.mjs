@@ -379,6 +379,35 @@ export class Gateway {
     return decodeProtoBytes(r.data, schemaName);
   }
 
+  // ── Agent working directory selection (workspace scope C) ───────────────
+  // These arms return the typed state payload directly (not a status
+  // string): { currentRoot: string|null, choices: WorkspaceChoice[] }.
+  async workspaceList() {
+    const r = await this.cmd('agent_workspace_list');
+    return r.data ?? { currentRoot: null, choices: [] };
+  }
+
+  async workspaceAddDirectory(path) {
+    const r = await this.cmd('agent_workspace_add_directory', { path });
+    return r.data;
+  }
+
+  async workspaceCreateWorktree(base, name) {
+    const r = await this.cmd('agent_workspace_create_worktree', { base, name });
+    return r.data;
+  }
+
+  async workspaceRemove(locator) {
+    const r = await this.cmd('agent_workspace_remove', { locator });
+    return r.data;
+  }
+
+  // locator undefined/null restores the private sandbox root.
+  async workspaceActivate(locator = null) {
+    const r = await this.cmd('agent_workspace_activate', { locator });
+    return r.data;
+  }
+
   // ── Actor-device engine bootstrap (headless onboarding) ─────────────────
   // Password gateway login binds only the Station JWT. The GUI post-login
   // flow additionally activates the actor-device messaging engine; headless
