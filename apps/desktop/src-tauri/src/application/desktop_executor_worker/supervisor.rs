@@ -24,7 +24,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -59,6 +59,9 @@ pub struct CapabilityWorkerSupervisor {
     /// Per actor/device project root selected for the current capability
     /// session. Absent key means the private provisioned sandbox root.
     desired_roots: Arc<Mutex<HashMap<String, PathBuf>>>,
+    /// Per actor/device machine-local shell authorization handle, shared with
+    /// the live executor so a user change applies without re-registering.
+    shell_modes: Arc<Mutex<HashMap<String, Arc<AtomicU8>>>>,
     workspace_requests: Arc<Mutex<VecDeque<WorkspaceActivationRequest>>>,
     acceptance_hooks: Arc<Mutex<HashMap<String, ExecutorAcceptanceHook>>>,
 }
@@ -240,6 +243,7 @@ impl CapabilityWorkerSupervisor {
             snapshot: Arc::new(Mutex::new(Vec::new())),
             negative_controls: Arc::new(Mutex::new(VecDeque::new())),
             desired_roots: Arc::new(Mutex::new(HashMap::new())),
+            shell_modes: Arc::new(Mutex::new(HashMap::new())),
             workspace_requests: Arc::new(Mutex::new(VecDeque::new())),
             acceptance_hooks: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -305,6 +309,40 @@ impl CapabilityWorkerSupervisor {
             .map_err(|_| "workspace roots lock poisoned".to_string())?
             .get(&workspace_scope_key(actor_ptid, device_id))
             .cloned())
+    }
+
+    /// Sets the machine-local shell authorization for the actor's session.
+    /// Full Access lets arbitrary commands run (cwd still pinned inside the
+    /// granted workspace); Standard keeps the hard command allowlist. The
+    /// shared atomic applies to a live worker immediately.
+    pub fn set_shell_access(
+        &self,
+        actor_ptid: &str,
+        device_id: &str,
+        full_access: bool,
+    ) -> Result<(), String> {
+        let key = workspace_scope_key(actor_ptid, device_id);
+        let handle = {
+            let mut modes = self
+                .shell_modes
+                .lock()
+                .map_err(|_| "shell mode lock poisoned".to_string())?;
+            modes
+                .entry(key)
+                .or_insert_with(|| Arc::new(AtomicU8::new(0)))
+                .clone()
+        };
+        handle.store(if full_access { 1 } else { 0 }, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub fn shell_access_full(&self, actor_ptid: &str, device_id: &str) -> Result<bool, String> {
+        Ok(self
+            .shell_modes
+            .lock()
+            .map_err(|_| "shell mode lock poisoned".to_string())?
+            .get(&workspace_scope_key(actor_ptid, device_id))
+            .is_some_and(|handle| handle.load(Ordering::SeqCst) == 1))
     }
 
     /// Resolves the device id the worker for an actor registers under, taken
@@ -411,6 +449,7 @@ impl CapabilityWorkerSupervisor {
         let snapshot = self.snapshot.clone();
         let negative_controls = self.negative_controls.clone();
         let desired_roots = self.desired_roots.clone();
+        let shell_modes = self.shell_modes.clone();
         let workspace_requests = self.workspace_requests.clone();
         let acceptance_hooks = self.acceptance_hooks.clone();
         let surface = self.surface;
@@ -426,6 +465,7 @@ impl CapabilityWorkerSupervisor {
                         snapshot,
                         negative_controls,
                         desired_roots,
+                        shell_modes,
                         workspace_requests,
                         acceptance_hooks,
                     )
@@ -608,6 +648,7 @@ impl ActiveWorker {
         context: WorkerContext,
         surface: ClientSurface,
         desired_root: Option<PathBuf>,
+        shell_handle: Arc<AtomicU8>,
     ) -> Result<Self, String> {
         let connector_projection_epoch = oauth2::connector_projection_epoch();
         let mcp_projection_epoch = crate::application::mcp::mcp_projection_epoch();
@@ -628,6 +669,7 @@ impl ActiveWorker {
                 &context.actor_ptid,
                 contracts.clone(),
                 browser_bridge,
+                shell_handle,
             )?;
             let ledger = ReceiptLedger::open(&context.actor_ptid, &context.device_id)?;
             let resources = ResourceRegistry::open(&context.actor_ptid, &context.device_id)?;
@@ -892,6 +934,7 @@ fn run_supervisor(
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
     negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
     desired_roots: Arc<Mutex<HashMap<String, PathBuf>>>,
+    shell_modes: Arc<Mutex<HashMap<String, Arc<AtomicU8>>>>,
     workspace_requests: Arc<Mutex<VecDeque<WorkspaceActivationRequest>>>,
     acceptance_hooks: Arc<Mutex<HashMap<String, ExecutorAcceptanceHook>>>,
 ) {
@@ -905,6 +948,7 @@ fn run_supervisor(
             &mut workers,
             &mut enrollment_backoff,
             &desired_roots,
+            &shell_modes,
         );
         process_negative_controls(&negative_controls, &mut workers);
         process_workspace_requests(&workspace_requests, &mut workers);
@@ -1444,6 +1488,7 @@ fn reconcile_workers(
     workers: &mut HashMap<String, ActiveWorker>,
     enrollment_backoff: &mut HashMap<String, std::time::Instant>,
     desired_roots: &Mutex<HashMap<String, PathBuf>>,
+    shell_modes: &Mutex<HashMap<String, Arc<AtomicU8>>>,
 ) {
     let mut desired = HashMap::new();
     let all_sessions = state.sessions.snapshot_all();
@@ -1510,12 +1555,22 @@ fn reconcile_workers(
             }
             enrollment_backoff.remove(&account_id);
         }
+        let scope_key = workspace_scope_key(&context.actor_ptid, &context.device_id);
         let desired_root = desired_roots
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(&workspace_scope_key(&context.actor_ptid, &context.device_id))
+            .get(&scope_key)
             .cloned();
-        match ActiveWorker::register(context, surface, desired_root) {
+        let shell_handle = {
+            let mut modes = shell_modes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            modes
+                .entry(scope_key)
+                .or_insert_with(|| Arc::new(AtomicU8::new(0)))
+                .clone()
+        };
+        match ActiveWorker::register(context, surface, desired_root, shell_handle) {
             Ok(worker) => {
                 workers.insert(account_id, worker);
             }

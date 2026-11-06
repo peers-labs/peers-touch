@@ -49,7 +49,17 @@ pub struct WorkspaceChoicePayload {
 pub struct WorkspaceStatePayload {
     /// Canonical root granted to the live session; None = private sandbox.
     pub current_root: Option<String>,
+    /// "standard" (hard command allowlist) | "full" (Full Access).
+    pub shell_access: String,
     pub choices: Vec<WorkspaceChoicePayload>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceShellAccessInput {
+    /// true = Full Access (arbitrary commands, cwd inside granted workspace);
+    /// false = Standard hard allowlist.
+    pub full_access: bool,
 }
 
 fn authenticated_actor(
@@ -96,10 +106,31 @@ pub(crate) fn workspace_state_payload(
             last_used_ms: choice.last_used_ms,
         })
         .collect();
+    let shell_access = if supervisor.shell_access_full(actor_ptid, &device_id)? {
+        "full"
+    } else {
+        "standard"
+    };
     Ok(WorkspaceStatePayload {
         current_root,
+        shell_access: shell_access.to_string(),
         choices,
     })
+}
+
+pub(crate) fn set_workspace_shell_access(
+    supervisor: &CapabilityWorkerSupervisor,
+    actor_ptid: &str,
+    full_access: bool,
+) -> AppResult<WorkspaceStatePayload> {
+    let device_id = match supervisor.device_id_for_actor(actor_ptid) {
+        Ok(device_id) => device_id,
+        Err(error) => return workspace_failed(error),
+    };
+    if let Err(error) = supervisor.set_shell_access(actor_ptid, &device_id, full_access) {
+        return workspace_failed(error);
+    }
+    list_workspaces(supervisor, actor_ptid)
 }
 
 pub(crate) fn list_workspaces(
@@ -262,5 +293,39 @@ pub async fn agent_workspace_activate(
     {
         Ok(result) => result,
         Err(error) => workspace_failed(format!("workspace activation task join failed: {error}")),
+    }
+}
+
+#[tauri::command]
+pub async fn agent_workspace_set_shell_access(
+    input: WorkspaceShellAccessInput,
+    app: AppHandle,
+    window: Window,
+) -> AppResult<WorkspaceStatePayload> {
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let actor_ptid = {
+        let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
+        let actor = session_resolver::ptid_for_window(&state, &window).unwrap_or_default();
+        if token.trim().is_empty() || !actor.starts_with("ptid:") {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "authentication required",
+                None,
+            );
+        }
+        actor
+    };
+    let supervisor: Arc<CapabilityWorkerSupervisor> = app
+        .state::<Arc<CapabilityWorkerSupervisor>>()
+        .inner()
+        .clone();
+    let full_access = input.full_access;
+    match tauri::async_runtime::spawn_blocking(move || {
+        set_workspace_shell_access(&supervisor, &actor_ptid, full_access)
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => workspace_failed(format!("shell access task join failed: {error}")),
     }
 }

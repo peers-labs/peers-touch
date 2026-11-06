@@ -4418,6 +4418,33 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
+        "agent_workspace_set_shell_access" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceShellAccessInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_set_shell_access") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::set_workspace_shell_access(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.full_access,
+                ),
+            )
+        }
         "agent_runtime_activity_station" => {
             let input = match parse_args::<AgentRuntimeActivityInput>(args) {
                 Ok(input) => input,

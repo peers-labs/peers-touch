@@ -1005,6 +1005,7 @@ fn main() {
             agent_workspace::agent_workspace_create_worktree,
             agent_workspace::agent_workspace_remove,
             agent_workspace::agent_workspace_activate,
+            agent_workspace::agent_workspace_set_shell_access,
             agent_turn::agent_conversation_list,
             agent_turn::agent_conversation_get,
             agent_turn::agent_conversation_create,

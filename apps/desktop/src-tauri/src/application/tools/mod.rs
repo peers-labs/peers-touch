@@ -50,6 +50,55 @@ impl std::fmt::Display for ToolError {
 /// bounds are deliberately tight for the local allowlist (build/test probes).
 const SHELL_TIMEOUT_MS: u64 = 60_000;
 const SHELL_OUTPUT_CAP_BYTES: usize = 64 * 1024;
+// Full Access runs real builds/tests: they legitimately run for minutes and
+// produce large logs. The authorization is per-session and machine-local.
+const FULL_ACCESS_SHELL_TIMEOUT_MS: u64 = 600_000;
+const FULL_ACCESS_SHELL_OUTPUT_CAP_BYTES: usize = 1024 * 1024;
+
+/// Machine-local shell authorization for one capability session. The device
+/// user grants it explicitly (composer); neither Station nor the model can
+/// raise it — it lives only in the desktop worker, never in a tool envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShellMode {
+    /// Hard command allowlist + write-subcommand denials + argv containment.
+    #[default]
+    Standard,
+    /// Arbitrary executable argv (git commit/push, package installs, build
+    /// tools), still spawned with cwd inside the granted workspace. Commands
+    /// run via execvp-style Command (no shell), so argv is never a shell
+    /// injection vector; the containment boundary is the working directory.
+    FullAccess,
+}
+
+impl ShellMode {
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            1 => ShellMode::FullAccess,
+            _ => ShellMode::Standard,
+        }
+    }
+
+    pub fn as_u8(self) -> u8 {
+        match self {
+            ShellMode::Standard => 0,
+            ShellMode::FullAccess => 1,
+        }
+    }
+
+    fn timeout_ms(self) -> u64 {
+        match self {
+            ShellMode::Standard => SHELL_TIMEOUT_MS,
+            ShellMode::FullAccess => FULL_ACCESS_SHELL_TIMEOUT_MS,
+        }
+    }
+
+    fn output_cap_bytes(self) -> usize {
+        match self {
+            ShellMode::Standard => SHELL_OUTPUT_CAP_BYTES,
+            ShellMode::FullAccess => FULL_ACCESS_SHELL_OUTPUT_CAP_BYTES,
+        }
+    }
+}
 /// Maximum unified diff surfaced in a tool result / artifact receipt.
 const DIFF_CAP_CHARS: usize = 16_000;
 /// Refuse quadratic LCS work on pathological files.
@@ -288,6 +337,7 @@ pub fn execute_builtin_local_tool(
     workspace_root: Option<&str>,
     allowed_roots: Option<&[String]>,
     call_id: Option<&str>,
+    shell_mode: ShellMode,
 ) -> Result<Value, ToolError> {
     let started = Instant::now();
     let output = match tool_name {
@@ -298,7 +348,9 @@ pub fn execute_builtin_local_tool(
         "local_shell_safe" => execute_shell_safe(&arguments, workspace_root, allowed_roots),
         "local_file_write" => execute_file_write(&arguments, workspace_root, allowed_roots),
         "local_file_edit" => execute_file_edit(&arguments, workspace_root, allowed_roots),
-        "local_shell_exec" => execute_shell_allowlist(&arguments, workspace_root, allowed_roots),
+        "local_shell_exec" => {
+            execute_shell_command(&arguments, workspace_root, allowed_roots, shell_mode)
+        }
         other => Err(ToolError::execution_failed(format!(
             "unsupported builtin local tool: {other}"
         ))),
@@ -314,7 +366,8 @@ pub fn execute_builtin_local_tool(
             "source": "builtin",
             "toolName": tool_name,
             "executionOwner": "desktop-rust",
-            "approvalRequired": true,
+            "approvalRequired": shell_mode == ShellMode::Standard,
+            "shellAccess": if shell_mode == ShellMode::FullAccess { "full" } else { "standard" },
             "executedAt": now_rfc3339()
         }
     }))
@@ -809,14 +862,43 @@ fn forbidden_shell_subcommands(command: &str) -> Option<&'static [&'static str]>
     })
 }
 
-fn execute_shell_allowlist(
+fn shell_raw_args(arguments: &Value) -> Vec<String> {
+    arguments
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|value| value.as_str().unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn execute_shell_command(
     arguments: &Value,
     workspace_root: Option<&str>,
     _allowed_roots: Option<&[String]>,
+    shell_mode: ShellMode,
 ) -> Result<Value, ToolError> {
     let command =
         required_string(arguments, "command").map_err(ToolError::execution_failed)?;
     let cwd = workspace_base(workspace_root).map_err(ToolError::execution_failed)?;
+    if shell_mode == ShellMode::FullAccess {
+        if command.trim().is_empty() {
+            return Err(ToolError::command_not_allowed("empty shell command"));
+        }
+        let full_args = shell_raw_args(arguments);
+        if full_args.iter().any(|arg| arg.trim().is_empty()) {
+            return Err(ToolError::command_not_allowed("empty shell argument"));
+        }
+        let timeout_ms = arguments
+            .get("timeout_ms")
+            .and_then(Value::as_u64)
+            .unwrap_or(FULL_ACCESS_SHELL_TIMEOUT_MS)
+            .min(FULL_ACCESS_SHELL_TIMEOUT_MS);
+        return spawn_shell(&command, &full_args, &cwd, shell_mode, timeout_ms);
+    }
     if !is_allowlisted_shell_command(&command) {
         return Err(ToolError::command_not_allowed(format!(
             "command '{command}' is not in the shell allowlist"
@@ -831,17 +913,7 @@ fn execute_shell_allowlist(
     );
     // find can execute or mutate through these flags.
     let forbidden_flags = ["-exec", "-execdir", "-ok", "-delete", "-fls", "-fprint"];
-    let raw_args: Vec<String> = arguments
-        .get("args")
-        .map(Value::as_array)
-        .flatten()
-        .map(|items| {
-            items
-                .iter()
-                .map(|value| value.as_str().unwrap_or_default().to_string())
-                .collect()
-        })
-        .unwrap_or_default();
+    let raw_args = shell_raw_args(arguments);
     for arg in &raw_args {
         if arg.trim().is_empty() {
             return Err(ToolError::command_not_allowed("empty shell argument"));
@@ -894,9 +966,25 @@ fn execute_shell_allowlist(
             )));
         }
     }
+    let timeout_ms = arguments
+        .get("timeout_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(SHELL_TIMEOUT_MS)
+        .min(SHELL_TIMEOUT_MS);
+    spawn_shell(&command, &raw_args, &cwd, ShellMode::Standard, timeout_ms)
+}
+
+fn spawn_shell(
+    command: &str,
+    raw_args: &[String],
+    cwd: &Path,
+    shell_mode: ShellMode,
+    timeout_ms: u64,
+) -> Result<Value, ToolError> {
+    let output_cap = shell_mode.output_cap_bytes();
     let started = Instant::now();
     let mut child = std::process::Command::new(&command)
-        .args(&raw_args)
+        .args(raw_args)
         .current_dir(&cwd)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -908,17 +996,11 @@ fn execute_shell_allowlist(
     let mut stderr_handle = child.stderr.take();
     let stdout_thread = stdout_handle
         .take()
-        .map(|mut pipe| std::thread::spawn(move || read_to_end_bounded(&mut pipe)));
+        .map(|mut pipe| std::thread::spawn(move || read_to_end_bounded_cap(&mut pipe, output_cap)));
     let stderr_thread = stderr_handle
         .take()
-        .map(|mut pipe| std::thread::spawn(move || read_to_end_bounded(&mut pipe)));
-    let timeout = Duration::from_millis(
-        arguments
-            .get("timeout_ms")
-            .and_then(Value::as_u64)
-            .unwrap_or(SHELL_TIMEOUT_MS)
-            .min(SHELL_TIMEOUT_MS),
-    );
+        .map(|mut pipe| std::thread::spawn(move || read_to_end_bounded_cap(&mut pipe, output_cap)));
+    let timeout = Duration::from_millis(timeout_ms);
     let exit_code = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status.code().unwrap_or(-1),
@@ -956,13 +1038,13 @@ fn execute_shell_allowlist(
     let stderr_bytes = stderr_thread
         .and_then(|handle| handle.join().ok())
         .unwrap_or_default();
-    let stdout_truncated = stdout_bytes.len() > SHELL_OUTPUT_CAP_BYTES;
-    let stderr_truncated = stderr_bytes.len() > SHELL_OUTPUT_CAP_BYTES;
+    let stdout_truncated = stdout_bytes.len() > output_cap;
+    let stderr_truncated = stderr_bytes.len() > output_cap;
     let stdout_total = stdout_bytes.len();
     let stderr_total = stderr_bytes.len();
-    let stdout = String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(SHELL_OUTPUT_CAP_BYTES)])
+    let stdout = String::from_utf8_lossy(&stdout_bytes[..stdout_bytes.len().min(output_cap)])
         .to_string();
-    let stderr = String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(SHELL_OUTPUT_CAP_BYTES)])
+    let stderr = String::from_utf8_lossy(&stderr_bytes[..stderr_bytes.len().min(output_cap)])
         .to_string();
     let duration_ms = started.elapsed().as_millis() as u64;
     let timed_out = false;
@@ -1001,16 +1083,16 @@ fn optional_string(arguments: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn read_to_end_bounded<R: std::io::Read>(reader: &mut R) -> Vec<u8> {
+fn read_to_end_bounded_cap<R: std::io::Read>(reader: &mut R, cap: usize) -> Vec<u8> {
     // Read one byte beyond the cap so callers can detect truncation, but
     // bound memory regardless of how chatty the command is.
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
-    while buf.len() <= SHELL_OUTPUT_CAP_BYTES {
+    while buf.len() <= cap {
         match reader.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
-                let remaining = SHELL_OUTPUT_CAP_BYTES + 1 - buf.len();
+                let remaining = cap + 1 - buf.len();
                 buf.extend_from_slice(&chunk[..n.min(remaining)]);
                 if n > remaining {
                     // Drain and discard the rest so the child can exit.
@@ -1177,6 +1259,7 @@ mod tests {
             Some(base.to_str().expect("temp path should be utf8")),
             None,
             Some("call_1"),
+            ShellMode::Standard
         )
         .expect("workspace file should be readable");
         assert_eq!(result.get("ok").and_then(Value::as_bool), Some(true));
@@ -1199,6 +1282,7 @@ mod tests {
             Some(base.to_str().expect("temp path should be utf8")),
             None,
             Some("call_2"),
+            ShellMode::Standard
         );
         let denial = denied.expect_err("outside file must be denied");
         assert_eq!(denial.code, ERR_PATH_OUTSIDE_ROOT);
@@ -1222,6 +1306,7 @@ mod tests {
             Some(base.to_str().expect("temp path should be utf8")),
             Some(&[extra.to_string_lossy().to_string()]),
             Some("call_3"),
+            ShellMode::Standard
         )
         .expect("configured extra root should be readable");
         assert_eq!(
@@ -1247,6 +1332,7 @@ mod tests {
             Some(base.to_str().unwrap()),
             Some(&[]),
             Some("call_write"),
+            ShellMode::Standard
         )
         .expect("write inside workspace");
         assert_eq!(
@@ -1267,6 +1353,7 @@ mod tests {
             Some(base.to_str().unwrap()),
             Some(&[]),
             Some("call_edit"),
+            ShellMode::Standard
         )
         .expect("exact edit should apply");
         let after = edit
@@ -1287,6 +1374,7 @@ mod tests {
             Some(base.to_str().unwrap()),
             Some(&[]),
             Some("call_travel"),
+            ShellMode::Standard
         );
         assert!(traversal.is_err(), "parent traversal must be rejected");
         let absolute = execute_builtin_local_tool(
@@ -1295,6 +1383,7 @@ mod tests {
             Some(base.to_str().unwrap()),
             Some(&[]),
             Some("call_abs"),
+            ShellMode::Standard
         );
         assert!(absolute.is_err(), "absolute paths must be rejected");
         // Nothing escaped.
@@ -1308,6 +1397,7 @@ mod tests {
             Some(base.to_str().unwrap()),
             Some(&[]),
             Some("call_dup"),
+            ShellMode::Standard
         );
         assert!(ambiguous.is_err());
 
@@ -1328,7 +1418,8 @@ mod tests {
                 root,
                 Some(&[]),
                 Some("call"),
-            );
+            ShellMode::Standard
+        );
             assert!(result.is_err(), "{command} must be rejected");
         }
         assert!(execute_builtin_local_tool(
@@ -1337,6 +1428,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .is_err());
         assert!(execute_builtin_local_tool(
@@ -1345,6 +1437,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .is_err());
         assert!(execute_builtin_local_tool(
@@ -1353,6 +1446,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .is_err());
         assert!(execute_builtin_local_tool(
@@ -1361,6 +1455,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .is_err());
         assert!(execute_builtin_local_tool(
@@ -1369,6 +1464,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .is_err());
         assert!(execute_builtin_local_tool(
@@ -1377,6 +1473,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .is_err());
 
@@ -1387,6 +1484,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .expect("ls is allowlisted");
         assert_eq!(
@@ -1411,6 +1509,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .expect_err("traversal rejected");
         assert_eq!(traversal.code, ERR_PATH_OUTSIDE_ROOT);
@@ -1421,6 +1520,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .expect_err("bash rejected");
         assert_eq!(unknown.code, ERR_COMMAND_NOT_ALLOWED);
@@ -1440,6 +1540,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .expect("ls runs");
         let output = ok.get("output").expect("output object");
@@ -1459,6 +1560,7 @@ mod tests {
             root,
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .expect("non-zero exit still returns a result");
         let failed_output = failed.get("output").unwrap();
@@ -1493,6 +1595,7 @@ mod tests {
             Some(base.to_str().unwrap()),
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .expect("edit applies");
         let output = edited.get("output").unwrap();
@@ -1519,6 +1622,7 @@ mod tests {
             Some(base.to_str().unwrap()),
             Some(&[]),
             Some("call2"),
+            ShellMode::Standard
         )
         .expect("create applies");
         assert_eq!(
@@ -1547,6 +1651,7 @@ mod tests {
             Some(base.to_str().unwrap()),
             Some(&[]),
             Some("call"),
+            ShellMode::Standard
         )
         .expect_err("blocked command must be killed");
         assert_eq!(error.code, ERR_COMMAND_TIMEOUT);

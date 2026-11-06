@@ -8,7 +8,7 @@ use serde_json::Value;
 #[cfg(feature = "acceptance-webdriver")]
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 #[cfg(feature = "acceptance-webdriver")]
 use std::sync::{Mutex, OnceLock};
@@ -34,6 +34,10 @@ pub struct LocalCapabilityExecutor {
     contracts: HashMap<String, CapabilityContract>,
     browser: Option<Arc<AgentBrowserBridge>>,
     execution_attempts: AtomicU64,
+    /// Machine-local per-session shell authorization shared with the
+    /// supervisor so the user can raise/lower it without rebuilding the
+    /// executor. Never derived from a Station/model envelope.
+    shell_mode: Arc<AtomicU8>,
 }
 
 impl LocalCapabilityExecutor {
@@ -41,6 +45,7 @@ impl LocalCapabilityExecutor {
         actor_ptid: &str,
         contracts: impl IntoIterator<Item = CapabilityContract>,
         browser: Option<Arc<AgentBrowserBridge>>,
+        shell_mode: Arc<AtomicU8>,
     ) -> Result<Self, String> {
         if !actor_ptid.starts_with("ptid:") {
             return Err("local capability executor requires an actor PTID".to_string());
@@ -103,11 +108,16 @@ impl LocalCapabilityExecutor {
             contracts: indexed,
             browser,
             execution_attempts: AtomicU64::new(0),
+            shell_mode,
         })
     }
 
     pub fn execution_attempt_count(&self) -> u64 {
         self.execution_attempts.load(Ordering::SeqCst)
+    }
+
+    fn shell_mode(&self) -> tools::ShellMode {
+        tools::ShellMode::from_u8(self.shell_mode.load(Ordering::SeqCst))
     }
 }
 
@@ -134,6 +144,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
             .iter()
             .map(|resource| resource.locator.clone())
             .collect::<Vec<_>>();
+        let shell_mode = self.shell_mode();
         let execute_once = || {
             Ok(match request.capability_id.as_str() {
                 "filesystem.read" => {
@@ -144,6 +155,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "filesystem.list" => {
@@ -154,6 +166,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "clipboard.read" => {
@@ -164,6 +177,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         None,
                         &[],
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "clipboard.write" => {
@@ -174,6 +188,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         None,
                         &[],
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "shell.execute" => {
@@ -184,6 +199,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "filesystem.write" => {
@@ -194,6 +210,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "filesystem.edit" => {
@@ -204,6 +221,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "shell.allowlist" => {
@@ -214,6 +232,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "skill.resource.read" => {
@@ -362,6 +381,7 @@ fn execute_builtin(
     workspace_root: Option<&str>,
     allowed_roots: &[String],
     tool_call_id: &str,
+    shell_mode: tools::ShellMode,
 ) -> Result<Value, String> {
     tools::execute_builtin_local_tool(
         tool_name,
@@ -369,6 +389,7 @@ fn execute_builtin(
         workspace_root,
         Some(allowed_roots),
         Some(tool_call_id),
+        shell_mode,
     )
     .map_err(|error| {
         // Surface the typed device code (path/command/timeout) while keeping
@@ -512,6 +533,7 @@ mod tests {
                 supports_external_idempotency: false,
             }],
             None,
+            Arc::new(AtomicU8::new(0)),
         )
         .unwrap();
         let request = ClientCapabilityRequest {
@@ -560,6 +582,7 @@ mod tests {
                 supports_external_idempotency: false,
             }],
             None,
+            Arc::new(AtomicU8::new(0)),
         )
         .expect("managed Skill resource capability should register");
         assert!(executor.contract("skill.resource.read").is_some());
@@ -578,6 +601,7 @@ mod tests {
                 supports_external_idempotency: false,
             }],
             None,
+            Arc::new(AtomicU8::new(0)),
         )
         .expect("Station-derived Connector capability should register");
         assert!(executor.contract(&capability_id).is_some());
@@ -592,6 +616,7 @@ mod tests {
                 supports_external_idempotency: false,
             }],
             None,
+            Arc::new(AtomicU8::new(0)),
         );
         assert!(invalid.is_err());
     }
