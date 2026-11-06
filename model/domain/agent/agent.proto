@@ -1419,6 +1419,14 @@ message ClientCapabilityRequest {
   ReceiptRecoveryCredential recovery_credential = 24;
   google.protobuf.Timestamp reconciliation_deadline = 25;
   uint64 capability_lease_revision = 26;
+  // Conversation owning the turn. Station fills this at dispatch so device
+  // executors can bind device resources (e.g. agent-driven browser sessions)
+  // to the same task/turn/device/account scope as server-owned resources.
+  string conversation_id = 27;
+  // Model-facing tool name (e.g. browser_navigate). Required when several
+  // tools share one capability id (browser.observe backs navigate/snapshot/
+  // screenshot; browser.interact backs click/fill/submit).
+  string tool_name = 28;
 }
 
 enum ClientCapabilityReceiptStatus {

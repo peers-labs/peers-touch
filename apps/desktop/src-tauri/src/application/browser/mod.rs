@@ -24,6 +24,19 @@ use tauri::{AppHandle, Emitter};
 
 use crate::infrastructure::storage;
 
+mod agent_tools;
+pub(crate) use agent_tools::AgentBrowserBridge;
+
+/// Readiness-only proof: a managed browser host is actually launchable.
+pub(crate) fn host_is_available() -> bool {
+    host_info().available
+}
+
+/// Engine identifier reported to Station in browser-session truth rows.
+pub(crate) fn host_engine() -> String {
+    host_info().engine
+}
+
 pub(crate) const BROWSER_EVENT: &str = "peers-touch://browser-session-event";
 
 #[derive(Clone, Debug, Serialize)]

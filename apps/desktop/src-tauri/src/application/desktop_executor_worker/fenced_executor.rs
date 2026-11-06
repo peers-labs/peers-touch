@@ -1140,6 +1140,8 @@ mod tests {
             recovery_credential: None,
             reconciliation_deadline: Some(reconciliation_deadline.clone()),
             capability_lease_revision: 1,
+            conversation_id: "conv-test-1".to_string(),
+            tool_name: "local_file_read".to_string(),
         };
         envelope.payload_hash = hex::encode(Sha256::digest(envelope.encode_to_vec()));
 

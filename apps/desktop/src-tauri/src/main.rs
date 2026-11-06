@@ -703,6 +703,13 @@ fn main() {
             application::desktop_executor_worker::start(Arc::clone(state.inner()));
             let capability_supervisor = app
                 .state::<Arc<application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
+            capability_supervisor
+                .attach_app(app.handle().clone())
+                .map_err(|error| {
+                    std::io::Error::other(format!(
+                        "attach app handle to client capability supervisor: {error}"
+                    ))
+                })?;
             if capability_supervisor.starts_automatically() {
                 capability_supervisor.start().map_err(|error| {
                     std::io::Error::other(format!(

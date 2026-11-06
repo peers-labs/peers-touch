@@ -101,6 +101,36 @@ func (r *ToolRegistryService) registerDesktopLocalBuiltinTools() {
 			description: "Run an allow-listed read-only or build command (find/grep/rg/cat/ls/make/pnpm/npm/go/cargo/git) inside the approved workspace after user approval.",
 			schema:      `{"type":"object","properties":{"command":{"type":"string","enum":["find","grep","rg","cat","ls","make","pnpm","npm","go","cargo","git"]},"args":{"type":"array","items":{"type":"string"}}},"required":["command"]}`,
 		},
+		{
+			name:        "browser_navigate",
+			description: "Open a URL in the task's managed desktop browser and observe the loaded page. The first call creates the agent-owned browser session for this task; reuse the returned session_id and tab_id on later browser calls. Navigation invalidates prior snapshot refs.",
+			schema:      `{"type":"object","properties":{"url":{"type":"string","description":"Absolute http(s) URL to open"},"session_id":{"type":"string","description":"Omit on first call; reuse the id returned previously"},"tab_id":{"type":"string"}},"required":["url"]}`,
+		},
+		{
+			name:        "browser_snapshot",
+			description: "Read the current browser page as an accessibility tree of interactable elements with stable element refs bound to snapshot_ref. Always re-snapshot after a navigation or action; refs from an older snapshot are rejected.",
+			schema:      `{"type":"object","properties":{"session_id":{"type":"string"},"tab_id":{"type":"string"}},"required":["session_id"]}`,
+		},
+		{
+			name:        "browser_click",
+			description: "Click an element on the browser page after user approval, using a ref from the latest snapshot.",
+			schema:      `{"type":"object","properties":{"session_id":{"type":"string"},"tab_id":{"type":"string"},"snapshot_ref":{"type":"string"},"element_ref":{"type":"string"}},"required":["session_id","snapshot_ref","element_ref"]}`,
+		},
+		{
+			name:        "browser_fill",
+			description: "Fill a text input on the browser page after user approval, using a ref from the latest snapshot.",
+			schema:      `{"type":"object","properties":{"session_id":{"type":"string"},"tab_id":{"type":"string"},"snapshot_ref":{"type":"string"},"element_ref":{"type":"string"},"value":{"type":"string","maxLength":10000}},"required":["session_id","snapshot_ref","element_ref","value"]}`,
+		},
+		{
+			name:        "browser_submit",
+			description: "Submit a form control on the browser page after user approval, using a ref from the latest snapshot.",
+			schema:      `{"type":"object","properties":{"session_id":{"type":"string"},"tab_id":{"type":"string"},"snapshot_ref":{"type":"string"},"element_ref":{"type":"string"}},"required":["session_id","snapshot_ref","element_ref"]}`,
+		},
+		{
+			name:        "browser_screenshot",
+			description: "Capture a PNG screenshot of the current browser page for visual evidence.",
+			schema:      `{"type":"object","properties":{"session_id":{"type":"string"},"tab_id":{"type":"string"}},"required":["session_id"]}`,
+		},
 	}
 
 	for _, spec := range specs {

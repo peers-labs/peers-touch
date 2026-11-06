@@ -1,5 +1,6 @@
 use super::fenced_executor::{CapabilityContract, CapabilityExecutor};
 use super::resource_registry::LocalResource;
+use crate::application::browser::AgentBrowserBridge;
 use crate::application::skills_market::managed_package;
 use crate::application::{mcp, oauth2, tools};
 use crate::model::agent::ClientCapabilityRequest;
@@ -8,6 +9,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 #[cfg(feature = "acceptance-webdriver")]
 use std::sync::{Mutex, OnceLock};
 
@@ -30,6 +32,7 @@ static ACCEPTANCE_EXTERNAL_IDEMPOTENCY_RESULTS: OnceLock<
 pub struct LocalCapabilityExecutor {
     actor_ptid: String,
     contracts: HashMap<String, CapabilityContract>,
+    browser: Option<Arc<AgentBrowserBridge>>,
     execution_attempts: AtomicU64,
 }
 
@@ -37,6 +40,7 @@ impl LocalCapabilityExecutor {
     pub fn new(
         actor_ptid: &str,
         contracts: impl IntoIterator<Item = CapabilityContract>,
+        browser: Option<Arc<AgentBrowserBridge>>,
     ) -> Result<Self, String> {
         if !actor_ptid.starts_with("ptid:") {
             return Err("local capability executor requires an actor PTID".to_string());
@@ -60,6 +64,8 @@ impl LocalCapabilityExecutor {
                     | "shell.execute"
                     | "shell.allowlist"
                     | "skill.resource.read"
+                    | "browser.observe"
+                    | "browser.interact"
             ) && !is_mcp_capability_id(&contract.capability_id)
                 && !is_connector_capability_id(&contract.capability_id)
             {
@@ -67,6 +73,15 @@ impl LocalCapabilityExecutor {
                     "unsupported local capability contract: {}",
                     contract.capability_id
                 ));
+            }
+            if contract.capability_id == "browser.observe"
+                || contract.capability_id == "browser.interact"
+            {
+                if browser.is_none() {
+                    return Err(
+                        "browser capability advertised without a managed browser bridge".to_string(),
+                    );
+                }
             }
             if contract.supports_external_idempotency
                 && !has_external_idempotency_adapter(&contract.capability_id)
@@ -86,6 +101,7 @@ impl LocalCapabilityExecutor {
         Ok(Self {
             actor_ptid: actor_ptid.to_string(),
             contracts: indexed,
+            browser,
             execution_attempts: AtomicU64::new(0),
         })
     }
@@ -203,6 +219,19 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                 "skill.resource.read" => {
                     record_side_effect_start()?;
                     execute_managed_skill_resource_read(arguments)?
+                }
+                "browser.observe" | "browser.interact" => {
+                    record_side_effect_start()?;
+                    let bridge = self
+                        .browser
+                        .as_ref()
+                        .ok_or("BROWSER_BRIDGE_UNAVAILABLE")?;
+                    bridge.execute(
+                        &request.tool_name,
+                        &arguments,
+                        &request.conversation_id,
+                        &request.turn_id,
+                    )?
                 }
                 capability_id if is_mcp_capability_id(capability_id) => {
                     record_side_effect_start()?;
@@ -482,6 +511,7 @@ mod tests {
                 max_result_bytes: 1024,
                 supports_external_idempotency: false,
             }],
+            None,
         )
         .unwrap();
         let request = ClientCapabilityRequest {
@@ -529,6 +559,7 @@ mod tests {
                 max_result_bytes: 65536,
                 supports_external_idempotency: false,
             }],
+            None,
         )
         .expect("managed Skill resource capability should register");
         assert!(executor.contract("skill.resource.read").is_some());
@@ -546,6 +577,7 @@ mod tests {
                 max_result_bytes: 1024,
                 supports_external_idempotency: false,
             }],
+            None,
         )
         .expect("Station-derived Connector capability should register");
         assert!(executor.contract(&capability_id).is_some());
@@ -559,6 +591,7 @@ mod tests {
                 max_result_bytes: 1024,
                 supports_external_idempotency: false,
             }],
+            None,
         );
         assert!(invalid.is_err());
     }

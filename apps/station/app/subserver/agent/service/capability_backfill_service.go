@@ -859,13 +859,17 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 	case strings.HasPrefix(definition.Name, "lark_"):
 		secretBoundary = "channel-requester"
 		riskClass = "external-read"
-	case strings.HasPrefix(definition.Name, "local_"):
+	case strings.HasPrefix(definition.Name, "local_"),
+		strings.HasPrefix(definition.Name, "browser_"):
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CLIENT_NATIVE
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
 		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
 		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
 		secretBoundary = "client"
 		requiredRuntimeCapabilities = nil
+		if strings.HasPrefix(definition.Name, "browser_") {
+			riskClass = "client-browser"
+		}
 		if mappedID := capabilityIDForTool(definition.Name); mappedID != "" {
 			capabilityID = mappedID
 			version = "1"

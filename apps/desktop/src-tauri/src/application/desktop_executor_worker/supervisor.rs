@@ -50,6 +50,7 @@ const LEASE_EXPIRY_SETTLE_DELAY_MS: i64 = 250;
 pub struct CapabilityWorkerSupervisor {
     state: Arc<AppState>,
     surface: ClientSurface,
+    app: Mutex<Option<tauri::AppHandle>>,
     stopping: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
@@ -214,12 +215,23 @@ impl CapabilityWorkerSupervisor {
         Self {
             state,
             surface: ClientSurface::from_environment(),
+            app: Mutex::new(None),
             stopping: Arc::new(AtomicBool::new(false)),
             thread: Mutex::new(None),
             snapshot: Arc::new(Mutex::new(Vec::new())),
             negative_controls: Arc::new(Mutex::new(VecDeque::new())),
             acceptance_hooks: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Binds the Tauri handle before start. Device browser tools require the
+    /// handle to drive the managed browser worker from the supervisor thread.
+    pub fn attach_app(&self, app: tauri::AppHandle) -> Result<(), String> {
+        *self
+            .app
+            .lock()
+            .map_err(|_| "client capability supervisor app lock poisoned".to_string())? = Some(app);
+        Ok(())
     }
 
     pub fn start(&self) -> Result<(), String> {
@@ -232,6 +244,11 @@ impl CapabilityWorkerSupervisor {
         }
         self.stopping.store(false, Ordering::SeqCst);
         let state = self.state.clone();
+        let app = self
+            .app
+            .lock()
+            .map_err(|_| "client capability supervisor app lock poisoned".to_string())?
+            .clone();
         let stopping = self.stopping.clone();
         let snapshot = self.snapshot.clone();
         let negative_controls = self.negative_controls.clone();
@@ -244,6 +261,7 @@ impl CapabilityWorkerSupervisor {
                     run_supervisor(
                         state,
                         surface,
+                        app,
                         stopping,
                         snapshot,
                         negative_controls,
@@ -347,7 +365,12 @@ impl CapabilityWorkerSupervisor {
             .into_iter()
             .find(|session| session.actor.ptid == actor_ptid)
             .ok_or_else(|| "authenticated actor session is unavailable".to_string())?;
-        worker_context(self.state.station.client(), &self.state, session)
+        let app = self
+            .app
+            .lock()
+            .map_err(|_| "client capability supervisor app lock poisoned".to_string())?
+            .clone();
+        worker_context(self.state.station.client(), &self.state, session, app)
     }
 
     pub fn emit_negative_control(
@@ -388,6 +411,7 @@ struct WorkerContext {
     token: String,
     signing_key_id: String,
     signing_key: ed25519_dalek::SigningKey,
+    app: Option<tauri::AppHandle>,
 }
 
 impl WorkerContext {
@@ -422,8 +446,23 @@ impl ActiveWorker {
         let connector_projection_epoch = oauth2::connector_projection_epoch();
         let mcp_projection_epoch = crate::application::mcp::mcp_projection_epoch();
         let contracts = local_contracts(surface, &context.actor_ptid)?;
+        let browser_bridge = context
+            .app
+            .clone()
+            .map(|app| {
+                Arc::new(crate::application::browser::AgentBrowserBridge::new(
+                    app,
+                    context.station_client.clone(),
+                    context.token.clone(),
+                    context.device_id.clone(),
+                ))
+            });
         let (executor, ledger, resources) = if !contracts.is_empty() {
-            let executor = LocalCapabilityExecutor::new(&context.actor_ptid, contracts.clone())?;
+            let executor = LocalCapabilityExecutor::new(
+                &context.actor_ptid,
+                contracts.clone(),
+                browser_bridge,
+            )?;
             let ledger = ReceiptLedger::open(&context.actor_ptid, &context.device_id)?;
             let resources = ResourceRegistry::open(&context.actor_ptid, &context.device_id)?;
             recover_persisted_receipts(&context, &ledger, &resources, &executor)?;
@@ -652,6 +691,7 @@ fn executor_acceptance_hook_matches(
 fn run_supervisor(
     state: Arc<AppState>,
     surface: ClientSurface,
+    app: Option<tauri::AppHandle>,
     stopping: Arc<AtomicBool>,
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
     negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
@@ -660,7 +700,7 @@ fn run_supervisor(
     let mut workers = HashMap::<String, ActiveWorker>::new();
     let mut enrollment_backoff: HashMap<String, std::time::Instant> = HashMap::new();
     while !stopping.load(Ordering::SeqCst) {
-        reconcile_workers(&state, surface, &mut workers, &mut enrollment_backoff);
+        reconcile_workers(&state, surface, &app, &mut workers, &mut enrollment_backoff);
         process_negative_controls(&negative_controls, &mut workers);
         let mut replace_accounts = Vec::new();
         for worker in workers.values_mut() {
@@ -1134,6 +1174,7 @@ const KEY_NOT_FOUND_BACKOFF: Duration = Duration::from_secs(5);
 fn reconcile_workers(
     state: &AppState,
     surface: ClientSurface,
+    app: &Option<tauri::AppHandle>,
     workers: &mut HashMap<String, ActiveWorker>,
     enrollment_backoff: &mut HashMap<String, std::time::Instant>,
 ) {
@@ -1143,7 +1184,7 @@ fn reconcile_workers(
         tracing::info!("capability supervisor: no window sessions registered");
     }
     for session in all_sessions {
-        match worker_context(state.station.client(), state, session) {
+        match worker_context(state.station.client(), state, session, app.clone()) {
             Ok(context) => {
                 desired.insert(context.account_id.clone(), context);
             }
@@ -1281,6 +1322,7 @@ fn worker_context(
     station_client: &StationClient,
     state: &AppState,
     session: ActiveSession,
+    app: Option<tauri::AppHandle>,
 ) -> Result<WorkerContext, String> {
     if session.account_id.trim().is_empty()
         || session.jwt.trim().is_empty()
@@ -1322,6 +1364,7 @@ fn worker_context(
         token: session.jwt,
         signing_key_id,
         signing_key,
+        app,
     })
 }
 
@@ -1418,6 +1461,20 @@ fn local_contracts(
                     supports_external_idempotency: false,
                 }),
         );
+        // Browser capabilities are advertised only when the managed host is
+        // actually launchable and version-verified; config/MCP presence is
+        // never readiness (TW-D6).
+        if crate::application::browser::host_is_available() {
+            for capability_id in ["browser.observe", "browser.interact"] {
+                contracts.push(CapabilityContract {
+                    capability_id: capability_id.to_string(),
+                    schema_version: "1".to_string(),
+                    max_argument_bytes: MAX_ARGUMENT_BYTES,
+                    max_result_bytes: MAX_RESULT_BYTES as usize,
+                    supports_external_idempotency: false,
+                });
+            }
+        }
     }
     contracts.extend(
         oauth2::connector_capability_contracts(actor_ptid)?
@@ -1672,6 +1729,7 @@ mod tests {
                 token: "token-1".to_string(),
                 signing_key_id: "signing-key-1".to_string(),
                 signing_key: ed25519_dalek::SigningKey::from_bytes(&[7; 32]),
+                app: None,
             },
             lease: ClientCapabilityLease::default(),
             ledger: None,
@@ -1784,7 +1842,14 @@ mod tests {
                 "Desktop must advertise {expected}; got {capability_ids:?}"
             );
         }
-        assert_eq!(contracts.len(), 9);
+        // Browser capabilities join only when a managed host is actually
+        // verifiable on this machine; the contract count follows that probe.
+        let browser_contracts = if crate::application::browser::host_is_available() {
+            2
+        } else {
+            0
+        };
+        assert_eq!(contracts.len(), 9 + browser_contracts);
     }
 
     #[test]

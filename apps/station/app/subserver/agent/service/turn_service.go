@@ -6145,6 +6145,10 @@ func capabilityIDForTool(toolName string) string {
 		return "filesystem.edit"
 	case "local_shell_exec":
 		return "shell.allowlist"
+	case "browser_navigate", "browser_snapshot", "browser_screenshot":
+		return "browser.observe"
+	case "browser_click", "browser_fill", "browser_submit":
+		return "browser.interact"
 	default:
 		return ""
 	}

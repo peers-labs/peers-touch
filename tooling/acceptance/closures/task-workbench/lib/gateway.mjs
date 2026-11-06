@@ -471,6 +471,7 @@ export class Gateway {
     'clipboard.read', 'clipboard.write',
     'filesystem.read', 'filesystem.list', 'filesystem.write', 'filesystem.edit',
     'shell.execute', 'shell.allowlist',
+    'browser.observe', 'browser.interact',
     'workspace.sandbox.filesystem.read', 'workspace.sandbox.filesystem.list',
     'workspace.sandbox.filesystem.write', 'workspace.sandbox.filesystem.edit',
     'workspace.sandbox.shell.execute', 'workspace.sandbox.shell.allowlist',

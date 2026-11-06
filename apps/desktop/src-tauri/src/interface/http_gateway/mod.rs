@@ -951,9 +951,13 @@ fn bind_gateway_session(
             None,
         )));
     }
+    // A fresh headless login is authoritative for the actor: bind exclusively
+    // so a stale window session restored at app launch (e.g. its JWT died with
+    // the Station it was minted by) can never win supervisor reconciliation
+    // and pin the capability worker to a revoked token.
     state
         .sessions
-        .bind(crate::domain::identity::ActiveSession::new(
+        .bind_exclusive(crate::domain::identity::ActiveSession::new(
             HTTP_GATEWAY_SESSION_LABEL,
             account_id,
             crate::domain::identity::ActorRef::new_person(actor_ptid),

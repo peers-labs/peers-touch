@@ -11826,8 +11826,16 @@ type ClientCapabilityRequest struct {
 	RecoveryCredential      *ReceiptRecoveryCredential  `protobuf:"bytes,24,opt,name=recovery_credential,json=recoveryCredential,proto3" json:"recovery_credential,omitempty"`
 	ReconciliationDeadline  *timestamppb.Timestamp      `protobuf:"bytes,25,opt,name=reconciliation_deadline,json=reconciliationDeadline,proto3" json:"reconciliation_deadline,omitempty"`
 	CapabilityLeaseRevision uint64                      `protobuf:"varint,26,opt,name=capability_lease_revision,json=capabilityLeaseRevision,proto3" json:"capability_lease_revision,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	// Conversation owning the turn. Station fills this at dispatch so device
+	// executors can bind device resources (e.g. agent-driven browser sessions)
+	// to the same task/turn/device/account scope as server-owned resources.
+	ConversationId string `protobuf:"bytes,27,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Model-facing tool name (e.g. browser_navigate). Required when several
+	// tools share one capability id (browser.observe backs navigate/snapshot/
+	// screenshot; browser.interact backs click/fill/submit).
+	ToolName      string `protobuf:"bytes,28,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClientCapabilityRequest) Reset() {
@@ -12040,6 +12048,20 @@ func (x *ClientCapabilityRequest) GetCapabilityLeaseRevision() uint64 {
 		return x.CapabilityLeaseRevision
 	}
 	return 0
+}
+
+func (x *ClientCapabilityRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *ClientCapabilityRequest) GetToolName() string {
+	if x != nil {
+		return x.ToolName
+	}
+	return ""
 }
 
 type ReceiptRecoveryProof struct {
@@ -19427,7 +19449,7 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x17reconciliation_deadline\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x16reconciliationDeadline\x12#\n" +
 	"\rcredential_id\x18\f \x01(\tR\fcredentialId\x121\n" +
 	"\x15device_signing_key_id\x18\r \x01(\tR\x12deviceSigningKeyId\x12\x14\n" +
-	"\x05nonce\x18\x0e \x01(\fR\x05nonce\"\x97\n" +
+	"\x05nonce\x18\x0e \x01(\fR\x05nonce\"\xdd\n" +
 	"\n" +
 	"\x17ClientCapabilityRequest\x12\x1d\n" +
 	"\n" +
@@ -19461,7 +19483,9 @@ const file_domain_agent_agent_proto_rawDesc = "" +
 	"\x18external_idempotency_key\x18\x17 \x01(\tR\x16externalIdempotencyKey\x12f\n" +
 	"\x13recovery_credential\x18\x18 \x01(\v25.peers_touch.model.agent.v1.ReceiptRecoveryCredentialR\x12recoveryCredential\x12S\n" +
 	"\x17reconciliation_deadline\x18\x19 \x01(\v2\x1a.google.protobuf.TimestampR\x16reconciliationDeadline\x12:\n" +
-	"\x19capability_lease_revision\x18\x1a \x01(\x04R\x17capabilityLeaseRevision\"\xa2\x01\n" +
+	"\x19capability_lease_revision\x18\x1a \x01(\x04R\x17capabilityLeaseRevision\x12'\n" +
+	"\x0fconversation_id\x18\x1b \x01(\tR\x0econversationId\x12\x1b\n" +
+	"\ttool_name\x18\x1c \x01(\tR\btoolName\"\xa2\x01\n" +
 	"\x14ReceiptRecoveryProof\x12#\n" +
 	"\rcredential_id\x18\x01 \x01(\tR\fcredentialId\x12\x14\n" +
 	"\x05nonce\x18\x02 \x01(\fR\x05nonce\x121\n" +

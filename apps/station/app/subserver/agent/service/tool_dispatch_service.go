@@ -3657,6 +3657,7 @@ func (s *ToolDispatchService) proposeCallTx(
 	row := &persistence.ToolCall{
 		ID:                generateID("tool_call"),
 		ActorID:           proposal.ActorID,
+		ConversationID:    proposal.ConversationID,
 		TurnID:            proposal.TurnID,
 		AttemptID:         proposal.AttemptID,
 		ToolBatchID:       proposal.ToolBatchID,
@@ -4170,6 +4171,8 @@ func (s *ToolDispatchService) issueCapabilityRequestTx(
 		ExternalIdempotencyKey:  call.ExternalIdempotencyKey,
 		ReconciliationDeadline:  timestamppb.New(call.ReconciliationDeadline.UTC()),
 		CapabilityLeaseRevision: call.CapabilityLeaseRevision,
+		ConversationId:          call.ConversationID,
+		ToolName:                call.ToolName,
 	}
 	envelope.PayloadHash = protoPayloadHash(envelope)
 	nonce := make([]byte, clientCapabilityCommandNonceSize)
