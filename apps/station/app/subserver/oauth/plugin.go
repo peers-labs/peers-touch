@@ -8,26 +8,26 @@ import (
 )
 
 type providerEnvironmentConfig struct {
-	ID           string `pconf:"id"`
-	Name         string `pconf:"name"`
-	AuthorizeURL string `pconf:"authorize-url"`
-	TokenURL     string `pconf:"token-url"`
-	UserinfoURL  string `pconf:"userinfo-url"`
-	Default      bool   `pconf:"default"`
+	ID           string `pconf:"id" json:"id"`
+	Name         string `pconf:"name" json:"name"`
+	AuthorizeURL string `pconf:"authorize-url" json:"authorize-url"`
+	TokenURL     string `pconf:"token-url" json:"token-url"`
+	UserinfoURL  string `pconf:"userinfo-url" json:"userinfo-url"`
+	Default      bool   `pconf:"default" json:"default"`
 }
 
 type providerConfig struct {
-	ID             string                      `pconf:"id"`
-	Name           string                      `pconf:"name"`
-	Description    string                      `pconf:"description"`
-	Icon           string                      `pconf:"icon"`
-	Color          string                      `pconf:"color"`
-	Category       string                      `pconf:"category"`
-	Enabled        bool                        `pconf:"enabled"`
-	Status         string                      `pconf:"status"`
-	HasCredentials bool                        `pconf:"has-credentials"`
-	CallbackURL    string                      `pconf:"callback-url"`
-	Environments   []providerEnvironmentConfig `pconf:"environments"`
+	ID             string                      `pconf:"id" json:"id"`
+	Name           string                      `pconf:"name" json:"name"`
+	Description    string                      `pconf:"description" json:"description"`
+	Icon           string                      `pconf:"icon" json:"icon"`
+	Color          string                      `pconf:"color" json:"color"`
+	Category       string                      `pconf:"category" json:"category"`
+	Enabled        bool                        `pconf:"enabled" json:"enabled"`
+	Status         string                      `pconf:"status" json:"status"`
+	HasCredentials bool                        `pconf:"has-credentials" json:"has-credentials"`
+	CallbackURL    string                      `pconf:"callback-url" json:"callback-url"`
+	Environments   []providerEnvironmentConfig `pconf:"environments" json:"environments"`
 }
 
 var oauthOptions struct {

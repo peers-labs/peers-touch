@@ -74,9 +74,15 @@ delegation, admission epoch and reservation remain current.
 | Station Session | Station Access Gate | Station canonical APIs | remains inside node-key-bound TLS |
 | Federation peer authorization | source/target Station owners | typed peer capabilities | never interpreted by Relay |
 | LiveKit token | Station group-call owner | client media SDK | room/media only |
+| Station↔Broker shared secret | external broker + Station (must match) | Station OAuth bridge HMAC verifier | login bridge assertion only; provisioned per [Runtime Secrets](./runtime-secrets/README.md) |
 
 No credential crosses into another row's authority. Relay raw credentials are
 never exposed to Client Web/UI.
+
+Runtime credentials' *ownership* lives in this table; how their *values* are
+classified, stored and delivered to a host at deploy time is defined by
+[Runtime Secrets](./runtime-secrets/README.md) and is intentionally separate
+from this ownership map.
 
 ## 5. Startup Contract
 
