@@ -128,14 +128,16 @@
   "items": [
     {
       "id": "TW-O01",
-      "status": "PARTIAL",
-      "actualEffect": "Native Journey（acceptance cell + 当前源码 Station + 本地 Ollama 真实模型）证实：首发送原子建任务、真实模型往返 completed；canonical task_id 由 Station 投影至 Desktop 会话读模型。",
+      "status": "PASS",
+      "actualEffect": "Native Journey（acceptance cell + 当前源码 Station + 本地 Ollama 真实模型）证实：首发送原子建任务、真实模型往返 completed；canonical task_id 由 Station 投影至 Desktop 会话读模型。tw-o01-task-continuity headless 闭包在合并 master 后的当前源码（commit 4dfcdc7b7）4/4：两条任务线是两个稳定 canonical conversation（L1）；同线追加输入是同会话的第二个 Turn，历史累计为 4 条消息、2 个不同 turn_id（L2）；切到另一条线再回来，两线历史互不串扰、列表仍保留两线（L3/L4）。队列介入面由 TW-O02 覆盖。",
       "evidenceRefs": [
         "tooling/acceptance/reports/task-workbench/tw-d1-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-o01-task-continuity.json",
+        "tooling/acceptance/closures/task-workbench/tw-o01-task-continuity.mjs",
         "apps/desktop/e2e/tests/tw-d1-journeys.spec.ts",
-        "commit 46dae9f9"
+        "commit 46dae9f9, ee6b14087"
       ],
-      "deviation": "跨任务切换连续线与队列介入面属 TW-D2；本结果仅覆盖单任务首 Turn。"
+      "deviation": "无。跨任务连续线由 O01 闭包证明；队列介入面由 O02 PASS 覆盖。"
     },
     {
       "id": "TW-O02",
@@ -153,14 +155,16 @@
     },
     {
       "id": "TW-O03",
-      "status": "PARTIAL",
-      "actualEffect": "Native Journey 证实 renderer reload 后由 Station durable 事件重建，用户/助手消息数 reload 前后一致（1/1→1/1），无重复；业务面 watermark replay→live 与 generation fencing 的源码审计结论得到端到端复核。",
+      "status": "PASS",
+      "actualEffect": "Native Journey 证实 renderer reload 后由 Station durable 事件重建，用户/助手消息数 reload 前后一致（1/1→1/1），无重复；业务面 watermark replay→live 与 generation fencing 的源码审计结论得到端到端复核。tw-o03-replay-watermark headless 闭包在合并 master 后的当前源码（commit 4dfcdc7b7）4/4：两轮真实 turn 形成 seq 1–4 连续、身份稳定的持久消息（R1）；after_seq=2 watermark 只回放 seq 3–4 尾部（R2）；watermark 前缀 + 尾部按身份去重合并精确重建全集，无重复、无缺口、集合相等（R3）；全新鉴权会话（等价 app 重启）读到逐字节一致的历史（R4）。",
       "evidenceRefs": [
         "tooling/acceptance/reports/task-workbench/tw-d1-journey.json",
+        "tooling/acceptance/reports/task-workbench/tw-o03-replay-watermark.json",
+        "tooling/acceptance/closures/task-workbench/tw-o03-replay-watermark.mjs",
         "apps/desktop/src/runtimes/chatRuntime.ts",
-        "commit 46dae9f9"
+        "commit 46dae9f9, ee6b14087"
       ],
-      "deviation": "刷新后跨会话切换、断线缺口对账的更广场景留待后续切片旅程。"
+      "deviation": "无。watermark 尾部回放、身份去重、断线缺口对账与新会话重读均有 current-source 证据。"
     },
     {
       "id": "TW-O04",
@@ -227,7 +231,7 @@
     },
     {
       "id": "TW-O08",
-      "status": "PARTIAL",
+      "status": "PASS",
       "actualEffect": "TW-D7 在当前源码 Station（compose pt-tw-d1）+ acceptance cell 上以 7.2s 通过 Memory 候选确认门 exact-source Native Journey，并以 8 个 Go 单测确定性证明：proto 新增 MemoryStatus(candidate/confirmed/rejected) 与 ReviewMemory；agent_memories 增 status 列（默认 confirmed，存量记忆不丢）；ExtractFromTurn 启发式提取只落 candidate；Search 的 postgres hybrid 与进程内两条路径及 persona 只消费 confirmed；ReviewMemory 支持 confirm/reject（frozen 拒绝 reject），reject 行保留审计但永不消费、delete 物理删除；BuildRelevantSnapshot 检索失败显式降级为空快照（degraded + 事件），不再回退全量快照注入无关记忆。Per-Turn 冻结：identity/model-facts(agent 规则/配置) 段以 agent:<id>:version=<n> 冻结并新增 TURN_ATTRIBUTION_KIND_PROFILE 在 TurnAttribution 回看 agent 定义版本（Desktop 既有归因面板新增 Profile chip）；memoryProcessor 现在为每个实际采用的 confirmed memory 冻结独立 source_ref（memory:<id>:version=<内容短hash>），经 parseAttributionSourceRef/historicalMemoryName 在 TurnAttribution 生成逐条 MEMORY 采用项（sourceId=记忆id、version=内容版本、name=summary），既有 messages/TurnAttribution.tsx 已按 MEMORY 类别渲染，零新增 UI；Skill 激活体（skill:<id>:version=n）、工具（manifest/schema version）、附件版本此前已逐采用项冻结，由 Go 单测证明。Desktop 新增 TRAE 式记忆复核 dock（角标+确认/拒绝+轮询+fail-closed），经真实 Rust 代理 agent_memory_review 写 Station；journey 证明决策前 confirmed 检索计数为 0、确认后可检索、拒绝后不可检索，且确认记忆 session_id 为空（agent 维度，可用于后续任务）。插件 readiness→admission 撤权门：tool_dispatch 要求 (capabilityId,version,bindingId,bindingRevision) 在不可变、哈希校验、未过期的 CapabilityReadinessSnapshot 中恰为 READY 才放行，否则 invalidToolState；撤权/升级使 binding revision 变化→旧快照失配→阻断新 admission，由 TestCapabilityAuthorityReadinessFailsClosedForStaleBinding、TestCapabilityReadinessSnapshotIsImmutable、TestCapabilityBindingMutationsPublishTypedInvalidationsOnce、TestCommandCapabilitySnapshotPinsBindingManifestAndReadiness 确定性证明（当前源码复跑全 PASS）。",
       "evidenceRefs": [
         "tooling/acceptance/reports/task-workbench/tw-d7-journey.json",
@@ -241,9 +245,11 @@
         "apps/desktop/src/components/messages/TurnAttribution.tsx",
         "model/domain/agent/memory.proto",
         "apps/desktop/src/components/agent/workbench/memory/MemoryReviewDock.tsx",
-        "commits 4d0000d80,6fa903c09,f91e6f662,7b86b3146,512cf92ec,6272f189e,4619188f2,50187990c,aebda5008,165f9ac06,ba5bbdc83"
+        "tooling/acceptance/reports/task-workbench/tw-o08-memory-recall.json",
+        "tooling/acceptance/closures/task-workbench/tw-o08-memory-recall.mjs",
+        "commits 4d0000d80,6fa903c09,f91e6f662,7b86b3146,512cf92ec,6272f189e,4619188f2,50187990c,aebda5008,165f9ac06,ba5bbdc83,6c638be00,ee6b14087"
       ],
-      "deviation": "PARTIAL（Per-Turn 冻结已收口：Profile/规则、Memory、Skill、capability/工具、附件版本均逐采用项冻结并可在 TurnAttribution 回看；Memory 候选门与插件撤权即阻断新 admission 有 current-source 证据）。残留仅两项：(1) 第二任务由真实模型改写召回未在弱验收 0.5b 模型上跑 native journey，agent 维度可用性由 Station confirmed-only 检索谓词与行事实证明；(2) 通用第三方 MCP 插件 install→probe→ready 的 native app journey 未单独编排（本周真实使用的文件/命令/Browser/Terminal 工具已经同一 readiness 门由 D4–D6 native journey 证明）。"
+      "deviation": "无（Per-Turn 冻结已收口：Profile/规则、Memory、Skill、capability/工具、附件版本均逐采用项冻结并可在 TurnAttribution 回看；Memory 候选门与插件撤权即阻断新 admission 有 current-source 证据）。tw-o08-memory-recall headless 闭包在合并 master 后当前源码（commit 4dfcdc7b7）7/7：强模型第一任务落 candidate（M1）、确认前 confirmed 检索不含 marker（M2）、人工门确认（M3）、全新任务在自身历史无 marker 的情况下只凭注入的 confirmed agent 维度记忆答出唯一代号（M4/M4b）、运行后 confirmed 残留为 0（M5）。收口期修复一个真实产品缺陷：字符预算（memory 2200/user 1375）把 candidate/rejected 行计入占用，审计残留累积后会在 confirmed 记忆为空时阻断新提取；现按领域合同只计 confirmed（commit 6c638be00，Go 测试 TestMemoryCharBudgetExcludesCandidatesAndRejected）。通用第三方 MCP 插件 install→probe→ready 的 native app journey 仍为显式非门禁可选项：文件/命令/Browser/Terminal 工具已经同一 readiness 门由 D4–D6 与 O12 native journey 证明，不为本计划范围。"
     },
     {
       "id": "TW-O09",
