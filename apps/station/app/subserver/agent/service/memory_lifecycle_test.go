@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
@@ -263,5 +264,58 @@ func TestMemoryRejectFrozenIsRefused(t *testing.T) {
 	}
 	if _, err := svc.ReviewMemory(ctx, agentID, item.MemoryID, domain.MemoryStatusRejected); err == nil {
 		t.Fatalf("rejecting a frozen memory must be refused")
+	}
+}
+
+// The char budget bounds injected (confirmed-only) content: pending
+// candidates and audit-retained rejected entries must not consume it, or an
+// aging agent with zero confirmed memories could no longer extract anything.
+func TestMemoryCharBudgetExcludesCandidatesAndRejected(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newMemoryLifecycleService(t)
+	const agentID = "agent-budget"
+	const target = domain.MemoryTargetUser
+
+	filler := strings.Repeat("candidate filler line ", 12)
+	for i := 0; i < 6; i++ {
+		item, err := svc.AddMemory(ctx, domain.MemoryItem{
+			AgentID: agentID,
+			Target:  target,
+			Layer:   domain.MemoryLayerContext,
+			Content: filler,
+			Status:  domain.MemoryStatusCandidate,
+		})
+		if err != nil {
+			t.Fatalf("add candidate %d: %v", i, err)
+		}
+		if i%2 == 0 {
+			if _, err := svc.ReviewMemory(ctx, agentID, item.MemoryID, domain.MemoryStatusRejected); err != nil {
+				t.Fatalf("reject candidate %d: %v", i, err)
+			}
+		}
+	}
+
+	// With zero confirmed entries a near-limit confirmed write must fit.
+	bigLive := strings.Repeat("confirmed live memory ", 55)
+	if len([]rune(bigLive)) >= domain.MemoryCharLimitUser {
+		t.Fatalf("test fixture broken: %d >= limit", len([]rune(bigLive)))
+	}
+	if _, err := svc.AddMemory(ctx, domain.MemoryItem{
+		AgentID: agentID,
+		Target:  target,
+		Layer:   domain.MemoryLayerContext,
+		Content: bigLive,
+	}); err != nil {
+		t.Fatalf("confirmed write must ignore candidate/rejected usage: %v", err)
+	}
+
+	// Confirmed content still enforces the budget.
+	if _, err := svc.AddMemory(ctx, domain.MemoryItem{
+		AgentID: agentID,
+		Target:  target,
+		Layer:   domain.MemoryLayerContext,
+		Content: strings.Repeat("another confirmed entry ", 10),
+	}); err == nil {
+		t.Fatalf("confirmed usage past the char limit must be rejected")
 	}
 }

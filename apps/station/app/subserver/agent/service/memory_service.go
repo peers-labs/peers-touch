@@ -547,8 +547,17 @@ func (s *MemoryService) AddMemory(ctx context.Context, item domain.MemoryItem) (
 	// Take a snapshot of current state before mutation (fire-and-forget).
 	s.takeSnapshotQuiet(ctx, agentID, "mutation", nil)
 
+	// The char budget bounds what can be assembled and injected into a Turn,
+	// and only confirmed entries are consumable. Candidates await review and
+	// rejected entries are excluded from every consumption path (domain
+	// contract), so counting either against the budget would let dead/pending
+	// content permanently shrink the live budget and block extraction even
+	// with zero confirmed memories (real acceptance failure).
 	var existing []persistence.Memory
-	if err := db.Where("agent_id = ? AND target = ?", agentID, target).
+	if err := db.Where(
+		"agent_id = ? AND target = ? AND status = ?",
+		agentID, target, string(domain.MemoryStatusConfirmed),
+	).
 		Order("created_at asc").Find(&existing).Error; err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to query existing memories", err)
