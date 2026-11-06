@@ -1,0 +1,62 @@
+{
+  "plan": "TW-20261102",
+  "closure": "tw-o12-browser-tool",
+  "outcome": "O12-browser-model-tool-psql",
+  "source_commit": "aee0a9925",
+  "source": "postgres://pt-tw-d1/postgres peers_touch_tw_d1 (direct SQL, independent of gateway/SSE)",
+  "verified_at": "2026-11-06T00:27:36Z",
+  "conversations": {
+    "main": "conv_d7e40fbcf3a27f6b3a7409c5",
+    "human_takeover_held": "conv_519744592d783308ebaa6779"
+  },
+  "turns": [
+    {
+      "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
+      "tool_name": "browser_navigate",
+      "capability_id": "browser.observe",
+      "execution_owner": "client_capability",
+      "status": "succeeded",
+      "approved": true,
+      "conversation_bound_on_wire": true
+    },
+    {
+      "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
+      "tool_name": "local_file_edit",
+      "capability_id": "filesystem.edit",
+      "execution_owner": "client_capability",
+      "status": "succeeded",
+      "approved": true,
+      "conversation_bound_on_wire": true
+    },
+    {
+      "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
+      "tool_name": "browser_navigate",
+      "capability_id": "browser.observe",
+      "execution_owner": "client_capability",
+      "status": "succeeded",
+      "approved": true,
+      "conversation_bound_on_wire": true
+    },
+    {
+      "conversation_id": "conv_519744592d783308ebaa6779",
+      "tool_name": "browser_navigate",
+      "capability_id": "browser.observe",
+      "execution_owner": "client_capability",
+      "status": "succeeded",
+      "approved": true,
+      "conversation_bound_on_wire": true
+    }
+  ],
+  "browser_session_truth": {
+    "id": "brows-01M6Q3YTR9RD66SW97WKVZSD77",
+    "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
+    "status": "active",
+    "lease": "agent"
+  },
+  "assertions": [
+    "all browser_navigate calls persisted as capability_id browser.observe, owner client_capability, succeeded, approved, with the new conversation_id wire field populated",
+    "browser and filesystem tool calls interleave in one model turn (same device family); local_file_edit also succeeds",
+    "the human-takeover turn still dispatches the browser call to the device; bounded BROWSER_HUMAN_TAKEOVER_HELD result observed in the SSE trace (closure C8)",
+    "model-created browser session registered as Station truth bound to the conversation (active/agent)"
+  ]
+}
