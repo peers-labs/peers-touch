@@ -9,6 +9,7 @@ use super::resource_registry::ResourceRegistry;
 use super::station_transport::{
     CapabilityNegativeControl, CapabilityNegativeControlStationFact, CapabilityStationTransport,
 };
+use super::workspace_choices;
 use super::workspace_grants;
 use crate::application::oauth2;
 use crate::application::station_runtime::client::{StationClient, StationRequestScope};
@@ -55,6 +56,10 @@ pub struct CapabilityWorkerSupervisor {
     thread: Mutex<Option<JoinHandle<()>>>,
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
     negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
+    /// Per actor/device project root selected for the current capability
+    /// session. Absent key means the private provisioned sandbox root.
+    desired_roots: Arc<Mutex<HashMap<String, PathBuf>>>,
+    workspace_requests: Arc<Mutex<VecDeque<WorkspaceActivationRequest>>>,
     acceptance_hooks: Arc<Mutex<HashMap<String, ExecutorAcceptanceHook>>>,
 }
 
@@ -210,6 +215,20 @@ struct CapabilityNegativeControlRequest {
     response: mpsc::SyncSender<Result<CapabilityNegativeControlFacts, String>>,
 }
 
+/// One user-initiated workspace activation. `None` restores the private
+/// sandbox root; `Some` authorizes a project directory for the session.
+struct WorkspaceActivationRequest {
+    actor_ptid: String,
+    device_id: String,
+    /// Canonical project root, or None to fall back to the sandbox root.
+    root: Option<PathBuf>,
+    response: mpsc::SyncSender<Result<Option<PathBuf>, String>>,
+}
+
+fn workspace_scope_key(actor_ptid: &str, device_id: &str) -> String {
+    format!("{actor_ptid}\x00{device_id}")
+}
+
 impl CapabilityWorkerSupervisor {
     pub fn new(state: Arc<AppState>) -> Self {
         Self {
@@ -220,8 +239,147 @@ impl CapabilityWorkerSupervisor {
             thread: Mutex::new(None),
             snapshot: Arc::new(Mutex::new(Vec::new())),
             negative_controls: Arc::new(Mutex::new(VecDeque::new())),
+            desired_roots: Arc::new(Mutex::new(HashMap::new())),
+            workspace_requests: Arc::new(Mutex::new(VecDeque::new())),
             acceptance_hooks: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Activate a user-selected project directory for the actor/device
+    /// capability session, or restore the private sandbox root when `root`
+    /// is None. Applies to a live worker immediately and is remembered for
+    /// the next registration when the worker is not up yet.
+    pub fn activate_workspace(
+        &self,
+        actor_ptid: &str,
+        device_id: &str,
+        root: Option<PathBuf>,
+    ) -> Result<Option<PathBuf>, String> {
+        let root = match root {
+            Some(path) => Some(workspace_choices::validate_directory(&path.to_string_lossy())?),
+            None => None,
+        };
+        let key = workspace_scope_key(actor_ptid, device_id);
+        {
+            let mut roots = self
+                .desired_roots
+                .lock()
+                .map_err(|_| "workspace roots lock poisoned".to_string())?;
+            match &root {
+                Some(path) => {
+                    roots.insert(key.clone(), path.clone());
+                }
+                None => {
+                    roots.remove(&key);
+                }
+            }
+        }
+        if self.thread.lock().map_err(|_| "supervisor lock poisoned".to_string())?.is_none() {
+            // Engine not running yet; the desired root is applied when the
+            // worker registers. Report the effective root that will be used.
+            return Ok(root);
+        }
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.workspace_requests
+            .lock()
+            .map_err(|_| "workspace request lock poisoned".to_string())?
+            .push_back(WorkspaceActivationRequest {
+                actor_ptid: actor_ptid.to_string(),
+                device_id: device_id.to_string(),
+                root: root.clone(),
+                response: tx,
+            });
+        rx.recv_timeout(Duration::from_secs(10))
+            .map_err(|_| "workspace activation timed out".to_string())?
+    }
+
+    /// Current project root selected for an actor/device, if any.
+    pub fn active_workspace(
+        &self,
+        actor_ptid: &str,
+        device_id: &str,
+    ) -> Result<Option<PathBuf>, String> {
+        Ok(self
+            .desired_roots
+            .lock()
+            .map_err(|_| "workspace roots lock poisoned".to_string())?
+            .get(&workspace_scope_key(actor_ptid, device_id))
+            .cloned())
+    }
+
+    /// Resolves the device id the worker for an actor registers under, taken
+    /// from the actor-device messaging engine the authenticated session
+    /// activated.
+    pub fn device_id_for_actor(&self, actor_ptid: &str) -> Result<String, String> {
+        let session = self
+            .state
+            .sessions
+            .snapshot_all()
+            .into_iter()
+            .find(|session| session.actor.ptid == actor_ptid)
+            .ok_or_else(|| "authenticated actor session is unavailable".to_string())?;
+        let engine = self
+            .state
+            .messaging_engines
+            .get(&session.account_id)?
+            .ok_or_else(|| "actor device engine is unavailable".to_string())?;
+        Ok(engine.endpoint().device_id.clone())
+    }
+
+    pub fn list_workspace_choices(
+        &self,
+        actor_ptid: &str,
+    ) -> Result<Vec<workspace_choices::WorkspaceChoice>, String> {
+        let device_id = self.device_id_for_actor(actor_ptid)?;
+        Ok(workspace_choices::list_choices(actor_ptid, &device_id))
+    }
+
+    /// Persists a user-picked directory as a reusable project choice. The
+    /// folder dialog runs in the UI surface; this validates and stores the
+    /// returned path, and is also the headless entry that accepts a path
+    /// directly.
+    pub fn add_workspace_choice(
+        &self,
+        actor_ptid: &str,
+        raw_path: &str,
+    ) -> Result<workspace_choices::WorkspaceChoice, String> {
+        let device_id = self.device_id_for_actor(actor_ptid)?;
+        let root = workspace_choices::validate_directory(raw_path)?;
+        workspace_choices::add_choice(actor_ptid, &device_id, &root, None)
+    }
+
+    /// Creates a user-initiated git worktree under
+    /// `<base>/.peers-worktrees/<name>` and persists it as a choice.
+    pub fn create_workspace_choice(
+        &self,
+        actor_ptid: &str,
+        base_path: &str,
+        name: &str,
+    ) -> Result<workspace_choices::WorkspaceChoice, String> {
+        let device_id = self.device_id_for_actor(actor_ptid)?;
+        let base = workspace_choices::validate_directory(base_path)?;
+        let worktree = workspace_choices::create_worktree(&base, name)?;
+        workspace_choices::add_choice(actor_ptid, &device_id, &worktree, Some(&base))
+    }
+
+    pub fn remove_workspace_choice(&self, actor_ptid: &str, locator: &str) -> Result<(), String> {
+        let device_id = self.device_id_for_actor(actor_ptid)?;
+        workspace_choices::remove_choice(actor_ptid, &device_id, locator)
+    }
+
+    /// Activates a stored project locator for the live capability session,
+    /// or restores the private sandbox when the locator is absent.
+    pub fn activate_workspace_choice(
+        &self,
+        actor_ptid: &str,
+        locator: Option<&str>,
+    ) -> Result<Option<PathBuf>, String> {
+        let device_id = self.device_id_for_actor(actor_ptid)?;
+        let root = match locator.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(raw) => Some(workspace_choices::validate_directory(raw)?),
+            None => None,
+        };
+        self.activate_workspace(actor_ptid, &device_id, root)
     }
 
     /// Binds the Tauri handle before start. Device browser tools require the
@@ -252,6 +410,8 @@ impl CapabilityWorkerSupervisor {
         let stopping = self.stopping.clone();
         let snapshot = self.snapshot.clone();
         let negative_controls = self.negative_controls.clone();
+        let desired_roots = self.desired_roots.clone();
+        let workspace_requests = self.workspace_requests.clone();
         let acceptance_hooks = self.acceptance_hooks.clone();
         let surface = self.surface;
         *handle = Some(
@@ -265,6 +425,8 @@ impl CapabilityWorkerSupervisor {
                         stopping,
                         snapshot,
                         negative_controls,
+                        desired_roots,
+                        workspace_requests,
                         acceptance_hooks,
                     )
                 })
@@ -442,7 +604,11 @@ struct ActiveWorker {
 }
 
 impl ActiveWorker {
-    fn register(context: WorkerContext, surface: ClientSurface) -> Result<Self, String> {
+    fn register(
+        context: WorkerContext,
+        surface: ClientSurface,
+        desired_root: Option<PathBuf>,
+    ) -> Result<Self, String> {
         let connector_projection_epoch = oauth2::connector_projection_epoch();
         let mcp_projection_epoch = crate::application::mcp::mcp_projection_epoch();
         let contracts = local_contracts(surface, &context.actor_ptid)?;
@@ -482,9 +648,10 @@ impl ActiveWorker {
         ensure_lease_identity(&context, &lease)?;
         let workspace_root = match resources.as_ref() {
             Some(registry) => {
-                let root = workspace_grants::provision_actor_workspace(
+                let root = workspace_root_for_registration(
                     &context.actor_ptid,
                     &context.device_id,
+                    desired_root,
                 )?;
                 let grants = workspace_grants::build_workspace_grants(&lease, &root)?;
                 workspace_grants::register_workspace_grants(
@@ -540,6 +707,35 @@ impl ActiveWorker {
         self.transport()?
             .declare_resource_grants(&self.lease.capability_session_id, &references)?;
         Ok(())
+    }
+
+    /// Applies a freshly activated workspace root and atomically replaces the
+    /// declared grants. `None` restores the private provisioned sandbox. A
+    /// project root that has vanished since activation fails before the
+    /// current grants are touched, so a failed activation never downgrades
+    /// or widens the live authorization mid-session.
+    fn redeclare_workspace(&mut self, root: Option<PathBuf>) -> Result<PathBuf, String> {
+        let next = match root {
+            Some(path) => {
+                if !path.is_dir() {
+                    return Err(format!(
+                        "workspace directory is unavailable: {}",
+                        path.display()
+                    ));
+                }
+                path
+            }
+            None => workspace_grants::provision_actor_workspace(
+                &self.context.actor_ptid,
+                &self.context.device_id,
+            )?,
+        };
+        let previous = self.workspace_root.replace(next.clone());
+        if let Err(error) = self.refresh_workspace_grants() {
+            self.workspace_root = previous;
+            return Err(error);
+        }
+        Ok(next)
     }
 
     fn same_identity(&self, candidate: &WorkerContext) -> bool {
@@ -695,13 +891,23 @@ fn run_supervisor(
     stopping: Arc<AtomicBool>,
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
     negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
+    desired_roots: Arc<Mutex<HashMap<String, PathBuf>>>,
+    workspace_requests: Arc<Mutex<VecDeque<WorkspaceActivationRequest>>>,
     acceptance_hooks: Arc<Mutex<HashMap<String, ExecutorAcceptanceHook>>>,
 ) {
     let mut workers = HashMap::<String, ActiveWorker>::new();
     let mut enrollment_backoff: HashMap<String, std::time::Instant> = HashMap::new();
     while !stopping.load(Ordering::SeqCst) {
-        reconcile_workers(&state, surface, &app, &mut workers, &mut enrollment_backoff);
+        reconcile_workers(
+            &state,
+            surface,
+            &app,
+            &mut workers,
+            &mut enrollment_backoff,
+            &desired_roots,
+        );
         process_negative_controls(&negative_controls, &mut workers);
+        process_workspace_requests(&workspace_requests, &mut workers);
         let mut replace_accounts = Vec::new();
         for worker in workers.values_mut() {
             if let Err(error) = worker.tick(&acceptance_hooks) {
@@ -778,6 +984,43 @@ fn process_negative_controls(
         }
         let result = emit_negative_control_from_worker(workers, &request);
         let _ = request.response.send(result);
+    }
+}
+
+fn process_workspace_requests(
+    queue: &Mutex<VecDeque<WorkspaceActivationRequest>>,
+    workers: &mut HashMap<String, ActiveWorker>,
+) {
+    let pending_count = queue
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .len();
+    for _ in 0..pending_count {
+        let request = queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pop_front();
+        let Some(request) = request else {
+            return;
+        };
+        let target_key = workspace_scope_key(&request.actor_ptid, &request.device_id);
+        let worker = workers.values_mut().find(|worker| {
+            workspace_scope_key(&worker.context.actor_ptid, &worker.context.device_id)
+                == target_key
+        });
+        match worker {
+            Some(worker) => {
+                let result = worker.redeclare_workspace(request.root.clone()).map(Some);
+                let _ = request.response.send(result);
+            }
+            None => {
+                // The worker is not registered yet (engine offline / lease
+                // backoff). The desired root is already stored and is applied
+                // atomically at registration; acknowledge with the root the
+                // next registration will use.
+                let _ = request.response.send(Ok(request.root.clone()));
+            }
+        }
     }
 }
 
@@ -1171,12 +1414,36 @@ fn publish_worker_snapshot(
 
 const KEY_NOT_FOUND_BACKOFF: Duration = Duration::from_secs(5);
 
+/// Resolves the workspace root a freshly registered worker declares. An
+/// explicitly selected project root is honored only while it still exists;
+/// a root that vanished since activation fails closed to the private sandbox
+/// rather than blocking the whole capability worker.
+fn workspace_root_for_registration(
+    actor_ptid: &str,
+    device_id: &str,
+    desired_root: Option<PathBuf>,
+) -> Result<PathBuf, String> {
+    match desired_root {
+        Some(path) if path.is_dir() => Ok(path),
+        Some(path) => {
+            tracing::warn!(
+                actor = %actor_ptid,
+                path = %path.display(),
+                "selected workspace directory unavailable at registration; using private sandbox"
+            );
+            workspace_grants::provision_actor_workspace(actor_ptid, device_id)
+        }
+        None => workspace_grants::provision_actor_workspace(actor_ptid, device_id),
+    }
+}
+
 fn reconcile_workers(
     state: &AppState,
     surface: ClientSurface,
     app: &Option<tauri::AppHandle>,
     workers: &mut HashMap<String, ActiveWorker>,
     enrollment_backoff: &mut HashMap<String, std::time::Instant>,
+    desired_roots: &Mutex<HashMap<String, PathBuf>>,
 ) {
     let mut desired = HashMap::new();
     let all_sessions = state.sessions.snapshot_all();
@@ -1243,7 +1510,12 @@ fn reconcile_workers(
             }
             enrollment_backoff.remove(&account_id);
         }
-        match ActiveWorker::register(context, surface) {
+        let desired_root = desired_roots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&workspace_scope_key(&context.actor_ptid, &context.device_id))
+            .cloned();
+        match ActiveWorker::register(context, surface, desired_root) {
             Ok(worker) => {
                 workers.insert(account_id, worker);
             }

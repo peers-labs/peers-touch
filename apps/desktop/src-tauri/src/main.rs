@@ -42,7 +42,7 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_events, agent_growth, agent_logical_artifact,
-    agent_orchestration, agent_turn, agents,
+    agent_orchestration, agent_turn, agent_workspace, agents,
     applets, auth, bot, capability_authority, channels, conversation, cron, crypto,
     desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home, host_events,
     i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_files,
@@ -1000,6 +1000,11 @@ fn main() {
             runtime_evidence::agent_runtime_activity_station,
             runtime_evidence::agent_runtime_activity_local,
             runtime_evidence::agent_capability_session_snapshot,
+            agent_workspace::agent_workspace_list,
+            agent_workspace::agent_workspace_add_directory,
+            agent_workspace::agent_workspace_create_worktree,
+            agent_workspace::agent_workspace_remove,
+            agent_workspace::agent_workspace_activate,
             agent_turn::agent_conversation_list,
             agent_turn::agent_conversation_get,
             agent_turn::agent_conversation_create,

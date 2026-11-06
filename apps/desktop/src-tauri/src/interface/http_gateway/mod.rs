@@ -4290,6 +4290,134 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 ),
             )
         }
+        "agent_workspace_list" => {
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_list") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::list_workspaces(
+                    supervisor.inner(),
+                    &actor_ptid,
+                ),
+            )
+        }
+        "agent_workspace_add_directory" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceDirectoryInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_add_directory") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::add_workspace_directory(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.path.trim(),
+                ),
+            )
+        }
+        "agent_workspace_create_worktree" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceWorktreeInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_create_worktree") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::create_workspace_worktree(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.base.trim(),
+                    input.name.trim(),
+                ),
+            )
+        }
+        "agent_workspace_remove" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceLocatorInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_remove") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::remove_workspace(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.locator.unwrap_or_default().trim(),
+                ),
+            )
+        }
+        "agent_workspace_activate" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::agent_workspace::WorkspaceLocatorInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (_, actor_ptid, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let app = match runtime.app_handle("agent_workspace_activate") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            to_json(
+                crate::interface::tauri_commands::agent_workspace::activate_workspace(
+                    supervisor.inner(),
+                    &actor_ptid,
+                    input.locator,
+                ),
+            )
+        }
         "agent_runtime_activity_station" => {
             let input = match parse_args::<AgentRuntimeActivityInput>(args) {
                 Ok(input) => input,

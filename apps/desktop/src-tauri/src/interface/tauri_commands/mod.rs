@@ -6,6 +6,7 @@ pub mod agent_growth;
 pub mod agent_logical_artifact;
 pub mod agent_orchestration;
 pub mod agent_turn;
+pub mod agent_workspace;
 pub mod agents;
 pub mod applets;
 pub mod auth;
