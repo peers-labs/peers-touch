@@ -3,15 +3,15 @@
   "closure": "tw-o12-browser-tool",
   "outcome": "O12-browser-model-tool-psql",
   "source_commit": "aee0a9925",
-  "source": "postgres://pt-tw-d1/postgres peers_touch_tw_d1 (direct SQL, independent of gateway/SSE)",
-  "verified_at": "2026-11-06T00:27:36Z",
+  "source": "postgres://pt-tw-d1/peers peers_touch_tw_d1 (direct SQL, independent of gateway/SSE)",
+  "verified_at": "2026-11-06T00:44:07Z",
   "conversations": {
-    "main": "conv_d7e40fbcf3a27f6b3a7409c5",
-    "human_takeover_held": "conv_519744592d783308ebaa6779"
+    "main": "conv_987b5e1ce2b22feae8489d36",
+    "human_takeover_held": "conv_149aae257b4ba68932b666ad"
   },
   "turns": [
     {
-      "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
+      "conversation_id": "conv_987b5e1ce2b22feae8489d36",
       "tool_name": "browser_navigate",
       "capability_id": "browser.observe",
       "execution_owner": "client_capability",
@@ -20,7 +20,7 @@
       "conversation_bound_on_wire": true
     },
     {
-      "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
+      "conversation_id": "conv_987b5e1ce2b22feae8489d36",
       "tool_name": "local_file_edit",
       "capability_id": "filesystem.edit",
       "execution_owner": "client_capability",
@@ -29,7 +29,7 @@
       "conversation_bound_on_wire": true
     },
     {
-      "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
+      "conversation_id": "conv_987b5e1ce2b22feae8489d36",
       "tool_name": "browser_navigate",
       "capability_id": "browser.observe",
       "execution_owner": "client_capability",
@@ -38,7 +38,7 @@
       "conversation_bound_on_wire": true
     },
     {
-      "conversation_id": "conv_519744592d783308ebaa6779",
+      "conversation_id": "conv_149aae257b4ba68932b666ad",
       "tool_name": "browser_navigate",
       "capability_id": "browser.observe",
       "execution_owner": "client_capability",
@@ -48,15 +48,20 @@
     }
   ],
   "browser_session_truth": {
-    "id": "brows-01M6Q3YTR9RD66SW97WKVZSD77",
-    "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
-    "status": "active",
-    "lease": "agent"
+    "id": "brows-01M6Q4V09FF6SNBK1WZB5GA8YK",
+    "conversation_id": "conv_987b5e1ce2b22feae8489d36",
+    "status_during_turn": "active",
+    "lease_during_turn": "agent"
+  },
+  "lifecycle_zero_residue": {
+    "agent_browser_sessions_remaining_total": 0,
+    "note": "closure C10 two-step remove (browser_remove device arm + agent_browser_session_remove Station arm); verified by direct count after the run"
   },
   "assertions": [
     "all browser_navigate calls persisted as capability_id browser.observe, owner client_capability, succeeded, approved, with the new conversation_id wire field populated",
     "browser and filesystem tool calls interleave in one model turn (same device family); local_file_edit also succeeds",
     "the human-takeover turn still dispatches the browser call to the device; bounded BROWSER_HUMAN_TAKEOVER_HELD result observed in the SSE trace (closure C8)",
-    "model-created browser session registered as Station truth bound to the conversation (active/agent)"
+    "model-created browser session registered as Station truth bound to the conversation (active/agent at C7)",
+    "after the run both the Station truth row and the device worker are gone (closure C10; direct count = 0)"
   ]
 }

@@ -304,12 +304,42 @@ try {
   evidence.fatal = error?.message ?? String(error);
   checks.record('FATAL', false, evidence.fatal);
 } finally {
+  // The browser resource contract is a two-step removal, exactly like the
+  // physical-takeover closure B11: browser_remove kills the device worker /
+  // Chrome, while browser_station_remove deletes the Station truth row. The
+  // model-created session is a user-visible resource (BrowserDock), so the
+  // product deliberately keeps the two sides independent; the closure must
+  // perform both to leave zero residue. Errors are surfaced into evidence
+  // instead of swallowed so a cleanup regression cannot pass silently.
+  const cleanupErrors = [];
   try {
     if (modelSessionId) {
-      await gw.browserRelease(modelSessionId).catch(() => undefined);
-      await gw.browserRemove(modelSessionId).catch(() => undefined);
+      await gw.browserRelease(modelSessionId).catch((error) => {
+        cleanupErrors.push(`release: ${String(error?.message ?? error).slice(0, 200)}`);
+      });
+      await gw.browserRemove(modelSessionId).catch((error) => {
+        cleanupErrors.push(`device_remove: ${String(error?.message ?? error).slice(0, 200)}`);
+      });
+      await gw.browserStationRemove(modelSessionId).catch((error) => {
+        cleanupErrors.push(`station_remove: ${String(error?.message ?? error).slice(0, 200)}`);
+      });
+      await sleep(1000);
+      const stationLeft = (await gw.browserStationList(evidence.conversation_id ?? ''))
+        .some((s) => s.session_id === modelSessionId);
+      const workerLeft = (await gw.browserSessionListWorkers())
+        .some((s) => s.session_id === modelSessionId);
+      if (stationLeft) cleanupErrors.push('station row still present after two-step remove');
+      if (workerLeft) cleanupErrors.push('device worker still present after remove');
+      if (cleanupErrors.length > 0) evidence.cleanup_errors = cleanupErrors;
+      checks.record(
+        'C10',
+        !stationLeft && !workerLeft,
+        `stationLeft=${stationLeft} workerLeft=${workerLeft} errors=${JSON.stringify(cleanupErrors)}`,
+      );
     }
-  } catch { /* best effort */ }
+  } catch (error) {
+    evidence.cleanup_errors = [...cleanupErrors, `cleanup: ${String(error?.message ?? error).slice(0, 200)}`];
+  }
   try {
     if (servicePort) {
       execFileSync('bash', ['-c', `pkill -9 -f "http.server ${servicePort} --bind" 2>/dev/null || true`]);

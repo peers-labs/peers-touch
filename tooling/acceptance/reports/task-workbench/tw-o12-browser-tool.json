@@ -1,5 +1,5 @@
 {
-  "ran_at": "2026-11-06T00:26:47.792Z",
+  "ran_at": "2026-11-06T00:43:14.627Z",
   "mode": "desktop-native-headless-gateway",
   "plan": "TW-20261102",
   "closure": "tw-o12-browser-tool",
@@ -9,7 +9,7 @@
   "provider_id": "ark",
   "model_id": "ep-20260623145021-n4xdm",
   "strong_model": true,
-  "pass": 9,
+  "pass": 10,
   "fail": 0,
   "results": [
     {
@@ -56,6 +56,11 @@
       "id": "C9",
       "pass": true,
       "evidence": "after release agent lease restored, page still PASS: true"
+    },
+    {
+      "id": "C10",
+      "pass": true,
+      "evidence": "stationLeft=false workerLeft=false errors=[]"
     }
   ],
   "evidence": {
@@ -101,16 +106,16 @@
       }
     ],
     "workspace_root": "/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/a0ab024e3dbd0fc648ca933a4653c5b4",
-    "page": "brw-5e45f8.html",
-    "url": "http://127.0.0.1:19093/brw-5e45f8.html",
-    "conversation_id": "conv_d7e40fbcf3a27f6b3a7409c5",
+    "page": "brw-618f24.html",
+    "url": "http://127.0.0.1:19464/brw-618f24.html",
+    "conversation_id": "conv_987b5e1ce2b22feae8489d36",
     "tool_calls": [
       "browser_navigate",
       "local_file_edit",
       "browser_navigate"
     ],
-    "model_browser_session_id": "brows-01M6Q3YTR9RD66SW97WKVZSD77",
-    "held_conversation_id": "conv_519744592d783308ebaa6779",
-    "held_turn_id": "turn_e01e18913416825b01541cc5"
+    "model_browser_session_id": "brows-01M6Q4V09FF6SNBK1WZB5GA8YK",
+    "held_conversation_id": "conv_149aae257b4ba68932b666ad",
+    "held_turn_id": "turn_92d4fdef2c7e7bdd07cff270"
   }
 }
