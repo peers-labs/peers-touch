@@ -117,28 +117,40 @@ def press_panel_button(
             api.reads.begin_observation()
             visited = 0
 
-            def find_button(node: _REF, depth: int = 0) -> _REF | None:
+            def find_button(node: _REF) -> _REF | None:
                 nonlocal visited
-                visited += 1
-                if visited > _MAX_NODES or depth > _MAX_DEPTH or time.monotonic() >= deadline:
+                frontier = [node]
+                owned: list[_REF] = []
+                try:
+                    for depth in range(_MAX_DEPTH + 1):
+                        for current in frontier:
+                            if visited >= _MAX_NODES or time.monotonic() >= deadline:
+                                return None
+                            visited += 1
+                            if api.text(current, "AXRole") == "AXButton" and api.enabled(current) and (
+                                api.text(current, "AXTitle") == button_title
+                                or (
+                                    button_title == "Cancel"
+                                    and api.text(current, "AXIdentifier") == "CancelButton"
+                                )
+                            ):
+                                return api.cf.CFRetain(current)
+                        if depth == _MAX_DEPTH:
+                            return None
+                        descendants = []
+                        for current in frontier:
+                            with api.attribute(current, "AXChildren") as children:
+                                for child in api.items(children):
+                                    retained = api.cf.CFRetain(child)
+                                    owned.append(retained)
+                                    descendants.append(retained)
+                        frontier = descendants
+                        if not frontier:
+                            return None
                     return None
-                # Read the cheap role discriminator first; enabled/title are
-                # fetched only for actual buttons so a panel walk stays inside
-                # its bounded read budget.
-                if api.text(node, "AXRole") == "AXButton" and api.enabled(node) and (
-                    api.text(node, "AXTitle") == button_title
-                    or (
-                        button_title == "Cancel"
-                        and api.text(node, "AXIdentifier") == "CancelButton"
-                    )
-                ):
-                    return api.cf.CFRetain(node)
-                with api.attribute(node, "AXChildren") as children:
-                    for child in api.items(children):
-                        found = find_button(child, depth + 1)
-                        if found:
-                            return found
-                return None
+                finally:
+                    for retained in owned:
+                        api.cf.CFRelease(retained)
 
             with api.attribute(application, "AXWindows", required=True) as windows:
                 panels = [

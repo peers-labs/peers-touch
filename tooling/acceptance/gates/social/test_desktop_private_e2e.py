@@ -42,7 +42,7 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
                 "provisioningRuns": 1,
                 "clientLaunches": 3,
                 "maxConcurrentNativeClients": 2,
-                "newAccountRegistrations": 3,
+                "newAccountRegistrations": 0,
                 "stationBuilds": 0,
                 "stationDeployments": 0,
                 "desktopBuilds": 0,
@@ -68,6 +68,7 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
         self,
     ) -> None:
         gate = SocialPrivateDesktopGate()
+        gate.e2e_preflight = {"executionPolicy": "development"}
         suite = self._suite()
         with (
             mock.patch.object(
@@ -87,7 +88,9 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
             result = gate.run()
 
         run_commands.assert_called_once_with(gate, SOURCE_COMMANDS)
-        load_suite.assert_called_once_with()
+        load_suite.assert_called_once_with(
+            consumer_gate_id=module.GATE_ID, execution_policy="development",
+        )
         attach.assert_called_once_with(gate, suite)
         self.assertEqual(
             suite.payload["runtimeManifest"],

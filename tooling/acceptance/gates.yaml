@@ -1655,6 +1655,8 @@
       "timeout_seconds": 5400,
       "environment": "cross-station-social-native",
       "provisioner": "cross-station-social-native",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
       "tier": "env-evidence",
       "e2e": {
         "journeys": [
@@ -1673,11 +1675,20 @@
     },
     "social-private-desktop-e2e": {
       "command": "python3 -m tooling.acceptance.gates.social.desktop_private_e2e",
-      "catalogExecution": "manual",
+      "dependsOn": ["social-cross-station-native-e2e"],
       "timeout_seconds": 9000,
       "environment": "local",
       "tier": "env-evidence",
-      "description": "Prove Desktop Private Moments with one reusable Alice/Bob/Eve Native Suite while leaving Mobile unproven."
+      "e2e": {
+        "journeys": [
+          {"id": "private-social-comment-reactions", "uses": ["tooling/acceptance/gates/social/desktop_private_e2e.py#SocialPrivateDesktopGate.run"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/social/desktop_private_e2e.py#SocialPrivateDesktopGate.run", "purpose": "Validate bilateral root/reply painted reactions, durable command retry and Bob2 readback from the original producer", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/social/cross_station_support.py#load_suite_result"], "invalidatedBy": ["source", "oracle", "fixture"]},
+          {"ref": "tooling/acceptance/gates/social/cross_station_support.py#load_suite_result", "purpose": "Read only the same execution graph original source-bound prerequisite inventory", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]}
+        ]
+      },
+      "description": "Validate private comment reactions, Native durable retry and replacement readback from this execution graph's original nine-scenario producer without provisioning again."
     },
     "social-cross-station-contract": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-contract",
@@ -1723,19 +1734,45 @@
     },
     "social-cross-station-desktop-functional": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-desktop-functional",
-      "catalogExecution": "manual",
+      "dependsOn": ["social-cross-station-native-e2e"],
       "timeout_seconds": 10800,
       "environment": "local",
       "tier": "local-evidence",
-      "description": "Run the source-only development two-Station Native Social Suite and retain its non-formal evidence."
+      "e2e": {
+        "journeys": [
+          {"id": "private-social-nine-scenario-functional", "uses": ["tooling/acceptance/gates/social/cross_station_desktop_functional.py#Gate.run"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/social/cross_station_desktop_functional.py#Gate.run", "purpose": "Validate the original nine scenario results without launching or provisioning a second Suite", "lifetime": "suite", "dependsOn": ["tooling/acceptance/gates/social/cross_station_support.py#load_suite_result"], "invalidatedBy": ["source", "oracle", "fixture"]},
+          {"ref": "tooling/acceptance/gates/social/cross_station_support.py#load_suite_result", "purpose": "Verify the original current execution graph prerequisite and policy", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]}
+        ]
+      },
+      "description": "Retain non-formal nine-scenario observations from the current graph's source-bound private Social producer."
     },
     "social-cross-station-native-e2e": {
       "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-native-e2e",
-      "catalogExecution": "manual",
       "timeout_seconds": 10800,
-      "environment": "local",
+      "environment": "cross-station-social-native",
+      "provisioner": "cross-station-social-native",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
       "tier": "env-evidence",
-      "description": "Attach formal proof to the exact-source CSS-09 Native Suite for AS17 through AS24 and same-Station regression."
+      "e2e": {
+        "journeys": [
+          {"id": "SOC-SEC-J10-J12", "uses": ["tooling/acceptance/gates/social/cross_station_native_e2e.py#Gate.run"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/social/cross_station_native_e2e.py#Gate.run", "purpose": "Execute and validate the original AS17-AS24 and same-Station Suite on Runner preparation", "lifetime": "suite", "dependsOn": ["tooling/development/secure_content/runtime_owner.py#W7RuntimeOwner.run_social_cross_station_suite", "tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py#CrossStationSocialNativeProvisioner"], "invalidatedBy": ["source", "environment", "oracle", "fixture"]},
+          {"ref": "tooling/development/secure_content/runtime_owner.py#W7RuntimeOwner.run_social_cross_station_suite", "purpose": "Preserve the original nine scenarios, painted comment/reply oracle, native command retry and empty-device recovery", "lifetime": "suite", "dependsOn": ["tooling/development/secure_content/prepared_native.py#PreparedSocialNativeClient.start", "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeClient.harness", "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeRuntime.cleanup"], "invalidatedBy": ["source", "oracle", "action-plan", "fixture"]},
+          {"ref": "tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py#CrossStationSocialNativeProvisioner", "purpose": "Prepare both physical schemas before retained service leases and independently re-attest their source and runtime", "lifetime": "suite", "dependsOn": ["tooling/development/secure_content/runtime_schema.py#prepare_private_social_runtime"], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/development/secure_content/runtime_schema.py#prepare_private_social_runtime", "purpose": "Use the original capability and lease governed exact-profile schema reset owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeClient.start", "purpose": "Adapt already-prepared Native binding with Eve fixture-only and Bob2 replacing Bob within two windows", "lifetime": "suite", "dependsOn": ["tooling/acceptance/drivers/native/runtime.py#NativeDesktopRuntimeBinding.create_bound_session"], "invalidatedBy": ["source", "client", "session"]},
+          {"ref": "tooling/acceptance/drivers/native/runtime.py#NativeDesktopRuntimeBinding.create_bound_session", "purpose": "Reuse the existing Native binary, storage, launch and live binding proof owner", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "toolchain", "environment", "client", "session"]},
+          {"ref": "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeClient.harness", "purpose": "Expose the original Foundation Harness and authentication helper to the prepared session", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "client", "session", "fixture"]},
+          {"ref": "tooling/development/secure_content/prepared_native.py#PreparedSocialNativeRuntime.cleanup", "purpose": "Delegate logout, stop and exact owned-resource release to the existing Native lifecycle and binding owners", "lifetime": "suite", "dependsOn": [], "invalidatedBy": ["source", "client", "session"]}
+        ]
+      },
+      "description": "Run the original nine private Social scenarios through one Runner preparation, three Native launches and at most two windows; preserve original receiver, painted, retry and recovery proof."
     },
     "social-cross-station-mobile-desktop-e2e": {
       "argv": [
@@ -1782,6 +1819,8 @@
         "social-cross-station-prekey",
         "social-cross-station-revocation-recovery",
         "social-private-desktop-e2e",
+        "social-public-feed-native-e2e",
+        "social-public-feed-source",
         "station-api-ownership"
       ],
       "command": "python3 tooling/scripts/acceptance-validate.py --domain social --require-proven",

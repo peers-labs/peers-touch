@@ -128,7 +128,6 @@ OWNER_ID = runtime_manifest.RUNTIME_OWNER_ID
 PROFILE = "four"
 SLOT = 5
 SOCIAL_ACCEPTANCE_SLOT = 12
-SOCIAL_CROSS_STATION_SLOT = 13
 STATION_ID = "station-four"
 SOCIAL_CROSS_STATION_PRIMARY_PROFILE = "chat-native-disposable"
 SOCIAL_CROSS_STATION_PRIMARY_DEPLOYMENT_ENVIRONMENT = (
@@ -244,32 +243,6 @@ SOCIAL_CROSS_STATION_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "allowClientReplacement": True,
     }
 )
-SOCIAL_CROSS_STATION_CLIENT_BINDINGS = (
-    (
-        "cross-station-social-alice",
-        "alice",
-        SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
-        STATION_ID,
-    ),
-    (
-        "cross-station-social-bob",
-        "bob",
-        SECONDARY_PROFILE,
-        SECONDARY_STATION_ID,
-    ),
-    (
-        "cross-station-social-eve",
-        "eve",
-        SECONDARY_PROFILE,
-        SECONDARY_STATION_ID,
-    ),
-    (
-        "cross-station-social-bob2",
-        "bob",
-        SECONDARY_PROFILE,
-        SECONDARY_STATION_ID,
-    ),
-)
 PRIVATE_PUBLISH_RECONCILING_STATES = frozenset(
     {
         "UNKNOWN_COMMIT",
@@ -278,12 +251,12 @@ PRIVATE_PUBLISH_RECONCILING_STATES = frozenset(
     }
 )
 SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS = (
-    "cross-station-social-alice",
-    "cross-station-social-bob",
-    "cross-station-social-bob2",
+    "alice",
+    "bob",
+    "bob2",
 )
 SOCIAL_CROSS_STATION_FIXTURE_ONLY_CLIENT_IDS = (
-    "cross-station-social-eve",
+    "eve",
 )
 W9_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
@@ -7150,156 +7123,50 @@ class W7RuntimeOwner:
     def run_social_cross_station_suite(
         self,
         *,
-        slot: int = SOCIAL_CROSS_STATION_SLOT,
+        prepared: Any,
     ) -> dict[str, Any]:
-        if slot != SOCIAL_CROSS_STATION_SLOT:
+        from tooling.acceptance.core import workspace_id
+        from tooling.acceptance.core.evidence_store import source_identity
+        from tooling.development.secure_content.prepared_native import (
+            CLIENT_BINDINGS as prepared_native_bindings,
+        )
+        source = json.loads(_required_text(
+            os.environ.get("PT_ACCEPTANCE_AGGREGATE_SOURCE"), "Runner source",
+        ))
+        run_id = _required_text(os.environ.get("PT_ACCEPTANCE_RUN_ID"), "Runner run ID")
+        if (
+            source != source_identity(self.repo_root)
+            or any(source.get(key) != prepared.manifest["source"].get(key)
+                   for key in ("commit", "workspaceDigest"))
+            or run_id != prepared.manifest["actorManifest"]["runId"]
+        ):
             raise RuntimeOwnerBlocked(
-                "CONTROLLER_BINDING_MISMATCH",
-                f"Cross-Station Social requires slot {SOCIAL_CROSS_STATION_SLOT}",
-                resource=(
-                    f"profile:{SOCIAL_CROSS_STATION_PRIMARY_PROFILE}"
-                ),
+                "SOURCE_ATTESTATION_MISMATCH", "Runner and prepared Native source differ",
+                resource="source:private-social",
             )
-        identity = _require_social_acceptance_source(
-            self.repo_root,
-            self.result_root,
-        )
-        control_commit = str(identity.get("controlHead") or identity["head"])
-        result_path = (
-            self.result_root
-            / SOCIAL_CROSS_STATION_TASK_ID.removesuffix("-final-proof")
-            / control_commit
-            / "suite"
-            / "result.json"
-        )
+        identity = {
+            "head": source["commit"], "workspaceId": workspace_id(self.repo_root),
+            "worktreeSetDigest": runtime_manifest.canonical_digest(source),
+        }
+        control_commit = source["commit"]
+        result_path = self.result_root / "suite" / "result.json"
         if result_path.exists():
             raise RuntimeOwnerBlocked(
                 "RESULT_PUBLICATION_CONFLICT",
                 "Cross-Station Social Suite result already exists",
                 resource="result:social-cross-station",
             )
-        resolved, profile_env = _resolve_machine_profile(
-            self.repo_root,
-            expected_slot=slot,
-            expected_profile=SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
-            expected_deployment_environment=(
-                SOCIAL_CROSS_STATION_PRIMARY_DEPLOYMENT_ENVIRONMENT
-            ),
-        )
-        _secondary_profile_path, secondary_profile_env = (
-            _resolve_secondary_profile(resolved)
-        )
-        run_id = (
-            f"social-cross-station-{control_commit[:12]}-{os.getpid()}-"
-            f"{time.time_ns()}"
-        )
         owner_root = self.runtime_root / run_id
-        attestation_store = owner_root / "attestation-store"
-        acceptance_run_id = (
-            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-            + "-"
-            + _sha256(run_id)[:32]
-        )
-        (
-            attestation_store
-            / str(identity["workspaceId"])
-            / SOCIAL_CROSS_STATION_JOURNEY
-            / acceptance_run_id
-        ).mkdir(parents=True, mode=0o700)
-        transport_stack, station_endpoints = _open_station_tunnels(
-            (
-                (STATION_ID, profile_env),
-                (SECONDARY_STATION_ID, secondary_profile_env),
-            )
-        )
-        station_url = station_endpoints[STATION_ID].transport_url
-        secondary_station_url = station_endpoints[
-            SECONDARY_STATION_ID
-        ].transport_url
-        try:
-            with _environment(
-                {
-                    "PT_ACCEPTANCE_ARTIFACT_ROOT": str(attestation_store),
-                    "PT_ACCEPTANCE_WORKSPACE_ID": str(identity["workspaceId"]),
-                    "PT_ACCEPTANCE_GATE_ID": SOCIAL_CROSS_STATION_JOURNEY,
-                    "PT_ACCEPTANCE_RUN_ID": acceptance_run_id,
-                }
-            ):
-                primary_attestation = produce_station_attestation(
-                    environment_id="cross-station-social-native",
-                    run_id=run_id,
-                    service_id=STATION_ID,
-                    station_url=station_url,
-                    profile_env=profile_env,
-                    require_runtime_identity=True,
-                    remote_source_identity_provider=resolve_remote_source_identity,
-                )
-                secondary_attestation = produce_station_attestation(
-                    environment_id="cross-station-social-native",
-                    run_id=run_id,
-                    service_id=SECONDARY_STATION_ID,
-                    station_url=secondary_station_url,
-                    profile_env=secondary_profile_env,
-                    require_runtime_identity=True,
-                    remote_source_identity_provider=resolve_remote_source_identity,
-                )
-        except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
-            raise RuntimeOwnerBlocked(
-                "SERVICE_ATTESTATION_UNAVAILABLE",
-                _error_message_with_cleanup(error),
-                resource="station:cross-station-social",
-            ) from error
-        local_proto_digest = source_proto_digest(self.repo_root)
-        if any(
-            (
-                not commits_match(attestation.live_commit, identity["head"])
-                or attestation.protocol_digest != local_proto_digest
-            )
-            for attestation in (primary_attestation, secondary_attestation)
-        ):
-            error = RuntimeOwnerBlocked(
-                "SOURCE_ATTESTATION_MISMATCH",
-                "Cross-Station Social Stations are not on the activated source",
-                resource="station:cross-station-social",
-            )
-            _close_runtime_stack(transport_stack, primary_error=error)
-            raise error
-
-        source_evidence_root = Path(
-            str(identity.get("sourceEvidenceRoot") or self.result_root)
-        )
-        schema_identity = dict(identity)
-        schema_identity["workspaceId"] = str(
-            identity.get("sourceEvidenceWorkspaceId")
-            or identity["workspaceId"]
-        )
-        try:
-            primary_schema = _resolve_canonical_private_schema_attestation(
-                source_evidence_root,
-                self.repo_root,
-                schema_identity,
-                primary_attestation,
-                service_id=STATION_ID,
-                profile_id=SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
-                attested_endpoint=profile_env["PT_STATION_URL"],
-                accepted_intents=("SCHEMA_ACTIVATION",),
-            )
-            secondary_schema = _resolve_canonical_private_schema_attestation(
-                source_evidence_root,
-                self.repo_root,
-                schema_identity,
-                secondary_attestation,
-                service_id=SECONDARY_STATION_ID,
-                profile_id=SECONDARY_PROFILE,
-                attested_endpoint=secondary_profile_env["PT_STATION_URL"],
-                accepted_intents=("SCHEMA_ACTIVATION",),
-            )
-        except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
-            raise
-
-        fixture_epoch = "css09-" + _sha256(run_id)[:32]
+        schemas = prepared.schema_bindings()
+        primary_schema, secondary_schema = schemas[STATION_ID], schemas[SECONDARY_STATION_ID]
+        primary_attestation = prepared.attestation("alice")
+        secondary_attestation = prepared.attestation("bob")
+        station_url = primary_attestation.endpoint
+        secondary_station_url = secondary_attestation.endpoint
+        schema_profiles = prepared.schema_inventory["services"]
+        fixture_epoch = prepared.manifest["runId"]
+        transport_stack = ExitStack()
+        transport_stack.callback(prepared.cleanup)
         ledger = SuiteRuntimeLedger(
             SOCIAL_CROSS_STATION_RUNTIME_REUSE,
             suite_runtime_id=run_id,
@@ -7315,59 +7182,16 @@ class W7RuntimeOwner:
         manifest_digests: dict[str, str] = {}
         max_concurrent_clients = 0
         with _runtime_cleanup_scope(transport_stack) as stack:
-            suffix = _sha256(f"{run_id}:{secrets.token_hex(16)}")[:10]
-            password = f"Css09Aa1!{suffix}"
-            accounts = {
-                "alice": _register_runtime_account(
-                    station_url,
-                    role="alice",
-                    suffix=suffix,
-                    password=password,
-                ),
-                "bob": _register_runtime_account(
-                    secondary_station_url,
-                    role="bob",
-                    suffix=suffix,
-                    password=password,
-                ),
-                "eve": _register_runtime_account(
-                    secondary_station_url,
-                    role="eve",
-                    suffix=suffix,
-                    password=password,
-                ),
-            }
-            for role in ("alice", "bob", "eve"):
-                ledger.record(
-                    SuiteRuntimeAction.ACCOUNT_PROVISION,
-                    resource_id=f"account:{role}",
-                )
-
-            reserved_ports: set[int] = set()
+            from tooling.acceptance.fixtures.chat_native_actors import fixture_password
+            password = fixture_password()
+            accounts = {role: prepared.account(role) for role in ("alice", "bob", "eve")}
             active_client_ids: set[int] = set()
             clients: dict[str, FoundationRuntimeClient] = {}
             payloads: dict[str, dict[str, Any]] = {}
-            for index, client_id in enumerate(
-                SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[:2]
-            ):
+            for index, client_id in enumerate(("alice", "bob")):
                 actor_role = "alice" if index == 0 else "bob"
                 service_id = STATION_ID if index == 0 else SECONDARY_STATION_ID
-                client = _make_client(
-                    repo_root=self.repo_root,
-                    runtime_root=owner_root,
-                    profile_env=(
-                        profile_env if index == 0 else secondary_profile_env
-                    ),
-                    source_commit=str(identity["head"]),
-                    client_id=client_id,
-                    runtime_kind="native-tauri",
-                    port_bases=(
-                        4930 + index * 20,
-                        5110 + index * 20,
-                        5895 + index * 20,
-                    ),
-                    reserved_ports=reserved_ports,
-                )
+                client = prepared.client(client_id)
                 stack.callback(
                     _stop_client_or_raise,
                     client,
@@ -7380,6 +7204,7 @@ class W7RuntimeOwner:
                     account=accounts[actor_role],
                     password=password,
                 )
+                prepared.verify_snapshot(client_id, snapshot)
                 _wait_for_device_enrollment(client)
                 _wait_for_mls_readiness(client)
                 _prepare_private_content_keys(client)
@@ -7404,8 +7229,8 @@ class W7RuntimeOwner:
                     len(active_client_ids),
                 )
 
-            alice = clients[SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[0]]
-            bob = clients[SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[1]]
+            alice = clients["alice"]
+            bob = clients["bob"]
             recovery_phrase, recovery_preparation = _prepare_portable_recovery(
                 bob
             )
@@ -7414,7 +7239,7 @@ class W7RuntimeOwner:
                 secondary_url=secondary_station_url,
                 primary_peer_id=primary_attestation.runtime_identity,
                 secondary_peer_id=secondary_attestation.runtime_identity,
-                primary_product_url=profile_env["PT_STATION_URL"],
+                primary_product_url=station_url,
                 fixture_epoch=fixture_epoch,
                 cleanup_stack=stack,
             )
@@ -7529,16 +7354,14 @@ class W7RuntimeOwner:
                     "workspaceId": str(identity["workspaceId"]),
                     "worktreeSetDigest": str(identity["worktreeSetDigest"]),
                     "controllerBinding": {
-                        "profileId": SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
-                        "slot": slot,
+                        "profileId": prepared.manifest["profile"]["resolvedName"],
+                        "slot": prepared.manifest["profile"]["slot"],
                     },
                     "fixtureManifestRef": fixture_ref,
                     "fixtureManifestDigest": fixture_digest,
                     "services": {
                         STATION_ID: {
-                            "profileId": (
-                                SOCIAL_CROSS_STATION_PRIMARY_PROFILE
-                            ),
+                            "profileId": schema_profiles[STATION_ID]["profileId"],
                             "runtimeIdentitySha256": _sha256(
                                 primary_attestation.runtime_identity
                             ),
@@ -7546,7 +7369,7 @@ class W7RuntimeOwner:
                             "schemaAttestationRef": primary_schema_ref,
                         },
                         SECONDARY_STATION_ID: {
-                            "profileId": SECONDARY_PROFILE,
+                            "profileId": schema_profiles[SECONDARY_STATION_ID]["profileId"],
                             "runtimeIdentitySha256": _sha256(
                                 secondary_attestation.runtime_identity
                             ),
@@ -7725,7 +7548,7 @@ class W7RuntimeOwner:
                     (str(scenario_path), str(ui_path))
                 )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS17",
@@ -7794,7 +7617,7 @@ class W7RuntimeOwner:
                 },
             )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS18",
@@ -7832,7 +7655,7 @@ class W7RuntimeOwner:
                 },
             )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS19",
@@ -7875,7 +7698,7 @@ class W7RuntimeOwner:
                 },
             )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS20",
@@ -7958,7 +7781,7 @@ class W7RuntimeOwner:
                 },
             )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS21",
@@ -7992,7 +7815,7 @@ class W7RuntimeOwner:
                 },
             )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS22",
@@ -8043,7 +7866,7 @@ class W7RuntimeOwner:
                 },
             )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS23",
@@ -8053,18 +7876,9 @@ class W7RuntimeOwner:
                 purpose="Cross-Station Social Bob replacement",
                 active_client_ids=active_client_ids,
             )
-            clients.pop(SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[1])
-            bob2_id = SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[2]
-            bob2 = _make_client(
-                repo_root=self.repo_root,
-                runtime_root=owner_root,
-                profile_env=secondary_profile_env,
-                source_commit=str(identity["head"]),
-                client_id=bob2_id,
-                runtime_kind="native-tauri",
-                port_bases=(4970, 5150, 5935),
-                reserved_ports=reserved_ports,
-            )
+            clients.pop("bob")
+            bob2_id = "bob2"
+            bob2 = prepared.client(bob2_id)
             stack.callback(
                 _stop_client_or_raise,
                 bob2,
@@ -8117,6 +7931,7 @@ class W7RuntimeOwner:
                 bob2_comment_ui.assert_like(as20_post, text, depth, 1, False, "replacement-readback")
             supporting_artifacts.extend(str(path) for path in bob2_comment_ui.artifacts)
             bob2_snapshot = _wait_for_moments_snapshot(bob2)
+            prepared.verify_snapshot(bob2_id, bob2_snapshot)
             clients[bob2_id] = bob2
             payloads[bob2_id] = _client_payload(
                 bob2_id,
@@ -8125,7 +7940,7 @@ class W7RuntimeOwner:
                 bob2_snapshot,
                 service_roles={"station": SECONDARY_STATION_ID},
             )
-            payloads.pop(SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[1])
+            payloads.pop("bob")
             current_bob = bob2
             max_concurrent_clients = max(
                 max_concurrent_clients,
@@ -8158,7 +7973,7 @@ class W7RuntimeOwner:
                 },
             )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="AS24",
@@ -8202,7 +8017,7 @@ class W7RuntimeOwner:
                 },
             )
 
-            station_endpoints.refresh()
+            prepared.verify_source()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="same-station-regression",
@@ -8286,30 +8101,19 @@ class W7RuntimeOwner:
             suite_report,
         )
         supporting_artifacts.append(str(suite_report_path))
-        activation_path = Path(
-            _required_text(
-                identity.get("activationAggregatePath"),
-                "activation aggregate path",
-            )
-        )
-        activation_digest = _required_text(
-            identity.get("activationAggregateDigest"),
-            "activation aggregate digest",
-        )
-        supporting_artifacts.append(str(activation_path))
         runtime_summary = {
             "artifactKind": SOCIAL_CROSS_STATION_RUNTIME_MANIFEST_KIND,
             "schemaVersion": 1,
             "state": "FIXTURE_READY",
             "cleanupState": "CLEANED",
             "runId": run_id,
+            "provisioningRunId": prepared.manifest["runId"],
             "workspaceId": str(identity["workspaceId"]),
             "sourceCommit": str(identity["head"]),
             "controlCommit": control_commit,
             "worktreeSetDigest": str(identity["worktreeSetDigest"]),
             "profileBindings": {
-                SOCIAL_CROSS_STATION_PRIMARY_PROFILE: STATION_ID,
-                SECONDARY_PROFILE: SECONDARY_STATION_ID,
+                entry["profileId"]: role for role, entry in schema_profiles.items()
             },
             "serviceRuntimeIdentityDigests": {
                 STATION_ID: _sha256(primary_attestation.runtime_identity),
@@ -8321,13 +8125,13 @@ class W7RuntimeOwner:
                 {
                     "clientId": client_id,
                     "actorRole": actor_role,
-                    "profileId": profile_id,
+                    "profileId": schema_profiles[service_id]["profileId"],
                     "serviceId": service_id,
                     "launched": client_id
                     in SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS,
                 }
-                for client_id, actor_role, profile_id, service_id
-                in SOCIAL_CROSS_STATION_CLIENT_BINDINGS
+                for client_id, (actor_role, service_id)
+                in prepared_native_bindings.items()
             ],
             "fixtureEpoch": fixture_epoch,
             "scenarioManifestDigests": manifest_digests,
@@ -8343,15 +8147,10 @@ class W7RuntimeOwner:
             "workspaceId": str(identity["workspaceId"]),
             "worktreeSetDigest": str(identity["worktreeSetDigest"]),
             "runId": run_id,
+            "provisioningRunId": prepared.manifest["runId"],
             "fixtureEpoch": fixture_epoch,
-            "activation": {
-                "aggregatePath": str(activation_path),
-                "resultDigest": activation_digest,
-                "profiles": [
-                    SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
-                    SECONDARY_PROFILE,
-                ],
-            },
+            "source": source,
+            "schemaInventory": prepared.schema_inventory_ref,
             "runtimeManifest": runtime_summary,
             "scenarioResults": scenario_results,
             "suiteRuntimeReport": str(suite_report_path),
@@ -8361,7 +8160,7 @@ class W7RuntimeOwner:
                 "provisioningRuns": 1,
                 "clientLaunches": 3,
                 "maxConcurrentNativeClients": max_concurrent_clients,
-                "newAccountRegistrations": 3,
+                "newAccountRegistrations": 0,
                 "stationBuilds": 0,
                 "stationDeployments": 0,
                 "desktopBuilds": 0,
@@ -11014,7 +10813,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "run-w7-desktop-suite",
             "run-w8-suite",
             "run-social-desktop-acceptance-suite",
-            "run-social-cross-station-suite",
             "run-w9-suite",
             "run-w2-suite",
             "run-w10-suite",
@@ -11034,13 +10832,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     required_slot = {
         "run-social-desktop-acceptance-suite": SOCIAL_ACCEPTANCE_SLOT,
-        "run-social-cross-station-suite": SOCIAL_CROSS_STATION_SLOT,
     }.get(args.action, SLOT)
-    required_profile = (
-        SOCIAL_CROSS_STATION_PRIMARY_PROFILE
-        if args.action == "run-social-cross-station-suite"
-        else PROFILE
-    )
+    required_profile = PROFILE
     selected_profile = args.profile or required_profile
     if selected_profile != required_profile or args.slot != required_slot:
         blocked = RuntimeOwnerBlocked(
@@ -11063,7 +10856,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "run-w7-desktop-suite",
         "run-w8-suite",
         "run-social-desktop-acceptance-suite",
-        "run-social-cross-station-suite",
         "run-w2-suite",
         "run-w10-suite",
         "run-w11-suite",
@@ -11072,23 +10864,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if (
         args.action in dual_profile_actions
         and selected_profiles
-        != (
-            (
-                SOCIAL_CROSS_STATION_PRIMARY_PROFILE
-                if args.action == "run-social-cross-station-suite"
-                else PROFILE
-            ),
-            SECONDARY_PROFILE,
-        )
+        != (PROFILE, SECONDARY_PROFILE)
     ):
         resource = {
             "run-w7-desktop-suite": "runtime:secure-content-w7",
             "run-w8-suite": "runtime:secure-content-w8",
             "run-social-desktop-acceptance-suite": (
                 "runtime:social-private-desktop"
-            ),
-            "run-social-cross-station-suite": (
-                "runtime:social-cross-station"
             ),
             "run-w2-suite": "runtime:secure-content-w2",
             "run-w10-suite": "runtime:secure-content-w10",
@@ -11101,15 +10883,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{args.action} requires exactly "
                 "--profiles "
                 + ",".join(
-                    (
-                        (
-                            SOCIAL_CROSS_STATION_PRIMARY_PROFILE
-                            if args.action
-                            == "run-social-cross-station-suite"
-                            else PROFILE
-                        ),
-                        SECONDARY_PROFILE,
-                    )
+                    (PROFILE, SECONDARY_PROFILE)
                 )
             ),
             resource=resource,
@@ -11148,8 +10922,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = owner.run_w8_suite()
         elif args.action == "run-social-desktop-acceptance-suite":
             result = owner.run_social_desktop_acceptance_suite(slot=args.slot)
-        elif args.action == "run-social-cross-station-suite":
-            result = owner.run_social_cross_station_suite(slot=args.slot)
         elif args.action == "run-w9-suite":
             result = owner.run_w9_suite()
         elif args.action == "run-w2-suite":

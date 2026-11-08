@@ -1820,6 +1820,11 @@ focus or HID delivery.
   focus deadline, cap messaging waits at the lesser of 0.5 seconds and remaining
   time, and reject expiry before or after a native call. Failure releases any
   returned CF value and stops subsequent reads.
+  One-shot AX mutations use the remaining time of their original operation
+  deadline. The 0.5-second observation cap must not become their inherited
+  message timeout. Timeout setup, invocation and reply consume that same
+  deadline; an expired reply or any nonzero AX status fails without replay.
+  This does not extend the selection subprocess or operator-read budgets.
   The shared control reader retains the actual queried application PID in
   `actualControlRequestPid` on that same exception. Operator sampling may
   receive caller PID zero or a chooser target while querying another frontmost
@@ -1846,6 +1851,20 @@ focus or HID delivery.
   copied child arrays on every exit. A failed read still propagates when no
   earlier native target exists; traversal order cannot convert refusal to
   optional absence.
+  The bounded process-owned panel button owner also checks one depth before
+  traversing deeper file-list descendants. Its node/depth limits and original
+  action deadline remain unchanged, and all retained nodes are released.
+  Native file-row selection uses the container's advertised mutable attribute:
+  ListView owns `AXSelectedRows`, while a column list may own
+  `AXSelectedChildren`. The selected value is the actual descendant row, not
+  a filename or a copied local object. An already available ListView row must
+  not be rejected and sent to Search merely because it lacks the column
+  attribute. Native panel completion still proves the exact staged file.
+  A known semantic selection-unavailable result must bind the requested
+  staged path. In non-intrusive mode it raises the original Driver's typed
+  blocker with the exact closed reason and owner PID, without exporting the
+  path or waiting for a commit that was not selected. Only an independently
+  admitted exclusive caller may retain its native fallback.
   The local Binding admits this capability only from its prepared Cell.
   The shared picker uses the visible trigger and real panel, checks closure
   and fixture identity, and leaves product and receiver oracles with the Gate.

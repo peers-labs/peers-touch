@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 import uuid
@@ -45,15 +46,28 @@ RUNTIME_TARGETS = {
     ),
 }
 
+# Station's local Go replacements include Note's service. Model owns generated
+# protocol inputs; the two Python files also execute in the remote reset owner.
+STATION_SOURCE_PATHS = (
+    "apps/station/", "apps/applets/note/service/", "model/",
+    "go.work", "go.work.sum",
+    "tooling/development/secure_content/schema_activation.py",
+    "tooling/development/secure_content/activation_transport.py",
+)
+
 
 def prepare_private_social_runtime(
     repo_root: Path, *, task_id: str, budget_seconds: int = 360,
+    target_profile: str | None = None, source_commit: str | None = None,
 ) -> Path:
     """One Suite reset; Profile capability authorizes it, never a Plan."""
     from tooling.acceptance.core.errors import BlockedError
 
     try:
-        return _prepare(repo_root, task_id=task_id, budget_seconds=budget_seconds)
+        return _prepare(
+            repo_root, task_id=task_id, budget_seconds=budget_seconds,
+            target_profile=target_profile, source_commit=source_commit,
+        )
     except BlockedError:
         raise
     except Exception as error:
@@ -63,7 +77,10 @@ def prepare_private_social_runtime(
         ) from error
 
 
-def _prepare(repo_root: Path, *, task_id: str, budget_seconds: int) -> Path:
+def _prepare(
+    repo_root: Path, *, task_id: str, budget_seconds: int,
+    target_profile: str | None, source_commit: str | None,
+) -> Path:
     from tooling.acceptance.core.errors import BlockedError
 
     started = time.monotonic()
@@ -74,9 +91,18 @@ def _prepare(repo_root: Path, *, task_id: str, budget_seconds: int) -> Path:
             raise RuntimeError("private Social schema preparation budget exhausted")
         return available
 
+    command_environment = dict(os.environ)
+    if target_profile is not None:
+        if target_profile not in RUNTIME_TARGETS:
+            raise BlockedError(
+                reason="private Social schema target is not in the reviewed reset allowlist",
+                resource="secure-content:runtime-schema",
+            )
+        command_environment["PT_DEV_TARGET_PROFILE"] = target_profile
     checked = subprocess.run(
         ["make", "env-check"], cwd=repo_root, capture_output=True,
         text=True, timeout=min(30, remaining()), check=True,
+        env=command_environment,
     )
     authority = json.loads(checked.stdout)
     binding, profile, source = (
@@ -94,16 +120,22 @@ def _prepare(repo_root: Path, *, task_id: str, budget_seconds: int) -> Path:
         or profile["sourceState"] != "tracked-clean"
         or profile["stationMode"] != "remote"
         or Path(binding["canonicalRoot"]).resolve() != repo_root.resolve()
+        or (target_profile is not None and profile["profile"] != target_profile)
+        or (source_commit is not None and source["head"] != source_commit)
     ):
         raise BlockedError(
             reason="private Social preparation requires an exact reviewed resettable Profile",
             resource=target.destructive_scope,
         )
     if subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=no"],
+        ["git", "status", "--porcelain", "--untracked-files=normal",
+         "--", *STATION_SOURCE_PATHS],
         cwd=repo_root, capture_output=True, text=True, timeout=10, check=True,
     ).stdout.strip():
-        raise RuntimeError("private Social preparation requires tracked-clean source")
+        raise RuntimeError(
+            "private Social preparation requires checkpoint-clean Station, "
+            "protocol and remote reset source"
+        )
     reset_id = "runtime-schema-" + uuid.uuid4().hex
     directory = (
         Path(authority["workspaceStateRoot"])

@@ -355,7 +355,7 @@ import time
 from pathlib import Path
 
 from tooling.acceptance.drivers.native.macos_ax import (
-    AXReadSession, NativeAXReadUnavailable,
+    AXReadSession, NativeAXActionUnavailable, NativeAXReadUnavailable,
 )
 
 application_services = ctypes.CDLL(
@@ -845,10 +845,8 @@ def select_visible_item(filename):
             (
                 index
                 for index in range(len(item_path) - 1, -1, -1)
-                if attribute_is_settable(
-                    item_path[index],
-                    "AXSelectedChildren",
-                )
+                if attribute_is_settable(item_path[index], "AXSelectedRows")
+                or attribute_is_settable(item_path[index], "AXSelectedChildren")
             ),
             None,
         )
@@ -856,12 +854,14 @@ def select_visible_item(filename):
             selection_container_index is None
             or selection_container_index + 1 >= len(item_path)
         ):
-            # List/column browsers that expose no mutable selection admit
-            # no list write (the panel may persist in List view); the exact
-            # PID search-commit fallback owns selection.
             raise ListSelectionUnsupported(
-                "no mutable AXSelectedChildren container"
+                "no mutable AX list selection container"
             )
+        selection_attribute = (
+            "AXSelectedRows"
+            if attribute_is_settable(item_path[selection_container_index], "AXSelectedRows")
+            else "AXSelectedChildren"
+        )
         selection_item = item_path[selection_container_index + 1]
         values = (CFRef * 1)(selection_item)
         selection = core_foundation.CFArrayCreate(
@@ -878,11 +878,11 @@ def select_visible_item(filename):
             try:
                 reads.set_attribute(
                     item_path[selection_container_index],
-                    "AXSelectedChildren",
+                    selection_attribute,
                     selection,
                 )
-            except RuntimeError as error:
-                if "AX error -25205" not in str(error):
+            except NativeAXActionUnavailable as error:
+                if error.observed["axStatus"] != -25205:
                     raise
                 raise ListSelectionUnsupported(str(error)) from error
         finally:
@@ -1882,10 +1882,34 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
             isinstance(result, dict)
             and result.get("selected") is False
             and result.get("reason") in _SEMANTIC_SELECTION_UNAVAILABLE_REASONS
+            and result.get("path") == str(target)
         ):
-            # The panel rejects exact-PID semantic selection (column list
-            # mutation, search field, or ambiguous results); the caller owns
-            # the fallback. No selection result may be invented.
+            # Only an isolated exclusive caller may use its native fallback.
+            # Semantic callers cannot commit this outcome; retain the exact
+            # reason instead of waiting for an already-unavailable selection.
+            if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+                raise BlockedError(
+                    reason=f"Native file chooser semantic selection unavailable: {result['reason']}",
+                    resource="desktop-native-file-chooser",
+                    diagnostic=ResourceDiagnostic.observed(
+                        owner="macos-native-file-chooser",
+                        resource="desktop-native-file-chooser",
+                        recovery_action=(
+                            "Repair the recorded semantic selection at the original "
+                            "Native Driver, then repeat the same prepared Journey."
+                        ),
+                        expected={
+                            "selected": True,
+                            "requestedPathSha256": hashlib.sha256(str(target).encode()).hexdigest(),
+                        },
+                        observed={
+                            "selected": False,
+                            "selectionReason": result["reason"],
+                            "targetProcessId": process_id,
+                            "inputMode": self.input_mode.value,
+                        },
+                    ),
+                )
             return None
         if (
             not isinstance(result, dict)

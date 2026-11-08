@@ -1866,12 +1866,17 @@ class LeaseWrappedSSHMaintenanceBoundary:
             "destructive_scope",
             pattern=IDENTIFIER,
         )
+        profile_id = _require_text(
+            request.get("profile_id"), "profile_id", pattern=IDENTIFIER,
+        )
         return [
             "node",
             "tooling/scripts/local-dev/machine-dev.mjs",
             "lease",
             "--workspace-root",
             str(self.repo_root),
+            "--target-profile",
+            profile_id,
             "--resource-kind",
             "station.reset",
             "--resource-id",

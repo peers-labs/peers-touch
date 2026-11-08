@@ -103,16 +103,31 @@ Binding consumes qualification and the shared picker uses the same observation
 contract for its visible trigger and exact-PID native selection. Permission,
 physical focus and HID remain separately guarded.
 
+The exact-PID selector uses the file container's actual mutable selection
+attribute. ListView exposes `AXSelectedRows` and no mutable
+`AXSelectedChildren`; requiring only the latter discards an available row and
+sends a fresh file to a Search path that can return no match. The original
+selector now uses the real row and requires native panel completion for the
+exact staged path. Run the real fresh-file regression in
+`macos_test.MacOSAccessibilityResponsivenessTests`; a native OpenPanel callback
+must independently return the same path, and the fixture bytes must remain
+unchanged. This is Driver evidence; parent Cell qualification and the actual
+Social Journey remain separate requirements.
+
 The XPC-hosted column browser advertises a mutable `AXSelectedChildren`
 but the cross-service write is rejected with -25205, and row
 `AXOpen`/`AXConfirm` do not commit a file. The exact-PID semantic fallback
 commits the panel Search field (`AXIdentifier="Search"`) with
 `AXValue` + `AXConfirm`, requires exactly one `AXFilename` match, selects
 the `AXOutline ListView` row through `AXSelectedRows`, then presses OK.
-No match, ambiguous matches, or a panel left open stay as an unavailable
-semantic sentinel rather than a fabricated selection; a unique qualification
-filename makes the single match exact and the parent still verifies path and
-file bytes. The loopback HTTP fault proxy is switched in only after the bound
+No match, ambiguous matches, or a panel left open retain their closed
+unavailable reason. The result still binds the requested staged path.
+Non-intrusive mode raises a typed Driver blocker carrying that reason and
+owner PID, without exporting the path or waiting for an unselected commit.
+Only an independently admitted exclusive caller can consume the unavailable
+sentinel through its native fallback. A unique qualification filename makes
+the single match exact and the parent still verifies path and file bytes.
+The loopback HTTP fault proxy is switched in only after the bound
 session discovers the reviewed manifest origin; Station canonical origin is
 restarted to loopback then, and restored to the public origin before any native
 restart/rebind. Launching a session against the loopback origin before the
@@ -273,3 +288,27 @@ cases in `test_native_observation_diagnostics`. Require the actual button path,
 the same propagated exception and balanced CF ownership. The complete real
 Native Journey must separately prove chooser open/select/close, exact file
 readback, unchanged operator and owned cleanup.
+
+## One-shot actions have their original operation budget
+
+The AX reader installs a 0.5-second messaging timeout for bounded observations.
+That timeout is inherited by mutations. A real Runtime Cell stopped at Search
+`AXConfirm` with `-25204` after the column browser exposed no mutable selection.
+This establishes the failing action, not whether that unknown action committed.
+
+The shared AX owner sets a mutation's messaging timeout to its original
+operation's remaining time, invokes it once, and rejects an expired reply or
+nonzero status. No action is replayed and no operation or subprocess deadline
+is extended. Read retries still use their separate short cap and shared budget.
+
+The real busy-panel regression also found the button owner exhausting its
+bounded depth-first walk inside the file list before reaching Cancel. It now
+checks controls by depth, retains the existing node/depth limits, and releases
+all retained nodes. Failed reads still propagate.
+
+Run `macos_test.AXOneShotActionTest`, the real
+`macos_test.MacOSAccessibilityResponsivenessTests`, and
+`test_file_chooser_qualification` / `test_native_desktop_macos`. Then run the
+same selected current-source Native Journey. Synthetic checks and a passing
+cancel operation cannot prove Search selection, operator preservation or
+Social product behavior.

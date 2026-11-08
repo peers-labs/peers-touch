@@ -694,6 +694,85 @@ class CrossStationSocialNativeProvisioner(
             station_profiles=station_profiles,
         )
 
+    def _provision_station_services(
+        self, manifest: RuntimeManifest,
+    ) -> dict[str, ServiceAttestation]:
+        if manifest.gate_id != "social-cross-station-native-e2e":
+            return super()._provision_station_services(manifest)
+        from tooling.acceptance.core import workspace_id
+        from tooling.development.secure_content import runtime_manifest
+        from tooling.development.secure_content.prepared_native import SCHEMA_INVENTORY_PATH
+        from tooling.development.secure_content.runtime_owner import (
+            _publish_canonical_private_schema_attestation,
+            _verify_live_canonical_private_schema_attestation,
+        )
+        from tooling.development.secure_content.runtime_schema import (
+            RUNTIME_TARGETS, prepare_private_social_runtime,
+        )
+
+        profiles = self._required_station_profiles()
+        targets = {}
+        for role, profile in profiles.items():
+            target = RUNTIME_TARGETS.get(profile)
+            if target is None:
+                raise BlockedError(
+                    reason="private Social Station is outside the physical schema reset allowlist",
+                    resource=f"service-profile:{role}",
+                )
+            targets[role] = target
+        # Deploy/reset owns its leases. Prepare both targets before retaining
+        # the Suite's source/service leases; then attest again under those locks.
+        paths = {
+            role: prepare_private_social_runtime(
+                REPO_ROOT, task_id=manifest.gate_id, target_profile=profile,
+                source_commit=manifest.source_commit,
+            )
+            for role, profile in profiles.items()
+        }
+        services = super()._provision_station_services(manifest)
+        inventory = {
+            "artifactKind": "private-social-schema-inventory",
+            "runId": manifest.run_id,
+            "workspaceId": workspace_id(REPO_ROOT),
+            "sourceCommit": manifest.source_commit,
+            "services": {},
+        }
+        for role, service in services.items():
+            target = targets[role]
+            binding = runtime_manifest.load_canonical_private_schema_attestation(
+                paths[role], repo_root=REPO_ROOT,
+                source_commit=manifest.source_commit,
+                workspace_id=inventory["workspaceId"],
+                service_id=target.service_id, profile_id=target.profile_id,
+                deployment_environment=target.deployment_environment,
+                station_runtime_identity=service.runtime_identity,
+                service_attestation_digest=runtime_manifest.schema_service_attestation_binding_digest(
+                    target.service_id, {
+                        "kind": service.service_kind,
+                        "deployment_environment": service.deployment_environment,
+                        "schema_attestation_endpoint": service.endpoint,
+                        "live_commit": service.live_commit,
+                        "protocol_digest": service.protocol_digest,
+                        "runtime_identity": service.runtime_identity,
+                    },
+                ),
+            )
+            _verify_live_canonical_private_schema_attestation(binding, repo_root=REPO_ROOT)
+            reference = _publish_canonical_private_schema_attestation(
+                self.evidence_run.run_dir, target.service_id, binding,
+            )
+            inventory["services"][role] = {
+                "profileId": target.profile_id,
+                "physicalServiceId": target.service_id,
+                "deploymentEnvironment": target.deployment_environment,
+                "attestationRef": reference,
+                "serviceAttestationRef": service.artifact_ref,
+            }
+        self.evidence_run.write_json(
+            SCHEMA_INVENTORY_PATH, inventory, role="private-social-schema-inventory",
+        )
+        return services
+
     def _resolve_active_profile(self) -> tuple[str, Path, int, dict[str, str]]:
         profile, profile_path, slot, environment = (
             super()._resolve_active_profile()

@@ -74,7 +74,7 @@ def _validate_attached_suite(
         reuse.get("provisioningRuns") != 1
         or reuse.get("clientLaunches") != 3
         or reuse.get("maxConcurrentNativeClients", 99) > 2
-        or reuse.get("newAccountRegistrations") != 3
+        or reuse.get("newAccountRegistrations") != 0
         or reuse.get("stationBuilds") != 0
         or reuse.get("stationDeployments") != 0
         or reuse.get("desktopBuilds") != 0
@@ -253,14 +253,15 @@ class SocialPrivateDesktopGate(AcceptanceGate):
         "docs/architecture/domains/social/core/experience-contract.md",
         "docs/architecture/domains/social/core/product-state-model.md",
         "docs/architecture/domains/social/core/acceptance-matrix.md",
-        "docs/architecture/domains/social/cross-station/execution-plans/"
-        "20261003-native-private-social/plan.md",
+        "docs/architecture/domains/social/cross-station/integration.md",
         "docs/architecture/domains/social/federation/interaction-completion.md",
     )
 
     def run(self) -> dict[str, Any]:
         commands = run_source_commands(self, SOURCE_COMMANDS)
-        result = load_suite_result()
+        result = load_suite_result(
+            consumer_gate_id=self.gate_id, execution_policy=self.e2e_preflight["executionPolicy"],
+        )
         same_station, resource_reuse, runtime_manifest = (
             _validate_attached_suite(result.payload)
         )
