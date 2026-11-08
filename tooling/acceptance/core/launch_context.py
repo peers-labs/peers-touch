@@ -898,9 +898,7 @@ class EphemeralGateLaunchContext:
                     endpoint,
                     self._max_frame_bytes,
                     stop=self._stop,
-                    deadline_monotonic=(
-                        time.monotonic() + self._request_timeout_seconds
-                    ),
+                    frame_timeout_seconds=self._request_timeout_seconds,
                 )
                 if request.get("type") == "close":
                     if set(request) != {"type", *identity} or any(
@@ -1791,13 +1789,30 @@ def _recv_frame(
     *,
     stop: Optional[threading.Event] = None,
     deadline_monotonic: Optional[float] = None,
+    frame_timeout_seconds: Optional[float] = None,
 ) -> Mapping[str, Any]:
-    prefix = _recv_exact(
-        endpoint,
-        _LENGTH_PREFIX.size,
-        stop=stop,
-        deadline_monotonic=deadline_monotonic,
-    )
+    if frame_timeout_seconds is not None:
+        if deadline_monotonic is not None or not _is_positive_finite_timeout(frame_timeout_seconds):
+            raise EphemeralLaunchProtocolError(
+                "ephemeral frame timeout is invalid",
+                operation="frame",
+            )
+        # An authenticated channel may idle during the product Journey.
+        # The first byte starts one budget for the remaining prefix and body;
+        # a partial prefix cannot turn into an unbounded idle wait.
+        first = _recv_exact(endpoint, 1, stop=stop, deadline_monotonic=None)
+        deadline_monotonic = time.monotonic() + float(frame_timeout_seconds)
+        prefix = first + _recv_exact(
+            endpoint, _LENGTH_PREFIX.size - 1,
+            stop=stop, deadline_monotonic=deadline_monotonic,
+        )
+    else:
+        prefix = _recv_exact(
+            endpoint,
+            _LENGTH_PREFIX.size,
+            stop=stop,
+            deadline_monotonic=deadline_monotonic,
+        )
     (length,) = _LENGTH_PREFIX.unpack(prefix)
     if length < 1 or length > max_frame_bytes:
         raise EphemeralLaunchProtocolError(

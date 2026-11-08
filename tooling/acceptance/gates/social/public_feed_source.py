@@ -10,6 +10,11 @@ from .cross_station_support import SourceCommand, run_source_commands
 
 COMMANDS = (
     SourceCommand(
+        name="public-feed-notification-channel",
+        argv=("python3", "-m", "unittest",
+              "tooling.acceptance.tests.test_launch_context.LaunchContextProtocolTests"),
+    ),
+    SourceCommand(
         name="public-feed-notification-parent",
         argv=("python3", "-m", "unittest",
               "tooling.acceptance.tests.test_social_feed_notification",

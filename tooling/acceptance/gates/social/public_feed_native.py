@@ -625,6 +625,7 @@ class Gate(DeviceSearchGate):
             return bool(control
                 and control.get_attribute("data-comment-like-count") == str(count)
                 and control.get_attribute("aria-pressed") == str(liked).lower()
+                and control.get_attribute("aria-disabled") != "true"
                 and control.get_attribute("disabled") is None)
         wait_until(settled, f"{actor} confirmed comment LIKE {count}/{liked}", timeout=120)
         return selector
@@ -652,7 +653,16 @@ class Gate(DeviceSearchGate):
         self.click("alice", '[data-acceptance-id="social-compose-poll"]')
         invalid = self.visible_element("alice", '[data-acceptance-id="social-composer-publish"]')
         self.assert_condition(f"{text}-empty-poll-publication-disabled", invalid is not None
-                              and invalid.get_attribute("disabled") is not None)
+                              and (invalid.get_attribute("aria-disabled") == "true"
+                                   or invalid.get_attribute("disabled") is not None))
+        before = self.action("alice", "publicFeedStatus")
+        self.click("alice", '[data-acceptance-id="social-composer-publish"]')
+        after = self.action("alice", "publicFeedStatus")
+        question = self.visible_element("alice", '[data-acceptance-id="social-poll-question"]')
+        self.assert_condition(f"{text}-empty-poll-activation-rejected",
+            question is not None and question.get_attribute("value") == ""
+            and before["pendingCount"] == after["pendingCount"] == 0
+            and before["verifiedSequence"] == after["verifiedSequence"])
         self.set_input("alice", '[data-acceptance-id="social-poll-question"]', text + " question")
         for index in range(2):
             self.set_input("alice", f'[data-acceptance-id="social-poll-draft-option-{index}"]', f"Option {index}")

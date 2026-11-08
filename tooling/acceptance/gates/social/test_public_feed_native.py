@@ -20,6 +20,48 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class PublicFeedNativeEntryTest(unittest.TestCase):
+    def test_original_poll_checks_peer_availability_and_real_empty_activation(self):
+        for disabled, aria_disabled, accepted in (
+            (None, "true", True), ("true", None, True),
+            (None, "false", False), (None, None, False),
+        ):
+            with self.subTest(disabled=disabled, aria_disabled=aria_disabled):
+                gate = object.__new__(Gate)
+                question = {"value": ""}
+                publish = Mock()
+                publish.get_attribute.side_effect = {
+                    "disabled": disabled, "aria-disabled": aria_disabled,
+                }.get
+                field = Mock()
+                field.get_attribute.side_effect = question.get
+                card = Mock()
+                card.get_attribute.return_value = "actual-object"
+                gate.visible_element = Mock(side_effect=lambda actor, selector:
+                    field if selector.endswith('="social-poll-question"]') else publish)
+                gate.click = Mock()
+                gate.action = Mock(return_value={"pendingCount": 0, "verifiedSequence": "7"})
+                gate.await_card = Mock(return_value=card)
+                gate.set_input = Mock(side_effect=lambda actor, selector, value:
+                    question.update(value=value) if selector.endswith('="social-poll-question"]') else None)
+
+                def assert_condition(name, condition, *args):
+                    if not condition:
+                        raise GateError(name)
+
+                gate.assert_condition = assert_condition
+                if not accepted:
+                    with self.assertRaisesRegex(GateError, "empty-poll-publication-disabled"):
+                        gate.create_poll("original-poll")
+                    gate.action.assert_not_called()
+                    continue
+                self.assertEqual(gate.create_poll("original-poll"), {
+                    "alice": "actual-object", "bob": "actual-object",
+                })
+                self.assertEqual(gate.action.call_count, 2)
+                self.assertEqual(gate.click.call_args_list.count(
+                    unittest.mock.call("alice", '[data-acceptance-id="social-composer-publish"]'),
+                ), 2)
+
     def test_original_runner_accepts_the_capability_catalog_launch(self):
         runner = runpy.run_path(str(ROOT / "tooling/scripts/acceptance-run.py"))
         definition = runner["load_gate_definitions"](ROOT / "tooling/acceptance/gates.yaml")[GATE_ID]
