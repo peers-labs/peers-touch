@@ -30,6 +30,7 @@ const commandMocks = vi.hoisted(() => ({
   recoverWithNativeInput: vi.fn(),
   react: vi.fn(),
   unreact: vi.fn(),
+  pollVote: vi.fn(),
   reactionRetry: vi.fn(),
   commentSubmit: vi.fn(),
   comments: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock('../services/mobileCommands', async (importOriginal) => {
     privateSocialRead: commandMocks.readMoment,
     privateSocialReadText: commandMocks.readText,
     privateSocialReact: commandMocks.react,
+    privateSocialPollVote: commandMocks.pollVote,
     privateSocialReactionRetry: commandMocks.reactionRetry,
     privateSocialRecoverWithNativeInput: commandMocks.recoverWithNativeInput,
     privateSocialReconcile: commandMocks.reconcile,
@@ -78,6 +80,7 @@ import {
   reconcilePrivateMoments,
   setPrivateMomentReaction,
   retryPrivateMomentReaction,
+  votePrivateMomentPoll,
   subscribePrivateMomentsRuntime,
   submitPrivateComment,
   trackPublicMomentPublish,
@@ -824,6 +827,76 @@ describe('privateMomentsRuntime projection', () => {
       projectionRevision: revision, exactReplay: false,
     };
   }
+
+  function pollParent(): PrivateMomentReadProjection {
+    return { ...readProjection('post-a', '1', 'CONTENT_READY'),
+      content: { kind: 'POLL', text: 'Parent', question: 'Choose', options: ['B', 'A'],
+        opaqueOptionIds: ['22'.repeat(32), '11'.repeat(32)], optionSetSha256: '33'.repeat(32),
+        minChoices: 1, maxChoices: 2, expiresAtSeconds: 4_000_000_000 } };
+  }
+
+  function pollResult(state = 'REACTION_COMMITTED', revision = '2') {
+    return { command: { commandId: 'ballot', postId: 'post-a', commentId: '', kind: 0,
+      operation: 'VOTE_POLL' as const, selectedOpaqueOptionIds: ['22'.repeat(32)],
+      state: state as 'REACTION_COMMITTED' | 'REACTION_UNKNOWN_OUTCOME', attemptCount: 1, projectionRevision: revision },
+      reactions: [], projectionRevision: revision, exactReplay: false,
+      poll: { voteCounts: ['1', '0'], selectedOptions: [0], voterCount: '1', projectionRevision: revision,
+        commandId: 'ballot', voteActorPtid: 'ptid:alice' } };
+  }
+
+  it('shares complete private ballots, preserves confirmed counts and retries the exact unknown command', async () => {
+    await activateCommentReactions();
+    commandMocks.readMoment.mockResolvedValue(pollParent());
+    await readPrivateMoment('post-a');
+    let complete!: (result: ReturnType<typeof pollResult>) => void;
+    commandMocks.pollVote.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const first = votePrivateMomentPoll('post-a', [0]);
+    const second = votePrivateMomentPoll('post-a', [0]);
+    await expect(votePrivateMomentPoll('post-a', [1])).rejects.toThrow('reactionPending');
+    expect(commandMocks.pollVote).toHaveBeenCalledOnce();
+    expect(readPrivateMomentsSnapshot().postsById['post-a'].content).not.toHaveProperty('result');
+    complete(pollResult('REACTION_UNKNOWN_OUTCOME'));
+    await Promise.all([first, second]);
+    await expect(votePrivateMomentPoll('post-a', [1])).rejects.toThrow('reactionPending');
+    commandMocks.reactionRetry.mockResolvedValue(pollResult());
+    await votePrivateMomentPoll('post-a', [0]);
+    expect(commandMocks.reactionRetry).toHaveBeenCalledWith(expect.objectContaining({ commandId: 'ballot' }));
+    expect(commandMocks.pollVote).toHaveBeenCalledOnce();
+    await readPrivateMoment('post-a');
+    expect(readPrivateMomentsSnapshot().postsById['post-a'].content).toMatchObject({
+      result: { selectedOptions: [0], voteCounts: ['1', '0'], projectionRevision: '2' },
+    });
+    expect(readPrivateMomentsSnapshot().comments.every(comment => comment.reactionsCount === 0)).toBe(true);
+  });
+
+  it('rejects private ballot selection substitution and late fenced completion', async () => {
+    await activateCommentReactions();
+    commandMocks.readMoment.mockResolvedValue(pollParent());
+    await readPrivateMoment('post-a');
+    commandMocks.pollVote.mockResolvedValue({ ...pollResult(),
+      command: { ...pollResult().command, selectedOpaqueOptionIds: ['11'.repeat(32)] } });
+    await expect(votePrivateMomentPoll('post-a', [0])).rejects.toThrow('reactionResultIdentityMismatch');
+    let complete!: (result: ReturnType<typeof pollResult>) => void;
+    commandMocks.pollVote.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const pending = votePrivateMomentPoll('post-a', [0]);
+    await Promise.resolve();
+    fencePrivateMomentsRuntimeProjection();
+    complete(pollResult());
+    await expect(pending).rejects.toThrow('staleReactionCompletion');
+    expect(readPrivateMomentsSnapshot().postsById).toEqual({});
+  });
+
+  it('keeps private poll revision monotonic and refuses equal revision drift or definition replacement', () => {
+    const old = pollParent();
+    old.content = { ...old.content as Extract<NonNullable<PrivateMomentReadProjection['content']>, { kind: 'POLL' }>, result: pollResult().poll };
+    const incoming = pollParent();
+    expect(mergeReadProjectionMap({ 'post-a': old }, [incoming])['post-a'].content).toEqual(old.content);
+    incoming.content = { ...incoming.content as Extract<NonNullable<PrivateMomentReadProjection['content']>, { kind: 'POLL' }>,
+      result: { ...pollResult().poll, commandId: 'drift' } };
+    expect(() => mergeReadProjectionMap({ 'post-a': old }, [incoming])).toThrow('pollRevisionConflict');
+    incoming.content = { ...incoming.content, opaqueOptionIds: ['11'.repeat(32), '22'.repeat(32)] };
+    expect(() => mergeReadProjectionMap({ 'post-a': old }, [incoming])).toThrow('pollDefinitionConflict');
+  });
 
   it('shares completion for the same comment and rejects the opposite pending action', async () => {
     await activateCommentReactions();

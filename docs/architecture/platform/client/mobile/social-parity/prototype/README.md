@@ -51,6 +51,8 @@ It covers:
 - Circle create/rename/delete/member management and Profile Block;
 - text/image/video/link/poll/repost/location rendering with capability-gated creation;
 - public/private inline Comment/reply and Reaction;
+- private single/multiple-choice ballots with explicit submit, whole-ballot replacement,
+  confirmed counts and local selection cancellation through the shared peers-ui `MomentPoll`;
 - remote pending/retrying/source-unavailable;
 - recovery-required, integrity failure and deleted/revoked;
 - stable Feed, overlay and true-route geometry.
@@ -170,3 +172,11 @@ same primary action hierarchy through `AccessGateHost.test.ts`.
 - Browser rendering does not prove safe area, keyboard, crypto, lifecycle or performance;
 - dark theme is not claimed until implemented and captured;
 - production iOS/Android evidence remains governed by `acceptance-matrix.md`.
+- Poll selection/counts in the prototype are controlled local state. Current-source
+  `UX_REVIEW` at 390x844, 554x954 and 1440x1100 verifies explicit submit, unchanged
+  counts before submit, whole-ballot replacement with one retained voter, cancellation,
+  disabled invalid/same selections, zero horizontal overflow and zero page errors.
+  Screenshots were visually inspected; report and source digests:
+  `/tmp/peers-social-private-poll-visual/report.json`.
+  The IC-J02/03 production path uses the original Native signed journal and permission
+  owner; Native proof remains `UNPROVEN` until its current-source run is recorded.

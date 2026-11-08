@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import {
-  BarChart3,
   Link as LinkIcon,
   MapPin,
   Play,
@@ -10,6 +9,7 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { Post } from '../../gen/proto/domain/social/post_pb';
 import { MomentImage } from './MomentImage';
+import { MomentPoll } from './MomentPoll';
 
 export type OpenMomentMedia = (
   postId: string,
@@ -141,14 +141,7 @@ export function MomentContent({ post, onOpenMedia }: MomentContentProps) {
       ) : null}
 
       {post.content.case === 'pollPost' && post.content.value.poll ? (
-        <div className="moments-poll">
-          <strong>
-            <BarChart3 size={16} /> {post.content.value.poll.question}
-          </strong>
-          {post.content.value.poll.options.map((option, index) => (
-            <span key={`${index}:${option}`}>{option}</span>
-          ))}
-        </div>
+        <MomentPoll post={post} />
       ) : null}
 
       {post.content.case === 'repostPost' ? (

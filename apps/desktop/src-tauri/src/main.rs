@@ -874,6 +874,7 @@ fn main() {
             social::social_private_moment_purge,
             social::social_private_moments_teardown,
             social::social_private_react,
+            social::social_private_poll_vote,
             social::social_private_unreact,
             social::social_private_reaction_retry,
             social::social_private_comments_bootstrap,

@@ -119,7 +119,7 @@ func (s *PrivateContentService) ReactPrivateMoment(
 	); err != nil {
 		return nil, err
 	}
-	result, exactReplay, err := s.routePrivateReaction(
+	result, exactReplay, err := s.routePrivateInteraction(
 		ctx,
 		author,
 		request.GetPostId(),
@@ -164,7 +164,7 @@ func (s *PrivateContentService) UnreactPrivateMoment(
 	); err != nil {
 		return nil, err
 	}
-	result, exactReplay, err := s.routePrivateReaction(
+	result, exactReplay, err := s.routePrivateInteraction(
 		ctx,
 		author,
 		request.GetPostId(),
@@ -194,20 +194,20 @@ func (s *PrivateContentService) UnreactPrivateMoment(
 	return response, nil
 }
 
-// Local and federated reactions use the same signed command, mutation and
+// Local and federated interactions use the same signed command, mutation and
 // result journal. Local delivery omits only the inter-Station transport.
-func (s *PrivateContentService) routePrivateReaction(
+func (s *PrivateContentService) routePrivateInteraction(
 	ctx context.Context,
 	author socialdomain.PrivateContentAuthor,
 	postID, commandID string,
 	operation privatecontentpb.FederatedPrivateInteractionOperation,
 	request proto.Message,
 ) (*privatecontentpb.FederatedPrivateInteractionResult, bool, error) {
-	const operationName = "social.private_content.route_reaction"
+	const operationName = "social.private_content.route_interaction"
 	if s.interactionStore == nil || s.localStationPeerID == "" ||
 		author.HomeStationPeerID != s.localStationPeerID {
 		return nil, false, socialdomain.NewPrivateContentError(
-			socialdomain.PrivateContentIntegrationGap, operationName, "dependencies", "private reaction routing is unavailable")
+			socialdomain.PrivateContentIntegrationGap, operationName, "dependencies", "private interaction routing is unavailable")
 	}
 	remote, err := s.IsRemotePrivateMoment(ctx, postID, author.Endpoint.GetActor().GetPtid())
 	if err != nil {
@@ -233,7 +233,7 @@ func (s *PrivateContentService) routePrivateReaction(
 	err = s.store.Execute(ctx, func(tx infrastructure.PrivateContentTransaction) error {
 		transaction := tx.ContentPreKeyValidationTransaction()
 		parent, err := s.interactionStore.FindLocalPrivateReactionParent(ctx, transaction, postID,
-			privateReactionCommentID(request), author.Endpoint.GetActor().GetPtid())
+			privateInteractionCommentID(request), author.Endpoint.GetActor().GetPtid())
 		if err != nil {
 			return mapPrivateStoreError(operationName, err)
 		}
@@ -425,10 +425,11 @@ func (s *PrivateContentService) routeFederatedPrivateInteraction(
 			return infrastructure.ErrPrivateContentConflict
 		}
 		if operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT ||
-			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT {
+			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT ||
+			operation == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL {
 			if err := s.interactionStore.ValidateRemotePrivateReactionParent(ctx, federationTx,
 				authority.SourceStationPeerID, s.localStationPeerID, authority.FederationID,
-				authority.Parent, privateReactionCommentID(request), author.Endpoint.GetActor().GetPtid(),
+				authority.Parent, privateInteractionCommentID(request), author.Endpoint.GetActor().GetPtid(),
 				author.Endpoint.GetDeviceId()); err != nil {
 				return err
 			}
@@ -565,8 +566,9 @@ func (s *PrivateContentService) ReceiveFederatedPrivateInteractionCommand(
 			), nil
 		}
 		if command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT ||
-			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT {
-			commentID, err := privateReactionCommandCommentID(command)
+			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT ||
+			command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL {
+			commentID, err := privateInteractionCommandCommentID(command)
 			if err != nil {
 				return federationdelivery.TerminalResult(federationdelivery.FrameErrorDomainRejected), nil
 			}
@@ -593,6 +595,12 @@ func (s *PrivateContentService) ReceiveFederatedPrivateInteractionCommand(
 		return federationdelivery.DuplicateResult(), nil
 	}
 
+	// A rejected command must not commit an earlier mutation if projection or
+	// fanout later fails. The original delivery UOW still owns the result journal.
+	const executionSavepoint = "social_private_interaction_execution"
+	if err := transaction.DB().SavePoint(executionSavepoint).Error; err != nil {
+		return federationdelivery.Result{}, err
+	}
 	canonicalResult, executeErr := s.executeFederatedPrivateInteraction(
 		ctx,
 		transaction,
@@ -600,6 +608,9 @@ func (s *PrivateContentService) ReceiveFederatedPrivateInteractionCommand(
 	)
 	resultKind := privatecontentpb.FederatedPrivateInteractionResultKind_FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_COMMITTED
 	if executeErr != nil {
+		if err := transaction.DB().RollbackTo(executionSavepoint).Error; err != nil {
+			return federationdelivery.Result{}, err
+		}
 		if federatedPrivateInteractionRetryable(executeErr) {
 			s.observeFederatedPrivateInteraction(
 				startedAt,
@@ -805,6 +816,12 @@ func (s *PrivateContentService) ReceiveFederatedPrivateInteractionResult(
 			result.GetCanonicalResult(),
 			frame,
 		); err != nil {
+			return deliveryResultForPrivateContentError(err), nil
+		}
+	}
+	if result.GetKind() == privatecontentpb.FederatedPrivateInteractionResultKind_FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_COMMITTED &&
+		command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL {
+		if err := s.importPrivatePollResult(ctx, transaction, command, result.GetCanonicalResult(), frame); err != nil {
 			return deliveryResultForPrivateContentError(err), nil
 		}
 	}
@@ -1084,6 +1101,17 @@ func (s *PrivateContentService) executeFederatedPrivateInteraction(
 			CommentId:          request.GetCommentId(),
 			ProjectionRevision: response.ProjectionRevision,
 		})
+	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL:
+		request := &privatecontentpb.VotePrivatePollRequest{}
+		if err := proto.Unmarshal(command.GetCanonicalOperation(), request); err != nil {
+			return nil, socialdomain.WrapPrivateContentError(socialdomain.PrivateContentInvalidArgument,
+				"social.private_content.decode_poll", err)
+		}
+		response, err := bound.executePrivatePoll(ctx, transaction, command, request)
+		if err != nil {
+			return nil, err
+		}
+		return socialdomain.CanonicalProtoBytes(response)
 	default:
 		return nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentUnsupported,
@@ -1340,6 +1368,17 @@ func (s *PrivateContentService) validateFederatedPrivateInteractionCommand(
 			)
 		}
 		signedRequest = request
+	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL:
+		request := &privatecontentpb.VotePrivatePollRequest{}
+		if err := proto.Unmarshal(command.GetCanonicalOperation(), request); err != nil ||
+			socialdomain.ValidateVotePrivatePollRequest(request, operation) != nil ||
+			request.GetPostId() != command.GetParent().GetContentId() ||
+			request.GetCommandId() != command.GetCommandId() ||
+			request.GetActorSigningKeyId() != command.GetActorSigningKeyId() ||
+			!bytes.Equal(request.GetActorDeviceSignature(), command.GetActorDeviceSignature()) {
+			return socialdomain.NewPrivateContentError(socialdomain.PrivateContentInvalidArgument, operation, "canonical_operation", "is not the bound ballot")
+		}
+		signedRequest = request
 	default:
 		return socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentUnsupported,
@@ -1515,6 +1554,8 @@ func federatedPrivateInteractionRequestSignature(
 		return request.GetActorSigningKeyId(),
 			append([]byte(nil), request.GetActorDeviceSignature()...),
 			nil
+	case *privatecontentpb.VotePrivatePollRequest:
+		return request.GetActorSigningKeyId(), append([]byte(nil), request.GetActorDeviceSignature()...), nil
 	default:
 		return "", nil, socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentUnsupported,
@@ -1573,6 +1614,10 @@ func canonicalFederatedPrivateInteractionRequestSigningBytes(
 		unsigned = cloned
 	case *actormodel.UnreactToPostRequest:
 		cloned := proto.Clone(request).(*actormodel.UnreactToPostRequest)
+		cloned.ActorDeviceSignature = nil
+		unsigned = cloned
+	case *privatecontentpb.VotePrivatePollRequest:
+		cloned := proto.Clone(request).(*privatecontentpb.VotePrivatePollRequest)
 		cloned.ActorDeviceSignature = nil
 		unsigned = cloned
 	default:
@@ -1958,7 +2003,7 @@ func federatedPrivateReactionStateMatches(
 	return removed
 }
 
-func privateReactionCommentID(request proto.Message) string {
+func privateInteractionCommentID(request proto.Message) string {
 	switch request := request.(type) {
 	case *actormodel.ReactToPostRequest:
 		return request.GetCommentId()
@@ -1969,20 +2014,22 @@ func privateReactionCommentID(request proto.Message) string {
 	}
 }
 
-func privateReactionCommandCommentID(command *privatecontentpb.FederatedPrivateInteractionCommand) (string, error) {
+func privateInteractionCommandCommentID(command *privatecontentpb.FederatedPrivateInteractionCommand) (string, error) {
 	var request proto.Message
 	switch command.GetOperation() {
 	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT:
 		request = &actormodel.ReactToPostRequest{}
 	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT:
 		request = &actormodel.UnreactToPostRequest{}
+	case privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL:
+		request = &privatecontentpb.VotePrivatePollRequest{}
 	default:
 		return "", infrastructure.ErrPrivateContentInvalid
 	}
 	if err := proto.Unmarshal(command.GetCanonicalOperation(), request); err != nil {
 		return "", err
 	}
-	return privateReactionCommentID(request), nil
+	return privateInteractionCommentID(request), nil
 }
 
 func (s *PrivateContentService) privateMomentPostProjection(

@@ -1327,6 +1327,9 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // -------------------------------------------------------------------------
 
   votePoll: (postId, options) => {
+    if (isPrivateMomentMutation(postId, get().postsById[postId])) {
+      return usePrivateMomentsStore.getState().votePoll(postId, options).then(() => undefined);
+    }
     const retained = get().pollCommands[postId];
     const same = retained?.options.length === options.length
       && retained.options.every((option, index) => option === options[index]);
@@ -1370,6 +1373,10 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   },
 
   retryPoll: (postId) => {
+    if (isPrivateMomentMutation(postId, get().postsById[postId])) {
+      return usePrivateMomentsStore.getState().retryReaction(postId, '', ReactionKind.REACTION_UNSPECIFIED)
+        .then(() => undefined);
+    }
     const retained = get().pollCommands[postId];
     if (!retained) return Promise.reject(new Error('FEED_POLL_TARGET_UNAVAILABLE'));
     return get().votePoll(postId, retained.options);

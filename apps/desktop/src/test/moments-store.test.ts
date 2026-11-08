@@ -1167,6 +1167,8 @@ describe('moments store: createPost / deletePost', () => {
           text: 'private poll',
           question: 'Choose one',
           options: ['First', 'Second'],
+          opaque_option_ids: ['11'.repeat(32), '22'.repeat(32)],
+          option_set_sha256: '77'.repeat(32),
           min_choices: 1,
           max_choices: 1,
           expires_at_seconds: expiresAtSeconds,
@@ -2819,7 +2821,7 @@ describe('moments store: reactions', () => {
       }));
 
     await useMomentsStore.getState().reactToPost('p1', ReactionKind.REACTION_LIKE);
-    expect(react).toHaveBeenCalledWith('p1', ReactionKind.REACTION_LIKE);
+    expect(react).toHaveBeenCalledWith('p1', ReactionKind.REACTION_LIKE, expect.any(String));
 
     expect(useMomentsStore.getState().reactions['p1']?.length).toBe(1);
     expect(useMomentsStore.getState().reactions['p1']?.[0]?.kind).toBe(

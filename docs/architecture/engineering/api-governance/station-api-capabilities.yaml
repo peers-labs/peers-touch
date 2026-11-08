@@ -28,6 +28,7 @@ governed_prefixes:
   - /api/v1/social/friend-requests
   - /api/v1/social/moments/remote-private
   - /api/v1/social/moments/read-policy
+  - /api/v1/social/moments/:post_id/poll/vote
   - /api/v1/social/search/
   - /api/v1/social/feed/
   - /api/v1/social/relationships/block
@@ -768,6 +769,18 @@ capabilities:
     request_proto: peers_touch.model.social.feed.v1.SubmitFeedEventRequest
     response_proto: peers_touch.model.social.feed.v1.SubmitFeedEventResponse
     truth_stores: [social_feed_chains, social_feed_events, social_feed_fanout]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: social.private_poll.vote
+    domain_owner: station.social
+    truth_owner: social.private_content
+    exposure: client
+    canonical_route: { method: POST, path: "/api/v1/social/moments/:post_id/poll/vote" }
+    request_proto: peers_touch.model.social.v1.VotePrivatePollRequest
+    response_proto: peers_touch.model.social.v1.VotePrivatePollResponse
+    truth_stores: [social_remote_private_commands]
     allowed_dependencies: []
     forbidden_aliases: []
     superseded_symbols: []

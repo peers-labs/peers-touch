@@ -1,4 +1,4 @@
-"""Source-authoritative Comment and Reaction Gate."""
+"""Source-authoritative private Comment, Reaction and Poll Gate."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from tooling.acceptance.core import AcceptanceGate
 from .cross_station_support import SourceCommand, run_source_commands
 
 
-TEST_PATTERN = "^TestFederatedPrivate(Comment|Reaction)"
+TEST_PATTERN = "^TestFederatedPrivate(Comment|Reaction|Poll)"
 COMMANDS = (
     SourceCommand(
         name="interaction-test-discovery",
@@ -39,25 +39,17 @@ COMMANDS = (
         timeout_seconds=900,
     ),
     SourceCommand(
-        name="interaction-comment-rust",
+        name="interaction-private-rust",
         argv=(
             "cargo",
             "test",
             "--manifest-path",
             "apps/desktop/src-tauri/Cargo.toml",
-            "private_comment",
-            "--no-fail-fast",
-        ),
-        timeout_seconds=900,
-    ),
-    SourceCommand(
-        name="interaction-reaction-rust",
-        argv=(
-            "cargo",
-            "test",
-            "--manifest-path",
-            "apps/desktop/src-tauri/Cargo.toml",
-            "private_reaction",
+            "--locked",
+            "--bin",
+            "peers-touch-desktop",
+            "--no-default-features",
+            "private_",
             "--no-fail-fast",
         ),
         timeout_seconds=900,
@@ -73,8 +65,9 @@ COMMANDS = (
             "run",
             "src/test/moments-store.test.ts",
             "src/runtimes/momentsRuntime.test.ts",
+            "src/acceptance/moments/harness.test.ts",
             "-t",
-            "comment|reaction|eventBus|pending|retry",
+            "comment|reaction|ballot|poll|eventBus|pending|retr",
         ),
         timeout_seconds=600,
         required_output_pattern=r"Tests\s+[1-9][0-9]* passed",
@@ -99,6 +92,7 @@ class Gate(AcceptanceGate):
             "provenScope": [
                 "source-authoritative Comment prepare/submit/replay",
                 "source-authoritative Reaction and unreaction convergence",
+                "source-authoritative private Poll signature, replacement, replay and projection",
             ],
             "unprovenScope": ["Native Alice/Bob interaction visibility"],
         }

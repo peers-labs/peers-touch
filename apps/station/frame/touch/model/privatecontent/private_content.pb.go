@@ -2570,12 +2570,15 @@ func (*PrivateRepostAuthority_PublicSource) isPrivateRepostAuthority_SourceProof
 func (*PrivateRepostAuthority_PrivateSource) isPrivateRepostAuthority_SourceProof() {}
 
 type VotePrivatePollRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	PostId          string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
-	OpaqueOptionIds [][]byte               `protobuf:"bytes,2,rep,name=opaque_option_ids,json=opaqueOptionIds,proto3" json:"opaque_option_ids,omitempty"`
-	CommandId       string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	PostId               string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	OpaqueOptionIds      [][]byte               `protobuf:"bytes,2,rep,name=opaque_option_ids,json=opaqueOptionIds,proto3" json:"opaque_option_ids,omitempty"`
+	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	OptionSetSha256      []byte                 `protobuf:"bytes,4,opt,name=option_set_sha256,json=optionSetSha256,proto3" json:"option_set_sha256,omitempty"`
+	ActorSigningKeyId    string                 `protobuf:"bytes,5,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
+	ActorDeviceSignature []byte                 `protobuf:"bytes,6,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *VotePrivatePollRequest) Reset() {
@@ -2627,6 +2630,27 @@ func (x *VotePrivatePollRequest) GetCommandId() string {
 		return x.CommandId
 	}
 	return ""
+}
+
+func (x *VotePrivatePollRequest) GetOptionSetSha256() []byte {
+	if x != nil {
+		return x.OptionSetSha256
+	}
+	return nil
+}
+
+func (x *VotePrivatePollRequest) GetActorSigningKeyId() string {
+	if x != nil {
+		return x.ActorSigningKeyId
+	}
+	return ""
+}
+
+func (x *VotePrivatePollRequest) GetActorDeviceSignature() []byte {
+	if x != nil {
+		return x.ActorDeviceSignature
+	}
+	return nil
 }
 
 type PrivateMomentDomainBinding struct {
@@ -3138,13 +3162,15 @@ func (x *SubmitPrivateContentHashInput) GetSubtypeAuthoritySha256() []byte {
 }
 
 type VotePrivatePollHashInput struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	FormatVersion   uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
-	CommandId       string                 `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
-	PostId          string                 `protobuf:"bytes,3,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
-	OpaqueOptionIds [][]byte               `protobuf:"bytes,4,rep,name=opaque_option_ids,json=opaqueOptionIds,proto3" json:"opaque_option_ids,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	FormatVersion     uint32                 `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	CommandId         string                 `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	PostId            string                 `protobuf:"bytes,3,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	OpaqueOptionIds   [][]byte               `protobuf:"bytes,4,rep,name=opaque_option_ids,json=opaqueOptionIds,proto3" json:"opaque_option_ids,omitempty"`
+	OptionSetSha256   []byte                 `protobuf:"bytes,5,opt,name=option_set_sha256,json=optionSetSha256,proto3" json:"option_set_sha256,omitempty"`
+	ActorSigningKeyId string                 `protobuf:"bytes,6,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *VotePrivatePollHashInput) Reset() {
@@ -3205,12 +3231,31 @@ func (x *VotePrivatePollHashInput) GetOpaqueOptionIds() [][]byte {
 	return nil
 }
 
+func (x *VotePrivatePollHashInput) GetOptionSetSha256() []byte {
+	if x != nil {
+		return x.OptionSetSha256
+	}
+	return nil
+}
+
+func (x *VotePrivatePollHashInput) GetActorSigningKeyId() string {
+	if x != nil {
+		return x.ActorSigningKeyId
+	}
+	return ""
+}
+
 type PrivatePollProjection struct {
-	state         protoimpl.MessageState     `protogen:"open.v1"`
-	Options       []*PrivatePollOptionResult `protobuf:"bytes,1,rep,name=options,proto3" json:"options,omitempty"`
-	VoterCount    uint64                     `protobuf:"varint,2,opt,name=voter_count,json=voterCount,proto3" json:"voter_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState     `protogen:"open.v1"`
+	Options            []*PrivatePollOptionResult `protobuf:"bytes,1,rep,name=options,proto3" json:"options,omitempty"`
+	VoterCount         uint64                     `protobuf:"varint,2,opt,name=voter_count,json=voterCount,proto3" json:"voter_count,omitempty"`
+	PostId             string                     `protobuf:"bytes,3,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	OptionSetSha256    []byte                     `protobuf:"bytes,4,opt,name=option_set_sha256,json=optionSetSha256,proto3" json:"option_set_sha256,omitempty"`
+	ProjectionRevision uint64                     `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	CommandId          string                     `protobuf:"bytes,6,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	VoteActorPtid      string                     `protobuf:"bytes,7,opt,name=vote_actor_ptid,json=voteActorPtid,proto3" json:"vote_actor_ptid,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *PrivatePollProjection) Reset() {
@@ -3255,6 +3300,41 @@ func (x *PrivatePollProjection) GetVoterCount() uint64 {
 		return x.VoterCount
 	}
 	return 0
+}
+
+func (x *PrivatePollProjection) GetPostId() string {
+	if x != nil {
+		return x.PostId
+	}
+	return ""
+}
+
+func (x *PrivatePollProjection) GetOptionSetSha256() []byte {
+	if x != nil {
+		return x.OptionSetSha256
+	}
+	return nil
+}
+
+func (x *PrivatePollProjection) GetProjectionRevision() uint64 {
+	if x != nil {
+		return x.ProjectionRevision
+	}
+	return 0
+}
+
+func (x *PrivatePollProjection) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *PrivatePollProjection) GetVoteActorPtid() string {
+	if x != nil {
+		return x.VoteActorPtid
+	}
+	return ""
 }
 
 type PrivateContentVerification struct {
@@ -5182,12 +5262,17 @@ func (x *PrivatePollOptionResult) GetSelectedByViewer() bool {
 }
 
 type VotePrivatePollResponse struct {
-	state         protoimpl.MessageState     `protogen:"open.v1"`
-	Options       []*PrivatePollOptionResult `protobuf:"bytes,1,rep,name=options,proto3" json:"options,omitempty"`
-	VoterCount    uint64                     `protobuf:"varint,2,opt,name=voter_count,json=voterCount,proto3" json:"voter_count,omitempty"`
-	ExactReplay   bool                       `protobuf:"varint,3,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState     `protogen:"open.v1"`
+	Options            []*PrivatePollOptionResult `protobuf:"bytes,1,rep,name=options,proto3" json:"options,omitempty"`
+	VoterCount         uint64                     `protobuf:"varint,2,opt,name=voter_count,json=voterCount,proto3" json:"voter_count,omitempty"`
+	ExactReplay        bool                       `protobuf:"varint,3,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	CommandId          string                     `protobuf:"bytes,4,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	PostId             string                     `protobuf:"bytes,5,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	OptionSetSha256    []byte                     `protobuf:"bytes,6,opt,name=option_set_sha256,json=optionSetSha256,proto3" json:"option_set_sha256,omitempty"`
+	ProjectionRevision uint64                     `protobuf:"varint,7,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	AdmittedAt         *timestamppb.Timestamp     `protobuf:"bytes,8,opt,name=admitted_at,json=admittedAt,proto3" json:"admitted_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *VotePrivatePollResponse) Reset() {
@@ -5239,6 +5324,41 @@ func (x *VotePrivatePollResponse) GetExactReplay() bool {
 		return x.ExactReplay
 	}
 	return false
+}
+
+func (x *VotePrivatePollResponse) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *VotePrivatePollResponse) GetPostId() string {
+	if x != nil {
+		return x.PostId
+	}
+	return ""
+}
+
+func (x *VotePrivatePollResponse) GetOptionSetSha256() []byte {
+	if x != nil {
+		return x.OptionSetSha256
+	}
+	return nil
+}
+
+func (x *VotePrivatePollResponse) GetProjectionRevision() uint64 {
+	if x != nil {
+		return x.ProjectionRevision
+	}
+	return 0
+}
+
+func (x *VotePrivatePollResponse) GetAdmittedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AdmittedAt
+	}
+	return nil
 }
 
 type ListRecoverablePrivateContentRequest struct {
@@ -5749,12 +5869,15 @@ const file_domain_social_private_content_proto_rawDesc = "" +
 	"\x1arendered_source_commitment\x18\x03 \x01(\fR\x18renderedSourceCommitment\x12[\n" +
 	"\rpublic_source\x18\x04 \x01(\v24.peers_touch.model.social.v1.PublicRepostSourceProofH\x00R\fpublicSource\x12^\n" +
 	"\x0eprivate_source\x18\x05 \x01(\v25.peers_touch.model.social.v1.PrivateRepostSourceProofH\x00R\rprivateSourceB\x0e\n" +
-	"\fsource_proof\"|\n" +
+	"\fsource_proof\"\x8f\x02\n" +
 	"\x16VotePrivatePollRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12*\n" +
 	"\x11opaque_option_ids\x18\x02 \x03(\fR\x0fopaqueOptionIds\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x03 \x01(\tR\tcommandId\"\xd0\x01\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12*\n" +
+	"\x11option_set_sha256\x18\x04 \x01(\fR\x0foptionSetSha256\x12/\n" +
+	"\x14actor_signing_key_id\x18\x05 \x01(\tR\x11actorSigningKeyId\x124\n" +
+	"\x16actor_device_signature\x18\x06 \x01(\fR\x14actorDeviceSignature\"\xd0\x01\n" +
 	"\x1aPrivateMomentDomainBinding\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12B\n" +
 	"\x04kind\x18\x02 \x01(\x0e2..peers_touch.model.social.v1.PrivateMomentKindR\x04kind\x12G\n" +
@@ -5797,17 +5920,25 @@ const file_domain_social_private_content_proto_rawDesc = "" +
 	"\tenvelopes\x18\x05 \x03(\v25.peers_touch.model.social.v1.EnvelopeSubmitCommitmentR\tenvelopes\x12M\n" +
 	"\aobjects\x18\x06 \x03(\v23.peers_touch.model.social.v1.ObjectSubmitCommitmentR\aobjects\x124\n" +
 	"\x16mention_routing_sha256\x18\a \x01(\fR\x14mentionRoutingSha256\x128\n" +
-	"\x18subtype_authority_sha256\x18\b \x01(\fR\x16subtypeAuthoritySha256\"\xa5\x01\n" +
+	"\x18subtype_authority_sha256\x18\b \x01(\fR\x16subtypeAuthoritySha256\"\x82\x02\n" +
 	"\x18VotePrivatePollHashInput\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x02 \x01(\tR\tcommandId\x12\x17\n" +
 	"\apost_id\x18\x03 \x01(\tR\x06postId\x12*\n" +
-	"\x11opaque_option_ids\x18\x04 \x03(\fR\x0fopaqueOptionIds\"\x88\x01\n" +
+	"\x11opaque_option_ids\x18\x04 \x03(\fR\x0fopaqueOptionIds\x12*\n" +
+	"\x11option_set_sha256\x18\x05 \x01(\fR\x0foptionSetSha256\x12/\n" +
+	"\x14actor_signing_key_id\x18\x06 \x01(\tR\x11actorSigningKeyId\"\xc5\x02\n" +
 	"\x15PrivatePollProjection\x12N\n" +
 	"\aoptions\x18\x01 \x03(\v24.peers_touch.model.social.v1.PrivatePollOptionResultR\aoptions\x12\x1f\n" +
 	"\vvoter_count\x18\x02 \x01(\x04R\n" +
-	"voterCount\"\xcb\x05\n" +
+	"voterCount\x12\x17\n" +
+	"\apost_id\x18\x03 \x01(\tR\x06postId\x12*\n" +
+	"\x11option_set_sha256\x18\x04 \x01(\fR\x0foptionSetSha256\x12/\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x06 \x01(\tR\tcommandId\x12&\n" +
+	"\x0fvote_actor_ptid\x18\a \x01(\tR\rvoteActorPtid\"\xcb\x05\n" +
 	"\x1aPrivateContentVerification\x12`\n" +
 	"\fcommit_proof\x18\x01 \x01(\v2=.peers_touch.model.secure_content.v1.ViewerContentCommitProofR\vcommitProof\x12Z\n" +
 	"\x0fmention_routing\x18\x02 \x01(\v21.peers_touch.model.social.v1.SignedMentionRoutingR\x0ementionRouting\x12Z\n" +
@@ -5962,12 +6093,19 @@ const file_domain_social_private_content_proto_rawDesc = "" +
 	"\x10opaque_option_id\x18\x01 \x01(\fR\x0eopaqueOptionId\x12\x1d\n" +
 	"\n" +
 	"vote_count\x18\x02 \x01(\x04R\tvoteCount\x12,\n" +
-	"\x12selected_by_viewer\x18\x03 \x01(\bR\x10selectedByViewer\"\xad\x01\n" +
+	"\x12selected_by_viewer\x18\x03 \x01(\bR\x10selectedByViewer\"\xff\x02\n" +
 	"\x17VotePrivatePollResponse\x12N\n" +
 	"\aoptions\x18\x01 \x03(\v24.peers_touch.model.social.v1.PrivatePollOptionResultR\aoptions\x12\x1f\n" +
 	"\vvoter_count\x18\x02 \x01(\x04R\n" +
 	"voterCount\x12!\n" +
-	"\fexact_replay\x18\x03 \x01(\bR\vexactReplay\"T\n" +
+	"\fexact_replay\x18\x03 \x01(\bR\vexactReplay\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x04 \x01(\tR\tcommandId\x12\x17\n" +
+	"\apost_id\x18\x05 \x01(\tR\x06postId\x12*\n" +
+	"\x11option_set_sha256\x18\x06 \x01(\fR\x0foptionSetSha256\x12/\n" +
+	"\x13projection_revision\x18\a \x01(\x04R\x12projectionRevision\x12;\n" +
+	"\vadmitted_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"admittedAt\"T\n" +
 	"$ListRecoverablePrivateContentRequest\x12\x16\n" +
 	"\x06cursor\x18\x01 \x01(\tR\x06cursor\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\rR\x05limit\"O\n" +
@@ -6269,16 +6407,17 @@ var file_domain_social_private_content_proto_depIdxs = []int32{
 	62,  // 128: peers_touch.model.social.v1.CheckMomentReadPolicyResponse.outcomes:type_name -> peers_touch.model.social.v1.MomentReadPolicyOutcome
 	47,  // 129: peers_touch.model.social.v1.ListMomentCommentsResponse.comments:type_name -> peers_touch.model.social.v1.CommentResource
 	66,  // 130: peers_touch.model.social.v1.VotePrivatePollResponse.options:type_name -> peers_touch.model.social.v1.PrivatePollOptionResult
-	69,  // 131: peers_touch.model.social.v1.SocialPrivateContentLocator.comment:type_name -> peers_touch.model.social.v1.PrivateCommentLocator
-	88,  // 132: peers_touch.model.social.v1.RecoverablePrivateContent.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	70,  // 133: peers_touch.model.social.v1.RecoverablePrivateContent.locator:type_name -> peers_touch.model.social.v1.SocialPrivateContentLocator
-	93,  // 134: peers_touch.model.social.v1.RecoverablePrivateContent.recovery_envelope:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	71,  // 135: peers_touch.model.social.v1.ListRecoverablePrivateContentResponse.resources:type_name -> peers_touch.model.social.v1.RecoverablePrivateContent
-	136, // [136:136] is the sub-list for method output_type
-	136, // [136:136] is the sub-list for method input_type
-	136, // [136:136] is the sub-list for extension type_name
-	136, // [136:136] is the sub-list for extension extendee
-	0,   // [0:136] is the sub-list for field type_name
+	78,  // 131: peers_touch.model.social.v1.VotePrivatePollResponse.admitted_at:type_name -> google.protobuf.Timestamp
+	69,  // 132: peers_touch.model.social.v1.SocialPrivateContentLocator.comment:type_name -> peers_touch.model.social.v1.PrivateCommentLocator
+	88,  // 133: peers_touch.model.social.v1.RecoverablePrivateContent.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	70,  // 134: peers_touch.model.social.v1.RecoverablePrivateContent.locator:type_name -> peers_touch.model.social.v1.SocialPrivateContentLocator
+	93,  // 135: peers_touch.model.social.v1.RecoverablePrivateContent.recovery_envelope:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	71,  // 136: peers_touch.model.social.v1.ListRecoverablePrivateContentResponse.resources:type_name -> peers_touch.model.social.v1.RecoverablePrivateContent
+	137, // [137:137] is the sub-list for method output_type
+	137, // [137:137] is the sub-list for method input_type
+	137, // [137:137] is the sub-list for extension type_name
+	137, // [137:137] is the sub-list for extension extendee
+	0,   // [0:137] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_private_content_proto_init() }

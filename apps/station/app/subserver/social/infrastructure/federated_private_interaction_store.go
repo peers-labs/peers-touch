@@ -298,6 +298,11 @@ type FederatedPrivateInteractionStore interface {
 	ListPrivateTargetReactions(context.Context, delivery.Transaction, string, string) ([]socialdomain.Reaction, uint64, error)
 	ListPrivateReactionRecipients(context.Context, delivery.Transaction, *securecontentpb.SecureResourceRef, string) ([]socialdomain.RecipientLocality, error)
 	ValidateRemotePrivateReactionProjection(context.Context, delivery.Transaction, *privatecontentpb.FederatedPrivateResourceDelivery) error
+	LoadPrivatePollAuthority(context.Context, delivery.Transaction, string, string, string) (*privatecontentpb.PrivatePollAuthority, error)
+	MutatePrivatePoll(context.Context, delivery.Transaction, *securecontentpb.SecureResourceRef, string, *privatecontentpb.VotePrivatePollRequest, func() time.Time) (PrivatePollMutation, error)
+	LocalPrivatePollProjection(context.Context, delivery.Transaction, *privatecontentpb.PrivatePollAuthority, string) (*privatecontentpb.PrivatePollProjection, error)
+	PutPrivatePollProjection(context.Context, delivery.Transaction, string, string, *privatecontentpb.PrivatePollAuthority, *privatecontentpb.PrivatePollProjection) (bool, error)
+	LoadPrivatePollProjection(context.Context, delivery.Transaction, string, string, *privatecontentpb.PrivatePollAuthority) (*privatecontentpb.PrivatePollProjection, error)
 }
 
 func (s *GORMPrivateContentStore) ValidateRemotePrivateCommentParent(

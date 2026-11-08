@@ -21,6 +21,7 @@ import {
   privateSocialRead,
   privateSocialReadText,
   privateSocialReact,
+  privateSocialPollVote,
   privateSocialReactionRetry,
   privateSocialRecoverWithNativeInput,
   privateSocialReconcile,
@@ -123,7 +124,7 @@ let projectionFenceRevision = 0;
 const commentReadFlights = new Map<string, PrivateCommentReadFlight>();
 const reactionFlights = new Map<string, {
   scope: PrivateSocialSessionScope;
-  active: boolean;
+  intent: string;
   promise: Promise<PrivateReactionMutationResult>;
 }>();
 
@@ -600,6 +601,7 @@ export async function setPrivateMomentReaction(
     requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleReactionCompletion');
     requireReactionResultTarget(result, postId, commentId, kind, active);
     applyPrivateReactionResult(result);
+    requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleReactionCompletion');
     return result;
   });
 }
@@ -613,16 +615,23 @@ export async function retryPrivateMomentReaction(
     return Promise.reject(new Error('mobile.privateSocial.reactionCommandUnavailable'));
   }
   const active = command.operation === 'REACT';
+  const intent = command.operation === 'VOTE_POLL'
+    ? JSON.stringify(command.selectedOpaqueOptionIds ?? []) : String(active);
   const key = privateReactionTargetKey(command.postId, command.commentId, command.kind);
-  return shareReactionFlight(scope, key, active, async () => {
+  return shareReactionFlight(scope, key, intent, async () => {
     requireCurrentPostCompletion(scope, command.postId, 'mobile.privateSocial.staleReactionCompletion');
     const result = await privateSocialReactionRetry({ ...operationScope(scope), commandId });
     requireCurrentPostCompletion(scope, command.postId, 'mobile.privateSocial.staleReactionCompletion');
-    requireReactionResultTarget(result, command.postId, command.commentId, command.kind, active);
+    if (command.operation === 'VOTE_POLL') {
+      requirePollResultTarget(result, command.postId, command.selectedOpaqueOptionIds ?? []);
+    } else {
+      requireReactionResultTarget(result, command.postId, command.commentId, command.kind, active);
+    }
     if (result.command.commandId !== commandId) {
       throw new Error('mobile.privateSocial.reactionResultIdentityMismatch');
     }
     applyPrivateReactionResult(result);
+    requireCurrentPostCompletion(scope, command.postId, 'mobile.privateSocial.staleReactionCompletion');
     return result;
   });
 }
@@ -630,15 +639,15 @@ export async function retryPrivateMomentReaction(
 function shareReactionFlight(
   scope: PrivateSocialSessionScope,
   key: string,
-  active: boolean,
+  intent: boolean | string,
   operation: () => Promise<PrivateReactionMutationResult>,
 ): Promise<PrivateReactionMutationResult> {
   const previous = reactionFlights.get(key);
   if (previous && isCurrentScope(previous.scope)) {
-    return previous.active === active ? previous.promise
+    return previous.intent === String(intent) ? previous.promise
       : Promise.reject(new Error('mobile.privateSocial.reactionPending'));
   }
-  const flight = { scope, active, promise: Promise.resolve().then(operation).catch((error: unknown) => {
+  const flight = { scope, intent: String(intent), promise: Promise.resolve().then(operation).catch((error: unknown) => {
     if (isCurrentScope(scope)) {
       setSnapshot({ ...snapshot, reactionErrorsByTarget: {
         ...snapshot.reactionErrorsByTarget, [key]: readableErrorMessage(error),
@@ -666,6 +675,51 @@ function requireReactionResultTarget(
   if (!result.command.commandId?.trim() || result.command.postId !== postId
     || result.command.commentId !== commentId || result.command.kind !== kind
     || result.command.operation !== (active ? 'REACT' : 'UNREACT')) {
+    throw new Error('mobile.privateSocial.reactionResultIdentityMismatch');
+  }
+}
+
+export async function votePrivateMomentPoll(postId: string, selectedOptions: readonly number[]): Promise<PrivateReactionMutationResult> {
+  const scope = requireActiveScope();
+  requirePrivateMomentAccessOpen(postId);
+  const parent = snapshot.postsById[postId];
+  const content = parent?.content;
+  if (parent?.state !== 'CONTENT_READY' || content?.kind !== 'POLL' || !content.opaqueOptionIds?.length) {
+    throw new Error('mobile.privateSocial.pollDefinitionUnavailable');
+  }
+  if (selectedOptions.length < content.minChoices || selectedOptions.length > content.maxChoices
+    || selectedOptions.some((index, i) => !Number.isInteger(index) || index < 0
+      || index >= content.options.length || (i > 0 && selectedOptions[i - 1] >= index))) {
+    throw new Error('mobile.privateSocial.pollInvalidSelection');
+  }
+  const selected = selectedOptions.map(index => content.opaqueOptionIds![index]).sort();
+  const intent = JSON.stringify(selected);
+  const key = privateReactionTargetKey(postId, '', ReactionKind.REACTION_UNSPECIFIED);
+  const pending = snapshot.reactionCommands.find(command =>
+    privateReactionTargetKey(command.postId, command.commentId, command.kind) === key
+    && command.state !== 'REACTION_COMMITTED' && command.state !== 'REACTION_REJECTED');
+  if (pending) {
+    if (pending.operation !== 'VOTE_POLL' || JSON.stringify(pending.selectedOpaqueOptionIds ?? []) !== intent) {
+      throw new Error('mobile.privateSocial.reactionPending');
+    }
+    return retryPrivateMomentReaction(pending.commandId);
+  }
+  return shareReactionFlight(scope, key, intent, async () => {
+    requireCurrentPostCompletion(scope, postId, 'mobile.privateSocial.staleReactionCompletion');
+    const result = await privateSocialPollVote({ ...operationScope(scope), postId, selectedOptions });
+    requireCurrentPostCompletion(scope, postId, 'mobile.privateSocial.staleReactionCompletion');
+    requirePollResultTarget(result, postId, selected);
+    applyPrivateReactionResult(result);
+    requireCurrentPostCompletion(scope, postId, 'mobile.privateSocial.staleReactionCompletion');
+    return result;
+  });
+}
+
+function requirePollResultTarget(result: PrivateReactionMutationResult, postId: string, selected: readonly string[]): void {
+  if (!result.command.commandId?.trim() || result.command.postId !== postId
+    || result.command.commentId !== '' || result.command.kind !== ReactionKind.REACTION_UNSPECIFIED
+    || result.command.operation !== 'VOTE_POLL'
+    || JSON.stringify(result.command.selectedOpaqueOptionIds ?? []) !== JSON.stringify(selected)) {
     throw new Error('mobile.privateSocial.reactionResultIdentityMismatch');
   }
 }
@@ -798,10 +852,28 @@ export function mergeReadProjectionMap(
       || compareGeneration(projection.generation, existing.generation) >= 0
     ) {
       merged[projection.postId] = existing?.state === 'CONTENT_READY' && projection.state === 'CONTENT_READY'
-        ? mergeReactionProjection(existing, projection) : projection;
+        ? mergePollProjection(existing, mergeReactionProjection(existing, projection)) : projection;
     }
   }
   return merged;
+}
+
+function mergePollProjection(current: PrivateMomentReadProjection, incoming: PrivateMomentReadProjection): PrivateMomentReadProjection {
+  if (current.contentId !== incoming.contentId || current.generation !== incoming.generation
+    || current.content?.kind !== 'POLL' || incoming.content?.kind !== 'POLL') return incoming;
+  const previous = current.content, next = incoming.content;
+  if (!previous.opaqueOptionIds?.length) return incoming;
+  if (JSON.stringify(previous.opaqueOptionIds) !== JSON.stringify(next.opaqueOptionIds)
+    || previous.optionSetSha256 !== next.optionSetSha256) {
+    throw new Error('mobile.privateSocial.pollDefinitionConflict');
+  }
+  if (!previous.result) return incoming;
+  const oldRevision = BigInt(previous.result.projectionRevision), newRevision = BigInt(next.result?.projectionRevision ?? '0');
+  if (next.result && oldRevision === newRevision && JSON.stringify(previous.result) !== JSON.stringify(next.result)) {
+    throw new Error('mobile.privateSocial.pollRevisionConflict');
+  }
+  return !next.result || oldRevision > newRevision
+    ? { ...incoming, content: { ...next, result: previous.result } } : incoming;
 }
 
 function mergeCommentDraftLists(
@@ -936,7 +1008,15 @@ function applyPrivateReactionResult(result: PrivateReactionMutationResult): void
   if (!current || current.state !== 'CONTENT_READY') {
     throw new Error('mobile.privateSocial.reactionProjectionUnavailable');
   }
-  const postsById = !result.command.commentId && result.command.state === 'REACTION_COMMITTED'
+  const poll = result.command.operation === 'VOTE_POLL';
+  if (poll && result.command.state === 'REACTION_COMMITTED'
+    && (current.content?.kind !== 'POLL' || !result.poll)) {
+    throw new Error('mobile.privateSocial.pollProjectionUnavailable');
+  }
+  const postsById = poll && result.command.state === 'REACTION_COMMITTED' && current.content?.kind === 'POLL'
+    ? mergeReadProjectionMap(snapshot.postsById, [{ ...current,
+      content: { ...current.content, result: result.poll } }])
+    : !poll && !result.command.commentId && result.command.state === 'REACTION_COMMITTED'
     ? mergeReadProjectionMap(snapshot.postsById, [{
       ...current,
       reactions: result.reactions,

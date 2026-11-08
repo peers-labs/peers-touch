@@ -321,7 +321,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .projections()?
             .into_iter()
             .map(|bytes| PrivateMomentProjection::decode_local(&bytes))
-            .map(|projection| projection.map(scrub_persisted_media_projection))
+            .map(|projection| projection.map(scrub_persisted_projection))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(PrivateMomentsSnapshot {
             actor_ptid: self.lease.session.key.actor_ptid.clone(),
@@ -372,6 +372,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .filter(|post_id| canonical_identifier(post_id))
             .map(ToOwned::to_owned)
             .collect::<BTreeSet<_>>();
+        for bytes in self.lease.store.projections()? {
+            let projection = PrivateMomentProjection::decode_local(&bytes)?;
+            if super::private_poll::requires_definition_read(&projection) {
+                reconciled_post_ids.insert(projection.post_id);
+            }
+        }
         match self.remote_private_moment_ids() {
             Ok(discovered) => reconciled_post_ids.extend(discovered),
             Err(error) if error == "secure content session generation is stale" => {
@@ -1410,7 +1416,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 apply_media_failure(item, &error);
             }
         }
-        let persisted = scrub_persisted_media_projection(decrypted.projection.clone());
+        let persisted = scrub_persisted_projection(decrypted.projection.clone());
         let encoded = persisted.encode_local()?;
         self.save_projection_if_current(post_id, &encoded)
             .map_err(|error| PrivateMediaOpenError::dependency(error, None))?;
@@ -2214,9 +2220,22 @@ fn apply_terminal_media_failure(
     };
 }
 
-pub(super) fn scrub_persisted_media_projection(
+pub(super) fn scrub_persisted_projection(
     mut projection: PrivateMomentProjection,
 ) -> PrivateMomentProjection {
+    if super::private_poll::requires_definition_read(&projection) {
+        if matches!(
+            projection.state,
+            super::projection::PrivateReadState::ContentReady
+                | super::projection::PrivateReadState::RemoteSourceUnavailable
+        ) {
+            projection.state = super::projection::PrivateReadState::LoadingAuthorizedResource;
+        }
+        projection.content = None;
+        projection.mentions.clear();
+        projection.reactions.clear();
+        projection.error_code = Some("PRIVATE_POLL_DEFINITION_REQUIRED".into());
+    }
     match projection.content.as_mut() {
         Some(PrivateMomentContentProjection::Image { media, .. })
         | Some(PrivateMomentContentProjection::Video { media, .. }) => {

@@ -243,6 +243,204 @@ class SocialCommentUI:
         }
 
 
+class SocialPollUI:
+    """Use the same attached Driver and painted oracle for the shared poll form."""
+
+    def __init__(self, client: FoundationRuntimeClient, actor: str, evidence_root: Path) -> None:
+        self.controls = SocialCommentUI(client, actor, evidence_root)
+        self.actor = actor
+        self.driver = self.controls.driver
+        self.actions = self.controls.actions
+        self.assertions = self.controls.assertions
+        self.artifacts = self.controls.artifacts
+        self.evidence_root = self.controls.evidence_root
+
+    def visible(self, selector: str) -> Any:
+        return self.controls.visible(selector)
+
+    def click(self, selector: str, action: str) -> Any:
+        return self.controls.click(selector, action)
+
+    def post_selector(self, post_id: str) -> str:
+        return self.controls.post_selector(post_id)
+
+    def open_poll(self, post_id: str) -> str:
+        self.click(
+            '[data-pt-primary-nav="moments"] button, '
+            '[data-pt-primary-nav="moments"] [role="button"]',
+            "moments-navigation",
+        )
+        selector = f'{self.post_selector(post_id)} [data-acceptance-id="social-poll"]'
+        wait_until(lambda: self.visible(selector), f"{self.actor} private poll", timeout=120)
+        return selector
+
+    def select(self, post_id: str, choices: list[int]) -> None:
+        selector = self.open_poll(post_id)
+        controls = self.driver.find_elements("css selector", f"{selector} input")
+        if not controls or choices != sorted(set(choices)) or any(
+            index < 0 or index >= len(controls) for index in choices
+        ):
+            raise ValueError("Invalid poll UI selection")
+        single = controls[0].get_attribute("type") == "radio"
+        if single and len(choices) != 1:
+            raise ValueError("Single-choice poll requires one choice")
+        # Free capacity before adding replacement choices in a maxed-out ballot.
+        order = sorted(range(len(controls)), key=lambda index: index in choices)
+        for index in order:
+            control = controls[index]
+            checked = bool(self.driver.execute_script("return arguments[0].checked;", control))
+            if (index in choices and not checked) or (
+                not single and index not in choices and checked
+            ):
+                self.click(f'{selector} [data-poll-option="{index}"] label', "poll-select")
+        wait_until(
+            lambda: self.driver.execute_script(
+                """
+                return JSON.stringify([...arguments[0].querySelectorAll('input')]
+                  .flatMap((e,i) => e.checked ? [i] : [])) === JSON.stringify(arguments[1]);
+                """,
+                self.visible(selector), choices,
+            ),
+            f"{self.actor} selected complete ballot",
+            timeout=30,
+        )
+
+    def submit(self, post_id: str, choices: list[int]) -> None:
+        self.select(post_id, choices)
+        selector = f'{self.post_selector(post_id)} [data-acceptance-id="social-poll-submit"]'
+        wait_until(
+            lambda: (control := self.visible(selector)) is not None
+            and control.get_attribute("disabled") is None
+            and control.get_attribute("aria-disabled") != "true",
+            f"{self.actor} enabled ballot submit",
+            timeout=30,
+        )
+        self.click(selector, "poll-submit")
+
+    def cancel(self, post_id: str) -> None:
+        self.click(
+            f'{self.post_selector(post_id)} [data-action-id="moment.poll.cancel.{post_id}"]',
+            "poll-cancel-selection",
+        )
+
+    def assert_poll(
+        self, post_id: str, counts: list[int], choices: list[int], voters: int, phase: str,
+        *, closed: bool = False,
+    ) -> None:
+        selector = self.open_poll(post_id)
+
+        def settled() -> Any:
+            element = self.visible(selector)
+            if element is None:
+                return None
+            return element if self.driver.execute_script(
+                """
+                const p=arguments[0], counts=arguments[1], choices=arguments[2],
+                  voters=arguments[3], closed=arguments[4];
+                const selected=[...p.querySelectorAll('input')].flatMap((e,i)=>e.checked?[i]:[]);
+                return p.dataset.pollState === (closed ? 'closed' : 'ready')
+                  && JSON.stringify([...p.querySelectorAll('[data-poll-count]')]
+                    .map(e=>e.dataset.pollCount)) === JSON.stringify(counts.map(String))
+                  && JSON.stringify(selected) === JSON.stringify(choices)
+                  && p.querySelector('[data-poll-voters]')?.dataset.pollVoters === String(voters)
+                  && !p.querySelector('[role=alert]')
+                  && (!closed || [...p.querySelectorAll('input')].every(e=>e.disabled));
+                """,
+                element, counts, choices, voters, closed,
+            ) else None
+
+        element = wait_until(settled, f"{self.actor} {phase} verified ballot", timeout=120)
+        self.driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center',inline:'nearest'});", element,
+        )
+
+        def painted() -> Any:
+            current = settled()
+            return current if current is not None and self.driver.execute_script(
+                search_capture.TARGET_VISIBILITY_JS
+                + "\nreturn targetVisibility(arguments[0], true).visible;",
+                current,
+            ) else None
+
+        element = wait_until(painted, f"{self.actor} unobscured poll", timeout=30)
+        if not self.driver.execute_async_script(search_capture.CAPTURE_PAINT_JS, 2500):
+            raise RuntimeError("Private poll Native paint frames timed out")
+        screenshot = self.evidence_root / f"{len(self.assertions):02d}-poll-{phase}.png"
+        dom = screenshot.with_suffix(".html")
+        if not self.driver.save_screenshot(str(screenshot)):
+            raise RuntimeError("Private poll Native screenshot failed")
+        dom.write_text(self.driver.page_source, encoding="utf-8")
+        if painted() is None:
+            raise RuntimeError("Private poll changed during Native painted capture")
+        self.artifacts.extend((screenshot, dom))
+        self.assertions.append({
+            "actor": self.actor, "phase": phase, "postIdSha256": _digest(post_id),
+            "counts": counts, "choices": choices, "voters": voters, "closed": closed,
+            "tag": element.tag_name, "automationSessionId": str(self.driver.session_id),
+            "paintFrames": 2,
+            "screenshot": {"path": str(screenshot), "sha256": hashlib.sha256(screenshot.read_bytes()).hexdigest()},
+            "dom": {"path": str(dom), "sha256": hashlib.sha256(dom.read_bytes()).hexdigest()},
+        })
+
+    def assert_denied(self, post_id: str, phase: str) -> None:
+        self.click(
+            '[data-pt-primary-nav="moments"] button, '
+            '[data-pt-primary-nav="moments"] [role="button"]',
+            "moments-navigation",
+        )
+        selector = self.post_selector(post_id)
+
+        def concealed() -> bool:
+            return all(not self.driver.execute_script(
+                """
+                return Boolean(arguments[0].querySelector(
+                  '[data-acceptance-id="social-poll"], [data-moments-body]'));
+                """, element,
+            ) for element in self.driver.find_elements("css selector", selector))
+
+        wait_until(concealed, f"{self.actor} concealed private poll", timeout=120)
+        if not self.driver.execute_async_script(search_capture.CAPTURE_PAINT_JS, 2500):
+            raise RuntimeError("Private poll denial paint frames timed out")
+        screenshot = self.evidence_root / f"{len(self.assertions):02d}-poll-{phase}.png"
+        dom = screenshot.with_suffix(".html")
+        if not self.driver.save_screenshot(str(screenshot)):
+            raise RuntimeError("Private poll denial screenshot failed")
+        dom.write_text(self.driver.page_source, encoding="utf-8")
+        if not concealed():
+            raise RuntimeError("Private poll resurrected during painted denial capture")
+        self.artifacts.extend((screenshot, dom))
+        self.assertions.append({
+            "actor": self.actor, "phase": phase, "postIdSha256": _digest(post_id),
+            "concealed": True, "tag": "body", "automationSessionId": str(self.driver.session_id),
+            "paintFrames": 2,
+            "screenshot": {"path": str(screenshot), "sha256": hashlib.sha256(screenshot.read_bytes()).hexdigest()},
+            "dom": {"path": str(dom), "sha256": hashlib.sha256(dom.read_bytes()).hexdigest()},
+        })
+
+
+def exercise_private_poll(
+    sender: SocialPollUI, receiver: SocialPollUI, *, post_id: str, multiple: bool,
+) -> dict[str, Any]:
+    """Submit and replace full ballots; counts always come from the painted owner."""
+    first = [0, 1] if multiple else [1]
+    retained = [1, 2] if multiple else [0]
+    sender.submit(post_id, first)
+    sender.assert_poll(post_id, [1, 1, 0] if multiple else [0, 1], first, 1, "first")
+    receiver.assert_poll(post_id, [1, 1, 0] if multiple else [0, 1], [], 1, "first")
+    receiver.submit(post_id, retained)
+    counts = [1, 2, 1] if multiple else [1, 1]
+    sender.assert_poll(post_id, counts, first, 2, "two-actors")
+    receiver.assert_poll(post_id, counts, retained, 2, "two-actors")
+    sender.submit(post_id, retained)
+    counts = [0, 2, 2] if multiple else [2, 0]
+    for ui in (sender, receiver):
+        ui.assert_poll(post_id, counts, retained, 2, "replacement")
+    sender.select(post_id, first)
+    sender.cancel(post_id)
+    sender.assert_poll(post_id, counts, retained, 2, "cancel")
+    return {"postId": post_id, "counts": counts, "choices": retained, "voters": 2}
+
+
 def exercise_comment_likes(
     sender: SocialCommentUI,
     receiver: SocialCommentUI,

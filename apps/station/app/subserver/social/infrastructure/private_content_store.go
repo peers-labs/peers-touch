@@ -582,6 +582,11 @@ func (s *GORMPrivateContentStore) DeletePrivatePost(
 					err,
 				)
 			}
+			for _, model := range []any{&privatePollChoiceModel{}, &privatePollBallotModel{}, &privatePollStateModel{}, &privatePollProjectionModel{}} {
+				if err := tx.Where("post_id = ?", postID).Delete(model).Error; err != nil {
+					return fmt.Errorf("social private content delete poll projection: %w", err)
+				}
+			}
 			if err := s.afterWrite(
 				ctx,
 				PrivateContentBoundaryReactionsRemoved,

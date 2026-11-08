@@ -17,7 +17,9 @@ from tooling.acceptance.core import (
     SuiteRuntimeAction,
     SuiteRuntimeLedger,
     call_async_harness,
+    current_run_directory,
 )
+from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.gates.chat.mixed_native_runtime import (
     MixedNativeRuntime,
     compact_json,
@@ -27,6 +29,10 @@ from tooling.acceptance.gates.chat.native_support import (
 )
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
     MobileSimulatorRuntimeBinding,
+)
+from tooling.development.secure_content.social_interaction_ui import (
+    SocialCommentUI,
+    SocialPollUI,
 )
 
 
@@ -184,6 +190,14 @@ class Gate(AcceptanceGate):
                 mobile_id,
             )
             source_identity = self.runtime.source_identity()
+            desktop_session = self.runtime.desktop_session(desktop_id)
+            if desktop_session is None:
+                raise GateError("Desktop interaction session is unavailable")
+            interaction_root = current_run_directory(repo_root=REPO_ROOT) / "interactions"
+            comment_ui = SocialCommentUI(desktop_session, "alice", interaction_root)
+            poll_ui = SocialPollUI(desktop_session, "alice", interaction_root / "polls")
+            comment_rows: list[dict[str, Any]] = []
+            poll_rows: list[dict[str, Any]] = []
 
             desktop_text = f"as25-desktop-ios-{time.time_ns()}"
             self._scenario_start("desktop-publish-ios-receive")
@@ -281,11 +295,7 @@ class Gate(AcceptanceGate):
                 mobile_comment,
             )
             desktop_comment = f"as25-desktop-comment-{time.time_ns()}"
-            self._submit_desktop_comment(
-                desktop_id,
-                mobile_post_id,
-                desktop_comment,
-            )
+            desktop_comment_id = comment_ui.submit(mobile_post_id, desktop_comment)
             mobile_comments = self._wait_for_mobile_comment(
                 mobile_id,
                 mobile_post_id,
@@ -300,6 +310,47 @@ class Gate(AcceptanceGate):
                 desktop_id,
                 desktop_post_id,
             )
+            mobile_comment_id = self._private_comment_id(desktop_comments, mobile_comment)
+            desktop_reply = f"as25-desktop-reply-{time.time_ns()}"
+            desktop_reply_id = comment_ui.submit(
+                desktop_post_id, desktop_reply, reply_to=mobile_comment,
+            )
+            mobile_reply = f"as25-mobile-reply-{time.time_ns()}"
+            self._open_mobile_moments(mobile_id)
+            self._submit_mobile_comment_via_ui(
+                mobile_id, mobile_post_id, mobile_reply,
+                reply_to_comment_id=desktop_comment_id,
+            )
+            mobile_reply_page = self._wait_for_desktop_comment(
+                desktop_id, mobile_post_id, mobile_reply,
+            )
+            for post_id, root_text, root_id, reply_text, reply_id in (
+                (desktop_post_id, mobile_comment, mobile_comment_id, desktop_reply, desktop_reply_id),
+                (mobile_post_id, desktop_comment, desktop_comment_id, mobile_reply,
+                 self._private_comment_id(mobile_reply_page, mobile_reply)),
+            ):
+                comment_ui.open_thread(post_id)
+                for text, comment_id, depth in ((root_text, root_id, 0), (reply_text, reply_id, 1)):
+                    comment_rows.append({"postId": post_id, "text": text, "commentId": comment_id, "depth": depth})
+                    self._exercise_mixed_comment_like(
+                        desktop_id, mobile_id, comment_ui, post_id, comment_id, text, depth, evidence,
+                    )
+            for multiple in (False, True):
+                options = ["one", "two", "three"] if multiple else ["one", "two"]
+                poll_text = f"as25-private-poll-{time.time_ns()}"
+                poll_id = self._publish_desktop_private_text(
+                    desktop_id, poll_text, poll={
+                        "question": poll_text, "options": options,
+                        "minChoices": 1, "maxChoices": 2 if multiple else 1,
+                        "expiresAtSeconds": int(time.time()) + 7200,
+                    },
+                )
+                self._wait_for_mobile_private_read(mobile_id, poll_id, expected_state="CONTENT_READY")
+                poll_rows.append(self._exercise_mixed_poll(
+                    desktop_id, mobile_id, poll_ui, poll_id, multiple, evidence,
+                ))
+            evidence["desktopCommentInteractions"] = comment_ui.assertions
+            evidence["desktopPollInteractions"] = poll_ui.assertions
             self.assert_condition(
                 "comment_reaction_convergence",
                 (
@@ -334,6 +385,17 @@ class Gate(AcceptanceGate):
                 ),
                 compact_json(eve_read),
             )
+            for row in poll_rows:
+                denied = self._wait_for_mobile_private_read(
+                    eve_id, row["postId"], expected_state="NOT_FOUND_OR_NOT_AUTHORIZED",
+                )
+                self._wait_mobile_post_absent(eve_id, row["postId"])
+                self.assert_condition(
+                    "unauthorized_poll_material_absent",
+                    denied.get("contentKind") is None and denied.get("textSha256") is None
+                    and not denied.get("mediaStates"),
+                )
+            evidence["evePollDenial"] = self._capture_mobile(eve_id, "private-polls-denied")
             self._scenario_end(
                 "unauthorized-denial",
                 ui_resource="mobile-eve:open-moments-feed",
@@ -351,6 +413,20 @@ class Gate(AcceptanceGate):
                 desktop_post_id,
                 expected_state="CONTENT_READY",
             )
+            for row in comment_rows:
+                self._assert_mobile_comment_like(
+                    mobile_id, row["postId"], row["commentId"], 2, True, "restart",
+                )
+            for row in poll_rows:
+                self._wait_for_mobile_private_read(
+                    mobile_id, row["postId"], expected_state="CONTENT_READY",
+                )
+                self._assert_mobile_poll(
+                    mobile_id, row["postId"], row["counts"], row["choices"], 2, "restart",
+                )
+                self._desktop_moments_action(
+                    desktop_id, "deletePrivateMoment", {"postId": row["postId"]},
+                )
             self._desktop_moments_action(
                 desktop_id,
                 "deletePrivateMoment",
@@ -378,6 +454,15 @@ class Gate(AcceptanceGate):
             )
             self._open_mobile_moments(mobile_id)
             self._wait_mobile_post_absent(mobile_id, desktop_post_id)
+            for row in poll_rows:
+                denied = self._wait_for_mobile_private_read(
+                    mobile_id, row["postId"], expected_state=PRIVATE_READ_TERMINAL_STATES,
+                )
+                self._wait_mobile_post_absent(mobile_id, row["postId"])
+                self.assert_condition(
+                    "revoked_poll_no_resurrection",
+                    denied.get("contentKind") is None and denied.get("textSha256") is None,
+                )
             evidence["revocation"] = self._capture_mobile(
                 mobile_id,
                 "revocation-after-restart",
@@ -520,6 +605,8 @@ class Gate(AcceptanceGate):
         self,
         client_id: str,
         text: str,
+        *,
+        poll: Mapping[str, Any] | None = None,
     ) -> str:
         draft_id = f"as25-desktop-{time.time_ns()}"
         staged = self._desktop_moments_action(
@@ -529,7 +616,8 @@ class Gate(AcceptanceGate):
                 "draftId": draft_id,
                 "revision": 1,
                 "text": text,
-                "momentKind": "TEXT",
+                "momentKind": "POLL" if poll else "TEXT",
+                **({"poll": dict(poll)} if poll else {}),
             },
         )
         if staged.get("present") is not True:
@@ -893,16 +981,27 @@ class Gate(AcceptanceGate):
         client_id: str,
         post_id: str,
         text: str,
+        *,
+        reply_to_comment_id: str | None = None,
     ) -> None:
         post_token = self._selector_token(post_id, "Post")
-        self._mobile_click(
-            client_id,
-            (
-                f'[data-post-id="{post_token}"] '
-                '[data-acceptance-id="social-thread-open"]'
-            ),
-            "Mobile private Moment thread",
-        )
+        if reply_to_comment_id is None:
+            self._mobile_click(
+                client_id,
+                (
+                    f'[data-post-id="{post_token}"] '
+                    '[data-acceptance-id="social-thread-open"]'
+                ),
+                "Mobile private Moment thread",
+            )
+        else:
+            self._open_mobile_thread(client_id, post_id)
+            comment_token = self._selector_token(reply_to_comment_id, "Comment")
+            self._mobile_click(
+                client_id,
+                f'[data-post-id="{post_token}"] [data-action-id="comment.reply.{comment_token}"]',
+                "Mobile reply to private Comment",
+            )
         thread = (
             '[data-acceptance-id="social-moment-thread"]'
             f'[data-post-id="{post_token}"]'
@@ -998,6 +1097,195 @@ class Gate(AcceptanceGate):
                 f"{compact_json(outcome)}"
             )
 
+    def _open_mobile_thread(self, client_id: str, post_id: str) -> str:
+        self._open_mobile_moments(client_id)
+        token = self._selector_token(post_id, "Post")
+        thread = f'[data-post-id="{token}"][data-acceptance-id="social-moment-thread"]'
+        if not self._mobile_observe(client_id, thread):
+            self._mobile_click(
+                client_id,
+                f'[data-post-id="{token}"] [data-acceptance-id="social-thread-open"]',
+                "Mobile private Moment thread",
+            )
+        self.runtime.wait_until(
+            lambda: self._mobile_observe(client_id, thread),
+            "Mobile expanded private thread", timeout_seconds=STEP_TIMEOUT,
+        )
+        return thread
+
+    @classmethod
+    def _private_comment_id(cls, comments: list[dict[str, Any]], text: str) -> str:
+        for comment in comments:
+            if comment.get("textSha256") == cls._sha256(text) and comment.get("commentId"):
+                return cls._selector_token(str(comment["commentId"]), "Comment")
+        raise GateError("Private comment identity is not bound to the expected text")
+
+    def _capture_mobile_interaction(
+        self, client_id: str, selector: str, capture_id: str,
+    ) -> dict[str, Any]:
+        self._interaction_capture_index = getattr(self, "_interaction_capture_index", 0) + 1
+        capture_id = f"{self._interaction_capture_index:03d}-{capture_id}"
+        def painted() -> dict[str, Any] | None:
+            result = self._mobile_action(
+                client_id, "moments.private.interaction.observe", {"selector": selector},
+            )
+            return result if result.get("visible") is True and result.get("paintFrames") == 2 else None
+
+        observation = self.runtime.wait_until(
+            painted, "Mobile unobscured painted interaction", timeout_seconds=STEP_TIMEOUT,
+        )
+        capture = self._capture_mobile(client_id, capture_id)
+        if not painted():
+            raise GateError("Mobile interaction changed during painted capture")
+        return {**capture, **observation, "selectorSha256": self._sha256(selector)}
+
+    def _assert_mobile_comment_like(
+        self, client_id: str, post_id: str, comment_id: str,
+        count: int, liked: bool, phase: str,
+    ) -> dict[str, Any]:
+        self._open_mobile_thread(client_id, post_id)
+        post = self._selector_token(post_id, "Post")
+        comment = self._selector_token(comment_id, "Comment")
+        selector = (
+            f'[data-post-id="{post}"] [data-comment-id="{comment}"] '
+            f'[data-comment-like][data-comment-like-count="{count}"]'
+            f'[aria-pressed="{str(liked).lower()}"]:not([disabled]):not([aria-disabled="true"])'
+        )
+        return self._capture_mobile_interaction(
+            client_id, selector, f"like-{phase}-{self._sha256(comment_id)[:12]}",
+        )
+
+    def _exercise_mixed_comment_like(
+        self, desktop_id: str, mobile_id: str, ui: SocialCommentUI,
+        post_id: str, comment_id: str, text: str, depth: int, evidence: dict[str, Any],
+    ) -> None:
+        captures = evidence.setdefault("mobileCommentInteractions", [])
+        token = self._selector_token(comment_id, "Comment")
+        post = self._selector_token(post_id, "Post")
+        selector = f'[data-post-id="{post}"] [data-comment-id="{token}"] [data-comment-like]'
+        ui.assert_like(post_id, text, depth, 0, False, "initial")
+        captures.append(self._assert_mobile_comment_like(mobile_id, post_id, comment_id, 0, False, "initial"))
+        for active in (True, False):
+            self._mobile_click(mobile_id, selector, "Mobile comment LIKE" if active else "Mobile comment UNLIKE")
+            captures.append(self._assert_mobile_comment_like(
+                mobile_id, post_id, comment_id, int(active), active, "mobile-toggle",
+            ))
+            ui.assert_like(post_id, text, depth, int(active), False, "mobile-toggle")
+        for active in (True, False):
+            ui.toggle_like(post_id, text, depth, int(not active), not active, "desktop-toggle")
+            ui.assert_like(post_id, text, depth, int(active), active, "desktop-toggle")
+            captures.append(self._assert_mobile_comment_like(
+                mobile_id, post_id, comment_id, int(active), False, "desktop-toggle",
+            ))
+        ui.toggle_like(post_id, text, depth, 0, False, "desktop-retain")
+        ui.assert_like(post_id, text, depth, 1, True, "desktop-retain")
+        self._assert_mobile_comment_like(mobile_id, post_id, comment_id, 1, False, "desktop-retain")
+        self._mobile_click(mobile_id, selector, "Mobile retain comment LIKE")
+        ui.assert_like(post_id, text, depth, 2, True, "both-retain")
+        captures.append(self._assert_mobile_comment_like(mobile_id, post_id, comment_id, 2, True, "both-retain"))
+        replay = self._mobile_action(
+            mobile_id, "moments.private.interaction.replay", {"postId": post_id, "commentId": comment_id},
+        )
+        desktop_replay = self._desktop_moments_action(
+            desktop_id, "replayPrivateCommentLike", {"postId": post_id, "commentId": comment_id},
+        )
+        self.assert_condition(
+            "comment_exact_native_retry",
+            replay.get("nativeRetryCount") == 2 and desktop_replay.get("nativeRetryCount") == 2,
+        )
+        evidence.setdefault("commentExactRetries", []).append({"mobile": replay, "desktop": desktop_replay})
+        ui.assert_like(post_id, text, depth, 2, True, "exact-retry")
+        captures.append(self._assert_mobile_comment_like(mobile_id, post_id, comment_id, 2, True, "exact-retry"))
+
+    def _mobile_poll_selector(self, post_id: str) -> str:
+        post = self._selector_token(post_id, "Post")
+        return f'[data-post-id="{post}"] [data-acceptance-id="social-poll"]'
+
+    def _select_mobile_poll(
+        self, client_id: str, post_id: str, choices: list[int], option_count: int,
+    ) -> None:
+        self._open_mobile_moments(client_id)
+        selector = self._mobile_poll_selector(post_id)
+        self.runtime.wait_until(
+            lambda: self._mobile_observe(client_id, selector),
+            "Mobile private poll", timeout_seconds=STEP_TIMEOUT,
+        )
+        selected = [
+            index for index in range(option_count)
+            if self._mobile_observe(client_id, f'{selector} [data-poll-option="{index}"]:has(input:checked)')
+        ]
+        # Remove stale multi-select choices before adding replacements at maxChoices.
+        if option_count > 2:
+            for index in selected:
+                if index not in choices:
+                    self._mobile_click(
+                        client_id, f'{selector} [data-poll-option="{index}"] label',
+                        "Mobile remove unsubmitted poll choice",
+                    )
+        for index in choices:
+            if index not in selected:
+                self._mobile_click(
+                    client_id, f'{selector} [data-poll-option="{index}"] label',
+                    "Mobile select poll choice",
+                )
+
+    def _assert_mobile_poll(
+        self, client_id: str, post_id: str, counts: list[int],
+        choices: list[int], voters: int, phase: str,
+    ) -> dict[str, Any]:
+        self._open_mobile_moments(client_id)
+        selector = self._mobile_poll_selector(post_id)
+        selector += f'[data-poll-state="ready"]:not(:has([role="alert"])):has([data-poll-voters="{voters}"])'
+        for index, count in enumerate(counts):
+            selector += f':has([data-poll-option="{index}"] [data-poll-count="{count}"])'
+            checked = ":checked" if index in choices else ":not(:checked)"
+            selector += f':has([data-poll-option="{index}"] input{checked})'
+        return self._capture_mobile_interaction(
+            client_id, selector, f"poll-{phase}-{self._sha256(post_id)[:12]}",
+        )
+
+    def _exercise_mixed_poll(
+        self, desktop_id: str, mobile_id: str, ui: SocialPollUI,
+        post_id: str, multiple: bool, evidence: dict[str, Any],
+    ) -> dict[str, Any]:
+        first, retained = ([0, 1], [1, 2]) if multiple else ([1], [0])
+        first_counts = [1, 1, 0] if multiple else [0, 1]
+        both_counts = [1, 2, 1] if multiple else [1, 1]
+        final_counts = [0, 2, 2] if multiple else [2, 0]
+        captures = evidence.setdefault("mobilePollInteractions", [])
+        ui.submit(post_id, first)
+        ui.assert_poll(post_id, first_counts, first, 1, "desktop-first")
+        captures.append(self._assert_mobile_poll(mobile_id, post_id, first_counts, [], 1, "desktop-first"))
+        self._select_mobile_poll(mobile_id, post_id, retained, len(final_counts))
+        self._mobile_click(
+            mobile_id,
+            f'{self._mobile_poll_selector(post_id)} [data-acceptance-id="social-poll-submit"]'
+            ':not([disabled]):not([aria-disabled="true"])',
+            "Mobile submit full private ballot",
+        )
+        captures.append(self._assert_mobile_poll(mobile_id, post_id, both_counts, retained, 2, "two-actors"))
+        ui.assert_poll(post_id, both_counts, first, 2, "two-actors")
+        ui.submit(post_id, retained)
+        ui.assert_poll(post_id, final_counts, retained, 2, "replace")
+        captures.append(self._assert_mobile_poll(mobile_id, post_id, final_counts, retained, 2, "replace"))
+        self._select_mobile_poll(mobile_id, post_id, first, len(final_counts))
+        self._mobile_click(
+            mobile_id,
+            f'{self._mobile_poll_selector(post_id)} [data-action-id="moment.poll.cancel.{post_id}"]',
+            "Mobile cancel unsubmitted choices",
+        )
+        captures.append(self._assert_mobile_poll(mobile_id, post_id, final_counts, retained, 2, "cancel"))
+        replay = self._mobile_action(mobile_id, "moments.private.interaction.replay", {"postId": post_id})
+        desktop_replay = self._desktop_moments_action(desktop_id, "replayPrivatePollVote", {"postId": post_id})
+        self.assert_condition(
+            "poll_exact_native_retry",
+            replay.get("nativeRetryCount") == 2 and desktop_replay.get("nativeRetryCount") == 2,
+        )
+        evidence.setdefault("pollExactRetries", []).append({"mobile": replay, "desktop": desktop_replay})
+        ui.assert_poll(post_id, final_counts, retained, 2, "exact-retry")
+        captures.append(self._assert_mobile_poll(mobile_id, post_id, final_counts, retained, 2, "exact-retry"))
+        return {"postId": post_id, "counts": final_counts, "choices": retained}
+
     @staticmethod
     def _private_comment_retry_delay(
         draft: Mapping[str, Any],
@@ -1017,26 +1305,6 @@ class Gate(AcceptanceGate):
             float(2**retry_attempts),
             PRIVATE_COMMENT_RETRY_MAX_DELAY_SECONDS,
         )
-
-    def _submit_desktop_comment(
-        self,
-        client_id: str,
-        post_id: str,
-        text: str,
-    ) -> None:
-        result = self._desktop_moments_action(
-            client_id,
-            "submitPrivateCommentWithRetry",
-            {
-                "postId": post_id,
-                "text": text,
-            },
-        )
-        if (
-            result.get("state") != "COMMENT_POSTED"
-            or result.get("textSha256") != self._sha256(text)
-        ):
-            raise GateError("Desktop private Comment did not commit")
 
     def _wait_for_desktop_comment(
         self,

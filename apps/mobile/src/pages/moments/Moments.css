@@ -340,33 +340,6 @@
   color: rgba(255, 255, 255, 0.78);
 }
 
-.moments-poll {
-  display: grid;
-  gap: 7px;
-  margin-top: 10px;
-  padding: 11px 12px;
-  border: 1px solid var(--moments-gray-100);
-  border-radius: 10px;
-  background: var(--moments-gray-50);
-}
-
-.moments-poll strong {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--moments-gray-800);
-  font-size: 12px;
-}
-
-.moments-poll > span {
-  padding: 8px 10px;
-  border: 1px solid var(--moments-gray-200);
-  border-radius: 8px;
-  background: #fff;
-  color: var(--moments-gray-600);
-  font-size: 11px;
-}
-
 .moments-repost {
   grid-template-columns: minmax(0, 1fr);
 }

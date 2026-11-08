@@ -1,4 +1,5 @@
 pub mod adapter;
+pub(crate) mod private_poll;
 pub(crate) mod private_reaction;
 pub mod search;
 
@@ -1385,7 +1386,9 @@ impl PrivateSocialEngine {
             .store
             .read_projections()?
             .into_iter()
-            .map(|projection| PrivateMomentReadProjection::decode(&projection))
+            .map(|projection| {
+                PrivateMomentReadProjection::decode(&projection).map(private_poll::conceal_legacy)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let comment_drafts = self
             .store
@@ -1404,7 +1407,7 @@ impl PrivateSocialEngine {
             .reaction_commands()?
             .iter()
             .map(private_reaction_command_projection)
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(PrivateSocialSnapshot {
             publish_projections,
             read_projections,
@@ -1877,13 +1880,26 @@ pub fn social_private_reconcile<R: Runtime>(
         input.activation_generation,
     )?;
     if input.invalidations.is_empty() {
-        return engine
+        let report = engine
             .reconcile(input.activation_generation)
-            .map(|report| PrivateSocialReconcileResult {
-                report,
-                invalidated_read_projections: Vec::new(),
-            })
-            .map_err(MobileError::social);
+            .map_err(MobileError::social)?;
+        for bytes in engine
+            .store
+            .read_projections()
+            .map_err(MobileError::social)?
+        {
+            let parent =
+                PrivateMomentReadProjection::decode(&bytes).map_err(MobileError::social)?;
+            if parent.state == PrivateReadState::ContentReady
+                && private_poll::requires_definition_read(&parent)
+            {
+                engine.read_text(input.activation_generation, &parent.post_id)?;
+            }
+        }
+        return Ok(PrivateSocialReconcileResult {
+            report,
+            invalidated_read_projections: Vec::new(),
+        });
     }
 
     let invalidated_read_projections = engine

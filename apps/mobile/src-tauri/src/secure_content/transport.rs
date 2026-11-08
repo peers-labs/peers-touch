@@ -388,6 +388,35 @@ impl NativeSocialTransport {
         )
     }
 
+    pub fn submit_private_poll_vote(
+        &self,
+        post_id: &str,
+        request_bytes: &[u8],
+    ) -> Result<social::VotePrivatePollResponse, TransportError> {
+        let request = social::VotePrivatePollRequest::decode(request_bytes)
+            .map_err(|_| local_error(20002))?;
+        if request.encode_to_vec() != request_bytes
+            || request.post_id != post_id
+            || request.command_id.trim().is_empty()
+            || request.actor_signing_key_id.trim().is_empty()
+            || request.actor_device_signature.len() != 64
+            || request.option_set_sha256.len() != 32
+            || request.opaque_option_ids.is_empty()
+            || request.opaque_option_ids.iter().any(|id| id.len() != 32)
+            || !request
+                .opaque_option_ids
+                .windows(2)
+                .all(|pair| pair[0] < pair[1])
+        {
+            return Err(local_error(20002));
+        }
+        self.post_proto_bytes(
+            &format!("/api/v1/social/moments/{post_id}/poll/vote"),
+            request_bytes,
+            CommitSemantics::MayCommit,
+        )
+    }
+
     pub fn submit_private_unreaction(
         &self,
         post_id: &str,

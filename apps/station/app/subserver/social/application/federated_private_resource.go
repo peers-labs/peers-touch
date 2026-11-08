@@ -277,6 +277,11 @@ func (s *PrivateContentService) enqueueFederatedPrivatePost(
 				request.GetMentionRouting(),
 			).(*privatecontentpb.SignedMentionRouting)
 		}
+		if request.GetPollAuthority() != nil {
+			verification.SubtypeAuthority = &privatecontentpb.PrivateContentVerification_PollAuthority{
+				PollAuthority: proto.Clone(request.GetPollAuthority()).(*privatecontentpb.PrivatePollAuthority),
+			}
+		}
 		deliveryID := deterministicPrivateID(
 			"federated-resource",
 			request.GetPlan().GetResource().GetContentId(),
@@ -536,7 +541,8 @@ func isFederatedPrivatePostType(kind actormodel.PostType) bool {
 	switch kind {
 	case actormodel.PostType_TEXT,
 		actormodel.PostType_IMAGE,
-		actormodel.PostType_VIDEO:
+		actormodel.PostType_VIDEO,
+		actormodel.PostType_POLL:
 		return true
 	default:
 		return false
@@ -708,6 +714,10 @@ func (s *PrivateContentService) signFederatedPrivateResourceFrame(
 	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION {
 		frame.OrderingKey = privateReactionOrderingKey(message.GetResource(), message.GetReaction().GetCommentId(), message.GetTargetActor().GetPtid())
 		frame.OrderingSequence = int64(message.GetReaction().GetProjectionRevision())
+	}
+	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION {
+		frame.OrderingKey = privatePollOrderingKey(message.GetResource(), message.GetTargetActor().GetPtid())
+		frame.OrderingSequence = int64(message.GetPoll().GetProjectionRevision())
 	}
 	signingBytes, err := federationdelivery.SigningBytes(frame)
 	if err != nil {
@@ -1081,6 +1091,9 @@ func (s *PrivateContentService) ReceiveFederatedPrivateResource(
 	}
 	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION {
 		return s.receivePrivateReactionProjection(ctx, transaction, message)
+	}
+	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION {
+		return s.receivePrivatePollProjection(ctx, transaction, message)
 	}
 	canonical, err := socialdomain.CanonicalProtoBytes(message)
 	if err != nil {
@@ -1626,6 +1639,9 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION {
 		return s.validatePrivateReactionDelivery(message, frame)
 	}
+	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION {
+		return s.validatePrivatePollDelivery(message, frame)
+	}
 	resource := message.GetResource()
 	post := message.GetPost()
 	comment := message.GetComment()
@@ -1665,7 +1681,7 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	switch message.GetResourceKind() {
 	case privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST:
 		mediaObjectCountValid :=
-			(post.GetType() == actormodel.PostType_TEXT &&
+			((post.GetType() == actormodel.PostType_TEXT || post.GetType() == actormodel.PostType_POLL) &&
 				len(message.GetObjects()) == 0) ||
 				((post.GetType() == actormodel.PostType_IMAGE ||
 					post.GetType() == actormodel.PostType_VIDEO) &&
@@ -1685,6 +1701,25 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 				"resource",
 				"is not a complete supported viewer-scoped Post",
 			)
+		}
+		var subtypeBytes []byte
+		if post.GetType() == actormodel.PostType_POLL {
+			authority := verification.GetPollAuthority()
+			if err := socialdomain.ValidatePrivatePollAuthority(authority, resource.GetContentId(), operation); err != nil {
+				return err
+			}
+			if !proto.Equal(authority.GetResource(), resource) {
+				return socialdomain.NewPrivateContentError(socialdomain.PrivateContentIntegrityFailed, operation, "poll_authority", "does not bind the original resource")
+			}
+			subtypeBytes, err = socialdomain.CanonicalProtoBytes(authority)
+			if err != nil {
+				return err
+			}
+		} else if verification.GetSubtypeAuthority() != nil {
+			return socialdomain.NewPrivateContentError(socialdomain.PrivateContentIntegrityFailed, operation, "subtype_authority", "is invalid for this post type")
+		}
+		if !bytes.Equal(privateSHA256(subtypeBytes), proof.GetSubtypeAuthoritySha256()) {
+			return socialdomain.NewPrivateContentError(socialdomain.PrivateContentIntegrityFailed, operation, "subtype_authority", "does not bind the signed commit")
 		}
 		resourceAuthor = post.GetAuthor()
 		audienceKind = post.GetAudienceKind()
@@ -2276,6 +2311,14 @@ func (s *PrivateContentService) projectRemotePrivateMoment(
 	if err != nil {
 		return nil, err
 	}
+	var pollProjection *privatecontentpb.PrivatePollProjection
+	if verification.GetPollAuthority() != nil {
+		pollProjection, err = s.interactionStore.LoadPrivatePollProjection(ctx, transaction,
+			message.GetSourceStationPeerId(), message.GetTargetActor().GetPtid(), verification.GetPollAuthority())
+		if err != nil {
+			return nil, mapPrivateStoreError(operation, err)
+		}
+	}
 	return &privatecontentpb.GetMomentResourceResponse{
 		Post:                       postProjection,
 		ReactionProjectionRevision: reactionProjectionRevision,
@@ -2305,6 +2348,7 @@ func (s *PrivateContentService) projectRemotePrivateMoment(
 					ViewerEnvelope: viewerEnvelope,
 					Objects:        cloneEncryptedObjects(message.GetObjects()),
 					Verification:   verification,
+					Poll:           pollProjection,
 				},
 			},
 		},

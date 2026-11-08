@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"fmt"
 	"testing"
 	"time"
@@ -17,9 +18,311 @@ import (
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
+
+func privatePollPrepareFixture(t *testing.T, maxChoices uint32) *privatecontentpb.PreparePrivateMomentRequest {
+	t.Helper()
+	request := privateMomentPrepareRequest("prepare-private-poll", "private-poll")
+	request.Kind = privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL
+	options := [][]byte{bytes.Repeat([]byte{0x11}, 32), bytes.Repeat([]byte{0x22}, 32)}
+	var wire []byte
+	for _, option := range options {
+		wire = protowire.AppendBytes(protowire.AppendTag(wire, 1, protowire.BytesType), option)
+	}
+	digest := sha256.Sum256(wire)
+	request.PollAuthority = &privatecontentpb.PrivatePollAuthority{
+		Resource: &securecontentpb.SecureResourceRef{
+			OwnerDomain: securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL,
+			ContentId:   request.GetContentId(), Generation: 1,
+		},
+		OpaqueOptionIds: options, OptionSetSha256: digest[:], MinChoices: 1, MaxChoices: maxChoices,
+		ExpiresAt: timestamppb.New(time.Date(2026, 9, 14, 11, 0, 0, 0, time.UTC)),
+	}
+	return request
+}
+
+func (f *federatedPrivateCommentFixture) privateVoteRequest(
+	t *testing.T, authority *privatecontentpb.PrivatePollAuthority, commandID string, indices ...int,
+) *privatecontentpb.VotePrivatePollRequest {
+	t.Helper()
+	request := &privatecontentpb.VotePrivatePollRequest{
+		PostId: f.postID, CommandId: commandID, ActorSigningKeyId: "author-key",
+		OptionSetSha256: append([]byte(nil), authority.GetOptionSetSha256()...),
+	}
+	for _, index := range indices {
+		request.OpaqueOptionIds = append(request.OpaqueOptionIds, authority.GetOpaqueOptionIds()[index])
+	}
+	f.signPrivateVote(t, request)
+	return request
+}
+
+func (f *federatedPrivateCommentFixture) signPrivateVote(t *testing.T, request *privatecontentpb.VotePrivatePollRequest) {
+	t.Helper()
+	signing, err := canonicalFederatedPrivateInteractionRequestSigningBytes(
+		privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ActorDeviceSignature = ed25519.Sign(f.source.authorPrivateKey, signing)
+}
+
+func (f *federatedPrivateCommentFixture) completePrivateVote(t *testing.T, request *privatecontentpb.VotePrivatePollRequest) *privatecontentpb.VotePrivatePollResponse {
+	t.Helper()
+	if _, err := f.receiver.service.VotePrivatePoll(f.ctx, f.bobAuthor, request); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+		t.Fatalf("first federated ballot must remain pending: %v", err)
+	}
+	f.deliverCommand(t, request.GetCommandId())
+	f.deliverResult(t, request.GetCommandId())
+	response, err := f.receiver.service.VotePrivatePoll(f.ctx, f.bobAuthor, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
+func TestFederatedPrivatePollSignedReplaceReplayAndProjection(t *testing.T) {
+	parent := privatePollPrepareFixture(t, 2)
+	fixture := newFederatedPrivateReactionFixture(t, parent)
+	authority := parent.GetPollAuthority()
+	first := fixture.privateVoteRequest(t, authority, "private-ballot-first", 0)
+	response := fixture.completePrivateVote(t, first)
+	firstAdmittedAt := proto.Clone(response.GetAdmittedAt()).(*timestamppb.Timestamp)
+	if response.GetVoterCount() != 1 || response.GetProjectionRevision() != 1 ||
+		response.GetOptions()[0].GetVoteCount() != 1 || !response.GetOptions()[0].GetSelectedByViewer() ||
+		response.GetOptions()[1].GetVoteCount() != 0 {
+		t.Fatalf("first ballot has wrong counts or selection: %+v", response)
+	}
+	replacement := fixture.privateVoteRequest(t, authority, "private-ballot-replace", 1)
+	fixture.source.clock.now = fixture.source.clock.now.Add(10 * time.Second)
+	response = fixture.completePrivateVote(t, replacement)
+	if response.GetVoterCount() != 1 || response.GetProjectionRevision() != 2 ||
+		response.GetOptions()[0].GetVoteCount() != 0 || response.GetOptions()[1].GetVoteCount() != 1 {
+		t.Fatalf("replacement incremented voter count or retained old choice: %+v", response)
+	}
+	multiple := fixture.privateVoteRequest(t, authority, "private-ballot-author", 0, 1)
+	fixture.source.clock.now = fixture.source.clock.now.Add(10 * time.Second)
+	authorResponse, err := fixture.source.service.VotePrivatePoll(fixture.ctx, fixture.source.author, multiple)
+	if err != nil || authorResponse.GetVoterCount() != 2 || authorResponse.GetProjectionRevision() != 3 {
+		t.Fatalf("same-source multi-choice ballot failed: %+v %v", authorResponse, err)
+	}
+	frame := federatedPrivateOutboxFrame(t, fixture.source.database, federationdelivery.PayloadKindSocialPrivateResource,
+		func(frame *federationdelivery.Frame) bool {
+			message := &privatecontentpb.FederatedPrivateResourceDelivery{}
+			return proto.Unmarshal(frame.GetOpaquePayload(), message) == nil &&
+				message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION &&
+				message.GetPoll().GetCommandId() == multiple.GetCommandId() && message.GetTargetActor().GetPtid() == "ptid:bob"
+		})
+	if result, err := fixture.receiver.receiver.Receive(fixture.ctx, frame); err != nil || result.Disposition != federationdelivery.DispositionAccepted {
+		t.Fatalf("poll fanout failed: %+v %v", result, err)
+	}
+	for _, reader := range []struct {
+		service *PrivateContentService
+		viewer  *actormodel.ActorDeviceRef
+	}{
+		{fixture.source.service, fixture.source.author.Endpoint},
+		{fixture.receiver.service, fixture.receiver.bob},
+	} {
+		read, err := reader.service.GetPrivateMoment(fixture.ctx, reader.viewer, fixture.postID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		poll := read.GetResource().GetPrivateContent().GetPoll()
+		if poll.GetVoterCount() != 2 || poll.GetProjectionRevision() != 3 ||
+			poll.GetOptions()[0].GetVoteCount() != 1 || poll.GetOptions()[1].GetVoteCount() != 2 {
+			t.Fatalf("original private read lost poll projection: %+v", poll)
+		}
+		if poll.GetOptions()[0].GetSelectedByViewer() != (reader.viewer.GetActor().GetPtid() == "ptid:alice") ||
+			!poll.GetOptions()[1].GetSelectedByViewer() {
+			t.Fatal("poll read leaked another viewer's selection")
+		}
+	}
+	fixture.source.clock.now = authority.GetExpiresAt().AsTime().Add(time.Minute)
+	replayed, err := fixture.receiver.service.VotePrivatePoll(fixture.ctx, fixture.bobAuthor, first)
+	if err != nil || !replayed.GetExactReplay() || replayed.GetProjectionRevision() != 1 ||
+		!proto.Equal(replayed.GetAdmittedAt(), firstAdmittedAt) {
+		t.Fatalf("exact retry after cutoff changed original acceptance: %+v %v", replayed, err)
+	}
+	read, err := fixture.receiver.service.GetPrivateMoment(fixture.ctx, fixture.receiver.bob, fixture.postID)
+	if err != nil || read.GetResource().GetPrivateContent().GetPoll().GetProjectionRevision() != 3 {
+		t.Fatalf("old replay rolled back current results: %+v %v", read, err)
+	}
+}
+
+func TestFederatedPrivatePollRejectsInvalidCommandsWithoutChangingBallot(t *testing.T) {
+	parent := privatePollPrepareFixture(t, 1)
+	fixture := newFederatedPrivateReactionFixture(t, parent)
+	authority := parent.GetPollAuthority()
+	first := fixture.privateVoteRequest(t, authority, "private-poll-valid", 0)
+	fixture.completePrivateVote(t, first)
+	for _, test := range []struct {
+		name string
+		edit func(*privatecontentpb.VotePrivatePollRequest)
+		code socialdomain.PrivateContentErrorCode
+	}{
+		{"duplicate", func(r *privatecontentpb.VotePrivatePollRequest) {
+			r.OpaqueOptionIds = append(r.OpaqueOptionIds, r.OpaqueOptionIds[0])
+		}, socialdomain.PrivateContentPollInvalidSelection},
+		{"outside", func(r *privatecontentpb.VotePrivatePollRequest) {
+			r.OpaqueOptionIds = [][]byte{bytes.Repeat([]byte{0x44}, 32)}
+		}, socialdomain.PrivateContentPollInvalidSelection},
+		{"too-many", func(r *privatecontentpb.VotePrivatePollRequest) { r.OpaqueOptionIds = authority.GetOpaqueOptionIds() }, socialdomain.PrivateContentPollInvalidSelection},
+		{"definition", func(r *privatecontentpb.VotePrivatePollRequest) { r.OptionSetSha256 = bytes.Repeat([]byte{0x55}, 32) }, socialdomain.PrivateContentPollDefinitionChanged},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := fixture.privateVoteRequest(t, authority, "private-poll-invalid-"+test.name, 0)
+			test.edit(request)
+			fixture.signPrivateVote(t, request)
+			if _, err := fixture.source.service.VotePrivatePoll(fixture.ctx, fixture.source.author, request); !socialdomain.IsPrivateContentCode(err, test.code) {
+				t.Fatalf("invalid ballot error = %v; want %s", err, test.code)
+			}
+		})
+	}
+	badSignature := fixture.privateVoteRequest(t, authority, "private-poll-bad-signature", 1)
+	badSignature.ActorDeviceSignature[0] ^= 1
+	if _, err := fixture.source.service.VotePrivatePoll(fixture.ctx, fixture.source.author, badSignature); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentUnauthorized) {
+		t.Fatalf("invalid device signature accepted: %v", err)
+	}
+	fixture.source.clock.now = authority.GetExpiresAt().AsTime()
+	closed := fixture.privateVoteRequest(t, authority, "private-poll-closed", 1)
+	if _, err := fixture.source.service.VotePrivatePoll(fixture.ctx, fixture.source.author, closed); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentPollClosed) {
+		t.Fatalf("source cutoff accepted a new ballot: %v", err)
+	}
+	read, err := fixture.source.service.GetPrivateMoment(fixture.ctx, fixture.source.author.Endpoint, fixture.postID)
+	if err != nil || read.GetResource().GetPrivateContent().GetPoll().GetVoterCount() != 1 ||
+		read.GetResource().GetPrivateContent().GetPoll().GetProjectionRevision() != 1 {
+		t.Fatalf("rejected ballot changed source projection: %+v %v", read, err)
+	}
+}
+
+func TestFederatedPrivatePollRevocationAndResultBinding(t *testing.T) {
+	parent := privatePollPrepareFixture(t, 1)
+	fixture := newFederatedPrivateReactionFixture(t, parent)
+	request := fixture.privateVoteRequest(t, parent.GetPollAuthority(), "private-poll-security", 0)
+	if _, err := fixture.receiver.service.VotePrivatePoll(fixture.ctx, fixture.bobAuthor, request); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+		t.Fatal(err)
+	}
+	fixture.deliverCommand(t, request.GetCommandId())
+	resultFrame := federatedPrivateOutboxFrame(t, fixture.source.database, federationdelivery.PayloadKindSocialPrivateResult,
+		func(frame *federationdelivery.Frame) bool { return frame.GetPayloadId() == request.GetCommandId() })
+	result := &privatecontentpb.FederatedPrivateInteractionResult{}
+	if err := proto.Unmarshal(resultFrame.GetOpaquePayload(), result); err != nil {
+		t.Fatal(err)
+	}
+	validResponse := &privatecontentpb.VotePrivatePollResponse{}
+	if err := proto.Unmarshal(result.GetCanonicalResult(), validResponse); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*privatecontentpb.VotePrivatePollResponse)
+	}{
+		{"selection", func(r *privatecontentpb.VotePrivatePollResponse) { r.Options[0].SelectedByViewer = false }},
+		{"counts", func(r *privatecontentpb.VotePrivatePollResponse) { r.Options[1].VoteCount = 2 }},
+		{"definition", func(r *privatecontentpb.VotePrivatePollResponse) { r.OptionSetSha256 = bytes.Repeat([]byte{0x88}, 32) }},
+		{"post", func(r *privatecontentpb.VotePrivatePollResponse) {
+			r.PostId = privateTestContentID("wrong-private-poll")
+		}},
+		{"late-admission", func(r *privatecontentpb.VotePrivatePollResponse) {
+			r.AdmittedAt = parent.GetPollAuthority().GetExpiresAt()
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := proto.Clone(validResponse).(*privatecontentpb.VotePrivatePollResponse)
+			test.edit(response)
+			tampered := proto.Clone(result).(*privatecontentpb.FederatedPrivateInteractionResult)
+			wire, err := socialdomain.CanonicalProtoBytes(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tampered.CanonicalResult, tampered.CanonicalResultSha256 = wire, privateSHA256(wire)
+			wire, err = socialdomain.CanonicalProtoBytes(tampered)
+			if err != nil {
+				t.Fatal(err)
+			}
+			frame := proto.Clone(resultFrame).(*federationdelivery.Frame)
+			frame.FrameId += "-" + test.name
+			frame.IdempotencyKey += "-" + test.name
+			frame.OpaquePayload, frame.PayloadSha256 = wire, federationdelivery.PayloadSHA256(wire)
+			signing, err := federationdelivery.SigningBytes(frame)
+			if err != nil {
+				t.Fatal(err)
+			}
+			frame.StationSignature = ed25519.Sign(fixture.source.stationSigner.privateKey, signing)
+			deliveryResult, err := fixture.receiver.receiver.Receive(fixture.ctx, frame)
+			if err != nil || deliveryResult.Disposition != federationdelivery.DispositionTerminal {
+				t.Fatalf("bound but altered poll result accepted: %+v %v", deliveryResult, err)
+			}
+		})
+	}
+	fixture.deliverResult(t, request.GetCommandId())
+	deniedViewer := proto.Clone(fixture.receiver.bob).(*actormodel.ActorDeviceRef)
+	deniedViewer.Actor.Ptid = "ptid:unrelated"
+	if _, err := fixture.receiver.service.GetPrivateMoment(fixture.ctx, deniedViewer, fixture.postID); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentNotFound) {
+		t.Fatalf("unrelated viewer received poll results: %v", err)
+	}
+	lateFrame := federatedPrivateOutboxFrame(t, fixture.source.database, federationdelivery.PayloadKindSocialPrivateResource,
+		func(frame *federationdelivery.Frame) bool {
+			message := &privatecontentpb.FederatedPrivateResourceDelivery{}
+			return proto.Unmarshal(frame.GetOpaquePayload(), message) == nil &&
+				message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION &&
+				message.GetTargetActor().GetPtid() == "ptid:bob"
+		})
+	deleted, err := fixture.source.service.DeletePrivateMoment(fixture.ctx, fixture.postID, "ptid:alice")
+	if err != nil || !deleted {
+		t.Fatalf("delete private poll: %v %v", deleted, err)
+	}
+	for _, table := range []string{"social_private_poll_ballots", "social_private_poll_choices", "social_private_poll_states", "social_private_poll_projections"} {
+		assertTableCount(t, fixture.source.database, table, 0)
+	}
+	invalidation := federatedPrivateOutboxFrame(t, fixture.source.database, federationdelivery.PayloadKindSocialPrivateInvalidation,
+		func(frame *federationdelivery.Frame) bool {
+			message := &privatecontentpb.FederatedPrivateResourceInvalidation{}
+			return proto.Unmarshal(frame.GetOpaquePayload(), message) == nil && message.GetTargetActor().GetPtid() == "ptid:bob"
+		})
+	if deliveryResult, err := fixture.receiver.receiver.Receive(fixture.ctx, invalidation); err != nil ||
+		deliveryResult.Disposition != federationdelivery.DispositionAccepted {
+		t.Fatalf("poll revocation failed: %+v %v", deliveryResult, err)
+	}
+	assertTableCount(t, fixture.receiver.database, "social_private_poll_projections", 0)
+	if deliveryResult, err := fixture.receiver.receiver.Receive(fixture.ctx, lateFrame); err != nil ||
+		deliveryResult.Disposition != federationdelivery.DispositionTerminal {
+		t.Fatalf("revoked poll accepted delayed projection: %+v %v", deliveryResult, err)
+	}
+	if _, err := fixture.receiver.service.VotePrivatePoll(fixture.ctx, fixture.bobAuthor, request); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentNotFound) {
+		t.Fatalf("revoked ballot replay exposed results: %v", err)
+	}
+}
+
+func TestFederatedPrivatePollFanoutFailureRollsBackAndRetriesExactCommand(t *testing.T) {
+	parent := privatePollPrepareFixture(t, 1)
+	fixture := newFederatedPrivateReactionFixture(t, parent)
+	request := fixture.privateVoteRequest(t, parent.GetPollAuthority(), "private-poll-fanout-failure", 0)
+	if _, err := fixture.receiver.service.VotePrivatePoll(fixture.ctx, fixture.bobAuthor, request); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+		t.Fatal(err)
+	}
+	frame := federatedPrivateOutboxFrame(t, fixture.receiver.database, federationdelivery.PayloadKindSocialPrivateInteraction,
+		func(frame *federationdelivery.Frame) bool { return frame.GetPayloadId() == request.GetCommandId() })
+	bus := fixture.source.service.events.bus
+	fixture.source.service.events.bus = func() events.EventBus { return nil }
+	result, err := fixture.sourceReceiver.Receive(fixture.ctx, frame)
+	fixture.source.service.events.bus = bus
+	if err != nil || result.Disposition != federationdelivery.DispositionRetryable {
+		t.Fatalf("missing event bus must remain retryable: %+v %v", result, err)
+	}
+	for _, table := range []string{"social_private_poll_ballots", "social_private_poll_choices", "social_private_poll_states", "social_private_poll_projections"} {
+		assertTableCount(t, fixture.source.database, table, 0)
+	}
+	fixture.deliverCommand(t, request.GetCommandId())
+	fixture.deliverResult(t, request.GetCommandId())
+	response, err := fixture.receiver.service.VotePrivatePoll(fixture.ctx, fixture.bobAuthor, request)
+	if err != nil || response.GetVoterCount() != 1 || response.GetProjectionRevision() != 1 {
+		t.Fatalf("exact retry after failure changed counts: %+v %v", response, err)
+	}
+}
 
 func TestFederatedPrivateCommentPrepare(t *testing.T) {
 	fixture := newFederatedPrivateCommentFixture(t)
@@ -952,9 +1255,10 @@ type federatedPrivateCommentFixture struct {
 
 func newFederatedPrivateReactionFixture(
 	t *testing.T,
+	parentRequests ...*privatecontentpb.PreparePrivateMomentRequest,
 ) *federatedPrivateCommentFixture {
 	t.Helper()
-	fixture := newFederatedPrivateCommentFixture(t)
+	fixture := newFederatedPrivateCommentFixture(t, parentRequests...)
 	for name, database := range map[string]*gorm.DB{
 		"source":   fixture.source.database,
 		"receiver": fixture.receiver.database,
@@ -1117,6 +1421,7 @@ func TestFederatedPrivateReactionDeliveryConvergesOtherReadersAndRejectsStaleTar
 
 func newFederatedPrivateCommentFixture(
 	t *testing.T,
+	parentRequests ...*privatecontentpb.PreparePrivateMomentRequest,
 ) *federatedPrivateCommentFixture {
 	t.Helper()
 	ctx := context.Background()
@@ -1184,7 +1489,7 @@ func newFederatedPrivateCommentFixture(
 	); err != nil {
 		t.Fatal(err)
 	}
-	postID := publishPrivateCommentParent(t, source, "federated-comment-parent")
+	postID := publishPrivateCommentParent(t, source, "federated-comment-parent", parentRequests...)
 	receiverAudienceFixture := receiver.service.audiences.(*privateContentTestAudience)
 	receiverAudienceFixture.snapshot.RecipientPTIDs = []string{
 		"ptid:alice",

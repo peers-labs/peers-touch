@@ -111,7 +111,9 @@ from tooling.development.secure_content.mobile_fixture import (
 )
 from tooling.development.secure_content.social_interaction_ui import (
     SocialCommentUI,
+    SocialPollUI,
     exercise_comment_likes,
+    exercise_private_poll,
 )
 from tooling.development.secure_content.runtime_fixture import (
     RuntimeFixtureBinding,
@@ -7641,6 +7643,28 @@ class W7RuntimeOwner:
                 actor_label="Bob",
             )
             scenario_state["as18Post"] = as18_post
+            private_polls = [
+                {
+                    "postId": publish_typed({
+                        "draftId": f"css09-as18-poll-{int(multiple)}",
+                        "revision": 1,
+                        "text": f"css09-cross-station-poll-{int(multiple)}",
+                        "audienceKind": "CUSTOM_ALLOW",
+                        "actorPtids": [fixture_identity["bobPtid"]],
+                        "momentKind": "POLL",
+                        "poll": {
+                            "question": f"css09-private-question-{int(multiple)}",
+                            "options": ["opaque label A", "opaque label B", "opaque label C"]
+                            if multiple else ["opaque label A", "opaque label B"],
+                            "minChoices": 1,
+                            "maxChoices": 2 if multiple else 1,
+                            "expiresAtSeconds": int(time.time()) + 7200,
+                        },
+                    }, label="AS18 private poll"),
+                    "multiple": multiple,
+                }
+                for multiple in (False, True)
+            ]
             record_scenario(
                 "AS18",
                 receiver=current_bob,
@@ -7682,6 +7706,20 @@ class W7RuntimeOwner:
                     "AS19 unauthorized fixture exposed private material",
                     resource="fixture-account:eve",
                 )
+            for poll in private_polls:
+                status, body = _http_get(
+                    f"{secondary_station_url.rstrip('/')}/api/v1/social/moments/{poll['postId']}",
+                    authorization=f"Bearer {eve_token}",
+                    headers={"X-Device-ID": "css09-eve-untrusted-device"},
+                )
+                if status != 404 or any(marker in body for marker in (
+                    b"opaque label", b"css09-private-question", b"voter_count",
+                    b"opaque_option_ids", b"option_set_sha256",
+                )):
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE", "AS19 private poll denial exposed material",
+                        resource="fixture-account:eve",
+                    )
             record_scenario(
                 "AS19",
                 receiver=current_bob,
@@ -7761,7 +7799,30 @@ class W7RuntimeOwner:
             for text, depth in ((as20_comment, 0), (as20_reply, 1)):
                 alice_comment_ui.assert_like(as20_post, text, depth, 1, True, "durable-retry")
                 bob_comment_ui.assert_like(as20_post, text, depth, 1, False, "durable-retry")
+            bob_poll_ui = SocialPollUI(current_bob, "bob", interaction_evidence_root)
+            alice_poll_ui = SocialPollUI(alice, "alice", interaction_evidence_root)
+            ballot_results = []
+            for poll in private_polls:
+                for client in (alice, current_bob):
+                    _wait_for_private_moment_state(
+                        client, post_id=poll["postId"], expected_state="CONTENT_READY",
+                        actor_label="private poll reader",
+                    )
+                result = exercise_private_poll(
+                    bob_poll_ui, alice_poll_ui, post_id=poll["postId"], multiple=poll["multiple"],
+                )
+                result["exactRetries"] = [
+                    _moments_harness(client, "replayPrivatePollVote", {"postId": poll["postId"]})
+                    for client in (alice, current_bob)
+                ]
+                for ui in (alice_poll_ui, bob_poll_ui):
+                    ui.assert_poll(
+                        result["postId"], result["counts"], result["choices"], 2, "durable-retry",
+                    )
+                ballot_results.append(result)
             supporting_artifacts.extend(str(path) for ui in (alice_comment_ui, bob_comment_ui)
+                                        for path in ui.artifacts)
+            supporting_artifacts.extend(str(path) for ui in (alice_poll_ui, bob_poll_ui)
                                         for path in ui.artifacts)
             record_scenario(
                 "AS20",
@@ -7777,6 +7838,9 @@ class W7RuntimeOwner:
                     "commentReactionActions": bob_comment_ui.actions + alice_comment_ui.actions,
                     "commentReactionAssertions": bob_comment_ui.assertions + alice_comment_ui.assertions,
                     "commentReactionReplays": replay_evidence,
+                    "pollActions": bob_poll_ui.actions + alice_poll_ui.actions,
+                    "pollAssertions": bob_poll_ui.assertions + alice_poll_ui.assertions,
+                    "pollResults": ballot_results,
                     "sourceGateIds": ["social-cross-station-interaction"],
                 },
             )
@@ -7800,6 +7864,12 @@ class W7RuntimeOwner:
                 expected_state="CONTENT_READY",
                 actor_label="Bob",
             )
+            reload_poll_ui = SocialPollUI(current_bob, "bob", owner_root / "scenarios" / "AS21" / "painted")
+            for result in ballot_results:
+                reload_poll_ui.assert_poll(
+                    result["postId"], result["counts"], result["choices"], 2, "renderer-reload",
+                )
+            supporting_artifacts.extend(str(path) for path in reload_poll_ui.artifacts)
             record_scenario(
                 "AS21",
                 receiver=current_bob,
@@ -7807,6 +7877,8 @@ class W7RuntimeOwner:
                 observations={
                     "contentReady": as21_read.get("state") == "CONTENT_READY",
                     "rendererReloaded": True,
+                    "pollActions": reload_poll_ui.actions,
+                    "pollAssertions": reload_poll_ui.assertions,
                     "bootIdentityStable": (
                         before_reload.get("bootIdentitySha256")
                         == after_reload.get("bootIdentitySha256")
@@ -7929,6 +8001,15 @@ class W7RuntimeOwner:
             bob2_comment_ui.open_thread(as20_post)
             for text, depth in ((as20_comment, 0), (as20_reply, 1)):
                 bob2_comment_ui.assert_like(as20_post, text, depth, 1, False, "replacement-readback")
+            bob2_poll_ui = SocialPollUI(bob2, "bob2", owner_root / "scenarios" / "AS23" / "painted")
+            for result in ballot_results:
+                _wait_for_private_moment_state(
+                    bob2, post_id=result["postId"], expected_state="CONTENT_READY", actor_label="Bob2",
+                )
+                bob2_poll_ui.assert_poll(
+                    result["postId"], result["counts"], result["choices"], 2, "replacement-readback",
+                )
+            supporting_artifacts.extend(str(path) for path in bob2_poll_ui.artifacts)
             supporting_artifacts.extend(str(path) for path in bob2_comment_ui.artifacts)
             bob2_snapshot = _wait_for_moments_snapshot(bob2)
             prepared.verify_snapshot(bob2_id, bob2_snapshot)
@@ -7967,6 +8048,8 @@ class W7RuntimeOwner:
                     ],
                     "commentReactionActions": bob2_comment_ui.actions,
                     "commentReactionAssertions": bob2_comment_ui.assertions,
+                    "pollActions": bob2_poll_ui.actions,
+                    "pollAssertions": bob2_poll_ui.assertions,
                     "sourceGateIds": [
                         "social-cross-station-revocation-recovery"
                     ],
@@ -8073,6 +8156,42 @@ class W7RuntimeOwner:
                 local_ui.toggle_like(private_post, text, depth, 1, True, f"local-{label}-unlike")
                 local_ui.assert_like(private_post, text, depth, 0, False, f"local-{label}-unlike")
             supporting_artifacts.extend(str(path) for path in local_ui.artifacts)
+            poll_denial_ui = SocialPollUI(
+                current_bob, "bob2", owner_root / "scenarios" / "same-station-regression" / "painted",
+            )
+            deleted_poll, blocked_poll = (result["postId"] for result in ballot_results)
+            _moments_harness(alice, "deletePrivateMoment", {"postId": deleted_poll})
+            deleted_read = _wait_for_private_moment_states(
+                current_bob, post_id=deleted_poll,
+                expected_states={"DELETED_OR_REVOKED", "NOT_FOUND_OR_NOT_AUTHORIZED"},
+                actor_label="Bob2 deleted poll",
+            )
+            if deleted_read.get("contentKind") or deleted_read.get("subtypeEvidence"):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE", "Deleted poll retained readable material",
+                    resource="client:cross-station-social-bob2",
+                )
+            poll_denial_ui.assert_denied(deleted_poll, "deleted")
+            relationship = _moments_harness(
+                alice, "relationshipStatus", {"actorPtid": fixture_identity["bobPtid"]},
+            )
+            _moments_harness(alice, "blockActor", {
+                "actorPtid": fixture_identity["bobPtid"],
+                "homeStationPeerId": secondary_attestation.runtime_identity,
+                "observedRevision": relationship["revision"],
+            })
+            blocked_read = _wait_for_private_moment_states(
+                current_bob, post_id=blocked_poll,
+                expected_states={"DELETED_OR_REVOKED", "NOT_FOUND_OR_NOT_AUTHORIZED"},
+                actor_label="Bob2 blocked poll",
+            )
+            if blocked_read.get("contentKind") or blocked_read.get("subtypeEvidence"):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE", "Blocked poll retained readable material",
+                    resource="client:cross-station-social-bob2",
+                )
+            poll_denial_ui.assert_denied(blocked_poll, "blocked")
+            supporting_artifacts.extend(str(path) for path in poll_denial_ui.artifacts)
             record_scenario(
                 "same-station-regression",
                 receiver=alice,
@@ -8085,6 +8204,8 @@ class W7RuntimeOwner:
                     "privateParentReady": True,
                     "commentReactionActions": local_ui.actions,
                     "commentReactionAssertions": local_ui.assertions,
+                    "pollDenialActions": poll_denial_ui.actions,
+                    "pollDenialAssertions": poll_denial_ui.assertions,
                     "sameStationPrivateGate": "social-private-desktop-e2e",
                 },
             )

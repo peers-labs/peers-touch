@@ -74,6 +74,10 @@ func RemotePrivateContentModels() []any {
 		&remotePrivateTombstoneModel{},
 		&federatedPrivateInteractionModel{},
 		&federatedPrivateReactionProjectionModel{},
+		&privatePollBallotModel{},
+		&privatePollChoiceModel{},
+		&privatePollStateModel{},
+		&privatePollProjectionModel{},
 	}
 }
 

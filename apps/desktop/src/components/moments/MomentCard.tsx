@@ -165,8 +165,7 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
       </blockquote>}
       {privateContent?.kind === 'LINK' && <p><ExternalLink size={15} />
         <a href={privateContent.url} target="_blank" rel="noreferrer">{privateContent.title}</a></p>}
-      {privateContent?.kind === 'POLL' && <div><strong>{privateContent.question}</strong>
-        <ul>{privateContent.options.map(option => <li key={option}>{option}</li>)}</ul></div>}
+      {privateContent?.kind === 'POLL' && <MomentPoll key={post.id} post={post} />}
       {privateContent?.kind === 'LOCATION' && <p><MapPin size={15} /> {privateContent.name}
         {privateContent.address && <span> · {privateContent.address}</span>}</p>}
       {original && <blockquote><MomentCard post={original} embedded defaultCommentsOpen={false}

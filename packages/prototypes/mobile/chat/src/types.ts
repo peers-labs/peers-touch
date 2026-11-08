@@ -108,7 +108,8 @@ export interface Moment {
   contentKind?: 'text' | 'image' | 'video' | 'link' | 'poll' | 'repost' | 'location';
   videoLabel?: string;
   link?: { title: string; url: string };
-  poll?: { question: string; options: string[] };
+  poll?: { question: string; options: string[]; minChoices: number; maxChoices: number;
+    confirmedChoices: number[]; voteCounts: number[]; voterCount: number; closed: boolean };
   repost?: { author: string; text: string };
   location?: { name: string; address: string };
   likes: number;
@@ -169,4 +170,3 @@ export const REACTION_EMOJI: Record<ReactionKind, string> = Object.fromEntries(
 
 /** Full kind list in catalog order (16). */
 export const REACTION_KINDS: ReactionKind[] = REACTION_CATALOG.map(meta => meta.kind);
-

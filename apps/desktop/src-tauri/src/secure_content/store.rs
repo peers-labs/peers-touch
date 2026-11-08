@@ -2,6 +2,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
+use crate::social::{PrivatePollResultProjection, PrivateReactionOperation};
+use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use secure_content_core::object::{
     ObjectDescriptor, ObjectTransferDirection, ObjectTransferErrorCode, ObjectTransferFailure,
@@ -297,7 +299,7 @@ pub struct StoredReactionCommand {
     pub post_id: String,
     pub comment_id: String,
     pub kind: i32,
-    pub remove: bool,
+    pub operation: PrivateReactionOperation,
     pub request_sha256: [u8; 32],
     pub request_bytes: Vec<u8>,
     pub result_sha256: Option<[u8; 32]>,
@@ -1883,6 +1885,16 @@ impl SecureContentStore {
             post_id,
             Some(generation),
         )?;
+        let current: Option<Vec<u8>> = transaction
+            .query_row(
+                "SELECT projection_bytes FROM secure_content_moment_projections WHERE post_id = ?1",
+                params![post_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let merged = crate::social::merge_poll_readback(current.as_deref(), projection_bytes)?;
+        let projection_bytes = merged.as_slice();
         transaction
             .execute(
                 "INSERT INTO secure_content_roots(
@@ -2001,6 +2013,16 @@ impl SecureContentStore {
                 return Err("private Social projection revision changed".to_string());
             }
         }
+        let current: Option<Vec<u8>> = transaction
+            .query_row(
+                "SELECT projection_bytes FROM secure_content_moment_projections WHERE post_id = ?1",
+                params![post_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let merged = crate::social::merge_poll_readback(current.as_deref(), projection_bytes)?;
+        let projection_bytes = merged.as_slice();
         transaction
             .execute(
                 "UPDATE secure_content_moment_projections
@@ -2046,7 +2068,9 @@ impl SecureContentStore {
     ) -> Result<StoredReactionCommand, String> {
         if command.command_id.trim().is_empty()
             || command.post_id.trim().is_empty()
-            || command.kind < 0
+            || (command.operation == PrivateReactionOperation::VotePoll
+                && (command.kind != 0 || !command.comment_id.is_empty()))
+            || (command.operation != PrivateReactionOperation::VotePoll && command.kind <= 0)
             || command.request_bytes.is_empty()
             || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
             || command.state != ReactionCommandState::Pending
@@ -2088,7 +2112,7 @@ impl SecureContentStore {
         transaction
             .execute(
                 "INSERT INTO secure_content_reaction_commands(
-                    command_id, post_id, kind, remove_reaction, request_sha256,
+                    command_id, post_id, kind, operation, request_sha256,
                     request_bytes, result_sha256, result_bytes, state,
                     session_generation, lease_generation, attempt_count,
                     projection_revision, error_code, retry_after_seconds,
@@ -2100,7 +2124,7 @@ impl SecureContentStore {
                     command.command_id,
                     command.post_id,
                     command.kind,
-                    command.remove,
+                    command.operation as i64,
                     command.request_sha256.as_slice(),
                     command.request_bytes,
                     ReactionCommandState::Pending as i64,
@@ -2112,7 +2136,7 @@ impl SecureContentStore {
             .map_err(|error| error.to_string())?;
         let stored = transaction
             .query_row(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
                         request_bytes, result_sha256, result_bytes, state,
                         session_generation, lease_generation, attempt_count,
                         projection_revision, error_code, retry_after_seconds,
@@ -2125,7 +2149,7 @@ impl SecureContentStore {
         if stored.post_id != command.post_id
             || stored.comment_id != command.comment_id
             || stored.kind != command.kind
-            || stored.remove != command.remove
+            || stored.operation != command.operation
             || stored.request_sha256 != command.request_sha256
             || stored.request_bytes != command.request_bytes
         {
@@ -2141,7 +2165,7 @@ impl SecureContentStore {
     ) -> Result<Option<StoredReactionCommand>, String> {
         self.connection()?
             .query_row(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
                         request_bytes, result_sha256, result_bytes, state,
                         session_generation, lease_generation, attempt_count,
                         projection_revision, error_code, retry_after_seconds,
@@ -2158,7 +2182,7 @@ impl SecureContentStore {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
                         request_bytes, result_sha256, result_bytes, state,
                         session_generation, lease_generation, attempt_count,
                         projection_revision, error_code, retry_after_seconds,
@@ -2218,7 +2242,7 @@ impl SecureContentStore {
         }
         let command = transaction
             .query_row(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
                         request_bytes, result_sha256, result_bytes, state,
                         session_generation, lease_generation, attempt_count,
                         projection_revision, error_code, retry_after_seconds,
@@ -2291,11 +2315,13 @@ impl SecureContentStore {
         result_sha256: &[u8; 32],
         projection_revision: u64,
         reactions: &[crate::social::PrivateReactionSummaryProjection],
+        poll: Option<&PrivatePollResultProjection>,
     ) -> Result<bool, String> {
         if result_bytes.is_empty()
             || Sha256::digest(result_bytes).as_slice() != result_sha256
             || projection_revision == 0
             || command.post_id.trim().is_empty()
+            || (command.operation == PrivateReactionOperation::VotePoll) != poll.is_some()
         {
             return Err("secure content Reaction completion is invalid".to_string());
         }
@@ -2345,13 +2371,22 @@ impl SecureContentStore {
                     params![post_id, comment_id], |row| row.get(0),
                 )
             }.map_err(|error| error.to_string())?;
-            let projection_bytes = crate::social::project_reaction_target(
-                post_id,
-                comment_id,
-                &current_bytes,
-                reactions,
-                projection_revision,
-            )?;
+            let projection_bytes = if let Some(poll) = poll {
+                if !comment_id.is_empty()
+                    || poll.projection_revision != projection_revision.to_string()
+                {
+                    return Err("secure content poll completion target is invalid".into());
+                }
+                crate::social::project_poll_target(post_id, &current_bytes, poll)?
+            } else {
+                crate::social::project_reaction_target(
+                    post_id,
+                    comment_id,
+                    &current_bytes,
+                    reactions,
+                    projection_revision,
+                )?
+            };
             let projection_changed = if comment_id.is_empty() {
                 transaction.execute(
                     "UPDATE secure_content_moment_projections
@@ -3360,6 +3395,93 @@ fn recover_comment_submissions(
     Ok(recovered_count)
 }
 
+fn migrate_reaction_operation(connection: &Connection) -> Result<(), String> {
+    let columns = connection
+        .prepare("PRAGMA table_info(secure_content_reaction_commands)")
+        .map_err(|error| error.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    if !columns.iter().any(|column| column == "remove_reaction") {
+        return Ok(());
+    }
+    // The original signed request and hash are preserved byte-for-byte. The
+    // retired boolean is used only here to qualify the original journal row.
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    {
+        let mut statement = transaction.prepare(
+            "SELECT command_id, post_id, comment_id, kind, remove_reaction, request_bytes, request_sha256
+             FROM secure_content_reaction_commands",
+        ).map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Vec<u8>>(5)?,
+                    row.get::<_, Vec<u8>>(6)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?;
+        for row in rows {
+            let (id, post, comment, kind, remove, bytes, hash) =
+                row.map_err(|error| error.to_string())?;
+            // React/Unreact share the same original wire fields; the retained
+            // operation determines the signing domain on exact replay.
+            let request = crate::model::social::ReactToPostRequest::decode(bytes.as_slice())
+                .map_err(|_| "secure content original interaction journal is malformed")?;
+            if !(0..=1).contains(&remove)
+                || request.encode_to_vec() != bytes
+                || request.command_id != id
+                || request.post_id != post
+                || request.comment_id != comment
+                || request.kind != kind
+                || kind <= 0
+                || request.actor_signing_key_id.trim().is_empty()
+                || request.actor_device_signature.len() != 64
+                || Sha256::digest(&bytes).as_slice() != hash
+            {
+                return Err(
+                    "secure content original interaction journal identity is invalid".into(),
+                );
+            }
+        }
+    }
+    transaction.execute_batch(
+        "CREATE TABLE secure_content_reaction_operation_migration (
+            command_id TEXT PRIMARY KEY, post_id TEXT NOT NULL,
+            comment_id TEXT NOT NULL DEFAULT '', kind INTEGER NOT NULL,
+            operation INTEGER NOT NULL CHECK(operation IN (3, 4, 5)),
+            request_sha256 BLOB NOT NULL CHECK(length(request_sha256) = 32),
+            request_bytes BLOB NOT NULL,
+            result_sha256 BLOB CHECK(result_sha256 IS NULL OR length(result_sha256) = 32),
+            result_bytes BLOB, state INTEGER NOT NULL, session_generation INTEGER NOT NULL,
+            lease_generation INTEGER NOT NULL DEFAULT 0, attempt_count INTEGER NOT NULL DEFAULT 0,
+            projection_revision INTEGER NOT NULL DEFAULT 0, error_code TEXT,
+            retry_after_seconds INTEGER, retry_not_before_unix_ms INTEGER,
+            updated_at_unix_ms INTEGER NOT NULL
+         );
+         INSERT INTO secure_content_reaction_operation_migration
+         SELECT command_id, post_id, comment_id, kind,
+                CASE remove_reaction WHEN 0 THEN 3 WHEN 1 THEN 4 END,
+                request_sha256, request_bytes, result_sha256, result_bytes, state,
+                session_generation, lease_generation, attempt_count, projection_revision,
+                error_code, retry_after_seconds, retry_not_before_unix_ms, updated_at_unix_ms
+         FROM secure_content_reaction_commands;
+         DROP TABLE secure_content_reaction_commands;
+         ALTER TABLE secure_content_reaction_operation_migration RENAME TO secure_content_reaction_commands;
+         CREATE INDEX idx_secure_content_reaction_commands_post
+         ON secure_content_reaction_commands(post_id, updated_at_unix_ms DESC);",
+    ).map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
+}
+
 fn reaction_command_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredReactionCommand> {
     let result_sha256 = row
         .get::<_, Option<Vec<u8>>>(6)?
@@ -3374,7 +3496,8 @@ fn reaction_command_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Stored
         post_id: row.get(1)?,
         comment_id: row.get(16)?,
         kind: row.get(2)?,
-        remove: row.get(3)?,
+        operation: PrivateReactionOperation::try_from(row.get::<_, i64>(3)?)
+            .map_err(conversion_error)?,
         request_sha256: fixed_32(row.get(4)?, "Reaction request hash")?,
         request_bytes: row.get(5)?,
         result_sha256,
@@ -3620,7 +3743,7 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 post_id TEXT NOT NULL,
                 comment_id TEXT NOT NULL DEFAULT '',
                 kind INTEGER NOT NULL,
-                remove_reaction INTEGER NOT NULL CHECK(remove_reaction IN (0, 1)),
+                operation INTEGER NOT NULL CHECK(operation IN (3, 4, 5)),
                 request_sha256 BLOB NOT NULL CHECK(length(request_sha256) = 32),
                 request_bytes BLOB NOT NULL,
                 result_sha256 BLOB CHECK(result_sha256 IS NULL OR length(result_sha256) = 32),
@@ -3950,6 +4073,7 @@ fn migrate_operation_schema(connection: &Connection) -> Result<(), String> {
             }
         }
     }
+    migrate_reaction_operation(connection)?;
     connection
         .execute(
             "UPDATE secure_content_moment_commands
@@ -5276,7 +5400,7 @@ mod tests {
             post_id: "post-1".to_string(),
             comment_id: String::new(),
             kind: 1,
-            remove: false,
+            operation: PrivateReactionOperation::React,
             request_sha256: Sha256::digest(&request_bytes).into(),
             request_bytes: request_bytes.clone(),
             result_sha256: None,
@@ -5327,7 +5451,7 @@ mod tests {
         let result_bytes = b"committed-private-reaction".to_vec();
         let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
         assert!(store
-            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 4, &[],)
+            .mark_reaction_committed(&retry, &result_bytes, &result_sha256, 4, &[], None)
             .unwrap());
         let committed = store
             .reaction_command(&command.command_id)
@@ -5348,7 +5472,7 @@ mod tests {
             post_id: "post-1".to_string(),
             comment_id: String::new(),
             kind: 1,
-            remove: true,
+            operation: PrivateReactionOperation::Unreact,
             request_sha256: Sha256::digest(&next_request_bytes).into(),
             request_bytes: next_request_bytes,
             result_sha256: None,
@@ -5402,7 +5526,7 @@ mod tests {
                 post_id: "post-1".into(),
                 comment_id: comment.into(),
                 kind,
-                remove: false,
+                operation: PrivateReactionOperation::React,
                 request_sha256: Sha256::digest(&request_bytes).into(),
                 request_bytes,
                 result_sha256: None,
@@ -5507,21 +5631,29 @@ mod tests {
                 updated_at_unix_ms INTEGER NOT NULL
             );"
         ).unwrap();
-        let bytes = b"signed-post-command";
+        let bytes = crate::model::social::ReactToPostRequest {
+            post_id: "post".into(),
+            comment_id: String::new(),
+            kind: 1,
+            command_id: "existing".into(),
+            actor_signing_key_id: "device-1".into(),
+            actor_device_signature: vec![7; 64],
+        }
+        .encode_to_vec();
         connection
             .execute(
                 "INSERT INTO secure_content_reaction_commands(
                 command_id, post_id, kind, remove_reaction, request_sha256, request_bytes,
                 state, session_generation, updated_at_unix_ms
             ) VALUES('existing','post',1,0,?1,?2,1,1,1)",
-                params![Sha256::digest(bytes).as_slice(), bytes.as_slice()],
+                params![Sha256::digest(&bytes).as_slice(), bytes.as_slice()],
             )
             .unwrap();
         migrate(&connection).unwrap();
         migrate(&connection).unwrap();
         let command = connection
             .query_row(
-                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                "SELECT command_id, post_id, kind, operation, request_sha256,
              request_bytes, result_sha256, result_bytes, state, session_generation,
              lease_generation, attempt_count, projection_revision, error_code,
              retry_after_seconds, retry_not_before_unix_ms, comment_id
@@ -5531,10 +5663,19 @@ mod tests {
             )
             .unwrap();
         assert_eq!(command.comment_id, "");
+        assert_eq!(command.operation, PrivateReactionOperation::React);
         assert_eq!(command.request_bytes, bytes);
         assert_eq!(
             command.request_sha256,
-            <[u8; 32]>::from(Sha256::digest(bytes))
+            <[u8; 32]>::from(Sha256::digest(&bytes))
         );
+        let columns = connection
+            .prepare("PRAGMA table_info(secure_content_reaction_commands)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(!columns.iter().any(|column| column == "remove_reaction"));
     }
 }

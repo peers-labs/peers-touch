@@ -263,6 +263,9 @@ message VotePrivatePollRequest {
   string post_id = 1;
   repeated bytes opaque_option_ids = 2;
   string command_id = 3;
+  bytes option_set_sha256 = 4;
+  string actor_signing_key_id = 5;
+  bytes actor_device_signature = 6;
 }
 
 message PrivateMomentDomainBinding {
@@ -323,11 +326,18 @@ message VotePrivatePollHashInput {
   string command_id = 2;
   string post_id = 3;
   repeated bytes opaque_option_ids = 4;
+  bytes option_set_sha256 = 5;
+  string actor_signing_key_id = 6;
 }
 
 message PrivatePollProjection {
   repeated PrivatePollOptionResult options = 1;
   uint64 voter_count = 2;
+  string post_id = 3;
+  bytes option_set_sha256 = 4;
+  uint64 projection_revision = 5;
+  string command_id = 6;
+  string vote_actor_ptid = 7;
 }
 
 message PrivateContentVerification {
@@ -557,6 +567,11 @@ message VotePrivatePollResponse {
   repeated PrivatePollOptionResult options = 1;
   uint64 voter_count = 2;
   bool exact_replay = 3;
+  string command_id = 4;
+  string post_id = 5;
+  bytes option_set_sha256 = 6;
+  uint64 projection_revision = 7;
+  .google.protobuf.Timestamp admitted_at = 8;
 }
 
 message ListRecoverablePrivateContentRequest {

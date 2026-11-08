@@ -13,8 +13,9 @@ use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
 use super::private_comment::PrivateCommentProjection;
 use super::projection::{
-    canonical_reaction_summaries, PrivateMomentProjection, PrivateReactionCommandProjection,
-    PrivateReactionOperation, PrivateReactionSummaryProjection,
+    canonical_reaction_summaries, PrivateMomentContentProjection, PrivateMomentProjection,
+    PrivatePollResultProjection, PrivateReactionCommandProjection, PrivateReactionOperation,
+    PrivateReactionSummaryProjection,
 };
 
 const FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN: &[u8] =
@@ -25,6 +26,7 @@ impl PrivateReactionOperation {
         match self {
             Self::React => social::FederatedPrivateInteractionOperation::React,
             Self::Unreact => social::FederatedPrivateInteractionOperation::Unreact,
+            Self::VotePoll => social::FederatedPrivateInteractionOperation::VotePoll,
         }
     }
 }
@@ -46,17 +48,28 @@ pub struct PrivateReactionRetryInput {
     pub command_id: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct PrivatePollMutationInput {
+    pub actor_ptid: String,
+    pub renderer_generation: u64,
+    pub post_id: String,
+    pub selected_options: Vec<u32>,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct PrivateReactionMutationResult {
     pub command: PrivateReactionCommandProjection,
     pub reactions: Vec<PrivateReactionSummaryProjection>,
     pub projection_revision: String,
     pub exact_replay: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poll: Option<PrivatePollResultProjection>,
 }
 
 enum ReactionResponse {
     React(social::ReactToPostResponse),
     Unreact(social::UnreactToPostResponse),
+    VotePoll(social::VotePrivatePollResponse),
 }
 
 impl ReactionResponse {
@@ -64,11 +77,18 @@ impl ReactionResponse {
         match self {
             Self::React(response) => &response.comment_id,
             Self::Unreact(response) => &response.comment_id,
+            Self::VotePoll(_) => "",
         }
     }
 
     fn validate_identity(&self, command: &StoredReactionCommand) -> Result<(), String> {
-        if !self.success()
+        let operation = match self {
+            Self::React(_) => PrivateReactionOperation::React,
+            Self::Unreact(_) => PrivateReactionOperation::Unreact,
+            Self::VotePoll(_) => PrivateReactionOperation::VotePoll,
+        };
+        if command.operation != operation
+            || !self.success()
             || self.command_id() != command.command_id
             || self.comment_id() != command.comment_id
             || self.projection_revision() == 0
@@ -82,6 +102,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => &response.command_id,
             Self::Unreact(response) => &response.command_id,
+            Self::VotePoll(response) => &response.command_id,
         }
     }
 
@@ -89,6 +110,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => response.success,
             Self::Unreact(response) => response.success,
+            Self::VotePoll(_) => true,
         }
     }
 
@@ -96,6 +118,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => &response.reactions,
             Self::Unreact(response) => &response.reactions,
+            Self::VotePoll(_) => &[],
         }
     }
 
@@ -103,6 +126,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => response.projection_revision,
             Self::Unreact(response) => response.projection_revision,
+            Self::VotePoll(response) => response.projection_revision,
         }
     }
 
@@ -110,6 +134,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => response.exact_replay,
             Self::Unreact(response) => response.exact_replay,
+            Self::VotePoll(response) => response.exact_replay,
         }
     }
 
@@ -117,6 +142,7 @@ impl ReactionResponse {
         match self {
             Self::React(response) => response.encode_to_vec(),
             Self::Unreact(response) => response.encode_to_vec(),
+            Self::VotePoll(response) => response.encode_to_vec(),
         }
     }
 }
@@ -155,14 +181,69 @@ impl<'a> PrivateReactionOrchestrator<'a> {
             &command_id,
             operation,
         )?;
+        self.persist_command(input, operation, &command_id, request_bytes)?;
+        self.dispatch(&command_id)
+    }
+
+    pub fn vote(
+        &self,
+        input: &PrivatePollMutationInput,
+    ) -> Result<PrivateReactionMutationResult, String> {
+        if input.actor_ptid.trim().is_empty()
+            || input.renderer_generation == 0
+            || input.post_id.trim().is_empty()
+            || input.post_id.trim() != input.post_id
+        {
+            return Err("private poll command identity is invalid".into());
+        }
+        self.ensure_private_projection(&input.post_id, "")?;
+        let parent = self.load_projection(&input.post_id)?;
+        let content = parent
+            .content
+            .as_ref()
+            .ok_or("private poll parent is unavailable")?;
+        let command_id = format!("poll-v1-{}", ulid::Ulid::new());
+        let mut request = super::private_poll::ballot_request(
+            content,
+            &input.post_id,
+            &input.selected_options,
+            &command_id,
+            &self.lease.session.signing_key_id,
+        )?;
+        request.actor_device_signature = self.lease.session.sign(&reaction_signing_bytes(
+            social::FederatedPrivateInteractionOperation::VotePoll,
+            &request.encode_to_vec(),
+        ))?;
+        self.persist_command(
+            &PrivateReactionMutationInput {
+                actor_ptid: input.actor_ptid.clone(),
+                renderer_generation: input.renderer_generation,
+                post_id: input.post_id.clone(),
+                comment_id: String::new(),
+                kind: 0,
+            },
+            PrivateReactionOperation::VotePoll,
+            &command_id,
+            request.encode_to_vec(),
+        )?;
+        self.dispatch(&command_id)
+    }
+
+    fn persist_command(
+        &self,
+        input: &PrivateReactionMutationInput,
+        operation: PrivateReactionOperation,
+        command_id: &str,
+        request_bytes: Vec<u8>,
+    ) -> Result<(), String> {
         let request_sha256: [u8; 32] = Sha256::digest(&request_bytes).into();
         self.with_current_store(|store| {
             store.persist_reaction_command(&StoredReactionCommand {
-                command_id: command_id.clone(),
+                command_id: command_id.into(),
                 post_id: input.post_id.clone(),
                 comment_id: input.comment_id.clone(),
                 kind: input.kind,
-                remove: operation == PrivateReactionOperation::Unreact,
+                operation,
                 request_sha256,
                 request_bytes,
                 result_sha256: None,
@@ -177,7 +258,7 @@ impl<'a> PrivateReactionOrchestrator<'a> {
                 retry_not_before_unix_ms: None,
             })
         })?;
-        self.dispatch(&command_id)
+        Ok(())
     }
 
     pub fn retry(
@@ -204,14 +285,19 @@ impl<'a> PrivateReactionOrchestrator<'a> {
         let command = self.with_current_store(|store| {
             store.acquire_reaction_command(command_id, self.lease.session.key.session_generation)
         })?;
-        let response = if command.remove {
-            self.transport
+        let response = match command.operation {
+            PrivateReactionOperation::Unreact => self
+                .transport
                 .submit_private_unreaction(&command.post_id, &command.request_bytes)
-                .map(ReactionResponse::Unreact)
-        } else {
-            self.transport
+                .map(ReactionResponse::Unreact),
+            PrivateReactionOperation::React => self
+                .transport
                 .submit_private_reaction(&command.post_id, &command.request_bytes)
-                .map(ReactionResponse::React)
+                .map(ReactionResponse::React),
+            PrivateReactionOperation::VotePoll => self
+                .transport
+                .submit_private_poll_vote(&command.post_id, &command.request_bytes)
+                .map(ReactionResponse::VotePoll),
         };
         match response {
             Ok(response) => match self.commit_response(&command, response) {
@@ -229,6 +315,17 @@ impl<'a> PrivateReactionOrchestrator<'a> {
     ) -> Result<PrivateReactionMutationResult, String> {
         response.validate_identity(command)?;
         let summaries = canonical_reaction_summaries(response.reactions())?;
+        let poll = match &response {
+            ReactionResponse::VotePoll(response) => {
+                Some(super::private_poll::qualify_poll_response(
+                    command,
+                    response,
+                    &self.load_projection(&command.post_id)?,
+                    &self.lease.session.key.actor_ptid,
+                )?)
+            }
+            _ => None,
+        };
         let response_revision = response.projection_revision();
         let result_bytes = response.encode();
         let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
@@ -239,6 +336,7 @@ impl<'a> PrivateReactionOrchestrator<'a> {
                 &result_sha256,
                 response_revision,
                 &summaries,
+                poll.as_ref(),
             )
         })?;
         if !changed {
@@ -312,24 +410,41 @@ impl<'a> PrivateReactionOrchestrator<'a> {
         &self,
         command: &StoredReactionCommand,
     ) -> Result<PrivateReactionMutationResult, String> {
-        let (reactions, projection_revision) =
+        let (reactions, mut projection_revision) =
             self.load_target_reactions(&command.post_id, &command.comment_id)?;
+        let poll = if command.operation == PrivateReactionOperation::VotePoll {
+            match self.load_projection(&command.post_id)?.content {
+                Some(PrivateMomentContentProjection::Poll { result, .. }) => result,
+                _ => return Err("private poll parent is unavailable".into()),
+            }
+        } else {
+            None
+        };
+        if command.operation == PrivateReactionOperation::VotePoll {
+            projection_revision = poll
+                .as_ref()
+                .map(|result| result.projection_revision.clone())
+                .unwrap_or_else(|| "0".into());
+        }
         let exact_replay = if let (Some(result_bytes), Some(result_sha256)) =
             (&command.result_bytes, command.result_sha256)
         {
             if Sha256::digest(result_bytes).as_slice() != result_sha256 {
                 return Err("private Reaction durable result hash is invalid".to_string());
             }
-            let response = if command.remove {
-                ReactionResponse::Unreact(
+            let response = match command.operation {
+                PrivateReactionOperation::Unreact => ReactionResponse::Unreact(
                     social::UnreactToPostResponse::decode(result_bytes.as_slice())
                         .map_err(|_| "private Reaction durable result is malformed".to_string())?,
-                )
-            } else {
-                ReactionResponse::React(
+                ),
+                PrivateReactionOperation::React => ReactionResponse::React(
                     social::ReactToPostResponse::decode(result_bytes.as_slice())
                         .map_err(|_| "private Reaction durable result is malformed".to_string())?,
-                )
+                ),
+                PrivateReactionOperation::VotePoll => ReactionResponse::VotePoll(
+                    social::VotePrivatePollResponse::decode(result_bytes.as_slice())
+                        .map_err(|_| "private poll durable result is malformed".to_string())?,
+                ),
             };
             if response.encode() != *result_bytes
                 || response.projection_revision() != command.projection_revision
@@ -337,6 +452,14 @@ impl<'a> PrivateReactionOrchestrator<'a> {
                 return Err("private Reaction durable result identity is invalid".to_string());
             }
             response.validate_identity(command)?;
+            if let ReactionResponse::VotePoll(response) = &response {
+                super::private_poll::qualify_poll_response(
+                    command,
+                    response,
+                    &self.load_projection(&command.post_id)?,
+                    &self.lease.session.key.actor_ptid,
+                )?;
+            }
             response.exact_replay()
         } else {
             false
@@ -346,6 +469,7 @@ impl<'a> PrivateReactionOrchestrator<'a> {
             reactions,
             projection_revision,
             exact_replay,
+            poll,
         })
     }
 
@@ -385,6 +509,9 @@ impl<'a> PrivateReactionOrchestrator<'a> {
                     &reaction_signing_bytes(operation.wire(), &request.encode_to_vec()),
                 )?;
                 Ok(request.encode_to_vec())
+            }
+            PrivateReactionOperation::VotePoll => {
+                Err("private poll requires an explicit ballot".into())
             }
         }
     }
@@ -450,15 +577,27 @@ impl<'a> PrivateReactionOrchestrator<'a> {
 pub(super) fn command_projection(
     command: &StoredReactionCommand,
 ) -> Result<PrivateReactionCommandProjection, String> {
+    if Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256 {
+        return Err("private interaction durable command hash is invalid".into());
+    }
     Ok(PrivateReactionCommandProjection {
         command_id: command.command_id.clone(),
         post_id: command.post_id.clone(),
         comment_id: command.comment_id.clone(),
         kind: command.kind,
-        operation: if command.remove {
-            PrivateReactionOperation::Unreact
+        operation: command.operation,
+        selected_opaque_option_ids: if command.operation == PrivateReactionOperation::VotePoll {
+            let request = social::VotePrivatePollRequest::decode(command.request_bytes.as_slice())
+                .map_err(|_| "private poll durable command is malformed")?;
+            if request.encode_to_vec() != command.request_bytes
+                || request.command_id != command.command_id
+                || request.post_id != command.post_id
+            {
+                return Err("private poll durable command identity is invalid".into());
+            }
+            request.opaque_option_ids.iter().map(hex::encode).collect()
         } else {
-            PrivateReactionOperation::React
+            vec![]
         },
         state: command.state.as_str().to_string(),
         attempt_count: command.attempt_count,
@@ -471,11 +610,12 @@ pub(super) fn command_projection(
 
 fn validate_mutation(
     input: &PrivateReactionMutationInput,
-    _operation: PrivateReactionOperation,
+    operation: PrivateReactionOperation,
 ) -> Result<(), String> {
     let kind = social::ReactionKind::try_from(input.kind)
         .map_err(|_| "private Reaction kind is invalid".to_string())?;
-    if input.actor_ptid.trim().is_empty()
+    if operation == PrivateReactionOperation::VotePoll
+        || input.actor_ptid.trim().is_empty()
         || input.renderer_generation == 0
         || input.post_id.trim().is_empty()
         || input.post_id != input.post_id.trim()
@@ -754,7 +894,7 @@ mod tests {
             post_id: "post-1".into(),
             comment_id: "comment-1".into(),
             kind: social::ReactionKind::ReactionLike as i32,
-            remove: false,
+            operation: PrivateReactionOperation::React,
             request_sha256: Sha256::digest(&request).into(),
             request_bytes: request,
             result_sha256: None,

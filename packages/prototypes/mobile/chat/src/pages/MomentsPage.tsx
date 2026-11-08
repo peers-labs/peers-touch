@@ -5,7 +5,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useT } from '../i18n';
-import { Icon, IconButton, Text, TextField } from '@peers-touch/ui';
+import { Icon, IconButton, MomentPoll, Text, TextField } from '@peers-touch/ui';
 import type {
   Moment,
   MomentComment,
@@ -262,6 +262,18 @@ export function MomentsPage({
     }));
   }
 
+  function votePoll(id: string, choices: number[]) {
+    setMoments(current => current.map(moment => {
+      const poll = moment.poll;
+      if (moment.id !== id || !poll || poll.closed || choices.length < poll.minChoices || choices.length > poll.maxChoices
+        || choices.some((value, index) => value < 0 || value >= poll.options.length
+          || !Number.isInteger(value) || (index > 0 && choices[index - 1] >= value))) return moment;
+      const counts = poll.voteCounts.map((count, index) => count
+        - Number(poll.confirmedChoices.includes(index)) + Number(choices.includes(index)));
+      return { ...moment, poll: { ...poll, confirmedChoices: [...choices], voteCounts: counts, voterCount: 1 } };
+    }));
+  }
+
   function addComment(momentId: string) {
     const text = (commentInputs[momentId] ?? '').trim();
     if (!text) return;
@@ -402,6 +414,7 @@ export function MomentsPage({
             reactionPickerOpen={reactionPickerId === moment.id}
             onOpenProfile={() => navigate('profile')}
             onReact={(kind) => toggleReaction(moment.id, kind)}
+            onVote={choices => votePoll(moment.id, choices)}
             onToggleReactionPicker={() =>
               setReactionPickerId((current) =>
                 current === moment.id ? null : moment.id,
@@ -651,6 +664,7 @@ function MomentArticle({
   reactionPickerOpen,
   onOpenProfile,
   onReact,
+  onVote,
   onToggleReactionPicker,
   onToggleCommentComposer,
   onToggleMoreComments,
@@ -667,6 +681,7 @@ function MomentArticle({
   reactionPickerOpen: boolean;
   onOpenProfile: () => void;
   onReact: (kind: ReactionKind) => void;
+  onVote: (choices: number[]) => void;
   onToggleReactionPicker: () => void;
   onToggleCommentComposer: () => void;
   onToggleMoreComments: () => void;
@@ -721,10 +736,16 @@ function MomentArticle({
         </button>
       )}
       {!hidesPlaintext && moment.poll && (
-        <div className="mp-social-poll">
-          <strong><Icon iconId="chart-column" size={16} /> {moment.poll.question}</strong>
-          {moment.poll.options.map((option) => <span key={option}>{option}</span>)}
-        </div>
+        <MomentPoll postId={moment.id} question={moment.poll.question}
+          options={moment.poll.options.map((text, index) => ({ text, votes: moment.poll!.voteCounts[index] }))}
+          minChoices={moment.poll.minChoices} maxChoices={moment.poll.maxChoices}
+          confirmedChoices={moment.poll.confirmedChoices} totalVotes={moment.poll.voterCount}
+          closed={moment.poll.closed} disabled={interactionsDisabled}
+          pending={scenario === 'social-private-pending'} onSubmit={onVote}
+          status={moment.poll.confirmedChoices.length ? t('moments.poll.state.committed') : undefined}
+          copy={{ submit: t('moments.poll.submit'), replace: t('moments.poll.replace'), cancel: t('moments.poll.cancel'),
+            retry: t('moments.poll.retry'), closed: t('moments.poll.closed'),
+            choices: (min, max) => t('moments.poll.choices', { min, max }), total: votes => t('moments.poll.total', { votes }) }} />
       )}
       {!hidesPlaintext && moment.repost && (
         <div className="mp-social-repost">

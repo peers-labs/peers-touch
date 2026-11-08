@@ -1652,6 +1652,63 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async replayPrivatePollVote(input: { postId: string }) {
+      if (!input.postId?.trim()) throw new Error('moments.acceptance.postIdMissing');
+      const scope = usePrivateMomentsStore.getState().scope;
+      if (!scope.actorPtid) throw new Error('moments.acceptance.sessionIdentityMissing');
+      const snapshot = await privateMomentsNative.bootstrap({
+        actorPtid: scope.actorPtid,
+        rendererGeneration: scope.rendererGeneration,
+      });
+      const command = snapshot.reactionCommands.find(candidate =>
+        candidate.postId === input.postId && candidate.operation === 'VOTE_POLL');
+      if (!command || command.state !== 'REACTION_COMMITTED') {
+        throw new Error('moments.acceptance.committedPollMissing');
+      }
+      const replays = [];
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (usePrivateMomentsStore.getState().scope !== scope) {
+          throw new Error('moments.acceptance.sessionReplaced');
+        }
+        const result = await privateMomentsNative.retryReaction({
+          actorPtid: scope.actorPtid,
+          rendererGeneration: scope.rendererGeneration,
+          commandId: command.commandId,
+        });
+        if (usePrivateMomentsStore.getState().scope !== scope
+          || result.command.commandId !== command.commandId
+          || result.command.postId !== input.postId
+          || result.command.commentId !== ''
+          || result.command.operation !== 'VOTE_POLL'
+          || result.command.state !== 'REACTION_COMMITTED'
+          || result.command.attemptCount !== command.attemptCount
+          || JSON.stringify(result.command.selectedOpaqueOptionIds)
+            !== JSON.stringify(command.selectedOpaqueOptionIds)
+          || !result.poll) {
+          throw new Error('moments.acceptance.pollReplayMismatch');
+        }
+        replays.push({
+          voteCounts: result.poll.voteCounts,
+          selectedOptions: result.poll.selectedOptions,
+          voterCount: result.poll.voterCount,
+          projectionRevision: result.poll.projectionRevision,
+          exactReplay: result.exactReplay,
+        });
+      }
+      if (JSON.stringify(replays[0]) !== JSON.stringify(replays[1])) {
+        throw new Error('moments.acceptance.pollReplayMismatch');
+      }
+      return {
+        commandIdSha256: await sha256(command.commandId),
+        postIdSha256: await sha256(input.postId),
+        state: command.state,
+        operation: command.operation,
+        attemptCount: command.attemptCount,
+        nativeRetryCount: replays.length,
+        replays,
+      };
+    },
+
     async findPublicMoment(input: PublicMomentInput) {
       if (!input?.text?.trim()) {
         throw new Error('moments.acceptance.publicTextMissing');

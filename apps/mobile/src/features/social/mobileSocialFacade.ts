@@ -29,6 +29,7 @@ import {
   reconcilePrivateMoments,
   recoverPrivateMoment,
   setPrivateMomentReaction,
+  votePrivateMomentPoll,
   retryPrivateMomentReaction,
   submitPrivateComment,
   subscribePrivateMomentsRuntime,
@@ -367,6 +368,34 @@ export function createMobileSocialFacade(
         if (result.command.state !== 'REACTION_COMMITTED') return false;
         await feedForPost(postId).reloadMoment(postId);
         return true;
+      },
+      votePoll: async (postId, options) => {
+        assertCurrent();
+        const privateSnapshot = readPrivateMomentsSnapshot();
+        const visible = feedForPost(postId).state().posts.find(post => post.id === postId);
+        if (!knownPrivatePostIds.has(postId) && (!visible?.audience || isPublicSocialAudience(visible.audience))) {
+          throw new Error('SOCIAL_PUBLIC_FEED_NATIVE_SIGNATURE_REQUIRED');
+        }
+        if (!privateProjectionMatchesScope(privateSnapshot, scope)) {
+          throw new Error('mobile.privateSocial.pollDefinitionUnavailable');
+        }
+        if (privateSnapshot.postsById[postId]?.state !== 'CONTENT_READY') {
+          await completeCurrent(() => readPrivateMoment(postId));
+        }
+        const result = await completeCurrent(() => votePrivateMomentPoll(postId, options));
+        return result.command.state === 'REACTION_COMMITTED';
+      },
+      retryPoll: async (postId) => {
+        assertCurrent();
+        const privateSnapshot = readPrivateMomentsSnapshot();
+        if (!privateProjectionMatchesScope(privateSnapshot, scope)) {
+          throw new Error('mobile.privateSocial.pollDefinitionUnavailable');
+        }
+        const command = privateSnapshot.reactionCommands.find(candidate =>
+          candidate.postId === postId && candidate.operation === 'VOTE_POLL' && candidate.commentId === '');
+        if (!command) throw new Error('mobile.privateSocial.reactionCommandUnavailable');
+        const result = await completeCurrent(() => retryPrivateMomentReaction(command.commandId));
+        return result.command.state === 'REACTION_COMMITTED';
       },
       deleteMoment: async (postId) => {
         const result = await completeCurrent(() => gateway.deletePost(postId));

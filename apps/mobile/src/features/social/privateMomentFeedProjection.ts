@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 
 import { FeedPollDefinitionSchema } from '../../gen/proto/domain/social/feed_log_pb';
+import { PollOptionResultSchema, PollResultSchema } from '../../gen/proto/domain/social/poll_pb';
 import {
   AudienceSchema,
   Audience_Kind,
@@ -151,6 +152,16 @@ export function privateMomentFeedPost(
             maxChoices: content.maxChoices,
             expiresAtUnixMs: BigInt(content.expiresAtSeconds) * 1000n,
           }),
+          result: content.result ? create(PollResultSchema, {
+            postId: projection.postId,
+            totalVotes: BigInt(content.result.voterCount),
+            options: content.options.map((text, index) => create(PollOptionResultSchema, {
+              index, text, votes: BigInt(content.result!.voteCounts[index]),
+            })),
+            hasVoted: content.result.selectedOptions.length > 0,
+            userVotes: content.result.selectedOptions,
+            isExpired: content.expiresAtSeconds * 1000 <= Date.now(),
+          }) : undefined,
         }),
       };
       break;

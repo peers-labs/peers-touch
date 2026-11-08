@@ -31,6 +31,7 @@ const (
 	FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POST                FederatedPrivateResourceKind = 1
 	FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT             FederatedPrivateResourceKind = 2
 	FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION FederatedPrivateResourceKind = 3
+	FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION     FederatedPrivateResourceKind = 4
 )
 
 // Enum value maps for FederatedPrivateResourceKind.
@@ -40,12 +41,14 @@ var (
 		1: "FEDERATED_PRIVATE_RESOURCE_KIND_POST",
 		2: "FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT",
 		3: "FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION",
+		4: "FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION",
 	}
 	FederatedPrivateResourceKind_value = map[string]int32{
 		"FEDERATED_PRIVATE_RESOURCE_KIND_UNSPECIFIED":         0,
 		"FEDERATED_PRIVATE_RESOURCE_KIND_POST":                1,
 		"FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT":             2,
 		"FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION": 3,
+		"FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION":     4,
 	}
 )
 
@@ -136,6 +139,7 @@ const (
 	FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT  FederatedPrivateInteractionOperation = 2
 	FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT           FederatedPrivateInteractionOperation = 3
 	FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT         FederatedPrivateInteractionOperation = 4
+	FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL       FederatedPrivateInteractionOperation = 5
 )
 
 // Enum value maps for FederatedPrivateInteractionOperation.
@@ -146,6 +150,7 @@ var (
 		2: "FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT",
 		3: "FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT",
 		4: "FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT",
+		5: "FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL",
 	}
 	FederatedPrivateInteractionOperation_value = map[string]int32{
 		"FEDERATED_PRIVATE_INTERACTION_OPERATION_UNSPECIFIED":     0,
@@ -153,6 +158,7 @@ var (
 		"FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT":  2,
 		"FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT":           3,
 		"FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT":         4,
+		"FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL":       5,
 	}
 )
 
@@ -251,6 +257,7 @@ type FederatedPrivateResourceDelivery struct {
 	//	*FederatedPrivateResourceDelivery_Post
 	//	*FederatedPrivateResourceDelivery_Comment
 	//	*FederatedPrivateResourceDelivery_Reaction
+	//	*FederatedPrivateResourceDelivery_Poll
 	Metadata             isFederatedPrivateResourceDelivery_Metadata `protobuf_oneof:"metadata"`
 	Payload              *securecontent.EncryptedPayload             `protobuf:"bytes,12,opt,name=payload,proto3" json:"payload,omitempty"`
 	TargetActorEnvelopes []*securecontent.ViewerContentKeyEnvelope   `protobuf:"bytes,13,rep,name=target_actor_envelopes,json=targetActorEnvelopes,proto3" json:"target_actor_envelopes,omitempty"`
@@ -389,6 +396,15 @@ func (x *FederatedPrivateResourceDelivery) GetReaction() *PrivateReactionProject
 	return nil
 }
 
+func (x *FederatedPrivateResourceDelivery) GetPoll() *PrivatePollProjection {
+	if x != nil {
+		if x, ok := x.Metadata.(*FederatedPrivateResourceDelivery_Poll); ok {
+			return x.Poll
+		}
+	}
+	return nil
+}
+
 func (x *FederatedPrivateResourceDelivery) GetPayload() *securecontent.EncryptedPayload {
 	if x != nil {
 		return x.Payload
@@ -447,11 +463,17 @@ type FederatedPrivateResourceDelivery_Reaction struct {
 	Reaction *PrivateReactionProjection `protobuf:"bytes,18,opt,name=reaction,proto3,oneof"`
 }
 
+type FederatedPrivateResourceDelivery_Poll struct {
+	Poll *PrivatePollProjection `protobuf:"bytes,19,opt,name=poll,proto3,oneof"`
+}
+
 func (*FederatedPrivateResourceDelivery_Post) isFederatedPrivateResourceDelivery_Metadata() {}
 
 func (*FederatedPrivateResourceDelivery_Comment) isFederatedPrivateResourceDelivery_Metadata() {}
 
 func (*FederatedPrivateResourceDelivery_Reaction) isFederatedPrivateResourceDelivery_Metadata() {}
+
+func (*FederatedPrivateResourceDelivery_Poll) isFederatedPrivateResourceDelivery_Metadata() {}
 
 type FederatedPrivateObjectDescriptorSet struct {
 	state         protoimpl.MessageState                     `protogen:"open.v1"`
@@ -1246,7 +1268,7 @@ var File_domain_social_private_federation_proto protoreflect.FileDescriptor
 
 const file_domain_social_private_federation_proto_rawDesc = "" +
 	"\n" +
-	"&domain/social/private_federation.proto\x12\x1bpeers_touch.model.social.v1\x1a\x18domain/actor/actor.proto\x1a#domain/secure_content/content.proto\x1a\"domain/secure_content/object.proto\x1a\x18domain/social/post.proto\x1a#domain/social/private_content.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb3\n" +
+	"&domain/social/private_federation.proto\x12\x1bpeers_touch.model.social.v1\x1a\x18domain/actor/actor.proto\x1a#domain/secure_content/content.proto\x1a\"domain/secure_content/object.proto\x1a\x18domain/social/post.proto\x1a#domain/social/private_content.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfd\n" +
 	"\n" +
 	" FederatedPrivateResourceDelivery\x12%\n" +
 	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12#\n" +
@@ -1262,7 +1284,8 @@ const file_domain_social_private_federation_proto_rawDesc = "" +
 	"\x04post\x18\n" +
 	" \x01(\v2).peers_touch.model.social.v1.PostMetadataH\x00R\x04post\x12H\n" +
 	"\acomment\x18\v \x01(\v2,.peers_touch.model.social.v1.CommentMetadataH\x00R\acomment\x12T\n" +
-	"\breaction\x18\x12 \x01(\v26.peers_touch.model.social.v1.PrivateReactionProjectionH\x00R\breaction\x12O\n" +
+	"\breaction\x18\x12 \x01(\v26.peers_touch.model.social.v1.PrivateReactionProjectionH\x00R\breaction\x12H\n" +
+	"\x04poll\x18\x13 \x01(\v22.peers_touch.model.social.v1.PrivatePollProjectionH\x00R\x04poll\x12O\n" +
 	"\apayload\x18\f \x01(\v25.peers_touch.model.secure_content.v1.EncryptedPayloadR\apayload\x12s\n" +
 	"\x16target_actor_envelopes\x18\r \x03(\v2=.peers_touch.model.secure_content.v1.ViewerContentKeyEnvelopeR\x14targetActorEnvelopes\x12X\n" +
 	"\aobjects\x18\x0e \x03(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectDescriptorR\aobjects\x12[\n" +
@@ -1344,23 +1367,25 @@ const file_domain_social_private_federation_proto_rawDesc = "" +
 	"\"ReadFederatedPrivateObjectResponse\x12+\n" +
 	"\x11descriptor_sha256\x18\x01 \x01(\fR\x10descriptorSha256\x12N\n" +
 	"\x05range\x18\x02 \x01(\v28.peers_touch.model.social.v1.FederatedPrivateObjectRangeR\x05range\x122\n" +
-	"\x15total_ciphertext_size\x18\x03 \x01(\x04R\x13totalCiphertextSize*\xdf\x01\n" +
+	"\x15total_ciphertext_size\x18\x03 \x01(\x04R\x13totalCiphertextSize*\x94\x02\n" +
 	"\x1cFederatedPrivateResourceKind\x12/\n" +
 	"+FEDERATED_PRIVATE_RESOURCE_KIND_UNSPECIFIED\x10\x00\x12(\n" +
 	"$FEDERATED_PRIVATE_RESOURCE_KIND_POST\x10\x01\x12+\n" +
 	"'FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT\x10\x02\x127\n" +
-	"3FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION\x10\x03*\x8f\x02\n" +
+	"3FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION\x10\x03\x123\n" +
+	"/FEDERATED_PRIVATE_RESOURCE_KIND_POLL_PROJECTION\x10\x04*\x8f\x02\n" +
 	"!PrivateResourceInvalidationReason\x124\n" +
 	"0PRIVATE_RESOURCE_INVALIDATION_REASON_UNSPECIFIED\x10\x00\x129\n" +
 	"5PRIVATE_RESOURCE_INVALIDATION_REASON_RESOURCE_DELETED\x10\x01\x12=\n" +
 	"9PRIVATE_RESOURCE_INVALIDATION_REASON_RELATIONSHIP_REVOKED\x10\x02\x12:\n" +
-	"6PRIVATE_RESOURCE_INVALIDATION_REASON_RECIPIENT_BLOCKED\x10\x03*\xc0\x02\n" +
+	"6PRIVATE_RESOURCE_INVALIDATION_REASON_RECIPIENT_BLOCKED\x10\x03*\xf7\x02\n" +
 	"$FederatedPrivateInteractionOperation\x127\n" +
 	"3FEDERATED_PRIVATE_INTERACTION_OPERATION_UNSPECIFIED\x10\x00\x12;\n" +
 	"7FEDERATED_PRIVATE_INTERACTION_OPERATION_PREPARE_COMMENT\x10\x01\x12:\n" +
 	"6FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT\x10\x02\x121\n" +
 	"-FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT\x10\x03\x123\n" +
-	"/FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT\x10\x04*\xa0\x02\n" +
+	"/FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT\x10\x04\x125\n" +
+	"1FEDERATED_PRIVATE_INTERACTION_OPERATION_VOTE_POLL\x10\x05*\xa0\x02\n" +
 	"%FederatedPrivateInteractionResultKind\x129\n" +
 	"5FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_UNSPECIFIED\x10\x00\x127\n" +
 	"3FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_COMMITTED\x10\x01\x12A\n" +
@@ -1400,15 +1425,16 @@ var file_domain_social_private_federation_proto_goTypes = []any{
 	(*securecontent.SecureResourceRef)(nil),         // 15: peers_touch.model.secure_content.v1.SecureResourceRef
 	(*PostMetadata)(nil),                            // 16: peers_touch.model.social.v1.PostMetadata
 	(*CommentMetadata)(nil),                         // 17: peers_touch.model.social.v1.CommentMetadata
-	(*securecontent.EncryptedPayload)(nil),          // 18: peers_touch.model.secure_content.v1.EncryptedPayload
-	(*securecontent.ViewerContentKeyEnvelope)(nil),  // 19: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	(*securecontent.EncryptedObjectDescriptor)(nil), // 20: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	(*PrivateContentVerification)(nil),              // 21: peers_touch.model.social.v1.PrivateContentVerification
-	(*model.AudienceExplanation)(nil),               // 22: peers_touch.model.social.v1.AudienceExplanation
-	(*timestamppb.Timestamp)(nil),                   // 23: google.protobuf.Timestamp
-	(*model.ActorDeviceRef)(nil),                    // 24: peers_touch.model.actor.v1.ActorDeviceRef
-	(*model.ReactionSummary)(nil),                   // 25: peers_touch.model.social.v1.ReactionSummary
-	(model.ReactionKind)(0),                         // 26: peers_touch.model.social.v1.ReactionKind
+	(*PrivatePollProjection)(nil),                   // 18: peers_touch.model.social.v1.PrivatePollProjection
+	(*securecontent.EncryptedPayload)(nil),          // 19: peers_touch.model.secure_content.v1.EncryptedPayload
+	(*securecontent.ViewerContentKeyEnvelope)(nil),  // 20: peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	(*securecontent.EncryptedObjectDescriptor)(nil), // 21: peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	(*PrivateContentVerification)(nil),              // 22: peers_touch.model.social.v1.PrivateContentVerification
+	(*model.AudienceExplanation)(nil),               // 23: peers_touch.model.social.v1.AudienceExplanation
+	(*timestamppb.Timestamp)(nil),                   // 24: google.protobuf.Timestamp
+	(*model.ActorDeviceRef)(nil),                    // 25: peers_touch.model.actor.v1.ActorDeviceRef
+	(*model.ReactionSummary)(nil),                   // 26: peers_touch.model.social.v1.ReactionSummary
+	(model.ReactionKind)(0),                         // 27: peers_touch.model.social.v1.ReactionKind
 }
 var file_domain_social_private_federation_proto_depIdxs = []int32{
 	14, // 0: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
@@ -1417,33 +1443,34 @@ var file_domain_social_private_federation_proto_depIdxs = []int32{
 	16, // 3: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.post:type_name -> peers_touch.model.social.v1.PostMetadata
 	17, // 4: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.comment:type_name -> peers_touch.model.social.v1.CommentMetadata
 	11, // 5: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.reaction:type_name -> peers_touch.model.social.v1.PrivateReactionProjection
-	18, // 6: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
-	19, // 7: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.target_actor_envelopes:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
-	20, // 8: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	21, // 9: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.verification:type_name -> peers_touch.model.social.v1.PrivateContentVerification
-	22, // 10: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.audience_explanation:type_name -> peers_touch.model.social.v1.AudienceExplanation
-	23, // 11: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.committed_at:type_name -> google.protobuf.Timestamp
-	20, // 12: peers_touch.model.social.v1.FederatedPrivateObjectDescriptorSet.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
-	15, // 13: peers_touch.model.social.v1.FederatedPrivateObjectGrantBinding.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	14, // 14: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	15, // 15: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	1,  // 16: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.reason:type_name -> peers_touch.model.social.v1.PrivateResourceInvalidationReason
-	23, // 17: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.committed_at:type_name -> google.protobuf.Timestamp
-	24, // 18: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.actor:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	15, // 19: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.parent:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	2,  // 20: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.operation:type_name -> peers_touch.model.social.v1.FederatedPrivateInteractionOperation
-	3,  // 21: peers_touch.model.social.v1.FederatedPrivateInteractionResult.kind:type_name -> peers_touch.model.social.v1.FederatedPrivateInteractionResultKind
-	25, // 22: peers_touch.model.social.v1.PrivateReactionProjection.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
-	26, // 23: peers_touch.model.social.v1.PrivateReactionProjection.reaction_kind:type_name -> peers_touch.model.social.v1.ReactionKind
-	24, // 24: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.viewer:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	15, // 25: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
-	7,  // 26: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.range:type_name -> peers_touch.model.social.v1.FederatedPrivateObjectRange
-	7,  // 27: peers_touch.model.social.v1.ReadFederatedPrivateObjectResponse.range:type_name -> peers_touch.model.social.v1.FederatedPrivateObjectRange
-	28, // [28:28] is the sub-list for method output_type
-	28, // [28:28] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	18, // 6: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.poll:type_name -> peers_touch.model.social.v1.PrivatePollProjection
+	19, // 7: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.payload:type_name -> peers_touch.model.secure_content.v1.EncryptedPayload
+	20, // 8: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.target_actor_envelopes:type_name -> peers_touch.model.secure_content.v1.ViewerContentKeyEnvelope
+	21, // 9: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	22, // 10: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.verification:type_name -> peers_touch.model.social.v1.PrivateContentVerification
+	23, // 11: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.audience_explanation:type_name -> peers_touch.model.social.v1.AudienceExplanation
+	24, // 12: peers_touch.model.social.v1.FederatedPrivateResourceDelivery.committed_at:type_name -> google.protobuf.Timestamp
+	21, // 13: peers_touch.model.social.v1.FederatedPrivateObjectDescriptorSet.objects:type_name -> peers_touch.model.secure_content.v1.EncryptedObjectDescriptor
+	15, // 14: peers_touch.model.social.v1.FederatedPrivateObjectGrantBinding.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	14, // 15: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	15, // 16: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	1,  // 17: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.reason:type_name -> peers_touch.model.social.v1.PrivateResourceInvalidationReason
+	24, // 18: peers_touch.model.social.v1.FederatedPrivateResourceInvalidation.committed_at:type_name -> google.protobuf.Timestamp
+	25, // 19: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.actor:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	15, // 20: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.parent:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	2,  // 21: peers_touch.model.social.v1.FederatedPrivateInteractionCommand.operation:type_name -> peers_touch.model.social.v1.FederatedPrivateInteractionOperation
+	3,  // 22: peers_touch.model.social.v1.FederatedPrivateInteractionResult.kind:type_name -> peers_touch.model.social.v1.FederatedPrivateInteractionResultKind
+	26, // 23: peers_touch.model.social.v1.PrivateReactionProjection.reactions:type_name -> peers_touch.model.social.v1.ReactionSummary
+	27, // 24: peers_touch.model.social.v1.PrivateReactionProjection.reaction_kind:type_name -> peers_touch.model.social.v1.ReactionKind
+	25, // 25: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.viewer:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	15, // 26: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.resource:type_name -> peers_touch.model.secure_content.v1.SecureResourceRef
+	7,  // 27: peers_touch.model.social.v1.ReadFederatedPrivateObjectRequest.range:type_name -> peers_touch.model.social.v1.FederatedPrivateObjectRange
+	7,  // 28: peers_touch.model.social.v1.ReadFederatedPrivateObjectResponse.range:type_name -> peers_touch.model.social.v1.FederatedPrivateObjectRange
+	29, // [29:29] is the sub-list for method output_type
+	29, // [29:29] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_private_federation_proto_init() }
@@ -1456,6 +1483,7 @@ func file_domain_social_private_federation_proto_init() {
 		(*FederatedPrivateResourceDelivery_Post)(nil),
 		(*FederatedPrivateResourceDelivery_Comment)(nil),
 		(*FederatedPrivateResourceDelivery_Reaction)(nil),
+		(*FederatedPrivateResourceDelivery_Poll)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

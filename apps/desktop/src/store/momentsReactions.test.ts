@@ -242,4 +242,37 @@ describe('Private target Reaction command scope', () => {
     expect(state().reactionCommands).toEqual({});
     expect(state().postsById).toEqual({});
   });
+
+  it('shares a complete private ballot and retries its original journal command without guessing counts', async () => {
+    const current = state().postsById.post;
+    usePrivateMomentsStore.setState({ postsById: { post: { ...current, content: {
+      kind: 'POLL', text: '', question: 'Choose', options: ['Second', 'First'],
+      opaqueOptionIds: ['22'.repeat(32), '11'.repeat(32)], optionSetSha256: '77'.repeat(32),
+      minChoices: 1, maxChoices: 2, expiresAtSeconds: 4_000_000_000,
+    } } } });
+    const pending = deferred();
+    const vote = vi.spyOn(privateMomentsNative, 'votePoll').mockReturnValue(pending.promise);
+    const first = state().votePoll('post', [0]);
+    expect(state().votePoll('post', [0])).toBe(first);
+    await expect(state().votePoll('post', [1])).rejects.toThrow('REACTION_COMMAND_PENDING');
+    expect(vote).toHaveBeenCalledOnce();
+    const unknown: PrivateReactionMutationResult = {
+      ...result(), command: { ...result().command, commandId: 'ballot',
+        kind: ReactionKind.REACTION_UNSPECIFIED, operation: 'VOTE_POLL',
+        selectedOpaqueOptionIds: ['22'.repeat(32)], state: 'REACTION_PENDING' },
+    };
+    pending.resolve(unknown);
+    await first;
+    expect(state().postsById.post.content).not.toHaveProperty('result');
+    const confirmed = { ...unknown, command: { ...unknown.command, state: 'REACTION_COMMITTED' as const },
+      poll: { voteCounts: ['1', '0'], voterCount: '1', selectedOptions: [0],
+        projectionRevision: '2', commandId: 'ballot', voteActorPtid: 'alice' } };
+    const retry = vi.spyOn(privateMomentsNative, 'retryReaction').mockResolvedValue(confirmed);
+    await expect(state().votePoll('post', [1])).rejects.toThrow('REACTION_COMMAND_PENDING');
+    await state().votePoll('post', [0]);
+    expect(retry).toHaveBeenCalledExactlyOnceWith({ actorPtid: 'alice', rendererGeneration: 1, commandId: 'ballot' });
+    expect(vote).toHaveBeenCalledOnce();
+    expect(state().postsById.post.content).toMatchObject({ result: confirmed.poll });
+    expect(state().postsById.post.reactions).toEqual([]);
+  });
 });

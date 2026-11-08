@@ -3,11 +3,16 @@ mod private_comment;
 mod private_media;
 mod private_mention;
 mod private_moment;
+mod private_poll;
 mod private_reaction;
 mod projection;
 pub(crate) use private_comment::PrivateCommentProjection;
+pub(crate) use private_poll::merge_poll_readback;
+pub(crate) use private_poll::project_poll_target;
 pub(crate) use private_reaction::project_reaction_target;
-pub(crate) use projection::PrivateReactionSummaryProjection;
+pub(crate) use projection::{
+    PrivatePollResultProjection, PrivateReactionOperation, PrivateReactionSummaryProjection,
+};
 pub(crate) mod public_feed;
 pub(crate) mod public_feed_read;
 mod public_feed_store;
@@ -45,9 +50,9 @@ use self::private_moment::{
     PrivateRecoveryFailureKind,
 };
 use self::private_reaction::{
-    PrivateReactionMutationInput, PrivateReactionOrchestrator, PrivateReactionRetryInput,
+    PrivatePollMutationInput, PrivateReactionMutationInput, PrivateReactionOrchestrator,
+    PrivateReactionRetryInput,
 };
-use self::projection::PrivateReactionOperation;
 
 #[cfg(feature = "acceptance-webdriver")]
 static ACCEPTANCE_RUNTIME_BOOT_ID: OnceLock<String> = OnceLock::new();
@@ -138,6 +143,29 @@ pub struct PrivateMomentMediaOpenInput {
 pub struct PrivateMomentsTeardownInput {
     pub actor_ptid: String,
     pub renderer_generation: u64,
+}
+
+#[tauri::command]
+pub fn social_private_poll_vote(
+    input: PrivatePollMutationInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "REACTION_REJECTED"),
+    };
+    match PrivateReactionOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.vote(&input))
+    {
+        Ok(result) => AppResult::success(json!(result)),
+        Err(error) => private_reaction_failure(error),
+    }
 }
 
 #[tauri::command]
@@ -991,6 +1019,26 @@ fn native_failure(message: String, state: &str) -> AppResult<Value> {
 }
 
 fn private_reaction_failure(message: String) -> AppResult<Value> {
+    if matches!(
+        message.as_str(),
+        "SOCIAL_PRIVATE_NOT_A_POLL"
+            | "SOCIAL_PRIVATE_POLL_INVALID_SELECTION"
+            | "SOCIAL_PRIVATE_POLL_DEFINITION_CHANGED"
+            | "SOCIAL_PRIVATE_POLL_CLOSED"
+    ) {
+        let code = if message == "SOCIAL_PRIVATE_POLL_CLOSED" {
+            ErrorCode::Conflict
+        } else {
+            ErrorCode::InvalidArgument
+        };
+        return AppResult::fail(
+            code,
+            message.clone(),
+            Some(json!({
+                "state": "REACTION_REJECTED", "native_error_code": message,
+            })),
+        );
+    }
     let lower = message.to_ascii_lowercase();
     let pending = lower.contains("reaction command is already pending");
     let retrying = lower.contains("reaction command is not retryable yet");

@@ -432,6 +432,16 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'moments.private.interaction.replay',
+    mobileAcceptanceActions['moments.private.interaction.replay'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.interaction.observe',
+    mobileAcceptanceActions['moments.private.interaction.observe'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'storage.cache.seed',
     mobileAcceptanceActions['storage.cache.seed'],
     registry,

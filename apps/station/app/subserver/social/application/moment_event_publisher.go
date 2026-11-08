@@ -173,6 +173,29 @@ func (p *MomentEventPublisher) StagePrivateReacted(
 	return err
 }
 
+func (p *MomentEventPublisher) StagePrivateUpdated(
+	ctx context.Context, transaction delivery.Transaction, postID, actorPTID, targetActorPTID string,
+) error {
+	if p == nil || postID == "" || actorPTID == "" || targetActorPTID == "" {
+		return fmt.Errorf("private update event identity is incomplete")
+	}
+	bus := p.bus
+	if bus == nil {
+		bus = events.GetBus
+	}
+	liveBus := bus()
+	if liveBus == nil {
+		return fmt.Errorf("Moment event bus is unavailable")
+	}
+	_, err := liveBus.PublishInTransaction(ctx, transaction, targetActorPTID, &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Moment{Moment: &realtime.MomentEvent{
+			Kind: realtime.MomentEvent_UPDATED, PostId: postID, ActorPtid: actorPTID,
+			TargetActorPtid: targetActorPTID, OccurredTsUnixMs: p.now().UTC().UnixMilli(),
+		}},
+	})
+	return err
+}
+
 func (p *MomentEventPublisher) StageImportedRevoked(
 	ctx context.Context,
 	transaction delivery.Transaction,
