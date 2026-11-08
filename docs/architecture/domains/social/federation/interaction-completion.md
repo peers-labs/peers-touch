@@ -133,6 +133,8 @@ renderer generation 取得 Native 存储身份；认证成功不能替代该运�
 准备失败仍须用原 PIN Owner 恢复主账号并核验原存储身份，不能把切换后的账号留给
 主账号 Session 的清理回调。Native 拒绝保留 typed code；准备和恢复同时失败时保留
 两个原因。原 Public Gate 在判定清理失败前保存完整 owned cleanup 结果。
+投票草稿的取消/重开证明等待原 Dialog 的关闭与新输入控件可见，随后核验原草稿值。
+超时或值不一致保留失败并采集原生诊断，不用一次即时 DOM 查询代替异步挂载完成。
 
 ## 6. 可证伪的验收
 
@@ -162,11 +164,10 @@ renderer generation 取得 Native 存储身份；认证成功不能替代该运�
 FUNCTIONAL_CHECK、ACCEPTANCE_PROOF 分开记录；正式 closure 在开发 Journey 通过后
 执行一次。冻结 planned 效果区不由本文或源码检查核销。
 
-当前 AFL 计划的 `Acceptance Execution` 十个 closure、completion 和 full
-都是空数组，`planctl inspect` 返回 `allDeclaredGateIds=[]`。计划结构通过不能
-证明其执行选择完整。补充实施须由原 Plan Owner 把已接受的检查与 Native Gate
-映射进 closure，并保持 planned 效果区的 digest；在此之前只使用明确指定的
-原 Gate，不把空选择解释为验收通过。
+有效执行映射位于
+[Native Runner Plan](./execution-plans/20261108-social-completion-native-runner/plan.md)。
+closure、completion 和 full 均绑定实际 Gate；原 planned 效果区 digest 保持冻结。
+计划结构与非空映射不能证明 Gate 已执行，具体效果仍由当前源码运行证据逐项核验。
 
 ## 7. 决策与代价
 

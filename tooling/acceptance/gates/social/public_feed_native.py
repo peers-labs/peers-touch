@@ -806,10 +806,21 @@ class Gate(DeviceSearchGate):
         # Dismiss/reopen goes through the original draft owner, including poll
         # fields; it must not turn the retained draft back into a text post.
         self.click("alice", '[data-action-id="compose.cancel"]')
-        self.click("alice", '[data-acceptance-id="social-composer-open"]')
-        self.assert_condition(f"{text}-poll-draft-restored",
-            self.visible_element("alice", '[data-acceptance-id="social-poll-question"]').get_attribute("value")
-            == text + " question")
+        try:
+            wait_until(lambda: self.visible_element("alice",
+                'textarea[data-moments-composer-input]') is None,
+                "Alice composer dismissed", timeout=30)
+            self.click("alice", '[data-acceptance-id="social-composer-open"]')
+            question = wait_until(lambda: self.visible_element("alice",
+                '[data-acceptance-id="social-poll-question"]'),
+                "Alice reopened poll question", timeout=30)
+            self.assert_condition(f"{text}-poll-draft-restored",
+                question.get_attribute("value") == text + " question")
+        except Exception:
+            cleanup_preserving_primary_failure(
+                lambda: self.capture("alice", f"{text}-poll-draft-restore-failure"),
+                self.report, "Poll draft restoration diagnostic")
+            raise
         self.click("alice", '[data-acceptance-id="social-composer-publish"]')
         return {actor: self.await_card(actor, text).get_attribute("data-post-id") for actor in ("alice", "bob")}
 
@@ -1129,8 +1140,7 @@ class Gate(DeviceSearchGate):
             "scenarioResults": {scenario: "PASS" for scenario in SCENARIOS},
             "textSha256": hashlib.sha256(text.encode()).hexdigest(),
             "suiteRuntimeReport": runtime_report, "cleanup": cleanup,
-            "unprovenScope": ["Circle block and account epoch",
-                              "Prototype visual parity", "Mobile Native"]}
+            "unprovenScope": ["Prototype visual parity", "Mobile Native"]}
 
 
 def main() -> int:

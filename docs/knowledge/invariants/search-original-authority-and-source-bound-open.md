@@ -175,6 +175,10 @@ revalidation is not terminal evidence. Diagnostics may record that frame, but
 all product terminal, readability and retained-context assertions remain required.
 The Social capture includes the original thread's loading state, parent,
 source, body and comment anchor in the before/after rendering comparison.
+Desktop captures consume the shared Moments card's body and highlighted comment
+markup. Scope the original thread to that exact parent card and inspect its
+actual `aria-busy` state; a neighboring private error or loading card cannot
+change the addressed original's readiness.
 An original comment frame must show its exact text, focused anchor and viewport
 visibility; a preceding DOM assertion cannot authorize a later loading screenshot.
 The native capture must observe original-thread DOM mutations throughout

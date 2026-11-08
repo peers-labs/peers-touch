@@ -44,9 +44,28 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                 field.get_attribute.side_effect = question.get
                 card = Mock()
                 card.get_attribute.return_value = "actual-object"
-                gate.visible_element = Mock(side_effect=lambda actor, selector:
-                    field if selector.endswith('="social-poll-question"]') else publish)
-                gate.click = Mock()
+                lifecycle = {"open": True, "opens": 0, "reopenedReads": 0}
+
+                def click(actor, selector):
+                    if selector == '[data-action-id="compose.cancel"]':
+                        lifecycle["open"] = False
+                    elif selector == '[data-acceptance-id="social-composer-open"]':
+                        lifecycle["open"] = True
+                        lifecycle["opens"] += 1
+
+                def visible(actor, selector):
+                    if selector == 'textarea[data-moments-composer-input]':
+                        return field if lifecycle["open"] else None
+                    if selector.endswith('="social-poll-question"]'):
+                        if lifecycle["opens"] == 2:
+                            lifecycle["reopenedReads"] += 1
+                            if lifecycle["reopenedReads"] == 1:
+                                return None
+                        return field if lifecycle["open"] else None
+                    return publish
+
+                gate.visible_element = Mock(side_effect=visible)
+                gate.click = Mock(side_effect=click)
                 gate.action = Mock(return_value={"pendingCount": 0, "verifiedSequence": "7"})
                 gate.await_card = Mock(return_value=card)
                 gate.set_input = Mock(side_effect=lambda actor, selector, value:
@@ -66,6 +85,7 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                     "alice": "actual-object", "bob": "actual-object",
                 })
                 self.assertEqual(gate.action.call_count, 2)
+                self.assertEqual(lifecycle["reopenedReads"], 2)
                 self.assertEqual(gate.click.call_args_list.count(
                     unittest.mock.call("alice", '[data-acceptance-id="social-composer-publish"]'),
                 ), 2)
