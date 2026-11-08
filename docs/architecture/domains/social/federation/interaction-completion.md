@@ -131,7 +131,8 @@ iOS/Android 场景只消费已准备作者和原资源引用，私密种子仍�
 Fixture 必须等待原 Moments Runtime 针对当前 Actor 的 bootstrap 队列，再从当前
 renderer generation 取得 Native 存储身份；认证成功不能替代该运行时就绪。
 准备失败仍须用原 PIN Owner 恢复主账号并核验原存储身份，不能把切换后的账号留给
-主账号 Session 的清理回调。Native 拒绝保留 typed code；准备和恢复同时失败时保留
+主账号 Session 的清理回调。Native 拒绝保留 typed code、既有状态和固定拒绝分支的
+原因码；未知错误正文、路径和凭证不进入 Fixture 报错。准备和恢复同时失败时保留
 两个原因。原 Public Gate 在判定清理失败前保存完整 owned cleanup 结果。
 投票草稿的取消/重开证明等待原 Dialog 的关闭与新输入控件可见，随后核验原草稿值。
 超时或值不一致保留失败并采集原生诊断，不用一次即时 DOM 查询代替异步挂载完成。

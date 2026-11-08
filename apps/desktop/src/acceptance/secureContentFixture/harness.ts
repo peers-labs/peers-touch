@@ -76,11 +76,28 @@ interface NativeRuntimeIdentityResult {
     accountStorageIdentitySha256?: unknown;
   };
   error?: {
+    message?: unknown;
     details?: {
       native_error_code?: unknown;
+      state?: unknown;
     };
   };
 }
+
+// Diagnostics identify fixed Native refusal branches without exposing dynamic
+// errors, filesystem paths, credentials or account data from a failed command.
+const identityRefusalReasons = new Map<string, string>([
+  ['secure content supervisor is not active', 'PRIVATE_RUNTIME_INACTIVE'],
+  ['secure content supervisor lock poisoned', 'PRIVATE_RUNTIME_LOCK_FAILED'],
+  ['secure content Station binding changed during identity capture', 'STATION_BINDING_CHANGED'],
+  ['secure content Station binding is not complete', 'STATION_BINDING_INCOMPLETE'],
+  ['secure content active Station peer ID is unavailable', 'STATION_IDENTITY_UNAVAILABLE'],
+  ['secure content active Station peer ID is invalid', 'STATION_IDENTITY_INVALID'],
+  ['secure content active Station URL is invalid', 'STATION_ENDPOINT_INVALID'],
+  ['secure content bound Station identity is unavailable', 'BOUND_STATION_IDENTITY_UNAVAILABLE'],
+  ['secure content bound Station route is unavailable', 'BOUND_STATION_ROUTE_UNAVAILABLE'],
+  ['secure content Station binding identity is inconsistent', 'STATION_BINDING_INCONSISTENT'],
+]);
 
 function requireText(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
@@ -191,9 +208,17 @@ async function accountStorageIdentitySha256(): Promise<string> {
   );
   if (result.ok !== true) {
     const code = result.error?.details?.native_error_code;
+    const state = result.error?.details?.state;
+    const message = result.error?.message;
+    const reason = typeof message === 'string' ? identityRefusalReasons.get(message) : undefined;
+    const diagnostic = [
+      typeof state === 'string' && /^[A-Z][A-Z0-9_]+$/.test(state) ? state : undefined,
+      reason,
+    ].filter((value): value is string => value !== undefined);
     throw new Error(`secureContentFixture.accountStorageIdentityRejected:${
       typeof code === 'string' && /^[A-Z][A-Z0-9_]+$/.test(code)
-        ? code : 'NATIVE_IDENTITY_UNAVAILABLE'}`);
+        ? code : 'NATIVE_IDENTITY_UNAVAILABLE'}${
+      diagnostic.length ? `:${diagnostic.join(':')}` : ''}`);
   }
   const digest = requireText(result.data?.accountStorageIdentitySha256, 'accountStorageIdentity');
   if (!/^[0-9a-f]{64}$/.test(digest)) {

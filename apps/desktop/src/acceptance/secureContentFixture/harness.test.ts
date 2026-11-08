@@ -300,6 +300,47 @@ describe('Secure Content fixture harness', () => {
     });
   });
 
+  it.each([
+    ['secure content supervisor is not active', 'AUTHENTICATION_REQUIRED', 'PRIVATE_RUNTIME_INACTIVE'],
+    ['secure content Station binding is not complete', 'INTEGRITY_FAILURE', 'STATION_BINDING_INCOMPLETE'],
+    ['secure content Station binding identity is inconsistent', 'INTEGRITY_FAILURE', 'STATION_BINDING_INCONSISTENT'],
+  ])('identifies the fixed native identity refusal %s', async (message, state, reason) => {
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-primary', provider_user_id: 'ptid:primary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: false,
+      error: { message, details: { native_error_code: 'PRIVATE_NATIVE_COMMAND_FAILED', state } },
+    });
+
+    await expect(harness().prepareAccountSwitch({
+      secondaryAccount: 'secondary@p.t', password: TEST_CREDENTIAL, pin: '135790',
+    })).rejects.toThrow(
+      `secureContentFixture.accountStorageIdentityRejected:PRIVATE_NATIVE_COMMAND_FAILED:${state}:${reason}`,
+    );
+    expect(mocks.loginWithPassword).not.toHaveBeenCalled();
+    expect(mocks.accountSetPin).not.toHaveBeenCalled();
+  });
+
+  it('does not expose unknown native identity errors or malformed state fields', async () => {
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-primary', provider_user_id: 'ptid:primary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: false,
+      error: {
+        message: `private path and credential ${TEST_CREDENTIAL}`,
+        details: { native_error_code: TEST_CREDENTIAL, state: TEST_CREDENTIAL },
+      },
+    });
+
+    await expect(harness().prepareAccountSwitch({
+      secondaryAccount: 'secondary@p.t', password: TEST_CREDENTIAL, pin: '135790',
+    })).rejects.toThrow(
+      /^secureContentFixture\.accountStorageIdentityRejected:NATIVE_IDENTITY_UNAVAILABLE$/,
+    );
+  });
+
   it('executes an account-switch round trip and proves stale projection removal', async () => {
     privateState.postsById = { stale: {} };
     mocks.unlockWithPin.mockImplementation(async (accountId: string) => {
