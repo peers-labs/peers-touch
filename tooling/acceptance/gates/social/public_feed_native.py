@@ -55,6 +55,7 @@ class FixtureClient:
 
 
 class Gate(DeviceSearchGate):
+    gate_id = GATE_ID
     phase = "Actor-Owned Moments Native"
     bom = ("AFL-08C", "AFL-09")
     spec = ("docs/architecture/domains/social/federation/actor-feed-log.md",)

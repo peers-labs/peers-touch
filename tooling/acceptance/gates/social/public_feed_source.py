@@ -10,6 +10,11 @@ from .cross_station_support import SourceCommand, run_source_commands
 
 COMMANDS = (
     SourceCommand(
+        name="public-feed-native-entry",
+        argv=("python3", "-m", "unittest",
+              "tooling.acceptance.gates.social.test_public_feed_native"),
+    ),
+    SourceCommand(
         name="public-feed-desktop-types",
         argv=("pnpm", "exec", "tsc", "--noEmit", "-p", "tsconfig.json"),
         cwd="apps/desktop",
