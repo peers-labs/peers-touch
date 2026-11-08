@@ -32,7 +32,9 @@ from tooling.acceptance.input_owners.native_toolchain import macos_sdk_installat
 from tooling.acceptance.input_owners.rust_toolchain import rust_installation
 
 
-DEFAULT_BUILD_SECONDS = 130.0
+# One cold request includes compilation and three complete installed-input
+# observations. Explicit caller limits and earlier outer deadlines still win.
+DEFAULT_BUILD_SECONDS = 600.0
 BUILD_OWNER = "tooling/acceptance/provisioners/desktop_acceptance_build.py"
 BUILD_RESOURCE = "desktop-acceptance-binary"
 TAURI_CONFIG = '{"app":{"withGlobalTauri":true}}'

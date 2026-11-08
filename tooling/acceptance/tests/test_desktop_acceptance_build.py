@@ -110,6 +110,32 @@ print(json.dumps({
     def count(self) -> int:
         return int((self.root / ".local/count").read_text())
 
+    def test_default_budget_covers_cold_build_and_complete_input_rechecks(self) -> None:
+        build = DesktopAcceptanceBuild(self.root)
+        original_identity = build._identity
+        original_clock = time.monotonic
+        elapsed = 0.0
+
+        def observe():
+            nonlocal elapsed
+            # Model full installation inventories without a long wall-clock
+            # sleep. Every identity pass still executes the real owner.
+            elapsed += 60.0
+            return original_identity()
+
+        with patch(
+            "tooling.acceptance.provisioners.desktop_acceptance_build.time.monotonic",
+            side_effect=lambda: original_clock() + elapsed,
+        ), patch.object(build, "_identity", side_effect=observe) as identity:
+            binary = build.ensure()
+        self.assertEqual(identity.call_count, 3)
+        self.assertEqual(elapsed, 180.0)
+        self.assertEqual(self.count(), 1)
+        self.assertTrue(binary.is_file())
+        self.assertEqual(build.observation["status"], "READY")
+        self.assertGreaterEqual(build.observation["durationSeconds"], elapsed)
+        self.assertLess(build.observation["durationSeconds"], build.timeout)
+
     @unittest.skipUnless(sys.platform == "darwin", "actual macOS installed input owner")
     def test_native_installation_drift_invalidates_both_build_receipts(self) -> None:
         prefix = "tooling.acceptance.provisioners.desktop_acceptance_build"
