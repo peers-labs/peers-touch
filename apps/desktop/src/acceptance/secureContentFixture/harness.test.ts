@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   stationSetActive: vi.fn(),
   loginWithPassword: vi.fn(),
   completeCurrentSession: vi.fn(),
+  momentsBootstrap: vi.fn(),
   unlockWithPin: vi.fn(),
   createAcceptanceRevision: vi.fn(),
   currentEndpoint: vi.fn(),
@@ -43,6 +44,12 @@ vi.mock('../../kernel/identityRuntime', () => ({
     loginWithPassword: mocks.loginWithPassword,
     completeCurrentSession: mocks.completeCurrentSession,
     unlockWithPin: mocks.unlockWithPin,
+  },
+}));
+
+vi.mock('../../runtimes/momentsRuntime', () => ({
+  momentsRuntime: {
+    bootstrap: mocks.momentsBootstrap,
   },
 }));
 
@@ -116,6 +123,12 @@ describe('Secure Content fixture harness', () => {
       sessionState.authenticated = true;
     });
     mocks.completeCurrentSession.mockResolvedValue(undefined);
+    mocks.momentsBootstrap.mockImplementation(async () => {
+      privateState.scope = {
+        actorPtid: sessionState.currentUser?.actorPtid ?? null,
+        rendererGeneration: sessionState.sessionEpoch,
+      };
+    });
     mocks.invoke.mockResolvedValue({
       ok: true,
       data: {
@@ -200,6 +213,91 @@ describe('Secure Content fixture harness', () => {
       'account-secondary',
       '12345678',
     );
+  });
+
+  it('waits for the original Moments owner to activate the switched account before native attestation', async () => {
+    let activate!: () => void;
+    mocks.momentsBootstrap.mockImplementation(() => new Promise<void>(resolve => {
+      activate = () => {
+        privateState.scope = { actorPtid: 'ptid:secondary', rendererGeneration: 2 };
+        resolve();
+      };
+    }));
+    mocks.unlockWithPin.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch = 2;
+    });
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-secondary', provider_user_id: 'ptid:secondary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: true, data: { accountStorageIdentitySha256: 'b'.repeat(64) },
+    });
+    const switching = harness().switchPreparedAccount({
+      accountId: 'account-secondary', actorPtid: 'ptid:secondary',
+      storageIdentitySha256: 'b'.repeat(64), outgoingActorPtid: 'ptid:primary',
+      outgoingSessionEpoch: 1, pin: '135790',
+    });
+    await vi.waitFor(() => expect(mocks.momentsBootstrap).toHaveBeenCalledOnce());
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    activate();
+    await expect(switching).resolves.toMatchObject({
+      storageIdentitySha256: 'b'.repeat(64), beforeGeneration: 1, afterGeneration: 2,
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'social_private_moments_acceptance_runtime_identity',
+      { input: { actor_ptid: 'ptid:secondary', renderer_generation: 2 } },
+    );
+  });
+
+  it('restores the primary account when secondary native attestation fails and retains the typed refusal', async () => {
+    mocks.accountGetActive
+      .mockResolvedValueOnce({ id: 'account-primary', provider_user_id: 'ptid:primary' })
+      .mockResolvedValueOnce({ id: 'account-secondary', provider_user_id: 'ptid:secondary' });
+    mocks.loginWithPassword.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch += 1;
+    });
+    mocks.unlockWithPin.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:primary' };
+      sessionState.sessionEpoch += 1;
+    });
+    mocks.invoke
+      .mockResolvedValueOnce({ ok: true, data: { accountStorageIdentitySha256: 'a'.repeat(64) } })
+      .mockResolvedValueOnce({ ok: false, error: { details: { native_error_code: 'UNAUTHORIZED' } } })
+      .mockResolvedValueOnce({ ok: true, data: { accountStorageIdentitySha256: 'a'.repeat(64) } });
+    await expect(harness().prepareAccountSwitch({
+      secondaryAccount: 'secondary@p.t', password: TEST_CREDENTIAL, pin: '135790',
+    })).rejects.toThrow('secureContentFixture.accountStorageIdentityRejected:UNAUTHORIZED');
+    expect(mocks.unlockWithPin).toHaveBeenCalledWith('account-primary', '135790');
+    expect(sessionState.currentUser?.actorPtid).toBe('ptid:primary');
+    expect(privateState.scope).toEqual({ actorPtid: 'ptid:primary', rendererGeneration: 3 });
+    expect(mocks.accountSetPin).toHaveBeenCalledOnce();
+  });
+
+  it('retains both preparation and primary restoration failures', async () => {
+    mocks.accountGetActive
+      .mockResolvedValueOnce({ id: 'account-primary', provider_user_id: 'ptid:primary' })
+      .mockResolvedValueOnce({ id: 'account-secondary', provider_user_id: 'ptid:secondary' });
+    mocks.loginWithPassword.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch += 1;
+    });
+    const restoreFailure = new Error('controlled PIN restoration failure');
+    mocks.unlockWithPin.mockRejectedValue(restoreFailure);
+    mocks.invoke
+      .mockResolvedValueOnce({ ok: true, data: { accountStorageIdentitySha256: 'a'.repeat(64) } })
+      .mockResolvedValueOnce({ ok: false, error: { details: { native_error_code: 'UNAUTHORIZED' } } });
+    const failure = await harness().prepareAccountSwitch({
+      secondaryAccount: 'secondary@p.t', password: TEST_CREDENTIAL, pin: '135790',
+    }).catch(error => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).toMatchObject({
+      message: 'secureContentFixture.accountPreparationAndRestoreFailed',
+      errors: [expect.objectContaining({
+        message: 'secureContentFixture.accountStorageIdentityRejected:UNAUTHORIZED',
+      }), restoreFailure],
+    });
   });
 
   it('executes an account-switch round trip and proves stale projection removal', async () => {

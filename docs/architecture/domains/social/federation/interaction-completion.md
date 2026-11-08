@@ -127,6 +127,13 @@ Mobile 的公开写权仍按 AD-08 拒绝；此次为既有 Search 验收接入�
 iOS/Android 场景只消费已准备作者和原资源引用，私密种子仍由原 Mobile Owner
 发布。禁止在首场景开始后补建客户端、登录或源身份。
 
+公开 Native Suite 的账号隔离 Fixture 也在首场景前准备。Identity Runtime 完成认证后，
+Fixture 必须等待原 Moments Runtime 针对当前 Actor 的 bootstrap 队列，再从当前
+renderer generation 取得 Native 存储身份；认证成功不能替代该运行时就绪。
+准备失败仍须用原 PIN Owner 恢复主账号并核验原存储身份，不能把切换后的账号留给
+主账号 Session 的清理回调。Native 拒绝保留 typed code；准备和恢复同时失败时保留
+两个原因。原 Public Gate 在判定清理失败前保存完整 owned cleanup 结果。
+
 ## 6. 可证伪的验收
 
 **IC-A01**：两个 Native 读者对根评论/回复点赞、取消点赞、重试、重启读取一致；

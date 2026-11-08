@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
 import { identityRuntime } from '../../kernel/identityRuntime';
+import { momentsRuntime } from '../../runtimes/momentsRuntime';
 import { api } from '../../services/desktop_api';
 import { imServiceV1 } from '../../services/im-service';
 import { messagingRecoveryService } from '../../services/messaging-recovery-service';
@@ -73,6 +74,11 @@ interface NativeRuntimeIdentityResult {
   ok: boolean;
   data?: {
     accountStorageIdentitySha256?: unknown;
+  };
+  error?: {
+    details?: {
+      native_error_code?: unknown;
+    };
   };
 }
 
@@ -164,7 +170,16 @@ async function maintainRecoveryPreKeys(expectedEpoch: number): Promise<number> {
 
 async function accountStorageIdentitySha256(): Promise<string> {
   const actorPtid = requireCurrentActor();
-  const rendererGeneration = usePrivateMomentsStore.getState().scope.rendererGeneration;
+  // Authentication completes before the long-lived Moments projection queue.
+  // Let its original owner finish the new account's activation before asking
+  // Native to attest that account's lease.
+  await momentsRuntime.bootstrap(actorPtid);
+  const { actorPtid: projectedActorPtid, rendererGeneration } =
+    usePrivateMomentsStore.getState().scope;
+  if (requireCurrentActor() !== actorPtid || projectedActorPtid !== actorPtid
+    || !Number.isSafeInteger(rendererGeneration) || rendererGeneration < 1) {
+    throw new Error('secureContentFixture.accountStorageScopeMismatch');
+  }
   const result = await invoke<NativeRuntimeIdentityResult>(
     'social_private_moments_acceptance_runtime_identity',
     {
@@ -174,12 +189,17 @@ async function accountStorageIdentitySha256(): Promise<string> {
       },
     },
   );
-  return requireText(
-    result.ok === true
-      ? result.data?.accountStorageIdentitySha256
-      : undefined,
-    'accountStorageIdentity',
-  );
+  if (result.ok !== true) {
+    const code = result.error?.details?.native_error_code;
+    throw new Error(`secureContentFixture.accountStorageIdentityRejected:${
+      typeof code === 'string' && /^[A-Z][A-Z0-9_]+$/.test(code)
+        ? code : 'NATIVE_IDENTITY_UNAVAILABLE'}`);
+  }
+  const digest = requireText(result.data?.accountStorageIdentitySha256, 'accountStorageIdentity');
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw new Error('secureContentFixture.accountStorageIdentityInvalid');
+  }
+  return digest;
 }
 
 async function boundStation() {
@@ -233,40 +253,56 @@ export function installAcceptanceHarness(): void {
       }
       const primaryStorageIdentitySha256 = await accountStorageIdentitySha256();
       await api.accountSetPin(primaryAccount.id, requireText(input.pin, 'pin'));
-      await replaceSessionWithPassword(
-        requireText(input.secondaryAccount, 'secondaryAccount'),
-        requireText(input.password, 'password'),
-      );
-      const secondaryActorPtid = requireCurrentActor();
-      const secondaryAccount = await api.accountGetActive();
-      if (
-        !secondaryAccount?.id
-        || !accountOwnsActor(secondaryAccount, secondaryActorPtid)
-        || secondaryAccount.id === primaryAccount.id
-        || secondaryActorPtid === primaryActorPtid
-      ) {
-        throw new Error('secureContentFixture.secondaryAccountMissing');
+      let prepared: {
+        secondaryAccountId: string;
+        secondaryActorPtid: string;
+        secondaryStorageIdentitySha256: string;
+      } | undefined;
+      let preparationFailure: unknown;
+      try {
+        await replaceSessionWithPassword(
+          requireText(input.secondaryAccount, 'secondaryAccount'),
+          requireText(input.password, 'password'),
+        );
+        const secondaryActorPtid = requireCurrentActor();
+        const secondaryAccount = await api.accountGetActive();
+        if (!secondaryAccount?.id || !accountOwnsActor(secondaryAccount, secondaryActorPtid)
+          || secondaryAccount.id === primaryAccount.id || secondaryActorPtid === primaryActorPtid) {
+          throw new Error('secureContentFixture.secondaryAccountMissing');
+        }
+        const secondaryStorageIdentitySha256 = await accountStorageIdentitySha256();
+        if (secondaryStorageIdentitySha256 === primaryStorageIdentitySha256) {
+          throw new Error('secureContentFixture.accountStorageIdentityCollision');
+        }
+        await api.accountSetPin(secondaryAccount.id, input.pin);
+        prepared = { secondaryAccountId: secondaryAccount.id, secondaryActorPtid,
+          secondaryStorageIdentitySha256 };
+      } catch (error) {
+        preparationFailure = error;
       }
-      const secondaryStorageIdentitySha256 = await accountStorageIdentitySha256();
-      if (secondaryStorageIdentitySha256 === primaryStorageIdentitySha256) {
-        throw new Error('secureContentFixture.accountStorageIdentityCollision');
+      try {
+        await identityRuntime.unlockWithPin(primaryAccount.id, input.pin);
+        await completeLogin();
+        if (requireCurrentActor() !== primaryActorPtid) {
+          throw new Error('secureContentFixture.primaryAccountRestoreFailed');
+        }
+        if (await accountStorageIdentitySha256() !== primaryStorageIdentitySha256) {
+          throw new Error('secureContentFixture.primaryStorageRestoreFailed');
+        }
+      } catch (restoreFailure) {
+        if (preparationFailure !== undefined) {
+          throw Object.assign(new Error('secureContentFixture.accountPreparationAndRestoreFailed'),
+            { errors: [preparationFailure, restoreFailure] });
+        }
+        throw restoreFailure;
       }
-      await api.accountSetPin(secondaryAccount.id, input.pin);
-      await identityRuntime.unlockWithPin(primaryAccount.id, input.pin);
-      await completeLogin();
-      if (requireCurrentActor() !== primaryActorPtid) {
-        throw new Error('secureContentFixture.primaryAccountRestoreFailed');
-      }
-      if (await accountStorageIdentitySha256() !== primaryStorageIdentitySha256) {
-        throw new Error('secureContentFixture.primaryStorageRestoreFailed');
-      }
+      if (preparationFailure !== undefined) throw preparationFailure;
+      if (!prepared) throw new Error('secureContentFixture.accountPreparationMissing');
       return {
         primaryAccountId: primaryAccount.id,
         primaryActorPtid,
         primaryStorageIdentitySha256,
-        secondaryAccountId: secondaryAccount.id,
-        secondaryActorPtid,
-        secondaryStorageIdentitySha256,
+        ...prepared,
         sessionGeneration: useSessionStore.getState().sessionEpoch,
       };
     },

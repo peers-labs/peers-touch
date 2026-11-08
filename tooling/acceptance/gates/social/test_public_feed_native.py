@@ -133,6 +133,23 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                         gate.run()
                 self.assertEqual(ledger.call_args.kwargs["source_digest"], expected)
 
+    def test_original_run_retains_owned_cleanup_details_beside_primary_failure(self):
+        current = source_identity(ROOT)
+        gate = object.__new__(Gate)
+        gate.manifest = {"source": current, "runId": "source-binding-fixture"}
+        gate.actor_manifest = {"runId": "source-binding-fixture"}
+        gate.active_social_scenario = None
+        gate.report = SimpleNamespace(runtime={})
+        cleanup = {"portsReleased": True, "processesReleased": True,
+                   "storageReleased": True, "logsReleased": True,
+                   "cleanupErrors": [{"resource": "session:alice", "error": "typed refusal"}]}
+        with patch.object(gate, "verify_fixture_ready", side_effect=RuntimeError("fixture boundary")), \
+             patch.object(gate, "cleanup_clients", return_value=cleanup):
+            with self.assertRaisesRegex(RuntimeError, "fixture boundary"):
+                gate.run()
+        self.assertEqual(gate.report.runtime["cleanup"], cleanup)
+        self.assertIn("cleanupFailure", gate.report.runtime)
+
     def test_original_run_rejects_invalid_workspace_digest_before_fixture_work(self):
         gate = object.__new__(Gate)
         gate.manifest = {

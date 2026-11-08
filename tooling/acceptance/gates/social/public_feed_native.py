@@ -1097,6 +1097,7 @@ class Gate(DeviceSearchGate):
             def release() -> None:
                 nonlocal cleanup
                 cleanup = self.cleanup_clients()
+                self.report.runtime["cleanup"] = cleanup
                 capability = getattr(self, "capability_client", None)
                 if capability is not None:
                     capability.close()
