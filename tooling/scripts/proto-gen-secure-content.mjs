@@ -47,10 +47,17 @@ export const PROTO_INPUTS = Object.freeze([
   'domain/social/private_content.proto',
   'domain/social/private_federation.proto',
   'domain/federation/delivery.proto',
+  'domain/federation/profile.proto',
+  'domain/federation/federation_resolve.proto',
   'domain/key_exchange/key_exchange.proto',
 ]);
 
 export const CONTENT_PREKEY_CLIENT_SCOPE = 'content-prekey-client';
+export const FEDERATION_RESOLVE_PROOF_SCOPE = 'federation-resolve-proof';
+export const FEDERATION_RESOLVE_PROOF_PROTO_INPUTS = Object.freeze([
+  'domain/federation/profile.proto',
+  'domain/federation/federation_resolve.proto',
+]);
 export const CONTENT_PREKEY_CLIENT_PROTO_INPUTS = Object.freeze([
   'domain/secure_content/prekey.proto',
   'domain/error/error.proto',
@@ -80,6 +87,8 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/social/private_content.proto': 'frame/touch/model/privatecontent',
   'domain/social/private_federation.proto': 'frame/touch/model/privatecontent',
   'domain/federation/delivery.proto': 'frame/core/federation/model',
+  'domain/federation/profile.proto': 'frame/touch/federation/profile/pb',
+  'domain/federation/federation_resolve.proto': 'frame/touch/federation/api/pb',
   'domain/key_exchange/key_exchange.proto': 'app/subserver/key_exchange/model',
 });
 
@@ -98,6 +107,8 @@ const GO_PACKAGE_NAMES = Object.freeze({
   'domain/social/private_content.proto': 'privatecontent',
   'domain/social/private_federation.proto': 'privatecontent',
   'domain/federation/delivery.proto': 'model',
+  'domain/federation/profile.proto': 'pb',
+  'domain/federation/federation_resolve.proto': 'pb',
   'domain/key_exchange/key_exchange.proto': 'model',
 });
 
@@ -235,6 +246,9 @@ function assertAllowedInput(relativePath) {
 
 function inputsForScope(scope) {
   if (scope === undefined || scope === null) return PROTO_INPUTS;
+  if (scope === FEDERATION_RESOLVE_PROOF_SCOPE) {
+    return FEDERATION_RESOLVE_PROOF_PROTO_INPUTS;
+  }
   if (scope === CONTENT_PREKEY_CLIENT_SCOPE) {
     return CONTENT_PREKEY_CLIENT_PROTO_INPUTS;
   }

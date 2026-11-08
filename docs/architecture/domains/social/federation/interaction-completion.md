@@ -164,3 +164,20 @@ private interaction 和现有验收都需同步更新。
 以及据此扩展原公开/私密协议。原 Owner 负责更新有效架构、生成协议、迁移完整
 消费者并实施；本文不构成已实施或已验收结果。旧展示假动作、无签名写和
 平行交互路径不得在完成状态中保留。
+
+## 8. Native 远端身份引导
+
+公开 Feed 的远端读取先取得 Actor Identity 原 Home-signed manifest，再通过
+原 Federation scoped resolver 取得原始 `signed_profile`。展示投影不能替代签名
+证明；`/actor/federation/profile` 是 Home Station 的本地 Actor 端点，客户端不能
+把远端 handle 发给自己的 Station 并期待它返回远端证明。
+
+Native 使用当前 Actor 可见的 active Federation contexts，逐一以明确
+`federation_id` 请求原 resolver；只对目标在该 context 不可见的 404 继续查找。
+网络、鉴权和完整性失败保持原错误。回包的 context、handle、Home Station、
+PTID、key fingerprint 与原始 envelope 必须一致，随后独立验证签名和有效期。
+相同 Home Station 的已有 key pin 不得被新回包替换。
+
+Station Registry 可保存只有身份用途的远端 Federation key pin。该记录不产生
+Station transport entry、route、Access binding 或 Session；传输目标的注册和
+准入仍由原 Station Runtime / Node Connectivity Owner 完成。

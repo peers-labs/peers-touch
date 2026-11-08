@@ -145,6 +145,7 @@ func federationResolveView(
 		ExpiresAtUnixMs:   envelope.GetExpiresAtUnixMs(),
 		SigningKeyKid:     envelope.GetSigningKeyKid(),
 		FederationId:      strings.TrimSpace(federationID),
+		SignedProfile:     envelope,
 	}
 }
 
