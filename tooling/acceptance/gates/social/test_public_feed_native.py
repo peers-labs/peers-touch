@@ -1,5 +1,6 @@
 """Social's concrete Native entry consumes its selected parent scope."""
 import os
+import runpy
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -19,6 +20,19 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class PublicFeedNativeEntryTest(unittest.TestCase):
+    def test_original_runner_accepts_the_capability_catalog_launch(self):
+        runner = runpy.run_path(str(ROOT / "tooling/scripts/acceptance-run.py"))
+        definition = runner["load_gate_definitions"](ROOT / "tooling/acceptance/gates.yaml")[GATE_ID]
+        launch = runner["gate_launch_fields"](GATE_ID, definition)
+        self.assertEqual(launch, {
+            "argv": ["python3", "-m", "tooling.acceptance.gates.social.public_feed_native"],
+            "ephemeralCapabilities": ["social-feed-notification"],
+        })
+        invalid = dict(definition)
+        invalid["command"] = " ".join(invalid.pop("argv"))
+        with self.assertRaisesRegex(SystemExit, "ephemeralCapabilities requires argv"):
+            runner["gate_launch_fields"](GATE_ID, invalid)
+
     def binding(self):
         catalog = ROOT / "tooling/acceptance/gates.yaml"
         definitions = load_catalog(catalog)

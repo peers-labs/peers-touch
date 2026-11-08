@@ -1765,7 +1765,7 @@
       "description": "Run Actor-Owned Moments Go regressions and Native Rust journal/cache source checks; does not prove product Journeys."
     },
     "social-public-feed-native-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.social.public_feed_native",
+      "argv": ["python3", "-m", "tooling.acceptance.gates.social.public_feed_native"],
       "timeout_seconds": 5400,
       "environment": "cross-station-social-native",
       "provisioner": "cross-station-social-native",
