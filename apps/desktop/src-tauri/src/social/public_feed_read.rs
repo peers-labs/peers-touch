@@ -88,15 +88,9 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     let request = ReadFeedRequest{actor_ptid: input.actor_ptid.clone(), chain_id: feed::PUBLIC_CHAIN_ID.into(),
         after_sequence: previous.as_ref().map_or(0, |h| h.sequence), limit: input.limit,
         include_thread: true, after_thread_cursor: store.thread_cursor(&input.actor_ptid)?};
-    let envelope: crate::model::common::PeersResponse = client.request_proto_for_device(
+    let response: ReadFeedResponse = client.request_proto_for_device(
         reqwest::Method::POST, "/api/v1/social/feed/read", &active.jwt, None,
         Some(&request), &engine.endpoint().device_id).map_err(|e| format!("FEED_HISTORY_READ_FAILED: {e}"))?;
-    if envelope.code != "200" { return Err("FEED_INVALID_RESPONSE".into()); }
-    let any = envelope.data.ok_or("FEED_INVALID_RESPONSE")?;
-    if any.type_url != "type.googleapis.com/peers_touch.model.social.feed.v1.ReadFeedResponse" {
-        return Err("FEED_INVALID_RESPONSE".into());
-    }
-    let response: ReadFeedResponse = feed::decode_canonical(&any.value).map_err(|e| e.to_string())?;
     if response.thread_entries.len() > 32 { return Err("FEED_INVALID_RESPONSE".into()); }
     let mut roots = std::collections::BTreeMap::new();
     let mut pins = Vec::new();

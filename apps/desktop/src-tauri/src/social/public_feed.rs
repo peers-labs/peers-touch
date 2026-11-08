@@ -129,16 +129,6 @@ fn validate_session(state: &AppState, window: &Window, actor: &str, account: &st
     Ok(())
 }
 
-fn decode_submit_response(envelope: crate::model::common::PeersResponse)
-    -> Result<SubmitFeedEventResponse, String> {
-    if envelope.code != "200" { return Err("FEED_INVALID_RESPONSE".into()); }
-    let any = envelope.data.ok_or("FEED_INVALID_RESPONSE")?;
-    if any.type_url != "type.googleapis.com/peers_touch.model.social.feed.v1.SubmitFeedEventResponse" {
-        return Err("FEED_INVALID_RESPONSE".into());
-    }
-    feed::decode_canonical(&any.value).map_err(|e| e.to_string())
-}
-
 #[tauri::command]
 pub fn social_public_feed_prepare(state: State<'_, Arc<AppState>>, window: Window,
     input: PublicFeedPrepareInput) -> Result<Value, String> {
@@ -158,7 +148,7 @@ pub fn social_public_feed_submit(state: State<'_, Arc<AppState>>, window: Window
         let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
         validate_prepared(&state, &window, &p)?;
     }
-    let response: crate::model::common::PeersResponse = client.request_proto_for_device(
+    let response: SubmitFeedEventResponse = client.request_proto_for_device(
         reqwest::Method::POST, "/api/v1/social/feed/events/submit", &p.token, None,
         Some(&SubmitFeedEventRequest{bundle: Some(p.bundle.clone())}), &p.device)
         .map_err(|e| format!("FEED_SUBMISSION_FAILED: {e}"))?;
@@ -166,7 +156,6 @@ pub fn social_public_feed_submit(state: State<'_, Arc<AppState>>, window: Window
     // or Station replacement. Such an ACK cannot touch the new session.
     let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
     validate_prepared(&state, &window, &p)?;
-    let response = decode_submit_response(response)?;
     let head = response.head.as_ref().ok_or("FEED_INVALID")?;
     p.store.confirm(&p.actor, &p.root, &input.command_id, head)?;
     Ok(json!({"commandId": input.command_id, "state": "COMMITTED", "duplicate": response.duplicate,
@@ -196,30 +185,4 @@ pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window
             "state": "PENDING_SUBMISSION"})
     }).collect();
     Ok(json!({"headB64": STANDARD.encode(head.encode_to_vec()), "sequence": head.sequence.to_string(), "pending": pending}))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_success_with_the_exact_submit_envelope_is_decoded() {
-        let payload = SubmitFeedEventResponse{head: Some(FeedHead{
-            actor_ptid: "actor".into(), chain_id: feed::PUBLIC_CHAIN_ID.into(),
-            sequence: 1, event_hash: vec![1; 32]}), duplicate: false};
-        let envelope = crate::model::common::PeersResponse{
-            code: "200".into(), msg: String::new(), data: Some(prost_types::Any{
-                type_url: "type.googleapis.com/peers_touch.model.social.feed.v1.SubmitFeedEventResponse".into(),
-                value: payload.encode_to_vec()})};
-        assert_eq!(decode_submit_response(envelope.clone()).unwrap(), payload);
-        let mut invalid = envelope.clone();
-        invalid.code = "409".into();
-        assert!(decode_submit_response(invalid).is_err());
-        let mut invalid = envelope.clone();
-        invalid.data.as_mut().unwrap().type_url = "type.googleapis.com/other.Response".into();
-        assert!(decode_submit_response(invalid).is_err());
-        let mut invalid = envelope;
-        invalid.data.as_mut().unwrap().value.extend_from_slice(&[0x28, 1]);
-        assert!(decode_submit_response(invalid).is_err());
-    }
 }
