@@ -21,17 +21,18 @@ type FeedActorIdentity interface {
 }
 
 type FeedLogService struct {
-	store             *infrastructure.FeedLogStore
-	actors            FeedActorIdentity
-	localStation      string
-	apply             infrastructure.FeedApply
-	now               func() time.Time
-	signer            delivery.Signer
-	pull              FeedPull
-	writePolicy       func(context.Context, delivery.Transaction, *model.FeedEvent) error
-	projector         *infrastructure.FeedProjector
-	pollSigner        PrivateContentStationSigner
-	verifyPollStation func(context.Context, delivery.Transaction, string, string, []byte, []byte) error
+	store                 *infrastructure.FeedLogStore
+	actors                FeedActorIdentity
+	localStation          string
+	apply                 infrastructure.FeedApply
+	now                   func() time.Time
+	signer                delivery.Signer
+	pull                  FeedPull
+	federationObservation FeedFederationObservation
+	writePolicy           func(context.Context, delivery.Transaction, *model.FeedEvent) error
+	projector             *infrastructure.FeedProjector
+	pollSigner            PrivateContentStationSigner
+	verifyPollStation     func(context.Context, delivery.Transaction, string, string, []byte, []byte) error
 }
 
 func (s *FeedLogService) SetProjector(projector *infrastructure.FeedProjector) {

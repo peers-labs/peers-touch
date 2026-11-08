@@ -18,6 +18,7 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.launch_context import EphemeralGateLaunchContext
 from tooling.acceptance.core.evidence_store import (
     current_artifact_ref,
     write_current_artifact,
@@ -226,6 +227,11 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             ),
         )
 
+    def _station_equipment_options(
+        self, manifest: RuntimeManifest, service_id: str, profile_name: str,
+    ) -> dict[str, object]:
+        return {}
+
     def _provision_station_services(
         self,
         manifest: RuntimeManifest,
@@ -238,10 +244,11 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
             )[1])
             for service_id, profile in self._required_station_profiles().items()
         }
-        for profile_name, profile_env in profiles.values():
+        for service_id, (profile_name, profile_env) in profiles.items():
             if profile_env.get("PT_STATION_MODE", "").strip() == "remote":
                 equip_station_profile(
                     profile_name, manifest.source_commit, repo_root=REPO_ROOT,
+                    **self._station_equipment_options(manifest, service_id, profile_name),
                 )
         for service_id, (profile_name, profile_env) in profiles.items():
             mode = (
@@ -693,6 +700,70 @@ class CrossStationSocialNativeProvisioner(
             contract,
             station_profiles=station_profiles,
         )
+
+    def _station_equipment_options(
+        self, manifest: RuntimeManifest, service_id: str, profile_name: str,
+    ) -> dict[str, object]:
+        if manifest.gate_id != "social-public-feed-native-e2e":
+            return {}
+        receiver = next(client for client in self.contract.clients if client.id == "bob")
+        if service_id != receiver.service_bindings["station"].service_id:
+            return {}
+        # Register before deploying: partial preparation must also restore.
+        # Reverse cleanup releases retained source/service leases first.
+        self.register_cleanup(
+            f"social-notification-runtime:{profile_name}",
+            lambda: equip_station_profile(
+                profile_name, manifest.source_commit, repo_root=REPO_ROOT,
+                recreate_runtime=True,
+            ),
+        )
+        return {"social_notification_run_id": manifest.run_id}
+
+    def create_gate_launch_context(
+        self, *, gate_id: str, evidence_run_id: str, provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext | None:
+        from tooling.acceptance.fixtures.social_feed_notification import (
+            CAPABILITY_ID, SocialFeedNotificationHandler,
+        )
+        if gate_id != "social-public-feed-native-e2e":
+            return super().create_gate_launch_context(
+                gate_id=gate_id, evidence_run_id=evidence_run_id,
+                provisioning_run_id=provisioning_run_id,
+                required_capabilities=required_capabilities,
+            )
+        if (required_capabilities != (CAPABILITY_ID,) or self._manifest is None
+                or not self._manifest.is_ready()
+                or evidence_run_id != self.evidence_run.run_id
+                or provisioning_run_id != self._manifest.run_id
+                or evidence_run_id == provisioning_run_id):
+            raise BlockedError(
+                reason="Social notification fixture requires the current prepared source and run",
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        clients = {client.id: client for client in self._manifest.clients}
+        receiver_id = clients["bob"].service_bindings["station"].service_id
+        sender_id = clients["alice"].service_bindings["station"].service_id
+        receiver, sender = (
+            self._manifest.services[receiver_id], self._manifest.services[sender_id],
+        )
+        if receiver_id == sender_id or receiver.live_commit != self._manifest.source_commit:
+            raise BlockedError(
+                reason="Social notification fixture requires distinct current-source Stations",
+                resource=CAPABILITY_ID,
+            )
+        deployment = load_env_file(resolve_deployment_environment_path(
+            receiver.deployment_environment, repo_root=REPO_ROOT,
+        ))
+        context = EphemeralGateLaunchContext(required_capabilities=required_capabilities)
+        context.register_capability(CAPABILITY_ID, SocialFeedNotificationHandler(
+            deployment=deployment, run_id=provisioning_run_id,
+            profile=self._required_station_profiles()[receiver_id],
+            commit=self._manifest.source_commit, station=receiver.runtime_identity,
+            source_station=sender.runtime_identity,
+        ))
+        return context
 
     def _provision_station_services(
         self, manifest: RuntimeManifest,

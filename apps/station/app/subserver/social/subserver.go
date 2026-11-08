@@ -180,6 +180,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err := s.feedLogSvc.ConfigureFederation(federationRuntime.Signer(), feedPeerPull(federationRuntime)); err != nil {
 		return err
 	}
+	if err := configureFeedAcceptance(s.feedLogSvc, federationRuntime.LocalStationPeerID()); err != nil {
+		return err
+	}
 	if err := federationRuntime.RegisterPeerEndpoint(federationruntime.PeerRouteSocialPublicFeedRead, s.handleFederatedFeedRead); err != nil {
 		return err
 	}

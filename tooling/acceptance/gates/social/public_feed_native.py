@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from tooling.acceptance.core import (
-    GateError, RuntimeReuseContract, SuiteRuntimeAction, SuiteRuntimeLedger,
+    EphemeralGateClient, GateError, RuntimeReuseContract, SuiteRuntimeAction, SuiteRuntimeLedger,
     call_async_harness, validate_suite_runtime_report,
 )
 from tooling.acceptance.gates.chat.native_two_client_runner import NativeTwoClientGate
@@ -36,6 +36,7 @@ SCENARIOS = (
     "normal-submit-readback", "lost-submit-ack", "corrupt-read-payload",
     "rollback-read-head", "second-device-writer-denial",
     "circle-members-pagination", "circle-cancel", "circle-partial-save-retry",
+    "lost-federation-notification",
 )
 RUNTIME_REUSE = RuntimeReuseContract.from_dict({
     "scope": "suite", "entryCheckId": GATE_ID, "scenarioIds": list(SCENARIOS),
@@ -87,6 +88,9 @@ class Gate(DeviceSearchGate):
         self.report.runtime["search"] = {}
         self.active_social_scenario: str | None = None
         self.circle_account_queries: list[str] = []
+        self.capability_client = EphemeralGateClient.from_environment()
+        if self.capability_client is None:
+            raise GateError("Public feed requires its prepared notification capability")
 
     @property
     def receiver(self) -> Any:
@@ -198,7 +202,7 @@ class Gate(DeviceSearchGate):
         self.save_screenshot(self.clients[actor], label)
         self.save_dom(self.clients[actor], label)
 
-    def await_painted_public_card(self, actor: str, text: str) -> Any:
+    def await_painted_public_card(self, actor: str, text: str, *, timeout: float = 80) -> Any:
         # Passive oracle: only the original Runtime may initiate repair reads.
         def painted() -> Any:
             card = self.card(actor, text)
@@ -222,7 +226,7 @@ class Gate(DeviceSearchGate):
                 });
             """, card)
             return card if observation["painted"] and observation["paintFrames"] == 2 else None
-        return wait_until(painted, f"{actor} passively painted authentic public Moment", timeout=80)
+        return wait_until(painted, f"{actor} passively painted signed public Moment", timeout=timeout)
 
     def public_fault(self, actor: str, *, action: str = "read", kind: str = "",
                      target: str = "", label: str = "") -> Any:
@@ -460,6 +464,68 @@ class Gate(DeviceSearchGate):
         self.public_fault("alice", action="clear")
         self.public_fault("bob", action="clear")
         return text
+
+    def notification_control(self, operation: str, payload: dict[str, Any] | None = None) -> Any:
+        if self.capability_client is None:
+            raise GateError("Social notification capability is unavailable")
+        return self.capability_client.invoke(
+            "social-feed-notification", operation, payload or {}, timeout_seconds=15,
+        )
+
+    def lost_notification_scenario(self, ledger: SuiteRuntimeLedger) -> str:
+        scenario = "lost-federation-notification"
+        self.begin_scenario(ledger, scenario)
+        status = self.action("alice", "publicFeedStatus")
+        head = status.get("verifiedSequence")
+        self.assert_condition(f"{scenario}-author-verified-head",
+            isinstance(head, str) and head.isdecimal() and int(head) < (1 << 64) - 1
+            and status["pendingCount"] == 0)
+        self.public_fault("bob", action="clear")
+        self.public_fault("bob", action="arm", kind="observe-reads",
+                          target=self.ptids["alice"], label=scenario)
+        deadline = time.monotonic() + 80
+        self.notification_control("arm", {
+            "actorPtid": self.ptids["alice"], "minimumHead": int(head) + 1,
+        })
+        try:
+            text = f"{scenario}-{self.manifest['runId']}"
+            started = self.publish_text_ui(text)
+            self.await_painted_public_card("alice", text)
+
+            def repaired() -> Any:
+                observed = self.notification_control("read")
+                return observed if observed["effectCount"] == 1 and observed["repairApplied"] else None
+
+            remaining = deadline - time.monotonic()
+            self.assert_condition(f"{scenario}-repair-budget", remaining > 0)
+            observed = wait_until(repaired, "original verified Federation missed-hint repair",
+                                  timeout=remaining)
+            remaining = deadline - time.monotonic()
+            self.assert_condition(f"{scenario}-paint-budget", remaining > 0)
+            self.await_painted_public_card("bob", text, timeout=remaining)
+            self.assert_condition(f"{scenario}-actual-hint-lost",
+                observed["effectCount"] == 1 and len(observed["frameSha256"]) == 64)
+            self.assert_condition(f"{scenario}-causal-verified-repair",
+                observed["repairReads"] > 0
+                and observed["repairAfterSequence"] < observed["observedHead"]
+                <= observed["repairVerifiedHead"])
+            self.assert_condition(f"{scenario}-bounded-original-repair",
+                observed["bounded"] and not observed["expired"])
+            self.report.runtime["federationNotification"] = observed
+            self.capture_public_measurement(scenario, started, self.public_fault("bob"))
+            self.capture("bob", scenario)
+            self.complete_scenario(ledger, scenario, "alice:real-publication",
+                "bob:painted-authentic-post-after-original-federation-hint-loss")
+            return text
+        finally:
+            cleanup_preserving_primary_failure(
+                lambda: self.notification_control("clear"), self.report,
+                "Social Federation notification control",
+            )
+            cleanup_preserving_primary_failure(
+                lambda: self.public_fault("bob", action="clear"), self.report,
+                "Social receiver read observation",
+            )
 
     def read_integrity_scenario(self, ledger: SuiteRuntimeLedger, *, kind: str,
                                 original_text: str) -> str:
@@ -835,6 +901,7 @@ class Gate(DeviceSearchGate):
 
                 self.action("bob", "followActor", {"actorPtid": fixture["alicePtid"]})
                 self.baseline_read_scenario(ledger)
+                self.lost_notification_scenario(ledger)
                 recent_text = self.lost_ack_scenario(ledger)
                 recent_text = self.read_integrity_scenario(
                     ledger, kind="corrupt-read-payload", original_text=recent_text)
@@ -891,6 +958,11 @@ class Gate(DeviceSearchGate):
             def release() -> None:
                 nonlocal cleanup
                 cleanup = self.cleanup_clients()
+                capability = getattr(self, "capability_client", None)
+                if capability is not None:
+                    capability.close()
+                    self.capability_client = None
+                    cleanup["notificationChannelClosed"] = True
                 if cleanup.get("cleanupErrors"):
                     raise GateError("Public Native Suite cleanup failed")
                 if self.active_social_scenario is not None:
@@ -917,7 +989,7 @@ class Gate(DeviceSearchGate):
             "scenarioResults": {scenario: "PASS" for scenario in SCENARIOS},
             "textSha256": hashlib.sha256(text.encode()).hexdigest(),
             "suiteRuntimeReport": runtime_report, "cleanup": cleanup,
-            "unprovenScope": ["Dropped Federation notification fault", "Circle block and account epoch",
+            "unprovenScope": ["Circle block and account epoch",
                               "Prototype visual parity", "Mobile Native"]}
 
 

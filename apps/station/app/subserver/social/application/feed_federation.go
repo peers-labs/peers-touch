@@ -22,6 +22,18 @@ import (
 
 type FeedPull func(context.Context, string, string, *model.ReadFeedRequest) (*model.ReadFeedResponse, error)
 
+// Composition may observe the original authenticated hint and repair path.
+// Ordinary builds never inject a fault-capable implementation.
+type FeedFederationObservation interface {
+	DropNotification(actor, source string, head uint64, frameSHA256 string, now time.Time) bool
+	ObserveRepair(actor, source string, afterSequence, verifiedHead uint64,
+		events, threads, responseBytes int, applied bool, now time.Time)
+}
+
+func (s *FeedLogService) SetFederationObservation(observer FeedFederationObservation) {
+	s.federationObservation = observer
+}
+
 func (s *FeedLogService) ConfigureFederation(signer delivery.Signer, pull FeedPull) error {
 	if signer == nil || pull == nil {
 		return domain.ErrFeedInvalid
@@ -77,6 +89,16 @@ func (s *FeedLogService) receiveNotification(ctx context.Context, tx delivery.Tr
 	}
 	if home != frame.SourceStationPeerId {
 		return delivery.TerminalResult(delivery.FrameErrorInvalidFrame), nil
+	}
+	if s.federationObservation != nil {
+		frameHash, hashErr := delivery.CanonicalFrameSHA256(frame)
+		if hashErr != nil {
+			return delivery.TerminalResult(delivery.FrameErrorInvalidFrame), nil
+		}
+		if s.federationObservation.DropNotification(message.Head.ActorPtid, home,
+			message.Head.Sequence, hex.EncodeToString(frameHash), s.now()) {
+			return delivery.AcceptedResult(), nil
+		}
 	}
 	if err := s.store.MarkFeedDirty(ctx, tx.DB(), message.Head, home, s.localStation); err != nil {
 		return feedDeliveryError(err)
@@ -341,6 +363,16 @@ func (s *FeedLogService) ProcessFederation(ctx context.Context) error {
 						return s.store.AdvanceThreadCursor(ctx, tx.DB(), row, cursor)
 					})
 			}
+		}
+		if s.federationObservation != nil && response != nil {
+			events := 0
+			if response.Bundle != nil {
+				events = len(response.Bundle.Events)
+			}
+			verifiedHead, verifyErr := s.store.LocalSequence(ctx, row.AuthorPTID)
+			s.federationObservation.ObserveRepair(row.AuthorPTID, row.AuthorStation,
+				sequence, verifiedHead, events, len(response.ThreadEntries), proto.Size(response),
+				readErr == nil && verifyErr == nil, s.now())
 		}
 		more := response != nil && (response.HasMore || response.ThreadHasMore)
 		if finishErr := s.store.FinishSync(ctx, row, readErr == nil, more); finishErr != nil && readErr == nil {

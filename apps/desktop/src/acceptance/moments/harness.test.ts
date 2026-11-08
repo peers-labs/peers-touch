@@ -268,6 +268,31 @@ describe('Moments acceptance harness', () => {
     installAcceptanceHarness();
   });
 
+  it('projects only a canonical verified public sequence and pending count', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      sequence: '18446744073709551615', pending: [{ commandId: 'retained-command' }],
+      headB64: 'private-head-bytes',
+    });
+    expect(await harness().publicFeedStatus()).toEqual({
+      verifiedSequence: '18446744073709551615', pendingCount: 1,
+    });
+  });
+
+  it.each([7, true, '01', '-1', '18446744073709551616'])(
+    'rejects a malformed verified public sequence %s', async (sequence) => {
+      vi.mocked(invoke).mockResolvedValueOnce({ sequence, pending: [] });
+      await expect(harness().publicFeedStatus()).rejects.toThrow('FEED_HEAD_INVALID');
+    },
+  );
+
+  it('rejects a verified public sequence after the session changes', async () => {
+    vi.mocked(invoke).mockImplementationOnce(async () => {
+      sessionState.sessionEpoch += 1;
+      return { sequence: '7', pending: [] };
+    });
+    await expect(harness().publicFeedStatus()).rejects.toThrow('MOMENTS_SESSION_STALE');
+  });
+
   it('creates an accepted friendship through Social authority', async () => {
     vi.mocked(api.profileGet).mockResolvedValue({
       home_station_peer_id: 'station-four',

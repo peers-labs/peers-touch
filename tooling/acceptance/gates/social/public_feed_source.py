@@ -10,6 +10,29 @@ from .cross_station_support import SourceCommand, run_source_commands
 
 COMMANDS = (
     SourceCommand(
+        name="public-feed-notification-parent",
+        argv=("python3", "-m", "unittest",
+              "tooling.acceptance.tests.test_social_feed_notification",
+              "tooling.acceptance.tests.test_station_equipment",
+              "tooling.acceptance.tests.test_private_social_native_provisioner"),
+    ),
+    SourceCommand(
+        name="public-feed-notification-control",
+        argv=("go", "test", "./app/subserver/social", "-tags", "social_acceptance",
+              "-run", "^TestNotificationControl", "-race", "-count=1"),
+        cwd="apps/station",
+    ),
+    SourceCommand(
+        name="public-feed-runtime-variant",
+        argv=("node", "--test", "--test-name-pattern=runtime variant",
+              "tooling/devctl/test/station.test.mjs"),
+    ),
+    SourceCommand(
+        name="public-feed-deployment-scope",
+        argv=("python3", "tooling/scripts/deploy/deploy_test.py",
+              "DeployOrchestrationTest.test_social_control_prefix_fences_scope_and_clears_ordinary_runtime"),
+    ),
+    SourceCommand(
         name="public-feed-native-entry",
         argv=("python3", "-m", "unittest",
               "tooling.acceptance.gates.social.test_public_feed_native"),
@@ -63,7 +86,7 @@ COMMANDS = (
     SourceCommand(
         name="private-comment-native-replay-harness",
         argv=("pnpm", "exec", "vitest", "run", "src/acceptance/moments/harness.test.ts",
-              "-t", "comment LIKE"),
+              "-t", "comment LIKE|verified public sequence"),
         cwd="apps/desktop",
     ),
     SourceCommand(

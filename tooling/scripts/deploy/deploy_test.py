@@ -15,6 +15,38 @@ SCRIPT = Path(__file__).resolve().parent / "deploy.sh"
 
 
 class DeployOrchestrationTest(unittest.TestCase):
+    def test_social_control_prefix_fences_scope_and_clears_ordinary_runtime(self) -> None:
+        source = SCRIPT.read_text()
+        function = source.split("social_acceptance_env_prefix() {", 1)[1].split(
+            "\n}\n", 1,
+        )[0]
+        script = "social_acceptance_env_prefix() {" + function + "\n}\nsocial_acceptance_env_prefix\n"
+        run_id = "20261108T173415871632Z-" + "a" * 32
+        valid = {
+            "PT_DEPLOY_ROLE": "station", "PT_DEPLOY_BUILD_CMD": "compose build station",
+            "PT_DEPLOY_RESTART_CMD": "compose up station", "env_name": "four",
+            "PT_SOCIAL_ACCEPTANCE_BUILD": "1", "PT_SOCIAL_ACCEPTANCE_PROFILE": "four",
+            "PT_SOCIAL_ACCEPTANCE_RUN_ID": run_id,
+        }
+        for replacement, accepted in (
+            ({}, True), ({"PT_DEPLOY_ROLE": "relay"}, False),
+            ({"PT_SOCIAL_ACCEPTANCE_PROFILE": "corpstable"}, False),
+            ({"env_name": "corpstable"}, False),
+            ({"PT_SOCIAL_ACCEPTANCE_RUN_ID": "foreign"}, False),
+            ({"PT_DEPLOY_RESTART_CMD": ""}, False),
+            ({"PT_SOCIAL_ACCEPTANCE_BUILD": "0", "PT_SOCIAL_ACCEPTANCE_PROFILE": "",
+              "PT_SOCIAL_ACCEPTANCE_RUN_ID": ""}, True),
+        ):
+            with self.subTest(replacement=replacement):
+                result = subprocess.run(
+                    ["/bin/bash", "-c", script], env={**os.environ, **valid, **replacement},
+                    capture_output=True, text=True, timeout=5,
+                )
+                self.assertEqual(result.returncode == 0, accepted)
+                if accepted and replacement:
+                    self.assertEqual(result.stdout,
+                        "PT_SOCIAL_ACCEPTANCE_BUILD=0 PT_SOCIAL_ACCEPTANCE_RUN_ID= PT_SOCIAL_ACCEPTANCE_PROFILE= ")
+
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         workspace = Path(self.temporary_directory.name)

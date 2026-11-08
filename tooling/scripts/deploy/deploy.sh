@@ -168,11 +168,35 @@ external_runtime_env_prefix() {
     "$reset_argv"
 }
 
+social_acceptance_env_prefix() {
+  local build="${PT_SOCIAL_ACCEPTANCE_BUILD:-0}"
+  local run_id="${PT_SOCIAL_ACCEPTANCE_RUN_ID:-}"
+  local profile="${PT_SOCIAL_ACCEPTANCE_PROFILE:-}"
+  if [[ "$build" == "0" && -z "$run_id$profile" ]]; then
+    printf 'PT_SOCIAL_ACCEPTANCE_BUILD=0 PT_SOCIAL_ACCEPTANCE_RUN_ID= PT_SOCIAL_ACCEPTANCE_PROFILE= '
+    return
+  fi
+  if [[ "$PT_DEPLOY_ROLE" != "station" || "$build" != "1" ]] \
+    || [[ ! "$run_id" =~ ^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{32}$ ]] \
+    || [[ ! "$profile" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] \
+    || [[ "$env_name" =~ [Ss][Tt][Aa][Bb][Ll][Ee]$ ]] \
+    || [[ "$profile" =~ [Ss][Tt][Aa][Bb][Ll][Ee]$ ]] \
+    || [[ -z "${PT_DEPLOY_BUILD_CMD:-}" || -z "${PT_DEPLOY_RESTART_CMD:-}" ]]; then
+    echo "[ERROR] Invalid run-scoped Social Acceptance deployment." >&2
+    return 1
+  fi
+  printf 'PT_SOCIAL_ACCEPTANCE_BUILD=1 PT_SOCIAL_ACCEPTANCE_RUN_ID=%s PT_SOCIAL_ACCEPTANCE_PROFILE=%s ' \
+    "$run_id" "$profile"
+}
+
 if [[ "$cmd" != "status" && "$cmd" != "logs" ]]; then
   if ! ACCEPTANCE_RUNTIME_ENV_PREFIX="$(acceptance_runtime_env_prefix)"; then
     exit 1
   fi
   if ! EXTERNAL_RUNTIME_ENV_PREFIX="$(external_runtime_env_prefix)"; then
+    exit 1
+  fi
+  if ! SOCIAL_ACCEPTANCE_ENV_PREFIX="$(social_acceptance_env_prefix)"; then
     exit 1
   fi
   if [[ -n "$ACCEPTANCE_RUNTIME_ENV_PREFIX$EXTERNAL_RUNTIME_ENV_PREFIX" ]] \
@@ -421,7 +445,7 @@ case "$cmd" in
 
     echo "[3/5] Building ..."
     if [[ -n "${PT_DEPLOY_BUILD_CMD:-}" ]]; then
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && PEERS_TOUCH_BUILD_COMMIT=\$(git rev-parse HEAD) PEERS_TOUCH_BUILD_LABEL=$BRANCH PEERS_TOUCH_BUILD_TIME=\$(date -u +%Y-%m-%dT%H:%M:%SZ) $PT_DEPLOY_BUILD_CMD"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && ${SOCIAL_ACCEPTANCE_ENV_PREFIX}PEERS_TOUCH_BUILD_COMMIT=\$(git rev-parse HEAD) PEERS_TOUCH_BUILD_LABEL=$BRANCH PEERS_TOUCH_BUILD_TIME=\$(date -u +%Y-%m-%dT%H:%M:%SZ) $PT_DEPLOY_BUILD_CMD"
     else
       case "$PT_DEPLOY_ROLE" in
         station)
@@ -439,7 +463,7 @@ case "$cmd" in
     echo "[4/5] Restarting $PT_DEPLOY_ROLE ..."
     if [[ -n "${PT_DEPLOY_RESTART_CMD:-}" ]]; then
       CLI_RUNTIME_ENV_PREFIX="$(remote_cli_runtime_env_prefix)"
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && ${ACCEPTANCE_RUNTIME_ENV_PREFIX}${EXTERNAL_RUNTIME_ENV_PREFIX}${CLI_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && ${ACCEPTANCE_RUNTIME_ENV_PREFIX}${EXTERNAL_RUNTIME_ENV_PREFIX}${SOCIAL_ACCEPTANCE_ENV_PREFIX}${CLI_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}"
     else
       ssh_run "cd \$HOME/$PT_DEPLOY_PATH && systemctl --user restart peers-${PT_DEPLOY_ROLE}"
     fi

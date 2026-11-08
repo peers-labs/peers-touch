@@ -1229,8 +1229,24 @@ export function installAcceptanceHarness(): void {
     },
 
     async publicFeedStatus() {
-      const status = await invoke<{ pending?: unknown[] }>('social_public_feed_status');
-      return { pendingCount: status.pending?.length ?? 0 };
+      const session = useSessionStore.getState();
+      const identity = {
+        epoch: session.sessionEpoch, actor: session.currentUser?.actorPtid,
+        station: session.stationPeerId,
+      };
+      const status = await invoke<{ pending?: unknown[]; sequence?: unknown }>('social_public_feed_status');
+      const sequence = status.sequence;
+      if (sequence !== undefined && (typeof sequence !== 'string'
+        || !/^(0|[1-9]\d*)$/.test(sequence) || BigInt(sequence) > 18446744073709551615n)) {
+        throw new Error('FEED_HEAD_INVALID');
+      }
+      const current = useSessionStore.getState();
+      if (current.sessionEpoch !== identity.epoch
+        || current.currentUser?.actorPtid !== identity.actor
+        || current.stationPeerId !== identity.station) {
+        throw new Error('MOMENTS_SESSION_STALE');
+      }
+      return { pendingCount: status.pending?.length ?? 0, verifiedSequence: sequence ?? null };
     },
 
     async circleProjection() {

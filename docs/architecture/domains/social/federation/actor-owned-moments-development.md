@@ -110,6 +110,23 @@ Station 本地 object ID 与作者分配的 portable ID 分开。签名 payload 
 
 ## 当前验证边界
 
+公开 Native Suite 的漏通知控制由原 Fixture 父进程通过 ephemeral capability
+通道管理。原 Station 组合根仅在 `social_acceptance` 构建中注入控制器，普通构建
+排除该文件；原 Docker/部署管线只为已绑定接收站投影 run/profile，Suite 清理在
+释放源/服务 lease 后由原 equipment Owner 恢复普通构建。
+
+父进程通过已审查 SSH 的容器 stdin 写入一次性规则，目录 `0700`、普通文件
+`0600`、同 UID 与 OS flock 约束共享访问；规则绑定当前 commit、run、Profile、
+接收站、Actor、源站和最小 head，最长 90 秒。控制只在实际 Actor Home 检查之后、
+原 dirty 标记之前丢弃一次真实提示，记录原 Frame canonical SHA-256。
+原有 32 项/1 MiB 拉取、验签、导入、线程和周期调度保持原 Owner。
+
+只有本次丢失的 head 尚未见过、随后真实有界拉取成功验证并导入到该 head，才能
+记录 causal repair。Native 场景从作者当前已验证序号推导下一 head，并在一个
+80 秒预算内等待原 Station 修复和接收卡片连续两帧绘制；不由 oracle 主动刷新。
+场景同时保留与普通提交同源的实际回读和提交到绘制样本。
+文件、通道及接收站普通运行形态的恢复都属于清理义务。
+
 已运行的 Rust/Go 源码检查验证签名向量、身份拒绝、重放、fork、分页 head、journal ACK、投影生命周期、订阅 revision/CAS 与有界 fanout。这些属于 SOURCE_CHECK。Go 凭据冲突与过早送达的受控变异分别触发 `TestFeedStoreAuthorPrefixCannotReplaceIndependentReceipt` 和 `TestFeedInteractionExpirationRenewsTransportAndOnlyACKMarksForwarded` 失败；恢复后注册源码门禁通过。Native 可信链头变异也已检出，不能因此推导界面或跨站行为已通过。
 
 客户端检查已运行：Desktop 36 项、Mobile composer/gateway 27 项；两端 TypeScript 检查通过。移动端验收脚本和拒绝 oracle 共 62 项源码检查通过。关闭 Desktop 正文匹配校验和改变 Mobile typed 拒绝码的受控变异均触发对应检查失败，恢复后复验通过。这些结果不代表 Native 用户行为已验证。

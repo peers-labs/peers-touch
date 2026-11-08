@@ -207,6 +207,27 @@ test(
 );
 
 test(
+  'remote start recreates a runtime variant at the same source',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const root = temporaryRoot(t);
+    const environment = machineEnvironment(t, root);
+    const port = await startHealthServer(t, 0, () => true, git(root, 'rev-parse', 'HEAD'));
+    const profilePath = writeProfile(root, 'remote-test', 'remote', port);
+    writeRemoteBridge(root, [
+      '#!/usr/bin/env bash', 'set -euo pipefail',
+      'printf "recreated\\n" > "$PWD/remote-bridge-ran"', '',
+    ].join('\n'));
+    const result = await startStation(root, {
+      ...environment, PT_DEV_PROFILE_FILE: profilePath,
+      PT_STATION_RECREATE_RUNTIME: 'true',
+    });
+    assert.equal(result.deployed, true);
+    assert.equal(fs.existsSync(path.join(root, 'remote-bridge-ran')), true);
+  },
+);
+
+test(
   'remote start honors an explicit product source commit',
   { skip: process.platform === 'win32' },
   async (t) => {

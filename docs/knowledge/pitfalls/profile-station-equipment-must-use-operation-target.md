@@ -52,6 +52,15 @@ and stops downstream dispatch even without `stop-on-failure`.
 
 ## How to detect a recurrence
 
+Changing a run-scoped runtime variant at the same commit must reach the original
+deployment bridge rather than reuse a merely healthy source-identical process.
+The Social Suite supplies its bounded notification run explicitly through the
+equipment caller; ambient Social and Agent control variables are stripped.
+Only the bound receiver gets the tagged build and run/profile projection.
+Its restoration callback is registered before equipment and runs after retained
+source/service leases release, requesting the ordinary variant at the same source.
+Rule and channel cleanup cannot substitute for restoring that runtime.
+
 - Run `node --test tooling/scripts/local-dev/machine-dev.test.mjs`; target
   deployment must preserve binding bytes, reject the wrong deployment, reject
   dirty definitions after preparation, and forbid borrowed stable authority.
