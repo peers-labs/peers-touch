@@ -537,8 +537,8 @@ def attribute_is_settable(element, name):
     return error == 0 and bool(result.value)
 
 
-def find_path(element, predicate, path=(), depth=0):
-    paths = [(*path, element)]
+def find_path(element, predicate, path=(), depth=0, *, roots=None):
+    paths = [(*path, root) for root in roots] if roots is not None else [(*path, element)]
     owned_children = []
     try:
         while paths:
@@ -592,28 +592,24 @@ def open_panel(application):
             observed["axReadElapsedSeconds"],
         ) from error
     elapsed = time.monotonic() - started
-    fallback = None
     try:
         windows = array_items(windows_value)
         if not windows:
             raise NativeAXWindowsUnavailable(0, True, 0, elapsed)
-        for window in windows:
-            if copied_text(window, "AXIdentifier") == "open-panel":
-                return core_foundation.CFRetain(window)
-            button = find_path(
-                window,
-                lambda element, _: (
-                    copied_text(element, "AXIdentifier") == "OKButton"
-                ),
-            )
-            if button is not None:
-                release_path(button)
-                fallback = window
-        return (
-            core_foundation.CFRetain(fallback)
-            if fallback is not None
-            else None
+        target = find_path(
+            None,
+            lambda element, path: (
+                copied_text(element, "AXIdentifier")
+                in (("open-panel", "OKButton") if len(path) == 1 else ("OKButton",))
+            ),
+            roots=windows,
         )
+        if target is None:
+            return None
+        try:
+            return core_foundation.CFRetain(target[0])
+        finally:
+            release_path(target)
     finally:
         if windows_value:
             core_foundation.CFRelease(windows_value)

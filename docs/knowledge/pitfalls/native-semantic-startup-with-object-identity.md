@@ -68,6 +68,13 @@ confirmation, unique filename row through AXSelectedRows and OKButton remain the
 semantic selection owner. Unknown action outcomes are never replayed. Parent
 still verifies the actual callback path and unchanged file bytes.
 
+The depth walk starts from all exact-PID owner windows together. Completing a
+deep walk of the first window before checking the second can exhaust the read
+budget or hit an unrelated unreadable subtree before an available OpenPanel
+control. The first verified panel path ends the observation; later unrelated
+windows cannot invalidate that presence. If no earlier target exists, read
+failures still propagate and cannot supply absent-panel evidence.
+
 AXReadSession remains the shared read/status/deadline owner. Only explicit
 NoValue/Unsupported represents optional absence; required windows reject null,
 empty or failed reads as appropriate. Preserve OS status, returned-value

@@ -1874,8 +1874,10 @@ focus or HID delivery.
   must transition absent/present/absent; macOS can expose a panel inside the
   existing AX window without changing window or sheet counts. Unavailable
   native observation fails closed rather than reporting an absent panel.
-  The shared path finder checks all controls at a depth before descending
-  into file-list contents. It retains the original depth bound and releases
+  The shared path finder checks all controls at a depth across every exact-PID
+  owner window before descending into file-list contents. The first verified
+  panel path ends that lookup; unrelated later windows cannot invalidate its
+  presence. It retains the original depth bound and releases
   copied child arrays on every exit. A failed read still propagates when no
   earlier native target exists; traversal order cannot convert refusal to
   optional absence.

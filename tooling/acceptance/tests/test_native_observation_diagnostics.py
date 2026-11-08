@@ -194,6 +194,57 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                     sorted(id(item) for item in [windows, *arrays]),
                 )
 
+    def test_panel_lookup_checks_all_owner_windows_before_deeper_subtrees(self) -> None:
+        names = {"find_path", "release_path", "open_panel"}
+        support = ast.Module(body=[
+            node for node in ast.parse(_NATIVE_AX_SUPPORT).body
+            if getattr(node, "name", "") in names
+        ], type_ignores=[])
+        tree = {1: [3], 2: [4], 3: [5], 4: [], 5: []}
+        arrays, retained, released = [], [], []
+        windows = [1, 2]
+        failure = RuntimeError("deeper unrelated subtree is unreadable")
+
+        class NativeArray(list):
+            def __bool__(self):
+                return True
+
+        def attribute(element, name, **kwargs):
+            if name == "AXWindows":
+                return windows
+            self.assertEqual(name, "AXChildren")
+            if element == 3:
+                raise failure
+            value = NativeArray(tree[element])
+            arrays.append(value)
+            return value
+
+        def identifier(element, name):
+            self.assertEqual(name, "AXIdentifier")
+            return "OKButton" if element == 4 else ""
+
+        def retain(element):
+            retained.append(element)
+            return element
+
+        namespace = {
+            "time": SimpleNamespace(monotonic=lambda: 0.0),
+            "copy_attribute": attribute, "copied_text": identifier,
+            "reads": SimpleNamespace(begin_observation=lambda: None),
+            "NativeAXReadUnavailable": NativeAXReadUnavailable,
+            "array_items": lambda value: value,
+            "core_foundation": SimpleNamespace(CFRetain=retain, CFRelease=released.append),
+        }
+        exec(compile(support, "<native-multiwindow-panel-lookup>", "exec"), namespace)
+        panel = namespace["open_panel"](42)
+        self.assertEqual(panel, 2)
+        namespace["core_foundation"].CFRelease(panel)
+        self.assertEqual(sorted(value for value in released if isinstance(value, int)), sorted(retained))
+        self.assertEqual(
+            sorted(id(value) for value in released if isinstance(value, list)),
+            sorted(id(value) for value in [windows, *arrays]),
+        )
+
     def test_home_lookup_reads_only_sidebar_text_and_preserves_failures(self) -> None:
         selector = ast.parse(_FILE_CHOOSER_SELECTION_PROBE)
         predicate = next(
@@ -492,7 +543,12 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                 namespace.update({
                     "array_items": lambda item: windows,
                     "copied_text": lambda item, name: identifier,
-                    "find_path": lambda *args: None,
+                    "find_path": lambda element, predicate, *, roots: (
+                        (roots[0],) if predicate(roots[0], (roots[0],)) else None
+                    ),
+                    "release_path": lambda path: [
+                        namespace["core_foundation"].CFRelease(item) for item in path
+                    ],
                 })
                 namespace["core_foundation"].CFRetain = lambda item: item
                 exec(compile(selected, "<native-ax-support>", "exec"), namespace)
