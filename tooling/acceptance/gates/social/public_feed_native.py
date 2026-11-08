@@ -23,6 +23,7 @@ from tooling.acceptance.gates.chat.native_support import (
 )
 from tooling.development.secure_content.runtime_owner import (
     _prepare_cross_station_social_fixture, _prepare_social_suite_federation,
+    _prepare_portable_recovery, _restore_portable_recovery,
 )
 
 GATE_ID = "social-public-feed-native-e2e"
@@ -51,6 +52,10 @@ class FixtureClient:
 
     @property
     def driver(self) -> Any:
+        return self.session
+
+    @property
+    def spec(self) -> Any:
         return self.session
 
     def harness(self, method: str, payload: dict[str, Any], *, timeout: float) -> Any:
@@ -102,6 +107,36 @@ class Gate(DeviceSearchGate):
             FixtureClient(self.clients["alice"], primary["endpoint"]),
             FixtureClient(self.clients["bob"], secondary["endpoint"]),
             federation_id=federation_id)
+
+    def start_suite_clients(self, ledger: SuiteRuntimeLedger,
+                            source_commit: str) -> None:
+        recovery_phrase = ""
+        try:
+            for actor in self.client_specs:
+                station = runtime_station_service(self.manifest, actor)
+                version = read_station_version(station["endpoint"])
+                self.assert_condition(f"{actor}-station-source",
+                    commits_match(str(version.get("build_commit") or ""), source_commit),
+                    "current source")
+                if actor == "bob2":
+                    if not recovery_phrase:
+                        raise GateError("Second-device recovery was not prepared by Bob")
+                    def restore(client: Any) -> None:
+                        restored = _restore_portable_recovery(
+                            FixtureClient(client, station["endpoint"]), recovery_phrase)
+                        self.report.runtime["secondDeviceRecovery"] = restored
+                    self.start_client(actor, prepare_authenticated_device=restore)
+                    recovery_phrase = ""
+                else:
+                    self.start_client(actor)
+                ledger.record(SuiteRuntimeAction.CLIENT_LAUNCH, resource_id=f"client:{actor}")
+                ledger.record(SuiteRuntimeAction.LOGIN, resource_id=f"session:{actor}")
+                if actor == "bob" and "bob2" in self.client_specs:
+                    recovery_phrase, preparation = _prepare_portable_recovery(
+                        FixtureClient(self.clients["bob"], station["endpoint"]))
+                    self.report.runtime["secondDeviceRecoveryPreparation"] = preparation
+        finally:
+            recovery_phrase = ""
 
     def visible_element(self, actor: str, selector: str) -> Any | None:
         client = self.clients[actor]
@@ -508,13 +543,7 @@ class Gate(DeviceSearchGate):
         edited_text = f"Updated-{self.manifest['runId']}"
         try:
             self.verify_fixture_ready()
-            for actor in self.client_specs:
-                version = read_station_version(runtime_station_service(self.manifest, actor)["endpoint"])
-                self.assert_condition(f"{actor}-station-source",
-                    commits_match(str(version.get("build_commit") or ""), source["commit"]), "current source")
-                self.start_client(actor)
-                ledger.record(SuiteRuntimeAction.CLIENT_LAUNCH, resource_id=f"client:{actor}")
-                ledger.record(SuiteRuntimeAction.LOGIN, resource_id=f"session:{actor}")
+            self.start_suite_clients(ledger, source["commit"])
             primary = runtime_station_service(self.manifest, "alice")
             secondary = runtime_station_service(self.manifest, "bob")
             self.assert_condition("two-distinct-stations",

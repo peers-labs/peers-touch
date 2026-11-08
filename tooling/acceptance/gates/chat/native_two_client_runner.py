@@ -647,7 +647,10 @@ class NativeTwoClientGate(AcceptanceGate):
             raise GateError(f"{actor} did not verify the configured Station")
         return binding
 
-    def start_client(self, actor: str) -> None:
+    def start_client(
+        self, actor: str, *,
+        prepare_authenticated_device: Callable[[TauriSession], None] | None = None,
+    ) -> None:
         client = self.runtime_binding.create_bound_session(
             actor,
             NativeLaunchOptions(
@@ -712,6 +715,10 @@ class NativeTwoClientGate(AcceptanceGate):
             )
         self.station_access[actor]["postAuthentication"] = bound_station
         self.client_lifecycles.mark_authenticated(client)
+        # A second installation may authenticate without an active Engine.
+        # Its Suite owns recovery before requesting Engine-backed hydration.
+        if prepare_authenticated_device is not None:
+            prepare_authenticated_device(client)
         hydration = async_harness(
             client,
             "hydrateActiveActor",

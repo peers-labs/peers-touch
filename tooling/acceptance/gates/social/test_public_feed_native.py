@@ -103,6 +103,7 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                 }
                 gate.active_social_scenario = None
                 gate.report = SimpleNamespace(runtime={}, add_assertion=Mock())
+                gate.clients = {"bob": Mock()}
                 with patch(
                     "tooling.acceptance.gates.social.public_feed_native.read_station_version",
                     return_value=version,
@@ -116,7 +117,10 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                     gate, "verify_fixture_ready",
                 ), patch.object(
                     gate, "start_client",
-                ) as launch, patch.object(
+                ) as launch, patch(
+                    "tooling.acceptance.gates.social.public_feed_native._prepare_portable_recovery",
+                    return_value=("private-recovery-material", {"preparedEpoch": 1}),
+                ) as prepare_recovery, patch.object(
                     gate, "source_identity", side_effect=RuntimeError("source identity boundary"),
                 ), patch.object(gate, "cleanup_clients", return_value={}):
                     if accepted:
@@ -125,10 +129,114 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                         self.assertEqual(launch.call_count, 3)
                         self.assertEqual([call.args[0] for call in launch.call_args_list],
                                          ["alice", "bob", "bob2"])
+                        prepare_recovery.assert_called_once()
+                        self.assertTrue(callable(
+                            launch.call_args_list[2].kwargs["prepare_authenticated_device"]))
                     else:
                         with self.assertRaisesRegex(GateError, "alice-station-source"):
                             gate.run()
                         launch.assert_not_called()
+                        prepare_recovery.assert_not_called()
+
+    def test_original_launch_restores_authenticated_device_before_engine_hydration(self):
+        from tooling.acceptance.gates.chat.native_two_client_runner import NativeTwoClientGate
+
+        gate = object.__new__(Gate)
+        client = Mock()
+        client.get_current_url.return_value = "tauri://localhost/"
+        gate.runtime_binding = Mock()
+        gate.runtime_binding.create_bound_session.return_value = client
+        gate.client_specs = {"bob2": {"actor": "bob"}}
+        gate.actor_specs = {"bob2": {
+            "ptid": "ptid:bob", "accountRef": "station-account:bob",
+        }}
+        gate.manifest = {}
+        gate.runtime_instances = []
+        gate.runtime_instance_actors = {}
+        gate.client_lifecycles = Mock()
+        gate.station_access = {}
+        gate.clients = {}
+        gate.ptids = {}
+        gate.device_ids = {}
+        gate.account_login_client = None
+        gate.report = SimpleNamespace(add_actor=Mock())
+        calls = []
+        recovered = False
+
+        def harness(session, method, payload, **kwargs):
+            self.assertIs(session, client)
+            calls.append(method)
+            if method == "loginWithPassword":
+                return {"authenticated": True}
+            if method == "hydrateActiveActor":
+                if not recovered:
+                    raise RuntimeError("messaging profile engine is not active")
+                return {"actorPtid": "ptid:bob"}
+            if method == "getRealtimeDevice":
+                return {"active": True, "deviceId": "bob-second-device"}
+            raise AssertionError(method)
+
+        def restore(session):
+            nonlocal recovered
+            self.assertIs(session, client)
+            gate.client_lifecycles.mark_authenticated.assert_called_once_with(client)
+            calls.append("restore-original-device")
+            recovered = True
+
+        with patch.object(gate, "configure_station_access", return_value={}), patch.object(
+            gate, "register_driver",
+        ), patch(
+            "tooling.acceptance.gates.chat.native_two_client_runner.runtime_station_service",
+            return_value={"endpoint": "http://reviewed-station"},
+        ), patch(
+            "tooling.acceptance.gates.chat.native_two_client_runner.call_async_harness",
+            return_value={"phase": "bound", "activeUrl": "http://reviewed-station"},
+        ), patch(
+            "tooling.acceptance.gates.chat.native_two_client_runner.async_harness",
+            side_effect=harness,
+        ):
+            NativeTwoClientGate.start_client(
+                gate, "bob2", prepare_authenticated_device=restore)
+        self.assertEqual(calls, [
+            "loginWithPassword", "restore-original-device",
+            "hydrateActiveActor", "getRealtimeDevice",
+        ])
+        self.assertEqual(gate.ptids["bob2"], "ptid:bob")
+        self.assertEqual(gate.device_ids["bob2"], "bob-second-device")
+
+    def test_original_suite_recovery_failure_retains_launch_failure(self):
+        gate = object.__new__(Gate)
+        gate.manifest = {}
+        gate.client_specs = {"alice": {}, "bob": {}, "bob2": {}}
+        gate.clients = {"bob": Mock()}
+        gate.report = SimpleNamespace(runtime={})
+        gate.assert_condition = Mock()
+        calls = []
+        failure = RuntimeError("original-recovery-failure")
+
+        def launch(actor, **kwargs):
+            calls.append(actor)
+            if actor == "bob2":
+                kwargs["prepare_authenticated_device"](Mock())
+
+        with patch(
+            "tooling.acceptance.gates.social.public_feed_native.runtime_station_service",
+            return_value={"endpoint": "http://reviewed-station"},
+        ), patch(
+            "tooling.acceptance.gates.social.public_feed_native.read_station_version",
+            return_value={"build_commit": "a" * 40},
+        ), patch(
+            "tooling.acceptance.gates.social.public_feed_native._prepare_portable_recovery",
+            return_value=("private-recovery-material", {"preparedEpoch": 1}),
+        ), patch(
+            "tooling.acceptance.gates.social.public_feed_native._restore_portable_recovery",
+            side_effect=failure,
+        ), patch.object(gate, "start_client", side_effect=launch):
+            with self.assertRaises(RuntimeError) as raised:
+                gate.start_suite_clients(Mock(), "a" * 40)
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(calls, ["alice", "bob", "bob2"])
+        self.assertNotIn("secondDeviceRecovery", gate.report.runtime)
 
 
 if __name__ == "__main__":
