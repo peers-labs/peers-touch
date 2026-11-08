@@ -185,3 +185,9 @@ Secure Content canonicalizer 统一；只规范查询提示，不修改已签名
 Station Registry 可保存只有身份用途的远端 Federation key pin。该记录不产生
 Station transport entry、route、Access binding 或 Session；传输目标的注册和
 准入仍由原 Station Runtime / Node Connectivity Owner 完成。
+
+Federation 原 Actor cache 在 `touch_actor.federation_profile_envelope` 保留完整
+Home-signed profile 字节，与同一 Actor 展示投影一起刷新。缓存命中仍核验当前
+signed locator 的 revision、Home Station、key pin、membership 与原 envelope
+签名/有效期；不得从展示列重建无签名信封。旧缓存没有原证明时按 miss 重新读取
+Home Station，已有信任固定不能被缓存或重新读取结果替换。
