@@ -90,7 +90,41 @@ func TestFeedPostProjectionPreservesSignedTimeAndBlocksResurrection(t *testing.T
 		t.Fatal("projection changed signed body or creation time", row)
 	}
 	previous, _ := domain.FeedEventHash(event)
+	createdAt := row.CreatedAt
 	event.Statement.Sequence = 2
+	event.Statement.PreviousHash = previous
+	event.Statement.Kind = model.FeedEventKind_FEED_EVENT_KIND_POST_UPDATED
+	event.Statement.CreatedAtUnixMs += 1234
+	editedRequest, err := signedlog.Canonical(&model.CreatePostRequest{
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  &model.CreatePostRequest_Text{Text: &model.CreateTextPostRequest{Text: "edited signed text"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.Payload, err = signedlog.Canonical(&model.FeedPayload{Mutation: &model.FeedPayload_Post{
+		Post: &model.FeedPostMutation{PostId: "101", CreateRequest: editedRequest},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest = sha256.Sum256(event.Payload)
+	event.Statement.PayloadHash = digest[:]
+	signStoreEvent(t, event)
+	if err := appendEvent(); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.First(&row, "id = ?", 101).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.TextBody != "edited signed text" || !row.CreatedAt.Equal(createdAt) ||
+		row.UpdatedAt.UnixMilli() != event.Statement.CreatedAtUnixMs || row.EditedAt == nil ||
+		row.EditedAt.UnixMilli() != event.Statement.CreatedAtUnixMs {
+		t.Fatalf("signed edit drifted from its source: created=%s updated=%s edited=%v",
+			row.CreatedAt, row.UpdatedAt, row.EditedAt)
+	}
+	previous, _ = domain.FeedEventHash(event)
+	event.Statement.Sequence = 3
 	event.Statement.PreviousHash = previous
 	event.Statement.Kind = model.FeedEventKind_FEED_EVENT_KIND_POST_TOMBSTONED
 	event.Payload, err = signedlog.Canonical(&model.FeedPayload{Mutation: &model.FeedPayload_Post{
@@ -106,7 +140,7 @@ func TestFeedPostProjectionPreservesSignedTimeAndBlocksResurrection(t *testing.T
 		t.Fatal(err)
 	}
 	previous, _ = domain.FeedEventHash(event)
-	event.Statement.Sequence = 3
+	event.Statement.Sequence = 4
 	event.Statement.PreviousHash = previous
 	event.Statement.Kind = model.FeedEventKind_FEED_EVENT_KIND_POST_UPDATED
 	event.Payload = payload
@@ -117,7 +151,7 @@ func TestFeedPostProjectionPreservesSignedTimeAndBlocksResurrection(t *testing.T
 		t.Fatal("resurrected tombstone", err)
 	}
 	response, err := store.Read(ctx, database, &model.ReadFeedRequest{ActorPtid: "ptid:test:alice", ChainId: domain.PublicFeedChainID})
-	if err != nil || response.Head.Sequence != 2 {
+	if err != nil || response.Head.Sequence != 3 {
 		t.Fatal(response, err)
 	}
 }

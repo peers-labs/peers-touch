@@ -164,7 +164,7 @@ func (p *FeedProjector) applyPost(ctx context.Context, tx *gorm.DB, chain *FeedC
 	result := tx.WithContext(ctx).Model(&db.SocialPublicPost{}).
 		Where("id = ? AND author_id = ? AND deleted_at IS NULL", object.LocalID, authorID).
 		Select("type", "text_body", "attachments_json", "mentions_json", "link_preview_json",
-			"repost_of_ref", "edited_at", "updated_at").Updates(row)
+			"repost_of_ref", "edited_at", "updated_at").UpdateColumns(row)
 	if result.Error != nil {
 		return result.Error
 	}
