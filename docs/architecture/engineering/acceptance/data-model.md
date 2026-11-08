@@ -1605,13 +1605,18 @@ type NativeObservationRequest = {
   mode: "operator" | "operator-panel" | "close"
   targetProcessId: number
   deadlineMonotonicSeconds: number
+  focusDeadlineMonotonicSeconds: number | null
 }
 ```
 
 scope ID 为32位随机 lowercase hex；bootstrap 只接收一次，parent PID 必须等于
 实际父进程。每条消息最多4096字节，拒绝重复/未知字段、非有限时间、过期或超过
 scope 的 deadline。sequence 从1严格递增，operator/close 的 target PID 为0，
-operator-panel 为正整数。response 原样绑定 scope/sequence/mode/target PID；
+operator-panel 为正整数。完整 observation 保留原3秒期限；独立 focus deadline
+从 parent 请求开始计算原1秒，包含首次初始化，并且不能晚于 observation deadline。
+close 的 focus deadline 必须为 null；其它请求必须为有限时间。面板读取继续消费
+原 AX read cap 和剩余 observation 时间，不把 focus deadline 续期或施加给面板。
+response 原样绑定 scope/sequence/mode/target PID；
 成功含原四字段 `operatorState`，panel mode 另含 typed exact-PID `panel`；
 失败只含原 safe `error`，close 只含 `closed: true`，不产生通过样本。
 

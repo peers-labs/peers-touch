@@ -1819,7 +1819,11 @@ focus or HID delivery.
   one in-flight request, exact scope/sequence/mode/target PID and finite deadlines;
   each message is at most 4096 bytes. EOF, parent exit, cancellation, expiry,
   malformed input or a stale reply closes or fails the scope. Each request
-  retains its original one-second deadline; startup consumes it. Close releases
+  binds separate focus and observation deadlines. Startup consumes the original
+  one-second focus deadline; the enclosing read retains its original three-second
+  deadline. Panel inspection consumes its remaining observation time and original
+  AX read cap, never renews focus or scope, and cannot admit a late focus result.
+  Close releases
   all CF references and acknowledges cleanup without sampling AX. Cross-request
   retained focus references are bounded by four, with at most six during a fresh
   read. Parent shutdown closes pipes and reaps the exact child. Cleanup failure

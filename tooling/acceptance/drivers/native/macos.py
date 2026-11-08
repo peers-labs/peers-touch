@@ -36,6 +36,7 @@ _CG_BITMAP_BYTE_ORDER_MASK = 0x7000
 _CG_BITMAP_BYTE_ORDER_32_LITTLE = 0x2000
 OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS = 1.0
 OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS = 0.05
+NATIVE_OBSERVATION_TIMEOUT_SECONDS = 3.0
 
 
 def _pixel_buffer_has_visible_alpha(
@@ -1268,7 +1269,8 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
 
     @staticmethod
     def _native_observation(
-        mode: str, process_id: int = 0, *, timeout_seconds: float = 3.0,
+        mode: str, process_id: int = 0, *,
+        timeout_seconds: float = NATIVE_OBSERVATION_TIMEOUT_SECONDS,
     ) -> dict[str, object]:
         focus_deadline = time.monotonic() + OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS
         details: dict[str, object] = {}

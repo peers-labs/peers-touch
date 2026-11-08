@@ -271,7 +271,9 @@ baseline 并拥有 phase 比较与 sticky failure；Driver 每次请求执行两
 引用只在同一 scope 内保留，摘要绑定 scope ID、原身份字段和对象相等结果；
 两个独立 scope 的摘要不能互相供应基线。默认诊断 scope 不超过30秒，生产
 qualification 与 picker 使用 owning operation/Cell lease 的实际剩余时间。
-请求的一秒 deadline 包含首次初始化；scope deadline 不可续期。
+请求携带独立的 focus 与 observation deadline：焦点稳定的原一秒期限包含
+首次初始化，完整读取保留原三秒期限。面板读取使用剩余 observation 时间和
+原 AX read cap；不能续期焦点或 scope。
 parent 从 prelaunch 持有到 owned-stop，picker 从 staging 持有到 selection；
 两者在所有异常/取消路径关闭并 reap。显式 close 不进行新的 AX 观察。
 它没有网络端点、资格持久化、后台轮询、焦点恢复或第二个 Runner。

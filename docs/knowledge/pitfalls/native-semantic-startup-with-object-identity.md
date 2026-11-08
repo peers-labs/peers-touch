@@ -72,8 +72,11 @@ AXReadSession remains the shared read/status/deadline owner. Only explicit
 NoValue/Unsupported represents optional absence; required windows reject null,
 empty or failed reads as appropriate. Preserve OS status, returned-value
 presence, read duration, original failure function/line and actual queried PID.
-All focus attributes use the original one-second deadline, including startup;
-general control/full subprocess limits remain two/three seconds. Checked
+All focus attributes use the original one-second deadline, including startup.
+The parent binds that deadline separately from the enclosing original
+three-second observation deadline. Panel reads use their original AX read cap
+and the remaining observation time; they cannot extend focus or scope. General
+control/full subprocess limits remain two/three seconds. Checked
 one-shot mutations use their original operation deadline rather than inheriting
 the short read cap. No budget, cache, exception text or private title is added
 to manufacture a successful sample.

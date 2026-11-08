@@ -80,11 +80,54 @@ class FocusObjectTests(unittest.TestCase):
         session = SimpleNamespace()
         return objects, native, clock, session, live, counts, equal
 
-    def observe(self, objects, clock, session, *, mode="operator", pid=0, end=1.0):
+    def observe(
+        self, objects, clock, session, *, mode="operator", pid=0,
+        end=1.0, focus_end=None,
+    ):
         with patch("tooling.acceptance.drivers.native.macos_operator.time", clock), patch(
             "tooling.acceptance.drivers.native.macos_operator.AXReadSession", return_value=session,
         ):
-            return objects.observe(mode, pid, end)
+            return objects.observe(
+                mode, pid, end, focus_end=end if focus_end is None else focus_end,
+            )
+
+    def test_panel_uses_original_observation_budget_after_bounded_focus(self):
+        objects, native, clock, session, live, *_ = self.fixture([(11, 21), (12, 22)])
+        def panel(pid):
+            clock.now = 1.2
+            return {"processId": pid, "present": True}
+        native["panel_presence"] = panel
+        result = self.observe(
+            objects, clock, session, mode="operator-panel", pid=42,
+            end=3.0, focus_end=1.0,
+        )
+        self.assertTrue(result["panel"]["present"])
+        objects.close()
+        self.assertEqual(live, [])
+
+    def test_long_panel_budget_never_extends_focus_or_admits_late_panel(self):
+        for stage in ("focus", "panel"):
+            objects, native, clock, session, live, *_ = self.fixture([(11, 21), (12, 22)])
+            if stage == "focus":
+                read = native["read_control"]
+                def late_focus(*args, **kwargs):
+                    self.assertEqual(kwargs["deadline"], 1.0)
+                    result = read(*args, **kwargs)
+                    clock.now = 1.0
+                    return result
+                native["read_control"] = late_focus
+            else:
+                def late_panel(pid):
+                    clock.now = 3.0
+                    return {"processId": pid, "present": True}
+                native["panel_presence"] = late_panel
+            with self.subTest(stage=stage), self.assertRaises(TimeoutError):
+                self.observe(
+                    objects, clock, session, mode="operator-panel", pid=42,
+                    end=3.0, focus_end=1.0,
+                )
+            objects.close()
+            self.assertEqual(live, [])
 
     def test_title_value_and_counts_do_not_define_identity_and_refs_are_bounded(self):
         objects, native, clock, session, live, peaks, equals = self.fixture(
@@ -221,6 +264,21 @@ class OperatorProtocolTests(unittest.TestCase):
         with self.assertRaises(DriverError):
             scope.observe("operator", 0)
 
+    def test_real_pipe_panel_after_one_second_retains_original_budget(self):
+        support = _SYNTHETIC_SUPPORT + """
+import time
+def panel_presence(pid):
+    time.sleep(1.05)
+    return {"processId":pid,"present":True}
+"""
+        scope = self.scope(support, lifetime=10.0)
+        first = scope.observe("operator", 0)
+        after = scope.observe("operator-panel", 42)
+        self.assertEqual(first.operator_state, after.operator_state)
+        self.assertTrue(after.file_chooser.present)
+        scope.close()
+        self.assertEqual(scope._process.poll(), 0)
+
     def test_foreign_or_extra_response_fields_fail_closed_without_restarting(self):
         evil = """
 import json, os
@@ -286,6 +344,9 @@ input()
             {"scopeId": "b" * 32}, {"sequence": 0}, {"sequence": 2},
             {"sequence": True}, {"mode": "unknown"}, {"targetProcessId": 42},
             {"deadlineMonotonicSeconds": 0}, {"deadlineMonotonicSeconds": float("inf")},
+            {"focusDeadlineMonotonicSeconds": None},
+            {"focusDeadlineMonotonicSeconds": float("inf")},
+            {"focusDeadlineMonotonicSeconds": time.monotonic() + 10},
             {"extra": True},
         ):
             scope = self.scope()
@@ -293,6 +354,7 @@ input()
             request = {
                 "scopeId": scope.scope_id, "sequence": 1, "mode": "operator",
                 "targetProcessId": 0, "deadlineMonotonicSeconds": time.monotonic() + 1,
+                "focusDeadlineMonotonicSeconds": time.monotonic() + 0.5,
                 **change,
             }
             with self.subTest(change=change):

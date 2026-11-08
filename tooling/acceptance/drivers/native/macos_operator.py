@@ -22,6 +22,7 @@ from tooling.acceptance.drivers.native.base import (
 )
 from tooling.acceptance.drivers.native.macos_ax import AXReadSession
 from tooling.acceptance.drivers.native.macos import (
+    NATIVE_OBSERVATION_TIMEOUT_SECONDS as _OBSERVATION_SECONDS,
     OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS as _FOCUS_SECONDS,
     OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS as _INTERVAL_SECONDS,
 )
@@ -32,6 +33,7 @@ _CLOSE_SECONDS = 2.0
 _BOOTSTRAP_FIELDS = {"scopeId", "parentProcessId", "scopeDeadlineMonotonicSeconds"}
 _REQUEST_FIELDS = {
     "scopeId", "sequence", "mode", "targetProcessId", "deadlineMonotonicSeconds",
+    "focusDeadlineMonotonicSeconds",
 }
 _IDENTITY_FIELDS = (
     "actualFrontmostPid", "focusedWindow", "frontmost", "kind", "mainWindow",
@@ -113,7 +115,9 @@ def _blocked(mode: str, pid: int, error: BaseException, details: Mapping | None 
         resource="runtime-cell-operator-focus",
         diagnostic=ResourceDiagnostic.observed(
             owner="macos-native-driver", resource="runtime-cell-operator-focus",
-            expected={"operation": mode, "processId": pid, "focusTimeoutSeconds": _FOCUS_SECONDS},
+            expected={"operation": mode, "processId": pid,
+                      "timeoutSeconds": _OBSERVATION_SECONDS,
+                      "focusTimeoutSeconds": _FOCUS_SECONDS},
             observed={
                 **observed, "errorType": observed.get("errorType", type(error).__name__),
                 "adapterErrorType": type(error).__name__,
@@ -160,7 +164,9 @@ class OperatorScope:
             "scopeDeadlineMonotonicSeconds": self.deadline,
         }))
 
-    def _exchange(self, mode: str, pid: int, end: float) -> dict:
+    def _exchange(
+        self, mode: str, pid: int, end: float, *, focus_end: float | None = None,
+    ) -> dict:
         self._sequence += 1
         binding = {
             "scopeId": self.scope_id, "sequence": self._sequence,
@@ -168,6 +174,7 @@ class OperatorScope:
         }
         self._process.stdin.write(_encode({
             **binding, "deadlineMonotonicSeconds": end,
+            "focusDeadlineMonotonicSeconds": focus_end,
         }))
         response = _read_line(self._process.stdout.fileno(), end)
         if any(response.get(key) != value or type(response.get(key)) is not type(value)
@@ -198,11 +205,13 @@ class OperatorScope:
             raise DriverError("Invalid scoped native observation request")
         if not self._lock.acquire(blocking=False):
             raise DriverError("Native observation already has an in-flight request")
-        end = min(self.deadline, time.monotonic() + _FOCUS_SECONDS)
+        started = time.monotonic()
+        end = min(self.deadline, started + _OBSERVATION_SECONDS)
+        focus_end = min(self.deadline, started + _FOCUS_SECONDS)
         try:
             if self._process is None:
                 self._start()
-            response = self._exchange(mode, pid, end)
+            response = self._exchange(mode, pid, end, focus_end=focus_end)
             state = response["operatorState"]
             if not isinstance(state, dict) or set(state) != {
                 "frontmostPid", "pointerX", "pointerY", "keyboardFocusSha256",
@@ -307,7 +316,7 @@ class FocusObjects:
             for a, b in zip(left, right)
         )
 
-    def observe(self, mode: str, pid: int, end: float) -> dict:
+    def observe(self, mode: str, pid: int, end: float, *, focus_end: float) -> dict:
         from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 
         native = self.native
@@ -319,12 +328,12 @@ class FocusObjects:
             raise ValueError("native operator PID is unavailable")
         count = 0
         while True:
-            if time.monotonic() >= end:
+            if time.monotonic() >= focus_end:
                 raise TimeoutError("native keyboard focus did not stabilize")
             current: list = []
             try:
                 control = native["read_control"](
-                    operator_pid, deadline=end, focus_refs=current,
+                    operator_pid, deadline=focus_end, focus_refs=current,
                 )
                 snapshot = MacOSNativeDesktopAdapter._control_snapshot(control)
                 identity = {key: getattr(snapshot, {
@@ -341,7 +350,7 @@ class FocusObjects:
                 ):
                     raise ValueError("native operator focus changed from its frozen baseline")
                 count += 1
-                if time.monotonic() >= end:
+                if time.monotonic() >= focus_end:
                     raise TimeoutError("native keyboard focus reply expired")
                 stable = count >= 2 and identity == self.previous_identity and self._equal(
                     self.previous, current,
@@ -379,7 +388,7 @@ class FocusObjects:
                 self.previous_identity = identity
             finally:
                 self._release(current)
-            time.sleep(min(_INTERVAL_SECONDS, max(0.0, end - time.monotonic())))
+            time.sleep(min(_INTERVAL_SECONDS, max(0.0, focus_end - time.monotonic())))
 
 
 def serve(native: dict) -> None:
@@ -409,15 +418,20 @@ def serve(native: dict) -> None:
         while True:
             request = _read_line(0, end, parent_pid=parent)
             sequence += 1
-            mode, pid, request_end = (
+            mode, pid, request_end, focus_end = (
                 request.get("mode"), request.get("targetProcessId"),
                 request.get("deadlineMonotonicSeconds"),
+                request.get("focusDeadlineMonotonicSeconds"),
             )
             if set(request) != _REQUEST_FIELDS or request["scopeId"] != scope_id or (
                 type(request["sequence"]) is not int or request["sequence"] != sequence
                 or mode not in ("operator", "operator-panel", "close")
                 or type(pid) is not int or (pid <= 0 if mode == "operator-panel" else pid != 0)
                 or not _finite(request_end) or request_end <= time.monotonic() or request_end > end
+                or (
+                    focus_end is not None if mode == "close" else
+                    not _finite(focus_end) or focus_end > request_end
+                )
             ):
                 raise ValueError("invalid native observation request binding")
             binding = {key: request[key] for key in (
@@ -430,9 +444,12 @@ def serve(native: dict) -> None:
             try:
                 if failed:
                     raise ValueError("native observation scope is failed")
-                if request_end > time.monotonic() + _FOCUS_SECONDS:
+                started = time.monotonic()
+                if request_end > started + _OBSERVATION_SECONDS:
+                    raise ValueError("native observation deadline exceeds its budget")
+                if focus_end > started + _FOCUS_SECONDS:
                     raise ValueError("native focus deadline exceeds its budget")
-                response = objects.observe(mode, pid, request_end)
+                response = objects.observe(mode, pid, request_end, focus_end=focus_end)
             except Exception as error:
                 failed = True
                 objects.close()
