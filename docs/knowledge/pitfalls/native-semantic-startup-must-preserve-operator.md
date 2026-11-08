@@ -1,7 +1,7 @@
 ---
 kind: pitfall
 title: Semantic Native qualification must include startup and preserve its operator baseline
-status: active
+status: superseded-by:docs/knowledge/pitfalls/native-semantic-startup-with-object-identity.md
 owns:
   - apps/desktop/src-tauri/Cargo.lock
   - apps/desktop/src-tauri/src/main.rs

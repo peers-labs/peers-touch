@@ -196,6 +196,7 @@ class NativeDesktopMacOSProvisioner:
         expires_at = datetime.now(timezone.utc) + timedelta(
             seconds=self.contract.lease_ttl_seconds
         )
+        self._observation_deadline = time.monotonic() + self.contract.lease_ttl_seconds
         self._write_state(
             {
                 "cellId": self.contract.cell_id,
@@ -412,9 +413,13 @@ class NativeDesktopMacOSProvisioner:
         screenshot = screenshot_root / "desktop.png"
         log_path: Path | None = None
         session_stopped = False
+        operator = None
         try:
             operator = (
-                adapter.observe_operator()
+                adapter.observe_operator(deadline_monotonic=getattr(
+                    self, "_observation_deadline",
+                    time.monotonic() + self.contract.lease_ttl_seconds,
+                ))
                 if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE
                 else None
             )
@@ -564,13 +569,20 @@ class NativeDesktopMacOSProvisioner:
             log_path = session.log_path
             return probes, webdriver_port
         finally:
-            if not session_stopped:
-                session.stop()
-            shutil.rmtree(screenshot_root, ignore_errors=True)
-            if log_path is None:
-                log_path = launcher.log_path
-            if log_path is not None:
-                log_path.unlink(missing_ok=True)
+            primary = sys.exc_info()
+            try:
+                if not session_stopped:
+                    session.stop()
+            finally:
+                try:
+                    if operator is not None:
+                        operator.__exit__(*primary)
+                finally:
+                    shutil.rmtree(screenshot_root, ignore_errors=True)
+                    if log_path is None:
+                        log_path = launcher.log_path
+                    if log_path is not None:
+                        log_path.unlink(missing_ok=True)
 
     @classmethod
     def _await_process_owned_point(

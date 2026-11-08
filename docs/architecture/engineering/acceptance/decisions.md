@@ -1798,15 +1798,32 @@ focus or HID delivery.
   baseline; an intermediate mismatch cannot be cleared by a later sample.
   The Driver owns all operator sampling and the exact-PID AX primitive.
   macOS uses one bounded native observation implementation for operator-only,
-  operator plus panel, focused control and pointer reads. Each observation
-  owns one subprocess and releases it before returning; no persistent worker
-  or cached operator/panel state supplies a sample. The same subprocess
-  initializes AX/AppKit once and independently reads two consecutive stable
-  focus samples. Pointer observation uses the same ctypes boundary for
+  operator plus panel, focused control and pointer reads. An operator scope
+  owns one private read-only subprocess from prelaunch baseline through owned
+  stop; the parent and shared picker close it on every exit, including baseline
+  construction and staging failure. No process survives its scope, restarts
+  after failure, or supplies cached operator/panel state. Each request performs
+  two fresh stable focus reads. The child retains actual AX control/window
+  references and uses `CFEqual` both for stability and against the immutable
+  baseline. Title, value, counts, hash equality and enumeration order never
+  identify those objects. Missing objects or role fail closed. Every fresh
+  read after baseline rejects a different object or identity field immediately;
+  A→B→A cannot clear an intermediate failure.
+  Pointer observation uses the same ctypes boundary for
   CoreGraphics and releases its event; it does not initialize a separate Quartz
   Python module. Focus must stabilize within the original one-second deadline,
   including child initialization; control and full observation retain their
   two- and three-second subprocess limits respectively.
+  Bootstrap binds one random scope ID, parent PID and fixed monotonic scope
+  deadline, bounded by the owning operation and Cell lease. Private pipes admit
+  one in-flight request, exact scope/sequence/mode/target PID and finite deadlines;
+  each message is at most 4096 bytes. EOF, parent exit, cancellation, expiry,
+  malformed input or a stale reply closes or fails the scope. Each request
+  retains its original one-second deadline; startup consumes it. Close releases
+  all CF references and acknowledges cleanup without sampling AX. Cross-request
+  retained focus references are bounded by four, with at most six during a fresh
+  read. Parent shutdown closes pipes and reaps the exact child. Cleanup failure
+  blocks proof and remains separate from the original primary failure.
   Probe failure diagnostics retain the original child exception type and code
   location separately from the adapter's response-decoding exception. Code
   function and line identify the failure without exporting Accessibility
@@ -1833,8 +1850,10 @@ focus or HID delivery.
   Window focus flags come from the application's actual `AXFocusedWindow`,
   falling back only to `AXMainWindow` on explicit optional absence.
   `AXWindows` enumeration order never identifies the focused window.
-  Both reads consume the same focus deadline and release their copied CF
-  references; failure cannot fall back to the first enumerated window.
+  Both reads consume the same focus deadline. Operator scope owns their copied
+  CF references until comparison/replacement or final close; general control
+  reads release them immediately. Failure cannot fall back to the first
+  enumerated window.
   Chooser Home lookup first requires an AXStaticText node inside the AXOutline
   sidebar, then reads its AXValue. Structural nodes are not text candidates;
   an actual eligible-node read failure still stops selection. The selector

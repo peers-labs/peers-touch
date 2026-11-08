@@ -89,6 +89,7 @@ tooling/acceptance/
 │   │   ├── __init__.py
 │   │   ├── base.py                 # NativeDesktopAdapter contract
 │   │   ├── macos.py                # AppKit/CoreGraphics/Accessibility
+│   │   ├── macos_operator.py       # scope-owned AX equality and private pipes
 │   │   ├── linux_x11.py            # X11 XTest/EWMH
 │   │   └── windows.py              # Win32 SendInput/UI Automation
 │   └── chrome.py                   # Selenium Chrome driver + CDP command bridge
@@ -230,11 +231,13 @@ tooling/acceptance/
 | `core/drivers/launcher.py` | 定义 launcher metadata、start/stop/alive 资源所有权契约 |
 | `core/fixtures/base.py` | BaseFixture 抽象基类，定义 setup/teardown/reset 接口 |
 | `drivers/tauri.py` | 纯 W3C client、local/provisioned launcher、TauriSession 与 non-intrusive semantic actions；只连接 local 或 forwarded loopback endpoint |
-| `drivers/native/base.py` | Native input mode、isolation admission、focus、window stack、point ownership、screenshot 与不可重置 operator observation contract |
-| `drivers/native/macos.py` | AppKit/CoreGraphics/Accessibility adapter；唯一 operator sampling 与 exact-PID AX chooser owner；共享 AX reader 区分可选缺失与真实失败、保留状态并释放 CF 值，全部 operator 属性消费原始焦点 deadline；Home 仅匹配 sidebar 的 AXStaticText；只读 panel presence 与选择共用 AX finder；global input 只允许 explicit exclusive mode |
-| `drivers/native/runtime.py` | 从同一 prepared Cell 消费 current-source chooser 资格；不根据平台名或 flag 推断 capability |
-| `provisioners/native_desktop_macos.py` | parent 装备当前 binary 并执行真实 chooser qualification，owned stop 后投影 descriptor；不重复实现 operator sampling |
-| `gates/chat/native_file_picker.py` | 共用可见 trigger/native-panel selection；单一 selector 实现，保留原有业务与接收端 oracle；不提供 capability 或恢复 semantic operator focus |
+| `drivers/native/base.py` | Native input mode、isolation admission、focus、window stack、point ownership、screenshot、不可重置四字段 operator baseline、sticky failure 与显式 close/context 生命周期 |
+| `drivers/native/macos.py` | AppKit/CoreGraphics/Accessibility adapter；原 operator scope 入口、共享新 AX reads 与 exact-PID chooser owner；Home 仅匹配 sidebar AXStaticText；panel presence 与选择共用 AX finder；global input 只允许 explicit exclusive mode |
+| `drivers/native/macos_operator.py` | 原 macOS Driver 的 scope 子进程、CFEqual 比较/引用释放、两次 fresh reads、固定 deadline、私有有界管道协议与 reap；不缓存 native state、不授权操作、不产生产品资格 |
+| `drivers/native/macos_ax.py` | 共享 AX deadline/status/optional absence 与 one-shot mutation；operator 属性消费原一秒预算，失败值始终释放 |
+| `drivers/native/runtime.py` | 从同一 prepared Cell 消费 current-source chooser 资格及实际 lease deadline；不根据平台名或 flag 推断 capability |
+| `provisioners/native_desktop_macos.py` | parent 装备当前 binary 并执行真实 chooser qualification，持有一次 scope 到 owned stop 后关闭，投影 descriptor；不重复实现 sampling |
+| `gates/chat/native_file_picker.py` | 共用可见 trigger/native-panel selection；从 staging 到选择结束持有并关闭 scope，异常同样释放；保留原业务/接收端 oracle，不提供 capability 或恢复 focus |
 | `drivers/native/linux_x11.py` | X11 XTest/EWMH adapter |
 | `drivers/native/windows.py` | Win32 SendInput/UI Automation adapter |
 | `transports/ssh.py` | SSH host-key verification、bounded command、run-scoped port forward、cancel 与 teardown |

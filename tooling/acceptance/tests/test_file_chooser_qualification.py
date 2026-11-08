@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timedelta, timezone
 import json
 import subprocess
 import tempfile
@@ -157,6 +158,7 @@ class FileChooserQualificationTests(unittest.TestCase):
             binding._binary, binding._binary_sha256 = binary, digest
             binding._prepared_cell = {
                 "runId": "cell-run", "source": source(digest),
+                "lease": {"expiresAt": (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()},
                 "nativeAdapter": {"fileChooser": qualifier(digest).to_dict()},
             }
             with patch.object(binding, "_verify_source_snapshot"):
@@ -215,12 +217,55 @@ class FileChooserQualificationTests(unittest.TestCase):
             client.find_elements.assert_called_with("[data-real-trigger]")
             client.semantic_click.assert_called_once_with(element)
             adapter.select_file_chooser_path_to_process.assert_called_once_with(42, str(fixture))
+            adapter.close_operator_observation.assert_called_once()
             binding.request_cooperative_activation.assert_not_called()
             for name in (
                 "activate_process", "post_key", "post_mouse", "write_clipboard",
                 "read_clipboard", "reveal_file_chooser_location",
             ):
                 getattr(adapter, name).assert_not_called()
+
+    def test_picker_closes_on_staging_trigger_selection_and_cleanup_failures(self) -> None:
+        for failed_stage in ("staging", "trigger", "selection", "cleanup"):
+            with self.subTest(stage=failed_stage), tempfile.TemporaryDirectory() as raw:
+                source_path = Path(raw) / "fixture.bin"
+                source_path.write_bytes(b"fixture")
+                adapter = Mock(spec=MacOSNativeDesktopAdapter)
+                adapter.snapshot_operator_state.return_value = BASELINE
+                adapter.snapshot_operator_and_file_chooser.side_effect = (
+                    NativeDesktopObservation(BASELINE, NativeFileChooserSnapshot(42, False)),
+                    NativeDesktopObservation(BASELINE, NativeFileChooserSnapshot(42, True)),
+                )
+                original = RuntimeError("original stage failure")
+                observer = NativeOperatorObservation(adapter)
+                binding = SimpleNamespace(
+                    native_adapter=adapter, begin_file_chooser=Mock(return_value=observer),
+                    stage_native_file=Mock(return_value=source_path),
+                    native_file_sha256=Mock(return_value=hashlib.sha256(b"fixture").hexdigest()),
+                )
+                trigger = Mock()
+                if failed_stage == "staging":
+                    binding.stage_native_file.side_effect = original
+                elif failed_stage == "trigger":
+                    trigger.side_effect = original
+                else:
+                    adapter.select_file_chooser_path_to_process.side_effect = original
+                if failed_stage == "cleanup":
+                    adapter.close_operator_observation.side_effect = DriverError("cleanup failed")
+                with self.assertRaises(RuntimeError) as caught:
+                    select_native_file(
+                        actor="actor", client=SimpleNamespace(process_id=42), sessions=(),
+                        runtime_binding=binding, source_path=source_path, trigger=trigger,
+                    )
+                self.assertIs(caught.exception, original)
+                adapter.close_operator_observation.assert_called_once()
+                if failed_stage == "cleanup":
+                    with self.assertRaises(DriverError) as first:
+                        observer.close()
+                    with self.assertRaises(DriverError) as later:
+                        observer.close()
+                    self.assertIs(first.exception, later.exception)
+                    self.assertIn("cleanup failed", original.__notes__[0])
 
     def test_parent_observes_native_command_commit_and_exact_fixture(self) -> None:
         adapter = Mock(spec=MacOSNativeDesktopAdapter)

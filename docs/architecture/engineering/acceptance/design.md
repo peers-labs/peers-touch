@@ -259,10 +259,22 @@ macOS WKWebView | Linux WebKitGTK | Windows WebView2
 - Business Gate 只调用稳定的 DOM 与 native action interface；不得导入 AppKit、
   Quartz、X11 或 Win32 API。
 - 本机 shared user session 只允许 `semantic-nonintrusive`。系统 file panel、
-  permission sheet、physical hover/drag 和 native-focus claim 必须绑定隔离 cell，
-  缺失时保持 `BLOCKED/UNPROVEN`。
+  permission sheet、physical hover/drag 和 native-focus claim 按 D-22 分别取得资格；
+  已由 parent 真实证明的 exact-PID AX chooser 可使用 semantic mode，其余全局输入
+  必须绑定隔离 cell，缺失时保持 `BLOCKED/UNPROVEN`。
 - Embedded WebDriver 仅绑定 cell 内 `127.0.0.1`；远端访问必须经过 run-scoped SSH
   tunnel，禁止开放到局域网。
+
+macOS 操作者观察由原 Native Driver 持有一个 scope 子进程。Core 冻结原四字段
+baseline 并拥有 phase 比较与 sticky failure；Driver 每次请求执行两次新 AX
+读取，以 CFEqual 验证真实控件和窗口对象，标题与输入内容不定义身份。
+引用只在同一 scope 内保留，摘要绑定 scope ID、原身份字段和对象相等结果；
+两个独立 scope 的摘要不能互相供应基线。默认诊断 scope 不超过30秒，生产
+qualification 与 picker 使用 owning operation/Cell lease 的实际剩余时间。
+请求的一秒 deadline 包含首次初始化；scope deadline 不可续期。
+parent 从 prelaunch 持有到 owned-stop，picker 从 staging 持有到 selection；
+两者在所有异常/取消路径关闭并 reap。显式 close 不进行新的 AX 观察。
+它没有网络端点、资格持久化、后台轮询、焦点恢复或第二个 Runner。
 
 ### 2.2 Ephemeral Gate Launch Context 拓扑
 

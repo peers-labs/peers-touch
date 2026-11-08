@@ -21,6 +21,7 @@ from tooling.acceptance.drivers.native.base import (
     NativeInputMode,
     NativeKey,
     NativeModifier,
+    NativeOperatorObservation,
     NativeWindowBounds,
     NativeWindowSnapshot,
     NativeWindowStack,
@@ -636,7 +637,7 @@ def pointer_location():
         core_foundation.CFRelease(event)
 
 
-def read_control(process_id, *, deadline=None):
+def read_control(process_id, *, deadline=None, focus_refs=None):
     reads.begin_observation()
     application = application_services.AXUIElementCreateApplication(process_id)
     focused = windows_value = window = None
@@ -645,8 +646,8 @@ def read_control(process_id, *, deadline=None):
         windows_value = copy_attribute(application, "AXWindows", required=True, deadline=deadline)
         windows = array_items(windows_value)
         sheet_count = 0
-        for window in windows:
-            sheets = copy_attribute(window, "AXSheets", deadline=deadline)
+        for enumerated_window in windows:
+            sheets = copy_attribute(enumerated_window, "AXSheets", deadline=deadline)
             try:
                 sheet_count += len(array_items(sheets))
             finally:
@@ -655,7 +656,7 @@ def read_control(process_id, *, deadline=None):
         window = copy_attribute(application, "AXFocusedWindow", deadline=deadline)
         if window is None:
             window = copy_attribute(application, "AXMainWindow", deadline=deadline)
-        return {
+        result = {
             "role": copied_text(focused, "AXRole", deadline=deadline) if focused else "",
             "subrole": copied_text(focused, "AXSubrole", deadline=deadline) if focused else "",
             "title": copied_text(focused, "AXTitle", deadline=deadline) if focused else "",
@@ -666,6 +667,10 @@ def read_control(process_id, *, deadline=None):
             "focusedWindow": copied_boolean(window, "AXFocused", deadline=deadline) if window else False,
             "actualFrontmostPid": frontmost_pid(),
         }
+        if focus_refs is not None:
+            focus_refs.extend((focused, window))
+            focused = window = None
+        return result
     except NativeAXReadUnavailable as error:
         error.observed["actualControlRequestPid"] = process_id
         raise
@@ -692,11 +697,6 @@ def panel_presence(process_id):
 """
 
 _NATIVE_OBSERVATION_BODY = r"""
-class ObservationFailure(Exception):
-    def __init__(self, reason, expected, observed):
-        self.details = {"reason": reason, "expected": expected, "observed": observed}
-
-
 def observe_native(mode, process_id, focus_deadline, interval):
     if mode == "pointer":
         return {"pointer": pointer_location()}
@@ -704,60 +704,7 @@ def observe_native(mode, process_id, focus_deadline, interval):
         return {"control": read_control(process_id)}
     if mode == "panel":
         return {"panel": panel_presence(process_id)}
-    operator_pid = frontmost_pid()
-    if operator_pid <= 0:
-        raise ObservationFailure(
-            "macOS operator frontmost process is unavailable",
-            {"frontmostPid": "positive process ID"}, {"frontmostPid": operator_pid},
-        )
-    if process_id and mode == "operator" and operator_pid != process_id:
-        raise ObservationFailure(
-            "macOS operator frontmost process changed during focus sampling",
-            {"frontmostPid": process_id}, {"frontmostPid": operator_pid},
-        )
-    previous = None
-    while True:
-        if time.monotonic() >= focus_deadline:
-            raise ObservationFailure(
-                "macOS operator keyboard focus did not stabilize",
-                {"frontmostPid": operator_pid, "consecutiveStableSamples": 2},
-                {"frontmostPid": operator_pid},
-            )
-        control = read_control(operator_pid, deadline=focus_deadline)
-        actual = control["actualFrontmostPid"]
-        if actual != operator_pid:
-            raise ObservationFailure(
-                "macOS operator frontmost process changed during focus sampling",
-                {"frontmostPid": operator_pid}, {"frontmostPid": actual},
-            )
-        identity = {
-            key: value for key, value in control.items()
-            if key not in ("value", "windowCount", "sheetCount")
-        }
-        remaining = focus_deadline - time.monotonic()
-        if remaining <= 0:
-            raise ObservationFailure(
-                "macOS operator keyboard focus did not stabilize",
-                {"frontmostPid": operator_pid, "consecutiveStableSamples": 2},
-                {"frontmostPid": actual, "platformRole": control["role"],
-                 "platformSubrole": control["subrole"]},
-            )
-        if identity == previous:
-            break
-        previous = identity
-        time.sleep(min(max(0.0, interval), remaining))
-    result = {"operator": {
-        "processId": operator_pid, "control": control, "pointer": pointer_location(),
-    }}
-    if mode == "operator-panel":
-        result["panel"] = panel_presence(process_id)
-    actual = frontmost_pid()
-    if actual != operator_pid:
-        raise ObservationFailure(
-            "macOS operator frontmost process changed during focus sampling",
-            {"frontmostPid": operator_pid}, {"frontmostPid": actual},
-        )
-    return result
+    raise ValueError("unsupported unscoped observation mode")
 """
 
 _NATIVE_OBSERVATION_PROBE = _NATIVE_AX_SUPPORT + _NATIVE_OBSERVATION_BODY + r"""
@@ -765,8 +712,6 @@ try:
     result = observe_native(
         sys.argv[1], int(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4]),
     )
-except ObservationFailure as error:
-    result = {"error": error.details}
 except Exception as error:
     failure = error.__traceback__
     while failure is not None and failure.tb_next is not None:
@@ -1303,6 +1248,7 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         input_mode: NativeInputMode = NativeInputMode.SEMANTIC_NON_INTRUSIVE,
     ) -> None:
         self._input_mode = input_mode
+        self._operator_scope = None
 
     @property
     def input_mode(self) -> NativeInputMode:
@@ -1335,17 +1281,11 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
                 raise ValueError("native observation failed")
             keys = {
                 "pointer": {"pointer"}, "control": {"control"}, "panel": {"panel"},
-                "operator": {"operator"}, "operator-panel": {"operator", "panel"},
             }[mode]
             if set(value) != keys or any(
                 not isinstance(payload, dict) for payload in value.values()
             ):
                 raise ValueError("invalid native observation shape")
-            if "operator" in value:
-                operator = value["operator"]
-                if set(operator) != {"processId", "pointer", "control"}:
-                    raise ValueError("invalid operator observation shape")
-                MacOSNativeDesktopAdapter._operator_state(operator)
             return value
         except (
             OSError, subprocess.SubprocessError, ValueError,
@@ -1391,49 +1331,46 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         return self._native_observation("pointer")["pointer"]
 
     def snapshot_operator_state(self) -> dict[str, object]:
-        return self._operator_state(self._native_observation("operator")["operator"])
+        if self._operator_scope is None:
+            with self.observe_operator() as observation:
+                return dict(observation.baseline)
+        return dict(self._operator_scope.observe("operator", 0).operator_state)
+
+    def observe_operator(
+        self, *, deadline_monotonic: float | None = None,
+    ) -> NativeOperatorObservation:
+        from tooling.acceptance.drivers.native.macos_operator import OperatorScope
+
+        if self._operator_scope is not None:
+            raise DriverError("Native operator observation is already active")
+        self._operator_scope = OperatorScope(
+            _NATIVE_AX_SUPPORT, deadline_monotonic=deadline_monotonic,
+        )
+        try:
+            return NativeOperatorObservation(self)
+        except BaseException as error:
+            try:
+                self.close_operator_observation()
+            except (BlockedError, DriverError) as cleanup:
+                error.add_note(f"Operator scope cleanup failed: {type(cleanup).__name__}")
+            raise
+
+    def close_operator_observation(self) -> None:
+        scope = self._operator_scope
+        if scope is not None:
+            try:
+                scope.close()
+            finally:
+                if scope._closed:
+                    self._operator_scope = None
 
     def snapshot_operator_and_file_chooser(
         self, process_id: int,
     ) -> NativeDesktopObservation:
         process_id = self._validated_process_id(process_id)
-        value = self._native_observation("operator-panel", process_id)
-        return NativeDesktopObservation(
-            self._operator_state(value["operator"]),
-            self._file_chooser_snapshot(value["panel"], process_id),
-        )
-
-    @staticmethod
-    def _operator_state(value: dict[str, object]) -> dict[str, object]:
-        process_id, pointer = value["processId"], value["pointer"]
-        control = MacOSNativeDesktopAdapter._control_snapshot(value["control"])
-        if (
-            type(process_id) is not int or process_id <= 0
-            or control.actual_frontmost_pid != process_id
-            or any(
-                type(pointer[name]) not in (int, float)
-                or not math.isfinite(pointer[name]) for name in ("x", "y")
-            )
-        ):
-            raise DriverError("Invalid native operator observation")
-        focus = MacOSNativeDesktopAdapter.keyboard_focus_identity(control)
-        return {
-            "frontmostPid": process_id,
-            "pointerX": float(pointer["x"]), "pointerY": float(pointer["y"]),
-            "keyboardFocusSha256": hashlib.sha256(
-                json.dumps(focus, sort_keys=True, separators=(",", ":")).encode(),
-            ).hexdigest(),
-        }
-
-    @staticmethod
-    def keyboard_focus_identity(control: NativeControlSnapshot) -> dict[str, object]:
-        return {
-            "actualFrontmostPid": control.actual_frontmost_pid,
-            "focusedWindow": control.focused_window, "frontmost": control.frontmost,
-            "kind": control.kind, "mainWindow": control.main_window,
-            "platformRole": control.platform_role,
-            "platformSubrole": control.platform_subrole, "title": control.title,
-        }
+        if self._operator_scope is None:
+            raise DriverError("Combined observation requires an active operator scope")
+        return self._operator_scope.observe("operator-panel", process_id)
 
     def activate_process(self, process_id: int) -> None:
         self.require_exclusive_input("activate macOS process")

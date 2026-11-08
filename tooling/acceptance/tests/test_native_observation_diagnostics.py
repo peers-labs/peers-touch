@@ -299,11 +299,11 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                 self.assertEqual(releases.count(22), 1)
                 self.assertEqual(releases.count(42), 1)
         probe, _, releases = control_probe()
-        result = probe["observe_native"]("operator", 0, 1.0, 0.05)
-        self.assertEqual(result["operator"]["control"]["role"], "AXTextArea")
-        self.assertEqual(releases.count(23), 2)
-        self.assertEqual(releases.count(22), 2)
-        self.assertEqual(releases.count(42), 2)
+        result = probe["read_control"](41, deadline=1.0)
+        self.assertEqual(result["role"], "AXTextArea")
+        self.assertEqual(releases.count(23), 1)
+        self.assertEqual(releases.count(22), 1)
+        self.assertEqual(releases.count(42), 1)
 
     def test_operator_window_identity_does_not_depend_on_window_enumeration(self) -> None:
         states = []
@@ -319,14 +319,17 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                     name == "AXFrontmost"
                     or (element.value if isinstance(element, ctypes.c_void_p) else element) == 34
                 )
-                observation = probe["observe_native"]("operator", 0, 1.0, 0.05)["operator"]
-                control = observation["control"]
+                refs = []
+                control = probe["read_control"](41, deadline=1.0, focus_refs=refs)
                 self.assertTrue(control["mainWindow"])
                 self.assertTrue(control["focusedWindow"])
-                states.append(MacOSNativeDesktopAdapter._operator_state(observation))
-                self.assertEqual(releases.count(34), 2)
-                self.assertEqual(releases.count(22), 2)
-                self.assertEqual(releases.count(42), 2)
+                states.append((control, [ref.value for ref in refs]))
+                self.assertEqual(releases.count(34), 0)
+                for ref in refs:
+                    cf.CFRelease(ref)
+                self.assertEqual(releases.count(34), 1)
+                self.assertEqual(releases.count(22), 1)
+                self.assertEqual(releases.count(42), 1)
         self.assertEqual(len(states), 2)
         self.assertEqual(states[0], states[1])
 
@@ -367,8 +370,8 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
             _NATIVE_AX_SUPPORT + _NATIVE_OBSERVATION_BODY,
         )
         for mode, caller_pid, recipient_pid, name, status, value in (
-            ("operator", 0, 41, "AXFocusedUIElement", -25204, 0),
-            ("operator-panel", 59, 41, "AXWindows", -25205, 0),
+            ("control", 41, 41, "AXFocusedUIElement", -25204, 0),
+            ("control", 41, 41, "AXWindows", -25205, 0),
             ("control", 59, 59, "AXRole", -25204, 44),
             ("control", 41, 41, "AXFrontmost", -25202, 44),
         ):
@@ -456,7 +459,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
             with self.subTest(started=started, replies=replies):
                 probe, reads, releases = control_probe(replies, started=started)
                 with self.assertRaises(Exception):
-                    probe["observe_native"]("operator", 0, 1.0, 0.05)
+                    probe["read_control"](41, deadline=1.0, focus_refs=[])
                 self.assertEqual([item[0] for item in reads], expected_reads)
                 for actual, expected in zip(reads, expected_limits):
                     self.assertAlmostEqual(actual[2], expected)
@@ -586,7 +589,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
             return_value=SimpleNamespace(stdout=json.dumps(payload)),
         ) as run:
             with self.assertRaises(BlockedError) as caught:
-                MacOSNativeDesktopAdapter._native_observation("operator-panel", 42)
+                MacOSNativeDesktopAdapter._native_observation("panel", 42)
         check = caught.exception.diagnostic.to_dict()["resourceChecks"][0]
         self.assertEqual(check["observed"]["errorType"], "RuntimeError")
         self.assertEqual(check["observed"]["adapterErrorType"], "ValueError")
@@ -594,7 +597,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
         self.assertEqual(check["observed"]["failureLine"], 123)
         self.assertEqual(check["expected"]["processId"], 42)
         self.assertEqual(run.call_args.kwargs["timeout"], 3.0)
-        self.assertEqual(caught.exception.resource, "runtime-cell-operator-focus")
+        self.assertEqual(caught.exception.resource, "native-file-chooser")
 
     def test_decode_failure_remains_the_observed_origin(self) -> None:
         with patch(
@@ -602,7 +605,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
             return_value=SimpleNamespace(stdout="{"),
         ):
             with self.assertRaises(BlockedError) as caught:
-                MacOSNativeDesktopAdapter._native_observation("operator", 0)
+                MacOSNativeDesktopAdapter._native_observation("pointer", 0)
         observed = caught.exception.diagnostic.to_dict()["resourceChecks"][0]["observed"]
         self.assertEqual(observed["errorType"], "JSONDecodeError")
         self.assertEqual(observed["adapterErrorType"], "JSONDecodeError")

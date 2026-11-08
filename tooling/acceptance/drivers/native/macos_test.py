@@ -19,6 +19,7 @@ from tooling.acceptance.drivers.native.macos import (
     MacOSStatusItemSnapshot,
     _ACCESSIBILITY_PROBE,
     _FILE_CHOOSER_SELECTION_PROBE,
+    _NATIVE_AX_SUPPORT,
 )
 
 
@@ -66,9 +67,124 @@ timer = Foundation.NSTimer.scheduledTimerWithTimeInterval_target_selector_userIn
 app.run()
 """
 
+_OBJECT_IDENTITY_OWNER = r"""
+import sys
+from pathlib import Path
+import AppKit
+import Foundation
+
+root = Path(sys.argv[1])
+app = AppKit.NSApplication.sharedApplication()
+app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+windows, fields = [], []
+for index in range(2):
+    window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+        ((180 + index * 30, 180 + index * 30), (320, 160)),
+        AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskClosable,
+        AppKit.NSBackingStoreBuffered, False,
+    )
+    window.setTitle_("Identical fixture title")
+    for column in range(2):
+        field = AppKit.NSTextField.alloc().initWithFrame_(((20, 30 + column * 50), (260, 30)))
+        field.setStringValue_("Identical fixture text")
+        field.setAccessibilityIdentifier_("first" if column == 0 else "second")
+        window.contentView().addSubview_(field)
+        fields.append(field)
+    window.orderBack_(None)
+    windows.append(window)
+
+class Owner(Foundation.NSObject):
+    def tick_(self, timer):
+        (root / "ready").touch()
+        if (root / "change").exists() and not (root / "changed").exists():
+            for window in windows:
+                window.setTitle_("Changed fixture title")
+            for field in fields:
+                field.setStringValue_("Changed fixture text")
+            (root / "changed").touch()
+
+owner = Owner.alloc().init()
+timer = Foundation.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+    0.02, owner, "tick:", None, True,
+)
+app.run()
+"""
+
 
 @unittest.skipUnless(sys.platform == "darwin", "requires real macOS Accessibility")
 class MacOSAccessibilityResponsivenessTests(unittest.TestCase):
+    def test_real_cf_equal_distinguishes_same_title_windows_and_same_role_controls(self):
+        probe = _NATIVE_AX_SUPPORT + r"""
+core_foundation.CFEqual.argtypes = [CFRef, CFRef]
+core_foundation.CFEqual.restype = ctypes.c_bool
+reads = AXReadSession(application_services, core_foundation, deadline=time.monotonic() + 2.5)
+root = Path(sys.argv[2])
+application = application_services.AXUIElementCreateApplication(int(sys.argv[1]))
+before = after = None
+paths = []
+try:
+    before = copy_attribute(application, "AXWindows", required=True)
+    windows = array_items(before)
+    assert len(windows) == 2
+    titles = [copied_text(window, "AXTitle") for window in windows]
+    assert titles[0] == titles[1]
+    assert not core_foundation.CFEqual(windows[0], windows[1])
+    for name in ("first", "second"):
+        path = find_path(windows[0], lambda element, _: copied_text(element, "AXIdentifier") == name)
+        assert path
+        paths.append(path)
+    first, second = paths[0][-1], paths[1][-1]
+    assert copied_text(first, "AXRole") == copied_text(second, "AXRole")
+    assert copied_text(first, "AXValue") == copied_text(second, "AXValue")
+    assert not core_foundation.CFEqual(first, second)
+    (root / "change").touch()
+    end = time.monotonic() + 1
+    while not (root / "changed").exists():
+        assert time.monotonic() < end
+        time.sleep(0.01)
+    after = copy_attribute(application, "AXWindows", required=True)
+    new_windows = array_items(after)
+    assert all(any(core_foundation.CFEqual(old, new) for new in new_windows) for old in windows)
+    assert copied_text(windows[0], "AXTitle") != titles[0]
+    new_path = find_path(windows[0], lambda element, _: copied_text(element, "AXIdentifier") == "first")
+    assert new_path
+    paths.append(new_path)
+    assert core_foundation.CFEqual(first, new_path[-1])
+    assert copied_text(first, "AXValue") == "Changed fixture text"
+    print(json.dumps({"distinctWindows": True, "distinctControls": True, "stableAfterContentChange": True}))
+finally:
+    for path in paths:
+        release_path(path)
+    for ref in (before, after, application):
+        if ref:
+            core_foundation.CFRelease(ref)
+"""
+        with tempfile.TemporaryDirectory(prefix="pt-ax-identity-") as directory:
+            root = Path(directory)
+            child = subprocess.Popen(
+                (sys.executable, "-c", _OBJECT_IDENTITY_OWNER, str(root)),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            try:
+                end = time.monotonic() + 5
+                while not (root / "ready").exists():
+                    self.assertIsNone(child.poll())
+                    self.assertLess(time.monotonic(), end)
+                    time.sleep(0.01)
+                result = subprocess.run(
+                    (sys.executable, "-c", probe, str(child.pid), str(root)),
+                    capture_output=True, text=True, timeout=3,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {
+                    "distinctWindows": True, "distinctControls": True,
+                    "stableAfterContentChange": True,
+                })
+            finally:
+                if child.poll() is None:
+                    child.terminate()
+                child.wait(timeout=3)
+
     def _probe_busy_owner(
         self, probe: str, busy_seconds: float, *, panel: bool = False,
         arguments: tuple[str, ...] = (),
