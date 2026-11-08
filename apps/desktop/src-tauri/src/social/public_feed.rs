@@ -140,7 +140,7 @@ fn decode_submit_response(envelope: crate::model::common::PeersResponse)
 }
 
 #[tauri::command]
-pub fn social_public_feed_prepare(state: State<AppState>, window: Window,
+pub fn social_public_feed_prepare(state: State<'_, Arc<AppState>>, window: Window,
     input: PublicFeedPrepareInput) -> Result<Value, String> {
     let PreparedFeed{bundle, ..} = prepare(&state, &window, &input)?;
     Ok(json!({"commandId": input.command_id, "bundleB64": STANDARD.encode(bundle.encode_to_vec()),
@@ -149,7 +149,7 @@ pub fn social_public_feed_prepare(state: State<AppState>, window: Window,
 }
 
 #[tauri::command]
-pub fn social_public_feed_submit(state: State<AppState>, window: Window,
+pub fn social_public_feed_submit(state: State<'_, Arc<AppState>>, window: Window,
     input: PublicFeedSubmitInput) -> Result<Value, String> {
     let prepared = PublicFeedPrepareInput{command_id: input.command_id.clone(), kind: input.kind, payload_b64: input.payload_b64};
     let mut p = prepare(&state, &window, &prepared)?;
@@ -176,7 +176,7 @@ pub fn social_public_feed_submit(state: State<AppState>, window: Window,
 /// Reopen retained intent after a process restart or a lost ACK. Returning the
 /// original payload/command lets submit reuse the exact journal event.
 #[tauri::command]
-pub fn social_public_feed_status(state: State<AppState>, window: Window) -> Result<Value, String> {
+pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window) -> Result<Value, String> {
     let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
     let active = state.sessions.get(window.label()).ok_or("FEED_AUTHENTICATION_REQUIRED")?;
     if active.jwt.is_empty() { return Err("FEED_AUTHENTICATION_REQUIRED".into()); }

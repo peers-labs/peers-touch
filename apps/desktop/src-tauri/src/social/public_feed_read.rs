@@ -2,6 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use prost::Message;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use station_trust::feed_log::{self as feed, proto::*};
 use tauri::{State, Window};
 
@@ -26,7 +27,7 @@ pub struct PublicFeedReadInput {
 /// Returns original verified event bytes rather than trusting a Station's
 /// mutable Moment projection. Renderer must reduce these events for display.
 #[tauri::command]
-pub fn social_public_feed_read(state: State<AppState>, window: Window,
+pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     input: PublicFeedReadInput) -> Result<Value, String> {
     if input.limit == 0 || input.limit > 64 || input.actor_ptid.trim().is_empty() {
         return Err("FEED_INVALID".into());
