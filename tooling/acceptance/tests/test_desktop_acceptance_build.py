@@ -280,6 +280,62 @@ print(json.dumps({
         self.assertEqual(rebuilt.observation["frontendReuse"], "BUILT_STAGE")
         self.assertEqual(self.count(), 2)
 
+    def test_completed_frontend_survives_input_recheck_deadline_and_is_requalified(self) -> None:
+        failed = DesktopAcceptanceBuild(self.root)
+        observe = failed._identity
+        observations = []
+
+        def expire_recheck():
+            observations.append(True)
+            if len(observations) == 2:
+                raise ExecutionDeadline("desktop-acceptance-build", "installed-inputs", "work")
+            return observe()
+
+        with patch.object(failed, "_identity", side_effect=expire_recheck):
+            with self.assertRaises(ExecutionDeadline):
+                failed.ensure()
+        stage_path = failed.state / "frontend-receipt.json"
+        stage = json.loads(stage_path.read_text())
+        self.assertEqual(stage["qualification"], "PENDING_INPUT_RECHECK")
+        self.assertFalse((failed.state / "receipt.json").exists())
+        self.assertFalse(failed.binary.exists())
+        resumed = DesktopAcceptanceBuild(self.root)
+        resumed.ensure()
+        self.assertEqual(self.count(), 1)
+        self.assertEqual(resumed.observation["frontendReuse"], "VERIFIED_STAGE")
+        self.assertEqual(resumed.observation["frontendProducer"]["attemptId"], failed._attempt.name)
+        self.assertEqual(json.loads(stage_path.read_text())["qualification"], "VERIFIED")
+
+    def test_pending_frontend_stage_rejects_input_or_output_drift(self) -> None:
+        for boundary in ("source", "tool", "output"):
+            with self.subTest(boundary=boundary):
+                failed = DesktopAcceptanceBuild(self.root)
+                observe = failed._identity
+                observations = []
+
+                def expire_recheck():
+                    observations.append(True)
+                    if len(observations) == 2:
+                        raise ExecutionDeadline("desktop-acceptance-build", "installed-inputs", "work")
+                    return observe()
+
+                if failed.state.exists():
+                    shutil.rmtree(failed.state)
+                with patch.object(failed, "_identity", side_effect=expire_recheck):
+                    with self.assertRaises(ExecutionDeadline):
+                        failed.ensure()
+                if boundary == "source":
+                    (self.root / "source.txt").write_text("changed candidate")
+                elif boundary == "tool":
+                    self.tool("node", "print('{\"inputs\": {}, \"externalSources\": []}')\n", version="changed")
+                else:
+                    (self.root / "apps/desktop/dist/index.html").write_text("changed output")
+                expected_count = self.count() + 1
+                rebuilt = DesktopAcceptanceBuild(self.root)
+                rebuilt.ensure()
+                self.assertEqual(self.count(), expected_count)
+                self.assertEqual(rebuilt.observation["frontendReuse"], "BUILT_STAGE")
+
     def test_staged_untracked_and_build_time_source_drift_are_bound(self) -> None:
         (self.root / "source.txt").write_text("staged source")
         self.git("add", "source.txt")

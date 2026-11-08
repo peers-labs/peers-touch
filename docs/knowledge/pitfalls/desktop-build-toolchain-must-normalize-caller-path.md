@@ -57,6 +57,12 @@ Incomplete frontend work is never retained as qualified output, and source or
 output drift invalidates the checkpoint. The final binary receipt still requires
 Cargo success and source/output recheck. Neither checkpoint nor cache is a
 product result; all original timeouts remain in force.
+After compiler success, the owner immediately retains the complete output
+inventory as `PENDING_INPUT_RECHECK`. Expiry during the subsequent full installed
+input observation cannot discard completed work. A later request reobserves the
+entire source/configuration/toolchain identity and output bytes under the same
+OS lock before promoting that stage to `VERIFIED`; any mismatch rebuilds it.
+Pending stages never qualify a binary or bypass final source/output verification.
 The build observer still persists terminal failure, but
 `EphemeralLaunchCleanupFailed` must remain the original exception with its
 cleanup result. Converting it to `BlockedError` lets a parent report successful
@@ -116,6 +122,10 @@ installation observations remain necessary supporting evidence.
 `test_failed_process_cleanup_preserves_exception_and_terminal_observation`
 requires both the original Launcher failure and the persisted failed observation,
 without a successful build receipt.
+`test_completed_frontend_survives_input_recheck_deadline_and_is_requalified`
+requires one successful compiler run across a failed recheck and a fresh
+public-owner request. `test_pending_frontend_stage_rejects_input_or_output_drift`
+requires a rebuild for each source, tool or output change after that failure.
 `test_synthetic_source_commits_do_not_invoke_operator_hooks` installs a real
 recording Hook and Trace2 target through a temporary global Git configuration.
 Fixture creation and a later source commit must leave both markers absent. Run the complete build

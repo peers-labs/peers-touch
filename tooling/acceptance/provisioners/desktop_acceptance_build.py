@@ -406,11 +406,21 @@ class DesktopAcceptanceBuild:
                 if (
                     isinstance(frontend_receipt, dict)
                     and frontend_receipt.get("artifactKind") == "desktop-frontend-build-receipt"
+                    and frontend_receipt.get("qualification") in {
+                        "VERIFIED", "PENDING_INPUT_RECHECK",
+                    }
                     and frontend_receipt.get("identity") == identity
                     and isinstance(frontend_receipt.get("producer"), dict)
                     and outputs
                     and frontend_receipt.get("outputs") == outputs
                 ):
+                    # This request has independently observed the complete
+                    # current input identity and output bytes under the lock.
+                    # A previous request may have expired while rechecking
+                    # inputs after its successful compiler exit.
+                    if frontend_receipt["qualification"] == "PENDING_INPUT_RECHECK":
+                        frontend_receipt["qualification"] = "VERIFIED"
+                        self._publish_receipt(frontend_receipt_path, frontend_receipt)
                     self.observation["frontendReuse"] = "VERIFIED_STAGE"
                     self.observation["frontendProducer"] = frontend_receipt["producer"]
                 else:
@@ -419,20 +429,28 @@ class DesktopAcceptanceBuild:
                         ("pnpm", "--dir", "apps/desktop", "run", "build"),
                         stage="frontend",
                     )
-                    if self._identity() != identity:
-                        raise self._blocked("Desktop source or build inputs changed during build")
                     outputs = self._frontend_outputs()
                     if not outputs:
                         raise self._blocked("Desktop frontend produced no closed output inventory")
-                    self._publish_receipt(frontend_receipt_path, {
+                    frontend_receipt = {
                         "artifactKind": "desktop-frontend-build-receipt",
+                        "qualification": "PENDING_INPUT_RECHECK",
                         "identity": identity, "outputs": outputs,
                         "producer": {
                             "attemptId": self._attempt.name,
                             "durationSeconds": self.observation["stages"][-1]["durationSeconds"],
                             "logs": self.observation.get("logs", []),
                         },
-                    })
+                    }
+                    # Retain only a completed compiler's exact output
+                    # inventory. This cannot qualify a binary, and reuse
+                    # still requires a fresh full input/output observation.
+                    self._publish_receipt(frontend_receipt_path, frontend_receipt)
+                    if self._identity() != identity:
+                        frontend_receipt_path.unlink(missing_ok=True)
+                        raise self._blocked("Desktop source or build inputs changed during build")
+                    frontend_receipt["qualification"] = "VERIFIED"
+                    self._publish_receipt(frontend_receipt_path, frontend_receipt)
                     self.observation["frontendReuse"] = "BUILT_STAGE"
                 self.observation["stage"] = "rust"
                 built = self._run((
