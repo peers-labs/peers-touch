@@ -1,10 +1,7 @@
 import { create } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 
-import {
-  PollOptionSchema,
-  PollSchema,
-} from '../../gen/proto/domain/activity/activity_pb';
+import { FeedPollDefinitionSchema } from '../../gen/proto/domain/social/feed_log_pb';
 import {
   AudienceSchema,
   Audience_Kind,
@@ -146,11 +143,13 @@ export function privateMomentFeedPost(
       postContent = {
         case: 'pollPost',
         value: create(PollPostSchema, {
-          text: [content.text, content.question].filter(Boolean).join('\n'),
-          poll: create(PollSchema, {
-            options: content.options.map((text) => create(PollOptionSchema, { text })),
-            expiresIn: Math.max(0, content.expiresAtSeconds),
-            multiple: content.maxChoices > 1,
+          text: content.text,
+          poll: create(FeedPollDefinitionSchema, {
+            question: content.question,
+            options: content.options,
+            minChoices: content.minChoices,
+            maxChoices: content.maxChoices,
+            expiresAtUnixMs: BigInt(content.expiresAtSeconds) * 1000n,
           }),
         }),
       };

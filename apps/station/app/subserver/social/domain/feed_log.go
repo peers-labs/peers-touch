@@ -81,7 +81,7 @@ func VerifyFeedEvent(event *model.FeedEvent, grant *model.FeedWriterGrant) error
 		statement.CreatedAtUnixMs <= 0 || len(statement.PreviousHash) != sha256.Size ||
 		len(event.Payload) == 0 || len(event.Payload) > signedlog.MaxMessageBytes ||
 		statement.Kind < model.FeedEventKind_FEED_EVENT_KIND_POST_CREATED ||
-		statement.Kind > model.FeedEventKind_FEED_EVENT_KIND_COMMENT_TOMBSTONED {
+		statement.Kind > model.FeedEventKind_FEED_EVENT_KIND_POLL_BALLOT_SET {
 		return ErrFeedInvalid
 	}
 	grantHash, err := signedlog.Hash(FeedGrantDomain, grant)
@@ -102,7 +102,20 @@ func VerifyFeedEvent(event *model.FeedEvent, grant *model.FeedWriterGrant) error
 	if err := signedlog.Decode(event.Payload, payload); err != nil {
 		return ErrFeedInvalid
 	}
-	return ValidateFeedPayload(statement.Kind, payload)
+	if err := ValidateFeedPayload(statement.Kind, payload); err != nil {
+		return err
+	}
+	if statement.Kind == model.FeedEventKind_FEED_EVENT_KIND_POST_CREATED && payload.GetPost() != nil {
+		request := &model.CreatePostRequest{}
+		if err := signedlog.Decode(payload.GetPost().CreateRequest, request); err != nil {
+			return ErrFeedInvalid
+		}
+		if request.GetPoll() != nil {
+			_, err := FeedPollDefinitionFor(request.GetPoll(), statement.CreatedAtUnixMs)
+			return err
+		}
+	}
+	return nil
 }
 
 func FeedEventHash(event *model.FeedEvent) ([]byte, error) {

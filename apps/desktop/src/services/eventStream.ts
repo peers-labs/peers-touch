@@ -444,11 +444,11 @@ function dispatchMomentEvent(
   if (
     !targetActorPtid
     || (!stationPeerId && !stationUrl)
-    || event.actorPtid !== targetActorPtid
+    || event.targetActorPtid !== targetActorPtid
   ) {
     log.warn('eventStream', 'MomentEvent stream scope mismatch, dropping', {
       targetActorPtid,
-      eventActorPtid: event.actorPtid,
+      eventTargetActorPtid: event.targetActorPtid,
     });
     return;
   }
@@ -498,6 +498,9 @@ function dispatchMomentEvent(
         commentId: event.commentId,
         commentAuthorActorPtid: event.actorPtid || undefined,
       });
+      return;
+    case MomentEvent_Kind.UPDATED:
+      eventBus.publish(EVENT.MOMENT_UPDATED, base);
       return;
     case MomentEvent_Kind.REACTED:
       eventBus.publish(EVENT.MOMENT_REACTED, {

@@ -348,10 +348,17 @@ func (c *PostConverter) decodeContent(out *model.Post, p *Post) error {
 	case model.PostType_POLL:
 		body := &model.PollPost{Text: p.TextBody}
 		if p.AttachmentsJSON != "" {
-			// PollPost stores the original CreatePollPostRequest as its
-			// attachments JSON snapshot for now; full Poll hydration
-			// requires the poll-vote subsystem (deferred to later phase).
-			body.Hashtags = nil // explicit no-op for clarity
+			var request model.CreatePollPostRequest
+			if err := json.Unmarshal([]byte(p.AttachmentsJSON), &request); err != nil {
+				return fmt.Errorf("decode poll creation: %w", err)
+			}
+			definition, err := FeedPollDefinitionFor(&request, p.CreatedAt.UnixMilli())
+			if err != nil {
+				return err
+			}
+			body.Poll = definition
+		} else {
+			return fmt.Errorf("poll creation definition is missing")
 		}
 		out.Content = &model.Post_PollPost{PollPost: body}
 

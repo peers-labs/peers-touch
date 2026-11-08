@@ -181,6 +181,8 @@ const IMPLEMENTED: Array<[CategoryId, string, string]> = [
   ['identity', 'MomentCard', '动态卡片'],
   ['identity', 'MomentCommentRow', '动态评论行'],
   ['identity', 'MomentCommentComposer', '动态评论输入'],
+  ['identity', 'MomentPoll', '动态投票与已确认结果'],
+  ['identity', 'MomentPollComposer', '投票题目、选项与截止时间'],
   ['identity', 'MomentScopeBar', '动态范围与搜索'],
   ['identity', 'MomentComposerSurface', '动态发布器'],
   ['identity', 'MomentAudiencePicker', '动态受众选择'],

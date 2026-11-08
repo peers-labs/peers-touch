@@ -122,6 +122,7 @@ import {
   submitPublicFeed, publicOperationObjectId, publicPostRef, publicCommentRef, publicCommentTarget,
   verifyPublicPosts, verifyPublicComments, committedPublicPost, committedPublicComment,
   verifiedPublicReactions, verifiedPublicCommentLike, publicTextUpdatePayload,
+  publicPollBallotPayload, verifiedPublicPoll,
 } from './publicFeedNative';
 import type { PrivateMomentLocalFileIntent } from './privateMomentsNative';
 
@@ -188,7 +189,7 @@ export interface PollDraft extends MomentDraftBase {
     minChoices: number;
     maxChoices: number;
     expiresAtSeconds: number;
-    /** Public Social retains its existing duration-based wire contract. */
+    /** Used only when no absolute expiry was selected. */
     durationHours: number;
     multipleChoice: boolean;
   };
@@ -307,8 +308,11 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
             text: draft.text,
             question: draft.poll.question,
             options: draft.poll.options,
-            durationHours: draft.poll.durationHours,
+            durationHours: draft.poll.expiresAtSeconds ? 0 : draft.poll.durationHours,
             multipleChoice: draft.poll.multipleChoice,
+            minChoices: draft.poll.minChoices,
+            maxChoices: draft.poll.maxChoices,
+            expiresAtUnixMs: BigInt(draft.poll.expiresAtSeconds) * 1000n,
           }),
         },
       });
@@ -504,23 +508,25 @@ export async function socialListByAuthor(
 export async function socialReact(
   postId: string,
   kind: ReactionKind,
+  operationId?: string,
 ): Promise<ReactToPostResponse> {
   await submitPublicFeed(FeedEventKind.REACTION_SET, create(FeedPayloadSchema, {
     mutation: { case: 'reaction', value: create(FeedReactionMutationSchema, { targetPostRef: publicPostRef(postId), reactionKind: kind }) },
-  }));
+  }), operationId);
   return create(ReactToPostResponseSchema, { reactions: verifiedPublicReactions(postId) });
 }
 
 export async function socialUnreact(
   postId: string,
   kind: ReactionKind = ReactionKind.REACTION_UNSPECIFIED,
+  operationId?: string,
 ): Promise<UnreactToPostResponse> {
   const kinds = kind === ReactionKind.REACTION_UNSPECIFIED
     ? verifiedPublicReactions(postId).filter(r => r.reactedByViewer).map(r => r.kind)
     : [kind];
   for (const reactionKind of kinds) await submitPublicFeed(FeedEventKind.REACTION_REMOVED, create(FeedPayloadSchema, {
     mutation: { case: 'reaction', value: create(FeedReactionMutationSchema, { targetPostRef: publicPostRef(postId), reactionKind }) },
-  }));
+  }), operationId ? `${operationId}:${reactionKind}` : undefined);
   return create(UnreactToPostResponseSchema, { reactions: verifiedPublicReactions(postId) });
 }
 
@@ -533,6 +539,12 @@ export async function socialSetCommentLike(postId: string, commentId: string, li
       targetPostRef: parent, targetCommentRef: publicCommentRef(commentId), reactionKind: ReactionKind.REACTION_LIKE,
     }) } }), operationId);
   return verifiedPublicCommentLike(commentId);
+}
+
+export async function socialVotePoll(postId: string, options: readonly number[], operationId: string) {
+  const payload = await publicPollBallotPayload(postId, options);
+  await submitPublicFeed(FeedEventKind.POLL_BALLOT_SET, payload, operationId);
+  return verifiedPublicPoll(postId);
 }
 
 // ---------------------------------------------------------------------------

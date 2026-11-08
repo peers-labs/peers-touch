@@ -281,6 +281,8 @@ message MomentEvent {
   bool removed = 7;
   string audience = 8;
   int64 occurred_ts_unix_ms = 9;
+  // Authenticated stream recipient. actor_ptid identifies the operation actor.
+  string target_actor_ptid = 10;
 
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -288,6 +290,7 @@ message MomentEvent {
     DELETED = 2;
     COMMENTED = 3;
     REACTED = 4;
+    UPDATED = 5;
   }
 }
 

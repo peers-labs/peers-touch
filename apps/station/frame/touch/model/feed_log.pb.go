@@ -33,6 +33,7 @@ const (
 	FeedEventKind_FEED_EVENT_KIND_COMMENT_CREATED    FeedEventKind = 6
 	FeedEventKind_FEED_EVENT_KIND_COMMENT_UPDATED    FeedEventKind = 7
 	FeedEventKind_FEED_EVENT_KIND_COMMENT_TOMBSTONED FeedEventKind = 8
+	FeedEventKind_FEED_EVENT_KIND_POLL_BALLOT_SET    FeedEventKind = 9
 )
 
 // Enum value maps for FeedEventKind.
@@ -47,6 +48,7 @@ var (
 		6: "FEED_EVENT_KIND_COMMENT_CREATED",
 		7: "FEED_EVENT_KIND_COMMENT_UPDATED",
 		8: "FEED_EVENT_KIND_COMMENT_TOMBSTONED",
+		9: "FEED_EVENT_KIND_POLL_BALLOT_SET",
 	}
 	FeedEventKind_value = map[string]int32{
 		"FEED_EVENT_KIND_UNSPECIFIED":        0,
@@ -58,6 +60,7 @@ var (
 		"FEED_EVENT_KIND_COMMENT_CREATED":    6,
 		"FEED_EVENT_KIND_COMMENT_UPDATED":    7,
 		"FEED_EVENT_KIND_COMMENT_TOMBSTONED": 8,
+		"FEED_EVENT_KIND_POLL_BALLOT_SET":    9,
 	}
 )
 
@@ -86,6 +89,64 @@ func (x FeedEventKind) Number() protoreflect.EnumNumber {
 // Deprecated: Use FeedEventKind.Descriptor instead.
 func (FeedEventKind) EnumDescriptor() ([]byte, []int) {
 	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{0}
+}
+
+type FeedPollAdmissionResult int32
+
+const (
+	FeedPollAdmissionResult_FEED_POLL_ADMISSION_RESULT_UNSPECIFIED        FeedPollAdmissionResult = 0
+	FeedPollAdmissionResult_FEED_POLL_ADMISSION_RESULT_ACCEPTED           FeedPollAdmissionResult = 1
+	FeedPollAdmissionResult_FEED_POLL_ADMISSION_RESULT_CLOSED             FeedPollAdmissionResult = 2
+	FeedPollAdmissionResult_FEED_POLL_ADMISSION_RESULT_INVALID_SELECTION  FeedPollAdmissionResult = 3
+	FeedPollAdmissionResult_FEED_POLL_ADMISSION_RESULT_DEFINITION_CHANGED FeedPollAdmissionResult = 4
+	FeedPollAdmissionResult_FEED_POLL_ADMISSION_RESULT_TARGET_UNAVAILABLE FeedPollAdmissionResult = 5
+)
+
+// Enum value maps for FeedPollAdmissionResult.
+var (
+	FeedPollAdmissionResult_name = map[int32]string{
+		0: "FEED_POLL_ADMISSION_RESULT_UNSPECIFIED",
+		1: "FEED_POLL_ADMISSION_RESULT_ACCEPTED",
+		2: "FEED_POLL_ADMISSION_RESULT_CLOSED",
+		3: "FEED_POLL_ADMISSION_RESULT_INVALID_SELECTION",
+		4: "FEED_POLL_ADMISSION_RESULT_DEFINITION_CHANGED",
+		5: "FEED_POLL_ADMISSION_RESULT_TARGET_UNAVAILABLE",
+	}
+	FeedPollAdmissionResult_value = map[string]int32{
+		"FEED_POLL_ADMISSION_RESULT_UNSPECIFIED":        0,
+		"FEED_POLL_ADMISSION_RESULT_ACCEPTED":           1,
+		"FEED_POLL_ADMISSION_RESULT_CLOSED":             2,
+		"FEED_POLL_ADMISSION_RESULT_INVALID_SELECTION":  3,
+		"FEED_POLL_ADMISSION_RESULT_DEFINITION_CHANGED": 4,
+		"FEED_POLL_ADMISSION_RESULT_TARGET_UNAVAILABLE": 5,
+	}
+)
+
+func (x FeedPollAdmissionResult) Enum() *FeedPollAdmissionResult {
+	p := new(FeedPollAdmissionResult)
+	*p = x
+	return p
+}
+
+func (x FeedPollAdmissionResult) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FeedPollAdmissionResult) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_feed_log_proto_enumTypes[1].Descriptor()
+}
+
+func (FeedPollAdmissionResult) Type() protoreflect.EnumType {
+	return &file_domain_social_feed_log_proto_enumTypes[1]
+}
+
+func (x FeedPollAdmissionResult) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FeedPollAdmissionResult.Descriptor instead.
+func (FeedPollAdmissionResult) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{1}
 }
 
 // v1 is a single-writer public chain. Private content uses Secure Content.
@@ -713,6 +774,7 @@ type FeedPayload struct {
 	//	*FeedPayload_Post
 	//	*FeedPayload_Reaction
 	//	*FeedPayload_Comment
+	//	*FeedPayload_PollBallot
 	Mutation      isFeedPayload_Mutation `protobuf_oneof:"mutation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -782,6 +844,15 @@ func (x *FeedPayload) GetComment() *FeedCommentMutation {
 	return nil
 }
 
+func (x *FeedPayload) GetPollBallot() *FeedPollBallotMutation {
+	if x != nil {
+		if x, ok := x.Mutation.(*FeedPayload_PollBallot); ok {
+			return x.PollBallot
+		}
+	}
+	return nil
+}
+
 type isFeedPayload_Mutation interface {
 	isFeedPayload_Mutation()
 }
@@ -798,11 +869,17 @@ type FeedPayload_Comment struct {
 	Comment *FeedCommentMutation `protobuf:"bytes,3,opt,name=comment,proto3,oneof"`
 }
 
+type FeedPayload_PollBallot struct {
+	PollBallot *FeedPollBallotMutation `protobuf:"bytes,4,opt,name=poll_ballot,json=pollBallot,proto3,oneof"`
+}
+
 func (*FeedPayload_Post) isFeedPayload_Mutation() {}
 
 func (*FeedPayload_Reaction) isFeedPayload_Mutation() {}
 
 func (*FeedPayload_Comment) isFeedPayload_Mutation() {}
+
+func (*FeedPayload_PollBallot) isFeedPayload_Mutation() {}
 
 type FeedBundle struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -977,11 +1054,12 @@ func (x *SubmitFeedEventRequest) GetBundle() *FeedBundle {
 }
 
 type SubmitFeedEventResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Head          *FeedHead              `protobuf:"bytes,1,opt,name=head,proto3" json:"head,omitempty"`
-	Duplicate     bool                   `protobuf:"varint,2,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Head           *FeedHead              `protobuf:"bytes,1,opt,name=head,proto3" json:"head,omitempty"`
+	Duplicate      bool                   `protobuf:"varint,2,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
+	PollAdmissions []*FeedPollAdmission   `protobuf:"bytes,3,rep,name=poll_admissions,json=pollAdmissions,proto3" json:"poll_admissions,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SubmitFeedEventResponse) Reset() {
@@ -1026,6 +1104,13 @@ func (x *SubmitFeedEventResponse) GetDuplicate() bool {
 		return x.Duplicate
 	}
 	return false
+}
+
+func (x *SubmitFeedEventResponse) GetPollAdmissions() []*FeedPollAdmission {
+	if x != nil {
+		return x.PollAdmissions
+	}
+	return nil
 }
 
 type ReadFeedRequest struct {
@@ -1321,6 +1406,7 @@ type FeedInteraction struct {
 	Genesis       *FeedGenesis           `protobuf:"bytes,1,opt,name=genesis,proto3" json:"genesis,omitempty"`
 	WriterGrant   *FeedWriterGrant       `protobuf:"bytes,2,opt,name=writer_grant,json=writerGrant,proto3" json:"writer_grant,omitempty"`
 	Event         *FeedEvent             `protobuf:"bytes,3,opt,name=event,proto3" json:"event,omitempty"`
+	PollAdmission *FeedPollAdmission     `protobuf:"bytes,4,opt,name=poll_admission,json=pollAdmission,proto3" json:"poll_admission,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1376,6 +1462,306 @@ func (x *FeedInteraction) GetEvent() *FeedEvent {
 	return nil
 }
 
+func (x *FeedInteraction) GetPollAdmission() *FeedPollAdmission {
+	if x != nil {
+		return x.PollAdmission
+	}
+	return nil
+}
+
+// Reconstructed from the original signed creation and its timestamp.
+// Body edits cannot change the question, options, constraints or deadline.
+type FeedPollDefinition struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Question        string                 `protobuf:"bytes,1,opt,name=question,proto3" json:"question,omitempty"`
+	Options         []string               `protobuf:"bytes,2,rep,name=options,proto3" json:"options,omitempty"`
+	MinChoices      uint32                 `protobuf:"varint,3,opt,name=min_choices,json=minChoices,proto3" json:"min_choices,omitempty"`
+	MaxChoices      uint32                 `protobuf:"varint,4,opt,name=max_choices,json=maxChoices,proto3" json:"max_choices,omitempty"`
+	ExpiresAtUnixMs int64                  `protobuf:"varint,5,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *FeedPollDefinition) Reset() {
+	*x = FeedPollDefinition{}
+	mi := &file_domain_social_feed_log_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeedPollDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeedPollDefinition) ProtoMessage() {}
+
+func (x *FeedPollDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_feed_log_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeedPollDefinition.ProtoReflect.Descriptor instead.
+func (*FeedPollDefinition) Descriptor() ([]byte, []int) {
+	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *FeedPollDefinition) GetQuestion() string {
+	if x != nil {
+		return x.Question
+	}
+	return ""
+}
+
+func (x *FeedPollDefinition) GetOptions() []string {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *FeedPollDefinition) GetMinChoices() uint32 {
+	if x != nil {
+		return x.MinChoices
+	}
+	return 0
+}
+
+func (x *FeedPollDefinition) GetMaxChoices() uint32 {
+	if x != nil {
+		return x.MaxChoices
+	}
+	return 0
+}
+
+func (x *FeedPollDefinition) GetExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixMs
+	}
+	return 0
+}
+
+type FeedPollBallotMutation struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TargetPostRef  string                 `protobuf:"bytes,1,opt,name=target_post_ref,json=targetPostRef,proto3" json:"target_post_ref,omitempty"`
+	DefinitionHash []byte                 `protobuf:"bytes,2,opt,name=definition_hash,json=definitionHash,proto3" json:"definition_hash,omitempty"`
+	// Strictly increasing and distinct; replaces the Actor's complete ballot.
+	OptionIndices []int32 `protobuf:"varint,3,rep,packed,name=option_indices,json=optionIndices,proto3" json:"option_indices,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FeedPollBallotMutation) Reset() {
+	*x = FeedPollBallotMutation{}
+	mi := &file_domain_social_feed_log_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeedPollBallotMutation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeedPollBallotMutation) ProtoMessage() {}
+
+func (x *FeedPollBallotMutation) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_feed_log_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeedPollBallotMutation.ProtoReflect.Descriptor instead.
+func (*FeedPollBallotMutation) Descriptor() ([]byte, []int) {
+	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *FeedPollBallotMutation) GetTargetPostRef() string {
+	if x != nil {
+		return x.TargetPostRef
+	}
+	return ""
+}
+
+func (x *FeedPollBallotMutation) GetDefinitionHash() []byte {
+	if x != nil {
+		return x.DefinitionHash
+	}
+	return nil
+}
+
+func (x *FeedPollBallotMutation) GetOptionIndices() []int32 {
+	if x != nil {
+		return x.OptionIndices
+	}
+	return nil
+}
+
+// Author Home authenticates admission time and decision, never Actor intent,
+// aggregate completeness or absolute physical clock correctness.
+type FeedPollAdmissionStatement struct {
+	state             protoimpl.MessageState  `protogen:"open.v1"`
+	FormatVersion     uint32                  `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	HomeStationPeerId string                  `protobuf:"bytes,2,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	TargetPostRef     string                  `protobuf:"bytes,3,opt,name=target_post_ref,json=targetPostRef,proto3" json:"target_post_ref,omitempty"`
+	EventHash         []byte                  `protobuf:"bytes,4,opt,name=event_hash,json=eventHash,proto3" json:"event_hash,omitempty"`
+	DefinitionHash    []byte                  `protobuf:"bytes,5,opt,name=definition_hash,json=definitionHash,proto3" json:"definition_hash,omitempty"`
+	AcceptedAtUnixMs  int64                   `protobuf:"varint,6,opt,name=accepted_at_unix_ms,json=acceptedAtUnixMs,proto3" json:"accepted_at_unix_ms,omitempty"`
+	Result            FeedPollAdmissionResult `protobuf:"varint,7,opt,name=result,proto3,enum=peers_touch.model.social.feed.v1.FeedPollAdmissionResult" json:"result,omitempty"`
+	SigningKeyId      string                  `protobuf:"bytes,8,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *FeedPollAdmissionStatement) Reset() {
+	*x = FeedPollAdmissionStatement{}
+	mi := &file_domain_social_feed_log_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeedPollAdmissionStatement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeedPollAdmissionStatement) ProtoMessage() {}
+
+func (x *FeedPollAdmissionStatement) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_feed_log_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeedPollAdmissionStatement.ProtoReflect.Descriptor instead.
+func (*FeedPollAdmissionStatement) Descriptor() ([]byte, []int) {
+	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *FeedPollAdmissionStatement) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *FeedPollAdmissionStatement) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+func (x *FeedPollAdmissionStatement) GetTargetPostRef() string {
+	if x != nil {
+		return x.TargetPostRef
+	}
+	return ""
+}
+
+func (x *FeedPollAdmissionStatement) GetEventHash() []byte {
+	if x != nil {
+		return x.EventHash
+	}
+	return nil
+}
+
+func (x *FeedPollAdmissionStatement) GetDefinitionHash() []byte {
+	if x != nil {
+		return x.DefinitionHash
+	}
+	return nil
+}
+
+func (x *FeedPollAdmissionStatement) GetAcceptedAtUnixMs() int64 {
+	if x != nil {
+		return x.AcceptedAtUnixMs
+	}
+	return 0
+}
+
+func (x *FeedPollAdmissionStatement) GetResult() FeedPollAdmissionResult {
+	if x != nil {
+		return x.Result
+	}
+	return FeedPollAdmissionResult_FEED_POLL_ADMISSION_RESULT_UNSPECIFIED
+}
+
+func (x *FeedPollAdmissionStatement) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+type FeedPollAdmission struct {
+	state            protoimpl.MessageState      `protogen:"open.v1"`
+	Statement        *FeedPollAdmissionStatement `protobuf:"bytes,1,opt,name=statement,proto3" json:"statement,omitempty"`
+	StationSignature []byte                      `protobuf:"bytes,2,opt,name=station_signature,json=stationSignature,proto3" json:"station_signature,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *FeedPollAdmission) Reset() {
+	*x = FeedPollAdmission{}
+	mi := &file_domain_social_feed_log_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeedPollAdmission) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeedPollAdmission) ProtoMessage() {}
+
+func (x *FeedPollAdmission) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_feed_log_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeedPollAdmission.ProtoReflect.Descriptor instead.
+func (*FeedPollAdmission) Descriptor() ([]byte, []int) {
+	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *FeedPollAdmission) GetStatement() *FeedPollAdmissionStatement {
+	if x != nil {
+		return x.Statement
+	}
+	return nil
+}
+
+func (x *FeedPollAdmission) GetStationSignature() []byte {
+	if x != nil {
+		return x.StationSignature
+	}
+	return nil
+}
+
 type FeedSubscription struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AuthorPtid     string                 `protobuf:"bytes,1,opt,name=author_ptid,json=authorPtid,proto3" json:"author_ptid,omitempty"`
@@ -1389,7 +1775,7 @@ type FeedSubscription struct {
 
 func (x *FeedSubscription) Reset() {
 	*x = FeedSubscription{}
-	mi := &file_domain_social_feed_log_proto_msgTypes[19]
+	mi := &file_domain_social_feed_log_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1401,7 +1787,7 @@ func (x *FeedSubscription) String() string {
 func (*FeedSubscription) ProtoMessage() {}
 
 func (x *FeedSubscription) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_feed_log_proto_msgTypes[19]
+	mi := &file_domain_social_feed_log_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1414,7 +1800,7 @@ func (x *FeedSubscription) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeedSubscription.ProtoReflect.Descriptor instead.
 func (*FeedSubscription) Descriptor() ([]byte, []int) {
-	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{19}
+	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *FeedSubscription) GetAuthorPtid() string {
@@ -1463,7 +1849,7 @@ type FeedJournalEntry struct {
 
 func (x *FeedJournalEntry) Reset() {
 	*x = FeedJournalEntry{}
-	mi := &file_domain_social_feed_log_proto_msgTypes[20]
+	mi := &file_domain_social_feed_log_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1475,7 +1861,7 @@ func (x *FeedJournalEntry) String() string {
 func (*FeedJournalEntry) ProtoMessage() {}
 
 func (x *FeedJournalEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_social_feed_log_proto_msgTypes[20]
+	mi := &file_domain_social_feed_log_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1488,7 +1874,7 @@ func (x *FeedJournalEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeedJournalEntry.ProtoReflect.Descriptor instead.
 func (*FeedJournalEntry) Descriptor() ([]byte, []int) {
-	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{20}
+	return file_domain_social_feed_log_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *FeedJournalEntry) GetBundle() *FeedBundle {
@@ -1557,11 +1943,13 @@ const file_domain_social_feed_log_proto_rawDesc = "" +
 	"\n" +
 	"comment_id\x18\x01 \x01(\tR\tcommentId\x12&\n" +
 	"\x0ftarget_post_ref\x18\x02 \x01(\tR\rtargetPostRef\x12%\n" +
-	"\x0ecreate_request\x18\x03 \x01(\fR\rcreateRequest\"\x8c\x02\n" +
+	"\x0ecreate_request\x18\x03 \x01(\fR\rcreateRequest\"\xe9\x02\n" +
 	"\vFeedPayload\x12H\n" +
 	"\x04post\x18\x01 \x01(\v22.peers_touch.model.social.feed.v1.FeedPostMutationH\x00R\x04post\x12T\n" +
 	"\breaction\x18\x02 \x01(\v26.peers_touch.model.social.feed.v1.FeedReactionMutationH\x00R\breaction\x12Q\n" +
-	"\acomment\x18\x03 \x01(\v25.peers_touch.model.social.feed.v1.FeedCommentMutationH\x00R\acommentB\n" +
+	"\acomment\x18\x03 \x01(\v25.peers_touch.model.social.feed.v1.FeedCommentMutationH\x00R\acomment\x12[\n" +
+	"\vpoll_ballot\x18\x04 \x01(\v28.peers_touch.model.social.feed.v1.FeedPollBallotMutationH\x00R\n" +
+	"pollBallotB\n" +
 	"\n" +
 	"\bmutation\"\xf0\x01\n" +
 	"\n" +
@@ -1577,10 +1965,11 @@ const file_domain_social_feed_log_proto_rawDesc = "" +
 	"\n" +
 	"event_hash\x18\x04 \x01(\fR\teventHash\"^\n" +
 	"\x16SubmitFeedEventRequest\x12D\n" +
-	"\x06bundle\x18\x01 \x01(\v2,.peers_touch.model.social.feed.v1.FeedBundleR\x06bundle\"w\n" +
+	"\x06bundle\x18\x01 \x01(\v2,.peers_touch.model.social.feed.v1.FeedBundleR\x06bundle\"\xd5\x01\n" +
 	"\x17SubmitFeedEventResponse\x12>\n" +
 	"\x04head\x18\x01 \x01(\v2*.peers_touch.model.social.feed.v1.FeedHeadR\x04head\x12\x1c\n" +
-	"\tduplicate\x18\x02 \x01(\bR\tduplicate\"\x91\x02\n" +
+	"\tduplicate\x18\x02 \x01(\bR\tduplicate\x12\\\n" +
+	"\x0fpoll_admissions\x18\x03 \x03(\v23.peers_touch.model.social.feed.v1.FeedPollAdmissionR\x0epollAdmissions\"\x91\x02\n" +
 	"\x0fReadFeedRequest\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x19\n" +
@@ -1602,11 +1991,37 @@ const file_domain_social_feed_log_proto_rawDesc = "" +
 	"\x18interaction_home_station\x18\x02 \x01(\tR\x16interactionHomeStation\x12K\n" +
 	"\areceipt\x18\x03 \x01(\v21.peers_touch.model.social.feed.v1.FeedInteractionR\areceipt\"R\n" +
 	"\x10FeedNotification\x12>\n" +
-	"\x04head\x18\x01 \x01(\v2*.peers_touch.model.social.feed.v1.FeedHeadR\x04head\"\xf3\x01\n" +
+	"\x04head\x18\x01 \x01(\v2*.peers_touch.model.social.feed.v1.FeedHeadR\x04head\"\xcf\x02\n" +
 	"\x0fFeedInteraction\x12G\n" +
 	"\agenesis\x18\x01 \x01(\v2-.peers_touch.model.social.feed.v1.FeedGenesisR\agenesis\x12T\n" +
 	"\fwriter_grant\x18\x02 \x01(\v21.peers_touch.model.social.feed.v1.FeedWriterGrantR\vwriterGrant\x12A\n" +
-	"\x05event\x18\x03 \x01(\v2+.peers_touch.model.social.feed.v1.FeedEventR\x05event\"\xad\x01\n" +
+	"\x05event\x18\x03 \x01(\v2+.peers_touch.model.social.feed.v1.FeedEventR\x05event\x12Z\n" +
+	"\x0epoll_admission\x18\x04 \x01(\v23.peers_touch.model.social.feed.v1.FeedPollAdmissionR\rpollAdmission\"\xb9\x01\n" +
+	"\x12FeedPollDefinition\x12\x1a\n" +
+	"\bquestion\x18\x01 \x01(\tR\bquestion\x12\x18\n" +
+	"\aoptions\x18\x02 \x03(\tR\aoptions\x12\x1f\n" +
+	"\vmin_choices\x18\x03 \x01(\rR\n" +
+	"minChoices\x12\x1f\n" +
+	"\vmax_choices\x18\x04 \x01(\rR\n" +
+	"maxChoices\x12+\n" +
+	"\x12expires_at_unix_ms\x18\x05 \x01(\x03R\x0fexpiresAtUnixMs\"\x90\x01\n" +
+	"\x16FeedPollBallotMutation\x12&\n" +
+	"\x0ftarget_post_ref\x18\x01 \x01(\tR\rtargetPostRef\x12'\n" +
+	"\x0fdefinition_hash\x18\x02 \x01(\fR\x0edefinitionHash\x12%\n" +
+	"\x0eoption_indices\x18\x03 \x03(\x05R\roptionIndices\"\x8c\x03\n" +
+	"\x1aFeedPollAdmissionStatement\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12/\n" +
+	"\x14home_station_peer_id\x18\x02 \x01(\tR\x11homeStationPeerId\x12&\n" +
+	"\x0ftarget_post_ref\x18\x03 \x01(\tR\rtargetPostRef\x12\x1d\n" +
+	"\n" +
+	"event_hash\x18\x04 \x01(\fR\teventHash\x12'\n" +
+	"\x0fdefinition_hash\x18\x05 \x01(\fR\x0edefinitionHash\x12-\n" +
+	"\x13accepted_at_unix_ms\x18\x06 \x01(\x03R\x10acceptedAtUnixMs\x12Q\n" +
+	"\x06result\x18\a \x01(\x0e29.peers_touch.model.social.feed.v1.FeedPollAdmissionResultR\x06result\x12$\n" +
+	"\x0esigning_key_id\x18\b \x01(\tR\fsigningKeyId\"\x9c\x01\n" +
+	"\x11FeedPollAdmission\x12Z\n" +
+	"\tstatement\x18\x01 \x01(\v2<.peers_touch.model.social.feed.v1.FeedPollAdmissionStatementR\tstatement\x12+\n" +
+	"\x11station_signature\x18\x02 \x01(\fR\x10stationSignature\"\xad\x01\n" +
 	"\x10FeedSubscription\x12\x1f\n" +
 	"\vauthor_ptid\x18\x01 \x01(\tR\n" +
 	"authorPtid\x12\x19\n" +
@@ -1616,7 +2031,7 @@ const file_domain_social_feed_log_proto_rawDesc = "" +
 	"\brevision\x18\x05 \x01(\x04R\brevision\"|\n" +
 	"\x10FeedJournalEntry\x12D\n" +
 	"\x06bundle\x18\x01 \x01(\v2,.peers_touch.model.social.feed.v1.FeedBundleR\x06bundle\x12\"\n" +
-	"\facknowledged\x18\x02 \x01(\bR\facknowledged*\xd3\x02\n" +
+	"\facknowledged\x18\x02 \x01(\bR\facknowledged*\xf8\x02\n" +
 	"\rFeedEventKind\x12\x1f\n" +
 	"\x1bFEED_EVENT_KIND_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cFEED_EVENT_KIND_POST_CREATED\x10\x01\x12 \n" +
@@ -1626,7 +2041,15 @@ const file_domain_social_feed_log_proto_rawDesc = "" +
 	" FEED_EVENT_KIND_REACTION_REMOVED\x10\x05\x12#\n" +
 	"\x1fFEED_EVENT_KIND_COMMENT_CREATED\x10\x06\x12#\n" +
 	"\x1fFEED_EVENT_KIND_COMMENT_UPDATED\x10\a\x12&\n" +
-	"\"FEED_EVENT_KIND_COMMENT_TOMBSTONED\x10\bBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"\"FEED_EVENT_KIND_COMMENT_TOMBSTONED\x10\b\x12#\n" +
+	"\x1fFEED_EVENT_KIND_POLL_BALLOT_SET\x10\t*\xad\x02\n" +
+	"\x17FeedPollAdmissionResult\x12*\n" +
+	"&FEED_POLL_ADMISSION_RESULT_UNSPECIFIED\x10\x00\x12'\n" +
+	"#FEED_POLL_ADMISSION_RESULT_ACCEPTED\x10\x01\x12%\n" +
+	"!FEED_POLL_ADMISSION_RESULT_CLOSED\x10\x02\x120\n" +
+	",FEED_POLL_ADMISSION_RESULT_INVALID_SELECTION\x10\x03\x121\n" +
+	"-FEED_POLL_ADMISSION_RESULT_DEFINITION_CHANGED\x10\x04\x121\n" +
+	"-FEED_POLL_ADMISSION_RESULT_TARGET_UNAVAILABLE\x10\x05BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_social_feed_log_proto_rawDescOnce sync.Once
@@ -1640,59 +2063,69 @@ func file_domain_social_feed_log_proto_rawDescGZIP() []byte {
 	return file_domain_social_feed_log_proto_rawDescData
 }
 
-var file_domain_social_feed_log_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_social_feed_log_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_domain_social_feed_log_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_domain_social_feed_log_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_domain_social_feed_log_proto_goTypes = []any{
-	(FeedEventKind)(0),               // 0: peers_touch.model.social.feed.v1.FeedEventKind
-	(*FeedGenesisStatement)(nil),     // 1: peers_touch.model.social.feed.v1.FeedGenesisStatement
-	(*FeedGenesis)(nil),              // 2: peers_touch.model.social.feed.v1.FeedGenesis
-	(*FeedWriterGrantStatement)(nil), // 3: peers_touch.model.social.feed.v1.FeedWriterGrantStatement
-	(*FeedWriterGrant)(nil),          // 4: peers_touch.model.social.feed.v1.FeedWriterGrant
-	(*FeedEventStatement)(nil),       // 5: peers_touch.model.social.feed.v1.FeedEventStatement
-	(*FeedEvent)(nil),                // 6: peers_touch.model.social.feed.v1.FeedEvent
-	(*FeedPostMutation)(nil),         // 7: peers_touch.model.social.feed.v1.FeedPostMutation
-	(*FeedReactionMutation)(nil),     // 8: peers_touch.model.social.feed.v1.FeedReactionMutation
-	(*FeedCommentMutation)(nil),      // 9: peers_touch.model.social.feed.v1.FeedCommentMutation
-	(*FeedPayload)(nil),              // 10: peers_touch.model.social.feed.v1.FeedPayload
-	(*FeedBundle)(nil),               // 11: peers_touch.model.social.feed.v1.FeedBundle
-	(*FeedHead)(nil),                 // 12: peers_touch.model.social.feed.v1.FeedHead
-	(*SubmitFeedEventRequest)(nil),   // 13: peers_touch.model.social.feed.v1.SubmitFeedEventRequest
-	(*SubmitFeedEventResponse)(nil),  // 14: peers_touch.model.social.feed.v1.SubmitFeedEventResponse
-	(*ReadFeedRequest)(nil),          // 15: peers_touch.model.social.feed.v1.ReadFeedRequest
-	(*ReadFeedResponse)(nil),         // 16: peers_touch.model.social.feed.v1.ReadFeedResponse
-	(*FeedThreadEntry)(nil),          // 17: peers_touch.model.social.feed.v1.FeedThreadEntry
-	(*FeedNotification)(nil),         // 18: peers_touch.model.social.feed.v1.FeedNotification
-	(*FeedInteraction)(nil),          // 19: peers_touch.model.social.feed.v1.FeedInteraction
-	(*FeedSubscription)(nil),         // 20: peers_touch.model.social.feed.v1.FeedSubscription
-	(*FeedJournalEntry)(nil),         // 21: peers_touch.model.social.feed.v1.FeedJournalEntry
+	(FeedEventKind)(0),                 // 0: peers_touch.model.social.feed.v1.FeedEventKind
+	(FeedPollAdmissionResult)(0),       // 1: peers_touch.model.social.feed.v1.FeedPollAdmissionResult
+	(*FeedGenesisStatement)(nil),       // 2: peers_touch.model.social.feed.v1.FeedGenesisStatement
+	(*FeedGenesis)(nil),                // 3: peers_touch.model.social.feed.v1.FeedGenesis
+	(*FeedWriterGrantStatement)(nil),   // 4: peers_touch.model.social.feed.v1.FeedWriterGrantStatement
+	(*FeedWriterGrant)(nil),            // 5: peers_touch.model.social.feed.v1.FeedWriterGrant
+	(*FeedEventStatement)(nil),         // 6: peers_touch.model.social.feed.v1.FeedEventStatement
+	(*FeedEvent)(nil),                  // 7: peers_touch.model.social.feed.v1.FeedEvent
+	(*FeedPostMutation)(nil),           // 8: peers_touch.model.social.feed.v1.FeedPostMutation
+	(*FeedReactionMutation)(nil),       // 9: peers_touch.model.social.feed.v1.FeedReactionMutation
+	(*FeedCommentMutation)(nil),        // 10: peers_touch.model.social.feed.v1.FeedCommentMutation
+	(*FeedPayload)(nil),                // 11: peers_touch.model.social.feed.v1.FeedPayload
+	(*FeedBundle)(nil),                 // 12: peers_touch.model.social.feed.v1.FeedBundle
+	(*FeedHead)(nil),                   // 13: peers_touch.model.social.feed.v1.FeedHead
+	(*SubmitFeedEventRequest)(nil),     // 14: peers_touch.model.social.feed.v1.SubmitFeedEventRequest
+	(*SubmitFeedEventResponse)(nil),    // 15: peers_touch.model.social.feed.v1.SubmitFeedEventResponse
+	(*ReadFeedRequest)(nil),            // 16: peers_touch.model.social.feed.v1.ReadFeedRequest
+	(*ReadFeedResponse)(nil),           // 17: peers_touch.model.social.feed.v1.ReadFeedResponse
+	(*FeedThreadEntry)(nil),            // 18: peers_touch.model.social.feed.v1.FeedThreadEntry
+	(*FeedNotification)(nil),           // 19: peers_touch.model.social.feed.v1.FeedNotification
+	(*FeedInteraction)(nil),            // 20: peers_touch.model.social.feed.v1.FeedInteraction
+	(*FeedPollDefinition)(nil),         // 21: peers_touch.model.social.feed.v1.FeedPollDefinition
+	(*FeedPollBallotMutation)(nil),     // 22: peers_touch.model.social.feed.v1.FeedPollBallotMutation
+	(*FeedPollAdmissionStatement)(nil), // 23: peers_touch.model.social.feed.v1.FeedPollAdmissionStatement
+	(*FeedPollAdmission)(nil),          // 24: peers_touch.model.social.feed.v1.FeedPollAdmission
+	(*FeedSubscription)(nil),           // 25: peers_touch.model.social.feed.v1.FeedSubscription
+	(*FeedJournalEntry)(nil),           // 26: peers_touch.model.social.feed.v1.FeedJournalEntry
 }
 var file_domain_social_feed_log_proto_depIdxs = []int32{
-	1,  // 0: peers_touch.model.social.feed.v1.FeedGenesis.statement:type_name -> peers_touch.model.social.feed.v1.FeedGenesisStatement
-	3,  // 1: peers_touch.model.social.feed.v1.FeedWriterGrant.statement:type_name -> peers_touch.model.social.feed.v1.FeedWriterGrantStatement
+	2,  // 0: peers_touch.model.social.feed.v1.FeedGenesis.statement:type_name -> peers_touch.model.social.feed.v1.FeedGenesisStatement
+	4,  // 1: peers_touch.model.social.feed.v1.FeedWriterGrant.statement:type_name -> peers_touch.model.social.feed.v1.FeedWriterGrantStatement
 	0,  // 2: peers_touch.model.social.feed.v1.FeedEventStatement.kind:type_name -> peers_touch.model.social.feed.v1.FeedEventKind
-	5,  // 3: peers_touch.model.social.feed.v1.FeedEvent.statement:type_name -> peers_touch.model.social.feed.v1.FeedEventStatement
-	7,  // 4: peers_touch.model.social.feed.v1.FeedPayload.post:type_name -> peers_touch.model.social.feed.v1.FeedPostMutation
-	8,  // 5: peers_touch.model.social.feed.v1.FeedPayload.reaction:type_name -> peers_touch.model.social.feed.v1.FeedReactionMutation
-	9,  // 6: peers_touch.model.social.feed.v1.FeedPayload.comment:type_name -> peers_touch.model.social.feed.v1.FeedCommentMutation
-	2,  // 7: peers_touch.model.social.feed.v1.FeedBundle.genesis:type_name -> peers_touch.model.social.feed.v1.FeedGenesis
-	4,  // 8: peers_touch.model.social.feed.v1.FeedBundle.writer_grant:type_name -> peers_touch.model.social.feed.v1.FeedWriterGrant
-	6,  // 9: peers_touch.model.social.feed.v1.FeedBundle.events:type_name -> peers_touch.model.social.feed.v1.FeedEvent
-	11, // 10: peers_touch.model.social.feed.v1.SubmitFeedEventRequest.bundle:type_name -> peers_touch.model.social.feed.v1.FeedBundle
-	12, // 11: peers_touch.model.social.feed.v1.SubmitFeedEventResponse.head:type_name -> peers_touch.model.social.feed.v1.FeedHead
-	11, // 12: peers_touch.model.social.feed.v1.ReadFeedResponse.bundle:type_name -> peers_touch.model.social.feed.v1.FeedBundle
-	12, // 13: peers_touch.model.social.feed.v1.ReadFeedResponse.head:type_name -> peers_touch.model.social.feed.v1.FeedHead
-	17, // 14: peers_touch.model.social.feed.v1.ReadFeedResponse.thread_entries:type_name -> peers_touch.model.social.feed.v1.FeedThreadEntry
-	19, // 15: peers_touch.model.social.feed.v1.FeedThreadEntry.receipt:type_name -> peers_touch.model.social.feed.v1.FeedInteraction
-	12, // 16: peers_touch.model.social.feed.v1.FeedNotification.head:type_name -> peers_touch.model.social.feed.v1.FeedHead
-	2,  // 17: peers_touch.model.social.feed.v1.FeedInteraction.genesis:type_name -> peers_touch.model.social.feed.v1.FeedGenesis
-	4,  // 18: peers_touch.model.social.feed.v1.FeedInteraction.writer_grant:type_name -> peers_touch.model.social.feed.v1.FeedWriterGrant
-	6,  // 19: peers_touch.model.social.feed.v1.FeedInteraction.event:type_name -> peers_touch.model.social.feed.v1.FeedEvent
-	11, // 20: peers_touch.model.social.feed.v1.FeedJournalEntry.bundle:type_name -> peers_touch.model.social.feed.v1.FeedBundle
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	6,  // 3: peers_touch.model.social.feed.v1.FeedEvent.statement:type_name -> peers_touch.model.social.feed.v1.FeedEventStatement
+	8,  // 4: peers_touch.model.social.feed.v1.FeedPayload.post:type_name -> peers_touch.model.social.feed.v1.FeedPostMutation
+	9,  // 5: peers_touch.model.social.feed.v1.FeedPayload.reaction:type_name -> peers_touch.model.social.feed.v1.FeedReactionMutation
+	10, // 6: peers_touch.model.social.feed.v1.FeedPayload.comment:type_name -> peers_touch.model.social.feed.v1.FeedCommentMutation
+	22, // 7: peers_touch.model.social.feed.v1.FeedPayload.poll_ballot:type_name -> peers_touch.model.social.feed.v1.FeedPollBallotMutation
+	3,  // 8: peers_touch.model.social.feed.v1.FeedBundle.genesis:type_name -> peers_touch.model.social.feed.v1.FeedGenesis
+	5,  // 9: peers_touch.model.social.feed.v1.FeedBundle.writer_grant:type_name -> peers_touch.model.social.feed.v1.FeedWriterGrant
+	7,  // 10: peers_touch.model.social.feed.v1.FeedBundle.events:type_name -> peers_touch.model.social.feed.v1.FeedEvent
+	12, // 11: peers_touch.model.social.feed.v1.SubmitFeedEventRequest.bundle:type_name -> peers_touch.model.social.feed.v1.FeedBundle
+	13, // 12: peers_touch.model.social.feed.v1.SubmitFeedEventResponse.head:type_name -> peers_touch.model.social.feed.v1.FeedHead
+	24, // 13: peers_touch.model.social.feed.v1.SubmitFeedEventResponse.poll_admissions:type_name -> peers_touch.model.social.feed.v1.FeedPollAdmission
+	12, // 14: peers_touch.model.social.feed.v1.ReadFeedResponse.bundle:type_name -> peers_touch.model.social.feed.v1.FeedBundle
+	13, // 15: peers_touch.model.social.feed.v1.ReadFeedResponse.head:type_name -> peers_touch.model.social.feed.v1.FeedHead
+	18, // 16: peers_touch.model.social.feed.v1.ReadFeedResponse.thread_entries:type_name -> peers_touch.model.social.feed.v1.FeedThreadEntry
+	20, // 17: peers_touch.model.social.feed.v1.FeedThreadEntry.receipt:type_name -> peers_touch.model.social.feed.v1.FeedInteraction
+	13, // 18: peers_touch.model.social.feed.v1.FeedNotification.head:type_name -> peers_touch.model.social.feed.v1.FeedHead
+	3,  // 19: peers_touch.model.social.feed.v1.FeedInteraction.genesis:type_name -> peers_touch.model.social.feed.v1.FeedGenesis
+	5,  // 20: peers_touch.model.social.feed.v1.FeedInteraction.writer_grant:type_name -> peers_touch.model.social.feed.v1.FeedWriterGrant
+	7,  // 21: peers_touch.model.social.feed.v1.FeedInteraction.event:type_name -> peers_touch.model.social.feed.v1.FeedEvent
+	24, // 22: peers_touch.model.social.feed.v1.FeedInteraction.poll_admission:type_name -> peers_touch.model.social.feed.v1.FeedPollAdmission
+	1,  // 23: peers_touch.model.social.feed.v1.FeedPollAdmissionStatement.result:type_name -> peers_touch.model.social.feed.v1.FeedPollAdmissionResult
+	23, // 24: peers_touch.model.social.feed.v1.FeedPollAdmission.statement:type_name -> peers_touch.model.social.feed.v1.FeedPollAdmissionStatement
+	12, // 25: peers_touch.model.social.feed.v1.FeedJournalEntry.bundle:type_name -> peers_touch.model.social.feed.v1.FeedBundle
+	26, // [26:26] is the sub-list for method output_type
+	26, // [26:26] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_feed_log_proto_init() }
@@ -1704,14 +2137,15 @@ func file_domain_social_feed_log_proto_init() {
 		(*FeedPayload_Post)(nil),
 		(*FeedPayload_Reaction)(nil),
 		(*FeedPayload_Comment)(nil),
+		(*FeedPayload_PollBallot)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_social_feed_log_proto_rawDesc), len(file_domain_social_feed_log_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   21,
+			NumEnums:      2,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

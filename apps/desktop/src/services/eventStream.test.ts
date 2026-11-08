@@ -17,6 +17,7 @@ import type {
   MomentCreatedPayload,
   MomentRevokedPayload,
   MomentReactedPayload,
+  MomentRealtimeBasePayload,
   RelationshipChangedPayload,
   RealtimeGroupFederationEventPayload,
   RealtimeGroupMembershipChangeKind,
@@ -238,6 +239,7 @@ describe('event stream group membership decode', () => {
             postId: 'post-1',
             commentId,
             actorPtid: 'ptid:bob',
+            targetActorPtid: 'ptid:bob',
             authorActorPtid: 'ptid:alice',
             reactionKind: 'REACTION_LIKE',
             removed: true,
@@ -262,6 +264,31 @@ describe('event stream group membership decode', () => {
     } finally {
       unsubscribe();
     }
+  });
+
+  it('routes a signed-feed update as an identity-scoped invalidation', async () => {
+    let handler: TauriEventHandler = () => { throw new Error('stream not installed'); };
+    listenMock.mockImplementation(async (name: string, callback: TauriEventHandler) => {
+      if (name === 'realtime:event') handler = callback;
+      return () => undefined;
+    });
+    const updates: MomentRealtimeBasePayload[] = [], created: MomentCreatedPayload[] = [];
+    const releaseUpdate = eventBus.subscribe(EVENT.MOMENT_UPDATED, payload => updates.push(payload));
+    const releaseCreated = eventBus.subscribe(EVENT.MOMENT_CREATED, payload => created.push(payload));
+    try {
+      await installEventStreamBridge();
+      const event = create(StreamEventSchema, { eventId: 'poll-update', kind: {
+        case: 'moment', value: { kind: MomentEvent_Kind.UPDATED, postId: 'post-1',
+          actorPtid: 'ptid:alice', targetActorPtid: 'ptid:bob',
+          authorActorPtid: 'ptid:alice', occurredTsUnixMs: 789n },
+      } });
+      handler({ payload: { actor_ptid: 'ptid:bob', session_epoch: 7, station_peer_id: 'station-b',
+        station_url: 'https://station-b.test/', data_b64: Buffer.from(toBinary(StreamEventSchema, event)).toString('base64') } });
+      expect(updates).toEqual([{ eventId: 'poll-update', targetActorPtid: 'ptid:bob', sessionEpoch: 7,
+        stationPeerId: 'station-b', stationUrl: 'https://station-b.test', postId: 'post-1',
+        authorActorPtid: 'ptid:alice', occurredAtUnixMs: 789 }]);
+      expect(created).toEqual([]);
+    } finally { releaseUpdate(); releaseCreated(); }
   });
 
   it('dispatches a typed private revocation and preserves its reason', async () => {
@@ -425,6 +452,7 @@ function privateMomentFrameBase64(): string {
         postId: '01REMOTEPRIVATEPOST',
         authorActorPtid: 'ptid:alice',
         actorPtid: 'ptid:bob',
+        targetActorPtid: 'ptid:bob',
         audience: 'FRIENDS',
         occurredTsUnixMs: 456n,
       },
@@ -442,6 +470,7 @@ function privateMomentRevocationFrameBase64(reason: string): string {
         kind: MomentEvent_Kind.DELETED,
         postId: '01REMOTEPRIVATEPOST',
         actorPtid: 'ptid:bob',
+        targetActorPtid: 'ptid:bob',
         audience: reason,
         occurredTsUnixMs: 456n,
       },

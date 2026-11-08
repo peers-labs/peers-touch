@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/social/feed_log.proto.
  */
 export const file_domain_social_feed_log: GenFile = /*@__PURE__*/
-  fileDesc("Chxkb21haW4vc29jaWFsL2ZlZWRfbG9nLnByb3RvEiBwZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MSJ3ChRGZWVkR2VuZXNpc1N0YXRlbWVudBIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRISCgphY3Rvcl9wdGlkGAIgASgJEhAKCGNoYWluX2lkGAMgASgJEiEKGWFjdG9yX2lkZW50aXR5X3B1YmxpY19rZXkYBCABKAwicQoLRmVlZEdlbmVzaXMSSQoJc3RhdGVtZW50GAEgASgLMjYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEdlbmVzaXNTdGF0ZW1lbnQSFwoPYWN0b3Jfc2lnbmF0dXJlGAIgASgMIrQBChhGZWVkV3JpdGVyR3JhbnRTdGF0ZW1lbnQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SEgoKYWN0b3JfcHRpZBgCIAEoCRIQCghjaGFpbl9pZBgDIAEoCRIUCgxnZW5lc2lzX2hhc2gYBCABKAwSEQoJZGV2aWNlX2lkGAUgASgJEhYKDnNpZ25pbmdfa2V5X2lkGAYgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAcgASgMInkKD0ZlZWRXcml0ZXJHcmFudBJNCglzdGF0ZW1lbnQYASABKAsyOi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkV3JpdGVyR3JhbnRTdGF0ZW1lbnQSFwoPYWN0b3Jfc2lnbmF0dXJlGAIgASgMIocCChJGZWVkRXZlbnRTdGF0ZW1lbnQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SEgoKYWN0b3JfcHRpZBgCIAEoCRIQCghjaGFpbl9pZBgDIAEoCRIZChF3cml0ZXJfZ3JhbnRfaGFzaBgEIAEoDBIQCghzZXF1ZW5jZRgFIAEoBBIVCg1wcmV2aW91c19oYXNoGAYgASgMEj0KBGtpbmQYByABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkRXZlbnRLaW5kEhQKDHBheWxvYWRfaGFzaBgIIAEoDBIaChJjcmVhdGVkX2F0X3VuaXhfbXMYCSABKAMifwoJRmVlZEV2ZW50EkcKCXN0YXRlbWVudBgBIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRFdmVudFN0YXRlbWVudBIPCgdwYXlsb2FkGAIgASgMEhgKEGRldmljZV9zaWduYXR1cmUYAyABKAwiOwoQRmVlZFBvc3RNdXRhdGlvbhIPCgdwb3N0X2lkGAEgASgJEhYKDmNyZWF0ZV9yZXF1ZXN0GAIgASgMImIKFEZlZWRSZWFjdGlvbk11dGF0aW9uEhcKD3RhcmdldF9wb3N0X3JlZhgBIAEoCRIVCg1yZWFjdGlvbl9raW5kGAIgASgFEhoKEnRhcmdldF9jb21tZW50X3JlZhgDIAEoCSJaChNGZWVkQ29tbWVudE11dGF0aW9uEhIKCmNvbW1lbnRfaWQYASABKAkSFwoPdGFyZ2V0X3Bvc3RfcmVmGAIgASgJEhYKDmNyZWF0ZV9yZXF1ZXN0GAMgASgMIvMBCgtGZWVkUGF5bG9hZBJCCgRwb3N0GAEgASgLMjIucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFBvc3RNdXRhdGlvbkgAEkoKCHJlYWN0aW9uGAIgASgLMjYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFJlYWN0aW9uTXV0YXRpb25IABJICgdjb21tZW50GAMgASgLMjUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZENvbW1lbnRNdXRhdGlvbkgAQgoKCG11dGF0aW9uItIBCgpGZWVkQnVuZGxlEj4KB2dlbmVzaXMYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkR2VuZXNpcxJHCgx3cml0ZXJfZ3JhbnQYAiABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkV3JpdGVyR3JhbnQSOwoGZXZlbnRzGAMgAygLMisucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEV2ZW50IlYKCEZlZWRIZWFkEhIKCmFjdG9yX3B0aWQYASABKAkSEAoIY2hhaW5faWQYAiABKAkSEAoIc2VxdWVuY2UYAyABKAQSEgoKZXZlbnRfaGFzaBgEIAEoDCJWChZTdWJtaXRGZWVkRXZlbnRSZXF1ZXN0EjwKBmJ1bmRsZRgBIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRCdW5kbGUiZgoXU3VibWl0RmVlZEV2ZW50UmVzcG9uc2USOAoEaGVhZBgBIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRIZWFkEhEKCWR1cGxpY2F0ZRgCIAEoCCKxAQoPUmVhZEZlZWRSZXF1ZXN0EhIKCmFjdG9yX3B0aWQYASABKAkSEAoIY2hhaW5faWQYAiABKAkSFgoOYWZ0ZXJfc2VxdWVuY2UYAyABKAQSDQoFbGltaXQYBCABKA0SFgoOaW5jbHVkZV90aHJlYWQYBSABKAgSGwoTYWZ0ZXJfdGhyZWFkX2N1cnNvchgGIAEoBBIcChRleHBsaWNpdF9wdWJsaWNfcmVhZBgHIAEoCCKXAgoQUmVhZEZlZWRSZXNwb25zZRI8CgZidW5kbGUYASABKAsyLC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkQnVuZGxlEjgKBGhlYWQYAiABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkSGVhZBIQCghoYXNfbW9yZRgDIAEoCBJJCg50aHJlYWRfZW50cmllcxgEIAMoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRUaHJlYWRFbnRyeRIVCg10aHJlYWRfY3Vyc29yGAUgASgEEhcKD3RocmVhZF9oYXNfbW9yZRgGIAEoCCKHAQoPRmVlZFRocmVhZEVudHJ5Eg4KBmN1cnNvchgBIAEoBBIgChhpbnRlcmFjdGlvbl9ob21lX3N0YXRpb24YAiABKAkSQgoHcmVjZWlwdBgDIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRJbnRlcmFjdGlvbiJMChBGZWVkTm90aWZpY2F0aW9uEjgKBGhlYWQYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkSGVhZCLWAQoPRmVlZEludGVyYWN0aW9uEj4KB2dlbmVzaXMYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkR2VuZXNpcxJHCgx3cml0ZXJfZ3JhbnQYAiABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkV3JpdGVyR3JhbnQSOgoFZXZlbnQYAyABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkRXZlbnQidQoQRmVlZFN1YnNjcmlwdGlvbhITCgthdXRob3JfcHRpZBgBIAEoCRIQCghjaGFpbl9pZBgCIAEoCRIXCg9zdWJzY3JpYmVyX3B0aWQYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIQCghyZXZpc2lvbhgFIAEoBCJmChBGZWVkSm91cm5hbEVudHJ5EjwKBmJ1bmRsZRgBIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRCdW5kbGUSFAoMYWNrbm93bGVkZ2VkGAIgASgIKtMCCg1GZWVkRXZlbnRLaW5kEh8KG0ZFRURfRVZFTlRfS0lORF9VTlNQRUNJRklFRBAAEiAKHEZFRURfRVZFTlRfS0lORF9QT1NUX0NSRUFURUQQARIgChxGRUVEX0VWRU5UX0tJTkRfUE9TVF9VUERBVEVEEAISIwofRkVFRF9FVkVOVF9LSU5EX1BPU1RfVE9NQlNUT05FRBADEiAKHEZFRURfRVZFTlRfS0lORF9SRUFDVElPTl9TRVQQBBIkCiBGRUVEX0VWRU5UX0tJTkRfUkVBQ1RJT05fUkVNT1ZFRBAFEiMKH0ZFRURfRVZFTlRfS0lORF9DT01NRU5UX0NSRUFURUQQBhIjCh9GRUVEX0VWRU5UX0tJTkRfQ09NTUVOVF9VUERBVEVEEAcSJgoiRkVFRF9FVkVOVF9LSU5EX0NPTU1FTlRfVE9NQlNUT05FRBAIQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM");
+  fileDesc("Chxkb21haW4vc29jaWFsL2ZlZWRfbG9nLnByb3RvEiBwZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MSJ3ChRGZWVkR2VuZXNpc1N0YXRlbWVudBIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRISCgphY3Rvcl9wdGlkGAIgASgJEhAKCGNoYWluX2lkGAMgASgJEiEKGWFjdG9yX2lkZW50aXR5X3B1YmxpY19rZXkYBCABKAwicQoLRmVlZEdlbmVzaXMSSQoJc3RhdGVtZW50GAEgASgLMjYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEdlbmVzaXNTdGF0ZW1lbnQSFwoPYWN0b3Jfc2lnbmF0dXJlGAIgASgMIrQBChhGZWVkV3JpdGVyR3JhbnRTdGF0ZW1lbnQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SEgoKYWN0b3JfcHRpZBgCIAEoCRIQCghjaGFpbl9pZBgDIAEoCRIUCgxnZW5lc2lzX2hhc2gYBCABKAwSEQoJZGV2aWNlX2lkGAUgASgJEhYKDnNpZ25pbmdfa2V5X2lkGAYgASgJEhkKEWRldmljZV9wdWJsaWNfa2V5GAcgASgMInkKD0ZlZWRXcml0ZXJHcmFudBJNCglzdGF0ZW1lbnQYASABKAsyOi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkV3JpdGVyR3JhbnRTdGF0ZW1lbnQSFwoPYWN0b3Jfc2lnbmF0dXJlGAIgASgMIocCChJGZWVkRXZlbnRTdGF0ZW1lbnQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SEgoKYWN0b3JfcHRpZBgCIAEoCRIQCghjaGFpbl9pZBgDIAEoCRIZChF3cml0ZXJfZ3JhbnRfaGFzaBgEIAEoDBIQCghzZXF1ZW5jZRgFIAEoBBIVCg1wcmV2aW91c19oYXNoGAYgASgMEj0KBGtpbmQYByABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkRXZlbnRLaW5kEhQKDHBheWxvYWRfaGFzaBgIIAEoDBIaChJjcmVhdGVkX2F0X3VuaXhfbXMYCSABKAMifwoJRmVlZEV2ZW50EkcKCXN0YXRlbWVudBgBIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRFdmVudFN0YXRlbWVudBIPCgdwYXlsb2FkGAIgASgMEhgKEGRldmljZV9zaWduYXR1cmUYAyABKAwiOwoQRmVlZFBvc3RNdXRhdGlvbhIPCgdwb3N0X2lkGAEgASgJEhYKDmNyZWF0ZV9yZXF1ZXN0GAIgASgMImIKFEZlZWRSZWFjdGlvbk11dGF0aW9uEhcKD3RhcmdldF9wb3N0X3JlZhgBIAEoCRIVCg1yZWFjdGlvbl9raW5kGAIgASgFEhoKEnRhcmdldF9jb21tZW50X3JlZhgDIAEoCSJaChNGZWVkQ29tbWVudE11dGF0aW9uEhIKCmNvbW1lbnRfaWQYASABKAkSFwoPdGFyZ2V0X3Bvc3RfcmVmGAIgASgJEhYKDmNyZWF0ZV9yZXF1ZXN0GAMgASgMIsQCCgtGZWVkUGF5bG9hZBJCCgRwb3N0GAEgASgLMjIucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFBvc3RNdXRhdGlvbkgAEkoKCHJlYWN0aW9uGAIgASgLMjYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFJlYWN0aW9uTXV0YXRpb25IABJICgdjb21tZW50GAMgASgLMjUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZENvbW1lbnRNdXRhdGlvbkgAEk8KC3BvbGxfYmFsbG90GAQgASgLMjgucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFBvbGxCYWxsb3RNdXRhdGlvbkgAQgoKCG11dGF0aW9uItIBCgpGZWVkQnVuZGxlEj4KB2dlbmVzaXMYASABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkR2VuZXNpcxJHCgx3cml0ZXJfZ3JhbnQYAiABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkV3JpdGVyR3JhbnQSOwoGZXZlbnRzGAMgAygLMisucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEV2ZW50IlYKCEZlZWRIZWFkEhIKCmFjdG9yX3B0aWQYASABKAkSEAoIY2hhaW5faWQYAiABKAkSEAoIc2VxdWVuY2UYAyABKAQSEgoKZXZlbnRfaGFzaBgEIAEoDCJWChZTdWJtaXRGZWVkRXZlbnRSZXF1ZXN0EjwKBmJ1bmRsZRgBIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRCdW5kbGUitAEKF1N1Ym1pdEZlZWRFdmVudFJlc3BvbnNlEjgKBGhlYWQYASABKAsyKi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkSGVhZBIRCglkdXBsaWNhdGUYAiABKAgSTAoPcG9sbF9hZG1pc3Npb25zGAMgAygLMjMucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFBvbGxBZG1pc3Npb24isQEKD1JlYWRGZWVkUmVxdWVzdBISCgphY3Rvcl9wdGlkGAEgASgJEhAKCGNoYWluX2lkGAIgASgJEhYKDmFmdGVyX3NlcXVlbmNlGAMgASgEEg0KBWxpbWl0GAQgASgNEhYKDmluY2x1ZGVfdGhyZWFkGAUgASgIEhsKE2FmdGVyX3RocmVhZF9jdXJzb3IYBiABKAQSHAoUZXhwbGljaXRfcHVibGljX3JlYWQYByABKAgilwIKEFJlYWRGZWVkUmVzcG9uc2USPAoGYnVuZGxlGAEgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEJ1bmRsZRI4CgRoZWFkGAIgASgLMioucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEhlYWQSEAoIaGFzX21vcmUYAyABKAgSSQoOdGhyZWFkX2VudHJpZXMYBCADKAsyMS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkVGhyZWFkRW50cnkSFQoNdGhyZWFkX2N1cnNvchgFIAEoBBIXCg90aHJlYWRfaGFzX21vcmUYBiABKAgihwEKD0ZlZWRUaHJlYWRFbnRyeRIOCgZjdXJzb3IYASABKAQSIAoYaW50ZXJhY3Rpb25faG9tZV9zdGF0aW9uGAIgASgJEkIKB3JlY2VpcHQYAyABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwuZmVlZC52MS5GZWVkSW50ZXJhY3Rpb24iTAoQRmVlZE5vdGlmaWNhdGlvbhI4CgRoZWFkGAEgASgLMioucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEhlYWQiowIKD0ZlZWRJbnRlcmFjdGlvbhI+CgdnZW5lc2lzGAEgASgLMi0ucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEdlbmVzaXMSRwoMd3JpdGVyX2dyYW50GAIgASgLMjEucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFdyaXRlckdyYW50EjoKBWV2ZW50GAMgASgLMisucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZEV2ZW50EksKDnBvbGxfYWRtaXNzaW9uGAQgASgLMjMucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFBvbGxBZG1pc3Npb24ifQoSRmVlZFBvbGxEZWZpbml0aW9uEhAKCHF1ZXN0aW9uGAEgASgJEg8KB29wdGlvbnMYAiADKAkSEwoLbWluX2Nob2ljZXMYAyABKA0SEwoLbWF4X2Nob2ljZXMYBCABKA0SGgoSZXhwaXJlc19hdF91bml4X21zGAUgASgDImIKFkZlZWRQb2xsQmFsbG90TXV0YXRpb24SFwoPdGFyZ2V0X3Bvc3RfcmVmGAEgASgJEhcKD2RlZmluaXRpb25faGFzaBgCIAEoDBIWCg5vcHRpb25faW5kaWNlcxgDIAMoBSKYAgoaRmVlZFBvbGxBZG1pc3Npb25TdGF0ZW1lbnQSFgoOZm9ybWF0X3ZlcnNpb24YASABKA0SHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYAiABKAkSFwoPdGFyZ2V0X3Bvc3RfcmVmGAMgASgJEhIKCmV2ZW50X2hhc2gYBCABKAwSFwoPZGVmaW5pdGlvbl9oYXNoGAUgASgMEhsKE2FjY2VwdGVkX2F0X3VuaXhfbXMYBiABKAMSSQoGcmVzdWx0GAcgASgOMjkucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFBvbGxBZG1pc3Npb25SZXN1bHQSFgoOc2lnbmluZ19rZXlfaWQYCCABKAkifwoRRmVlZFBvbGxBZG1pc3Npb24STwoJc3RhdGVtZW50GAEgASgLMjwucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLmZlZWQudjEuRmVlZFBvbGxBZG1pc3Npb25TdGF0ZW1lbnQSGQoRc3RhdGlvbl9zaWduYXR1cmUYAiABKAwidQoQRmVlZFN1YnNjcmlwdGlvbhITCgthdXRob3JfcHRpZBgBIAEoCRIQCghjaGFpbl9pZBgCIAEoCRIXCg9zdWJzY3JpYmVyX3B0aWQYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIQCghyZXZpc2lvbhgFIAEoBCJmChBGZWVkSm91cm5hbEVudHJ5EjwKBmJ1bmRsZRgBIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC5mZWVkLnYxLkZlZWRCdW5kbGUSFAoMYWNrbm93bGVkZ2VkGAIgASgIKvgCCg1GZWVkRXZlbnRLaW5kEh8KG0ZFRURfRVZFTlRfS0lORF9VTlNQRUNJRklFRBAAEiAKHEZFRURfRVZFTlRfS0lORF9QT1NUX0NSRUFURUQQARIgChxGRUVEX0VWRU5UX0tJTkRfUE9TVF9VUERBVEVEEAISIwofRkVFRF9FVkVOVF9LSU5EX1BPU1RfVE9NQlNUT05FRBADEiAKHEZFRURfRVZFTlRfS0lORF9SRUFDVElPTl9TRVQQBBIkCiBGRUVEX0VWRU5UX0tJTkRfUkVBQ1RJT05fUkVNT1ZFRBAFEiMKH0ZFRURfRVZFTlRfS0lORF9DT01NRU5UX0NSRUFURUQQBhIjCh9GRUVEX0VWRU5UX0tJTkRfQ09NTUVOVF9VUERBVEVEEAcSJgoiRkVFRF9FVkVOVF9LSU5EX0NPTU1FTlRfVE9NQlNUT05FRBAIEiMKH0ZFRURfRVZFTlRfS0lORF9QT0xMX0JBTExPVF9TRVQQCSqtAgoXRmVlZFBvbGxBZG1pc3Npb25SZXN1bHQSKgomRkVFRF9QT0xMX0FETUlTU0lPTl9SRVNVTFRfVU5TUEVDSUZJRUQQABInCiNGRUVEX1BPTExfQURNSVNTSU9OX1JFU1VMVF9BQ0NFUFRFRBABEiUKIUZFRURfUE9MTF9BRE1JU1NJT05fUkVTVUxUX0NMT1NFRBACEjAKLEZFRURfUE9MTF9BRE1JU1NJT05fUkVTVUxUX0lOVkFMSURfU0VMRUNUSU9OEAMSMQotRkVFRF9QT0xMX0FETUlTU0lPTl9SRVNVTFRfREVGSU5JVElPTl9DSEFOR0VEEAQSMQotRkVFRF9QT0xMX0FETUlTU0lPTl9SRVNVTFRfVEFSR0VUX1VOQVZBSUxBQkxFEAVCQ1pBZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWw7bW9kZWxiBnByb3RvMw");
 
 /**
  * v1 is a single-writer public chain. Private content uses Secure Content.
@@ -342,6 +342,12 @@ export type FeedPayload = Message<"peers_touch.model.social.feed.v1.FeedPayload"
      */
     value: FeedCommentMutation;
     case: "comment";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.social.feed.v1.FeedPollBallotMutation poll_ballot = 4;
+     */
+    value: FeedPollBallotMutation;
+    case: "pollBallot";
   } | { case: undefined; value?: undefined };
 };
 
@@ -441,6 +447,11 @@ export type SubmitFeedEventResponse = Message<"peers_touch.model.social.feed.v1.
    * @generated from field: bool duplicate = 2;
    */
   duplicate: boolean;
+
+  /**
+   * @generated from field: repeated peers_touch.model.social.feed.v1.FeedPollAdmission poll_admissions = 3;
+   */
+  pollAdmissions: FeedPollAdmission[];
 };
 
 /**
@@ -613,6 +624,11 @@ export type FeedInteraction = Message<"peers_touch.model.social.feed.v1.FeedInte
    * @generated from field: peers_touch.model.social.feed.v1.FeedEvent event = 3;
    */
   event?: FeedEvent | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.social.feed.v1.FeedPollAdmission poll_admission = 4;
+   */
+  pollAdmission?: FeedPollAdmission | undefined;
 };
 
 /**
@@ -621,6 +637,152 @@ export type FeedInteraction = Message<"peers_touch.model.social.feed.v1.FeedInte
  */
 export const FeedInteractionSchema: GenMessage<FeedInteraction> = /*@__PURE__*/
   messageDesc(file_domain_social_feed_log, 18);
+
+/**
+ * Reconstructed from the original signed creation and its timestamp.
+ * Body edits cannot change the question, options, constraints or deadline.
+ *
+ * @generated from message peers_touch.model.social.feed.v1.FeedPollDefinition
+ */
+export type FeedPollDefinition = Message<"peers_touch.model.social.feed.v1.FeedPollDefinition"> & {
+  /**
+   * @generated from field: string question = 1;
+   */
+  question: string;
+
+  /**
+   * @generated from field: repeated string options = 2;
+   */
+  options: string[];
+
+  /**
+   * @generated from field: uint32 min_choices = 3;
+   */
+  minChoices: number;
+
+  /**
+   * @generated from field: uint32 max_choices = 4;
+   */
+  maxChoices: number;
+
+  /**
+   * @generated from field: int64 expires_at_unix_ms = 5;
+   */
+  expiresAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.social.feed.v1.FeedPollDefinition.
+ * Use `create(FeedPollDefinitionSchema)` to create a new message.
+ */
+export const FeedPollDefinitionSchema: GenMessage<FeedPollDefinition> = /*@__PURE__*/
+  messageDesc(file_domain_social_feed_log, 19);
+
+/**
+ * @generated from message peers_touch.model.social.feed.v1.FeedPollBallotMutation
+ */
+export type FeedPollBallotMutation = Message<"peers_touch.model.social.feed.v1.FeedPollBallotMutation"> & {
+  /**
+   * @generated from field: string target_post_ref = 1;
+   */
+  targetPostRef: string;
+
+  /**
+   * @generated from field: bytes definition_hash = 2;
+   */
+  definitionHash: Uint8Array;
+
+  /**
+   * Strictly increasing and distinct; replaces the Actor's complete ballot.
+   *
+   * @generated from field: repeated int32 option_indices = 3;
+   */
+  optionIndices: number[];
+};
+
+/**
+ * Describes the message peers_touch.model.social.feed.v1.FeedPollBallotMutation.
+ * Use `create(FeedPollBallotMutationSchema)` to create a new message.
+ */
+export const FeedPollBallotMutationSchema: GenMessage<FeedPollBallotMutation> = /*@__PURE__*/
+  messageDesc(file_domain_social_feed_log, 20);
+
+/**
+ * Author Home authenticates admission time and decision, never Actor intent,
+ * aggregate completeness or absolute physical clock correctness.
+ *
+ * @generated from message peers_touch.model.social.feed.v1.FeedPollAdmissionStatement
+ */
+export type FeedPollAdmissionStatement = Message<"peers_touch.model.social.feed.v1.FeedPollAdmissionStatement"> & {
+  /**
+   * @generated from field: uint32 format_version = 1;
+   */
+  formatVersion: number;
+
+  /**
+   * @generated from field: string home_station_peer_id = 2;
+   */
+  homeStationPeerId: string;
+
+  /**
+   * @generated from field: string target_post_ref = 3;
+   */
+  targetPostRef: string;
+
+  /**
+   * @generated from field: bytes event_hash = 4;
+   */
+  eventHash: Uint8Array;
+
+  /**
+   * @generated from field: bytes definition_hash = 5;
+   */
+  definitionHash: Uint8Array;
+
+  /**
+   * @generated from field: int64 accepted_at_unix_ms = 6;
+   */
+  acceptedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: peers_touch.model.social.feed.v1.FeedPollAdmissionResult result = 7;
+   */
+  result: FeedPollAdmissionResult;
+
+  /**
+   * @generated from field: string signing_key_id = 8;
+   */
+  signingKeyId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.feed.v1.FeedPollAdmissionStatement.
+ * Use `create(FeedPollAdmissionStatementSchema)` to create a new message.
+ */
+export const FeedPollAdmissionStatementSchema: GenMessage<FeedPollAdmissionStatement> = /*@__PURE__*/
+  messageDesc(file_domain_social_feed_log, 21);
+
+/**
+ * @generated from message peers_touch.model.social.feed.v1.FeedPollAdmission
+ */
+export type FeedPollAdmission = Message<"peers_touch.model.social.feed.v1.FeedPollAdmission"> & {
+  /**
+   * @generated from field: peers_touch.model.social.feed.v1.FeedPollAdmissionStatement statement = 1;
+   */
+  statement?: FeedPollAdmissionStatement | undefined;
+
+  /**
+   * @generated from field: bytes station_signature = 2;
+   */
+  stationSignature: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.social.feed.v1.FeedPollAdmission.
+ * Use `create(FeedPollAdmissionSchema)` to create a new message.
+ */
+export const FeedPollAdmissionSchema: GenMessage<FeedPollAdmission> = /*@__PURE__*/
+  messageDesc(file_domain_social_feed_log, 22);
 
 /**
  * @generated from message peers_touch.model.social.feed.v1.FeedSubscription
@@ -657,7 +819,7 @@ export type FeedSubscription = Message<"peers_touch.model.social.feed.v1.FeedSub
  * Use `create(FeedSubscriptionSchema)` to create a new message.
  */
 export const FeedSubscriptionSchema: GenMessage<FeedSubscription> = /*@__PURE__*/
-  messageDesc(file_domain_social_feed_log, 19);
+  messageDesc(file_domain_social_feed_log, 23);
 
 /**
  * Client journal rows persist exact signed bytes, avoiding re-signing on retry.
@@ -681,7 +843,7 @@ export type FeedJournalEntry = Message<"peers_touch.model.social.feed.v1.FeedJou
  * Use `create(FeedJournalEntrySchema)` to create a new message.
  */
 export const FeedJournalEntrySchema: GenMessage<FeedJournalEntry> = /*@__PURE__*/
-  messageDesc(file_domain_social_feed_log, 20);
+  messageDesc(file_domain_social_feed_log, 24);
 
 /**
  * @generated from enum peers_touch.model.social.feed.v1.FeedEventKind
@@ -731,6 +893,11 @@ export enum FeedEventKind {
    * @generated from enum value: FEED_EVENT_KIND_COMMENT_TOMBSTONED = 8;
    */
   COMMENT_TOMBSTONED = 8,
+
+  /**
+   * @generated from enum value: FEED_EVENT_KIND_POLL_BALLOT_SET = 9;
+   */
+  POLL_BALLOT_SET = 9,
 }
 
 /**
@@ -738,3 +905,44 @@ export enum FeedEventKind {
  */
 export const FeedEventKindSchema: GenEnum<FeedEventKind> = /*@__PURE__*/
   enumDesc(file_domain_social_feed_log, 0);
+
+/**
+ * @generated from enum peers_touch.model.social.feed.v1.FeedPollAdmissionResult
+ */
+export enum FeedPollAdmissionResult {
+  /**
+   * @generated from enum value: FEED_POLL_ADMISSION_RESULT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FEED_POLL_ADMISSION_RESULT_ACCEPTED = 1;
+   */
+  ACCEPTED = 1,
+
+  /**
+   * @generated from enum value: FEED_POLL_ADMISSION_RESULT_CLOSED = 2;
+   */
+  CLOSED = 2,
+
+  /**
+   * @generated from enum value: FEED_POLL_ADMISSION_RESULT_INVALID_SELECTION = 3;
+   */
+  INVALID_SELECTION = 3,
+
+  /**
+   * @generated from enum value: FEED_POLL_ADMISSION_RESULT_DEFINITION_CHANGED = 4;
+   */
+  DEFINITION_CHANGED = 4,
+
+  /**
+   * @generated from enum value: FEED_POLL_ADMISSION_RESULT_TARGET_UNAVAILABLE = 5;
+   */
+  TARGET_UNAVAILABLE = 5,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.feed.v1.FeedPollAdmissionResult.
+ */
+export const FeedPollAdmissionResultSchema: GenEnum<FeedPollAdmissionResult> = /*@__PURE__*/
+  enumDesc(file_domain_social_feed_log, 1);

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import {
   Avatar, Button, Dialog, IconButton, ImageGrid, MomentAuthor, MomentCard as PeerMomentCard,
-  MomentCommentRow, MomentCommentComposer, MomentReactionBar, MomentTrustMeta, TextArea, TextField,
+  MomentCommentRow, MomentCommentComposer, MomentReactionBar, MomentTrustMeta, MomentPoll, TextArea, TextField,
 } from '@peers-touch/ui';
 import { AuthorTrigger } from './AuthorCard';
 import {
@@ -195,11 +195,12 @@ export interface MomentCardProps extends AuthorTriggerProps {
   onDeleteComment: (postId: string, commentId: string) => void;
   onDeletePost: (postId: string) => void;
   onEditPost: (postId: string, text: string) => void;
+  onVotePoll: (postId: string, choices: number[]) => void;
 }
 
 export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onToggleBlock,
   onToggleReaction, onComment, onLikeComment,
-  onReplyComment, onDeleteComment, onDeletePost, onEditPost }: MomentCardProps) {
+  onReplyComment, onDeleteComment, onDeletePost, onEditPost, onVotePoll }: MomentCardProps) {
   const [commentsOpen, setCommentsOpen] = useState(true);
   const [commentPage, setCommentPage] = useState(1);
   const [draft, setDraft] = useState('');
@@ -252,6 +253,15 @@ export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onTo
                 onActivate: () => setConfirmTarget('post'),
       }] : []}
       trust={<TrustMeta post={post} />}
+      content={post.poll && <MomentPoll postId={post.id} question={post.poll.question}
+        options={post.poll.options.map((text, index) => ({ text,
+          votes: post.poll!.baseCounts[index] + Number(post.poll!.choices.includes(index)) }))}
+        minChoices={post.poll.minChoices} maxChoices={post.poll.maxChoices}
+        closed={post.poll.closed} confirmedChoices={post.poll.choices}
+        totalVotes={post.poll.baseVoters + Number(post.poll.choices.length > 0)}
+        onSubmit={choices => onVotePoll(post.id, choices)}
+        copy={{ submit: '投票', replace: '更新选票', cancel: '取消选择', retry: '确认结果', closed: '投票已截止',
+          choices: (min, max) => `请选择 ${min}–${max} 个选项`, total: count => `${count} 人已投票` }} />}
       attachments={post.images && post.images.length > 0 && <ImageGrid
           images={post.images.map((source, index) => ({
             resourceId: source, source, state: 'available', name: `图片 ${index + 1}`,

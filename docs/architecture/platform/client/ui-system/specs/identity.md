@@ -33,6 +33,12 @@ Domain/Identity/Resource Owner 提供 canonical identity、可信正文、受众
 基础元素提供真实卡片宿主，子件引用该宿主；生产适配器不复制卡片 markup/CSS。
 
 `MomentCommentRow` / `MomentCommentComposer` 的唯一展示在 `moment-comments.tsx`。
+`MomentPoll` 的唯一展示在 `moment-poll.tsx`，复用 Radio/Checkbox/Button 的原有
+控件几何与令牌。题目、规则、选项、已确认人数和动作保持同一阅读流。只有未提交
+选择属于组件；已确认选择、计数、截止、pending/unknown/admission/readback、
+错误和精确重试由原 Runtime 提供。Cancel 不撤销已提交选票；未确定结果时不能
+修改选票。正常、长文案、禁用、结果未知、重试、替换和截止均在原基础元素
+`MomentPollStage` 中可触达。原型演示不构成 Native 投票证明。
 行包含 canonical avatar/author、正文、时间/动作、一层回复块和输入槽；草稿、IME、
 提及、分页及公开/私密提交继续归原 Runtime/Store。未知时间不伪造，失败保留输入。
 评论行的 `reaction` 输入包含已确认 count/liked、本地化 label、pending/error 和意图回调。

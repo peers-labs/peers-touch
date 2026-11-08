@@ -42,9 +42,9 @@ func (s *FeedLogService) importThread(ctx context.Context, author, authorStation
 			if err := signedlog.Decode(entry.Receipt.Event.Payload, payload); err != nil {
 				return err
 			}
-			target := payload.GetReaction().GetTargetPostRef()
-			if payload.GetComment() != nil {
-				target = payload.GetComment().TargetPostRef
+			target, err := domain.FeedInteractionTarget(payload)
+			if err != nil {
+				return err
 			}
 			home, id, err := domain.FeedTargetPost(target)
 			if err != nil || home != authorStation {

@@ -21,15 +21,17 @@ type FeedActorIdentity interface {
 }
 
 type FeedLogService struct {
-	store        *infrastructure.FeedLogStore
-	actors       FeedActorIdentity
-	localStation string
-	apply        infrastructure.FeedApply
-	now          func() time.Time
-	signer       delivery.Signer
-	pull         FeedPull
-	writePolicy  func(context.Context, delivery.Transaction, *model.FeedEvent) error
-	projector    *infrastructure.FeedProjector
+	store             *infrastructure.FeedLogStore
+	actors            FeedActorIdentity
+	localStation      string
+	apply             infrastructure.FeedApply
+	now               func() time.Time
+	signer            delivery.Signer
+	pull              FeedPull
+	writePolicy       func(context.Context, delivery.Transaction, *model.FeedEvent) error
+	projector         *infrastructure.FeedProjector
+	pollSigner        PrivateContentStationSigner
+	verifyPollStation func(context.Context, delivery.Transaction, string, string, []byte, []byte) error
 }
 
 func (s *FeedLogService) SetProjector(projector *infrastructure.FeedProjector) {
@@ -95,7 +97,11 @@ func (s *FeedLogService) Submit(ctx context.Context, actorPTID, deviceID string,
 		if err != nil {
 			return err
 		}
-		response = &model.SubmitFeedEventResponse{Head: head, Duplicate: duplicate}
+		admissions, err := s.pollAdmissionsFor(ctx, tx, request.Bundle)
+		if err != nil {
+			return err
+		}
+		response = &model.SubmitFeedEventResponse{Head: head, Duplicate: duplicate, PollAdmissions: admissions}
 		return nil
 	})
 	if err != nil {

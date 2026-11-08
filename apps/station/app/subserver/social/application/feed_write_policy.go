@@ -32,9 +32,12 @@ func NewFeedWritePolicy() func(context.Context, delivery.Transaction, *model.Fee
 		if err := signedlog.Decode(event.Payload, payload); err != nil {
 			return err
 		}
-		target := payload.GetReaction().GetTargetPostRef()
-		if c := payload.GetComment(); c != nil {
-			target = c.TargetPostRef
+		target := ""
+		if payload.GetPost() == nil {
+			target, err = domain.FeedInteractionTarget(payload)
+			if err != nil {
+				return err
+			}
 		}
 		if p := payload.GetPost(); p != nil && len(p.CreateRequest) > 0 {
 			request := &model.CreatePostRequest{}

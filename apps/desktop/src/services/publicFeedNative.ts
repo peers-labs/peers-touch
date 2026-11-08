@@ -2,12 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { create, equals, fromBinary, toBinary } from '@bufbuild/protobuf';
 import {
   FeedBundleSchema, FeedPayloadSchema, FeedPostMutationSchema, FeedThreadEntrySchema, FeedEventKind,
+  FeedPollAdmissionSchema, FeedPollAdmissionResult, FeedPollBallotMutationSchema,
   type FeedPayload,
 } from '../gen/proto/domain/social/feed_log_pb';
 import { Audience_Kind, CreatePostRequestSchema, type Post } from '../gen/proto/domain/social/post_pb';
 import { type Comment } from '../gen/proto/domain/social/comment_pb';
 import { useSessionStore } from '../store/session';
 import { PublicFeedProjection } from './publicFeedProjection';
+import { publicPollDefinitionHash } from './publicFeedPollProjection';
 
 export function feedBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -34,10 +36,15 @@ export function publicFeedErrorKey(error: unknown): string {
   if (/FEED_(WRITER_NOT_AUTHORIZED|DEVICE_REQUIRED)/.test(code)) return 'moments.publicFeed.writerRequired';
   if (/FEED_(IDENTITY_REQUIRED|AUTHENTICATION_REQUIRED|SESSION_CHANGED)|MOMENTS_SESSION_STALE/.test(code)) return 'moments.publicFeed.identityRequired';
   if (/FEED_PENDING_ACK/.test(code)) return 'moments.publicFeed.pending';
+  if (/FEED_POLL_(ADMISSION_PENDING|ADMISSION_UNVERIFIED)/.test(code)) return 'moments.publicFeed.pending';
   return 'moments.publicFeed.retry';
 }
 type Pending = { commandId: string; kind: FeedEventKind; payloadB64: string };
-type Status = { pending?: Pending[] };
+type Status = { pending?: Pending[]; pendingAdmissions?: Pending[] };
+type NativeSubmission = {
+  state: string; sourceState?: string; bundleB64: string; homeStationPeerId: string;
+  pollAdmissionB64?: string; errorCode?: string;
+};
 type NativePage = {
   state: string; actorPtid: string; homeStationPeerId: string;
   bundleB64: string; nextSequence: string; hasMore: boolean;
@@ -73,6 +80,16 @@ export async function resumePublicFeed(): Promise<void> {
     await submitPublicFeed(pending.kind, fromBinary(FeedPayloadSchema, bytes(pending.payloadB64)), pending.commandId);
     if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
   }
+  for (const pending of status.pendingAdmissions ?? []) {
+    try {
+      await submitPublicFeed(pending.kind, fromBinary(FeedPayloadSchema, bytes(pending.payloadB64)), pending.commandId);
+    } catch (error) {
+      // Confirmed ballots await their own Home decision without monopolizing
+      // recovery or blocking an unrelated Actor-chain command.
+      if (!/FEED_POLL_(ADMISSION_PENDING|ADMISSION_UNVERIFIED|CLOSED|INVALID_SELECTION|DEFINITION_CHANGED|TARGET_UNAVAILABLE)/.test(String(error))) throw error;
+    }
+    if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
+  }
 }
 
 // Reuse a retained command only for the same intent. Native is the sole owner
@@ -105,16 +122,45 @@ async function submit(kind: FeedEventKind, payload: FeedPayload, operationId?: s
     if (pending.kind !== kind || !equals(FeedPayloadSchema, comparison, retained)) throw new Error('FEED_PENDING_ACK');
     commandId = pending.commandId;
     payload = retained;
+  } else if (payload.mutation.case === 'pollBallot') {
+    const target = payload.mutation.value.targetPostRef;
+    for (const pending of status.pendingAdmissions ?? []) {
+      const retained = fromBinary(FeedPayloadSchema, bytes(pending.payloadB64));
+      if (retained.mutation.case !== 'pollBallot' || retained.mutation.value.targetPostRef !== target) continue;
+      if (pending.kind !== kind || !equals(FeedPayloadSchema, payload, retained)) throw new Error('FEED_POLL_ADMISSION_PENDING');
+      commandId = pending.commandId;
+      payload = retained;
+      break;
+    }
   }
   const input = { command_id: commandId, kind, payload_b64: feedBase64(toBinary(FeedPayloadSchema, payload)) };
   await invoke('social_public_feed_prepare', { input });
   if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
-  const result = await invoke<{ state: string; bundleB64: string; homeStationPeerId: string }>('social_public_feed_submit', { input });
+  const result = await invoke<NativeSubmission>('social_public_feed_submit', { input });
   if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
-  if (result.state !== 'COMMITTED' || !result.homeStationPeerId) throw new Error('FEED_INVALID_RESPONSE');
+  if ((result.state !== 'COMMITTED' && result.sourceState !== 'COMMITTED') || !result.homeStationPeerId) {
+    throw new Error('FEED_INVALID_RESPONSE');
+  }
   const bundle = fromBinary(FeedBundleSchema, bytes(result.bundleB64));
-  for (const event of bundle.events) projection.apply(event, result.homeStationPeerId);
+  const admission = result.pollAdmissionB64 ? fromBinary(FeedPollAdmissionSchema, bytes(result.pollAdmissionB64)) : undefined;
+  for (const event of bundle.events) projection.apply(event, result.homeStationPeerId, admission);
   localHome = result.homeStationPeerId;
+  if (kind === FeedEventKind.POLL_BALLOT_SET) {
+    if (result.state === 'PENDING_ADMISSION' || result.state === 'PENDING_READBACK') {
+      throw new Error(result.errorCode ?? 'FEED_POLL_ADMISSION_PENDING');
+    }
+    if (!admission?.statement) throw new Error('FEED_INVALID_RESPONSE');
+    const errors: Partial<Record<FeedPollAdmissionResult, string>> = {
+      [FeedPollAdmissionResult.CLOSED]: 'FEED_POLL_CLOSED',
+      [FeedPollAdmissionResult.INVALID_SELECTION]: 'FEED_POLL_INVALID_SELECTION',
+      [FeedPollAdmissionResult.DEFINITION_CHANGED]: 'FEED_POLL_DEFINITION_CHANGED',
+      [FeedPollAdmissionResult.TARGET_UNAVAILABLE]: 'FEED_POLL_TARGET_UNAVAILABLE',
+    };
+    if (admission.statement.result !== FeedPollAdmissionResult.ACCEPTED) {
+      throw new Error(errors[admission.statement.result] ?? 'FEED_INVALID_RESPONSE');
+    }
+    if (result.state !== 'COMMITTED') throw new Error('FEED_INVALID_RESPONSE');
+  }
   return payload;
 }
 
@@ -170,7 +216,7 @@ async function syncActor(actor: string, handle: string): Promise<void> {
       for (const encoded of result.threadEntriesB64) {
         const entry = fromBinary(FeedThreadEntrySchema, bytes(encoded));
         if (!entry.receipt?.event) throw new Error('FEED_INVALID_RESPONSE');
-        projection.apply(entry.receipt.event, entry.interactionHomeStation);
+        projection.apply(entry.receipt.event, entry.interactionHomeStation, entry.receipt.pollAdmission);
       }
       const next = { sequence: result.nextSequence, thread: result.nextThreadCursor };
       cursors.set(actor, next);
@@ -207,6 +253,32 @@ export function publicPostRef(id: string): string {
   const known = postRefs.get(id);
   if (!known) throw new Error('FEED_PROJECTION_UNVERIFIED');
   return known.ref;
+}
+export async function publicPollBallotPayload(id: string, options: readonly number[]): Promise<FeedPayload> {
+  const expected = generation;
+  const ref = publicPostRef(id);
+  const post = projection.posts.get(ref);
+  if (!post || post.isDeleted) throw new Error('FEED_POLL_TARGET_UNAVAILABLE');
+  if (post.content.case !== 'pollPost' || !post.content.value.poll) throw new Error('FEED_POLL_NOT_POLL');
+  const definition = post.content.value.poll;
+  if (options.length < definition.minChoices || options.length > definition.maxChoices
+    || options.some((index, position) => !Number.isInteger(index) || index < 0
+      || index >= definition.options.length || (position > 0 && options[position - 1] >= index))) {
+    throw new Error('FEED_POLL_INVALID_SELECTION');
+  }
+  const definitionHash = await publicPollDefinitionHash(definition);
+  if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
+  return create(FeedPayloadSchema, { mutation: { case: 'pollBallot',
+    value: create(FeedPollBallotMutationSchema, {
+      targetPostRef: ref, definitionHash, optionIndices: [...options],
+    }) } });
+}
+export function verifiedPublicPoll(id: string) {
+  const post = projection.posts.get(publicPostRef(id));
+  if (!post || post.isDeleted) throw new Error('FEED_POLL_TARGET_UNAVAILABLE');
+  const verified = projection.bindPost(post, useSessionStore.getState().currentUser?.actorPtid ?? '');
+  if (verified.content.case !== 'pollPost' || !verified.content.value.result) throw new Error('FEED_POLL_NOT_POLL');
+  return verified.content.value.result;
 }
 export function publicTextUpdatePayload(id: string, text: string): FeedPayload {
   const ref = publicPostRef(id);

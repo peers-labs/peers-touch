@@ -20,7 +20,8 @@ export type RealtimeWireEvent = RealtimeWireMetadata & (
   | { kind: 'settings-changed'; conversationKind: 'friend' | 'group'; containerUlid: string }
   | {
     kind: 'moment';
-    momentKind: 'post-created' | 'post-deleted' | 'post-commented' | 'post-reacted';
+    momentKind: 'post-created' | 'post-deleted' | 'post-commented' | 'post-reacted' | 'post-updated';
+    targetActorPtid: string;
     postId: string;
     authorActorPtid: string;
     actorPtid: string;
@@ -148,6 +149,7 @@ function decodeRealtimeEvent(bytes: Uint8Array): RealtimeWireEvent {
       ...metadata,
       kind: 'moment',
       momentKind,
+      targetActorPtid: frame.value.targetActorPtid,
       postId: frame.value.postId,
       authorActorPtid: frame.value.authorActorPtid,
       actorPtid: frame.value.actorPtid,
@@ -219,6 +221,7 @@ function momentKindFromEnum(
   if (value === MomentEvent_Kind.DELETED) return 'post-deleted';
   if (value === MomentEvent_Kind.COMMENTED) return 'post-commented';
   if (value === MomentEvent_Kind.REACTED) return 'post-reacted';
+  if (value === MomentEvent_Kind.UPDATED) return 'post-updated';
   return null;
 }
 

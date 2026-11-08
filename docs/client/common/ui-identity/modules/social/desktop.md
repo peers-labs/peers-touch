@@ -83,6 +83,10 @@ Rules:
 - Text input, media attachments, audience selector, and publish button share one state owner.
 - Publish disabled state must explain empty text, uploading media, invalid audience, or offline/runtime failure when applicable.
 - Audience selector must be visible enough to prevent privacy mistakes.
+- Poll creation uses shared `MomentPollComposer` fields in that same draft.
+  Question, distinct options, minimum/maximum choices and absolute deadline
+  survive dismissal and failures. Images and poll are mutually exclusive.
+  Any edit invalidates private recipient readiness before a new prepare.
 
 ## 7. Reaction And Comments
 
@@ -93,6 +97,13 @@ Rules:
 - A failed reaction restores the previous selected state/count.
 - Comment submit pending state belongs to the reply composer.
 - Comment failures preserve typed text and show inline recovery.
+- Polls use the shared `MomentPoll` inside the original card. The question,
+  option rows, confirmed counts, selection rule and submit action form one
+  continuous surface. Only unsubmitted choices are local. Submit replaces the
+  complete choice set; Cancel resets that local selection. Unknown submission,
+  admission wait and verified-readback wait preserve confirmed counts and offer
+  exact-command recovery. Closed polls are read-only; a pending command can still
+  be checked after cutoff. Native-qualified ballots determine public counts.
 
 ## 8. Station, Audience, And Moderation
 

@@ -28,7 +28,8 @@ COMMANDS = (
               "src/services/socialCirclePages.test.ts", "src/store/relationships.test.ts",
               "src/services/socialRealtime.test.ts", "src/services/socialRelationshipTransport.test.ts",
               "src/store/momentsCircles.test.ts", "src/store/momentsReactions.test.ts",
-              "src/store/privateComments.test.ts", "src/services/eventStream.test.ts"),
+              "src/store/privateComments.test.ts", "src/services/eventStream.test.ts",
+              "src/store/momentsPolls.test.ts"),
         cwd="apps/desktop",
     ),
     SourceCommand(

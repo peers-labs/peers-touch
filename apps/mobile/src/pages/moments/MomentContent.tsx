@@ -143,10 +143,10 @@ export function MomentContent({ post, onOpenMedia }: MomentContentProps) {
       {post.content.case === 'pollPost' && post.content.value.poll ? (
         <div className="moments-poll">
           <strong>
-            <BarChart3 size={16} /> {post.content.value.text}
+            <BarChart3 size={16} /> {post.content.value.poll.question}
           </strong>
           {post.content.value.poll.options.map((option, index) => (
-            <span key={`${index}:${option.text}`}>{option.text}</span>
+            <span key={`${index}:${option}`}>{option}</span>
           ))}
         </div>
       ) : null}

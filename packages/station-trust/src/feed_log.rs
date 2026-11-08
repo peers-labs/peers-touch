@@ -13,6 +13,10 @@ pub mod proto {
 }
 use proto::*;
 
+#[path = "feed_poll.rs"]
+mod poll;
+pub use poll::*;
+
 // Compile the existing content contracts; signed payloads must not invent a
 // second schema that accepts a private body or mismatched content variant.
 pub mod content {
@@ -27,6 +31,11 @@ pub mod content {
         }
     }
     pub mod social {
+        pub mod feed {
+            pub mod v1 {
+                pub use crate::feed_log::proto::*;
+            }
+        }
         pub mod v1 {
             include!(concat!(env!("OUT_DIR"), "/peers_touch.model.social.v1.rs"));
         }
@@ -146,7 +155,7 @@ pub fn verify_event(event: &FeedEvent, grant: &FeedWriterGrant) -> Result<(), Tr
         || s.previous_hash.len() != 32
         || event.payload.is_empty()
         || event.payload.len() > MAX_FEED_BYTES
-        || !(1..=8).contains(&s.kind)
+        || !(1..=9).contains(&s.kind)
     {
         return Err(error("FEED_INVALID"));
     }
@@ -166,7 +175,16 @@ pub fn verify_event(event: &FeedEvent, grant: &FeedWriterGrant) -> Result<(), Tr
         &event.device_signature,
     )?;
     let payload: FeedPayload = decode_canonical(&event.payload)?;
-    validate_payload(s.kind, &payload)
+    validate_payload(s.kind, &payload)?;
+    if s.kind == FeedEventKind::PostCreated as i32 {
+        if let Some(feed_payload::Mutation::Post(post)) = payload.mutation.as_ref() {
+            let request: content::social::v1::CreatePostRequest = decode_canonical(&post.create_request)?;
+            if let Some(content::social::v1::create_post_request::Content::Poll(poll)) = request.content.as_ref() {
+                poll_definition(poll, s.created_at_unix_ms)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn object_id(value: &str) -> Result<u64, TrustError> {
@@ -209,7 +227,8 @@ pub fn validate_payload(kind: i32, payload: &FeedPayload) -> Result<(), TrustErr
             match (r.r#type, r.content.as_ref()) {
                 (0, Some(Content::Text(_))) | (1, Some(Content::Image(_))) |
                 (2, Some(Content::Video(_))) | (3, Some(Content::Link(_))) |
-                (4, Some(Content::Poll(_))) | (6, Some(Content::Location(_))) => Ok(()),
+                (6, Some(Content::Location(_))) => Ok(()),
+                (4, Some(Content::Poll(poll))) => validate_poll_request(poll),
                 (5, Some(Content::Repost(p))) => target_object(&p.original_post_id, "post").map(|_| ()),
                 _ => Err(error("FEED_INVALID")),
             }
@@ -239,6 +258,7 @@ pub fn validate_payload(kind: i32, payload: &FeedPayload) -> Result<(), TrustErr
             }
             validate_mentions(&r.content, &r.typed_mentions)
         }
+        (9, Some(feed_payload::Mutation::PollBallot(ballot))) => validate_poll_ballot(ballot),
         _ => Err(error("FEED_INVALID")),
     }
 }
@@ -560,5 +580,85 @@ mod tests {
         let mut after = request;
         after.after_sequence = 1;
         assert_eq!(verify_read_page(&after, &response, &root, Some(&next)).unwrap_err().code, "FEED_HEAD_ROLLBACK");
+    }
+
+    #[test]
+    fn poll_replay_keeps_original_deadline_and_blocks_definition_replacement() {
+        use content::social::v1::{create_post_request,CreatePostRequest,CreatePollPostRequest,Audience};
+        let (bundle,_,_) = vector();
+        let writer = Keypair::ed25519_from_bytes([2u8;32]).unwrap();
+        let mut request = CreatePostRequest { r#type: 4, audience: Some(Audience {kind: 1,..Default::default()}),
+            content: Some(create_post_request::Content::Poll(CreatePollPostRequest {
+                text: "original".into(),question: "Which route?".into(),
+                options: vec!["Direct".into(),"Relay".into()],duration_hours: 1,..Default::default()
+            })),..Default::default() };
+        let payload = |request: &CreatePostRequest| FeedPayload {mutation: Some(feed_payload::Mutation::Post(FeedPostMutation {
+            post_id: "101".into(),create_request: request.encode_to_vec(),
+        }))};
+        let mut statement = bundle.events[0].statement.clone().unwrap();
+        statement.kind = FeedEventKind::PostCreated as i32;
+        let creation = sign_event(statement.clone(),&payload(&request),&writer).unwrap();
+        verify_event(&creation,bundle.writer_grant.as_ref().unwrap()).unwrap();
+        let mut replay = FeedPostReplay::default();
+        replay.observe(&creation).unwrap();
+        if let Some(create_post_request::Content::Poll(poll)) = request.content.as_mut() { poll.text = "after closure".into(); }
+        statement.kind = FeedEventKind::PostUpdated as i32;
+        statement.sequence = 2;
+        statement.created_at_unix_ms += 3_600_001;
+        statement.previous_hash = event_hash(&creation).unwrap();
+        let edit = sign_event(statement.clone(),&payload(&request),&writer).unwrap();
+        verify_event(&edit,bundle.writer_grant.as_ref().unwrap()).unwrap();
+        replay.observe(&edit).unwrap();
+        let mut changed = request.clone();
+        if let Some(create_post_request::Content::Poll(poll)) = changed.content.as_mut() { poll.duration_hours = 2; }
+        let invalid = sign_event(statement.clone(),&payload(&changed),&writer).unwrap();
+        assert!(replay.observe(&invalid).is_err());
+        statement.kind = FeedEventKind::PostTombstoned as i32;
+        let tombstone = sign_event(statement,&FeedPayload {mutation: Some(feed_payload::Mutation::Post(FeedPostMutation {
+            post_id: "101".into(),create_request: vec![],
+        }))},&writer).unwrap();
+        replay.observe(&tombstone).unwrap();
+        assert!(replay.observe(&edit).is_err());
+    }
+
+    #[test]
+    fn poll_admission_requires_independent_home_key_and_signed_cutoff() {
+        let (bundle,_,_) = vector();
+        let writer = Keypair::ed25519_from_bytes([2u8;32]).unwrap();
+        let station = Keypair::ed25519_from_bytes([7u8;32]).unwrap();
+        let foreign = Keypair::ed25519_from_bytes([8u8;32]).unwrap();
+        let definition = FeedPollDefinition {question: "Which route?".into(),
+            options: vec!["Direct".into(),"Relay".into()],min_choices: 1,max_choices: 1,
+            expires_at_unix_ms: 1_700_000_003_000};
+        let ballot = FeedPollBallotMutation {target_post_ref: "oss://station-a/post/101".into(),
+            definition_hash: poll_definition_hash(&definition).unwrap(),option_indices: vec![0]};
+        let mut event_statement = bundle.events[0].statement.clone().unwrap();
+        event_statement.kind = FeedEventKind::PollBallotSet as i32;
+        let event = sign_event(event_statement,&FeedPayload {
+            mutation: Some(feed_payload::Mutation::PollBallot(ballot.clone())),
+        },&writer).unwrap();
+        verify_event(&event,bundle.writer_grant.as_ref().unwrap()).unwrap();
+        let mut statement = FeedPollAdmissionStatement {format_version: 1,
+            home_station_peer_id: "station-a".into(),target_post_ref: ballot.target_post_ref.clone(),
+            event_hash: event_hash(&event).unwrap(),definition_hash: poll_definition_hash(&definition).unwrap(),
+            accepted_at_unix_ms: definition.expires_at_unix_ms - 1,result: FeedPollAdmissionResult::Accepted as i32,
+            signing_key_id: "home-key".into()};
+        let sign = |statement: &FeedPollAdmissionStatement| FeedPollAdmission {
+            statement: Some(statement.clone()),station_signature: station.sign(&signing_bytes(POLL_ADMISSION_DOMAIN,statement).unwrap()).unwrap(),
+        };
+        let key = station.public().try_into_ed25519().unwrap().to_bytes();
+        verify_poll_admission(&sign(&statement),&event,&definition,"home-key",&key).unwrap();
+        let foreign_key = foreign.public().try_into_ed25519().unwrap().to_bytes();
+        assert!(verify_poll_admission(&sign(&statement),&event,&definition,"home-key",&foreign_key).is_err());
+        assert!(verify_poll_admission(&sign(&statement),&event,&definition,"replaced-key",&key).is_err());
+        statement.accepted_at_unix_ms = definition.expires_at_unix_ms;
+        assert!(verify_poll_admission(&sign(&statement),&event,&definition,"home-key",&key).is_err());
+        statement.result = FeedPollAdmissionResult::Closed as i32;
+        verify_poll_admission(&sign(&statement),&event,&definition,"home-key",&key).unwrap();
+        statement.event_hash[0] ^= 1;
+        assert!(verify_poll_admission(&sign(&statement),&event,&definition,"home-key",&key).is_err());
+        let mut duplicate = ballot.clone();
+        duplicate.option_indices = vec![0,0];
+        assert!(validate_poll_ballot(&duplicate).is_err());
     }
 }

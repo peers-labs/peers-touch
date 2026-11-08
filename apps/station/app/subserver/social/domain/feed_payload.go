@@ -87,6 +87,9 @@ func ValidateFeedPayload(kind model.FeedEventKind, payload *model.FeedPayload) e
 			_, _, err := FeedTargetPost(r.GetRepost().OriginalPostId)
 			return err
 		}
+		if r.GetPoll() != nil {
+			return ValidateFeedPollRequest(r.GetPoll())
+		}
 		return nil
 	case model.FeedEventKind_FEED_EVENT_KIND_REACTION_SET,
 		model.FeedEventKind_FEED_EVENT_KIND_REACTION_REMOVED:
@@ -135,6 +138,8 @@ func ValidateFeedPayload(kind model.FeedEventKind, payload *model.FeedPayload) e
 			return ErrFeedInvalid
 		}
 		return nil
+	case model.FeedEventKind_FEED_EVENT_KIND_POLL_BALLOT_SET:
+		return ValidateFeedPollBallot(payload.GetPollBallot())
 	default:
 		return ErrFeedInvalid
 	}

@@ -18,20 +18,26 @@ import (
 // Station. Remote IDs are translated to Station-local projection IDs so two
 // unrelated Stations cannot overwrite each other's numeric primary keys.
 type FeedObjectRecord struct {
-	HomeStation string `gorm:"primaryKey;size:255"`
-	ObjectKind  string `gorm:"primaryKey;size:16"`
-	ObjectID    string `gorm:"primaryKey;size:20"`
-	ActorPTID   string `gorm:"column:actor_ptid;not null;size:255"`
-	LocalID     uint64 `gorm:"not null;uniqueIndex"`
-	Sequence    uint64 `gorm:"not null"`
+	HomeStation     string `gorm:"primaryKey;size:255"`
+	ObjectKind      string `gorm:"primaryKey;size:16"`
+	ObjectID        string `gorm:"primaryKey;size:20"`
+	ActorPTID       string `gorm:"column:actor_ptid;not null;size:255"`
+	LocalID         uint64 `gorm:"not null;uniqueIndex"`
+	Sequence        uint64 `gorm:"not null"`
+	CreatedSequence uint64 `gorm:"not null;default:0"`
 }
 
 func (FeedObjectRecord) TableName() string { return "social_feed_objects" }
 
 type FeedProjectionObserver func(context.Context, *gorm.DB, *model.FeedEvent, uint64, string) error
 type FeedProjector struct {
-	localStation string
-	observer     FeedProjectionObserver
+	localStation  string
+	observer      FeedProjectionObserver
+	pollAuthority func(context.Context, *gorm.DB, *model.FeedInteraction) error
+}
+
+func (p *FeedProjector) SetPollAuthority(authority func(context.Context, *gorm.DB, *model.FeedInteraction) error) {
+	p.pollAuthority = authority
 }
 
 func (p *FeedProjector) SetObserver(observer FeedProjectionObserver) { p.observer = observer }
@@ -105,6 +111,7 @@ func (p *FeedProjector) applyPost(ctx context.Context, tx *gorm.DB, chain *FeedC
 			key.LocalID = id.NextID()
 		}
 		object = key
+		object.CreatedSequence = event.Statement.Sequence
 	} else {
 		if err != nil {
 			return err
@@ -141,6 +148,15 @@ func (p *FeedProjector) applyPost(ctx context.Context, tx *gorm.DB, chain *FeedC
 	}
 	if chain.HomeStationPeerID == p.localStation {
 		if err := domain.ValidatePostMedia(ctx, request, NewOssMediaResolver(tx)); err != nil {
+			return err
+		}
+	}
+	if kind == model.FeedEventKind_FEED_EVENT_KIND_POST_UPDATED {
+		original, created, err := OriginalFeedPostRequest(ctx, tx, &object)
+		if err != nil {
+			return err
+		}
+		if err := domain.ValidateFeedPollPostUpdate(original, request, created); err != nil {
 			return err
 		}
 	}

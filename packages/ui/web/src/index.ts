@@ -33,6 +33,7 @@ export * from './identity-card';
 export * from './image-grid';
 export * from './moment-card';
 export * from './moment-comments';
+export * from './moment-poll';
 export * from './moment-scope-bar';
 export * from './moment-composer';
 export * from './moment-circles';

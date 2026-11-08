@@ -77,6 +77,17 @@ UI 只显示已确认并回读的计数，pending/error 单独呈现。
 绝对正确。Home Station 的遗漏、停机或时钟错误仍是可用性/时间判定边界。
 跨站客户端不能用接收时间或本机当前时间独立重新判定旧选票。
 
+原 Feed append 在同一事务中先保存完整已验证批次和 head，再执行投影；
+投影失败回滚该批次和 head，分叉隔离保留原语义。创建索引只从已保存的签名
+创建事件恢复，序号必须处于已验证 head 以内。正文编辑仍按原创建时间重建定义，
+不能以编辑时间移动截止，也不能把普通帖子改成投票或移除既有投票定义。
+
+作者 Home 的接纳回执与 Actor 事件分开保存在原 interaction 行中。
+thread/fanout 只能暴露已验证接纳回执的选票。回执返回是该行独立的投递义务：
+即使源转发和投影都完成，原 worker 仍须继续核验返回 ACK，过期只更新
+transport revision，不能重新签署接纳时间。作者本人在自己的 Home 互动时，
+该 Home 同时是互动源和父帖 Home；向订阅站分发仍属于作者 Home fanout。
+
 ## 4. 私密交互权威
 
 原 Secure Content prepare/submit、资源权限快照、设备验证和共享 Federation
@@ -203,3 +214,8 @@ authenticated viewer；远端作者通过原 peer read/pull 补齐本站副本�
 
 作者签名的正文时间和互动派生计数独立：更新反应计数不能修改帖子
 `updated_at`。Native 保持严格的完整正文比对，不能豁免这类漂移。
+
+原 `MomentEvent` 的 `target_actor_ptid` 绑定 authenticated stream recipient，
+`actor_ptid` 保留操作发起者。公开 fanout 和私密投影均逐接收者构造事件，
+Desktop/Mobile 验证接收者与当前流/Actor 一致后触发原 Owner 回读。
+正文编辑和投票结果使用 typed `UPDATED`，不能当成新建或伪造反应事件。

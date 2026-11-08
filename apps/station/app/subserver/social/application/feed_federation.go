@@ -133,13 +133,13 @@ func (s *FeedLogService) receiveInteraction(ctx context.Context, tx delivery.Tra
 	if err := signedlog.Decode(message.Event.Payload, payload); err != nil {
 		return feedDeliveryError(err)
 	}
-	target := payload.GetReaction().GetTargetPostRef()
-	if payload.GetComment() != nil {
-		target = payload.GetComment().TargetPostRef
+	target, err := domain.FeedInteractionTarget(payload)
+	if err != nil {
+		return feedDeliveryError(err)
 	}
 	targetHome, _, err := domain.FeedTargetPost(target)
 	if err != nil || (frame.SourceStationPeerId != home && frame.SourceStationPeerId != targetHome) ||
-		(frame.SourceStationPeerId == home && targetHome != s.localStation) {
+		(frame.SourceStationPeerId == home && home != targetHome && targetHome != s.localStation) {
 		return delivery.TerminalResult(delivery.FrameErrorInvalidFrame), nil
 	}
 	if err := tx.DB().SavePoint("feed_received_interaction").Error; err != nil {
@@ -300,7 +300,7 @@ func (s *FeedLogService) ProcessFederation(ctx context.Context) error {
 	sendInteraction := func(ctx context.Context, tx delivery.Transaction, target string, receipt *model.FeedInteraction) error {
 		return s.enqueue(ctx, tx, target, delivery.PayloadKindSocialPublicFeedInteraction, receipt)
 	}
-	if err := s.store.ProcessInteractions(ctx, s.projector, s.verifyStoredInteraction, s.forwardInteraction); err != nil {
+	if err := s.store.ProcessInteractions(ctx, s.projector, s.verifyStoredInteraction, s.forwardInteraction, s.returnPollAdmission); err != nil {
 		if firstError == nil {
 			firstError = err
 		}
@@ -371,7 +371,10 @@ func (s *FeedLogService) verifyStoredInteraction(ctx context.Context, tx deliver
 	if _, err := s.authenticate(ctx, tx, bundle, actor, home, false); err != nil {
 		return err
 	}
-	return domain.VerifyFeedEvent(receipt.Event, receipt.WriterGrant)
+	if err := domain.VerifyFeedEvent(receipt.Event, receipt.WriterGrant); err != nil {
+		return err
+	}
+	return s.verifyPollAdmission(infrastructure.FeedTransactionContext(ctx, tx), tx.DB(), receipt)
 }
 
 func (s *FeedLogService) verifyPulledHead(ctx context.Context, actor string, response *model.ReadFeedResponse) error {

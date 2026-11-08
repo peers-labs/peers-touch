@@ -35,6 +35,7 @@ export const EVENT = {
   MOMENT_REVOKED: 'moment.revoked',
   MOMENT_COMMENTED: 'moment.commented',
   MOMENT_REACTED: 'moment.reacted',
+  MOMENT_UPDATED: 'moment.updated',
   MOMENT_RESYNC_REQUESTED: 'moment.resync_requested',
   RELATIONSHIP_CHANGED: 'relationship.changed',
 } as const;

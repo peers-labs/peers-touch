@@ -45,6 +45,7 @@ enum FeedEventKind {
   FEED_EVENT_KIND_COMMENT_CREATED = 6;
   FEED_EVENT_KIND_COMMENT_UPDATED = 7;
   FEED_EVENT_KIND_COMMENT_TOMBSTONED = 8;
+  FEED_EVENT_KIND_POLL_BALLOT_SET = 9;
 }
 
 message FeedEventStatement {
@@ -97,6 +98,7 @@ message FeedPayload {
     FeedPostMutation post = 1;
     FeedReactionMutation reaction = 2;
     FeedCommentMutation comment = 3;
+    FeedPollBallotMutation poll_ballot = 4;
   }
 }
 
@@ -120,6 +122,7 @@ message SubmitFeedEventRequest {
 message SubmitFeedEventResponse {
   FeedHead head = 1;
   bool duplicate = 2;
+  repeated FeedPollAdmission poll_admissions = 3;
 }
 
 message ReadFeedRequest {
@@ -163,6 +166,51 @@ message FeedInteraction {
   FeedGenesis genesis = 1;
   FeedWriterGrant writer_grant = 2;
   FeedEvent event = 3;
+  FeedPollAdmission poll_admission = 4;
+}
+
+// Reconstructed from the original signed creation and its timestamp.
+// Body edits cannot change the question, options, constraints or deadline.
+message FeedPollDefinition {
+  string question = 1;
+  repeated string options = 2;
+  uint32 min_choices = 3;
+  uint32 max_choices = 4;
+  int64 expires_at_unix_ms = 5;
+}
+
+message FeedPollBallotMutation {
+  string target_post_ref = 1;
+  bytes definition_hash = 2;
+  // Strictly increasing and distinct; replaces the Actor's complete ballot.
+  repeated int32 option_indices = 3;
+}
+
+enum FeedPollAdmissionResult {
+  FEED_POLL_ADMISSION_RESULT_UNSPECIFIED = 0;
+  FEED_POLL_ADMISSION_RESULT_ACCEPTED = 1;
+  FEED_POLL_ADMISSION_RESULT_CLOSED = 2;
+  FEED_POLL_ADMISSION_RESULT_INVALID_SELECTION = 3;
+  FEED_POLL_ADMISSION_RESULT_DEFINITION_CHANGED = 4;
+  FEED_POLL_ADMISSION_RESULT_TARGET_UNAVAILABLE = 5;
+}
+
+// Author Home authenticates admission time and decision, never Actor intent,
+// aggregate completeness or absolute physical clock correctness.
+message FeedPollAdmissionStatement {
+  uint32 format_version = 1;
+  string home_station_peer_id = 2;
+  string target_post_ref = 3;
+  bytes event_hash = 4;
+  bytes definition_hash = 5;
+  int64 accepted_at_unix_ms = 6;
+  FeedPollAdmissionResult result = 7;
+  string signing_key_id = 8;
+}
+
+message FeedPollAdmission {
+  FeedPollAdmissionStatement statement = 1;
+  bytes station_signature = 2;
 }
 
 message FeedSubscription {

@@ -708,6 +708,11 @@ function onMomentCommented(payload: MomentCommentedPayload): void {
   );
 }
 
+function onMomentUpdated(payload: MomentRealtimeBasePayload): void {
+  runScopedMomentEvent(payload, 'moment updated projection refresh',
+    scope => ensureMomentDetailProjectionNow(scope, payload.postId));
+}
+
 function onMomentReacted(payload: MomentReactedPayload): void {
   runScopedMomentEvent(
     payload,
@@ -984,6 +989,7 @@ export const momentsRuntime: RuntimeDescriptor = {
       eventBus.subscribe(EVENT.MOMENT_REVOKED, onMomentRevoked),
       eventBus.subscribe(EVENT.MOMENT_COMMENTED, onMomentCommented),
       eventBus.subscribe(EVENT.MOMENT_REACTED, onMomentReacted),
+      eventBus.subscribe(EVENT.MOMENT_UPDATED, onMomentUpdated),
       eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
       eventBus.subscribe(EVENT.MOMENT_RESYNC_REQUESTED, onMomentResyncRequested),
       eventBus.subscribe(EVENT.REALTIME_RESYNC, onRealtimeResync),

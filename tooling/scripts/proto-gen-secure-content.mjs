@@ -62,6 +62,7 @@ export const SOCIAL_INTERACTION_PROTO_INPUTS = Object.freeze([
   'domain/social/poll.proto',
   'domain/social/private_content.proto',
   'domain/social/private_federation.proto',
+  'domain/realtime/event.proto',
 ]);
 export const FEDERATION_RESOLVE_PROOF_PROTO_INPUTS = Object.freeze([
   'domain/federation/profile.proto',
@@ -79,6 +80,7 @@ const ALLOWED_PROTO_ROOTS = Object.freeze([
   'domain/social',
   'domain/federation',
   'domain/key_exchange',
+  'domain/realtime',
 ]);
 
 const GO_OUTPUT_DIRECTORIES = Object.freeze({
@@ -100,6 +102,7 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/federation/profile.proto': 'frame/touch/federation/profile/pb',
   'domain/federation/federation_resolve.proto': 'frame/touch/federation/api/pb',
   'domain/key_exchange/key_exchange.proto': 'app/subserver/key_exchange/model',
+  'domain/realtime/event.proto': 'frame/touch/model/realtime',
 });
 
 const GO_PACKAGE_NAMES = Object.freeze({
@@ -121,6 +124,7 @@ const GO_PACKAGE_NAMES = Object.freeze({
   'domain/federation/profile.proto': 'pb',
   'domain/federation/federation_resolve.proto': 'pb',
   'domain/key_exchange/key_exchange.proto': 'model',
+  'domain/realtime/event.proto': 'realtime',
 });
 
 const OUTPUT_ROOT_BY_CHANNEL = Object.freeze({

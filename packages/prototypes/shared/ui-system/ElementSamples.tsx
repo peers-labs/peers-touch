@@ -29,8 +29,9 @@ import {
   FileDropzone, FilePicker, FileTypeGlyph, Flex, FloatingPanel, Form, FormField, FormFooter,
   FormGroup, Grid, GroupAvatar, GuideStep, Heading, HighlightText, HtmlPreview, Icon, IconButton,
   Image, ImageChoice, ImageGrid, IdentityCard, IdentityTrigger, FollowButton, InlineEdit, Layout, Link, List, ListItem, ListItemMeta, ListRow, ListSection,
-  MomentCard, MomentAuthor, MomentTrustMeta, MomentReactionBar, MomentCommentRow, MomentCommentComposer, MomentScopeBar,
+  MomentCard, MomentAuthor, MomentTrustMeta, MomentReactionBar, MomentCommentRow, MomentCommentComposer, MomentScopeBar, MomentPoll,
   MomentComposerSurface, MomentAudiencePicker, MomentCircleCard, MomentCircleEditor,
+  MomentPollComposer, createMomentPollDraft, momentPollDraftError,
   UserProfileHeader, StatGrid, FeedSortFloat,
   Markdown, MentionPicker, Menu, NavigationToggle, NumberField, OTPField, OverflowHint,
   OverflowToolbar, PageHeader, Paragraph, Pagination, PasswordField, Popover, Progress, QrCode,
@@ -483,6 +484,37 @@ function MomentCardStage({ c }: { c: Ctx }) {
           emphasis="primary" availability={c.unavailable} /></MomentCommentComposer>
     </> : undefined} />;
 }
+function MomentPollStage({ c }: { c: Ctx }) {
+  const [choices, setChoices] = useState<number[]>([]);
+  const [unresolved, setUnresolved] = useState(false);
+  const [simulateUnknown, setSimulateUnknown] = useState(false), [closed, setClosed] = useState(false);
+  const [retained, setRetained] = useState<number[]>([]);
+  const options = ['共享书架', '种子交换', '修补旧衣'];
+  const confirm = (next: number[]) => { setChoices(next); setUnresolved(false); };
+  return <div><Checkbox checked={simulateUnknown} onCheckedChange={setSimulateUnknown} label="模拟提交结果未知" />
+    <Checkbox checked={closed} onCheckedChange={setClosed} label="投票已截止" />
+    <MomentPoll postId="element-poll" question={c.L('周末做什么？', '周末想一起参加哪两项社区活动？')}
+    options={options.map((text, index) => ({ text: c.L(text, `${text}：适合邻居一起参与的周末活动`),
+      votes: choices.includes(index) ? 1 : 0 }))}
+    minChoices={1} maxChoices={2} confirmedChoices={choices} totalVotes={choices.length ? 1 : 0}
+    closed={closed} disabled={c.disabled} unresolved={unresolved}
+    status={unresolved ? '提交结果未知，已确认人数保持不变' : undefined}
+    onSubmit={next => { setRetained(next); if (simulateUnknown) setUnresolved(true); else confirm(next); }}
+    onRetry={unresolved ? () => confirm(retained) : undefined}
+    copy={{ submit: '投票', replace: '更新选票', cancel: '取消选择', retry: '确认结果', closed: '投票已截止',
+      choices: (min, max) => `请选择 ${min}–${max} 个选项`, total: count => `${count} 人已投票` }} /></div>;
+}
+function MomentPollComposerStage({ c }: { c: Ctx }) {
+  const [draft, setDraft] = useState(() => ({ ...createMomentPollDraft(), question: '周末活动',
+    options: ['共享书架', '种子交换'] }));
+  const error = momentPollDraftError(draft);
+  return <MomentPollComposer value={draft} onChange={setDraft} disabled={c.disabled}
+    error={error ? '请检查题目、不同选项、选择数量和截止时间' : undefined}
+    copy={{ question: c.L('投票题目', '你希望邻居们在这个周末一起参加什么活动？'),
+      option: index => `选项 ${index}`, add: '添加选项', remove: '移除选项',
+      minimum: '最少选择数', maximum: '最多选择数', expiry: '投票截止时间',
+      description: '填写 2–10 个不同选项，最多选择 1 项即为单选。' }} />;
+}
 function MomentScopeStage({ c }: { c: Ctx }) {
   const [scope, setScope] = useState<'feed' | 'circles'>('feed');
   const [query, setQuery] = useState('');
@@ -564,6 +596,8 @@ const IDENTITY: Record<string, Renderer> = {
   MomentCard: c => <MomentCardStage c={c} />,
   MomentCommentRow: c => <MomentCardStage c={c} />,
   MomentCommentComposer: c => <MomentCardStage c={c} />,
+  MomentPoll: c => <MomentPollStage c={c} />,
+  MomentPollComposer: c => <MomentPollComposerStage c={c} />,
   MomentScopeBar: c => <MomentScopeStage c={c} />,
   MomentComposerSurface: c => <MomentComposeStage c={c} />,
   MomentAudiencePicker: c => <MomentComposeStage c={c} />,
@@ -708,7 +742,7 @@ const WIDE = new Set<string>([
   'SurfaceFade', 'Paragraph', 'ListSection', 'ListRow', 'Image', 'ImageViewer', 'HtmlPreview',
   'ImageGrid', 'Lightbox', 'IdentityCard',
   'MomentCard', 'MomentAuthor', 'MomentTrustMeta', 'MomentReactionBar',
-  'MomentCommentRow', 'MomentCommentComposer',
+  'MomentCommentRow', 'MomentCommentComposer', 'MomentPoll', 'MomentPollComposer',
   'MomentScopeBar',
   'MomentComposerSurface', 'MomentAudiencePicker', 'MomentCircleCard', 'MomentCircleEditor',
   'UserProfileHeader', 'StatGrid', 'FeedSortFloat',

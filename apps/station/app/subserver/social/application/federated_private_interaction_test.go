@@ -1710,7 +1710,8 @@ func assertFederatedPrivateCommentEvent(
 			moment.GetKind() != realtime.MomentEvent_COMMENTED ||
 			moment.GetPostId() != postID ||
 			moment.GetCommentId() != commentID ||
-			moment.GetActorPtid() != targetActorPTID {
+			moment.GetTargetActorPtid() != targetActorPTID ||
+			moment.GetActorPtid() != moment.GetAuthorActorPtid() {
 			t.Fatalf("private Comment event = %+v", event)
 		}
 	case <-time.After(time.Second):

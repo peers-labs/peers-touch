@@ -11,6 +11,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"google.golang.org/protobuf/proto"
 )
 
 // MomentEventPublisher bridges committed social writes into the unified
@@ -70,7 +71,8 @@ func (p *MomentEventPublisher) StageImportedCreated(
 					Kind:             realtime.MomentEvent_CREATED,
 					PostId:           postID,
 					AuthorActorPtid:  authorPTID,
-					ActorPtid:        targetActorPTID,
+					ActorPtid:        authorPTID,
+					TargetActorPtid:  targetActorPTID,
 					Audience:         audience.String(),
 					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
 				},
@@ -113,7 +115,8 @@ func (p *MomentEventPublisher) StageImportedCommented(
 					Kind:             realtime.MomentEvent_COMMENTED,
 					PostId:           postID,
 					AuthorActorPtid:  commentAuthorPTID,
-					ActorPtid:        targetActorPTID,
+					ActorPtid:        commentAuthorPTID,
+					TargetActorPtid:  targetActorPTID,
 					CommentId:        commentID,
 					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
 				},
@@ -159,6 +162,7 @@ func (p *MomentEventPublisher) StagePrivateReacted(
 					PostId:           postID,
 					CommentId:        commentID,
 					ActorPtid:        reactionActorPTID,
+					TargetActorPtid:  targetActorPTID,
 					ReactionKind:     kind.String(),
 					Removed:          removed,
 					OccurredTsUnixMs: p.now().UTC().UnixMilli(),
@@ -197,9 +201,9 @@ func (p *MomentEventPublisher) StageImportedRevoked(
 		&realtime.StreamEvent{
 			Kind: &realtime.StreamEvent_Moment{
 				Moment: &realtime.MomentEvent{
-					Kind:      realtime.MomentEvent_DELETED,
-					PostId:    postID,
-					ActorPtid: targetActorPTID,
+					Kind:            realtime.MomentEvent_DELETED,
+					PostId:          postID,
+					TargetActorPtid: targetActorPTID,
 					// The canonical realtime schema has no separate revocation
 					// arm yet. Audience is otherwise unused for DELETED and
 					// carries the closed invalidation-reason enum.
@@ -246,6 +250,8 @@ func (p *MomentEventPublisher) publish(ctx context.Context, targetActorPTID stri
 		return
 	}
 
+	ev = proto.Clone(ev).(*realtime.MomentEvent)
+	ev.TargetActorPtid = targetActorPTID
 	if _, err := liveBus.Publish(targetActorPTID, &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_Moment{Moment: ev},
 	}); err != nil {

@@ -430,6 +430,7 @@ export function createSocialProjectionRuntime(
   }
 
   function ingestRealtimeEvent(event: RealtimeWireEvent): void {
+    if (event.kind === 'moment' && event.targetActorPtid !== getSocialStore().currentUserPtid) return;
     if (event.kind === 'call-signal') {
       dependencies.ingestCallSignal(event);
       return;

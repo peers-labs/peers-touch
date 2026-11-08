@@ -5,6 +5,8 @@ package peers_touch.model.social.v1;
 import "google/protobuf/timestamp.proto";
 import "domain/activity/activity.proto";
 import "domain/common/common.proto";
+import "domain/social/feed_log.proto";
+import "domain/social/poll.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -138,9 +140,10 @@ message LinkPost {
 
 message PollPost {
   string text = 1;
-  peers_touch.model.activity.v1.Poll poll = 2;
+  peers_touch.model.social.feed.v1.FeedPollDefinition poll = 2;
   repeated string hashtags = 3;
   repeated string mentions = 4;
+  PollResult result = 5;
 }
 
 message RepostPost {
@@ -273,6 +276,10 @@ message CreatePollPostRequest {
   repeated string options = 3;
   int32 duration_hours = 4;
   bool multiple_choice = 5;
+  uint32 min_choices = 6;
+  uint32 max_choices = 7;
+  // Exactly one explicit deadline or duration measured from signed creation.
+  int64 expires_at_unix_ms = 8;
 }
 
 message CreateRepostRequest {

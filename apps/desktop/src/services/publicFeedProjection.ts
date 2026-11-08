@@ -1,7 +1,8 @@
 import { clone, create, equals, fromBinary } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import {
-  FeedEventKind, FeedPayloadSchema, type FeedEvent,
+  FeedEventKind, FeedPayloadSchema, FeedPollDefinitionSchema, FeedPollAdmissionResult,
+  type FeedEvent, type FeedPollAdmission,
 } from '../gen/proto/domain/social/feed_log_pb';
 import {
   CreatePostRequestSchema, PostSchema, TextPostSchema, ImagePostSchema,
@@ -14,12 +15,13 @@ import {
 import {
   CommentSchema, CreateCommentRequestSchema, type Comment,
 } from '../gen/proto/domain/social/comment_pb';
+import { publicPollDefinition, publicPollResult, type PublicPollBallotVersion } from './publicFeedPollProjection';
 
 function stamp(ms: bigint) {
   return timestampFromDate(new Date(Number(ms)));
 }
 
-export function signedPostContent(request: CreatePostRequest): Post['content'] {
+export function signedPostContent(request: CreatePostRequest, createdAt: bigint): Post['content'] {
   const content = request.content;
   switch (content.case) {
     case 'text': return { case: 'textPost', value: create(TextPostSchema, { text: content.value.text }) };
@@ -38,7 +40,9 @@ export function signedPostContent(request: CreatePostRequest): Post['content'] {
     case 'repost': return { case: 'repostPost', value: create(RepostPostSchema, {
       comment: content.value.comment, originalPostId: content.value.originalPostId,
     }) };
-    case 'poll': return { case: 'pollPost', value: create(PollPostSchema, { text: content.value.text }) };
+    case 'poll': return { case: 'pollPost', value: create(PollPostSchema, {
+      text: content.value.text, poll: publicPollDefinition(content.value, createdAt),
+    }) };
     case 'location': return { case: 'locationPost', value: create(LocationPostSchema, {
       text: content.value.text, location: content.value.location,
       images: content.value.imageIds.map(id => create(ImageAttachmentSchema, { id, url: id })),
@@ -58,9 +62,11 @@ export class PublicFeedProjection {
   private readonly commentVersions = new Map<string, bigint>();
   private readonly postVersions = new Map<string, bigint>();
   private readonly postRequests = new Map<string, CreatePostRequest>();
+  private readonly postCreations = new Map<string, { request: CreatePostRequest; at: bigint }>();
+  private readonly pollBallots = new Map<string, PublicPollBallotVersion>();
   private readonly deferredComments = new Map<string, { event: FeedEvent; home: string }>();
 
-  apply(event: FeedEvent, home: string): void {
+  apply(event: FeedEvent, home: string, admission?: FeedPollAdmission): void {
     const statement = event.statement;
     if (!statement || !home) throw new Error('FEED_INVALID_RESPONSE');
     const payload = fromBinary(FeedPayloadSchema, event.payload);
@@ -79,14 +85,45 @@ export class PublicFeedProjection {
       }
       if (previous?.isDeleted) throw new Error('FEED_INVALID');
       const request = fromBinary(CreatePostRequestSchema, mutation.value.createRequest);
+      let original = this.postCreations.get(ref);
+      if (statement.kind === FeedEventKind.POST_CREATED) {
+        if (original) throw new Error('FEED_INVALID');
+        original = { request, at: statement.createdAtUnixMs };
+        this.postCreations.set(ref, original);
+      } else {
+        if (!original) throw new Error('FEED_GAP');
+        const oldPoll = original.request.content, newPoll = request.content;
+        if (oldPoll.case === 'poll' || newPoll.case === 'poll') {
+          if (oldPoll.case !== 'poll' || newPoll.case !== 'poll'
+            || !equals(FeedPollDefinitionSchema, publicPollDefinition(oldPoll.value, original.at),
+              publicPollDefinition(newPoll.value, original.at))) throw new Error('FEED_INVALID');
+        }
+      }
       this.postRequests.set(ref, request);
       this.posts.set(ref, create(PostSchema, {
         publicFeedRef: ref, authorPtid: actor, type: request.type,
-        audience: request.audience, content: signedPostContent(request),
+        audience: request.audience, content: signedPostContent(request, original.at),
         createdAt: previous?.createdAt ?? stamp(statement.createdAtUnixMs),
         updatedAt: stamp(statement.createdAtUnixMs),
       }));
       this.postVersions.set(ref, statement.sequence);
+      return;
+    }
+    if (mutation.case === 'pollBallot') {
+      // A verified Actor event alone does not establish admission before cutoff.
+      // Native supplies this supplement only after checking its independent key.
+      if (!admission) return;
+      const receipt = admission.statement;
+      const ballot = mutation.value;
+      if (statement.kind !== FeedEventKind.POLL_BALLOT_SET || !receipt
+        || receipt.targetPostRef !== ballot.targetPostRef || receipt.eventHash.length !== 32
+        || receipt.homeStationPeerId !== ballot.targetPostRef.split('/')[2]) throw new Error('FEED_INVALID_RESPONSE');
+      if (receipt.result !== FeedPollAdmissionResult.ACCEPTED) return;
+      const key = `${ballot.targetPostRef}\0${actor}`;
+      const previous = this.pollBallots.get(key);
+      if (!previous || previous.sequence < statement.sequence) this.pollBallots.set(key, {
+        postRef: ballot.targetPostRef, actor, sequence: statement.sequence, options: [...ballot.optionIndices],
+      });
       return;
     }
     if (mutation.case === 'comment') {
@@ -174,11 +211,17 @@ export class PublicFeedProjection {
     body.stats = undefined;
     body.interaction = undefined;
     body.reactions = [];
+    if (body.content.case === 'pollPost') body.content.value.result = undefined;
     // Compare every authored field, including media, mentions and timestamps.
     if (!equals(PostSchema, body, signed)) throw new Error('FEED_PROJECTION_TAMPERED');
     const reactions = this.reactionSummaries(signed.publicFeedRef, viewer);
+    const content = clone(PostSchema, signed).content;
+    if (content.case === 'pollPost') {
+      if (!content.value.poll) throw new Error('FEED_INVALID_RESPONSE');
+      content.value.result = publicPollResult(content.value.poll,signed.publicFeedRef,viewer,this.pollBallots.values(),Date.now());
+    }
     return create(PostSchema, {
-      ...projected, content: signed.content, typedMentions: signed.typedMentions,
+      ...projected, content, typedMentions: signed.typedMentions,
       reactions,
       interaction: create(PostInteractionSchema, {
         isLiked: reactions.some(r => r.kind === ReactionKind.REACTION_LIKE && r.reactedByViewer),

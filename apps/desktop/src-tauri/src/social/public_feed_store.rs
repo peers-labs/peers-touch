@@ -7,6 +7,10 @@ use crate::domain::storage::database::DatabaseOpenSpec;
 use crate::infrastructure::{local_scope, storage};
 use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
 
+#[path = "public_feed_poll_store.rs"]
+mod poll;
+use poll::*;
+
 /// One SQLCipher database per retained Actor. The journal owns issued bytes
 /// and verified heads; neither is reconstructed from Station projections.
 pub(super) struct PublicFeedStore {
@@ -57,6 +61,7 @@ impl PublicFeedStore {
 
     fn from_connection(connection: Connection) -> Result<Self, String> {
         connection.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
+        connection.execute_batch(POLL_SCHEMA).map_err(|e| e.to_string())?;
         Ok(Self { connection })
     }
 
@@ -76,7 +81,7 @@ impl PublicFeedStore {
         Self::verified_remote_head(&self.connection, actor, root, home)
     }
 
-    pub(super) fn thread_cursor(&self, author: &str) -> Result<u64, String> {
+    pub(super) fn thread_cursor(&self, author: &str, keys: &PollKeyResolver<'_>) -> Result<u64, String> {
         let mut query = self.connection.prepare(
             "SELECT cursor,home,root,receipt,actor,chain,sequence FROM social_remote_feed_threads WHERE author=?1 ORDER BY cursor")
             .map_err(|e| e.to_string())?;
@@ -92,14 +97,14 @@ impl PublicFeedStore {
             if statement.actor_ptid != actor || statement.chain_id != chain || statement.sequence != sequence {
                 return Err("FEED_INVALID".into());
             }
-            Self::verify_thread_receipt(&self.connection, author, &home, &root, &receipt)?;
+            Self::verify_thread_receipt(&self.connection, author, &home, &root, &receipt, keys)?;
             cursor = n;
         }
         Ok(cursor)
     }
 
     fn verify_thread_receipt(connection: &Connection, author: &str, home: &str,
-        root: &[u8], receipt: &FeedInteraction) -> Result<(), String> {
+        root: &[u8], receipt: &FeedInteraction, keys: &PollKeyResolver<'_>) -> Result<(), String> {
         let genesis = receipt.genesis.as_ref().ok_or("FEED_INVALID")?;
         let grant = receipt.writer_grant.as_ref().ok_or("FEED_INVALID")?;
         let event = receipt.event.as_ref().ok_or("FEED_INVALID")?;
@@ -110,7 +115,7 @@ impl PublicFeedStore {
         if pinned_home != home || pinned_root != root { return Err("FEED_WRITER_NOT_AUTHORIZED".into()); }
         feed::verify_authorization(genesis,grant,actor,root).map_err(|e| e.to_string())?;
         feed::verify_event(event,grant).map_err(|e| e.to_string())?;
-        for table in ["social_remote_feed_heads","social_feed_receipt_authorizations"] {
+        for table in ["social_remote_feed_heads","social_feed_heads","social_feed_receipt_authorizations"] {
             let known: Option<(Vec<u8>,Vec<u8>)> = connection.query_row(
                 &format!("SELECT genesis,grant_bytes FROM {table} WHERE actor=?1"),params![actor],
                 |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e| e.to_string())?;
@@ -119,40 +124,23 @@ impl PublicFeedStore {
             }
         }
         let statement = event.statement.as_ref().ok_or("FEED_INVALID")?;
-        let known: Option<Vec<u8>> = connection.query_row(
-            "SELECT event FROM social_remote_feed_events WHERE actor=?1 AND chain=?2 AND sequence=?3",
-            params![actor,statement.chain_id,statement.sequence],|r| r.get(0)).optional().map_err(|e| e.to_string())?;
-        if known.is_some_and(|wire| wire != event.encode_to_vec()) { return Err("FEED_FORK_DETECTED".into()); }
-        let payload: FeedPayload = feed::decode_canonical(&event.payload).map_err(|e| e.to_string())?;
-        let target = match payload.mutation.as_ref().ok_or("FEED_INVALID")? {
-            feed_payload::Mutation::Reaction(r) => &r.target_post_ref,
-            feed_payload::Mutation::Comment(c) => &c.target_post_ref,
-            _ => return Err("FEED_INVALID".into())
-        };
-        let (author_home,author_root): (String,Vec<u8>) = connection.query_row(
-            "SELECT home,root FROM social_feed_actor_pins WHERE actor=?1", params![author],
-            |r| Ok((r.get(0)?,r.get(1)?))).map_err(|e| e.to_string())?;
-        Self::verified_remote_head(connection,author,&author_root,&author_home)?.ok_or("FEED_GAP")?;
-        let prefix = format!("oss://{author_home}/post/");
-        let post_id = target.strip_prefix(&prefix).ok_or("FEED_WRITER_NOT_AUTHORIZED")?;
-        // Bind to an independently verified post event, not a Station row.
-        let mut query = connection.prepare("SELECT event FROM social_remote_feed_events WHERE actor=?1 ORDER BY sequence")
-            .map_err(|e| e.to_string())?;
-        let rows = query.query_map(params![author], |r| r.get::<_,Vec<u8>>(0)).map_err(|e| e.to_string())?;
-        for row in rows {
-            let event: FeedEvent = feed::decode_canonical(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-            let payload: FeedPayload = feed::decode_canonical(&event.payload).map_err(|e| e.to_string())?;
-            if let Some(feed_payload::Mutation::Post(post)) = payload.mutation {
-                if post.post_id == post_id && event.statement.as_ref().ok_or("FEED_INVALID")?.kind == 1 { return Ok(()); }
-            }
+        for table in ["social_remote_feed_events","social_feed_journal"] {
+            let known: Option<Vec<u8>> = connection.query_row(
+                &format!("SELECT event FROM {table} WHERE actor=?1 AND chain=?2 AND sequence=?3"),
+                params![actor,statement.chain_id,statement.sequence],|r| r.get(0)).optional().map_err(|e| e.to_string())?;
+            if known.is_some_and(|wire| wire != event.encode_to_vec()) { return Err("FEED_FORK_DETECTED".into()); }
         }
-        Err("FEED_GAP".into())
+        let payload: FeedPayload = feed::decode_canonical(&event.payload).map_err(|e| e.to_string())?;
+        let target = interaction_target(&payload)?;
+        if creation_for_post(connection,target)?.0 != author { return Err("FEED_WRITER_NOT_AUTHORIZED".into()); }
+        attach_admission(connection,&mut receipt.clone(),keys)
     }
 
     // Receipt authenticity and synchronization do not depend on arrival order.
     // Exposure does: a comment target needs its independently verified creation
     // on this parent. Missing ancestors remain durable, but are never rendered.
-    fn verify_comment_target(connection: &Connection, author: &str, receipt: &FeedInteraction) -> Result<(), String> {
+    fn verify_comment_target(connection: &Connection, author: &str, receipt: &FeedInteraction,
+        keys: &PollKeyResolver<'_>) -> Result<(), String> {
         let event = receipt.event.as_ref().ok_or("FEED_INVALID")?;
         let payload: FeedPayload = feed::decode_canonical(&event.payload).map_err(|e| e.to_string())?;
         let Some(feed_payload::Mutation::Reaction(reaction)) = payload.mutation else { return Ok(()); };
@@ -170,7 +158,7 @@ impl PublicFeedStore {
             let payload: FeedPayload = feed::decode_canonical(&created.payload).map_err(|e| e.to_string())?;
             if let Some(feed_payload::Mutation::Comment(comment)) = payload.mutation {
                 if format!("oss://{home}/comment/{}",comment.comment_id) == reaction.target_comment_ref {
-                    Self::verify_thread_receipt(connection,author,&home,&root,&creation)?;
+                    Self::verify_thread_receipt(connection,author,&home,&root,&creation,keys)?;
                     if comment.target_post_ref != reaction.target_post_ref { return Err("FEED_INVALID".into()); }
                     return Ok(());
                 }
@@ -180,11 +168,11 @@ impl PublicFeedStore {
     }
 
     pub(super) fn import_thread(&mut self, request: &ReadFeedRequest, response: &ReadFeedResponse,
-        roots: &std::collections::BTreeMap<String,Vec<u8>>) -> Result<(), String> {
+        roots: &std::collections::BTreeMap<String,Vec<u8>>, keys: &PollKeyResolver<'_>) -> Result<(), String> {
         if response.thread_entries.len() > 32 || response.encoded_len() > feed::MAX_FEED_BYTES {
             return Err("FEED_INVALID".into());
         }
-        if self.thread_cursor(&request.actor_ptid)? != request.after_thread_cursor { return Err("FEED_GAP".into()); }
+        if self.thread_cursor(&request.actor_ptid,keys)? != request.after_thread_cursor { return Err("FEED_GAP".into()); }
         let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
         let mut cursor = request.after_thread_cursor;
         for entry in &response.thread_entries {
@@ -192,7 +180,8 @@ impl PublicFeedStore {
             let receipt = entry.receipt.as_ref().ok_or("FEED_INVALID")?;
             let statement = receipt.event.as_ref().and_then(|e| e.statement.as_ref()).ok_or("FEED_INVALID")?;
             let root = roots.get(&statement.actor_ptid).ok_or("FEED_WRITER_NOT_AUTHORIZED")?;
-            Self::verify_thread_receipt(&tx,&request.actor_ptid,&entry.interaction_home_station,root,receipt)?;
+            Self::verify_thread_receipt(&tx,&request.actor_ptid,&entry.interaction_home_station,root,receipt,keys)?;
+            let base = receipt_bytes(receipt);
             // A receipt with the same author sequence cannot change, including
             // when it reappears under a different thread arrival cursor.
             let known: Option<Vec<u8>> = tx.query_row(
@@ -200,16 +189,19 @@ impl PublicFeedStore {
                 params![statement.actor_ptid,statement.chain_id,statement.sequence],|r| r.get(0))
                 .optional().map_err(|e| e.to_string())?;
             if let Some(wire) = known {
-                if wire != receipt.encode_to_vec() {
+                if wire != base {
                     return Err("FEED_FORK_DETECTED".into());
                 }
                 return Err("FEED_INVALID".into());
+            }
+            if let Some(admission) = receipt.poll_admission.as_ref() {
+                retain_admission(&tx,receipt.event.as_ref().ok_or("FEED_INVALID")?,admission,keys)?;
             }
             tx.execute("INSERT OR IGNORE INTO social_feed_receipt_authorizations VALUES (?1,?2,?3)",
                 params![statement.actor_ptid,receipt.genesis.as_ref().ok_or("FEED_INVALID")?.encode_to_vec(),
                     receipt.writer_grant.as_ref().ok_or("FEED_INVALID")?.encode_to_vec()]).map_err(|e| e.to_string())?;
             tx.execute("INSERT INTO social_remote_feed_threads VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                params![request.actor_ptid,entry.cursor,entry.interaction_home_station,root,receipt.encode_to_vec(),
+                params![request.actor_ptid,entry.cursor,entry.interaction_home_station,root,base,
                     statement.actor_ptid,statement.chain_id,statement.sequence])
                 .map_err(|e| e.to_string())?;
             cursor = entry.cursor;
@@ -218,7 +210,7 @@ impl PublicFeedStore {
         // Validate after retaining the entire page, so an ancestor arriving
         // later in the same page works. Only absence is deferred.
         for entry in &response.thread_entries {
-            match Self::verify_comment_target(&tx,&request.actor_ptid,entry.receipt.as_ref().ok_or("FEED_INVALID")?) {
+            match Self::verify_comment_target(&tx,&request.actor_ptid,entry.receipt.as_ref().ok_or("FEED_INVALID")?,keys) {
                 Ok(()) => (),
                 Err(error) if error == "FEED_GAP" => (),
                 Err(error) => return Err(error),
@@ -227,8 +219,8 @@ impl PublicFeedStore {
         tx.commit().map_err(|e| e.to_string())
     }
 
-    pub(super) fn thread_page(&self, author: &str, after: u64) -> Result<Vec<FeedThreadEntry>,String> {
-        if after > self.thread_cursor(author)? { return Err("FEED_GAP".into()); }
+    pub(super) fn thread_page(&self, author: &str, after: u64, keys: &PollKeyResolver<'_>) -> Result<Vec<FeedThreadEntry>,String> {
+        if after > self.thread_cursor(author,keys)? { return Err("FEED_GAP".into()); }
         let mut query = self.connection.prepare(
             "SELECT cursor,home,receipt FROM social_remote_feed_threads WHERE author=?1 AND cursor>?2 ORDER BY cursor LIMIT 32")
             .map_err(|e| e.to_string())?;
@@ -238,9 +230,10 @@ impl PublicFeedStore {
         let mut bytes = 0;
         for row in rows {
             let (cursor,home,wire) = row.map_err(|e| e.to_string())?;
-            let entry = FeedThreadEntry{cursor,interaction_home_station:home,
+            let mut entry = FeedThreadEntry{cursor,interaction_home_station:home,
                 receipt:Some(feed::decode_canonical(&wire).map_err(|e| e.to_string())?)};
-            match Self::verify_comment_target(&self.connection,author,entry.receipt.as_ref().ok_or("FEED_INVALID")?) {
+            attach_admission(&self.connection,entry.receipt.as_mut().ok_or("FEED_INVALID")?,keys)?;
+            match Self::verify_comment_target(&self.connection,author,entry.receipt.as_ref().ok_or("FEED_INVALID")?,keys) {
                 Ok(()) => (),
                 Err(error) if error == "FEED_GAP" => break,
                 Err(error) => return Err(error),
@@ -310,6 +303,8 @@ impl PublicFeedStore {
         feed::verify_authorization(&genesis, &grant, actor, root).map_err(|e| e.to_string())?;
         let observed: FeedHead = feed::decode_canonical(&h).map_err(|e| e.to_string())?;
         let mut head = feed::initial_head(&genesis).map_err(|e| e.to_string())?;
+        let mut replay = feed::FeedPostReplay::default();
+        let mut creations = Vec::new();
         let mut query = connection.prepare(
             "SELECT sequence, event FROM social_remote_feed_events WHERE actor=?1 AND chain=?2 ORDER BY sequence")
             .map_err(|e| e.to_string())?;
@@ -321,8 +316,13 @@ impl PublicFeedStore {
             feed::verify_event(&event, &grant).map_err(|e| e.to_string())?;
             if event.statement.as_ref().ok_or("FEED_INVALID")?.sequence != sequence { return Err("FEED_INVALID".into()); }
             head = feed::advance_head(&head, &event).map_err(|e| e.to_string())?;
+            replay.observe(&event).map_err(|e| e.to_string())?;
+            if event.statement.as_ref().ok_or("FEED_INVALID")?.kind == FeedEventKind::PostCreated as i32 {
+                creations.push(event);
+            }
         }
         feed::verify_observed_head(&head, &observed).map_err(|e| e.to_string())?;
+        for event in creations { retain_creation(connection,&event,home)?; }
         Ok(Some(head))
     }
 
@@ -370,6 +370,7 @@ impl PublicFeedStore {
         }
         tx.execute("UPDATE social_remote_feed_heads SET head=?3 WHERE actor=?1 AND chain=?2",
             params![request.actor_ptid, request.chain_id, head.encode_to_vec()]).map_err(|e| e.to_string())?;
+        Self::verified_remote_head(&tx,&request.actor_ptid,root,home)?.ok_or("FEED_GAP")?;
         tx.commit().map_err(|e| e.to_string())?;
         Ok(head)
     }
@@ -422,6 +423,8 @@ impl PublicFeedStore {
         feed::verify_authorization(&genesis, &grant, actor, &root).map_err(|e| e.to_string())?;
         let observed: FeedHead = feed::decode_canonical(&wire).map_err(|e| e.to_string())?;
         let mut expected = feed::initial_head(&genesis).map_err(|e| e.to_string())?;
+        let mut replay = feed::FeedPostReplay::default();
+        let mut creations = Vec::new();
         let mut query = connection.prepare(
             "SELECT sequence, event FROM social_feed_journal WHERE actor=?1 AND chain=?2 AND confirmed=1 ORDER BY sequence")
             .map_err(|e| e.to_string())?;
@@ -435,8 +438,15 @@ impl PublicFeedStore {
                 return Err("FEED_INVALID".into());
             }
             expected = feed::advance_head(&expected, &event).map_err(|e| e.to_string())?;
+            replay.observe(&event).map_err(|e| e.to_string())?;
+            if event.statement.as_ref().ok_or("FEED_INVALID")?.kind == FeedEventKind::PostCreated as i32 {
+                creations.push(event);
+            }
         }
         feed::verify_observed_head(&expected, &observed).map_err(|e| e.to_string())?;
+        let home: Option<String> = connection.query_row("SELECT home FROM social_feed_actor_pins WHERE actor=?1",
+            params![actor],|r| r.get(0)).optional().map_err(|e| e.to_string())?;
+        if let Some(home) = home { for event in creations { retain_creation(connection,&event,&home)?; } }
         Ok(expected)
     }
 
@@ -499,6 +509,22 @@ impl PublicFeedStore {
             "SELECT EXISTS(SELECT 1 FROM social_feed_journal WHERE actor=?1 AND chain=?2 AND confirmed=0)",
             params![actor, feed::PUBLIC_CHAIN_ID], |r| r.get(0)).map_err(|e| e.to_string())?;
         if pending { return Err("FEED_PENDING_ACK".into()); }
+        if let Some(feed_payload::Mutation::Post(post)) = payload.mutation.as_ref() {
+            if kind == FeedEventKind::PostUpdated as i32 {
+                let home: String = tx.query_row("SELECT home FROM social_feed_actor_pins WHERE actor=?1",
+                    params![actor],|r| r.get(0)).map_err(|e| e.to_string())?;
+                let (author,original,created) = creation_for_post(&tx,&format!("oss://{home}/post/{}",post.post_id))?;
+                if author != actor { return Err("FEED_WRITER_NOT_AUTHORIZED".into()); }
+                let updated = feed::decode_canonical(&post.create_request).map_err(|e| e.to_string())?;
+                feed::validate_post_update(&original,&updated,created).map_err(|e| e.to_string())?;
+            }
+        }
+        if let Some(feed_payload::Mutation::PollBallot(ballot)) = payload.mutation.as_ref() {
+            let pending: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM social_feed_poll_admissions WHERE actor=?1 AND chain=?2 AND target=?3 AND admission IS NULL)",
+                params![actor,feed::PUBLIC_CHAIN_ID,ballot.target_post_ref],|r| r.get(0)).map_err(|e| e.to_string())?;
+            if pending { return Err("FEED_POLL_ADMISSION_PENDING".into()); }
+        }
         let event = feed::sign_event(FeedEventStatement{
             format_version: 1, actor_ptid: actor.into(), chain_id: feed::PUBLIC_CHAIN_ID.into(),
             sequence: head.sequence.checked_add(1).ok_or("FEED_INVALID")?,
@@ -506,6 +532,16 @@ impl PublicFeedStore {
             kind, created_at_unix_ms: now, payload_hash: vec![],
         }, payload, writer).map_err(|e| e.to_string())?;
         feed::verify_event(&event, grant).map_err(|e| e.to_string())?;
+        let mut replay = feed::FeedPostReplay::default();
+        let mut query = tx.prepare("SELECT event FROM social_feed_journal WHERE actor=?1 AND chain=?2 AND confirmed=1 ORDER BY sequence")
+            .map_err(|e| e.to_string())?;
+        let rows = query.query_map(params![actor,feed::PUBLIC_CHAIN_ID],|r| r.get::<_,Vec<u8>>(0)).map_err(|e| e.to_string())?;
+        for row in rows {
+            let event: FeedEvent = feed::decode_canonical(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            replay.observe(&event).map_err(|e| e.to_string())?;
+        }
+        replay.observe(&event).map_err(|e| e.to_string())?;
+        drop(query);
         tx.execute("INSERT INTO social_feed_journal VALUES (?1,?2,?3,?4,?5,0)",
             params![actor, feed::PUBLIC_CHAIN_ID, event.statement.as_ref().ok_or("FEED_INVALID")?.sequence as i64,
                 command, event.encode_to_vec()]).map_err(|e| e.to_string())?;
@@ -534,6 +570,8 @@ impl PublicFeedStore {
             params![actor, feed::PUBLIC_CHAIN_ID, next.encode_to_vec()]).map_err(|e| e.to_string())?;
         tx.execute("UPDATE social_feed_journal SET confirmed=1 WHERE actor=?1 AND chain=?2 AND command_id=?3",
             params![actor, feed::PUBLIC_CHAIN_ID, command]).map_err(|e| e.to_string())?;
+        Self::verified_head(&tx,actor)?;
+        remember_pending_admission(&tx,&event)?;
         tx.commit().map_err(|e| e.to_string())
     }
 }
@@ -541,6 +579,9 @@ impl PublicFeedStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn no_poll_key(_: &str) -> Result<(String,Vec<u8>),String> {
+        Err("FEED_POLL_TRUST_UNAVAILABLE".into())
+    }
     fn fixture() -> (PublicFeedStore, FeedBundle, Vec<u8>, Keypair) {
         let vector: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../../model/domain/social/testdata/feed_v1.json")).unwrap();
@@ -558,7 +599,7 @@ mod tests {
         let mut interaction_statement=bundle.events[0].statement.clone().unwrap();
         interaction_statement.sequence=9;
         let receipt = FeedInteraction{genesis:bundle.genesis.clone(),writer_grant:bundle.writer_grant.clone(),
-            event:Some(feed::sign_event(interaction_statement,&interaction_payload,&writer).unwrap())};
+            event:Some(feed::sign_event(interaction_statement,&interaction_payload,&writer).unwrap()),..Default::default()};
         let content = CreatePostRequest{audience:Some(Audience{kind:1,..Default::default()}),
             content:Some(create_post_request::Content::Text(CreateTextPostRequest{text:"post".into()})),
             ..Default::default()};
@@ -577,22 +618,22 @@ mod tests {
         store.import_remote_page(&request,&response,&root,"station-a").unwrap();
         let mut roots=std::collections::BTreeMap::new();
         roots.insert(actor.into(),vec![3;32]);
-        assert!(store.import_thread(&request,&response,&roots).is_err());
-        assert_eq!(store.thread_cursor(actor).unwrap(),0);
+        assert!(store.import_thread(&request,&response,&roots,&no_poll_key).is_err());
+        assert_eq!(store.thread_cursor(actor,&no_poll_key).unwrap(),0);
         roots.insert(actor.into(),root);
         let mut corrupt=response.clone();
         corrupt.thread_entries[0].receipt.as_mut().unwrap().event.as_mut().unwrap().payload[0]^=1;
-        assert!(store.import_thread(&request,&corrupt,&roots).is_err());
-        store.import_thread(&request,&response,&roots).unwrap();
-        assert_eq!(store.thread_cursor(actor).unwrap(),1);
-        assert_eq!(store.thread_page(actor,0).unwrap(),response.thread_entries);
-        assert!(store.thread_page(actor,1).unwrap().is_empty());
+        assert!(store.import_thread(&request,&corrupt,&roots,&no_poll_key).is_err());
+        store.import_thread(&request,&response,&roots,&no_poll_key).unwrap();
+        assert_eq!(store.thread_cursor(actor,&no_poll_key).unwrap(),1);
+        assert_eq!(store.thread_page(actor,0,&no_poll_key).unwrap(),response.thread_entries);
+        assert!(store.thread_page(actor,1,&no_poll_key).unwrap().is_empty());
         store.connection.execute("UPDATE social_remote_feed_threads SET sequence=10",[]).unwrap();
-        assert!(store.thread_cursor(actor).is_err());
+        assert!(store.thread_cursor(actor,&no_poll_key).is_err());
         store.connection.execute("UPDATE social_remote_feed_threads SET sequence=9",[]).unwrap();
-        assert_eq!(store.thread_cursor(actor).unwrap(),1);
+        assert_eq!(store.thread_cursor(actor,&no_poll_key).unwrap(),1);
         store.connection.execute("UPDATE social_remote_feed_threads SET receipt=?1",params![vec![0u8;32]]).unwrap();
-        assert!(store.thread_cursor(actor).is_err());
+        assert!(store.thread_cursor(actor,&no_poll_key).is_err());
     }
     #[test]
     fn comment_reaction_waits_for_signed_creation_and_rejects_wrong_parent_and_cache_tampering() {
@@ -625,7 +666,7 @@ mod tests {
             statement.sequence=sequence;
             statement.kind=kind;
             FeedInteraction{genesis:bundle.genesis.clone(),writer_grant:bundle.writer_grant.clone(),
-                event:Some(feed::sign_event(statement.clone(),payload,&writer).unwrap())}
+                event:Some(feed::sign_event(statement.clone(),payload,&writer).unwrap()),..Default::default()}
         };
         let reaction=interaction(8,FeedEventKind::ReactionSet as i32,&FeedPayload{
             mutation:Some(feed_payload::Mutation::Reaction(FeedReactionMutation{
@@ -635,9 +676,9 @@ mod tests {
         let response=ReadFeedResponse{thread_cursor:1,thread_has_more:true,thread_entries:vec![
             FeedThreadEntry{cursor:1,interaction_home_station:"station-a".into(),receipt:Some(reaction)}],
             ..Default::default()};
-        store.import_thread(&request,&response,&roots).unwrap();
-        assert_eq!(store.thread_cursor(actor).unwrap(),1);
-        assert!(store.thread_page(actor,0).unwrap().is_empty());
+        store.import_thread(&request,&response,&roots,&no_poll_key).unwrap();
+        assert_eq!(store.thread_cursor(actor,&no_poll_key).unwrap(),1);
+        assert!(store.thread_page(actor,0,&no_poll_key).unwrap().is_empty());
         let creation=interaction(9,FeedEventKind::CommentCreated as i32,&FeedPayload{
             mutation:Some(feed_payload::Mutation::Comment(FeedCommentMutation{comment_id:"201".into(),
                 target_post_ref:"oss://station-a/post/101".into(),create_request:CreateCommentRequest{
@@ -646,8 +687,8 @@ mod tests {
         let response=ReadFeedResponse{thread_cursor:2,thread_entries:vec![
             FeedThreadEntry{cursor:2,interaction_home_station:"station-a".into(),receipt:Some(creation.clone())}],
             ..Default::default()};
-        store.import_thread(&request,&response,&roots).unwrap();
-        assert_eq!(store.thread_page(actor,0).unwrap().len(),2);
+        store.import_thread(&request,&response,&roots,&no_poll_key).unwrap();
+        assert_eq!(store.thread_page(actor,0,&no_poll_key).unwrap().len(),2);
         // A signed creation bound to another post must never authorize this
         // reaction, even when its comment ID and writer match.
         let mut wrong=creation.clone();
@@ -660,11 +701,11 @@ mod tests {
         wrong.event=Some(feed::sign_event(wrong.event.unwrap().statement.unwrap(),&payload,&writer).unwrap());
         store.connection.execute("UPDATE social_remote_feed_threads SET receipt=?1 WHERE cursor=2",
             params![wrong.encode_to_vec()]).unwrap();
-        assert_eq!(store.thread_page(actor,0).unwrap_err(),"FEED_INVALID");
+        assert_eq!(store.thread_page(actor,0,&no_poll_key).unwrap_err(),"FEED_INVALID");
         let mut corrupt=creation.encode_to_vec();
         *corrupt.last_mut().unwrap() ^= 1;
         store.connection.execute("UPDATE social_remote_feed_threads SET receipt=?1 WHERE cursor=2",params![corrupt]).unwrap();
-        assert!(store.thread_cursor(actor).is_err());
+        assert!(store.thread_cursor(actor,&no_poll_key).is_err());
     }
     #[test]
     fn journal_retry_is_exact_and_unverified_ack_cannot_advance() {
@@ -738,5 +779,78 @@ mod tests {
         store.connection.execute("DELETE FROM social_feed_journal WHERE confirmed=1", []).unwrap();
         assert!(store.head(actor).is_err());
         assert!(store.stage(actor, &root, "next", 4, &payload, 1700000000001, &writer).is_err());
+    }
+
+    #[test]
+    fn poll_source_ack_releases_chain_and_retains_exact_pending_admission() {
+        use feed::content::social::v1::{CreatePostRequest,CreatePollPostRequest,Audience,create_post_request};
+        let (mut store,bundle,root,writer) = fixture();
+        let actor = "ptid:test:alice";
+        let now = 1_700_000_000_000;
+        store.pin_actor(actor,"station-a",&root).unwrap();
+        store.initialize(bundle.genesis.as_ref().unwrap(),bundle.writer_grant.as_ref().unwrap(),actor,&root).unwrap();
+        let request = CreatePostRequest {r#type: 4,audience: Some(Audience {kind: 1,..Default::default()}),
+            content: Some(create_post_request::Content::Poll(CreatePollPostRequest {
+                text: "original".into(),question: "Which route?".into(),options: vec!["Direct".into(),"Relay".into()],
+                duration_hours: 1,..Default::default()
+            })),..Default::default()};
+        let post = FeedPayload {mutation: Some(feed_payload::Mutation::Post(FeedPostMutation {
+            post_id: "101".into(),create_request: request.encode_to_vec()
+        }))};
+        let created = store.stage(actor,&root,"create",1,&post,now,&writer).unwrap();
+        let head = feed::advance_head(&store.head(actor).unwrap(),&created.events[0]).unwrap();
+        store.confirm(actor,&root,"create",&head).unwrap();
+        let (_,original,created_at) = creation_for_post(&store.connection,"oss://station-a/post/101").unwrap();
+        assert_eq!(original,request);
+        assert_eq!(created_at,now);
+        let create_post_request::Content::Poll(poll) = request.content.as_ref().unwrap() else { panic!("poll"); };
+        let definition = feed::poll_definition(poll,now).unwrap();
+        let ballot = FeedPayload {mutation: Some(feed_payload::Mutation::PollBallot(FeedPollBallotMutation {
+            target_post_ref: "oss://station-a/post/101".into(),definition_hash: feed::poll_definition_hash(&definition).unwrap(),
+            option_indices: vec![0]
+        }))};
+        let issued = store.stage(actor,&root,"ballot",9,&ballot,now+1,&writer).unwrap();
+        let head = feed::advance_head(&store.head(actor).unwrap(),&issued.events[0]).unwrap();
+        store.confirm(actor,&root,"ballot",&head).unwrap();
+        assert!(store.pending(actor,&root).unwrap().is_empty());
+        assert_eq!(store.pending_poll_admissions(actor).unwrap(),vec![("ballot".into(),issued.events[0].clone())]);
+        assert_eq!(store.stage(actor,&root,"ballot",9,&ballot,now+2,&writer).unwrap(),issued);
+        assert_eq!(store.stage(actor,&root,"other-ballot",9,&ballot,now+2,&writer).unwrap_err(),"FEED_POLL_ADMISSION_PENDING");
+        let reaction: FeedPayload = feed::decode_canonical(&bundle.events[0].payload).unwrap();
+        let other = store.stage(actor,&root,"reaction",4,&reaction,now+2,&writer).unwrap();
+        let head = feed::advance_head(&store.head(actor).unwrap(),&other.events[0]).unwrap();
+        store.confirm(actor,&root,"reaction",&head).unwrap();
+        assert_eq!(store.head(actor).unwrap().sequence,3);
+        let home_key = Keypair::ed25519_from_bytes([7u8;32]).unwrap();
+        let statement = FeedPollAdmissionStatement {format_version: 1,home_station_peer_id: "station-a".into(),
+            target_post_ref: "oss://station-a/post/101".into(),event_hash: feed::event_hash(&issued.events[0]).unwrap(),
+            definition_hash: feed::poll_definition_hash(&definition).unwrap(),accepted_at_unix_ms: now+2,
+            result: FeedPollAdmissionResult::Accepted as i32,signing_key_id: "home-key".into()};
+        let admission = FeedPollAdmission {station_signature: home_key.sign(
+            &feed::signing_bytes(feed::POLL_ADMISSION_DOMAIN,&statement).unwrap()).unwrap(),statement: Some(statement)};
+        let key = home_key.public().try_into_ed25519().unwrap().to_bytes().to_vec();
+        let keys = |home: &str| {
+            if home != "station-a" { return Err("FEED_WRITER_NOT_AUTHORIZED".into()); }
+            Ok(("home-key".into(),key.clone()))
+        };
+        store.retain_poll_admission(&issued.events[0],&admission,&keys).unwrap();
+        assert!(store.pending_poll_admissions(actor).unwrap().is_empty());
+        assert_eq!(store.poll_admission_for(&issued.events[0],&keys).unwrap(),Some(admission.clone()));
+        assert!(store.poll_admission_for(&issued.events[0],&|_| Ok(("foreign".into(),vec![8;32]))).is_err());
+        let receipt = FeedInteraction {genesis: issued.genesis.clone(),writer_grant: issued.writer_grant.clone(),
+            event: Some(issued.events[0].clone()),poll_admission: Some(admission.clone())};
+        let request = ReadFeedRequest {actor_ptid: actor.into(),chain_id: feed::PUBLIC_CHAIN_ID.into(),
+            limit: 32,include_thread: true,..Default::default()};
+        let response = ReadFeedResponse {thread_cursor: 1,thread_entries: vec![FeedThreadEntry {
+            cursor: 1,interaction_home_station: "station-a".into(),receipt: Some(receipt.clone()),
+        }],..Default::default()};
+        let roots = std::collections::BTreeMap::from([(actor.to_string(),root.clone())]);
+        store.import_thread(&request,&response,&roots,&keys).unwrap();
+        assert_eq!(store.thread_page(actor,0,&keys).unwrap(),response.thread_entries);
+        let base: Vec<u8> = store.connection.query_row("SELECT receipt FROM social_remote_feed_threads",
+            [],|r| r.get(0)).unwrap();
+        assert!(feed::decode_canonical::<FeedInteraction>(&base).unwrap().poll_admission.is_none());
+        assert!(store.thread_cursor(actor,&|_| Ok(("foreign".into(),vec![8;32]))).is_err());
+        assert_eq!(store.stage(actor,&root,"replacement",9,&ballot,now+3,&writer).unwrap().events[0].statement.as_ref().unwrap().sequence,4);
     }
 }

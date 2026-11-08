@@ -16,10 +16,12 @@ import (
 
 func (s *FeedLogStore) ProcessInteractions(ctx context.Context, projector *FeedProjector,
 	verify func(context.Context, delivery.Transaction, *model.FeedInteraction, string) error,
-	send func(context.Context, delivery.Transaction, string, *model.FeedInteraction) error) error {
+	send func(context.Context, delivery.Transaction, string, *model.FeedInteraction) error,
+	returnAdmission func(context.Context, delivery.Transaction, string, *model.FeedInteraction) error) error {
+	const pending = "(forwarded = ? OR projected = ? OR (admission_return_required = ? AND admission_returned = ?))"
 	var rows []FeedInteractionRecord
 	if err := s.database.WithContext(ctx).
-		Where("(forwarded = ? OR projected = ?) AND next_attempt_at <= ?", false, false, time.Now().UTC()).
+		Where(pending+" AND next_attempt_at <= ?", false, false, true, false, time.Now().UTC()).
 		Order("next_attempt_at ASC, actor_ptid ASC, sequence ASC").Limit(32).Find(&rows).Error; err != nil {
 		return err
 	}
@@ -50,6 +52,25 @@ func (s *FeedLogStore) ProcessInteractions(ctx context.Context, projector *FeedP
 			}
 			if !row.Projected {
 				if _, err := projector.StoreInteraction(FeedTransactionContext(ctx, tx), tx.DB(), receipt, row.HomeStation, true); err != nil {
+					return err
+				}
+				if err := tx.DB().Where("actor_ptid = ? AND chain_id = ? AND sequence = ?",
+					row.ActorPTID, row.ChainID, row.Sequence).Take(&row).Error; err != nil {
+					return err
+				}
+			}
+			if row.AdmissionReturnRequired && !row.AdmissionReturned {
+				if returnAdmission == nil {
+					return domain.ErrFeedInvalid
+				}
+				receipt, err = verifiedReceiptRow(&row)
+				if err != nil {
+					return err
+				}
+				if err := verify(FeedTransactionContext(ctx, tx), tx, receipt, row.HomeStation); err != nil {
+					return err
+				}
+				if err := returnAdmission(ctx, tx, row.HomeStation, receipt); err != nil {
 					return err
 				}
 			}
@@ -98,13 +119,25 @@ func verifiedReceiptRow(row *FeedInteractionRecord) (*model.FeedInteraction, err
 	if err := signedlog.Decode(event.Payload, payload); err != nil {
 		return nil, err
 	}
-	target := payload.GetReaction().GetTargetPostRef()
-	if payload.GetComment() != nil {
-		target = payload.GetComment().TargetPostRef
+	target, err := domain.FeedInteractionTarget(payload)
+	if err != nil {
+		return nil, err
 	}
 	home, _, err := domain.FeedTargetPost(target)
 	if err != nil || home != row.TargetStation {
 		return nil, domain.ErrFeedInvalid
+	}
+	if receipt.PollAdmission != nil {
+		return nil, domain.ErrFeedInvalid
+	}
+	if len(row.PollAdmission) != 0 {
+		if payload.GetPollBallot() == nil {
+			return nil, domain.ErrFeedInvalid
+		}
+		receipt.PollAdmission = &model.FeedPollAdmission{}
+		if err := signedlog.Decode(row.PollAdmission, receipt.PollAdmission); err != nil {
+			return nil, err
+		}
 	}
 	return receipt, nil
 }

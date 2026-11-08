@@ -71,18 +71,23 @@ func (FeedSubscriptionRecord) TableName() string { return "social_feed_subscript
 
 // An interaction receipt proves authenticity, not full author-chain continuity.
 type FeedInteractionRecord struct {
-	ActorPTID        string    `gorm:"column:actor_ptid;primaryKey;size:255"`
-	ChainID          string    `gorm:"primaryKey;size:128"`
-	Sequence         uint64    `gorm:"primaryKey;autoIncrement:false"`
-	EventHash        []byte    `gorm:"type:bytea;not null"`
-	Interaction      []byte    `gorm:"type:bytea;not null"`
-	TargetStation    string    `gorm:"size:255;not null;index"`
-	HomeStation      string    `gorm:"size:255;not null"`
-	Projected        bool      `gorm:"not null;index"`
-	Forwarded        bool      `gorm:"not null;index"`
-	OutboundFrameID  string    `gorm:"size:512;not null"`
-	DeliveryRevision uint64    `gorm:"not null"`
-	NextAttemptAt    time.Time `gorm:"not null;index"`
+	ActorPTID                 string    `gorm:"column:actor_ptid;primaryKey;size:255"`
+	ChainID                   string    `gorm:"primaryKey;size:128"`
+	Sequence                  uint64    `gorm:"primaryKey;autoIncrement:false"`
+	EventHash                 []byte    `gorm:"type:bytea;not null"`
+	Interaction               []byte    `gorm:"type:bytea;not null"`
+	TargetStation             string    `gorm:"size:255;not null;index"`
+	HomeStation               string    `gorm:"size:255;not null"`
+	Projected                 bool      `gorm:"not null;index"`
+	Forwarded                 bool      `gorm:"not null;index"`
+	OutboundFrameID           string    `gorm:"size:512;not null"`
+	DeliveryRevision          uint64    `gorm:"not null"`
+	NextAttemptAt             time.Time `gorm:"not null;index"`
+	PollAdmission             []byte    `gorm:"type:bytea"`
+	AdmissionReturnRequired   bool      `gorm:"not null;default:false;index"`
+	AdmissionReturned         bool      `gorm:"not null;default:false;index"`
+	AdmissionFrameID          string    `gorm:"size:512;not null;default:''"`
+	AdmissionDeliveryRevision uint64    `gorm:"not null;default:0"`
 }
 
 func (FeedInteractionRecord) TableName() string { return "social_feed_interactions" }
@@ -152,7 +157,7 @@ func (s *FeedLogStore) Migrate(ctx context.Context) error {
 		&FeedChainRecord{}, &FeedEventRecord{}, &FeedFanoutRecord{},
 		&FeedSubscriptionRecord{}, &FeedInteractionRecord{},
 		&FeedObjectRecord{},
-		&FeedReactionVersion{},
+		&FeedReactionVersion{}, &FeedPollVersion{},
 		&FeedInteractionFanout{},
 		&FeedThreadHead{}, &FeedThreadRecord{}, &FeedQuarantineRecord{},
 	)
@@ -342,6 +347,20 @@ func (s *FeedLogStore) AppendTx(
 		if err := tx.Create(&FeedEventRecord{ActorPTID: actorPTID, ChainID: chain.ChainID, Sequence: sequence, EventHash: hash, Event: encoded}).Error; err != nil {
 			return nil, false, err
 		}
+	}
+	// Definitions are resolved through the original verified prefix. Publish
+	// its head before projection, inside the same rollback savepoint.
+	result := tx.Model(&FeedChainRecord{}).
+		Where("actor_ptid = ? AND chain_id = ? AND sequence = ?", actorPTID, chain.ChainID, chain.Sequence).
+		Updates(map[string]interface{}{"sequence": head.Sequence, "head_hash": head.EventHash, "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, false, errors.New("FEED_CONCURRENT_WRITE")
+	}
+	for _, event := range pending {
+		sequence := event.Statement.Sequence
 		if err := apply(ctx, tx, event); err != nil {
 			if errors.Is(err, domain.ErrFeedFork) {
 				if rollback := tx.RollbackTo("feed_append_projection").Error; rollback != nil {
@@ -359,15 +378,6 @@ func (s *FeedLogStore) AppendTx(
 				return nil, false, err
 			}
 		}
-	}
-	result := tx.Model(&FeedChainRecord{}).
-		Where("actor_ptid = ? AND chain_id = ? AND sequence = ?", actorPTID, chain.ChainID, chain.Sequence).
-		Updates(map[string]interface{}{"sequence": head.Sequence, "head_hash": head.EventHash, "updated_at": time.Now().UTC()})
-	if result.Error != nil {
-		return nil, false, result.Error
-	}
-	if result.RowsAffected != 1 {
-		return nil, false, errors.New("FEED_CONCURRENT_WRITE")
 	}
 	return head, duplicate, nil
 }

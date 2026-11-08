@@ -11,6 +11,7 @@ import { MomentAttachments, MomentVideoAttachment } from './MomentAttachments';
 import { MomentAuthorTrigger } from './MomentAuthorTrigger';
 import { MomentTextEditor } from './MomentTextEditor';
 import { MomentCommentsSection } from './MomentCommentsSection';
+import { MomentPoll } from './MomentPoll';
 import { PrivateMediaGrid } from './PrivateMediaGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useActorIdentity } from '../common/useActorIdentity';
@@ -155,9 +156,7 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
           : <span>{content.value.link.title}</span>}
         {content.value.link.description && <span> · {content.value.link.description}</span>}
       </p>}
-      {!isPrivate && content.case === 'pollPost' && content.value.poll && <ul>
-        {content.value.poll.options.map((option, index) => <li key={index}>{option.text}</li>)}
-      </ul>}
+      {!isPrivate && content.case === 'pollPost' && <MomentPoll key={post.id} post={post} />}
       {!isPrivate && content.case === 'locationPost' && content.value.location && <p><MapPin size={15} />
         {content.value.location.name}{content.value.location.address && <span> · {content.value.location.address}</span>}
       </p>}

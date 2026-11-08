@@ -85,9 +85,10 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
         store.pin_actor(&input.actor_ptid, home, &root)?;
     }
     let previous = store.remote_head(&input.actor_ptid, &root, home)?;
+    let poll_keys = |home: &str| super::public_feed::poll_station_key(&state,home);
     let request = ReadFeedRequest{actor_ptid: input.actor_ptid.clone(), chain_id: feed::PUBLIC_CHAIN_ID.into(),
         after_sequence: previous.as_ref().map_or(0, |h| h.sequence), limit: input.limit,
-        include_thread: true, after_thread_cursor: store.thread_cursor(&input.actor_ptid)?, ..Default::default()};
+        include_thread: true, after_thread_cursor: store.thread_cursor(&input.actor_ptid,&poll_keys)?, ..Default::default()};
     let response: ReadFeedResponse = client.request_proto_for_device(
         reqwest::Method::POST, "/api/v1/social/feed/read", &active.jwt, None,
         Some(&request), &engine.endpoint().device_id).map_err(|e| format!("FEED_HISTORY_READ_FAILED: {e}"))?;
@@ -117,12 +118,12 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     validate()?;
     for (actor,home,root) in pins { store.pin_actor(&actor,&home,&root)?; }
     let head = store.import_remote_page(&request, &response, &root, home)?;
-    store.import_thread(&request,&response,&roots)?;
+    store.import_thread(&request,&response,&roots,&poll_keys)?;
     let (page, page_head) = store.remote_page(&request.actor_ptid, &root, home,
         after_sequence, input.limit)?;
-    let threads = store.thread_page(&request.actor_ptid,after_thread_cursor)?;
+    let threads = store.thread_page(&request.actor_ptid,after_thread_cursor,&poll_keys)?;
     let next_thread = threads.last().map_or(after_thread_cursor,|e| e.cursor);
-    let thread_cursor = store.thread_cursor(&request.actor_ptid)?;
+    let thread_cursor = store.thread_cursor(&request.actor_ptid,&poll_keys)?;
     Ok(json!({"actorPtid": request.actor_ptid, "homeStationPeerId": home, "state": "VERIFIED",
         "bundleB64": STANDARD.encode(page.bundle.ok_or("FEED_INVALID_RESPONSE")?.encode_to_vec()),
         "headB64": STANDARD.encode(head.encode_to_vec()), "sequence": head.sequence.to_string(),
