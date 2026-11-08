@@ -1166,7 +1166,7 @@ state are retained.
 
 The database allowlist is:
 
-1. clear all rows from exactly these nineteen private Social tables:
+1. clear all rows from exactly these twenty-four private Social tables:
 
 ```text
 social_private_content_plans
@@ -1179,6 +1179,11 @@ social_private_recipient_grants
 social_private_content_envelopes
 social_private_delivery_intents
 social_remote_private_commands
+social_private_reaction_projections
+social_private_poll_choices
+social_private_poll_ballots
+social_private_poll_states
+social_private_poll_projections
 social_remote_private_envelopes
 social_remote_private_resources
 social_remote_private_tombstones
@@ -1233,6 +1238,11 @@ legacy social_reactions(post_class='private')
 legacy social_comments(post_class='private')
 social_moment_deliveries
 social_remote_private_commands
+social_private_reaction_projections
+social_private_poll_choices
+social_private_poll_ballots
+social_private_poll_states
+social_private_poll_projections
 social_remote_private_envelopes
 social_remote_private_resources
 social_remote_private_tombstones

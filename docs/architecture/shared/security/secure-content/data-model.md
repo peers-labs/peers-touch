@@ -1955,6 +1955,11 @@ The manifest's table/predicate pairs are exactly:
 | `social_reactions` | `DELETE_WHERE_POST_CLASS_PRIVATE` |
 | `social_moment_deliveries` | `CLEAR_TABLE` |
 | `social_remote_private_commands` | `CLEAR_TABLE` |
+| `social_private_reaction_projections` | `CLEAR_TABLE` |
+| `social_private_poll_choices` | `CLEAR_TABLE` |
+| `social_private_poll_ballots` | `CLEAR_TABLE` |
+| `social_private_poll_states` | `CLEAR_TABLE` |
+| `social_private_poll_projections` | `CLEAR_TABLE` |
 | `social_remote_private_envelopes` | `CLEAR_TABLE` |
 | `social_remote_private_resources` | `CLEAR_TABLE` |
 | `social_remote_private_tombstones` | `CLEAR_TABLE` |

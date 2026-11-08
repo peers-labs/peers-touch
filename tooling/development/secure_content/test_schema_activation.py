@@ -1853,6 +1853,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                 encoder := json.NewEncoder(os.Stdout)
                 encoder.SetEscapeHTML(false)
                 if err := encoder.Encode(map[string]any{
+                    "database_targets": infrastructure.CanonicalDatabaseResetTargets(),
                     "attestation": attestation,
                     "attestation_digest": attestationDigest,
                     "invocation": invocation,
@@ -1883,6 +1884,12 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             )
         self.assertEqual(0, completed.returncode, completed.stderr)
         fixture = json.loads(completed.stdout)
+        self.assertEqual(
+            [(spec.table, spec.operation, spec.predicate) for spec in DATABASE_TARGET_SPECS],
+            [(target["table"], target["operation"], target.get("predicate"))
+             for target in fixture["database_targets"]],
+            "Python reset validation must consume the Station owner's exact ordered target list",
+        )
 
         invocation = fixture["invocation"]
         invocation_digest = invocation.pop("invocation_digest")
