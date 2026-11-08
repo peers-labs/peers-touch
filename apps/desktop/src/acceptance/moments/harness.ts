@@ -1233,6 +1233,30 @@ export function installAcceptanceHarness(): void {
       return { pendingCount: status.pending?.length ?? 0 };
     },
 
+    async circleProjection() {
+      const session = useSessionStore.getState();
+      const actorPtid = session.currentUser?.actorPtid?.trim();
+      if (!actorPtid) throw new Error('moments.acceptance.actorIdentityMissing');
+      const state = useMomentsStore.getState();
+      const circles = state.circles.map(circle => ({
+        id: String(circle.id),
+        name: circle.name,
+        description: circle.description,
+        memberCount: Number(circle.memberCount),
+        memberPtids: (state.circleMembers[String(circle.id)] ?? []).map(member => member.actorPtid),
+        membersLoaded: Object.prototype.hasOwnProperty.call(state.circleMembers, String(circle.id)),
+        membersError: state.circleMembersErrors[String(circle.id)] ?? null,
+      }));
+      const actorPtidSha256 = await sha256(actorPtid);
+      const current = useSessionStore.getState();
+      if (current.sessionEpoch !== session.sessionEpoch
+        || current.currentUser?.actorPtid?.trim() !== actorPtid
+        || current.stationPeerId !== session.stationPeerId) {
+        throw new Error('MOMENTS_SESSION_STALE');
+      }
+      return { actorPtidSha256, sessionEpoch: session.sessionEpoch, circles };
+    },
+
     async createAudienceCircle(input: { name: string }) {
       if (!input.name?.trim()) {
         throw new Error('moments.acceptance.circleNameMissing');

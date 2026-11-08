@@ -18,12 +18,13 @@ from tooling.acceptance.core import (
 from tooling.acceptance.gates.chat.native_two_client_runner import NativeTwoClientGate
 from tooling.acceptance.gates.chat.device_search_runner import DeviceSearchGate
 from tooling.acceptance.gates.chat.native_support import (
-    cleanup_preserving_primary_failure, commits_match, read_station_version,
+    DEV_ACCOUNT_PASSWORD, cleanup_preserving_primary_failure, commits_match, read_station_version,
     runtime_station_service, selected_native_runtime, wait_until,
 )
 from tooling.development.secure_content.runtime_owner import (
     _prepare_cross_station_social_fixture, _prepare_social_suite_federation,
     _prepare_portable_recovery, _restore_portable_recovery,
+    _register_runtime_account, _runtime_account_search_query,
 )
 
 GATE_ID = "social-public-feed-native-e2e"
@@ -34,6 +35,7 @@ SCENARIOS = (
     "poll-single-choice", "poll-multiple-choice", "poll-cutoff",
     "normal-submit-readback", "lost-submit-ack", "corrupt-read-payload",
     "rollback-read-head", "second-device-writer-denial",
+    "circle-members-pagination", "circle-cancel", "circle-partial-save-retry",
 )
 RUNTIME_REUSE = RuntimeReuseContract.from_dict({
     "scope": "suite", "entryCheckId": GATE_ID, "scenarioIds": list(SCENARIOS),
@@ -84,6 +86,7 @@ class Gate(DeviceSearchGate):
             raise GateError("Public feed requires the reviewed two-Station environment")
         self.report.runtime["search"] = {}
         self.active_social_scenario: str | None = None
+        self.circle_account_queries: list[str] = []
 
     @property
     def receiver(self) -> Any:
@@ -103,10 +106,19 @@ class Gate(DeviceSearchGate):
             cleanup_stack=stack)
         for actor in ("alice", "bob"):
             self.action(actor, "reconcileFederationProjection")
-        return _prepare_cross_station_social_fixture(
+        fixture = _prepare_cross_station_social_fixture(
             FixtureClient(self.clients["alice"], primary["endpoint"]),
             FixtureClient(self.clients["bob"], secondary["endpoint"]),
             federation_id=federation_id)
+        # Expensive identity provisioning belongs to this preparation lifetime.
+        # All candidates subsequently come from the original production search.
+        suffix = hashlib.sha256(self.manifest["runId"].encode()).hexdigest()[:10]
+        for index in range(22):
+            role = f"circle-member-{index}"
+            account = _register_runtime_account(
+                primary["endpoint"], role=role, suffix=suffix, password=DEV_ACCOUNT_PASSWORD)
+            self.circle_account_queries.append(_runtime_account_search_query(account, role=role))
+        return fixture
 
     def start_suite_clients(self, ledger: SuiteRuntimeLedger,
                             source_commit: str) -> None:
@@ -224,6 +236,155 @@ class Gate(DeviceSearchGate):
         started = time.monotonic()
         self.click(actor, '[data-acceptance-id="social-composer-publish"]')
         return started
+
+    def circle_projection(self, circle_id: str) -> dict[str, Any] | None:
+        projection = self.action("alice", "circleProjection")
+        self.assert_condition("circle-observer-actor-bound",
+            projection["actorPtidSha256"] == hashlib.sha256(self.ptids["alice"].encode()).hexdigest())
+        return next((circle for circle in projection["circles"] if circle["id"] == circle_id), None)
+
+    def assert_circle(self, circle_id: str, name: str, description: str,
+                      members: set[str]) -> None:
+        selector = f'[data-action-id="circle.manage.{circle_id}"]'
+        def settled() -> bool:
+            circle = self.circle_projection(circle_id)
+            card = self.visible_element("alice", selector)
+            return bool(circle and card and circle["membersLoaded"] and not circle["membersError"]
+                and circle["name"] == name and circle["description"] == description
+                and circle["memberCount"] == len(members)
+                and set(circle["memberPtids"]) == members
+                and self.clients["alice"].execute_script("""
+                    const el = arguments[0], name = arguments[1], description = arguments[2];
+                    const r = el.getBoundingClientRect();
+                    const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+                    return !!hit && el.contains(hit)
+                      && el.querySelector('.sk-circle-name')?.textContent === name
+                      && (el.querySelector('.sk-circle-desc')?.textContent ?? '') === description;
+                """, card, name, description))
+        wait_until(settled, "Alice painted original complete Circle projection", timeout=60)
+
+    def assert_circle_editor(self, name: str, description: str, members: set[str]) -> None:
+        def matches() -> bool:
+            return self.clients["alice"].execute_script("""
+                const name = document.querySelector('input[data-circle-name]');
+                const description = document.querySelector('input[data-circle-desc]');
+                const list = document.querySelector('[data-circle-member-count]');
+                return name?.value === arguments[0] && description?.value === arguments[1]
+                  && Number(list?.dataset.circleMemberCount) === arguments[2].length
+                  && JSON.stringify([...list.querySelectorAll('[data-circle-member]')]
+                    .map(row => row.dataset.circleMember).sort()) === JSON.stringify(arguments[2]);
+            """, name, description, sorted(members))
+        wait_until(matches, "Alice complete cancellable Circle editor", timeout=30)
+        if members:
+            row = self.clients["alice"].find_elements('[data-circle-member]')[-1]
+            self.assert_circle_element_painted(row, "circle-last-member-painted")
+
+    def assert_circle_element_painted(self, element: Any, assertion: str) -> None:
+        self.clients["alice"].execute_script("arguments[0].scrollIntoView({block:'center'});", element)
+        painted = self.clients["alice"].execute_async_script("""
+            const el = arguments[0], done = arguments[arguments.length - 1];
+            const visible = () => {
+              const r = el.getBoundingClientRect(), style = getComputedStyle(el);
+              const hit = document.elementFromPoint((r.left+r.right)/2, (r.top+r.bottom)/2);
+              return el.isConnected && r.width > 0 && r.height > 0 && !!hit && el.contains(hit)
+                && style.visibility === 'visible' && Number(style.opacity) > 0;
+            };
+            requestAnimationFrame(() => {
+              const first = visible();
+              requestAnimationFrame(() => done(first && visible()));
+            });
+        """, element)
+        self.assert_condition(assertion, painted is True)
+
+    def circle_scenarios(self, ledger: SuiteRuntimeLedger) -> None:
+        self.click("alice", '[data-action-id="segment.circles"]')
+        name = "Circle-" + hashlib.sha256(self.manifest["runId"].encode()).hexdigest()[:12]
+        description = "Native complete membership"
+        self.begin_scenario(ledger, "circle-members-pagination")
+        self.click("alice", '[data-acceptance-id="social-circle-create-open"]')
+        self.set_input("alice", 'input[data-circle-name]', name)
+        self.click("alice", '[data-action-id="circle.create"]')
+        def created() -> str | None:
+            projection = self.action("alice", "circleProjection")
+            return next((circle["id"] for circle in projection["circles"]
+                         if circle["name"] == name and circle["membersLoaded"]), None)
+        circle_id = wait_until(created, "Alice created and hydrated Circle", timeout=60)
+        self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
+        self.set_input("alice", 'input[data-circle-desc]', description)
+        members: set[str] = set()
+        for query in self.circle_account_queries:
+            self.set_input("alice", '.sk-circle-candidates input', query)
+            def candidate() -> Any | None:
+                for row in self.clients["alice"].find_elements('[data-circle-candidate]'):
+                    if row.is_displayed() and query in row.text:
+                        return row
+                return None
+            row = wait_until(candidate, "original searched real Circle member", timeout=30)
+            ptid = row.get_attribute("data-circle-candidate")
+            self.assert_condition("circle-real-member-distinct",
+                                  ptid.startswith("ptid:") and ptid not in members)
+            self.click("alice", f'[data-action-id="circle.member.add.{circle_id}.{ptid}"]')
+            members.add(ptid)
+        self.assert_circle_editor(name, description, members)
+        self.click("alice", '[data-action-id="circle.save"]')
+        self.assert_circle(circle_id, name, description, members)
+        self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
+        self.assert_circle_editor(name, description, members)
+        self.capture("alice", "circle-members-pagination")
+        self.complete_scenario(ledger, "circle-members-pagination",
+            "alice:real-search-select-22-members-and-save", "alice:painted-complete-22-member-readback")
+
+        self.begin_scenario(ledger, "circle-cancel")
+        removed = sorted(members)[0]
+        self.set_input("alice", 'input[data-circle-name]', "Cancelled Circle")
+        self.set_input("alice", 'input[data-circle-desc]', "Cancelled description")
+        self.click("alice", f'[data-action-id="circle.member.remove.{circle_id}.{removed}"]')
+        self.click("alice", '[data-action-id="circle.save-cancel"]')
+        self.assert_circle(circle_id, name, description, members)
+        self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
+        self.assert_circle_editor(name, description, members)
+        self.capture("alice", "circle-cancel")
+        self.complete_scenario(ledger, "circle-cancel",
+            "alice:change-name-description-members-and-cancel", "alice:painted-unchanged-22-member-readback")
+
+        self.begin_scenario(ledger, "circle-partial-save-retry")
+        # CircleNameMax is 32 runes at the original domain validator. Membership
+        # removal commits before the failing rename; the UI must retain the
+        # draft while its original Store re-reads that partial committed truth.
+        invalid_name = "x" * 33
+        remaining = members - {removed}
+        self.set_input("alice", 'input[data-circle-name]', invalid_name)
+        self.click("alice", f'[data-action-id="circle.member.remove.{circle_id}.{removed}"]')
+        self.click("alice", '[data-action-id="circle.save"]')
+        warning = wait_until(lambda: self.visible_element("alice",
+            '.sk-circle-manage .pt-alert[data-tone="warning"][role="status"]'),
+            "original Circle save failure warning", timeout=60)
+        self.assert_circle_element_painted(warning, "circle-save-failure-painted")
+        self.capture("alice", "circle-partial-save-failure-warning")
+        self.assert_circle_editor(invalid_name, description, remaining)
+        wait_until(lambda: (circle := self.circle_projection(circle_id)) is not None
+                   and circle["name"] == name and set(circle["memberPtids"]) == remaining,
+                   "original partial membership commit readback", timeout=60)
+        self.capture("alice", "circle-partial-save-failure")
+        self.set_input("alice", 'input[data-circle-name]', name)
+        self.click("alice", '[data-action-id="circle.save"]')
+        self.assert_circle(circle_id, name, description, remaining)
+        self.capture("alice", "circle-partial-save-retry")
+        self.report.runtime["circleLifecycle"] = {
+            "realRegisteredMembers": len(members), "confirmedMembersAfterRetry": len(remaining),
+            "cancelRetainedCanonicalMembership": True, "failedRenameRetainedDraft": True,
+            "partialCommitReRead": True, "retryConfirmedCanonicalMembership": True,
+            "unprovenScope": ["Circle block and account epoch"],
+        }
+        self.complete_scenario(ledger, "circle-partial-save-retry",
+            "alice:actual-invalid-rename-after-member-removal-and-retry",
+            "alice:painted-retained-failure-draft-and-confirmed-retry")
+        self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
+        self.click("alice", f'[data-action-id="circle.delete.{circle_id}"]')
+        self.click("alice", '[data-action-id="circle.delete.confirm"]')
+        wait_until(lambda: self.circle_projection(circle_id) is None,
+                   "original Circle deletion cleanup", timeout=60)
+        self.click("alice", '[data-action-id="segment.feed"]')
 
     def capture_public_measurement(self, scenario: str, started: float,
                                    observation: dict[str, Any]) -> None:
@@ -551,6 +712,7 @@ class Gate(DeviceSearchGate):
             source_identity = self.source_identity(read_station_version(primary["endpoint"]))
             with ExitStack() as stack:
                 fixture = self.prepare_fixture(stack)
+                ledger.record(SuiteRuntimeAction.ACCOUNT_PROVISION, resource_id="22-real-circle-members")
                 self.action("bob", "unfollowActor", {"actorPtid": fixture["alicePtid"]})
                 for actor in self.client_specs:
                     self.click(actor, '[data-pt-primary-nav="moments"] [role="button"]')
@@ -723,6 +885,7 @@ class Gate(DeviceSearchGate):
                 self.capture("bob", SCENARIOS[5])
                 self.complete_scenario(ledger, SCENARIOS[5],
                     "alice:delete-confirm", "bob:no-painted-deleted-card-or-search-result")
+                self.circle_scenarios(ledger)
         finally:
             def release() -> None:
                 nonlocal cleanup
@@ -753,7 +916,7 @@ class Gate(DeviceSearchGate):
             "scenarioResults": {scenario: "PASS" for scenario in SCENARIOS},
             "textSha256": hashlib.sha256(text.encode()).hexdigest(),
             "suiteRuntimeReport": runtime_report, "cleanup": cleanup,
-            "unprovenScope": ["Dropped Federation notification fault", "Circle lifecycle",
+            "unprovenScope": ["Dropped Federation notification fault", "Circle block and account epoch",
                               "Prototype visual parity", "Mobile Native"]}
 
 
