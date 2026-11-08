@@ -160,7 +160,8 @@ pub fn social_public_feed_submit(state: State<'_, Arc<AppState>>, window: Window
     }
     let response: crate::model::common::PeersResponse = client.request_proto_for_device(
         reqwest::Method::POST, "/api/v1/social/feed/events/submit", &p.token, None,
-        Some(&SubmitFeedEventRequest{bundle: Some(p.bundle.clone())}), &p.device).map_err(|e| e.to_string())?;
+        Some(&SubmitFeedEventRequest{bundle: Some(p.bundle.clone())}), &p.device)
+        .map_err(|e| format!("FEED_SUBMISSION_FAILED: {e}"))?;
     // Network success may arrive after logout, account switch, device restart
     // or Station replacement. Such an ACK cannot touch the new session.
     let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;

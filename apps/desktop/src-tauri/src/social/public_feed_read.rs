@@ -69,7 +69,7 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
         reqwest::Method::POST, "/actor/endpoint-manifest", &active.jwt, None,
         Some(&GetActorEndpointManifestRequest{actor: Some(ActorRef{
             ptid: input.actor_ptid.clone(), kind: ActorKind::Person as i32, ..Default::default()
-        })}), &engine.endpoint().device_id).map_err(|e| e.to_string())?;
+        })}), &engine.endpoint().device_id).map_err(|e| format!("FEED_ACTOR_MANIFEST_FAILED: {e}"))?;
     validate()?;
     let manifest = manifest.manifest.ok_or("FEED_INVALID_RESPONSE")?;
     let home = &manifest.home_station_peer_id;
@@ -90,7 +90,7 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
         include_thread: true, after_thread_cursor: store.thread_cursor(&input.actor_ptid)?};
     let envelope: crate::model::common::PeersResponse = client.request_proto_for_device(
         reqwest::Method::POST, "/api/v1/social/feed/read", &active.jwt, None,
-        Some(&request), &engine.endpoint().device_id).map_err(|e| e.to_string())?;
+        Some(&request), &engine.endpoint().device_id).map_err(|e| format!("FEED_HISTORY_READ_FAILED: {e}"))?;
     if envelope.code != "200" { return Err("FEED_INVALID_RESPONSE".into()); }
     let any = envelope.data.ok_or("FEED_INVALID_RESPONSE")?;
     if any.type_url != "type.googleapis.com/peers_touch.model.social.feed.v1.ReadFeedResponse" {
@@ -108,7 +108,7 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
             reqwest::Method::POST,"/actor/endpoint-manifest",&active.jwt,None,
             Some(&GetActorEndpointManifestRequest{actor:Some(ActorRef{
                 ptid:actor.clone(),kind:ActorKind::Person as i32,..Default::default()})}),
-            &engine.endpoint().device_id).map_err(|e| e.to_string())?;
+            &engine.endpoint().device_id).map_err(|e| format!("FEED_THREAD_MANIFEST_FAILED: {e}"))?;
         validate()?;
         let identity = identity.manifest.ok_or("FEED_INVALID_RESPONSE")?;
         if identity.home_station_peer_id != entry.interaction_home_station { return Err("FEED_WRITER_NOT_AUTHORIZED".into()); }
