@@ -57,6 +57,7 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                     "runId": "source-binding-fixture",
                 }
                 gate.actor_manifest = {"runId": "source-binding-fixture"}
+                gate.active_social_scenario = None
                 gate.report = SimpleNamespace(runtime={})
                 with patch(
                     "tooling.acceptance.gates.social.public_feed_native.SuiteRuntimeLedger",
@@ -95,6 +96,12 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                     "runId": "version-contract-fixture",
                 }
                 gate.actor_manifest = {"runId": "version-contract-fixture"}
+                gate.client_specs = {
+                    "alice": {"actor": "alice"},
+                    "bob": {"actor": "bob"},
+                    "bob2": {"actor": "bob"},
+                }
+                gate.active_social_scenario = None
                 gate.report = SimpleNamespace(runtime={}, add_assertion=Mock())
                 with patch(
                     "tooling.acceptance.gates.social.public_feed_native.read_station_version",
@@ -115,7 +122,9 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
                     if accepted:
                         with self.assertRaisesRegex(RuntimeError, "source identity boundary"):
                             gate.run()
-                        self.assertEqual(launch.call_count, 2)
+                        self.assertEqual(launch.call_count, 3)
+                        self.assertEqual([call.args[0] for call in launch.call_args_list],
+                                         ["alice", "bob", "bob2"])
                     else:
                         with self.assertRaisesRegex(GateError, "alice-station-source"):
                             gate.run()

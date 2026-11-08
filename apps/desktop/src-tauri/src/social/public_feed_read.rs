@@ -52,6 +52,12 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     if active.jwt.is_empty() { return Err("FEED_AUTHENTICATION_REQUIRED".into()); }
     let engine = state.messaging_engines.get(&active.account_id)?.ok_or("FEED_DEVICE_REQUIRED")?;
     let scope = state.station.client().active_scope().ok_or("FEED_STATION_REQUIRED")?;
+    #[cfg(feature = "acceptance-webdriver")]
+    let fault_scope = super::public_feed_faults::FeedFaultScope {
+        actor: active.actor.ptid.clone(), account: active.account_id.clone(),
+        device: engine.endpoint().device_id.clone(), station: scope.station_peer_id.clone(),
+        generation: scope.lifecycle_generation.to_string(),
+    };
     let client = state.station.client();
     let validate = || -> Result<(), String> {
         let current = state.sessions.get(window.label()).ok_or("FEED_SESSION_CHANGED")?;
@@ -92,6 +98,16 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     let response: ReadFeedResponse = client.request_proto_for_device(
         reqwest::Method::POST, "/api/v1/social/feed/read", &active.jwt, None,
         Some(&request), &engine.endpoint().device_id).map_err(|e| format!("FEED_HISTORY_READ_FAILED: {e}"))?;
+    #[cfg(feature = "acceptance-webdriver")]
+    let response = {
+        let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
+        validate()?;
+        super::public_feed_faults::observe_read(&fault_scope, &input.actor_ptid, &request, &response);
+        let mut response = response;
+        super::public_feed_faults::transform_read_response(&fault_scope, &input.actor_ptid,
+            previous.as_ref(), &mut response)?;
+        response
+    };
     if response.thread_entries.len() > 32 { return Err("FEED_INVALID_RESPONSE".into()); }
     let mut roots = std::collections::BTreeMap::new();
     let mut pins = Vec::new();
@@ -117,7 +133,11 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
     validate()?;
     for (actor,home,root) in pins { store.pin_actor(&actor,&home,&root)?; }
-    let head = store.import_remote_page(&request, &response, &root, home)?;
+    let head = store.import_remote_page(&request, &response, &root, home).map_err(|error| {
+        #[cfg(feature = "acceptance-webdriver")]
+        super::public_feed_faults::observe_rejection(&fault_scope, &error);
+        error
+    })?;
     store.import_thread(&request,&response,&roots,&poll_keys)?;
     let (page, page_head) = store.remote_page(&request.actor_ptid, &root, home,
         after_sequence, input.limit)?;

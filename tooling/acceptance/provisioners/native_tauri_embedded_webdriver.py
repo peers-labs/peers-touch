@@ -62,7 +62,7 @@ _CROSS_STATION_SOCIAL_GATE_ROLES = {
     "social-cross-station-native-e2e": ("alice", "bob", "eve"),
 }
 _CROSS_STATION_SOCIAL_GATE_CLIENTS = {
-    "social-public-feed-native-e2e": ("alice", "bob"),
+    "social-public-feed-native-e2e": ("alice", "bob", "bob2"),
     "federation-two-station-lifecycle-e2e": (
         "alice",
         "federation-secondary-owner",

@@ -1219,6 +1219,15 @@ export function installAcceptanceHarness(): void {
       return { following: false, actorPtidSha256: await sha256(actorPtid) };
     },
 
+    async publicFeedFault(input: {
+      action: 'read' | 'clear' | 'arm';
+      id?: string;
+      kind?: string;
+      target_actor_ptid?: string;
+    }) {
+      return invoke('social_public_feed_acceptance_fault', { input });
+    },
+
     async publicFeedStatus() {
       const status = await invoke<{ pending?: unknown[] }>('social_public_feed_status');
       return { pendingCount: status.pending?.length ?? 0 };

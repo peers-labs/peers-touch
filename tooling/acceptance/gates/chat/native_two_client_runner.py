@@ -503,24 +503,34 @@ class NativeTwoClientGate(AcceptanceGate):
         ).rstrip("/")
         if not self.station_identity_url:
             raise GateError("Station identity URL is required")
+        declared_clients = manifest.get("clients", [])
+        declared_actors = actor_manifest.get("actors", [])
         self.client_specs = {
             str(client.get("id")): client
-            for client in manifest.get("clients", [])
+            for client in declared_clients
             if isinstance(client, dict)
         }
-        self.actor_specs = {
+        canonical_actors = {
             str(actor.get("role")): actor
-            for actor in actor_manifest.get("actors", [])
+            for actor in declared_actors
             if isinstance(actor, dict)
         }
-        if set(self.client_specs) != {"alice", "bob"}:
+        if (len(self.client_specs) != len(declared_clients)
+                or not {"alice", "bob"}.issubset(self.client_specs)
+                or any(not key or key == "None" for key in self.client_specs)):
             raise GateError(
-                "runtime manifest must allocate isolated Alice and Bob clients"
+                "runtime manifest must allocate unique isolated Alice and Bob clients"
             )
-        if set(self.actor_specs) != {"alice", "bob"}:
+        if set(canonical_actors) != {"alice", "bob"} or len(canonical_actors) != len(declared_actors):
             raise GateError(
                 "actor manifest must contain canonical Alice and Bob identities"
             )
+        self.actor_specs = {}
+        for client_id, client_spec in self.client_specs.items():
+            role = client_spec.get("actor")
+            if role not in canonical_actors or (client_id in canonical_actors and role != client_id):
+                raise GateError("runtime client must bind its declared canonical Actor")
+            self.actor_specs[client_id] = canonical_actors[role]
         self.account_login_client = account_login_client
         self.direction_order = (
             [CURRENT_PROFILE_INITIAL_SENDER, "alice"]
@@ -641,8 +651,8 @@ class NativeTwoClientGate(AcceptanceGate):
         client = self.runtime_binding.create_bound_session(
             actor,
             NativeLaunchOptions(
-                window_slot=("alice", "bob").index(actor),
-                window_count=2,
+                window_slot=tuple(self.client_specs).index(actor),
+                window_count=len(self.client_specs),
             ),
         )
         self.runtime_instances.append(client)
@@ -761,8 +771,8 @@ class NativeTwoClientGate(AcceptanceGate):
         client = self.runtime_binding.create_bound_session(
             actor,
             NativeLaunchOptions(
-                window_slot=("alice", "bob").index(actor),
-                window_count=2,
+                window_slot=tuple(self.client_specs).index(actor),
+                window_count=len(self.client_specs),
             ),
         )
         self.runtime_instances.append(client)

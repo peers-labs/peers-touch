@@ -866,6 +866,8 @@ fn main() {
             social::public_feed::social_public_feed_submit,
             social::public_feed::social_public_feed_status,
             social::public_feed_read::social_public_feed_read,
+            #[cfg(feature = "acceptance-webdriver")]
+            social::public_feed_faults::social_public_feed_acceptance_fault,
             social::social_private_moments_reconcile,
             social::social_private_moment_publish,
             social::social_private_moment_read,

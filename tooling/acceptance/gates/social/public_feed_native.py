@@ -31,10 +31,12 @@ SCENARIOS = (
     "restart-readback", "public-search", "public-tombstone",
     "comment-reactions",
     "poll-single-choice", "poll-multiple-choice", "poll-cutoff",
+    "normal-submit-readback", "lost-submit-ack", "corrupt-read-payload",
+    "rollback-read-head", "second-device-writer-denial",
 )
 RUNTIME_REUSE = RuntimeReuseContract.from_dict({
     "scope": "suite", "entryCheckId": GATE_ID, "scenarioIds": list(SCENARIOS),
-    "maxProvisioningRuns": 1, "maxClientLaunches": 3,
+    "maxProvisioningRuns": 1, "maxClientLaunches": 4,
     "minWarmReuseRate": 0.66, "requireAttachOnlyScenarios": True,
     "requireReceiverVisibleProof": True, "allowClientReplacement": True,
 })
@@ -147,6 +149,194 @@ class Gate(DeviceSearchGate):
     def capture(self, actor: str, label: str) -> None:
         self.save_screenshot(self.clients[actor], label)
         self.save_dom(self.clients[actor], label)
+
+    def await_painted_public_card(self, actor: str, text: str) -> Any:
+        # Passive oracle: only the original Runtime may initiate repair reads.
+        def painted() -> Any:
+            card = self.card(actor, text)
+            if card is None:
+                return None
+            observation = self.clients[actor].execute_async_script("""
+                const el = arguments[0], done = arguments[arguments.length - 1];
+                const visible = () => {
+                  if (!el.isConnected) return false;
+                  const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+                  const left = Math.max(0, r.left), top = Math.max(0, r.top);
+                  const right = Math.min(innerWidth, r.right), bottom = Math.min(innerHeight, r.bottom);
+                  if (right <= left || bottom <= top || s.display === 'none'
+                      || s.visibility !== 'visible' || Number(s.opacity) <= 0) return false;
+                  const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+                  return !!hit && (hit === el || el.contains(hit));
+                };
+                requestAnimationFrame(() => {
+                  const first = visible();
+                  requestAnimationFrame(() => done({painted: first && visible(), paintFrames: 2}));
+                });
+            """, card)
+            return card if observation["painted"] and observation["paintFrames"] == 2 else None
+        return wait_until(painted, f"{actor} passively painted authentic public Moment", timeout=80)
+
+    def public_fault(self, actor: str, *, action: str = "read", kind: str = "",
+                     target: str = "", label: str = "") -> Any:
+        return self.action(actor, "publicFeedFault", {
+            "action": action, "kind": kind, "target_actor_ptid": target,
+            "id": f"{self.manifest['runId']}:{label}" if label else "",
+        })
+
+    def publish_text_ui(self, text: str, actor: str = "alice") -> float:
+        self.click(actor, '[data-acceptance-id="social-composer-open"]')
+        self.set_input(actor, 'textarea[data-moments-composer-input]', text)
+        started = time.monotonic()
+        self.click(actor, '[data-acceptance-id="social-composer-publish"]')
+        return started
+
+    def capture_public_measurement(self, scenario: str, started: float,
+                                   observation: dict[str, Any]) -> None:
+        self.assert_condition(f"{scenario}-actual-read-observed", observation["readCount"] > 0)
+        self.assert_condition(f"{scenario}-bounded-response", observation["boundedResponses"] is True)
+        self.assert_condition(f"{scenario}-observation-within-lease", observation["expired"] is False)
+        self.report.runtime.setdefault("publicFeedMeasurements", {})[scenario] = {
+            "submitToPaintSeconds": round(time.monotonic() - started, 6),
+            "receiverNativeReadCount": observation["readCount"],
+            "receiverNativeThreadReadCount": observation["threadReadCount"],
+            "maxNativeEventPage": observation["maxEventCount"],
+            "maxNativeThreadPage": observation["maxThreadCount"],
+            "maxNativeResponseBytes": observation["maxResponseBytes"],
+            "source": dict(self.manifest["source"]), "receiver": "bob", "sampleCount": 1,
+            "claim": "one comparable observed sample; no percentile or improvement claim",
+        }
+
+    def baseline_read_scenario(self, ledger: SuiteRuntimeLedger) -> str:
+        scenario = "normal-submit-readback"
+        self.begin_scenario(ledger, scenario)
+        text = f"{scenario}-{self.manifest['runId']}"
+        self.public_fault("bob", action="clear")
+        self.public_fault("bob", action="arm", kind="observe-reads",
+                          target=self.ptids["alice"], label=scenario)
+        started = self.publish_text_ui(text)
+        self.await_painted_public_card("alice", text)
+        self.await_painted_public_card("bob", text)
+        self.capture_public_measurement(scenario, started, self.public_fault("bob"))
+        self.capture("bob", scenario)
+        self.complete_scenario(ledger, scenario, "alice:real-publication",
+                               "bob:passive-runtime-painted-authentic-post")
+        self.public_fault("bob", action="clear")
+        return text
+
+    def lost_ack_scenario(self, ledger: SuiteRuntimeLedger) -> str:
+        scenario = "lost-submit-ack"
+        self.begin_scenario(ledger, scenario)
+        text = f"{scenario}-{self.manifest['runId']}"
+        self.public_fault("alice", action="clear")
+        self.public_fault("bob", action="clear")
+        self.public_fault("bob", action="arm", kind="observe-reads",
+                          target=self.ptids["alice"], label=f"{scenario}:receiver")
+        self.public_fault("alice", action="arm", kind="drop-submit-ack",
+                          target=self.ptids["alice"], label=scenario)
+        started = self.publish_text_ui(text)
+        self.await_painted_public_card("bob", text)
+        self.capture_public_measurement(scenario, started, self.public_fault("bob"))
+        observed = self.public_fault("alice")
+        self.assert_condition(f"{scenario}-real-ack-loss", observed["effectCount"] == 1)
+        self.assert_condition(f"{scenario}-retained-exact-command",
+                              bool(observed["commandId"]) and len(observed["eventSha256"]) == 64)
+        control = self.visible_element("alice", 'textarea[data-moments-composer-input]')
+        self.assert_condition(f"{scenario}-draft-retained",
+                              control is not None and control.get_attribute("value") == text)
+        self.capture("alice", f"{scenario}-unknown-result")
+        self.click("alice", '[data-acceptance-id="social-composer-publish"]')
+        self.await_painted_public_card("alice", text)
+        self.await_painted_public_card("bob", text)
+        settled = self.public_fault("alice")
+        self.assert_condition(f"{scenario}-exact-retry", settled["submissionCount"] >= 2
+                              and settled["retryBytesMatch"] is True
+                              and settled["commandId"] == observed["commandId"])
+        self.assert_condition(f"{scenario}-journal-committed",
+                              self.action("alice", "publicFeedStatus")["pendingCount"] == 0)
+        for actor in ("alice", "bob"):
+            cards = self.clients[actor].find_elements('[data-acceptance-id="social-moment-card"]')
+            self.assert_condition(f"{scenario}-{actor}-one-painted-post",
+                                  sum(card.is_displayed() and text in card.text for card in cards) == 1)
+            self.capture(actor, f"{scenario}-{actor}-committed")
+        self.complete_scenario(ledger, scenario, "alice:publish-and-same-draft-retry",
+                               "bob:one-painted-authentic-post-after-ack-loss")
+        self.public_fault("alice", action="clear")
+        self.public_fault("bob", action="clear")
+        return text
+
+    def read_integrity_scenario(self, ledger: SuiteRuntimeLedger, *, kind: str,
+                                original_text: str) -> str:
+        self.begin_scenario(ledger, kind)
+        original_id = self.await_painted_public_card("bob", original_text).get_attribute("data-post-id")
+        self.public_fault("bob", action="clear")
+        self.public_fault("bob", action="arm", kind=kind, target=self.ptids["alice"], label=kind)
+        text = f"{kind}-{self.manifest['runId']}"
+        started = self.publish_text_ui(text)
+        self.await_painted_public_card("alice", text)
+        self.await_painted_public_card("bob", text)
+        observed = self.public_fault("bob")
+        rejection = {"corrupt-read-payload": "FEED_INVALID",
+                     "rollback-read-head": "FEED_HEAD_ROLLBACK"}[kind]
+        self.assert_condition(f"{kind}-real-response-transformed",
+                              observed["effectCount"] == 1 and observed["rejection"] == rejection)
+        self.assert_condition(f"{kind}-retained-authentic-body",
+                              self.await_painted_public_card("bob", original_text)
+                              .get_attribute("data-post-id") == original_id)
+        self.capture_public_measurement(kind, started, observed)
+        self.capture("bob", f"{kind}-verified-recovery")
+        self.complete_scenario(ledger, kind, "alice:real-publication",
+                               "bob:painted-authentic-retained-and-recovered-bodies")
+        self.public_fault("bob", action="clear")
+        return text
+
+    def second_writer_scenario(self, ledger: SuiteRuntimeLedger) -> None:
+        scenario = "second-device-writer-denial"
+        self.begin_scenario(ledger, scenario)
+        self.assert_condition(f"{scenario}-same-actor-separate-device",
+                              self.ptids["bob2"] == self.ptids["bob"]
+                              and self.device_ids["bob2"] != self.device_ids["bob"])
+        text = f"{scenario}-{self.manifest['runId']}"
+        self.public_fault("bob2", action="clear")
+        self.public_fault("bob2", action="arm", kind="observe-reads",
+                          target=self.ptids["bob2"], label=scenario)
+        self.publish_text_ui(text, actor="bob2")
+        toast = wait_until(lambda: self.visible_element("bob2", '.pt-toast[data-tone="danger"]'),
+                           "Bob second-device visible writing-device feedback", timeout=80)
+        self.assert_condition(f"{scenario}-writer-feedback-copy", any(copy in toast.text for copy in (
+            "请在已授权的写入设备上发布公开内容。当前设备仍可阅读。",
+            "Publish public posts from the authorized writing device. This device can still read posts.",
+        )))
+        painted = self.clients["bob2"].execute_async_script("""
+            const el = arguments[0], done = arguments[arguments.length - 1];
+            const visible = () => {
+              if (!el.isConnected) return false;
+              const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+              const left = Math.max(0, r.left), top = Math.max(0, r.top);
+              const right = Math.min(innerWidth, r.right), bottom = Math.min(innerHeight, r.bottom);
+              if (right <= left || bottom <= top || s.display === 'none'
+                  || s.visibility !== 'visible' || Number(s.opacity) <= 0) return false;
+              const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+              return !!hit && (hit === el || el.contains(hit));
+            };
+            requestAnimationFrame(() => {
+              const first = visible();
+              requestAnimationFrame(() => done(first && visible()));
+            });
+        """, toast)
+        self.assert_condition(f"{scenario}-painted-error", painted is True)
+        self.capture("bob2", scenario)
+        error = wait_until(lambda: self.public_fault("bob2").get("submissionRejection"),
+                           "Bob second-device typed writer denial", timeout=80)
+        self.assert_condition(f"{scenario}-typed-rejection", error == "FEED_WRITER_NOT_AUTHORIZED")
+        control = self.visible_element("bob2", 'textarea[data-moments-composer-input]')
+        self.assert_condition(f"{scenario}-draft-retained",
+                              control is not None and control.get_attribute("value") == text)
+        self.assert_condition(f"{scenario}-no-published-card",
+                              all(self.card(actor, text) is None for actor in ("alice", "bob", "bob2")))
+        self.complete_scenario(ledger, scenario, "bob2:real-publication-attempt",
+                               "bob2:painted-writer-denial-and-retained-draft")
+        self.click("bob2", '[data-action-id="compose.cancel"]')
+        self.public_fault("bob2", action="clear")
 
     def comment_selector(self, actor: str, post_selector: str, text: str) -> str:
         def locate() -> str | None:
@@ -309,11 +499,16 @@ class Gate(DeviceSearchGate):
         ledger.record(SuiteRuntimeAction.ACCOUNT_PROVISION, resource_id="alice,bob")
         cleanup: dict[str, Any] = {}
         source_identity: dict[str, Any] = {}
+        self.report.runtime["resourcePlanDeviation"] = {
+            "plannedMaxClientLaunches": 3, "requiredMaxClientLaunches": 4,
+            "reason": "three isolated devices plus original Bob restart",
+            "plannedOutcomeSectionUnchanged": True,
+        }
         text = f"AFL-{self.manifest['runId']}"
         edited_text = f"Updated-{self.manifest['runId']}"
         try:
             self.verify_fixture_ready()
-            for actor in ("alice", "bob"):
+            for actor in self.client_specs:
                 version = read_station_version(runtime_station_service(self.manifest, actor)["endpoint"])
                 self.assert_condition(f"{actor}-station-source",
                     commits_match(str(version.get("build_commit") or ""), source["commit"]), "current source")
@@ -328,7 +523,7 @@ class Gate(DeviceSearchGate):
             with ExitStack() as stack:
                 fixture = self.prepare_fixture(stack)
                 self.action("bob", "unfollowActor", {"actorPtid": fixture["alicePtid"]})
-                for actor in ("alice", "bob"):
+                for actor in self.client_specs:
                     self.click(actor, '[data-pt-primary-nav="moments"] [role="button"]')
                     self.click(actor, '[data-action-id="segment.feed"]')
 
@@ -446,6 +641,15 @@ class Gate(DeviceSearchGate):
                 self.capture("bob", SCENARIOS[3])
                 self.complete_scenario(ledger, SCENARIOS[3], "bob:native-restart", "bob:painted-replayed-updated-body")
 
+                self.action("bob", "followActor", {"actorPtid": fixture["alicePtid"]})
+                self.baseline_read_scenario(ledger)
+                recent_text = self.lost_ack_scenario(ledger)
+                recent_text = self.read_integrity_scenario(
+                    ledger, kind="corrupt-read-payload", original_text=recent_text)
+                self.read_integrity_scenario(
+                    ledger, kind="rollback-read-head", original_text=recent_text)
+                self.second_writer_scenario(ledger)
+
                 self.begin_scenario(ledger, SCENARIOS[4])
                 self.open_search()
                 self.click("bob", '[data-search-filter="social"]')
@@ -520,8 +724,8 @@ class Gate(DeviceSearchGate):
             "scenarioResults": {scenario: "PASS" for scenario in SCENARIOS},
             "textSha256": hashlib.sha256(text.encode()).hexdigest(),
             "suiteRuntimeReport": runtime_report, "cleanup": cleanup,
-            "unprovenScope": ["Lost ACK fault", "Dropped notification fault", "Second writer denial",
-                              "Station projection tamper and head rollback faults", "Prototype visual parity", "Mobile Native"]}
+            "unprovenScope": ["Dropped Federation notification fault", "Circle lifecycle",
+                              "Prototype visual parity", "Mobile Native"]}
 
 
 def main() -> int:

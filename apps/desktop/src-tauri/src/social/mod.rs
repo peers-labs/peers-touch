@@ -14,6 +14,8 @@ pub(crate) use projection::{
     PrivatePollResultProjection, PrivateReactionOperation, PrivateReactionSummaryProjection,
 };
 pub(crate) mod public_feed;
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+pub(crate) mod public_feed_faults;
 pub(crate) mod public_feed_read;
 mod public_feed_store;
 pub(crate) mod search_projection;

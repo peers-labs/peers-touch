@@ -165,20 +165,41 @@ pub fn social_public_feed_prepare(state: State<'_, Arc<AppState>>, window: Windo
 pub fn social_public_feed_submit(state: State<'_, Arc<AppState>>, window: Window,
     input: PublicFeedSubmitInput) -> Result<Value, String> {
     let prepared = PublicFeedPrepareInput{command_id: input.command_id.clone(), kind: input.kind, payload_b64: input.payload_b64};
-    let mut p = prepare(&state, &window, &prepared)?;
+    #[cfg(feature = "acceptance-webdriver")]
+    let fault_scope = {
+        let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
+        super::public_feed_faults::current_scope(&state, &window)?
+    };
+    let mut p = prepare(&state, &window, &prepared).map_err(|error| {
+        #[cfg(feature = "acceptance-webdriver")]
+        super::public_feed_faults::observe_submission_rejection(&fault_scope, &error);
+        error
+    })?;
     let client = state.station.client();
     {
         let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
         validate_prepared(&state, &window, &p)?;
     }
+    #[cfg(feature = "acceptance-webdriver")]
+    super::public_feed_faults::observe_submit(&fault_scope, &input.command_id,
+        p.bundle.events.first().ok_or("FEED_INVALID")?)?;
     let response: SubmitFeedEventResponse = client.request_proto_for_device(
         reqwest::Method::POST, "/api/v1/social/feed/events/submit", &p.token, None,
         Some(&SubmitFeedEventRequest{bundle: Some(p.bundle.clone())}), &p.device)
-        .map_err(|e| format!("FEED_SUBMISSION_FAILED: {e}"))?;
+        .map_err(|e| {
+            let error = format!("FEED_SUBMISSION_FAILED: {e}");
+            #[cfg(feature = "acceptance-webdriver")]
+            super::public_feed_faults::observe_submission_rejection(&fault_scope, &error);
+            error
+        })?;
     // Network success may arrive after logout, account switch, device restart
     // or Station replacement. Such an ACK cannot touch the new session.
     let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
     validate_prepared(&state, &window, &p)?;
+    #[cfg(feature = "acceptance-webdriver")]
+    if super::public_feed_faults::lose_submit_ack(&fault_scope, &input.command_id)? {
+        return Err("FEED_SUBMISSION_FAILED: acknowledgement unavailable".into());
+    }
     let head = response.head.as_ref().ok_or("FEED_INVALID")?;
     p.store.confirm(&p.actor, &p.root, &input.command_id, head)?;
     // Source ACK releases the sequence even if the Home supplement is absent
