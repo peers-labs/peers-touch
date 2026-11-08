@@ -1,7 +1,7 @@
 import { useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IdentityTrigger, type IdentityCardCopy } from '@peers-touch/ui';
-import { message } from 'antd';
+import { useScopedFeedback } from '../../hooks/useAppFeedback';
 import { useActorIdentity } from '../common/useActorIdentity';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ensureUserMomentsProjection } from '../../runtimes/momentsRuntime';
@@ -14,6 +14,7 @@ export function MomentAuthorTrigger({ actorPtid, children, onOpenProfile, onOpen
   onOpenProfile?: (actorPtid: string) => void; onOpenMoment?: (postId: string) => void;
 }) {
   const { t } = useTranslation('moments');
+  const feedback = useScopedFeedback();
   const identity = useActorIdentity(actorPtid, { requireCanonicalProfile: true });
   const { relation, status, statusError, blockPending, setBlocked, followers, follow, unfollow } = useActiveRelationshipsSlice(state => ({
     relation: state.relations[actorPtid], followers: state.followersByActor[actorPtid]?.total,
@@ -40,13 +41,13 @@ export function MomentAuthorTrigger({ actorPtid, children, onOpenProfile, onOpen
       || !status.allowedActions.includes(SocialRelationshipAllowedAction.FOLLOW)) return;
     setPending(true);
     try { await (relation.following ? unfollow(actorPtid) : follow(actorPtid)); }
-    catch { message.error(t('moments.follow.unavailable')); }
+    catch { feedback.error(t('moments.follow.unavailable')); }
     finally { setPending(false); }
   };
   const toggleBlock = async () => {
     if (!status || statusError || blockPending || pending) return;
     try { await setBlocked(actorPtid, !status.blockedByViewer); }
-    catch { message.error(t('moments.follow.unavailable')); }
+    catch { feedback.error(t('moments.follow.unavailable')); }
   };
   const unavailable = { kind: 'disabled' as const, reason: t('moments.follow.unavailable') };
   return <IdentityTrigger copy={copy} name={identity.displayName || t('moments.author.unknown')}
@@ -63,7 +64,7 @@ export function MomentAuthorTrigger({ actorPtid, children, onOpenProfile, onOpen
     onToggleBlock={() => void toggleBlock()}
     onToggleFollow={relation ? () => void toggleFollow() : undefined}
     onOpenChange={open => { if (open) void ensureUserMomentsProjection(actorPtid)
-      .catch(() => message.error(t('moments.follow.unavailable'))); }}
+      .catch(() => feedback.error(t('moments.follow.unavailable'))); }}
     moments={posts.map(post => ({
       id: post.id, text: post.content.case === 'textPost' ? post.content.value.text : '',
     }))}

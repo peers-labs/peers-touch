@@ -471,7 +471,6 @@ interface MomentsState {
   // Two non-keyed feeds: home (followed + circles) and explore (public).
   feeds: Record<MomentFeedKind, MomentFeedState>;
   // Keyed feeds: per-circle and per-actor profile.
-  circleFeeds: Record<string, MomentFeedState>;
   userFeeds: Record<string, MomentFeedState>;
 
   // Per-post threads, indexed by post id.
@@ -506,7 +505,6 @@ interface MomentsState {
   ) => Promise<void>;
   syncProjection: (reason: string) => Promise<void>;
   hydratePrivateMoments: (projections: readonly PrivateMomentProjection[]) => void;
-  loadCircleFeed: (circleId: string, refresh?: boolean) => Promise<void>;
   loadUserFeed: (actorPtid: string, refresh?: boolean) => Promise<void>;
 
   loadPost: (postId: string) => Promise<Post | undefined>;
@@ -565,7 +563,6 @@ const initialState: Pick<
   | 'postsById'
   | 'authorsById'
   | 'feeds'
-  | 'circleFeeds'
   | 'userFeeds'
   | 'comments'
   | 'commentsCursor'
@@ -591,7 +588,6 @@ const initialState: Pick<
   postsById: {},
   authorsById: {},
   feeds: { home: emptyFeed(), explore: emptyFeed() },
-  circleFeeds: {},
   userFeeds: {},
   comments: {},
   commentsCursor: {},
@@ -927,29 +923,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     ));
   },
 
-  loadCircleFeed: async (circleId, refresh = false) => {
-    // Backend support for per-circle feed reads ships in P3 — the
-    // server-side ActorResolver / GroupMembershipChecker is required
-    // to enforce membership. Until then we return an empty,
-    // explicitly-loaded feed so the UI shows a "Coming in P3" stub
-    // rather than a perpetual spinner.
-    const current = get().circleFeeds[circleId] ?? emptyFeed();
-    set((s) => ({
-      circleFeeds: {
-        ...s.circleFeeds,
-        [circleId]: {
-          ...current,
-          postIds: refresh ? [] : current.postIds,
-          loading: false,
-          loadedAt: Date.now(),
-          hasMore: false,
-          nextCursor: '',
-        },
-      },
-    }));
-    log.info(TAG, 'loadCircleFeed: noop (P3)');
-  },
-
   loadUserFeed: async (actorPtid, refresh = false) => {
     const generation = storeGeneration;
     const current = get().userFeeds[actorPtid] ?? emptyFeed();
@@ -1168,12 +1141,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         },
         userFeeds: Object.fromEntries(
           Object.entries(s.userFeeds).map(([k, v]) => [
-            k,
-            { ...v, postIds: filterIds(v.postIds) },
-          ]),
-        ),
-        circleFeeds: Object.fromEntries(
-          Object.entries(s.circleFeeds).map(([k, v]) => [
             k,
             { ...v, postIds: filterIds(v.postIds) },
           ]),

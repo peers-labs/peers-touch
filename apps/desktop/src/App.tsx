@@ -3,12 +3,12 @@ import { FeedbackHost } from '@peers-touch/ui';
 import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { useAppRuntime } from './hooks/useAppRuntime';
 import { useWindowSurface } from './hooks/useWindowSurface';
+import { AppFeedbackContext, useAppFeedback } from './hooks/useAppFeedback';
 import { OnboardingView } from './views/OnboardingView';
 import { ResumingView } from './views/ResumingView';
 import { ReadyView } from './views/ReadyView';
 import { SurfaceTransitionVeil } from './components/SurfaceTransitionVeil';
 import './services/identityHandlers';
-import { feedbackChannel } from './ui/feedback';
 import type { AppState, AppLifecycle } from './types/navigation';
 
 const DevOverlayProvider = import.meta.env.DEV
@@ -26,6 +26,7 @@ const APP_VIEWS: Record<AppState, ComponentType<ViewProps>> = {
 };
 
 function App() {
+  const feedback = useAppFeedback();
   const lifecycle = useAppLifecycle();
   const criticalRuntimeReady = useAppRuntime(lifecycle);
 
@@ -42,7 +43,7 @@ function App() {
     isReadyTransition && surfaceTransition.readySurfaceSettled;
 
   return (
-    <>
+    <AppFeedbackContext.Provider value={feedback}>
       {isReadyTransition ? (
         // The heavy shell mounts only after its frame is settled; the veil
         // covers the gap so the ready shell never paints at an interim width.
@@ -56,9 +57,10 @@ function App() {
         visible={surfaceTransition.veilVisible}
         leaving={surfaceTransition.veilLeaving}
       />
-      <FeedbackHost channel={feedbackChannel} />
+      {/* Scoped, session-bound feedback channel for product surfaces. */}
+      <FeedbackHost channel={feedback} />
       {DevOverlayProvider && <Suspense fallback={null}><DevOverlayProvider /></Suspense>}
-    </>
+    </AppFeedbackContext.Provider>
   );
 }
 

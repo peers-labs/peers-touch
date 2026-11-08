@@ -71,6 +71,8 @@ Rules:
 - Comments should use indentation, subtle dividers, or background continuity, not separate heavy cards.
 - Reply composer belongs to the thread surface.
 - Empty comments should read as "no replies yet", not as a missing panel.
+- The shared `packages/ui` MomentCard owns the complete thread boundary.
+  App adapters must not introduce another thread/card renderer.
 - Comment rows, feed previews, and reply-target labels resolve identity by
   `authorPtid` through the shared actor profile projection; transport author
   handles are not display-name or avatar authority.
@@ -125,6 +127,16 @@ Rules:
 - Popovers cannot cover the content being reacted to or commented on.
 - Keyboard focus must reach tabs, composer, reaction picker, comment action, and more menu.
 - Focus returns to the source after popover close.
+- App owns one window-local peers-ui FeedbackChannel. Social callbacks capture
+  Actor, completed Station binding and session epoch before asynchronous work;
+  old or unmounted callbacks cannot notify a new session. Identity changes
+  dismiss existing notices and settle queued confirmations.
+- Circle lists are the publisher's private audience management. They do not
+  define a separately readable Circle feed or a group membership product.
+- Block dispatches the original relationship command and private revoke policy;
+  it does not delete the publisher's Circle membership metadata. An identity
+  change clears Circle views and unsaved editor state; returning to the original
+  account reads its canonical membership rather than restoring the old draft.
 
 ## 10. Acceptance States
 

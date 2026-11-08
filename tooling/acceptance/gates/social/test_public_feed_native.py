@@ -14,12 +14,20 @@ from tooling.acceptance.core.e2e_preflight import (
 from tooling.acceptance.core.evidence_store import source_identity
 from tooling.acceptance.core.execution_budget import ExecutionBudgetError
 from tooling.acceptance.core.execution_graph import compile_graph
-from tooling.acceptance.gates.social.public_feed_native import GATE_ID, Gate
+from tooling.acceptance.gates.social.public_feed_native import GATE_ID, Gate, RUNTIME_REUSE, SCENARIOS
 
 ROOT = Path(__file__).resolve().parents[4]
 
 
 class PublicFeedNativeEntryTest(unittest.TestCase):
+    def test_original_circle_suite_declares_block_and_intermediate_epoch_without_extra_launches(self):
+        self.assertIn("circle-block", SCENARIOS)
+        self.assertIn("circle-account-epoch", SCENARIOS)
+        ledger = SuiteRuntimeLedger(RUNTIME_REUSE, suite_runtime_id="circle-scope",
+            source_digest="a" * 40, fixture_epoch="circle-scope")
+        self.assertEqual(ledger.contract.max_client_launches, 4)
+        self.assertEqual(tuple(ledger.contract.scenario_ids), SCENARIOS)
+
     def test_original_poll_checks_peer_availability_and_real_empty_activation(self):
         for disabled, aria_disabled, accepted in (
             (None, "true", True), ("true", None, True),

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { resolvePrivateCommentComposerAction } from './privateCommentComposerState';
 
@@ -14,7 +14,7 @@ const commentListSource = source('./CommentList.tsx');
 const commentsSectionSource = source('./MomentCommentsSection.tsx');
 const detailSource = source('../../pages/moments/MomentDetailPage.tsx');
 const appSource = source('../../pages/moments/MomentsApp.tsx');
-const threadSource = source('./surfaces/SocialThreadSurface.tsx');
+const sharedCardSource = source('../../../../../packages/ui/web/src/moment-card.tsx');
 const scopeSource = source('../../../../../packages/ui/web/src/moment-scope-bar.tsx');
 const navigationSource = source('../../store/momentsNavigation.ts');
 const userSource = source('../../pages/moments/MomentsUserPage.tsx');
@@ -29,6 +29,28 @@ const enMoments = JSON.parse(
 ) as Record<string, string>;
 
 describe('Desktop Moments interaction contract', () => {
+  it('uses peers-ui across all Social surfaces and the shell-owned scoped feedback path', () => {
+    const legacy: string[] = [];
+    const inspect = (directory: URL) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const file = new URL(entry.name + (entry.isDirectory() ? '/' : ''), directory);
+        if (entry.isDirectory()) inspect(file);
+        else if (/\.tsx?$/.test(entry.name) && !entry.name.includes('.test.')
+          && /(?:from\s*|import\s*\()\s*['"](?:antd|@lobehub\/ui)['"]/.test(readFileSync(file, 'utf8'))) {
+          legacy.push(file.pathname);
+        }
+      }
+    };
+    inspect(new URL('./', import.meta.url));
+    inspect(new URL('../../pages/moments/', import.meta.url));
+    expect(legacy).toEqual([]);
+    expect(source('../../App.tsx')).toContain('feedback={feedback}');
+    for (const consumer of ['./MomentComposer.tsx', './MomentCard.tsx', './CommentList.tsx',
+      './MomentAuthorTrigger.tsx', './MomentRelationshipAction.tsx', '../../pages/moments/CircleManagePage.tsx']) {
+      expect(source(consumer)).toContain('useScopedFeedback');
+    }
+  });
+
   it('boots recovery projections independently from critical Chat readiness', () => {
     const deferredProjection = appRuntimeHookSource.indexOf(
       'void installDeferredAppRuntimeProjections(actorPtid);',
@@ -51,7 +73,10 @@ describe('Desktop Moments interaction contract', () => {
   });
 
   it('lets users collapse and restore the comment thread inside the card', () => {
-    expect(threadSource).toContain('data-moments-comments-toggle');
+    expect(sharedCardSource).toContain('data-acceptance-id="social-open-comments"');
+    expect(sharedCardSource).toContain('aria-expanded={commentsOpen}');
+    expect(actionBarSource).toContain('<MomentReactionBar');
+    expect(detailSource).not.toContain('SocialThreadSurface');
     // Comments expand inline in the card; the section anchor stays on the
     // card root so deep-link captures find the thread from its card.
     expect(momentCardSource).toContain('data-moments-comments-region={post.id}');

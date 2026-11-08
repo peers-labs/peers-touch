@@ -1,12 +1,9 @@
 import { useCallback } from 'react';
-import { Button } from 'antd';
+import { Button } from '@peers-touch/ui';
 import { ChevronLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { SocialEmptyState } from '../../components/moments/surfaces/SocialEmptyState';
-import {
-  SocialThreadSurface,
-} from '../../components/moments/surfaces';
 import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
 
 export interface MomentDetailViewProps {
@@ -18,7 +15,7 @@ export interface MomentDetailViewProps {
 }
 
 // Detail surface: the post card owns its inline comment thread
-// (MomentCommentsSection); this view only provides the thread frame,
+// (MomentCommentsSection); this view only provides
 // navigation, and post-level actions.
 export function MomentDetailView({
   postId,
@@ -60,14 +57,13 @@ export function MomentDetailView({
         />
       )}
       {post && (
-        <SocialThreadSurface>
-          {/* Back belongs to the thread card header, not a detached row. */}
+        <>
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <Button
-              type="text"
-              icon={<ChevronLeft size={16} />}
-              onClick={onBack}
-              style={{ paddingInline: 4 }}
+              actionId="moments.detail.back"
+              emphasis="quiet"
+              leading={<ChevronLeft size={16} />}
+              onActivate={onBack}
             >
               {t('moments.action.back')}
             </Button>
@@ -78,7 +74,6 @@ export function MomentDetailView({
             reactions={reactions}
             explanation={explanation}
             viewerActorPtid={viewerActorPtid}
-            embedded
             defaultCommentsOpen
             targetCommentId={commentId}
             onAuthorClick={onAuthorClick}
@@ -86,7 +81,7 @@ export function MomentDetailView({
             onUnreact={unreactToPost}
             onDelete={handleDeletePost}
           />
-        </SocialThreadSurface>
+        </>
       )}
     </div>
   );

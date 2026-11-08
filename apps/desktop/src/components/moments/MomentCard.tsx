@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { message } from 'antd';
+import { useScopedFeedback } from '../../hooks/useAppFeedback';
 import { Button, Dialog, MomentAuthor, MomentCard as PeerMomentCard } from '@peers-touch/ui';
 import { ExternalLink, MapPin, Pencil, Trash2 } from 'lucide-react';
 import {
@@ -66,6 +66,7 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
   surface = 'home', onOpen, defaultCommentsOpen = true, targetCommentId, onReact, onUnreact,
   onAuthorClick, onDelete, embedded }: MomentCardProps) {
   const { t } = useTranslation('moments');
+  const feedback = useScopedFeedback();
   const selfStation = useActiveMomentsFederationSlice(state => state.self);
   const { projection, platform, readMoment, recoverMoment, openMedia, reaction, retryReaction } =
     useActivePrivateMomentsSlice(state => ({
@@ -105,17 +106,17 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
   const unavailable = isPrivate && !readable;
   const react = async (kind: ReactionKind, operationId: string) => {
     try { await onReact?.(post.id, kind, operationId); }
-    catch { message.error(t('moments.reaction.status.REACTION_REJECTED')); }
+    catch { feedback.error(t('moments.reaction.status.REACTION_REJECTED')); }
   };
   const unreact = async (kind: ReactionKind | undefined, operationId: string) => {
     try { await onUnreact?.(post.id, kind, operationId); }
-    catch { message.error(t('moments.reaction.status.REACTION_REJECTED')); }
+    catch { feedback.error(t('moments.reaction.status.REACTION_REJECTED')); }
   };
   const confirmDelete = async () => {
     if (!onDelete || deleting) return;
     setDeleting(true);
     try { await onDelete(post.id); setDeleteOpen(false); }
-    catch { message.error(t('moments.delete.error')); }
+    catch { feedback.error(t('moments.delete.error')); }
     finally { setDeleting(false); }
   };
   return <PeerMomentCard postId={post.id} text={text} embedded={embedded}
@@ -174,7 +175,7 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
     actions={<SocialActionBar postId={post.id} reactions={shownReactions} commentCount={Number(post.stats?.commentsCount ?? 0n)}
       commentsOpen={commentsOpen} reactionState={isPrivate ? reaction?.state : undefined}
       onRetryReaction={isPrivate && !unavailable ? async () => {
-        try { await retryReaction(post.id, '', reaction?.kind); } catch { message.error(t('moments.reaction.retryUnavailable')); }
+        try { await retryReaction(post.id, '', reaction?.kind); } catch { feedback.error(t('moments.reaction.retryUnavailable')); }
       } : undefined}
       onReact={!unavailable && onReact ? react : undefined} onUnreact={!unavailable && onUnreact ? unreact : undefined}
       onOpenComments={() => setCommentsOpen(value => !value)} />}

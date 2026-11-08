@@ -3,7 +3,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { message } from 'antd';
+import { useScopedFeedback } from '../../hooks/useAppFeedback';
 import { Button, Dialog, IconButton, MomentCommentComposer, MomentCommentRow as PeerCommentRow, Spin, TextArea } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 import type { PrivateCommentPublicationState, PrivateCommentState } from '../../services/privateCommentsNative';
@@ -458,12 +458,13 @@ function MomentCommentRow({
   const name = identity.displayName || t('moments.author.unknown');
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const feedback = useScopedFeedback();
   const date = comment.createdAtMillis ?? (comment.createdAt ? Number(comment.createdAt.seconds) * 1000 : undefined);
   const remove = async () => {
     if (!onDelete || deleting) return;
     setDeleting(true);
     try { await onDelete(comment.id); setConfirmOpen(false); }
-    catch { message.error(t('moments.comment.deleteFailed')); }
+    catch { feedback.error(t('moments.comment.deleteFailed')); }
     finally { setDeleting(false); }
   };
   return <PeerCommentRow commentId={comment.id} content={comment.content} own={canModerate}

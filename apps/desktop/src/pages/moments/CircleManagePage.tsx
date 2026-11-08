@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Button, Dialog, Empty, MomentCircleCard, MomentCircleEditor, TextField,
   type MomentCircleDraft, type MomentCirclePerson } from '@peers-touch/ui';
-import { message } from 'antd';
+import { useScopedFeedback } from '../../hooks/useAppFeedback';
 import { useActiveDiscoverySlice, useActiveMomentsSlice, useActiveRelationshipsSlice } from '../../components/moments/useActiveMomentsStore';
 import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
 import { actorDisplayName } from '../../store/socialProfileProjection';
@@ -12,6 +12,7 @@ export function CircleManageView({ query = '', createOpen = false, onCloseCreate
   query?: string; createOpen?: boolean; onCloseCreate?: () => void;
 }) {
   const { t } = useTranslation('moments');
+  const feedback = useScopedFeedback();
   const { circles, circlesLoading, circleMembers, circleMembersErrors, createCircle, saveCircle, deleteCircle } = useActiveMomentsSlice(s => ({
     circles: s.circles, circlesLoading: s.circlesLoading, circleMembers: s.circleMembers,
     circleMembersErrors: s.circleMembersErrors,
@@ -56,7 +57,7 @@ export function CircleManageView({ query = '', createOpen = false, onCloseCreate
       if (editing.id) await saveCircle(editing.id, name.trim(), description.trim(), memberIds);
       else await createCircle(name.trim());
       setEditing(null); setSearch('');
-      message.success(t(editing.id ? 'moments.circle.saved' : 'moments.circle.created'));
+      feedback.success(t(editing.id ? 'moments.circle.saved' : 'moments.circle.created'));
     } catch { setError(true); }
     finally { setPending(false); }
   };
@@ -110,7 +111,7 @@ export function CircleManageView({ query = '', createOpen = false, onCloseCreate
             if (!editing?.id || pending) return;
             setPending(true);
             void deleteCircle(editing.id).then(() => { setDeleteOpen(false); setEditing(null); })
-              .catch(() => message.error(t('moments.circle.saveFailed'))).finally(() => setPending(false));
+              .catch(() => feedback.error(t('moments.circle.saveFailed'))).finally(() => setPending(false));
           }} />
       </>} />
   </div>;

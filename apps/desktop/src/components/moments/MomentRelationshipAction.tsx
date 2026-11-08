@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, FollowButton } from '@peers-touch/ui';
-import { message } from 'antd';
+import { useScopedFeedback } from '../../hooks/useAppFeedback';
 import { useActiveRelationshipsSlice } from './useActiveMomentsStore';
 import { SocialRelationshipAllowedAction } from '../../gen/proto/domain/social/relationship_pb';
 
@@ -18,6 +18,7 @@ interface FollowButtonProps {
 
 export function MomentRelationshipAction({ targetActorPtid, viewerActorPtid, compact }: FollowButtonProps) {
   const { t } = useTranslation('moments');
+  const feedback = useScopedFeedback();
   const { relation, status, statusError, blockPending, loadingMap, loadRelationship,
     loadRelationshipStatus, follow, unfollow } = useActiveRelationshipsSlice((s) => ({
     relation: s.relations[targetActorPtid],
@@ -40,7 +41,7 @@ export function MomentRelationshipAction({ targetActorPtid, viewerActorPtid, com
       label={loading ? t('moments.follow.loading') : t('moments.follow.resolve')}
       execution={loading ? 'pending' : 'idle'} emphasis="secondary"
       onActivate={() => void Promise.all([loadRelationship(targetActorPtid), loadRelationshipStatus(targetActorPtid)]).catch(() =>
-        message.error(t('moments.follow.unavailable')))} />;
+        feedback.error(t('moments.follow.unavailable')))} />;
   }
 
   const handleClick = async () => {
@@ -53,8 +54,8 @@ export function MomentRelationshipAction({ targetActorPtid, viewerActorPtid, com
       } else {
         await follow(targetActorPtid);
       }
-    } catch (err) {
-      message.error(String(err));
+    } catch {
+      feedback.error(t('moments.follow.unavailable'));
     } finally {
       setSubmitting(false);
     }

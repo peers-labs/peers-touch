@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Icon, MomentComposerSurface, MomentPollComposer, TextArea,
   createMomentPollDraft, momentPollDraftError, type MomentPollDraftValue } from '@peers-touch/ui';
 import type { MomentDraft } from '../../services/social_api';
-import { message } from 'antd';
+import { useScopedFeedback } from '../../hooks/useAppFeedback';
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
@@ -125,6 +125,7 @@ function makeLocalId(): string {
 
 export function MomentComposer({ initialAudience, onPublished, onDismiss }: MomentComposerProps) {
   const { t } = useTranslation('moments');
+  const feedback = useScopedFeedback();
   const {
     draft,
     setDraft,
@@ -585,7 +586,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
 
   const handlePickImages = async () => {
     if (slotsLeft <= 0) {
-      message.warning(t('moments.compose.imageMaxReached', { max: MAX_IMAGES_PER_POST }));
+      feedback.warning(t('moments.compose.imageMaxReached', { max: MAX_IMAGES_PER_POST }));
       return;
     }
     let paths: string[];
@@ -597,7 +598,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
     }
     if (!paths.length) return;
     if (pollMirrorRef.current) {
-      message.warning(t('moments.compose.poll.exclusive'));
+      feedback.warning(t('moments.compose.poll.exclusive'));
       return;
     }
 
@@ -624,11 +625,11 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       }
     });
     if (!accepted.length) {
-      message.error(t('moments.compose.media.IMAGE_TYPE_UNSUPPORTED'));
+      feedback.error(t('moments.compose.media.IMAGE_TYPE_UNSUPPORTED'));
       return;
     }
     if (rejected > 0) {
-      message.warning(t('moments.compose.media.IMAGE_TYPE_UNSUPPORTED'));
+      feedback.warning(t('moments.compose.media.IMAGE_TYPE_UNSUPPORTED'));
     }
 
     const privatePick = isPrivateAudience(audience);
@@ -705,23 +706,23 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
   const handlePublish = async () => {
     const trimmed = text.trim();
     if (!trimmed) {
-      message.warning(t('moments.compose.emptyError'));
+      feedback.warning(t('moments.compose.emptyError'));
       return;
     }
     if (poll && momentPollDraftError(poll)) {
-      message.warning(t(`moments.compose.poll.error.${momentPollDraftError(poll)}`));
+      feedback.warning(t(`moments.compose.poll.error.${momentPollDraftError(poll)}`));
       return;
     }
     if (poll && pending.length > 0) {
-      message.warning(t('moments.compose.poll.exclusive'));
+      feedback.warning(t('moments.compose.poll.exclusive'));
       return;
     }
     if (uploadingCount > 0) {
-      message.warning(t('moments.compose.imageUploading'));
+      feedback.warning(t('moments.compose.imageUploading'));
       return;
     }
     if (errorCount > 0) {
-      message.warning(t('moments.compose.imageHasErrors'));
+      feedback.warning(t('moments.compose.imageHasErrors'));
       return;
     }
 
@@ -781,7 +782,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
       setSubmitting(true);
       try {
         const id = await createPost(privateDraft);
-        message.success(t('moments.compose.published'));
+        feedback.success(t('moments.compose.published'));
         cancelScheduledDraftWrite();
         setText('');
         setPending([]);
@@ -791,7 +792,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
         clearPrivatePublishState();
         onPublished?.(id);
       } catch (err) {
-        message.error(String(err));
+        feedback.error(t('moments.private.state.PUBLISH_FAILED.title'));
       } finally {
         setSubmitting(false);
       }
@@ -851,7 +852,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
               draftRevision: draftRevision.current,
             })
           : await createPost({ kind: 'text', text: trimmed, audience, draftId, draftRevision: draftRevision.current });
-      message.success(t('moments.compose.published'));
+      feedback.success(t('moments.compose.published'));
       cancelScheduledDraftWrite();
       setText('');
       setPending([]);
@@ -871,9 +872,9 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
               }
             : item
         )));
-        message.error(t(`moments.compose.media.${err.code}`, { defaultValue: err.code }));
+        feedback.error(t(`moments.compose.media.${err.code}`, { defaultValue: err.code }));
       } else {
-        message.error(isPrivateAudience(audience) ? String(err) : t(publicFeedErrorKey(err)));
+        feedback.error(isPrivateAudience(audience) ? t('moments.private.state.PUBLISH_FAILED.title') : t(publicFeedErrorKey(err)));
       }
     } finally {
       setSubmitting(false);

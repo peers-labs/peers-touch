@@ -41,13 +41,24 @@ The methodological error was treating UI ID as a style preference instead of a r
 
 ### What was done in code
 
-- Added Social surface primitives under `apps/desktop/src/components/moments/surfaces/`.
-- Moved the page column into `SocialContentRail` and the title/tabs/primary action into `SocialScopeBar`.
-- Replaced ad-hoc `source · reason · audience` text with `SocialTrustMeta`.
-- Replaced split reaction/comment controls with `SocialActionBar`.
-- Wrapped detail post + comments + reply composer in `SocialThreadSurface`.
-- Added `SocialEmptyState` so incomplete capability states are explicit and visually consistent.
-- Removed the standalone outer card from `MomentComposer`; callers now place it inside the correct Social surface.
+- `packages/ui` owns the scope bar, MomentCard, composer, Circle editor, identity
+  popover, reactions, comments, media, overlays and feedback presentation.
+- Social adapters bind original Native/Proto projections and commands to those
+  components. Detail renders one shared MomentCard containing the comment thread;
+  Back sits above it. No app-local thread frame or duplicate comment renderer remains.
+- Empty and private status adapters use shared Empty, Spin and Alert, retaining
+  the original distinctions between loading, empty, degraded and denied states.
+- Private Image/VideoPlayer/Lightbox consume only authorized native media handles.
+  Revocation removes the preview resource; shared playback teardown releases it.
+- App owns one window-local SDK FeedbackChannel. Social consumers capture the
+  completed Actor/Station/session-epoch scope; late callbacks and unmounted
+  consumers cannot publish into another session. Scope changes dismiss active
+  notices and settle queued confirmations.
+- Circle block proof uses the original IdentityTrigger control and reciprocal
+  relationship denial. Account epoch proof prepares accounts before scenario
+  entry, switches through the original PIN runtime, then observes the secondary
+  account's painted empty Circle state and the primary's canonical readback.
+  The PIN switch is a prepared Native fixture command, not an Auth UI proof.
 - Comment rows, previews, and reply-target labels use `useActorIdentity` with
   canonical profiles. Public comment DTOs may contain only an account handle;
   reading their author fields directly loses the persisted name and portrait.
@@ -61,12 +72,13 @@ The methodological error was treating UI ID as a style preference instead of a r
 卡片、作者、信任行、反应条和个人头部的当前唯一展示 Owner 是
 `packages/ui/web/src/moment-card.tsx` / `moments.css`。原型与生产均消费同源组件；
 app 的 MomentCard、SocialActionBar、SocialTrustMeta、UserProfileHeader 只适配原数据和命令。
-剩余 circle/composer/thread 展示迁移按组件清单闭合，不能重新在 app 内复制上述展示。
+circle/composer/thread 同样消费共享组件，不能重新在 app 内复制上述展示。
 原 `north-star.suite.json` 与 `boards.suite.json` 绑定共享源码及焦点/长文案/禁用场景。
 
 - `pnpm run check` in `apps/desktop/` must pass after Social UI edits.
 - Future Social UI work must load `docs/client/common/ui-identity/README.md` and `docs/client/common/ui-identity/modules/social/desktop.md` before editing.
-- Feature components under `apps/desktop/src/pages/moments/` and `apps/desktop/src/components/moments/` should compose `components/moments/surfaces/` instead of declaring new top-level card, rail, thread, action, or trust meta styles inline.
+- Feature components compose `packages/ui`; `components/moments/surfaces/`
+  contains business adapters rather than another presentation library.
 
 ## How to Detect a Recurrence
 
@@ -81,7 +93,8 @@ Run these checks during review:
 Interpretation:
 
 - Direct feature-level `Card` / `Segmented` / inline radius is not automatically wrong, but every occurrence must explain why an existing Social surface cannot own that boundary.
-- `MomentDetailPage.tsx` may render `MomentCard`, `CommentList`, and `MomentComposer`, but they must be inside one `SocialThreadSurface` and must not introduce competing outer cards.
+- `MomentDetailPage.tsx` delegates the complete post/comments surface to the
+  shared MomentCard and must not introduce a competing thread frame.
 - Any newly exposed incomplete Social capability must map to one of the explicit state kinds instead of borrowing a generic empty state.
 
 ## Crosswalks

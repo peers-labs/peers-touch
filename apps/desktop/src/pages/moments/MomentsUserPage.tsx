@@ -1,8 +1,7 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@lobehub/ui';
 import { ChevronLeft } from 'lucide-react';
-import { StatGrid } from '@peers-touch/ui';
+import { Button, StatGrid } from '@peers-touch/ui';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { MomentListState } from '../../components/moments/MomentListState';
 import { UserProfileHeader } from '../../components/moments/UserProfileHeader';
@@ -105,9 +104,10 @@ export function MomentsUserView({
   return (
     <div>
       <Button
-        type="text"
-        icon={<ChevronLeft size={16} />}
-        onClick={onBack}
+        actionId="moments.profile.back"
+        emphasis="quiet"
+        leading={<ChevronLeft size={16} />}
+        onActivate={onBack}
         style={{ marginBottom: 12 }}
       >
         {t('moments.action.back')}

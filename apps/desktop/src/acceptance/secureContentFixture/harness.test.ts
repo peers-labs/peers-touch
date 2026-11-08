@@ -245,6 +245,57 @@ describe('Secure Content fixture harness', () => {
       .toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it('switches once to a prepared PIN account so the caller can inspect intermediate UI', async () => {
+    mocks.unlockWithPin.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch += 1;
+    });
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-secondary', provider_user_id: 'ptid:secondary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: true, data: { accountStorageIdentitySha256: 'b'.repeat(64) },
+    });
+    const result = await harness().switchPreparedAccount({
+      accountId: 'account-secondary', actorPtid: 'ptid:secondary',
+      storageIdentitySha256: 'b'.repeat(64), outgoingActorPtid: 'ptid:primary',
+      outgoingSessionEpoch: 1, pin: '135790',
+    });
+    expect(result).toMatchObject({
+      beforeGeneration: 1, afterGeneration: 2, storageIdentitySha256: 'b'.repeat(64),
+    });
+    expect(mocks.unlockWithPin).toHaveBeenCalledExactlyOnceWith('account-secondary', '135790');
+    expect(mocks.loginWithPassword).not.toHaveBeenCalled();
+    expect(sessionState.currentUser?.actorPtid).toBe('ptid:secondary');
+  });
+
+  it('rejects a raced prepared switch before issuing a native account command', async () => {
+    await expect(harness().switchPreparedAccount({
+      accountId: 'account-secondary', actorPtid: 'ptid:secondary',
+      storageIdentitySha256: 'b'.repeat(64), outgoingActorPtid: 'ptid:primary',
+      outgoingSessionEpoch: 0, pin: '135790',
+    })).rejects.toThrow('secureContentFixture.accountSwitchScopeMismatch');
+    expect(mocks.unlockWithPin).not.toHaveBeenCalled();
+  });
+
+  it('rejects a prepared switch that lands in another account storage partition', async () => {
+    mocks.unlockWithPin.mockImplementation(async () => {
+      sessionState.currentUser = { actorPtid: 'ptid:secondary' };
+      sessionState.sessionEpoch += 1;
+    });
+    mocks.accountGetActive.mockResolvedValue({
+      id: 'account-secondary', provider_user_id: 'ptid:secondary',
+    });
+    mocks.invoke.mockResolvedValue({
+      ok: true, data: { accountStorageIdentitySha256: 'c'.repeat(64) },
+    });
+    await expect(harness().switchPreparedAccount({
+      accountId: 'account-secondary', actorPtid: 'ptid:secondary',
+      storageIdentitySha256: 'b'.repeat(64), outgoingActorPtid: 'ptid:primary',
+      outgoingSessionEpoch: 1, pin: '135790',
+    })).rejects.toThrow('secureContentFixture.preparedAccountSwitchFailed');
+  });
+
   it('rejects an account fixture when the active account does not own the actor', async () => {
     mocks.accountGetActive.mockResolvedValue({
       id: 'account-primary',

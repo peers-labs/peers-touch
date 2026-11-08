@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { Typography } from 'antd';
 import { actorDisplayName } from '../../store/socialProfileProjection';
 import { useActorIdentity } from '../common/useActorIdentity';
 
@@ -10,8 +9,8 @@ export function MomentCommentAuthorName({ actorPtid }: { actorPtid: string }) {
   });
 
   return (
-    <Typography.Text strong style={{ fontSize: 13 }}>
+    <strong>
       {actorDisplayName(identity.displayName, t('moments.author.unknown'))}
-    </Typography.Text>
+    </strong>
   );
 }

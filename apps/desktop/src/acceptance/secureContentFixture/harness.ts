@@ -32,6 +32,15 @@ interface AccountSwitchInput {
   password: string;
 }
 
+interface PreparedAccountSwitchInput {
+  accountId: string;
+  actorPtid: string;
+  storageIdentitySha256: string;
+  outgoingActorPtid: string;
+  outgoingSessionEpoch: number;
+  pin: string;
+}
+
 interface StationFixtureInput {
   secondaryStationUrl: string;
 }
@@ -260,6 +269,29 @@ export function installAcceptanceHarness(): void {
         secondaryStorageIdentitySha256,
         sessionGeneration: useSessionStore.getState().sessionEpoch,
       };
+    },
+
+    async switchPreparedAccount(input: PreparedAccountSwitchInput) {
+      const before = useSessionStore.getState();
+      const beforeGeneration = before.sessionEpoch;
+      const stationPeerId = before.stationPeerId;
+      if (!before.authenticated || requireCurrentActor() !== input.outgoingActorPtid
+        || before.sessionEpoch !== input.outgoingSessionEpoch || !/^\d{6}$/.test(input.pin)) {
+        throw new Error('secureContentFixture.accountSwitchScopeMismatch');
+      }
+      await identityRuntime.unlockWithPin(requireText(input.accountId, 'accountId'), input.pin);
+      await completeLogin();
+      const account = await api.accountGetActive();
+      const actorPtid = requireCurrentActor();
+      const storageIdentitySha256 = await accountStorageIdentitySha256();
+      const after = useSessionStore.getState();
+      if (account?.id !== input.accountId || !accountOwnsActor(account, actorPtid)
+        || actorPtid !== input.actorPtid || storageIdentitySha256 !== input.storageIdentitySha256
+        || after.sessionEpoch <= beforeGeneration || after.stationPeerId !== stationPeerId) {
+        throw new Error('secureContentFixture.preparedAccountSwitchFailed');
+      }
+      return { actorPtidSha256: await sha256(actorPtid), storageIdentitySha256,
+        beforeGeneration, afterGeneration: after.sessionEpoch };
     },
 
     async roundTripAccountSwitch(input: AccountSwitchInput) {

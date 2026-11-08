@@ -61,6 +61,14 @@ COMMANDS = (
         cwd="apps/desktop",
     ),
     SourceCommand(
+        name="public-feed-social-ui-and-account-scope",
+        argv=("pnpm", "exec", "vitest", "run",
+              "src/hooks/useAppFeedback.test.ts",
+              "src/components/moments/PrivateMediaGrid.test.tsx",
+              "src/acceptance/secureContentFixture/harness.test.ts"),
+        cwd="apps/desktop",
+    ),
+    SourceCommand(
         name="public-feed-mobile-cutover",
         argv=("pnpm", "exec", "vitest", "run", "src/services/gateways/momentsGateway.test.ts",
               "src/pages/moments/MomentComposer.test.ts", "src/runtimes/privateMomentsRuntime.test.ts",

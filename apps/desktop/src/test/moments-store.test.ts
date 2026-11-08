@@ -1589,14 +1589,6 @@ describe('moments store: createPost / deletePost', () => {
           loading: false,
         },
       },
-      circleFeeds: {
-        c1: {
-          postIds: ['gone'],
-          nextCursor: '',
-          hasMore: false,
-          loading: false,
-        },
-      },
     });
     const callsBefore = invokeMock.mock.calls.length;
 
@@ -1615,7 +1607,6 @@ describe('moments store: createPost / deletePost', () => {
     expect(state.feeds.home.postIds).toEqual(['keep', 'tail']);
     expect(state.feeds.explore.postIds).toEqual(['keep']);
     expect(state.userFeeds.a.postIds).toEqual([]);
-    expect(state.circleFeeds.c1.postIds).toEqual([]);
     // Pure local projection: no Station write command is issued.
     expect(invokeMock.mock.calls.length).toBe(callsBefore);
   });

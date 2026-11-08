@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import tempfile
 import time
 from contextlib import ExitStack
@@ -37,6 +38,7 @@ SCENARIOS = (
     "rollback-read-head", "second-device-writer-denial",
     "circle-members-pagination", "circle-cancel", "circle-partial-save-retry",
     "lost-federation-notification",
+    "circle-block", "circle-account-epoch",
 )
 RUNTIME_REUSE = RuntimeReuseContract.from_dict({
     "scope": "suite", "entryCheckId": GATE_ID, "scenarioIds": list(SCENARIOS),
@@ -88,6 +90,8 @@ class Gate(DeviceSearchGate):
         self.report.runtime["search"] = {}
         self.active_social_scenario: str | None = None
         self.circle_account_queries: list[str] = []
+        self.circle_account_switch: dict[str, Any] = {}
+        self.circle_remote_member = ""
         self.capability_client = EphemeralGateClient.from_environment()
         if self.capability_client is None:
             raise GateError("Public feed requires its prepared notification capability")
@@ -117,13 +121,23 @@ class Gate(DeviceSearchGate):
         # Expensive identity provisioning belongs to this preparation lifetime.
         # All candidates subsequently come from the original production search.
         roles = tuple(f"circle-member-{index}" for index in range(22))
-        accounts, _ = _provision_runtime_accounts(
+        accounts, password = _provision_runtime_accounts(
             primary_station_url=primary["endpoint"],
             run_id=self.manifest["runId"], roles=roles)
         self.circle_account_queries = [
             _runtime_account_search_query(accounts[role], role=role) for role in roles
         ]
+        pin = f"{secrets.randbelow(1_000_000):06d}"
+        prepared = self.fixture_action("prepareAccountSwitch", {
+            "secondaryAccount": accounts[roles[-1]], "password": password, "pin": pin,
+        })
+        self.circle_account_switch = {**prepared, "pin": pin}
+        self.circle_remote_member = fixture["bobPtid"]
         return fixture
+
+    def fixture_action(self, method: str, payload: dict[str, Any]) -> Any:
+        return call_async_harness(self.clients["alice"], method, payload,
+                                  namespace="secure-content-fixture", script_timeout=120)
 
     def start_suite_clients(self, ledger: SuiteRuntimeLedger,
                             source_commit: str) -> None:
@@ -316,8 +330,11 @@ class Gate(DeviceSearchGate):
         circle_id = wait_until(created, "Alice created and hydrated Circle", timeout=60)
         self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
         self.set_input("alice", 'input[data-circle-desc]', description)
-        members: set[str] = set()
-        for query in self.circle_account_queries:
+        # Include the real remote friend so blocking is exercised against a
+        # confirmed Circle member. All identities were prepared before entry.
+        self.click("alice", f'[data-action-id="circle.member.add.{circle_id}.{self.circle_remote_member}"]')
+        members: set[str] = {self.circle_remote_member}
+        for query in self.circle_account_queries[:21]:
             self.set_input("alice", '.sk-circle-candidates input', query)
             def candidate() -> Any | None:
                 for row in self.clients["alice"].find_elements('[data-circle-candidate]'):
@@ -337,10 +354,10 @@ class Gate(DeviceSearchGate):
         self.assert_circle_editor(name, description, members)
         self.capture("alice", "circle-members-pagination")
         self.complete_scenario(ledger, "circle-members-pagination",
-            "alice:real-search-select-22-members-and-save", "alice:painted-complete-22-member-readback")
+            "alice:real-search-select-and-save-22-local-and-remote-members", "alice:painted-complete-22-member-readback")
 
         self.begin_scenario(ledger, "circle-cancel")
-        removed = sorted(members)[0]
+        removed = sorted(members - {self.circle_remote_member})[0]
         self.set_input("alice", 'input[data-circle-name]', "Cancelled Circle")
         self.set_input("alice", 'input[data-circle-desc]', "Cancelled description")
         self.click("alice", f'[data-action-id="circle.member.remove.{circle_id}.{removed}"]')
@@ -379,17 +396,129 @@ class Gate(DeviceSearchGate):
             "realRegisteredMembers": len(members), "confirmedMembersAfterRetry": len(remaining),
             "cancelRetainedCanonicalMembership": True, "failedRenameRetainedDraft": True,
             "partialCommitReRead": True, "retryConfirmedCanonicalMembership": True,
-            "unprovenScope": ["Circle block and account epoch"],
         }
         self.complete_scenario(ledger, "circle-partial-save-retry",
             "alice:actual-invalid-rename-after-member-removal-and-retry",
             "alice:painted-retained-failure-draft-and-confirmed-retry")
+        self.circle_block_scenario(ledger, circle_id, name, description, remaining)
+        self.circle_epoch_scenario(ledger, circle_id, name, description, remaining)
         self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
         self.click("alice", f'[data-action-id="circle.delete.{circle_id}"]')
         self.click("alice", '[data-action-id="circle.delete.confirm"]')
         wait_until(lambda: self.circle_projection(circle_id) is None,
                    "original Circle deletion cleanup", timeout=60)
         self.click("alice", '[data-action-id="segment.feed"]')
+
+    def circle_block_scenario(self, ledger: SuiteRuntimeLedger, circle_id: str,
+                              name: str, description: str, members: set[str]) -> None:
+        self.begin_scenario(ledger, "circle-block")
+        self.click("alice", '[data-action-id="segment.feed"]')
+        text = f"Circle-block-{self.manifest['runId']}"
+        self.publish_text_ui(text, actor="bob")
+        bob_card = self.await_card("bob", text)
+        alice_card = self.await_card("alice", text)
+        alice_id = alice_card.get_attribute("data-post-id")
+        self.click("alice", f'[data-post-id="{alice_id}"] .sk-post-author')
+        self.click("alice", f'[data-action-id="author.moment.{alice_id}"]')
+        # The original detail stays mounted when the Feed hides a blocked
+        # author. This is the real product path to the retained unblock control.
+        wait_until(lambda: self.visible_element("alice", '[data-action-id="moments.detail.back"]'),
+                   "original detail navigation", timeout=30)
+        self.click("alice", f'[data-post-id="{alice_id}"] .sk-post-author')
+        control = f'[data-action-id="author.block.{self.circle_remote_member}"]'
+        self.click("alice", control)
+        wait_until(lambda: self.action("alice", "relationshipStatus", {
+            "actorPtid": self.circle_remote_member,
+        })["blockedByViewer"] is True, "original confirmed block", timeout=60)
+        wait_until(lambda: self.action("bob", "relationshipStatus", {
+            "actorPtid": self.ptids["alice"],
+        })["interactionAllowed"] is False, "counterparty original interaction denied", timeout=60)
+        block = wait_until(lambda: self.visible_element("alice", control),
+                           "original unblock control", timeout=30)
+        self.assert_condition("circle-member-block-control-confirmed",
+                              block.get_attribute("data-author-block") == "on")
+        self.assert_circle_element_painted(block, "circle-block-control-painted")
+        self.capture("alice", "circle-block")
+        self.click("alice", control)
+        wait_until(lambda: self.action("alice", "relationshipStatus", {
+            "actorPtid": self.circle_remote_member,
+        })["blockedByViewer"] is False, "original confirmed unblock", timeout=60)
+        # Close through the original trigger, then inspect the unchanged
+        # publisher-owned list. A block is not a membership deletion command.
+        self.click("alice", f'[data-post-id="{alice_id}"] .sk-post-author')
+        self.click("alice", '[data-action-id="moments.detail.back"]')
+        self.click("alice", '[data-action-id="segment.circles"]')
+        self.assert_circle(circle_id, name, description, members)
+        self.report.runtime["circleLifecycle"]["blockRetainedMembership"] = True
+        self.report.runtime["circleLifecycle"]["counterpartyInteractionDenied"] = True
+        self.complete_scenario(ledger, "circle-block", "alice:original-identity-block-and-unblock",
+                               "alice,bob:painted-block-control-and-original-counterparty-denial")
+        bob_id = bob_card.get_attribute("data-post-id")
+        self.click("bob", f'[data-post-id="{bob_id}"] [data-acceptance-id="social-moment-menu"]')
+        self.click("bob", f'[data-action-id="moment.delete.{bob_id}"]')
+        self.click("bob", '[data-acceptance-id="social-delete-confirm"]')
+
+    def circle_epoch_scenario(self, ledger: SuiteRuntimeLedger, circle_id: str,
+                              name: str, description: str, members: set[str]) -> None:
+        self.begin_scenario(ledger, "circle-account-epoch")
+        self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
+        draft = "Uncommitted account draft"
+        self.set_input("alice", 'input[data-circle-name]', draft)
+        self.assert_circle_editor(draft, description, members)
+        before = self.action("alice", "circleProjection")
+        prepared = self.circle_account_switch
+        secondary = self.fixture_action("switchPreparedAccount", {
+            "accountId": prepared["secondaryAccountId"], "actorPtid": prepared["secondaryActorPtid"],
+            "storageIdentitySha256": prepared["secondaryStorageIdentitySha256"],
+            "outgoingActorPtid": prepared["primaryActorPtid"],
+            "outgoingSessionEpoch": before["sessionEpoch"], "pin": prepared["pin"],
+        })
+        self.click("alice", '[data-pt-primary-nav="moments"] [role="button"]')
+        self.click("alice", '[data-action-id="segment.circles"]')
+        def isolated() -> bool:
+            projection = self.action("alice", "circleProjection")
+            return (projection["actorPtidSha256"] == secondary["actorPtidSha256"]
+                    and projection["sessionEpoch"] == secondary["afterGeneration"]
+                    and not projection["circles"]
+                    and self.clients["alice"].execute_async_script("""
+                        const circle = arguments[0], draft = arguments[1];
+                        const done = arguments[arguments.length - 1];
+                        const valid = () => {
+                          const empty = [...document.querySelectorAll('.moments-circles .pt-empty')]
+                            .find(el => el.getBoundingClientRect().height > 0);
+                          if (!empty || document.querySelector('[data-circle-name]')
+                              || document.querySelector(`[data-action-id="circle.manage.${circle}"]`)) return false;
+                          const r = empty.getBoundingClientRect();
+                          const hit = document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);
+                          return !!hit && empty.contains(hit)
+                            && !document.querySelector('.moments-circles')?.textContent.includes(draft);
+                        };
+                        requestAnimationFrame(() => {
+                          const first = valid(); requestAnimationFrame(() => done(first && valid()));
+                        });
+                    """, circle_id, draft) is True)
+        wait_until(isolated, "secondary account painted Circle and draft isolation", timeout=60)
+        self.capture("alice", "circle-secondary-account-isolation")
+        primary = self.fixture_action("switchPreparedAccount", {
+            "accountId": prepared["primaryAccountId"], "actorPtid": prepared["primaryActorPtid"],
+            "storageIdentitySha256": prepared["primaryStorageIdentitySha256"],
+            "outgoingActorPtid": prepared["secondaryActorPtid"],
+            "outgoingSessionEpoch": secondary["afterGeneration"], "pin": prepared["pin"],
+        })
+        self.assert_condition("circle-account-epoch-advanced",
+            primary["afterGeneration"] > secondary["afterGeneration"] > before["sessionEpoch"])
+        self.click("alice", '[data-pt-primary-nav="moments"] [role="button"]')
+        self.click("alice", '[data-action-id="segment.circles"]')
+        self.assert_circle(circle_id, name, description, members)
+        self.click("alice", f'[data-action-id="circle.manage.{circle_id}"]')
+        self.assert_circle_editor(name, description, members)
+        self.click("alice", '[data-action-id="circle.save-cancel"]')
+        self.capture("alice", "circle-primary-account-canonical-readback")
+        self.report.runtime["circleLifecycle"]["accountEpochIsolated"] = True
+        self.report.runtime["circleLifecycle"]["accountSwitchActionClass"] = "prepared-native-fixture-command"
+        self.complete_scenario(ledger, "circle-account-epoch",
+            "alice:painted-unsaved-circle-edit;original-prepared-native-PIN-switch",
+            "alice:painted-secondary-empty-and-primary-canonical-circle-without-old-draft")
 
     def capture_public_measurement(self, scenario: str, started: float,
                                    observation: dict[str, Any]) -> None:
