@@ -908,7 +908,8 @@ impl PrivateSocialEngine {
             .generation
             .parse::<u64>()
             .map_err(|_| MobileError::social("private Social receiver generation is invalid"))?;
-        self.store
+        let committed = self
+            .store
             .commit_receiver_projection(
                 self.activation_generation,
                 &decrypted.projection.content_id,
@@ -919,7 +920,7 @@ impl PrivateSocialEngine {
                 &decrypted.projection.encode().map_err(MobileError::social)?,
             )
             .map_err(MobileError::social)?;
-        Ok(decrypted.projection)
+        PrivateMomentReadProjection::decode(&committed).map_err(MobileError::social)
     }
 
     fn open_media<R: Runtime>(
@@ -989,7 +990,8 @@ impl PrivateSocialEngine {
             .generation
             .parse::<u64>()
             .map_err(|_| MobileError::social("private Social receiver generation is invalid"))?;
-        self.store
+        let committed = self
+            .store
             .commit_receiver_projection(
                 activation_generation,
                 &decrypted.projection.content_id,
@@ -1000,6 +1002,8 @@ impl PrivateSocialEngine {
                 &decrypted.projection.encode().map_err(MobileError::social)?,
             )
             .map_err(MobileError::social)?;
+        decrypted.projection =
+            PrivateMomentReadProjection::decode(&committed).map_err(MobileError::social)?;
         let mut transport_failure = None;
         let materialized = materialize_private_moment_media(
             app,
@@ -1054,7 +1058,8 @@ impl PrivateSocialEngine {
             error_code,
         )
         .map_err(MobileError::social)?;
-        self.store
+        let committed = self
+            .store
             .commit_receiver_projection(
                 activation_generation,
                 &decrypted.projection.content_id,
@@ -1065,7 +1070,7 @@ impl PrivateSocialEngine {
                 &decrypted.projection.encode().map_err(MobileError::social)?,
             )
             .map_err(MobileError::social)?;
-        Ok(decrypted.projection)
+        PrivateMomentReadProjection::decode(&committed).map_err(MobileError::social)
     }
 
     fn ensure_recovery_request(
@@ -1323,7 +1328,8 @@ impl PrivateSocialEngine {
                     phrase,
                 )
                 .map_err(MobileError::social)?;
-                self.store
+                let committed = self
+                    .store
                     .commit_receiver_projection(
                         self.activation_generation,
                         &decrypted.projection.content_id,
@@ -1334,7 +1340,8 @@ impl PrivateSocialEngine {
                         &decrypted.projection.encode().map_err(MobileError::social)?,
                     )
                     .map_err(MobileError::social)?;
-                return Ok(decrypted.projection);
+                return PrivateMomentReadProjection::decode(&committed)
+                    .map_err(MobileError::social);
             }
             if !recoverable.has_more {
                 return match transport.get_private_moment(post_id) {

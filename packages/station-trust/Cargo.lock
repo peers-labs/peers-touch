@@ -1133,6 +1133,7 @@ dependencies = [
  "multiaddr",
  "prost",
  "prost-build",
+ "prost-types",
  "rustls",
  "sha2 0.10.9",
  "url",

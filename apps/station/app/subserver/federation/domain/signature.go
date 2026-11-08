@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	"github.com/peers-labs/peers-touch/station/frame/core/signedlog"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -23,7 +24,7 @@ func (s *SignatureService) SignActor(privateKey ed25519.PrivateKey, input *pb.Ac
 	if err != nil {
 		return nil, err
 	}
-	return ed25519.Sign(privateKey, data), nil
+	return signedlog.SignBytes(privateKey, data)
 }
 
 func (s *SignatureService) VerifyActor(publicKey ed25519.PublicKey, input *pb.ActorSignatureInput, signature []byte) error {
@@ -31,7 +32,7 @@ func (s *SignatureService) VerifyActor(publicKey ed25519.PublicKey, input *pb.Ac
 	if err != nil {
 		return err
 	}
-	if !ed25519.Verify(publicKey, data, signature) {
+	if !signedlog.VerifyBytes(publicKey, data, signature) {
 		return ErrInvalidActorSignature
 	}
 	return nil
@@ -42,7 +43,7 @@ func (s *SignatureService) SignStation(privateKey ed25519.PrivateKey, input *pb.
 	if err != nil {
 		return nil, err
 	}
-	return ed25519.Sign(privateKey, data), nil
+	return signedlog.SignBytes(privateKey, data)
 }
 
 func (s *SignatureService) VerifyStation(publicKey ed25519.PublicKey, input *pb.StationSignatureInput, signature []byte) error {
@@ -50,7 +51,7 @@ func (s *SignatureService) VerifyStation(publicKey ed25519.PublicKey, input *pb.
 	if err != nil {
 		return err
 	}
-	if !ed25519.Verify(publicKey, data, signature) {
+	if !signedlog.VerifyBytes(publicKey, data, signature) {
 		return ErrInvalidStationSignature
 	}
 	return nil
@@ -61,7 +62,7 @@ func (s *SignatureService) SignSequencer(privateKey ed25519.PrivateKey, input *p
 	if err != nil {
 		return nil, err
 	}
-	return ed25519.Sign(privateKey, data), nil
+	return signedlog.SignBytes(privateKey, data)
 }
 
 func (s *SignatureService) VerifySequencer(publicKey ed25519.PublicKey, input *pb.SequencerSignatureInput, signature []byte) error {
@@ -69,7 +70,7 @@ func (s *SignatureService) VerifySequencer(publicKey ed25519.PublicKey, input *p
 	if err != nil {
 		return err
 	}
-	if !ed25519.Verify(publicKey, data, signature) {
+	if !signedlog.VerifyBytes(publicKey, data, signature) {
 		return ErrInvalidSequencerSignature
 	}
 	return nil

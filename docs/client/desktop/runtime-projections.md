@@ -35,7 +35,7 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | `messaging` | Chat command lifecycle, native projection events, scoped reset, cold sync, and periodic reconciliation |
 | `messaging-recovery` | Authenticated backup status before Messaging activation, Session/Station-scoped reset, committed profile activation publication, post-restore identity refresh, and periodic reconciliation |
 | `socialRealtime` | Friendship, contact, profile, presence, and Social notification projections |
-| `momentsRuntime` | Moments HOME / Explore / Circles projection bootstrap, periodic reconciliation, and actor-scoped reset |
+| `momentsRuntime` | Moments HOME / Public / Circles projection bootstrap, periodic reconciliation, and actor-scoped reset; Page merges acquired HOME/Public windows into one timeline |
 | `agent-capability` | Provider, model, Agent, applet, MCP, Skill, Tool, and versioned Commands & Skills snapshot bootstrap |
 | `agent-topic` | Selected Agent topic/message bootstrap, historical Turn attribution readback, Agent-switch refresh, and periodic reconciliation |
 | `agent-tool` | Station-authored ToolCall proposal, approval-decision, and result projections; user decision-intent submission through Desktop Rust |
@@ -82,6 +82,10 @@ login:
 - bootstrap current user profile, friend requests, relationship state,
   notification counts, and notification list;
 - consume presence, relationship, profile, and Social notification events;
+- acquire the complete original blocked-Actor list at bootstrap and periodically;
+  relationship status and blocked-list reads share Actor, Session epoch and Station reset fences.
+  Confirmed block commands update the original projection and emit `relationship.changed`;
+  periodic status readback emits the same invalidation after a dropped block event.
 - consume notification-derived social signals such as friend request and friend accepted notifications;
 - periodically reconcile friendship, profiles, presence, and notifications;
 - keep UI components as pure readers of the owning stores whenever possible.
@@ -131,12 +135,37 @@ Social profile invalidation.
 `momentsRuntime` is responsible for the first runtime-owned Moments projection slice:
 
 - observe authenticated actor edges and reset actor-scoped Moments / Discovery state on identity switch;
-- bootstrap the viewer identity, HOME feed, PUBLIC Explore feed, circles, and circle member previews;
+- bootstrap the viewer identity, original HOME/PUBLIC feed windows, circles and circle member previews;
+  the Page composes one deduplicated temporal feed plus a Circles scope;
+- traverse the original Circle and member pages completely before publishing member projections;
+  retain the last complete projection after failures, gate editing on acquisition errors,
+  and fence late reads across local Circle mutations and identity changes.
+  Member ordering is `(added_at, actor_ptid)`; the cursor binds the Circle.
+  Runtime reconciliation reloads existing memberships and resolves member profiles in bounded batches;
 - refresh detail projection when the user opens a Moment (`post + comments`);
+- acquire painted inline comment threads through `acquireMomentComments`;
+  the section binds viewport and PageHost visibility, never calls a first-read API on mount;
+  the Runtime loads the original thread once and reconciles visible public threads after missed events.
+  Closing, scrolling out, hiding the page and identity reset release interest;
 - refresh author projection when the user opens an actor page (`author feed + followers/following`);
+- refresh current-actor aggregates through the original `social_get_my_stats` owner; failed or
+  unacquired values remain unknown, and Actor reset fences late aggregate responses;
 - periodically reconcile the same projection until Station projection events and cursor sync land;
 - consume Desktop eventBus Moment events (`moment.created`, `moment.deleted`, `moment.commented`, `moment.reacted`, `moment.resync_requested`) and refresh affected projections while keeping periodic reconcile as the missed-event safety net;
-- keep HOME / Explore / Circle / Detail / User pages as pure readers for first-screen data;
+- preserve the typed reaction target through Native, EventStream and Runtime: a
+  `moment.reacted` with `commentId` refreshes its original thread; a post reaction
+  refreshes only the post summary. Private command status is keyed by
+  `(postId, commentId, kind)` in the existing private Moments Store. Private
+  Comment Store consumes the Native committed target projection; it never
+  toggles a count optimistically. Unknown outcomes expose an explicit retry
+  of the same durable command. Actor, renderer and Native-session replacement
+  fence completion and clear these projections.
+- merge private Comment content generation and reaction revision independently,
+  including replacement pages and Native snapshots; a delayed reaction updates
+  only the currently retained target and cannot recreate a deleted row or restore
+  old plaintext. Equivalent Native-session bootstrap retains activation identity;
+  reactivation with equal field values still fences old command completions.
+- keep merged Feed / Circles / Detail / User views as pure readers for first-screen data;
 - allow explicit user actions (`Load more`, sort switch, comment submit) to call store actions, because those are interaction-driven pagination/write flows rather than mount-time projection freshness.
 
 ## 5. Implementation Pattern

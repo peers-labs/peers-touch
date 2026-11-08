@@ -1,15 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@lobehub/ui';
-import { Input, Space, Tooltip, Typography, message, theme } from 'antd';
-import {
-  ImagePlus,
-  LockKeyhole,
-  RotateCcw,
-  SendHorizontal,
-  ShieldCheck,
-  X,
-} from 'lucide-react';
+import { Button, Icon, MomentComposerSurface, TextArea } from '@peers-touch/ui';
+import { message } from 'antd';
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
@@ -35,17 +27,16 @@ import {
   type PublicComposerImage,
 } from './composerMediaDecision';
 import { api } from '../../services/desktop_api';
+import { publicFeedErrorKey } from '../../services/publicFeedNative';
 import {
   preparePrivateAudience,
   prepareRemotePrivateRecipient,
 } from '../../runtimes/momentsRuntime';
 import { privateMomentPublishIntent } from '../../store/moments';
 import { log } from '../../utils/logger';
-import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { actorDisplayName } from '../../store/socialProfileProjection';
 import { SocialPrivateState } from './surfaces';
 import {
-  useActiveDiscoverySlice,
   useActiveMomentsSlice,
   useActiveMomentsFederationSlice,
   useActivePrivateMomentsSlice,
@@ -53,8 +44,6 @@ import {
   useActiveSocialChatSlice,
 } from './useActiveMomentsStore';
 
-const { TextArea } = Input;
-const { Text } = Typography;
 
 const TAG = 'moment-composer';
 
@@ -91,6 +80,7 @@ interface MomentComposerProps {
   initialAudience?: Audience;
   /** Optional callback after successful publish. */
   onPublished?: (postId: string) => void;
+  onDismiss?: () => void;
 }
 
 function defaultAudience(): Audience {
@@ -131,11 +121,8 @@ function makeLocalId(): string {
   return `pending-${Date.now()}-${pendingIdSeq}`;
 }
 
-export function MomentComposer({ initialAudience, onPublished }: MomentComposerProps) {
+export function MomentComposer({ initialAudience, onPublished, onDismiss }: MomentComposerProps) {
   const { t } = useTranslation('moments');
-  const { token } = theme.useToken();
-
-  const me = useActiveDiscoverySlice((s) => s.me);
   const {
     draft,
     setDraft,
@@ -454,20 +441,6 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     }
     writeDraft(draftRevision.current, text, audience, pending);
     return draftRevision.current;
-  };
-
-  const handleClear = () => {
-    if (text.trim()) {
-      // Immediate commit also cancels a trailing write that carried stale text.
-      persistDraft(text, audience, pending);
-    } else {
-      cancelScheduledDraftWrite();
-      clearDraft();
-    }
-    queuedUploadIdsRef.current.clear();
-    uploadQueueRef.current = [];
-    setText('');
-    setPending([]);
   };
 
   // Keep queue mirrors current across async upload boundaries.
@@ -841,8 +814,10 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
               imageIds: decision.imageIds,
               images: decision.attachments,
               audience,
+              draftId,
+              draftRevision: draftRevision.current,
             })
-          : await createPost({ kind: 'text', text: trimmed, audience });
+          : await createPost({ kind: 'text', text: trimmed, audience, draftId, draftRevision: draftRevision.current });
       message.success(t('moments.compose.published'));
       cancelScheduledDraftWrite();
       setText('');
@@ -864,299 +839,48 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
         )));
         message.error(t(`moments.compose.media.${err.code}`, { defaultValue: err.code }));
       } else {
-        message.error(String(err));
+        message.error(isPrivateAudience(audience) ? String(err) : t(publicFeedErrorKey(err)));
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  return (
-      <div
-        id="moments-composer"
-        style={{
-          padding: 2,
-          background: token.colorBgContainer,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 12 }}>
-          <UserSquareAvatar
-            remoteUrl={me?.avatar || undefined}
-            actorPtid={me?.id || null}
-            name={me?.displayName || me?.username || t('moments.author.unknown')}
-            size={42}
-            radius={12}
-          />
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: '8px 12px',
-              border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: token.borderRadiusLG,
-              background: token.colorBgContainer,
-            }}
-          >
-            <TextArea
-              data-moments-composer-input
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                persistDraft(e.target.value, audience, pending, 'trailing');
-              }}
-              placeholder={t('moments.compose.placeholder')}
-              autoSize={{ minRows: 2, maxRows: 10 }}
-              maxLength={5000}
-              variant="borderless"
-              style={{
-                padding: 0,
-                resize: 'none',
-                background: 'transparent',
-                fontSize: 15,
-                lineHeight: 1.7,
-              }}
-            />
-          </div>
-        </div>
-
-        {pending.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))',
-              gap: 8,
-              marginTop: 14,
-              marginLeft: 54,
-            }}
-          >
-            {pending.map((p) => (
-              <PendingThumb
-                key={p.localId}
-                item={p}
-                onRemove={() => handleRemoveImage(p.localId)}
-                onRetry={() => handleRetryImage(p.localId)}
-                token={token}
-              />
-            ))}
-          </div>
-        )}
-
-        {privateAudience && privatePublishState !== 'IDLE' && (
-          <div style={{ marginLeft: 54 }}>
-            <SocialPrivateState
-              state={privatePublishState}
-              compact
-              onRetry={
-                checkingReadiness || submitting
-                  ? undefined
-                  : () => void handlePublish()
-              }
-            />
-          </div>
-        )}
-
-        <Space
-          wrap
-          style={{
-            justifyContent: 'space-between',
-            width: '100%',
-            marginTop: 12,
-            paddingTop: 10,
-            borderTop: `1px solid ${token.colorBorderSecondary}`,
-          }}
-          align="center"
-        >
-          <Space size={8} wrap>
-            <Tooltip
-              title={
-                slotsLeft <= 0
-                  ? t('moments.compose.imageMaxReached', { max: MAX_IMAGES_PER_POST })
-                  : t('moments.compose.imagePickHint', {
-                      remaining: slotsLeft,
-                      max: MAX_IMAGES_PER_POST,
-                    })
-              }
-            >
-              <Button
-                type="text"
-                icon={<ImagePlus size={14} />}
-                onClick={handlePickImages}
-                disabled={slotsLeft <= 0 || submitting}
-              >
-                {pending.length > 0 ? `${pending.length}/${MAX_IMAGES_PER_POST}` : null}
-              </Button>
-            </Tooltip>
-            {uploadingCount > 0 && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('moments.compose.imageUploadingProgress', {
-                  uploading: uploadingCount,
-                  total: pending.length,
-                })}
-              </Text>
-            )}
-          </Space>
-          <Space size={8} wrap style={{ justifyContent: 'flex-end' }}>
-            <Space size={4} style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-              <LockKeyhole size={13} />
-              <span>{t('moments.compose.audienceLabel')}</span>
-            </Space>
-            <AudiencePicker
-              value={audience}
-              people={audiencePeople}
-              circles={circleOptions}
-              groups={groupOptions}
-              onChange={handleAudienceChange}
-              disabled={submitting}
-            />
-            {(text || pending.length > 0) && (
-              <Button onClick={handleClear} disabled={submitting} type="text">
-                {t('moments.compose.cancel')}
-              </Button>
-            )}
-            <Button
-              type="primary"
-              onClick={handlePublish}
-              loading={checkingReadiness || submitting}
-              disabled={!canPublish}
-              icon={
-                privateAudience && !readyForCurrentDraft && !submitting
-                  ? <ShieldCheck size={14} />
-                  : <SendHorizontal size={14} />
-              }
-            >
-              {privateAudience && !readyForCurrentDraft && !submitting
-                ? t('moments.compose.checkRecipients')
-                : t('moments.compose.publish')}
-            </Button>
-          </Space>
-        </Space>
-      </div>
-  );
-}
-
-interface PendingThumbProps {
-  item: PendingImage;
-  onRemove: () => void;
-  onRetry: () => void;
-  token: ReturnType<typeof theme.useToken>['token'];
-}
-
-function PendingThumb({ item, onRemove, onRetry, token }: PendingThumbProps) {
-  const { t } = useTranslation('moments');
-  const isError = item.status === 'error';
-  const isUploading = item.status === 'uploading';
-  const isPrivate = item.status === 'private';
-  return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        aspectRatio: '1 / 1',
-        borderRadius: token.borderRadius,
-        overflow: 'hidden',
-        background: token.colorBgLayout,
-        border: `1px solid ${isError ? token.colorErrorBorder : token.colorBorder}`,
-      }}
-    >
-      <img
-        src={item.previewSrc}
-        alt={t('moments.compose.imagePendingAlt')}
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          opacity: isError ? 0.4 : isUploading ? 0.6 : 1,
-        }}
-      />
-
-      {isPrivate && (
-        <div
-          aria-label={t('moments.compose.privateSlot')}
-          style={{
-            position: 'absolute',
-            left: 4,
-            bottom: 4,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 20,
-            height: 20,
-            borderRadius: '50%',
-            color: token.colorWhite,
-            background: 'rgba(0,0,0,0.45)',
-          }}
-        >
-          <LockKeyhole size={11} />
-        </div>
-      )}
-
-      {isUploading && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: token.colorWhite,
-            fontSize: 11,
-            fontWeight: 600,
-            background: 'rgba(0,0,0,0.35)',
-          }}
-        >
-          {t('moments.compose.imageUploadingShort')}
-        </div>
-      )}
-
-      {isError && (
-        <Tooltip title={item.error ?? t('moments.compose.imageUploadFailed')}>
-          <button
-            type="button"
-            onClick={onRetry}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              color: token.colorWhite,
-              fontSize: 11,
-              fontWeight: 600,
-              background: 'rgba(220,30,30,0.55)',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            <RotateCcw size={12} />
-            {t('moments.compose.imageRetry')}
-          </button>
-        </Tooltip>
-      )}
-
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={t('moments.compose.imageRemove')}
-        style={{
-          position: 'absolute',
-          top: 2,
-          right: 2,
-          width: 18,
-          height: 18,
-          padding: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'rgba(0,0,0,0.55)',
-          color: token.colorWhite,
-          border: 'none',
-          borderRadius: '50%',
-          cursor: 'pointer',
-        }}
-      >
-        <X size={11} />
-      </button>
-    </div>
-  );
+  const busy = checkingReadiness || submitting;
+  const disabledReason = !text.trim() ? t('moments.compose.emptyError')
+    : !audienceComplete ? t('moments.private.state.AUDIENCE_REQUIRED.description')
+      : uploadingCount > 0 ? t('moments.compose.imageUploading')
+        : errorCount > 0 ? t('moments.compose.imageHasErrors') : t('moments.reaction.pending');
+  return <MomentComposerSurface id="moments-composer" disabled={busy}
+    images={pending.map(item => ({
+      id: item.localId, src: item.previewSrc, alt: t('moments.compose.imagePendingAlt'),
+      status: item.status === 'uploading' ? t('moments.compose.imageUploadingShort')
+        : item.status === 'private' ? t('moments.compose.privateSlot') : undefined,
+      error: item.error, onRetry: () => handleRetryImage(item.localId),
+    }))}
+    onRemoveImage={handleRemoveImage}
+    copy={{ removeImage: t('moments.compose.imageRemove'), retryImage: t('moments.compose.imageRetry') }}
+    editor={<TextArea className="sk-compose-input" aria-label={t('moments.compose.title')}
+      data-moments-composer-input framing="embedded" minimumRows={4} maximumRows={8}
+      value={text} disabled={busy} onValueChange={next => {
+        setText(next); persistDraft(next, audience, pending, 'trailing');
+      }} placeholder={t('moments.compose.placeholder')} maxLength={5000} />}
+    toolbar={<Button actionId="compose.images" emphasis="quiet" leading={<Icon iconId="image-plus" size={15} />}
+      label={pending.length ? `${t('moments.compose.attachImage')} ${pending.length}/${MAX_IMAGES_PER_POST}`
+        : t('moments.compose.attachImage')}
+      availability={slotsLeft <= 0 || busy ? { kind: 'disabled', reason: t('moments.compose.imageMaxReached', { max: MAX_IMAGES_PER_POST }) } : undefined}
+      onActivate={() => void handlePickImages()} />}
+    audience={<AudiencePicker value={audience} people={audiencePeople} circles={circleOptions} groups={groupOptions}
+      onChange={handleAudienceChange} disabled={busy} />}
+    status={privateAudience && privatePublishState !== 'IDLE'
+      ? <SocialPrivateState state={privatePublishState} compact onRetry={busy ? undefined : () => void handlePublish()} /> : undefined}
+    footer={<>
+      {onDismiss && <Button actionId="compose.cancel" emphasis="quiet" label={t('moments.compose.cancel')}
+        availability={busy ? { kind: 'disabled', reason: t('moments.reaction.pending') } : undefined}
+        onActivate={() => { checkpointDraft(); onDismiss(); }} />}
+      <Button actionId="compose.publish" emphasis="primary" data-acceptance-id="social-composer-publish"
+        onActivate={() => void handlePublish()} execution={busy ? 'pending' : 'idle'}
+        availability={canPublish ? undefined : { kind: 'disabled', reason: disabledReason }}
+        label={privateAudience && !readyForCurrentDraft && !submitting ? t('moments.compose.checkRecipients') : t('moments.compose.publish')} />
+    </>} />;
 }

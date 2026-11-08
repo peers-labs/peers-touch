@@ -46,6 +46,7 @@ const privateRuntime = vi.hoisted(() => {
     readPrivateComments: vi.fn(),
     reconcilePrivate: vi.fn(),
     setPrivateReaction: vi.fn(),
+    retryPrivateReaction: vi.fn(),
     invalidatePrivate: vi.fn(),
     trackPublicMomentPublish: vi.fn(async (operation, isPublished) => {
       const result = await operation();
@@ -74,6 +75,7 @@ vi.mock('../../runtimes/privateMomentsRuntime', () => ({
   readPrivateComments: privateRuntime.readPrivateComments,
   reconcilePrivateMoments: privateRuntime.reconcilePrivate,
   setPrivateMomentReaction: privateRuntime.setPrivateReaction,
+  retryPrivateMomentReaction: privateRuntime.retryPrivateReaction,
   invalidatePrivateMoments: privateRuntime.invalidatePrivate,
   trackPublicMomentPublish: privateRuntime.trackPublicMomentPublish,
 }));
@@ -82,6 +84,7 @@ import {
   createMobileSocialFacade,
   readActiveMobileSocialFacade,
 } from './mobileSocialFacade';
+import { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 
 const session = {
   stationPeerId: 'station-a',
@@ -408,6 +411,43 @@ describe('Mobile Social facade', () => {
       2,
       true,
     );
+    expect(gateway.reactToPost).not.toHaveBeenCalled();
+  });
+
+  it('uses the generated LIKE kind and the original command for private comment intent and retry', async () => {
+    privateRuntime.snapshot.postsById = {
+      'private-1': {
+        postId: 'private-1', contentId: 'private-1', generation: '1',
+        authorPtid: 'ptid:bob', audienceKind: 'FRIENDS', state: 'CONTENT_READY',
+        content: { kind: 'TEXT', text: 'private' }, reactions: [],
+      },
+    };
+    privateRuntime.snapshot.comments = [{
+      postId: 'private-1', commentId: 'root', state: 'COMMENT_POSTED',
+      reactions: [{ kind: ReactionKind.REACTION_LIKE, count: '1', reactedByViewer: true }],
+    }];
+    const result = {
+      command: {
+        commandId: 'original-unlike', postId: 'private-1', commentId: 'root',
+        kind: ReactionKind.REACTION_LIKE, operation: 'UNREACT',
+        state: 'REACTION_UNKNOWN_OUTCOME', attemptCount: 1, projectionRevision: '1',
+      },
+      reactions: [], projectionRevision: '1', exactReplay: false,
+    };
+    privateRuntime.setPrivateReaction.mockResolvedValue(result);
+    privateRuntime.retryPrivateReaction.mockResolvedValue({
+      ...result, command: { ...result.command, state: 'REACTION_COMMITTED' },
+    });
+    facade = createMobileSocialFacade(session, { retry: vi.fn(async () => true) });
+    facade.activate();
+    await expect(facade.intents.reactComment('private-1', 'root')).resolves.toBe(false);
+    expect(privateRuntime.setPrivateReaction).toHaveBeenCalledExactlyOnceWith(
+      'private-1', ReactionKind.REACTION_LIKE, false, 'root',
+    );
+    privateRuntime.snapshot.reactionCommands = [result.command];
+    await expect(facade.intents.retryCommentReaction('private-1', 'root')).resolves.toBe(true);
+    expect(privateRuntime.retryPrivateReaction).toHaveBeenCalledExactlyOnceWith('original-unlike');
+    expect(privateRuntime.setPrivateReaction).toHaveBeenCalledOnce();
     expect(gateway.reactToPost).not.toHaveBeenCalled();
   });
 

@@ -3,6 +3,8 @@ kind: pitfall
 title: Social UI surfaces must not fragment identity
 status: active
 owns:
+  - packages/ui/web/src/moment-card.tsx
+  - packages/ui/web/src/moments.css
   - apps/desktop/src/pages/moments/
   - apps/desktop/src/components/moments/
   - apps/desktop/src/components/profile/
@@ -55,6 +57,12 @@ The methodological error was treating UI ID as a style preference instead of a r
   comments rendered that same actor correctly.
 
 ### What guards against regression
+
+卡片、作者、信任行、反应条和个人头部的当前唯一展示 Owner 是
+`packages/ui/web/src/moment-card.tsx` / `moments.css`。原型与生产均消费同源组件；
+app 的 MomentCard、SocialActionBar、SocialTrustMeta、UserProfileHeader 只适配原数据和命令。
+剩余 circle/composer/thread 展示迁移按组件清单闭合，不能重新在 app 内复制上述展示。
+原 `north-star.suite.json` 与 `boards.suite.json` 绑定共享源码及焦点/长文案/禁用场景。
 
 - `pnpm run check` in `apps/desktop/` must pass after Social UI edits.
 - Future Social UI work must load `docs/client/common/ui-identity/README.md` and `docs/client/common/ui-identity/modules/social/desktop.md` before editing.

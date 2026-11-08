@@ -1,127 +1,65 @@
-import { useCallback } from 'react';
+import { useMemo, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Alert, Button, Empty, FeedSortFloat, Spin } from '@peers-touch/ui';
 import { MomentCard } from '../../components/moments/MomentCard';
-import { MomentComposer } from '../../components/moments/MomentComposer';
-import { MomentListState } from '../../components/moments/MomentListState';
-import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
-import {
-  SocialComposer,
-  SocialEmptyState,
-} from '../../components/moments/surfaces';
-import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
-
-// MomentsFeedView — the HOME timeline (followed actors + own posts).
-//
-// Pagination: an explicit "Load more" button is preferred over
-// infinite scroll so the user can stop reading without their feed
-// silently loading 100 more rows in the background. Refresh fires
-// from a header button (no pull-to-refresh on desktop).
+import { useActiveMomentsSlice, useActiveRelationshipsSlice } from '../../components/moments/useActiveMomentsStore';
+import { momentSearchText, selectMomentsTimeline } from '../../store/momentsTimeline';
 
 interface MomentsFeedViewProps {
   viewerActorPtid?: string;
   onOpenPost: (postId: string) => void;
   onAuthorClick: (actorPtid: string) => void;
-  onComposerPublished?: (postId: string) => void;
-  composerOpen?: boolean;
-  onCloseComposer?: () => void;
+  query: string;
+  scrollRef: RefObject<HTMLDivElement | null>;
 }
 
-export function MomentsFeedView({
-  viewerActorPtid: _viewerActorPtid,
-  onOpenPost,
-  onAuthorClick,
-  onComposerPublished,
-  composerOpen = false,
-  onCloseComposer,
-}: MomentsFeedViewProps) {
+/** One reading stream; HOME and public retain their original owners and cursors. */
+export function MomentsFeedView({ viewerActorPtid, onOpenPost, onAuthorClick, query, scrollRef }: MomentsFeedViewProps) {
   const { t } = useTranslation('moments');
-  const {
-    feed,
-    postsById,
-    comments,
-    reactions,
-    feedExplanations,
-    loadFeed,
-    reactToPost,
-    unreactToPost,
-    deletePost,
-  } = useActiveMomentsSlice((s) => ({
-    feed: s.feeds.home,
-    postsById: s.postsById,
-    comments: s.comments,
-    reactions: s.reactions,
-    feedExplanations: s.feedExplanations,
-    loadFeed: s.loadFeed,
-    reactToPost: s.reactToPost,
-    unreactToPost: s.unreactToPost,
-    deletePost: s.deletePost,
+  const { home, publicFeed, postsById, reactions, explanations, sort, setSort, loadFeed,
+    reactToPost, unreactToPost, deletePost } = useActiveMomentsSlice(state => ({
+    home: state.feeds.home, publicFeed: state.feeds.explore, postsById: state.postsById,
+    reactions: state.reactions, explanations: state.feedExplanations,
+    sort: state.timelineSort, setSort: state.setTimelineSort, loadFeed: state.loadFeed,
+    reactToPost: state.reactToPost, unreactToPost: state.unreactToPost, deletePost: state.deletePost,
   }));
-
-  const posts = feed.postIds.map((id) => postsById[id]).filter(Boolean);
-
-  const handleReact = useCallback((postId: string, kind: ReactionKind) =>
-    reactToPost(postId, kind), [reactToPost]);
-  const handleUnreact = useCallback((postId: string, kind?: ReactionKind) =>
-    unreactToPost(postId, kind), [unreactToPost]);
-  const handleDelete = useCallback((postId: string) =>
-    deletePost(postId), [deletePost]);
-
-  // Background refresh never replaces existing cards with a
-  // page-level loading surface; the local list footer (MomentListState)
-  // carries the spinner. The loading state is only full-page when
-  // there is no data yet.
-  const showInitialEmpty = posts.length === 0 && !feed.loading;
-  const showInitialLoading = posts.length === 0 && feed.loading;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {composerOpen && (
-        <SocialComposer
-          title={t('moments.compose.title')}
-          hint={t('moments.compose.privacyHint')}
-          onClose={onCloseComposer}
-          closeLabel={t('moments.compose.close')}
-        >
-          <MomentComposer onPublished={onComposerPublished} />
-        </SocialComposer>
-      )}
-
-      {showInitialLoading && <SocialEmptyState kind="loading" />}
-      {showInitialEmpty && (
-        <SocialEmptyState
-          kind="empty"
-          title={t('moments.placeholder.empty')}
-          description={t('moments.placeholder.feedEmpty')}
-        />
-      )}
-
-      {posts.map((p) => (
-        <MomentCard
-          key={p.id}
-          post={p}
-          reactions={reactions[p.id]}
-          explanation={feedExplanations[p.id]}
-          commentPreview={comments[p.id]}
-          viewerActorPtid={_viewerActorPtid}
-          surface="home"
-          onOpen={onOpenPost}
-          onAuthorClick={onAuthorClick}
-          onReact={handleReact}
-          onUnreact={handleUnreact}
-          onDelete={handleDelete}
-        />
-      ))}
-
-      {posts.length > 0 && (
-        <MomentListState
-          loading={feed.loading}
-          empty={false}
-          emptyText={t('moments.placeholder.feedEmpty')}
-          loadMoreText={t('moments.action.loadMore')}
-          hasMore={feed.hasMore}
-          onLoadMore={() => loadFeed('home').catch(() => {})}
-        />
-      )}
-    </div>
-  );
+  const [error, setError] = useState(false);
+  const { blockedActors, blockedActorsLoadedAt, blockedActorsError } = useActiveRelationshipsSlice(state => ({
+    blockedActors: state.blockedActors, blockedActorsLoadedAt: state.blockedActorsLoadedAt,
+    blockedActorsError: state.blockedActorsError,
+  }));
+  const q = query.trim().toLocaleLowerCase();
+  const posts = useMemo(() => {
+    const timeline = selectMomentsTimeline(home.postIds, publicFeed.postIds, postsById, sort, reactions);
+    return timeline.filter(post => !blockedActors[post.authorPtid] && (!q || momentSearchText(post).includes(q)));
+  }, [home.postIds, publicFeed.postIds, postsById, reactions, blockedActors, sort, q]);
+  const loading = home.loading || publicFeed.loading;
+  const more = home.hasMore || publicFeed.hasMore;
+  const loadMore = async () => {
+    setError(false);
+    const results = await Promise.allSettled([
+      ...(home.hasMore ? [loadFeed('home')] : []),
+      ...(publicFeed.hasMore ? [loadFeed('explore', { sort: 'recent' })] : []),
+    ]);
+    setError(results.some(result => result.status === 'rejected'));
+  };
+  if (!blockedActorsLoadedAt) return blockedActorsError
+    ? <Alert variant="inline" tone="warning" description={t('moments.empty.degraded.description')} />
+    : <Spin label={t('moments.follow.loading')} />;
+  return <>
+    {!q && <FeedSortFloat value={sort} onChange={setSort} scrollRef={scrollRef}
+      copy={{ label: t('moments.sort.label'), recent: t('moments.tab.recent'),
+        hot: t('moments.tab.hot'), top: t('moments.action.backToTop') }} />}
+    {posts.length === 0 && (loading ? <Spin label={t('moments.follow.loading')} />
+      : <Empty description={q ? t('moments.search.noMatch', { query }) : t('moments.placeholder.feedEmpty')} />)}
+    {posts.map(post => <MomentCard key={post.publicFeedRef || post.id} post={post}
+      reactions={reactions[post.id]} explanation={explanations[post.id]} viewerActorPtid={viewerActorPtid}
+      surface={home.postIds.includes(post.id) ? 'home' : 'federated'}
+      onOpen={onOpenPost} onAuthorClick={onAuthorClick} onReact={reactToPost}
+      onUnreact={unreactToPost} onDelete={deletePost} />)}
+    {error && <Alert variant="inline" tone="warning" description={t('moments.empty.degraded.description')} />}
+    {!q && posts.length > 0 && (more ? <Button actionId="moments.load-more" emphasis="quiet" fullWidth
+      label={t('moments.action.loadMore')} execution={loading ? 'pending' : 'idle'}
+      onActivate={() => void loadMore()} /> : <span className="moments-feed-end">{t('moments.placeholder.feedEnd')}</span>)}
+  </>;
 }

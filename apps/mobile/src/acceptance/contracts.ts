@@ -1189,6 +1189,7 @@ export interface MomentsFeedReadOutput {
 export interface MomentsPublishActionInput {
   text: string;
   audienceKind: number;
+  audience?: PrivateSocialAudience;
 }
 
 export interface MomentsReactionActionInput {
@@ -1586,7 +1587,7 @@ export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceCo
   };
   'moments.publish': {
     input: MomentsPublishActionInput;
-    output: PublicMomentProjection;
+    output: PublicMomentProjection | { rejected: true; code: 'FEED_SIGNED_WRITE_REQUIRED'; text: string };
   };
   'moments.react': {
     input: MomentsReactionActionInput;

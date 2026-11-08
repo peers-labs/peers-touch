@@ -816,6 +816,7 @@ export type PrivateReactionCommandState =
 export interface PrivateReactionCommandProjection {
   commandId: string;
   postId: string;
+  commentId: string;
   kind: number;
   operation: 'REACT' | 'UNREACT';
   state: PrivateReactionCommandState;
@@ -871,6 +872,9 @@ export interface PrivateCommentProjection {
   text?: string;
   mentions: PrivateMomentMention[];
   reactionsCount: number;
+  reactions?: PrivateReactionSummaryProjection[];
+  reactionRevision?: string;
+  reactionsHydrated?: boolean;
   repliesCount: number;
   createdAtMillis?: number;
   updatedAtMillis?: number;
@@ -1014,32 +1018,35 @@ export async function privateSocialComments(
     postId: string;
     cursor?: string;
     limit?: number;
+    anchorCommentId?: string;
   },
 ): Promise<PrivateCommentPage> {
   return invoke<PrivateCommentPage>('social_private_comments', { input });
 }
 
 export async function privateSocialReact(
-  input: PrivateSocialAccountInput & { postId: string; kind: number },
+  input: PrivateSocialAccountInput & { postId: string; commentId?: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
   return invoke<PrivateReactionMutationResult>('social_private_react', {
     input: {
       ...privateSocialReactionScope(input),
       postId: input.postId,
+      commentId: input.commentId ?? '',
       kind: input.kind,
     },
   });
 }
 
 export async function privateSocialUnreact(
-  input: PrivateSocialAccountInput & { postId: string; kind: number },
+  input: PrivateSocialAccountInput & { postId: string; commentId?: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
   return invoke<PrivateReactionMutationResult>('social_private_unreact', {
     input: {
       ...privateSocialReactionScope(input),
       postId: input.postId,
+      commentId: input.commentId ?? '',
       kind: input.kind,
     },
   });

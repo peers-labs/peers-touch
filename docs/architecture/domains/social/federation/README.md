@@ -109,6 +109,11 @@ Agent、A2A、Applet 将来会接入同一社会活动层，但当前阶段只�
 | [decisions.md](./decisions.md) | 当前阶段关键设计决策 |
 | [../api-ownership/README.md](../../../engineering/api-governance/README.md) | API owner, shared Federation transport, and hard-cut governance |
 | [e2e-acceptance.md](./e2e-acceptance.md) | Human 联邦社交 E2E 验收机制 |
+| [actor-feed-log.md](./actor-feed-log.md) | **proposed**：朋友圈主权架构（Actor-Owned Moments）——数据权威从 Station CRUD 迁到 Actor 签名内容流，CRUD 降级为投影 |
+| [interaction-completion.md](./interaction-completion.md) | **accepted**：评论点赞、投票、公开选票接纳与私密原交互扩展合同；原 Owner、同源 Native 证明及无遗留要求 |
+| [execution-plans/20261106-actor-feed-log/plan.md](./execution-plans/20261106-actor-feed-log/plan.md) | Actor-Owned Moments v1 冻结 Plan r5（10 个 Task；公开单设备签名链、在役私密 E2EE） |
+| [execution-plans/20261108-social-completion/plan.md](./execution-plans/20261108-social-completion/plan.md) | 当前 Social 闭合版本：继承完整 AFL 口径，评论/投票与 Mobile 签名种子、故障/性能和非空 Gate 映射 |
+| [actor-owned-moments-ui-inventory.md](./actor-owned-moments-ui-inventory.md) | 钉版 glass 原型的组件处置、库/数据/命令边界与尚未闭合范围 |
 | [execution-plans/20260617-federated-human-social-activity.md](./execution-plans/20260617-federated-human-social-activity.md) | 分阶段执行计划与任务跟踪 |
 
 ---

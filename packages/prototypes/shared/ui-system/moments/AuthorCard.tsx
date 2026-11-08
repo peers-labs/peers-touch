@@ -8,7 +8,8 @@
  * card; the chrome/actions live in ../identity/IdentityCard.
  */
 import type { ReactElement, ReactNode } from 'react';
-import { IdentityCard, IdentityTrigger, type IdentityMoment } from '../identity/IdentityCard';
+import { IdentityCard, IdentityTrigger, type IdentityMoment } from '@peers-touch/ui';
+import { identityCopy } from '../identity/identity-copy';
 import type { Moment, Person } from './moments-data';
 import { MOMENT_SEEDS, VIEWER } from './moments-data';
 
@@ -30,6 +31,7 @@ export function AuthorCard({ person, name, station, onOpenProfile, onToggleFollo
   const isSelf = name === VIEWER.name;
   return (
     <IdentityCard
+      copy={identityCopy}
       name={name}
       tone={person?.tone ?? (isSelf ? VIEWER.tone : undefined)}
       station={person?.station ?? station}
@@ -37,7 +39,7 @@ export function AuthorCard({ person, name, station, onOpenProfile, onToggleFollo
       followers={person ? person.followers : undefined}
       mutual={person?.mutual}
       isSelf={isSelf}
-      seeded={Boolean(person)}
+      resolved={Boolean(person)}
       followed={person?.followed ?? false}
       blocked={person?.blocked ?? false}
       moments={momentsByIdentity(name)}
@@ -67,6 +69,7 @@ export function AuthorTrigger({ name, person, station, children, placement = 'bo
 }): ReactNode {
   return (
     <IdentityTrigger placement={placement}
+      copy={identityCopy}
       name={name}
       tone={person?.tone ?? (name === VIEWER.name ? VIEWER.tone : undefined)}
       station={person?.station ?? station}
@@ -74,7 +77,7 @@ export function AuthorTrigger({ name, person, station, children, placement = 'bo
       followers={person ? person.followers : undefined}
       mutual={person?.mutual}
       isSelf={name === VIEWER.name}
-      seeded={Boolean(person)}
+      resolved={Boolean(person)}
       followed={person?.followed ?? false}
       blocked={person?.blocked ?? false}
       moments={momentsByIdentity(name)}

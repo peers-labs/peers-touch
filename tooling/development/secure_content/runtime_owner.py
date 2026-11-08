@@ -109,6 +109,10 @@ from tooling.development.secure_content.platform_runtime import (
 from tooling.development.secure_content.mobile_fixture import (
     MobileProductionFixture,
 )
+from tooling.development.secure_content.social_interaction_ui import (
+    SocialCommentUI,
+    exercise_comment_likes,
+)
 from tooling.development.secure_content.runtime_fixture import (
     RuntimeFixtureBinding,
     RuntimeFixtureOwner,
@@ -7641,6 +7645,7 @@ class W7RuntimeOwner:
                 action_text: str | None = None,
                 open_comments: bool = False,
                 absent_texts: Sequence[str] = (),
+                interaction_ui: Mapping[str, Any] | None = None,
             ) -> None:
                 scenario_path = _write_social_cross_station_scenario_evidence(
                     owner_root,
@@ -7651,7 +7656,7 @@ class W7RuntimeOwner:
                     fixture_epoch=fixture_epoch,
                     observations=observations,
                 )
-                ui = _receiver_ui_probe(
+                ui = interaction_ui if interaction_ui is not None else _receiver_ui_probe(
                     receiver,
                     workstream_id=SOCIAL_CROSS_STATION_TASK_ID,
                     scenario_id=scenario_id,
@@ -7877,6 +7882,7 @@ class W7RuntimeOwner:
             )
             as20_text = "css09-cross-station-interaction-parent"
             as20_comment = "css09-cross-station-comment"
+            as20_reply = "css09-cross-station-reply"
             as20_post = _publish_friends_moment(
                 alice,
                 draft_id="css09-as20",
@@ -7888,10 +7894,15 @@ class W7RuntimeOwner:
                 expected_state="CONTENT_READY",
                 actor_label="Bob",
             )
-            comment = _moments_harness(
-                current_bob,
-                "submitPrivateCommentWithRetry",
-                {"postId": as20_post, "text": as20_comment},
+            interaction_evidence_root = owner_root / "scenarios" / "AS20" / "painted"
+            bob_comment_ui = SocialCommentUI(current_bob, "bob", interaction_evidence_root)
+            alice_comment_ui = SocialCommentUI(alice, "alice", interaction_evidence_root)
+            comment_interactions = exercise_comment_likes(
+                bob_comment_ui,
+                alice_comment_ui,
+                post_id=as20_post,
+                root_text=as20_comment,
+                reply_text=as20_reply,
             )
             reaction = _moments_harness(
                 current_bob,
@@ -7904,8 +7915,7 @@ class W7RuntimeOwner:
                 {"postId": as20_post, "refresh": True},
             )
             if (
-                comment.get("state") != "COMMENT_POSTED"
-                or not any(
+                not any(
                     isinstance(item, Mapping)
                     and item.get("textSha256") == _sha256(as20_comment)
                     for item in alice_comments.get("comments", ())
@@ -7917,16 +7927,33 @@ class W7RuntimeOwner:
                     "AS20 interaction did not converge at source authority",
                     resource="client:cross-station-social-alice",
                 )
+            replay_evidence = [
+                _moments_harness(
+                    alice,
+                    "replayPrivateCommentLike",
+                    {"postId": as20_post, "commentId": comment_interactions[key]},
+                )
+                for key in ("rootId", "replyId")
+            ]
+            for text, depth in ((as20_comment, 0), (as20_reply, 1)):
+                alice_comment_ui.assert_like(as20_post, text, depth, 1, True, "durable-retry")
+                bob_comment_ui.assert_like(as20_post, text, depth, 1, False, "durable-retry")
+            supporting_artifacts.extend(str(path) for ui in (alice_comment_ui, bob_comment_ui)
+                                        for path in ui.artifacts)
             record_scenario(
                 "AS20",
                 receiver=alice,
                 action_text=as20_text,
                 visible_text=as20_comment,
                 open_comments=True,
+                interaction_ui=alice_comment_ui.evidence("AS20", as20_reply),
                 observations={
                     "commentPosted": True,
                     "reactionProjected": True,
                     "commentTextSha256": _sha256(as20_comment),
+                    "commentReactionActions": bob_comment_ui.actions + alice_comment_ui.actions,
+                    "commentReactionAssertions": bob_comment_ui.assertions + alice_comment_ui.assertions,
+                    "commentReactionReplays": replay_evidence,
                     "sourceGateIds": ["social-cross-station-interaction"],
                 },
             )
@@ -8081,6 +8108,14 @@ class W7RuntimeOwner:
                     resource=f"client:{bob2_id}",
                 )
             _prepare_private_content_keys(bob2)
+            _wait_for_private_moment_state(
+                bob2, post_id=as20_post, expected_state="CONTENT_READY", actor_label="Bob2",
+            )
+            bob2_comment_ui = SocialCommentUI(bob2, "bob2", owner_root / "scenarios" / "AS23" / "painted")
+            bob2_comment_ui.open_thread(as20_post)
+            for text, depth in ((as20_comment, 0), (as20_reply, 1)):
+                bob2_comment_ui.assert_like(as20_post, text, depth, 1, False, "replacement-readback")
+            supporting_artifacts.extend(str(path) for path in bob2_comment_ui.artifacts)
             bob2_snapshot = _wait_for_moments_snapshot(bob2)
             clients[bob2_id] = bob2
             payloads[bob2_id] = _client_payload(
@@ -8115,6 +8150,8 @@ class W7RuntimeOwner:
                     "replacementDeviceIdSha256": restored[
                         "deviceIdSha256"
                     ],
+                    "commentReactionActions": bob2_comment_ui.actions,
+                    "commentReactionAssertions": bob2_comment_ui.assertions,
                     "sourceGateIds": [
                         "social-cross-station-revocation-recovery"
                     ],
@@ -8206,15 +8243,33 @@ class W7RuntimeOwner:
                     "same-Station public Social projection did not converge",
                     resource="client:cross-station-social-alice",
                 )
+            private_text = "css09-same-station-private-regression"
+            private_post = _publish_friends_moment(
+                alice, draft_id="css09-same-station-private", text=private_text,
+            )
+            local_ui = SocialCommentUI(alice, "alice", owner_root / "scenarios" / "same-station-regression" / "painted")
+            local_root = "css09-same-station-private-comment"
+            local_reply = "css09-same-station-private-reply"
+            local_ui.submit(private_post, local_root)
+            local_ui.submit(private_post, local_reply, reply_to=local_root)
+            for text, depth, label in ((local_root, 0, "root"), (local_reply, 1, "reply")):
+                local_ui.toggle_like(private_post, text, depth, 0, False, f"local-{label}-like")
+                local_ui.assert_like(private_post, text, depth, 1, True, f"local-{label}-like")
+                local_ui.toggle_like(private_post, text, depth, 1, True, f"local-{label}-unlike")
+                local_ui.assert_like(private_post, text, depth, 0, False, f"local-{label}-unlike")
+            supporting_artifacts.extend(str(path) for path in local_ui.artifacts)
             record_scenario(
                 "same-station-regression",
                 receiver=alice,
-                action_text="Public",
-                visible_text=public_text,
+                visible_text=local_reply,
+                interaction_ui=local_ui.evidence("same-station-regression", local_reply),
                 observations={
                     "anonymousReadStatus": public_status,
                     "publicProjectionFound": True,
                     "publicTextSha256": _sha256(public_text),
+                    "privateParentReady": True,
+                    "commentReactionActions": local_ui.actions,
+                    "commentReactionAssertions": local_ui.assertions,
                     "sameStationPrivateGate": "social-private-desktop-e2e",
                 },
             )

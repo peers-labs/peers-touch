@@ -54,6 +54,7 @@ from .station_equipment import equip_station_profile
 
 
 _CROSS_STATION_SOCIAL_GATE_ROLES = {
+    "social-public-feed-native-e2e": ("alice", "bob"),
     "federation-two-station-lifecycle-e2e": (
         "alice",
         "federation_secondary_owner",
@@ -61,6 +62,7 @@ _CROSS_STATION_SOCIAL_GATE_ROLES = {
     "social-cross-station-native-e2e": ("alice", "bob", "eve"),
 }
 _CROSS_STATION_SOCIAL_GATE_CLIENTS = {
+    "social-public-feed-native-e2e": ("alice", "bob"),
     "federation-two-station-lifecycle-e2e": (
         "alice",
         "federation-secondary-owner",
@@ -678,7 +680,6 @@ class CrossStationSocialNativeProvisioner(
     NativeTauriEmbeddedWebDriverProvisioner
 ):
     environment_id = "cross-station-social-native"
-    required_slot = 13
     fixture_id = "cross-station-social-actors"
     product_label = "Cross-Station Social"
 
@@ -698,14 +699,16 @@ class CrossStationSocialNativeProvisioner(
             super()._resolve_active_profile()
         )
         required_profile = self._required_station_profiles()["station-four"]
-        if profile != required_profile or slot != self.required_slot:
+        if profile != required_profile:
             raise BlockedError(
                 reason=(
                     "Cross-Station Social requires active profile "
-                    f"{required_profile} at slot {self.required_slot}"
+                    f"{required_profile}; observed {profile}"
                 ),
                 resource=f"profile:{required_profile}",
             )
+        # Machine Dev owns workspace slots. The Environment contract binds
+        # Station roles, while client ports derive from that verified slot.
         return profile, profile_path, slot, environment
 
     def _clients(

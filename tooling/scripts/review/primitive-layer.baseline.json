@@ -812,27 +812,6 @@
       ".pt-select-trigger",
       ".pt-textarea"
     ],
-    "packages/prototypes/shared/ui-system/moments/moments.css": [
-      ".pt-avatar",
-      ".pt-avatar",
-      ".pt-avatar",
-      ".pt-button",
-      ".pt-button",
-      ".pt-button",
-      ".pt-button",
-      ".pt-button",
-      ".pt-button",
-      ".pt-button",
-      ".pt-button",
-      ".pt-button",
-      ".pt-button-content",
-      ".pt-button-content",
-      ".pt-field-frame",
-      ".pt-field-frame",
-      ".pt-icon-button",
-      ".pt-icon-button",
-      ".pt-input"
-    ],
     "packages/prototypes/shared/ui-system/notifications/notifications.css": [
       ".pt-button",
       ".pt-icon-button"

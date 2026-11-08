@@ -16,26 +16,29 @@ import type {
   Post,
   PostAuthor,
   ReactionSummary,
+  GetMyMomentsStatsResponse,
 } from '../gen/proto/domain/social/post_pb';
 import type { Comment } from '../gen/proto/domain/social/comment_pb';
 import type { Circle, CircleMember } from '../gen/proto/domain/social/circle_pb';
 import {
   socialCreateMoment,
   socialDeleteMoment,
+  socialDeletePrivateMoment,
+  socialUpdateMomentText,
   socialGetComments,
   publicCommentFromResource,
   socialGetMomentResponse,
   socialGetTimeline,
+  socialGetMyStats,
   socialSyncMomentsProjection,
   socialListByAuthor,
   socialReact,
   socialUnreact,
   socialCreateComment,
   socialDeleteComment,
+  socialSetCommentLike,
   socialCircleCreate,
   socialCircleDelete,
-  socialCircleListMembers,
-  socialCircleListMine,
   socialCircleRename,
   socialCircleAddMembers,
   socialCircleRemoveMembers,
@@ -52,11 +55,24 @@ import type {
 import { isReadablePrivateMomentProjection } from '../services/privateMomentsNative';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
+import { resetPublicFeed } from '../services/publicFeedNative';
+import { useSessionStore } from './session';
+import { commentDraftKey, useSocialCommentDraftsStore } from './socialCommentDrafts';
+import { loadAllSocialCircleMembers, loadAllSocialCircles } from '../services/socialCirclePages';
 
 const TAG = 'moments-store';
 const EMPTY_COMMENTS: Comment[] = [];
 const MAX_PROTO_UINT64 = 18_446_744_073_709_551_615n;
 let storeGeneration = 0;
+let circlesRead: Promise<void> | null = null;
+const circleMemberReads = new Map<string, Promise<void>>();
+let circleCatalogVersion = 0;
+const circleMembershipVersions = new Map<string, number>();
+
+function invalidateCircleMembership(circleId: string): void {
+  circleCatalogVersion += 1;
+  circleMembershipVersions.set(circleId, (circleMembershipVersions.get(circleId) ?? 0) + 1);
+}
 interface PublicCommentRead {
   generation: number;
   cursor: string;
@@ -96,22 +112,22 @@ function runFencedReaction(
   const existing = reactionFlights.get(key);
   if (existing) {
     log.info(TAG, 'reaction intent fenced', {
-      operationId: operationId ?? 'implicit',
-      postId,
+      explicitCommand: Boolean(operationId),
       kind: effectiveKind,
       direction,
     });
     return existing;
   }
+  const opposite = reactionFlightKey(postId, effectiveKind, direction === 'add' ? 'remove' : 'add');
+  if (reactionFlights.has(opposite)) return Promise.reject(new Error('FEED_PENDING_ACK'));
   const id = operationId ?? makeReactionOperationId();
   log.info(TAG, 'reaction intent', {
-    operationId: id,
-    postId,
+    explicitCommand: Boolean(operationId),
     kind: effectiveKind,
     direction,
   });
   const flight = task(id).finally(() => {
-    reactionFlights.delete(key);
+    if (reactionFlights.get(key) === flight) reactionFlights.delete(key);
   });
   reactionFlights.set(key, flight);
   return flight;
@@ -435,6 +451,14 @@ export function selectMomentComments(
 }
 
 interface MomentsState {
+  timelineSort: TimelineSort;
+  setTimelineSort: (sort: TimelineSort) => void;
+  myStats?: GetMyMomentsStatsResponse;
+  myStatsLoading: boolean;
+  loadMyStats: () => Promise<void>;
+  publicFeedReadError: string | null;
+  publicFeedRecoveryError: string | null;
+  setPublicFeedRecoveryError: (error: string | null) => void;
   // Posts indexed by id; every feed list stores ids only.
   postsById: Record<string, Post>;
   authorsById: Record<string, PostAuthor>;
@@ -450,6 +474,7 @@ interface MomentsState {
   commentsCursor: Record<string, string>;
   commentsHasMore: Record<string, boolean>;
   commentsLoading: Record<string, boolean>;
+  commentReactionCommands: Record<string, { pending: boolean; error?: string }>;
 
   // Per-post reaction summary list. Sourced from `Post.reactions` on
   // every refresh — the explicit map exists so optimistic toggles in
@@ -462,6 +487,7 @@ interface MomentsState {
   circles: Circle[];
   circlesLoading: boolean;
   circleMembers: Record<string, CircleMember[]>;
+  circleMembersErrors: Record<string, string>;
 
   // Composer draft — kept in store so navigation away keeps state.
   composerDraft: MomentComposerDraft | null;
@@ -479,6 +505,7 @@ interface MomentsState {
 
   loadPost: (postId: string) => Promise<Post | undefined>;
   createPost: (draft: MomentDraft) => Promise<string>;
+  updatePostText: (postId: string, text: string, operationId: string) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
   /**
    * Pure local eviction driven by an authoritative delete/revoke
@@ -498,6 +525,7 @@ interface MomentsState {
     mentions?: StructuralMention[],
   ) => Promise<void>;
   deleteComment: (postId: string, commentId: string) => Promise<void>;
+  setCommentLike: (postId: string, commentId: string, liked: boolean) => Promise<void>;
 
   /** Re-fetch only one post's reaction projection. Used by post-scoped
    * realtime wakeups so a reaction event never reloads feeds/threads. */
@@ -505,13 +533,14 @@ interface MomentsState {
   reactToPost: (postId: string, kind: ReactionKind, operationId?: string) => Promise<void>;
   unreactToPost: (postId: string, kind?: ReactionKind, operationId?: string) => Promise<void>;
 
-  listMyCircles: () => Promise<void>;
+  listMyCircles: (refresh?: boolean) => Promise<void>;
   createCircle: (name: string, description?: string) => Promise<string>;
   renameCircle: (circleId: string, name: string, description?: string) => Promise<void>;
   deleteCircle: (circleId: string) => Promise<void>;
-  loadCircleMembers: (circleId: string) => Promise<void>;
+  loadCircleMembers: (circleId: string, refresh?: boolean) => Promise<void>;
   addCircleMember: (circleId: string, actorPtid: string) => Promise<void>;
   removeCircleMember: (circleId: string, actorPtid: string) => Promise<void>;
+  saveCircle: (circleId: string, name: string, description: string, memberPtids: string[]) => Promise<void>;
 
   setComposerDraft: (draft: MomentsState['composerDraft']) => void;
   clearComposerDraft: () => void;
@@ -522,6 +551,9 @@ interface MomentsState {
 
 const initialState: Pick<
   MomentsState,
+  | 'timelineSort'
+  | 'myStats'
+  | 'myStatsLoading'
   | 'postsById'
   | 'authorsById'
   | 'feeds'
@@ -531,13 +563,22 @@ const initialState: Pick<
   | 'commentsCursor'
   | 'commentsHasMore'
   | 'commentsLoading'
+  | 'commentReactionCommands'
   | 'reactions'
   | 'feedExplanations'
   | 'circles'
   | 'circlesLoading'
   | 'circleMembers'
+  | 'circleMembersErrors'
   | 'composerDraft'
+  | 'publicFeedReadError'
+  | 'publicFeedRecoveryError'
 > = {
+  timelineSort: 'recent',
+  myStats: undefined,
+  myStatsLoading: false,
+  publicFeedReadError: null,
+  publicFeedRecoveryError: null,
   postsById: {},
   authorsById: {},
   feeds: { home: emptyFeed(), explore: emptyFeed() },
@@ -547,11 +588,13 @@ const initialState: Pick<
   commentsCursor: {},
   commentsHasMore: {},
   commentsLoading: {},
+  commentReactionCommands: {},
   reactions: {},
   feedExplanations: {},
   circles: [],
   circlesLoading: false,
   circleMembers: {},
+  circleMembersErrors: {},
   composerDraft: null,
 };
 
@@ -690,6 +733,20 @@ function refreshProjectionBestEffort(store: MomentsState, reason: string): void 
 
 export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set, get) => ({
   ...initialState,
+  setTimelineSort: (sort) => set({ timelineSort: sort }),
+  loadMyStats: async () => {
+    if (get().myStatsLoading) return;
+    const generation = storeGeneration;
+    set({ myStatsLoading: true });
+    try {
+      const myStats = await socialGetMyStats();
+      if (generation === storeGeneration) set({ myStats, myStatsLoading: false });
+    } catch (error) {
+      if (generation === storeGeneration) set({ myStats: undefined, myStatsLoading: false });
+      throw error;
+    }
+  },
+  setPublicFeedRecoveryError: (error) => set({ publicFeedRecoveryError: error }),
 
   // -------------------------------------------------------------------------
   // Feeds
@@ -807,6 +864,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
           Object.values(privateState.postsById),
         );
         return {
+          publicFeedReadError: null,
           postsById: mergedExplore.postsById,
           authorsById: mergedExplore.authorsById,
           reactions: mergedExplore.reactions,
@@ -835,6 +893,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     } catch (err) {
       if (generation !== storeGeneration) return;
       log.warn(TAG, 'syncProjection failed', { reason, err: String(err) });
+      set({ publicFeedReadError: String(err) });
       throw err;
     }
   },
@@ -1016,9 +1075,31 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     return post.id;
   },
 
+  updatePostText: async (postId, text, operationId) => {
+    const generation = storeGeneration;
+    const current = get().postsById[postId];
+    if (!current || current.audience?.kind !== Audience_Kind.PUBLIC) {
+      throw new Error('FEED_PROJECTION_UNVERIFIED');
+    }
+    const post = await socialUpdateMomentText(postId, text, operationId);
+    if (generation !== storeGeneration) throw new Error('MOMENTS_SESSION_STALE');
+    set((state) => {
+      const merged = ingestPosts(state, [post]);
+      return {
+        postsById: merged.postsById,
+        authorsById: merged.authorsById,
+        reactions: merged.reactions,
+        feedExplanations: merged.feedExplanations,
+      };
+    });
+    refreshProjectionBestEffort(get(), 'action:updatePost');
+  },
+
   deletePost: async (postId) => {
     const generation = storeGeneration;
-    await socialDeleteMoment(postId);
+    if (isPrivateMomentMutation(postId, get().postsById[postId])) {
+      await socialDeletePrivateMoment(postId);
+    } else await socialDeleteMoment(postId);
     if (generation !== storeGeneration) return;
     try {
       await usePrivateMomentsStore.getState().purgeMoment(postId);
@@ -1147,14 +1228,21 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
 
   createComment: async (postId, content, replyToCommentId, mentions = []) => {
     const generation = storeGeneration;
+    const session = useSessionStore.getState();
+    const retained = useSocialCommentDraftsStore.getState().drafts[
+      commentDraftKey(session.currentUser?.actorPtid, session.sessionEpoch, postId)
+    ];
+    const operationId = retained?.draftId ? `comment:${retained.draftId}:${retained.revision ?? 0}` : undefined;
     const comment = await socialCreateComment(
       postId,
       content,
       replyToCommentId,
       mentions,
+      operationId,
     );
     if (generation !== storeGeneration) return;
     if (!comment) return;
+    if ((get().comments[postId] ?? []).some(existing => existing.id === comment.id)) return;
     set((s) => ({
       comments: {
         ...s.comments,
@@ -1173,6 +1261,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         postsById: { ...s.postsById, [postId]: { ...post, stats } as Post },
       };
     });
+    refreshProjectionBestEffort(get(), 'action:createComment');
   },
 
   deleteComment: async (postId, commentId) => {
@@ -1186,6 +1275,30 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       },
     }));
   },
+
+  setCommentLike: (postId, commentId, liked) => runFencedReaction(
+    `comment:${postId}:${commentId}`, ReactionKind.REACTION_LIKE, liked ? 'add' : 'remove', undefined,
+    async operationId => {
+      const generation = storeGeneration;
+      const target = (get().comments[postId] ?? []).find(comment => comment.id === commentId);
+      if (!target || target.isDeleted) throw new Error('FEED_PROJECTION_UNVERIFIED');
+      set(state => ({ commentReactionCommands: { ...state.commentReactionCommands, [commentId]: { pending: true } } }));
+      try {
+        const confirmed = await socialSetCommentLike(postId, commentId, liked, operationId);
+        if (generation !== storeGeneration) return;
+        set(state => ({
+          comments: { ...state.comments, [postId]: (state.comments[postId] ?? [])
+            .map(comment => comment.id === commentId ? { ...comment, ...confirmed } : comment) },
+          commentReactionCommands: { ...state.commentReactionCommands, [commentId]: { pending: false } },
+        }));
+      } catch (error) {
+        if (generation !== storeGeneration) return;
+        set(state => ({ commentReactionCommands: { ...state.commentReactionCommands,
+          [commentId]: { pending: false, error: String(error) } } }));
+        throw error;
+      }
+    },
+  ),
 
   // -------------------------------------------------------------------------
   // Reactions
@@ -1216,7 +1329,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         if (isPrivateMomentMutation(postId, post)) {
           const result = await usePrivateMomentsStore
             .getState()
-            .reactToPost(postId, kind);
+            .setReaction(postId, kind, 'REACT');
           if (generation !== storeGeneration) return;
           set((state) => ({
             reactions: {
@@ -1253,9 +1366,10 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         if (isPrivateMomentMutation(postId, post)) {
           const result = await usePrivateMomentsStore
             .getState()
-            .unreactToPost(
+            .setReaction(
               postId,
               kind ?? ReactionKind.REACTION_UNSPECIFIED,
+              'UNREACT',
             );
           if (generation !== storeGeneration) return;
           set((state) => ({
@@ -1283,20 +1397,36 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   // Circles
   // -------------------------------------------------------------------------
 
-  listMyCircles: async () => {
+  listMyCircles: async (refresh = false) => {
     const generation = storeGeneration;
-    if (get().circlesLoading) return;
-    set({ circlesLoading: true });
-    try {
-      const resp = await socialCircleListMine();
-      if (generation !== storeGeneration) return;
-      set({ circles: resp.circles ?? [], circlesLoading: false });
-    } catch (err) {
-      if (generation !== storeGeneration) return;
-      log.warn(TAG, 'listMyCircles failed', { err: String(err) });
-      set({ circlesLoading: false });
-      throw err;
+    if (circlesRead) {
+      if (refresh) await circlesRead.catch(() => {});
+      else await circlesRead;
+      if (!refresh || generation !== storeGeneration) return;
     }
+    const version = circleCatalogVersion;
+    const assertScope = () => {
+      if (generation !== storeGeneration) throw new Error('MOMENTS_SESSION_STALE');
+      if (version !== circleCatalogVersion) throw new Error('CIRCLE_READ_SUPERSEDED');
+    };
+    set({ circlesLoading: true });
+    const read = loadAllSocialCircles(assertScope).then(circles => {
+      assertScope();
+      const ids = new Set(circles.map(circle => String(circle.id)));
+      set(s => ({
+        circles, circlesLoading: false,
+        circleMembers: Object.fromEntries(Object.entries(s.circleMembers).filter(([id]) => ids.has(id))),
+        circleMembersErrors: Object.fromEntries(Object.entries(s.circleMembersErrors).filter(([id]) => ids.has(id))),
+      }));
+    }).catch(err => {
+      if (generation === storeGeneration) {
+        log.warn(TAG, 'listMyCircles failed', { err: String(err) });
+        set({ circlesLoading: false });
+      }
+      throw err;
+    }).finally(() => { if (circlesRead === read) circlesRead = null; });
+    circlesRead = read;
+    await read;
   },
 
   createCircle: async (name, description) => {
@@ -1308,19 +1438,22 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     if (!resp.circle) {
       throw new Error('createCircle: server returned no circle');
     }
+    circleCatalogVersion += 1;
     set((s) => ({ circles: [resp.circle as Circle, ...s.circles] }));
     return String(resp.circle.id ?? '');
   },
 
   renameCircle: async (circleId, name, description) => {
     const generation = storeGeneration;
-    await socialCircleRename(circleId, name, description);
+    const response = await socialCircleRename(circleId, name, description);
     if (generation !== storeGeneration) return;
+    if (!response.circle || String(response.circle.id) !== circleId) {
+      throw new Error('CIRCLE_PROJECTION_INVALID');
+    }
+    circleCatalogVersion += 1;
     set((s) => ({
       circles: s.circles.map((c) =>
-        String(c.id) === circleId
-          ? ({ ...c, name, description: description ?? c.description } as Circle)
-          : c,
+        String(c.id) === circleId ? response.circle as Circle : c,
       ),
     }));
   },
@@ -1329,6 +1462,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const generation = storeGeneration;
     await socialCircleDelete(circleId);
     if (generation !== storeGeneration) return;
+    invalidateCircleMembership(circleId);
     set((s) => ({
       circles: s.circles.filter((c) => String(c.id) !== circleId),
       circleMembers: Object.fromEntries(
@@ -1337,36 +1471,88 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     }));
   },
 
-  loadCircleMembers: async (circleId) => {
+  loadCircleMembers: async (circleId, refresh = false) => {
     const generation = storeGeneration;
-    const resp = await socialCircleListMembers(circleId);
-    if (generation !== storeGeneration) return;
-    set((s) => ({
-      circleMembers: { ...s.circleMembers, [circleId]: resp.members ?? [] },
-    }));
+    const previous = circleMemberReads.get(circleId);
+    if (previous) {
+      if (refresh) await previous.catch(() => {});
+      else await previous;
+      if (!refresh) return;
+    }
+    const version = circleMembershipVersions.get(circleId) ?? 0;
+    const assertScope = () => {
+      if (generation !== storeGeneration) throw new Error('MOMENTS_SESSION_STALE');
+      if (version !== (circleMembershipVersions.get(circleId) ?? 0)) throw new Error('CIRCLE_READ_SUPERSEDED');
+    };
+    assertScope();
+    const read = loadAllSocialCircleMembers(circleId, assertScope).then(members => {
+      assertScope();
+      if (!get().circles.some(circle => String(circle.id) === circleId)) return;
+      set(s => ({
+        circleMembers: { ...s.circleMembers, [circleId]: members },
+        circleMembersErrors: Object.fromEntries(Object.entries(s.circleMembersErrors).filter(([id]) => id !== circleId)),
+      }));
+    }).catch(error => {
+      if (generation === storeGeneration && version === (circleMembershipVersions.get(circleId) ?? 0)) set(s => ({
+        circleMembersErrors: { ...s.circleMembersErrors, [circleId]: String(error) },
+      }));
+      throw error;
+    }).finally(() => { if (circleMemberReads.get(circleId) === read) circleMemberReads.delete(circleId); });
+    circleMemberReads.set(circleId, read);
+    await read;
   },
 
   addCircleMember: async (circleId, actorPtid) => {
     const generation = storeGeneration;
     await socialCircleAddMembers(circleId, [actorPtid]);
     if (generation !== storeGeneration) return;
+    invalidateCircleMembership(circleId);
     // Refresh members so the UI reflects the canonical server state
     // (server may dedupe / reject already-present DIDs silently).
-    await get().loadCircleMembers(circleId);
+    await get().loadCircleMembers(circleId, true);
   },
 
   removeCircleMember: async (circleId, actorPtid) => {
     const generation = storeGeneration;
     await socialCircleRemoveMembers(circleId, [actorPtid]);
     if (generation !== storeGeneration) return;
-    set((s) => ({
-      circleMembers: {
-        ...s.circleMembers,
-        [circleId]: (s.circleMembers[circleId] ?? []).filter(
-          (m) => m.actorPtid !== actorPtid,
-        ),
-      },
-    }));
+    invalidateCircleMembership(circleId);
+    await get().loadCircleMembers(circleId, true);
+  },
+
+  saveCircle: async (circleId, name, description, memberPtids) => {
+    const generation = storeGeneration;
+    const assertScope = () => {
+      if (generation !== storeGeneration) throw new Error('MOMENTS_SESSION_STALE');
+    };
+    // Re-read the original membership before computing a retryable delta.
+    // Each existing Circle command commits independently; a failure preserves
+    // the editor draft and re-reads actual truth, never invents a full save.
+    await get().loadCircleMembers(circleId);
+    assertScope();
+    const existing = new Set((get().circleMembers[circleId] ?? []).map(member => member.actorPtid));
+    const wanted = new Set(memberPtids);
+    const removed = [...existing].filter(id => !wanted.has(id));
+    const added = [...wanted].filter(id => !existing.has(id));
+    try {
+      if (removed.length) {
+        await socialCircleRemoveMembers(circleId, removed); assertScope(); invalidateCircleMembership(circleId);
+      }
+      if (added.length) {
+        await socialCircleAddMembers(circleId, added); assertScope(); invalidateCircleMembership(circleId);
+      }
+      await get().renameCircle(circleId, name, description);
+      assertScope();
+    } finally {
+      if (generation === storeGeneration) {
+        await Promise.all([get().loadCircleMembers(circleId, true), get().listMyCircles(true)]);
+      }
+    }
+    assertScope();
+    const actual = new Set((get().circleMembers[circleId] ?? []).map(member => member.actorPtid));
+    if (actual.size !== wanted.size || [...wanted].some(id => !actual.has(id))) {
+      throw new Error('CIRCLE_MEMBERS_NOT_CONFIRMED');
+    }
   },
 
   // -------------------------------------------------------------------------
@@ -1378,6 +1564,12 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
 
   reset: () => {
     storeGeneration += 1;
+    reactionFlights.clear();
+    circlesRead = null;
+    circleMemberReads.clear();
+    circleCatalogVersion += 1;
+    circleMembershipVersions.clear();
+    resetPublicFeed();
     commentReads.clear();
     activeCommentTarget = null;
     set({ ...initialState });

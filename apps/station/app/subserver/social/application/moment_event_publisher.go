@@ -127,6 +127,7 @@ func (p *MomentEventPublisher) StagePrivateReacted(
 	ctx context.Context,
 	transaction delivery.Transaction,
 	postID string,
+	commentID string,
 	reactionActorPTID string,
 	targetActorPTID string,
 	kind model.ReactionKind,
@@ -156,6 +157,7 @@ func (p *MomentEventPublisher) StagePrivateReacted(
 				Moment: &realtime.MomentEvent{
 					Kind:             realtime.MomentEvent_REACTED,
 					PostId:           postID,
+					CommentId:        commentID,
 					ActorPtid:        reactionActorPTID,
 					ReactionKind:     kind.String(),
 					Removed:          removed,
@@ -227,17 +229,6 @@ func (p *MomentEventPublisher) PublishCommented(ctx context.Context, postID uint
 		AuthorActorPtid:  postAuthorPTID,
 		ActorPtid:        commentAuthorPTID,
 		CommentId:        fmt.Sprintf("%d", commentID),
-		OccurredTsUnixMs: p.now().UTC().UnixMilli(),
-	})
-}
-
-func (p *MomentEventPublisher) PublishReacted(ctx context.Context, postID string, reactionActorPTID string, kind model.ReactionKind, removed bool) {
-	p.publish(ctx, reactionActorPTID, &realtime.MomentEvent{
-		Kind:             realtime.MomentEvent_REACTED,
-		PostId:           postID,
-		ActorPtid:        reactionActorPTID,
-		ReactionKind:     kind.String(),
-		Removed:          removed,
 		OccurredTsUnixMs: p.now().UTC().UnixMilli(),
 	})
 }

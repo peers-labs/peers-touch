@@ -14,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
-  reportHookObservation,
   runHook,
   workspaceContext,
 } from './hook-entry.mjs';
@@ -46,45 +45,23 @@ function projectFixture(parent, name) {
   return realpathSync(root);
 }
 
-test('reports the current worktree without changing hook admission', async () => {
-  const calls = [];
-  const result = await reportHookObservation(
-    { host: 'trae', hostEvent: 'UserPromptSubmit' },
-    '/tmp/worktree',
-    {
-      report(options) {
-        calls.push(options);
-        return { workspaceId: '0123456789abcdef' };
-      },
-    },
-  );
-  assert.equal(result.status, 'REPORTED');
-  assert.deepEqual(calls, [
-    {
-      workspaceRoot: '/tmp/worktree',
-      host: 'trae',
-      event: 'UserPromptSubmit',
-      minimumIntervalMs: 15_000,
-    },
-  ]);
-});
-
-test('observation failure is isolated from hook admission', async () => {
-  const result = await reportHookObservation(
-    { host: 'codex', hostEvent: 'PreToolUse' },
-    '/tmp/worktree',
-    {
-      report() {
-        const error = new Error('disk unavailable');
-        error.code = 'WORKTREE_OBSERVATION_FAILED';
-        throw error;
-      },
-    },
-  );
-  assert.deepEqual(result, {
-    status: 'UNAVAILABLE',
-    code: 'WORKTREE_OBSERVATION_FAILED',
-  });
+test('Hook returns workflow guidance with filesystem writes denied', () => {
+  const response = JSON.parse(execFileSync(process.execPath, [
+    '--permission', '--allow-fs-read=*', '--allow-child-process',
+    path.join(installationRoot, 'tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs'),
+    '--host', 'trae', '--event', 'PreToolUse',
+  ], {
+    cwd: installationRoot,
+    input: JSON.stringify({
+      cwd: installationRoot,
+      tool_name: 'Write',
+      tool_input: { file_path: 'README.md' },
+    }),
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  }));
+  assert.equal(response.hookSpecificOutput.permissionDecision, 'allow');
+  assert.match(response.hookSpecificOutput.additionalContext, /pt-dev-workflow\/SKILL\.md/);
 });
 
 test('loads ordered roots from the installed TRAE workspace descriptor', () => {
@@ -155,8 +132,9 @@ test('FLOW-A04 thin TRAE adapter attaches guidance without identity authority', 
     response.hookSpecificOutput.additionalContext,
     /docs\/global\/workflow\.md/,
   );
-  assert.equal(reports.length, 1);
-  assert.equal(reports[0].host, 'trae');
+  assert.match(response.hookSpecificOutput.additionalContext, /pt-god-view\/SKILL\.md/);
+  assert.match(response.hookSpecificOutput.additionalContext, /pt-dev-workflow\/SKILL\.md/);
+  assert.equal(reports.length, 0);
 });
 
 test('FLOW-A04 installed Hook ignores an explicit sibling worktree', async () => {

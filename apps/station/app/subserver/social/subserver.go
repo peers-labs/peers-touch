@@ -50,6 +50,7 @@ type subServer struct {
 	publicSearchSvc   *application.PublicSearchService
 	privateContentSvc *application.PrivateContentService
 	privateObjectSvc  *application.PrivateObjectService
+	feedLogSvc        *application.FeedLogService
 	database          *gorm.DB
 	privateObjects    storage.Backend
 
@@ -60,6 +61,8 @@ type subServer struct {
 	friendRequestEffectWait   sync.WaitGroup
 	privateObjectCancel       context.CancelFunc
 	privateObjectWait         sync.WaitGroup
+	feedCancel                context.CancelFunc
+	feedWait                  sync.WaitGroup
 }
 
 func NewSocialSubServer(_ ...option.Option) server.Subserver {
@@ -112,7 +115,10 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	resolver := infrastructure.NewActorIdentity(rds)
 	groups := application.NewNoopGroupMembershipChecker()
 
-	repos := infrastructure.NewRepos(rds)
+	repos := infrastructure.NewRepos(rds, func(ctx context.Context, tx delivery.Transaction,
+		subscriber, author string, enabled bool) error {
+		return s.feedLogSvc.ChangeSubscription(ctx, tx, subscriber, author, enabled)
+	})
 
 	// MediaResolver wires the cross-subserver gate that rejects
 	// foreign-origin or fabricated `oss://...` CIDs in image / video
@@ -124,7 +130,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 
 	// Reaction service has no inter-service dependency; build first
 	// so the moment service can hold a pointer for hydration.
-	s.reactionSvc = application.NewReactionService(rds, repos, momentEvents)
+	s.reactionSvc = application.NewReactionService(repos)
 
 	s.momentSvc = application.NewMomentService(rds, repos, resolver, groups, media, s.reactionSvc, momentEvents)
 	s.commentSvc = application.NewCommentService(repos, s.momentSvc, momentEvents)
@@ -150,6 +156,32 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	actorCapabilities, err := resolvePrivateContentActorCapabilities()
 	if err != nil {
 		return fmt.Errorf("initialize Social private Actor Identity port: %w", err)
+	}
+	feedActors, ok := server.GetOptions().SubserverInstances["actor_identity"].(application.FeedActorIdentity)
+	if !ok || feedActors == nil {
+		return fmt.Errorf("initialize Social feed: Actor Identity capability unavailable")
+	}
+	feedStore, err := infrastructure.NewFeedLogStore(rds)
+	if err != nil {
+		return err
+	}
+	if err := feedStore.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrate Social feed: %w", err)
+	}
+	s.feedLogSvc, err = application.NewFeedLogService(feedStore, feedActors,
+		federationRuntime.LocalStationPeerID(), infrastructure.NewFeedProjector(federationRuntime.LocalStationPeerID()).Apply)
+	if err != nil {
+		return err
+	}
+	feedProjector := infrastructure.NewFeedProjector(federationRuntime.LocalStationPeerID())
+	feedProjector.SetObserver(momentEvents.FeedObserver())
+	s.feedLogSvc.SetProjector(feedProjector)
+	s.feedLogSvc.SetWritePolicy(application.NewFeedWritePolicy())
+	if err := s.feedLogSvc.ConfigureFederation(federationRuntime.Signer(), feedPeerPull(federationRuntime)); err != nil {
+		return err
+	}
+	if err := federationRuntime.RegisterPeerEndpoint(federationruntime.PeerRouteSocialPublicFeedRead, s.handleFederatedFeedRead); err != nil {
+		return err
 	}
 	privateContentStore, err := infrastructure.NewGORMPrivateContentStore(rds)
 	if err != nil {
@@ -318,6 +350,9 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		WithActorDeviceKeyResolver(actorDeviceKeyPort{}).
 		WithPrivateContentRevoker(s.privateContentSvc)
 	if err := federationRuntime.RegisterReceivers(func(registry *delivery.Registry) error {
+		if err := s.feedLogSvc.RegisterReceivers(registry); err != nil {
+			return err
+		}
 		if err := infrastructure.RegisterFederatedFriendRequestReceivers(
 			registry,
 			s.federatedFriendRequestSvc,
@@ -390,6 +425,24 @@ func (s *subServer) Start(ctx context.Context, _ ...option.Option) error {
 		defer s.privateObjectWait.Done()
 		s.runPrivateObjectCleanup(objectContext)
 	}()
+	feedContext, feedCancel := context.WithCancel(ctx)
+	s.feedCancel = feedCancel
+	s.feedWait.Add(1)
+	go func() {
+		defer s.feedWait.Done()
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			if err := s.feedLogSvc.ProcessFederation(feedContext); err != nil && feedContext.Err() == nil {
+				log.Warnf(feedContext, "[social] public feed reconcile remains retryable: %v", err)
+			}
+			select {
+			case <-feedContext.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 
 	s.status = server.StatusRunning
 	log.Infof(ctx, "[social] subserver started")
@@ -408,8 +461,13 @@ func (s *subServer) Stop(ctx context.Context) error {
 		s.privateObjectCancel()
 		s.privateObjectCancel = nil
 	}
+	if s.feedCancel != nil {
+		s.feedCancel()
+		s.feedCancel = nil
+	}
 	s.friendRequestEffectWait.Wait()
 	s.privateObjectWait.Wait()
+	s.feedWait.Wait()
 	s.status = server.StatusStopped
 	log.Infof(ctx, "[social] subserver stopped")
 	return nil

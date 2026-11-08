@@ -322,6 +322,7 @@ export interface MomentCommentedPayload extends MomentRealtimeBasePayload {
 }
 
 export interface MomentReactedPayload extends MomentRealtimeBasePayload {
+  commentId?: string;
   reactionActorPtid?: string;
   kind?: string;
   removed: boolean;

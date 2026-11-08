@@ -1643,6 +1643,34 @@
       "tier": "local-evidence",
       "description": "Validate Desktop applet runtime page lease smoothness for A-to-B switching, explicit close back to launcher, LRU eviction, and launcher wakeup refresh."
     },
+    "social-public-feed-source": {
+      "command": "python3 -m tooling.acceptance.gates.social.public_feed_source",
+      "timeout_seconds": 3600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run Actor-Owned Moments Go regressions and Native Rust journal/cache source checks; does not prove product Journeys."
+    },
+    "social-public-feed-native-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.social.public_feed_native",
+      "timeout_seconds": 5400,
+      "environment": "cross-station-social-native",
+      "provisioner": "cross-station-social-native",
+      "tier": "env-evidence",
+      "e2e": {
+        "journeys": [
+          {"id": "actor-owned-moments-public", "uses": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.run"]}
+        ],
+        "implementations": [
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.run", "purpose": "Execute public publication, late follower, non-follower, edit, restart, Search and tombstone UI assertions", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "tooling/acceptance/gates/social/public_feed_native.py#Gate.action", "tooling/acceptance/gates/social/public_feed_native.py#Gate.prepare_fixture", "tooling/acceptance/gates/chat/device_search_runner.py#DeviceSearchGate.open_search"], "invalidatedBy": ["source", "oracle", "action-plan"]},
+          {"ref": "tooling/acceptance/gates/chat/native_two_client_runner.py#NativeTwoClientGate.start_client", "purpose": "Reuse source-bound Native launch, login and cleanup", "lifetime": "suite", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "environment", "fixture", "client", "session"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.action", "purpose": "Bind the existing production Moments Harness through its asynchronous transport", "lifetime": "implementation", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "oracle"]},
+          {"ref": "tooling/acceptance/gates/social/public_feed_native.py#Gate.prepare_fixture", "purpose": "Bind existing Social runtime owner Federation create/join/archive, routing and Actor resolution", "lifetime": "suite", "dependsOn": ["tooling/acceptance/gates/social/public_feed_native.py#Gate.action"], "invalidatedBy": ["source", "environment", "fixture"]},
+          {"ref": "tooling/acceptance/gates/chat/device_search_runner.py#DeviceSearchGate.open_search", "purpose": "Reuse original Native Search input, settlement and painted geometry oracle on the existing receiver", "lifetime": "scenario", "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"], "invalidatedBy": ["source", "oracle", "client", "session"]},
+          {"ref": "tooling/acceptance/core/harness.py#call_async_harness", "purpose": "Reuse existing asynchronous Harness transport", "lifetime": "implementation", "dependsOn": [], "invalidatedBy": ["source", "toolchain"]}
+        ]
+      },
+      "description": "Prove public signed publication, late-follower history, non-follower comment/reaction, edit, restart, replicated Search and tombstone rendering through one reusable two-Station Native Suite; fault and visual parity scope remains unproven."
+    },
     "social-private-desktop-e2e": {
       "command": "python3 -m tooling.acceptance.gates.social.desktop_private_e2e",
       "catalogExecution": "manual",

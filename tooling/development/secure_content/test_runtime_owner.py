@@ -563,7 +563,9 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn("visible_text=recovery_text", replay_source)
         same_station_source = cross_source[replay_end:]
         self.assertIn('"findPublicMoment"', same_station_source)
-        self.assertIn('action_text="Public"', same_station_source)
+        self.assertIn('local_ui.submit(private_post, local_root)', same_station_source)
+        self.assertIn('local_ui.submit(private_post, local_reply, reply_to=local_root)', same_station_source)
+        self.assertIn('interaction_ui=local_ui.evidence(', same_station_source)
         self.assertIn(
             '"publicProjectionFound": True',
             same_station_source,

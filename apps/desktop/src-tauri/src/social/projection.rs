@@ -168,6 +168,7 @@ pub enum PrivateReactionOperation {
 pub struct PrivateReactionCommandProjection {
     pub command_id: String,
     pub post_id: String,
+    pub comment_id: String,
     pub kind: i32,
     pub operation: PrivateReactionOperation,
     pub state: String,

@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { PostDetailOutcome } from '../../gen/proto/domain/social/post_pb';
+import { Audience_Kind, PostDetailOutcome, ReactionKind } from '../../gen/proto/domain/social/post_pb';
+
+const privateProjection = vi.hoisted(() => ({ current: null }));
 
 const detailHook = vi.hoisted(() => ({
   current: {
@@ -26,7 +28,7 @@ vi.mock('../../app/mobileI18n', () => ({
 }));
 
 vi.mock('../../features/social/useSocialExperience', () => ({
-  useSocialExperience: () => ({ facade: { feed: {} } }),
+  useSocialExperience: () => ({ facade: { feed: {} }, projection: { runtime: { privateSocial: privateProjection.current } } }),
 }));
 
 vi.mock('../../features/social/useMomentsFeed', () => ({
@@ -56,6 +58,36 @@ describe('Moment detail', () => {
     reactions: [],
     isDeleted: false,
   };
+
+  it('renders the shared private comment like control without changing counts for an unknown result', () => {
+    const comment = {
+      commentId: 'root', contentId: 'root', generation: '1', postId: 'post-1',
+      replyToCommentId: '', authorPtid: 'ptid:alice', state: 'COMMENT_POSTED',
+      text: 'private comment', mentions: [], reactionsCount: 4, repliesCount: 0,
+      reactions: [{ kind: ReactionKind.REACTION_LIKE, count: '4', reactedByViewer: false }],
+      reactionRevision: '3', reactionsHydrated: true,
+    };
+    privateProjection.current = {
+      reactionPendingTargets: [],
+      reactionCommands: [{ commandId: 'like-root', postId: 'post-1', commentId: 'root',
+        kind: ReactionKind.REACTION_LIKE, state: 'REACTION_UNKNOWN_OUTCOME', errorCode: 'REACTION_RESULT_UNKNOWN' }],
+      commentThreadsByPostId: { 'post-1': {
+        comments: [comment], initialized: true, loading: false, hasMore: false, errorMessage: null,
+      } },
+    };
+    try {
+      const markup = renderToStaticMarkup(<MomentCommentsSection postId="post-1"
+        post={{ ...feedPost, audience: { kind: Audience_Kind.FRIENDS } }}
+        intents={{}} onReact={vi.fn()} />);
+      expect(markup).toContain('data-action-id="comment.like.root"');
+      expect(markup).toContain('data-comment-like-count="4"');
+      expect(markup).toContain('data-comment-like="off"');
+      expect(markup).toContain('data-action-id="comment.like.retry.root"');
+      expect(markup).toContain('role="alert"');
+    } finally {
+      privateProjection.current = null;
+    }
+  });
 
   it('does not render a stale feed snapshot before authoritative readback', () => {
     const markup = renderToStaticMarkup(

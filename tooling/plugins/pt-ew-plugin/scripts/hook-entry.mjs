@@ -99,38 +99,9 @@ function installationRoot() {
   );
 }
 
-export async function reportHookObservation(
-  normalized,
-  executionRoot,
-  options = {},
-) {
-  if (!executionRoot) return { status: 'NOOP' };
-  try {
-    const report =
-      options.report ??
-      (await import(localDevModuleUrl('worktree-observation-store.mjs')))
-        .reportWorktreeObservation;
-    return {
-      status: 'REPORTED',
-      observation: report({
-        workspaceRoot: executionRoot,
-        host: normalized.host,
-        event: normalized.hostEvent,
-        minimumIntervalMs: 15_000,
-      }),
-    };
-  } catch (error) {
-    return {
-      status: 'UNAVAILABLE',
-      code: error.code ?? 'WORKTREE_OBSERVATION_FAILED',
-    };
-  }
-}
-
 export async function runHook({
   argv = process.argv.slice(2),
   input = process.stdin,
-  report,
 } = {}) {
   const options = parseArguments(argv);
   const payload = await readInput(input);
@@ -145,7 +116,6 @@ export async function runHook({
     ...workspace,
   });
   const result = await kernel.evaluateWorkflowEvent(normalized);
-  await reportHookObservation(normalized, result.executionRoot, { report });
   const response = adapters.renderHostResponse(options.host, result, normalized);
   return response;
 }

@@ -19,6 +19,7 @@ import (
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
+	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
@@ -542,6 +543,95 @@ func isFederatedPrivatePostType(kind actormodel.PostType) bool {
 	}
 }
 
+func (s *PrivateContentService) stagePrivateReactionProjections(
+	ctx context.Context, transaction federationdelivery.Transaction,
+	command *privatecontentpb.FederatedPrivateInteractionCommand, commentID string,
+	mutation infrastructure.FederatedPrivateReactionMutation, kind actormodel.ReactionKind, removed bool,
+) error {
+	recipients, err := s.interactionStore.ListPrivateReactionRecipients(ctx, transaction, command.GetParent(), commentID)
+	if err != nil {
+		return mapPrivateStoreError("social.private_content.reaction_recipients", err)
+	}
+	repos := infrastructure.NewRepos(transaction.DB())
+	actorPTIDs := make([]string, 0, len(recipients))
+	for _, target := range recipients {
+		actorPTIDs = append(actorPTIDs, target.ActorPTID)
+	}
+	actors, err := repos.Identity.ActorsByPTIDs(ctx, actorPTIDs)
+	if err != nil {
+		return err
+	}
+	service := NewReactionService(repos)
+	committedAt := s.now()
+	for _, target := range recipients {
+		summaries, err := service.summarizeVisible(ctx, mutation.Reactions, mutation.PostAuthorPTID, target.ActorPTID)
+		if err != nil {
+			return err
+		}
+		projection := infrastructure.FederatedPrivateReactionProjection{
+			SourceStationPeerID: s.localStationPeerID, PostID: command.GetParent().GetContentId(),
+			CommentID: commentID, ViewerPTID: target.ActorPTID, ProjectionRevision: mutation.ProjectionRevision,
+			CommandID: command.GetCommandId(), Reactions: service.toProtoSummaries(summaries), UpdatedAt: committedAt,
+		}
+		if _, err := s.interactionStore.PutFederatedPrivateReactionProjection(ctx, transaction, projection); err != nil {
+			return err
+		}
+		if target.HomeStationPeerID == s.localStationPeerID {
+			if err := s.events.StagePrivateReacted(ctx, transaction, projection.PostID, commentID,
+				command.GetActor().GetActor().GetPtid(), target.ActorPTID, kind, removed); err != nil {
+				return err
+			}
+			continue
+		}
+		if target.FederationID == "" || target.HomeStationPeerID == "" || actors[target.ActorPTID] == nil {
+			return infrastructure.ErrPrivateContentConflict
+		}
+		if err := s.federationMembership.ValidateActiveStationPair(ctx, target.FederationID, s.localStationPeerID, target.HomeStationPeerID); err != nil {
+			return mapPrivateDependencyError("social.private_content.reaction_federation", err)
+		}
+		metadata := &privatecontentpb.PrivateReactionProjection{
+			PostId: projection.PostID, CommentId: commentID, Reactions: projection.Reactions,
+			ProjectionRevision: projection.ProjectionRevision, CommandId: command.GetCommandId(),
+			ReactionActorPtid: command.GetActor().GetActor().GetPtid(), ReactionKind: kind, Removed: removed,
+		}
+		message := &privatecontentpb.FederatedPrivateResourceDelivery{
+			FormatVersion: socialdomain.PrivateContentFormatVersion, FederationId: target.FederationID,
+			DeliveryId:          privateReactionDeliveryID(command.GetParent(), metadata, target.ActorPTID),
+			SourceStationPeerId: s.localStationPeerID, TargetStationPeerId: target.HomeStationPeerID,
+			TargetActor:       touchactor.ProtoActorRef(actors[target.ActorPTID]),
+			ResourceKind:      privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION,
+			Resource:          proto.Clone(command.GetParent()).(*securecontentpb.SecureResourceRef),
+			LifecycleRevision: command.GetParent().GetGeneration(),
+			Metadata:          &privatecontentpb.FederatedPrivateResourceDelivery_Reaction{Reaction: metadata},
+			CommittedAt:       timestamppb.New(committedAt),
+		}
+		wire, err := socialdomain.CanonicalProtoBytes(message)
+		if err != nil {
+			return err
+		}
+		frame, err := s.signFederatedPrivateResourceFrame(ctx, transaction, message, wire, committedAt)
+		if err != nil {
+			return err
+		}
+		if transaction.Outbox() == nil {
+			return infrastructure.ErrPrivateContentInvalid
+		}
+		if _, err := transaction.Outbox().Enqueue(ctx, frame, committedAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func privateReactionDeliveryID(parent *securecontentpb.SecureResourceRef, projection *privatecontentpb.PrivateReactionProjection, viewerPTID string) string {
+	return deterministicPrivateID("federated-reaction", parent.GetContentId(), strconv.FormatUint(parent.GetGeneration(), 10),
+		projection.GetCommentId(), viewerPTID, projection.GetCommandId(), strconv.FormatUint(projection.GetProjectionRevision(), 10))
+}
+
+func privateReactionOrderingKey(parent *securecontentpb.SecureResourceRef, commentID, viewerPTID string) string {
+	return deterministicPrivateID("reaction-order", parent.GetContentId(), strconv.FormatUint(parent.GetGeneration(), 10), commentID, viewerPTID)
+}
+
 func federatedPrivateObjectDescriptors(
 	objects []socialdomain.PrivateObjectMaterial,
 ) []*securecontentpb.EncryptedObjectDescriptor {
@@ -614,6 +704,10 @@ func (s *PrivateContentService) signFederatedPrivateResourceFrame(
 		),
 		SigningKeyId: keyID,
 		TraceId:      federatedPrivateTraceID(ctx, identity),
+	}
+	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION {
+		frame.OrderingKey = privateReactionOrderingKey(message.GetResource(), message.GetReaction().GetCommentId(), message.GetTargetActor().GetPtid())
+		frame.OrderingSequence = int64(message.GetReaction().GetProjectionRevision())
 	}
 	signingBytes, err := federationdelivery.SigningBytes(frame)
 	if err != nil {
@@ -985,6 +1079,9 @@ func (s *PrivateContentService) ReceiveFederatedPrivateResource(
 		s.observeFederatedPrivateDelivery(startedAt, "receiver", "rejected", "domain")
 		return deliveryResultForPrivateContentError(err), nil
 	}
+	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION {
+		return s.receivePrivateReactionProjection(ctx, transaction, message)
+	}
 	canonical, err := socialdomain.CanonicalProtoBytes(message)
 	if err != nil {
 		return federationdelivery.Result{}, err
@@ -1124,6 +1221,41 @@ func (s *PrivateContentService) ReceiveFederatedPrivateResource(
 		}
 	}
 	s.observeFederatedPrivateDelivery(startedAt, "receiver", "accepted", "none")
+	return federationdelivery.AcceptedResult(), nil
+}
+
+func (s *PrivateContentService) receivePrivateReactionProjection(
+	ctx context.Context, transaction federationdelivery.Transaction, message *privatecontentpb.FederatedPrivateResourceDelivery,
+) (federationdelivery.Result, error) {
+	if err := s.interactionStore.ValidateRemotePrivateReactionProjection(ctx, transaction, message); err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentNotFound) {
+			// A summary can overtake its original encrypted parent/comment.
+			return federationdelivery.RetryableResult(federationdelivery.FrameErrorOverloaded), nil
+		}
+		if errors.Is(err, infrastructure.ErrPrivateContentStaleRevision) {
+			return federationdelivery.TerminalResult(federationdelivery.FrameErrorDomainRejected), nil
+		}
+		return federationdelivery.Result{}, err
+	}
+	metadata := message.GetReaction()
+	changed, err := s.interactionStore.PutFederatedPrivateReactionProjection(ctx, transaction, infrastructure.FederatedPrivateReactionProjection{
+		SourceStationPeerID: message.GetSourceStationPeerId(), PostID: metadata.GetPostId(), CommentID: metadata.GetCommentId(),
+		ViewerPTID: message.GetTargetActor().GetPtid(), ProjectionRevision: metadata.GetProjectionRevision(),
+		CommandID: metadata.GetCommandId(), Reactions: metadata.GetReactions(), UpdatedAt: message.GetCommittedAt().AsTime(),
+	})
+	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentConflict) || errors.Is(err, infrastructure.ErrPrivateContentInvalid) {
+			return federationdelivery.PayloadHashConflictResult(), nil
+		}
+		return federationdelivery.Result{}, err
+	}
+	if !changed {
+		return federationdelivery.DuplicateResult(), nil
+	}
+	if err := s.events.StagePrivateReacted(ctx, transaction, metadata.GetPostId(), metadata.GetCommentId(),
+		metadata.GetReactionActorPtid(), message.GetTargetActor().GetPtid(), metadata.GetReactionKind(), metadata.GetRemoved()); err != nil {
+		return federationdelivery.Result{}, err
+	}
 	return federationdelivery.AcceptedResult(), nil
 }
 
@@ -1326,6 +1458,37 @@ func (s *PrivateContentService) validateFederatedPrivateInvalidation(
 	return nil
 }
 
+func (s *PrivateContentService) validatePrivateReactionDelivery(message *privatecontentpb.FederatedPrivateResourceDelivery, frame *federationdelivery.Frame) error {
+	const operation = "social.private_content.validate_reaction_delivery"
+	metadata := message.GetReaction()
+	parent := message.GetResource()
+	target := message.GetTargetActor()
+	if s.interactionStore == nil || parent == nil || parent.GetGeneration() == 0 ||
+		parent.GetContentId() == "" || parent.GetContentId() != strings.TrimSpace(parent.GetContentId()) ||
+		parent.GetGeneration() > math.MaxInt64 ||
+		parent.GetOwnerDomain() != securecontentpb.SecureContentOwnerDomain_SECURE_CONTENT_OWNER_DOMAIN_SOCIAL ||
+		metadata == nil || metadata.GetPostId() != parent.GetContentId() || metadata.GetProjectionRevision() == 0 ||
+		len(metadata.ProtoReflect().GetUnknown()) != 0 ||
+		metadata.GetCommentId() != strings.TrimSpace(metadata.GetCommentId()) ||
+		metadata.GetProjectionRevision() > math.MaxInt64 ||
+		metadata.GetCommandId() == "" || metadata.GetCommandId() != strings.TrimSpace(metadata.GetCommandId()) ||
+		metadata.GetReactionActorPtid() == "" || metadata.GetReactionActorPtid() != strings.TrimSpace(metadata.GetReactionActorPtid()) ||
+		metadata.GetReactionKind() == actormodel.ReactionKind_REACTION_UNSPECIFIED ||
+		actormodel.ReactionKind_name[int32(metadata.GetReactionKind())] == "" ||
+		target.GetPtid() == "" || target.GetPtid() != strings.TrimSpace(target.GetPtid()) ||
+		target.GetKind() != actormodel.ActorKind_ACTOR_KIND_PERSON ||
+		message.GetLifecycleRevision() != parent.GetGeneration() ||
+		message.GetDeliveryId() != privateReactionDeliveryID(parent, metadata, target.GetPtid()) ||
+		frame.GetOrderingKey() != privateReactionOrderingKey(parent, metadata.GetCommentId(), target.GetPtid()) ||
+		frame.GetOrderingSequence() != int64(metadata.GetProjectionRevision()) ||
+		message.GetCommittedAt() == nil || message.GetCommittedAt().CheckValid() != nil ||
+		message.GetPayload() != nil || message.GetVerification() != nil ||
+		len(message.GetTargetActorEnvelopes()) != 0 || len(message.GetObjects()) != 0 || message.GetAudienceExplanation() != nil {
+		return socialdomain.NewPrivateContentError(socialdomain.PrivateContentInvalidArgument, operation, "reaction_projection", "is not a canonical viewer-scoped summary")
+	}
+	return nil
+}
+
 func privateInvalidationMetricReason(
 	reason privatecontentpb.PrivateResourceInvalidationReason,
 ) string {
@@ -1459,6 +1622,9 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			operation,
 			err,
 		)
+	}
+	if message.GetResourceKind() == privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_REACTION_PROJECTION {
+		return s.validatePrivateReactionDelivery(message, frame)
 	}
 	resource := message.GetResource()
 	post := message.GetPost()

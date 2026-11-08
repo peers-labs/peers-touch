@@ -320,6 +320,7 @@ export function MomentComposer({
   onClose,
 }: MomentComposerProps) {
   const { t } = useMobileI18n();
+  const [publicWriteRejected, setPublicWriteRejected] = useState(false);
   const lifecycle = useLifecycleKernel();
   const keyboardOverlapHeight = useVisualKeyboardOverlap();
   const composerStyle = useMemo(
@@ -768,6 +769,12 @@ export function MomentComposer({
     if (!await persistDraftNow(text, audience, successfulMediaRefs)) {
       return;
     }
+    if (isPublicSocialAudience(audience)) {
+      setPublicWriteRejected(true);
+      message.error(t('mobile.moments.publicSignedWriteRequired'));
+      return;
+    }
+    setPublicWriteRejected(false);
 
     setPublishing(true);
     if (isPublicSocialAudience(audience)) {
@@ -1019,6 +1026,11 @@ export function MomentComposer({
           <ChevronRight size={17} />
         </button>
 
+        {publicWriteRejected && audience && isPublicSocialAudience(audience) && (
+          <Text type="danger" role="alert" data-acceptance-id="social-public-write-rejected">
+            {t('mobile.moments.publicSignedWriteRequired')}
+          </Text>
+        )}
         {!audience && (
           <Text
             className="moment-composer-validation"

@@ -187,6 +187,14 @@ func TestActorIdentitySubServerLifecycleAndCanonicalRoutes(t *testing.T) {
 		},
 	}
 	handlers := subserver.Handlers()
+	expected = append([]struct {
+		name         string
+		path         string
+		method       server.Method
+		wrapperCount int
+	}{
+		{name: "actor-endpoint-manifest", path: "/actor/endpoint-manifest", method: server.POST, wrapperCount: 2},
+	}, expected...)
 	if len(handlers) != len(expected) {
 		t.Fatalf("handler count = %d, want %d", len(handlers), len(expected))
 	}

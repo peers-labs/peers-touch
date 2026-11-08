@@ -40,6 +40,9 @@ const mocks = vi.hoisted(() => ({
   markGroupRead: vi.fn(),
   ingestRealtimeMessage: vi.fn(),
   loadMutualFriends: vi.fn(),
+  reconcileRelationships: vi.fn(),
+  loadRelationshipStatus: vi.fn(),
+  loadBlockedActors: vi.fn(),
   resetRelationships: vi.fn(),
   bumpChatUnread: vi.fn(),
   clearChatUnread: vi.fn(),
@@ -88,6 +91,9 @@ vi.mock('../store/relationships', () => ({
   useRelationshipsStore: {
     getState: () => ({
       loadMutualFriends: mocks.loadMutualFriends,
+      reconcileRelationships: mocks.reconcileRelationships,
+      loadRelationshipStatus: mocks.loadRelationshipStatus,
+      loadBlockedActors: mocks.loadBlockedActors,
       reset: mocks.resetRelationships,
       mutualFriends: [],
     }),
@@ -400,12 +406,15 @@ describe('social realtime group membership side effects', () => {
     await vi.waitFor(() => {
       expect(mocks.startEventStream).toHaveBeenCalledWith(1);
     });
+    const resetsAfterInitialSession = mocks.resetRelationships.mock.calls.length;
 
     mocks.sessionEpoch = 2;
     mocks.sessionListener?.();
     await vi.waitFor(() => {
       expect(mocks.stopEventStream).toHaveBeenCalledTimes(1);
       expect(mocks.startEventStream).toHaveBeenLastCalledWith(2);
+      expect(mocks.resetRelationships).toHaveBeenCalledTimes(resetsAfterInitialSession + 1);
+      expect(mocks.loadBlockedActors).toHaveBeenCalledTimes(2);
     });
 
     eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
@@ -416,6 +425,8 @@ describe('social realtime group membership side effects', () => {
       expect(mocks.stopEventStream).toHaveBeenCalledTimes(2);
       expect(mocks.startEventStream).toHaveBeenCalledTimes(3);
       expect(mocks.startEventStream).toHaveBeenLastCalledWith(2);
+      expect(mocks.resetRelationships).toHaveBeenCalledTimes(resetsAfterInitialSession + 2);
+      expect(mocks.loadBlockedActors).toHaveBeenCalledTimes(3);
     });
   });
 

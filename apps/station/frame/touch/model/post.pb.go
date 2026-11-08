@@ -764,6 +764,9 @@ type Post struct {
 	// prefer `typed_mentions` which carries offset/length so highlighting
 	// works without re-parsing the text.
 	TypedMentions []*Mention `protobuf:"bytes,52,rep,name=typed_mentions,json=typedMentions,proto3" json:"typed_mentions,omitempty"`
+	// Discovery hint only. Clients bind it to independently verified Feed events
+	// before displaying public content or using it as a signed mutation target.
+	PublicFeedRef string `protobuf:"bytes,53,opt,name=public_feed_ref,json=publicFeedRef,proto3" json:"public_feed_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -957,6 +960,13 @@ func (x *Post) GetTypedMentions() []*Mention {
 		return x.TypedMentions
 	}
 	return nil
+}
+
+func (x *Post) GetPublicFeedRef() string {
+	if x != nil {
+		return x.PublicFeedRef
+	}
+	return ""
 }
 
 type isPost_Content interface {
@@ -5011,8 +5021,10 @@ type ReactToPostRequest struct {
 	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ActorSigningKeyId    string                 `protobuf:"bytes,4,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
 	ActorDeviceSignature []byte                 `protobuf:"bytes,5,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Optional private comment ID; post_id remains the permission anchor.
+	CommentId     string `protobuf:"bytes,6,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReactToPostRequest) Reset() {
@@ -5080,6 +5092,13 @@ func (x *ReactToPostRequest) GetActorDeviceSignature() []byte {
 	return nil
 }
 
+func (x *ReactToPostRequest) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
+}
+
 type ReactToPostResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Success bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -5089,6 +5108,7 @@ type ReactToPostResponse struct {
 	CommandId          string             `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ExactReplay        bool               `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
 	ProjectionRevision uint64             `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	CommentId          string             `protobuf:"bytes,6,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -5158,6 +5178,13 @@ func (x *ReactToPostResponse) GetProjectionRevision() uint64 {
 	return 0
 }
 
+func (x *ReactToPostResponse) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
+}
+
 type UnreactToPostRequest struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	PostId               string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
@@ -5165,6 +5192,7 @@ type UnreactToPostRequest struct {
 	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ActorSigningKeyId    string                 `protobuf:"bytes,4,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
 	ActorDeviceSignature []byte                 `protobuf:"bytes,5,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
+	CommentId            string                 `protobuf:"bytes,6,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -5234,6 +5262,13 @@ func (x *UnreactToPostRequest) GetActorDeviceSignature() []byte {
 	return nil
 }
 
+func (x *UnreactToPostRequest) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
+}
+
 type UnreactToPostResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Success            bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -5241,6 +5276,7 @@ type UnreactToPostResponse struct {
 	CommandId          string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	ExactReplay        bool                   `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
 	ProjectionRevision uint64                 `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	CommentId          string                 `protobuf:"bytes,6,opt,name=comment_id,json=commentId,proto3" json:"comment_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -5308,6 +5344,13 @@ func (x *UnreactToPostResponse) GetProjectionRevision() uint64 {
 		return x.ProjectionRevision
 	}
 	return 0
+}
+
+func (x *UnreactToPostResponse) GetCommentId() string {
+	if x != nil {
+		return x.CommentId
+	}
+	return ""
 }
 
 type ListReactionsRequest struct {
@@ -5503,7 +5546,7 @@ var File_domain_social_post_proto protoreflect.FileDescriptor
 
 const file_domain_social_post_proto_rawDesc = "" +
 	"\n" +
-	"\x18domain/social/post.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1edomain/activity/activity.proto\x1a\x1adomain/common/common.proto\"\x85\n" +
+	"\x18domain/social/post.proto\x12\x1bpeers_touch.model.social.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1edomain/activity/activity.proto\x1a\x1adomain/common/common.proto\"\xad\n" +
 	"\n" +
 	"\x04Post\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -5533,7 +5576,8 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x10reply_to_post_id\x18( \x01(\tR\rreplyToPostId\x12A\n" +
 	"\baudience\x182 \x01(\v2%.peers_touch.model.social.v1.AudienceR\baudience\x12J\n" +
 	"\treactions\x183 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12K\n" +
-	"\x0etyped_mentions\x184 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentionsB\t\n" +
+	"\x0etyped_mentions\x184 \x03(\v2$.peers_touch.model.social.v1.MentionR\rtypedMentions\x12&\n" +
+	"\x0fpublic_feed_ref\x185 \x01(\tR\rpublicFeedRefB\t\n" +
 	"\acontentJ\x04\b\x04\x10\x05R\tauthor_idR\n" +
 	"visibility\"\x99\x01\n" +
 	"\tPostStats\x12\x1f\n" +
@@ -5884,35 +5928,43 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12\x16\n" +
 	"\x06length\x18\x03 \x01(\x05R\x06length\x12\x18\n" +
-	"\adisplay\x18\x04 \x01(\tR\adisplay\"\xf2\x01\n" +
+	"\adisplay\x18\x04 \x01(\tR\adisplay\"\x91\x02\n" +
 	"\x12ReactToPostRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x03 \x01(\tR\tcommandId\x12/\n" +
 	"\x14actor_signing_key_id\x18\x04 \x01(\tR\x11actorSigningKeyId\x124\n" +
-	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\"\xee\x01\n" +
+	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x06 \x01(\tR\tcommentId\"\x8d\x02\n" +
 	"\x13ReactToPostResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12J\n" +
 	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x03 \x01(\tR\tcommandId\x12!\n" +
 	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay\x12/\n" +
-	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\"\xf4\x01\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x06 \x01(\tR\tcommentId\"\x93\x02\n" +
 	"\x14UnreactToPostRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x03 \x01(\tR\tcommandId\x12/\n" +
 	"\x14actor_signing_key_id\x18\x04 \x01(\tR\x11actorSigningKeyId\x124\n" +
-	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\"\xf0\x01\n" +
+	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x06 \x01(\tR\tcommentId\"\x8f\x02\n" +
 	"\x15UnreactToPostResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12J\n" +
 	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x03 \x01(\tR\tcommandId\x12!\n" +
 	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay\x12/\n" +
-	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\"\x9c\x01\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\x12\x1d\n" +
+	"\n" +
+	"comment_id\x18\x06 \x01(\tR\tcommentId\"\x9c\x01\n" +
 	"\x14ListReactionsRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x16\n" +

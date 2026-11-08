@@ -8,7 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::application::station_runtime::client::StationClient;
 use crate::infrastructure::station_registry::StationRegistry;
-use crate::model::actor::{ActorDeviceRef, ActorSigningKeyVerificationSource};
+use crate::model::actor::{ActorDeviceRef, ActorSigningKeyVerificationSource,
+    ActorEndpointManifest, ActorEndpointManifestSigningInput};
 use crate::model::federation::ActorProfileEnvelope;
 use crate::secure_content::SecureContentSession;
 
@@ -20,6 +21,56 @@ const FEDERATION_KEY_ID_LENGTH: usize = 26;
 pub struct TrustedStationSigningKey {
     pub key_id: String,
     pub verifying_key: VerifyingKey,
+}
+
+/// Verify the original Identity-owner manifest against an independently
+/// pinned Home Station key. This is the bootstrap for a retained Actor root;
+/// subsequent root changes must be rejected by the consuming local store.
+pub fn verify_actor_identity_manifest(manifest: &ActorEndpointManifest,
+    trusted: &TrustedStationSigningKey, actor: &str, now_ms: i64) -> Result<Vec<u8>, String> {
+    let invalid = || "ACTOR_IDENTITY_INVALID_PROOF".to_string();
+    let owner = manifest.actor.as_ref().ok_or_else(invalid)?;
+    let timestamp_ms = |time: &prost_types::Timestamp| -> Result<i64, String> {
+        if time.nanos < 0 || time.nanos >= 1_000_000_000 { return Err(invalid()); }
+        time.seconds.checked_mul(1000).and_then(|s| s.checked_add(i64::from(time.nanos / 1_000_000)))
+            .ok_or_else(invalid)
+    };
+    let issued = timestamp_ms(manifest.issued_at.as_ref().ok_or_else(invalid)?)?;
+    let expires = timestamp_ms(manifest.expires_at.as_ref().ok_or_else(invalid)?)?;
+    if manifest.encoded_len() > station_trust::MAX_SIGNED_CONTROL_BYTES ||
+        manifest.active_endpoints.len() > 256 ||
+        manifest.format_version != 1 || manifest.manifest_id.trim().is_empty() ||
+        actor.is_empty() || owner.ptid != actor || manifest.home_station_peer_id.trim().is_empty() ||
+        manifest.directory_version == 0 || manifest.actor_profile_version == 0 ||
+        manifest.actor_identity_public_key.len() != 32 || manifest.signing_key_id != trusted.key_id ||
+        expires <= issued || expires.saturating_sub(issued) > 3_600_000 ||
+        expires <= now_ms || issued > now_ms.saturating_add(60_000) || manifest.active_endpoints.is_empty() {
+        return Err(invalid());
+    }
+    let mut previous = "";
+    for entry in &manifest.active_endpoints {
+        let endpoint = entry.endpoint.as_ref().ok_or_else(invalid)?;
+        if endpoint.actor.as_ref() != Some(owner) || endpoint.device_id.trim().is_empty() ||
+            endpoint.device_id.trim() != endpoint.device_id || entry.signing_key_id.trim().is_empty() ||
+            entry.public_material_sha256.is_empty() || (!previous.is_empty() && previous >= endpoint.device_id.as_str()) ||
+            entry.public_material_sha256.iter().any(|h| h.len() != 32) ||
+            entry.public_material_sha256.windows(2).any(|p| p[0] >= p[1]) {
+            return Err(invalid());
+        }
+        previous = &endpoint.device_id;
+    }
+    let input = ActorEndpointManifestSigningInput{
+        format_version: manifest.format_version, manifest_id: manifest.manifest_id.clone(),
+        actor: manifest.actor.clone(), home_station_peer_id: manifest.home_station_peer_id.clone(),
+        directory_version: manifest.directory_version, active_endpoints: manifest.active_endpoints.clone(),
+        issued_at: manifest.issued_at, expires_at: manifest.expires_at,
+        signing_key_id: manifest.signing_key_id.clone(),
+        actor_identity_public_key: manifest.actor_identity_public_key.clone(),
+        actor_profile_version: manifest.actor_profile_version,
+    };
+    let signature = Signature::from_slice(&manifest.station_signature).map_err(|_| invalid())?;
+    trusted.verifying_key.verify(&input.encode_to_vec(), &signature).map_err(|_| invalid())?;
+    Ok(manifest.actor_identity_public_key.clone())
 }
 
 pub fn current_session_sender_signing_key(
@@ -125,6 +176,14 @@ pub fn resolve_station_signing_key(
     token: &str,
     device_id: &str,
 ) -> Result<TrustedStationSigningKey, String> {
+    resolve_station_signing_key_for_actor(station_client, registry, station_peer_id,
+        actor_handle, token, device_id, None)
+}
+
+pub fn resolve_station_signing_key_for_actor(
+    station_client: &StationClient, registry: &StationRegistry, station_peer_id: &str,
+    actor_handle: &str, token: &str, device_id: &str, expected_actor: Option<&str>,
+) -> Result<TrustedStationSigningKey, String> {
     require_authenticated_station_transport(station_client)?;
     if let Some(pin) = registry
         .federation_signing_key_pin(station_peer_id)
@@ -154,6 +213,12 @@ pub fn resolve_station_signing_key(
         .map_err(|error| format!("load Station Federation profile: {error}"))?;
     let trusted =
         verify_profile_envelope(&envelope, actor_handle, station_peer_id, current_unix_ms())?;
+    if let Some(actor) = expected_actor {
+        if envelope.profile.as_ref().and_then(|p| p.peers_touch.as_ref())
+            .map(|p| p.network_id.as_str()) != Some(actor) {
+            return Err("ACTOR_IDENTITY_INVALID_PROOF".into());
+        }
+    }
     registry
         .pin_or_verify_federation_signing_key(
             station_peer_id,

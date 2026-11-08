@@ -19,7 +19,9 @@ import { api } from '../../services/desktop_api';
 import {
   socialBlockActor,
   socialFollow,
+  socialUnfollow,
   socialGetRelationshipStatus,
+  socialGetRelationship,
   socialUnblockActor,
   type MomentDraft,
 } from '../../services/social_api';
@@ -1206,6 +1208,22 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async unfollowActor(input: { actorPtid: string }) {
+      const actorPtid = input?.actorPtid?.trim();
+      if (!actorPtid) throw new Error('moments.acceptance.actorIdentityMissing');
+      const response = await socialUnfollow(actorPtid);
+      const current = await socialGetRelationship(actorPtid);
+      if (!response.success || current.relationship?.following !== false) {
+        throw new Error('moments.acceptance.unfollowProjectionMismatch');
+      }
+      return { following: false, actorPtidSha256: await sha256(actorPtid) };
+    },
+
+    async publicFeedStatus() {
+      const status = await invoke<{ pending?: unknown[] }>('social_public_feed_status');
+      return { pendingCount: status.pending?.length ?? 0 };
+    },
+
     async createAudienceCircle(input: { name: string }) {
       if (!input.name?.trim()) {
         throw new Error('moments.acceptance.circleNameMissing');
@@ -1574,6 +1592,63 @@ export function installAcceptanceHarness(): void {
         hasMore: thread.hasMore,
         loaded: thread.loaded,
         state: thread.state,
+      };
+    },
+
+    async replayPrivateCommentLike(input: { postId: string; commentId: string }) {
+      if (!input.postId?.trim() || !input.commentId?.trim()) {
+        throw new Error('moments.acceptance.privateCommentInvalid');
+      }
+      const scope = usePrivateMomentsStore.getState().scope;
+      if (!scope.actorPtid) throw new Error('moments.acceptance.sessionIdentityMissing');
+      const snapshot = await privateMomentsNative.bootstrap({
+        actorPtid: scope.actorPtid,
+        rendererGeneration: scope.rendererGeneration,
+      });
+      const command = snapshot.reactionCommands.find(candidate =>
+        candidate.postId === input.postId && candidate.commentId === input.commentId
+        && candidate.kind === ReactionKind.REACTION_LIKE);
+      if (!command || command.state !== 'REACTION_COMMITTED') {
+        throw new Error('moments.acceptance.committedReactionMissing');
+      }
+      const replays = [];
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (usePrivateMomentsStore.getState().scope !== scope) {
+          throw new Error('moments.acceptance.sessionReplaced');
+        }
+        const result = await privateMomentsNative.retryReaction({
+          actorPtid: scope.actorPtid,
+          rendererGeneration: scope.rendererGeneration,
+          commandId: command.commandId,
+        });
+        if (usePrivateMomentsStore.getState().scope !== scope
+          || result.command.commandId !== command.commandId
+          || result.command.postId !== input.postId
+          || result.command.commentId !== input.commentId
+          || result.command.kind !== command.kind
+          || result.command.operation !== command.operation
+          || result.command.state !== 'REACTION_COMMITTED'
+          || result.command.attemptCount !== command.attemptCount) {
+          throw new Error('moments.acceptance.reactionReplayMismatch');
+        }
+        const like = result.reactions.find(summary => summary.kind === ReactionKind.REACTION_LIKE);
+        replays.push({
+          count: Number(like?.count ?? 0n),
+          liked: like?.reactedByViewer ?? false,
+          projectionRevision: result.projectionRevision,
+        });
+      }
+      if (JSON.stringify(replays[0]) !== JSON.stringify(replays[1])) {
+        throw new Error('moments.acceptance.reactionReplayMismatch');
+      }
+      return {
+        commandIdSha256: await sha256(command.commandId),
+        commentIdSha256: await sha256(input.commentId),
+        state: command.state,
+        operation: command.operation,
+        attemptCount: command.attemptCount,
+        nativeRetryCount: replays.length,
+        replays,
       };
     },
 

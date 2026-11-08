@@ -41,6 +41,9 @@ function contextHeader(root) {
     'workflow=docs/global/workflow.md',
     'knowledge=docs/knowledge/README.md',
     'skills=tooling/skills',
+    'For project work or resume, load tooling/skills/pt-god-view/SKILL.md and dispatch to its owning skill.',
+    'Non-trivial development continues through tooling/skills/pt-dev-workflow/SKILL.md: verify current scope, implement accepted contracts, run an exact-source functional Journey, then the selected formal closure.',
+    'Before editing, load tooling/skills/pt-read-before-edit/SKILL.md and the knowledge governing the target paths.',
     'Hook context is advisory; operation permissions remain at concrete runtime and delivery entrypoints.',
   ].join('\n');
 }

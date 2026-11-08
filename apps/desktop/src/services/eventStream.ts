@@ -502,6 +502,7 @@ function dispatchMomentEvent(
     case MomentEvent_Kind.REACTED:
       eventBus.publish(EVENT.MOMENT_REACTED, {
         ...base,
+        commentId: event.commentId || undefined,
         reactionActorPtid: event.actorPtid || undefined,
         kind: event.reactionKind || undefined,
         removed: Boolean(event.removed),

@@ -23,7 +23,6 @@
 import { create, toBinary } from '@bufbuild/protobuf';
 import {
   CreatePostRequestSchema,
-  CreatePostResponseSchema,
   CreateTextPostRequestSchema,
   CreateImagePostRequestSchema,
   CreateVideoPostRequestSchema,
@@ -51,7 +50,6 @@ import {
   PostAuthorSchema,
   StationModerationPolicy_Kind,
   type CreatePostRequest,
-  type CreatePostResponse,
   type DeletePostResponse,
   type ListPostsResponse,
   type GetTimelineResponse,
@@ -67,11 +65,7 @@ import {
 } from '../gen/proto/domain/social/post_pb';
 import {
   CommentSchema,
-  CreateCommentResponseSchema,
-  DeleteCommentResponseSchema,
   type Comment,
-  type CreateCommentResponse,
-  type DeleteCommentResponse,
 } from '../gen/proto/domain/social/comment_pb';
 import {
   GetMomentResourceResponseSchema,
@@ -104,6 +98,7 @@ import {
   UnblockSocialActorResponseSchema,
   GetRelationshipResponseSchema,
   GetSocialRelationshipStatusResponseSchema,
+  ListBlockedActorsResponseSchema,
   GetFollowersResponseSchema,
   GetFollowingResponseSchema,
   type BlockSocialActorResponse,
@@ -112,11 +107,22 @@ import {
   type UnblockSocialActorResponse,
   type GetRelationshipResponse,
   type GetSocialRelationshipStatusResponse,
+  type ListBlockedActorsResponse,
   type GetFollowersResponse,
   type GetFollowingResponse,
 } from '../gen/proto/domain/social/relationship_pb';
 import { EVENT, eventBus } from '../kernel/events';
 import { invokeRustProto } from './desktop_api';
+import {
+  FeedEventKind, FeedPayloadSchema, FeedPostMutationSchema,
+  FeedReactionMutationSchema, FeedCommentMutationSchema,
+} from '../gen/proto/domain/social/feed_log_pb';
+import { CreateCommentRequestSchema } from '../gen/proto/domain/social/comment_pb';
+import {
+  submitPublicFeed, publicOperationObjectId, publicPostRef, publicCommentRef, publicCommentTarget,
+  verifyPublicPosts, verifyPublicComments, committedPublicPost, committedPublicComment,
+  verifiedPublicReactions, verifiedPublicCommentLike, publicTextUpdatePayload,
+} from './publicFeedNative';
 import type { PrivateMomentLocalFileIntent } from './privateMomentsNative';
 
 // ---------------------------------------------------------------------------
@@ -347,33 +353,55 @@ export function buildCreatePostRequest(draft: MomentDraft): CreatePostRequest {
 
 export async function socialCreateMoment(draft: MomentDraft): Promise<Post | undefined> {
   const req = buildCreatePostRequest(draft);
-  const payload = toBinary(CreatePostRequestSchema, req);
-  const resp = await invokeRustProto<{ payload: number[] }, CreatePostResponse>(
-    'social_create_moment',
-    CreatePostResponseSchema,
-    { payload: Array.from(payload) },
-  );
-  return resp.post;
+  if (req.content.case === 'repost') req.content.value.originalPostId = publicPostRef(req.content.value.originalPostId);
+  const operationId = draft.draftId ? `${draft.draftId}:${draft.draftRevision ?? 0}` : undefined;
+  const id = await publicOperationObjectId(operationId);
+  const payload = await submitPublicFeed(FeedEventKind.POST_CREATED, create(FeedPayloadSchema, {
+    mutation: { case: 'post', value: create(FeedPostMutationSchema, {
+      postId: id, createRequest: toBinary(CreatePostRequestSchema, req),
+    }) },
+  }), operationId);
+  if (payload.mutation.case !== 'post') throw new Error('FEED_INVALID_RESPONSE');
+  return committedPublicPost(payload.mutation.value.postId);
 }
 
 export async function socialGetMoment(id: string): Promise<Post | undefined> {
-  const resp = await invokeRustProto<{ id: string }, GetMomentResourceResponse>(
-    'social_get_moment',
-    GetMomentResourceResponseSchema,
-    { id },
-  );
+  const resp = await socialGetMomentResponse(id);
   return resp.post;
 }
 
 export async function socialGetMomentResponse(id: string): Promise<GetMomentResourceResponse> {
-  return invokeRustProto<{ id: string }, GetMomentResourceResponse>(
+  const response = await invokeRustProto<{ id: string }, GetMomentResourceResponse>(
     'social_get_moment',
     GetMomentResourceResponseSchema,
     { id },
   );
+  if (response.post?.audience?.kind === Audience_Kind.PUBLIC) {
+    [response.post] = await verifyPublicPosts([response.post]);
+  }
+  return response;
 }
 
 export async function socialDeleteMoment(id: string): Promise<boolean> {
+  const ref = publicPostRef(id);
+  const postId = ref.substring(ref.lastIndexOf('/') + 1);
+  await submitPublicFeed(FeedEventKind.POST_TOMBSTONED, create(FeedPayloadSchema, {
+    mutation: { case: 'post', value: create(FeedPostMutationSchema, { postId }) },
+  }));
+  return true;
+}
+
+export async function socialUpdateMomentText(id: string, text: string, operationId: string): Promise<Post> {
+  const payload = await submitPublicFeed(
+    FeedEventKind.POST_UPDATED, publicTextUpdatePayload(id, text), operationId,
+  );
+  if (payload.mutation.case !== 'post') throw new Error('FEED_INVALID_RESPONSE');
+  const committed = committedPublicPost(payload.mutation.value.postId);
+  // Keep the receiving Station's local projection ID at the view boundary.
+  return { ...committed, id };
+}
+
+export async function socialDeletePrivateMoment(id: string): Promise<boolean> {
   const resp = await invokeRustProto<{ id: string }, DeletePostResponse>(
     'social_delete_moment',
     DeletePostResponseSchema,
@@ -411,7 +439,7 @@ export async function socialGetTimeline(
   // path is a touch faster (no enum lookup). The wire string MUST
   // match the proto enum name exactly.
   const sortWire = sort === 'hot' ? 'TIMELINE_SORT_HOT' : undefined;
-  return invokeRustProto<
+  const response = await invokeRustProto<
     { type: TimelineKindWire; cursor?: string; limit?: number; sort?: string },
     GetTimelineResponse
   >('social_get_timeline', GetTimelineResponseSchema, {
@@ -420,6 +448,8 @@ export async function socialGetTimeline(
     limit,
     sort: sortWire,
   });
+  response.posts = await verifyPublicPosts(response.posts);
+  return response;
 }
 
 export async function socialSyncMomentsProjection(options?: {
@@ -429,7 +459,7 @@ export async function socialSyncMomentsProjection(options?: {
   publicSort?: TimelineSort;
   reason?: string;
 }): Promise<SyncMomentsProjectionResponse> {
-  return invokeRustProto<
+  const response = await invokeRustProto<
     {
       home_cursor?: string;
       public_cursor?: string;
@@ -445,6 +475,9 @@ export async function socialSyncMomentsProjection(options?: {
     public_sort: options?.publicSort === 'hot' ? 1 : 0,
     reason: options?.reason,
   });
+  if (response.homeTimeline) response.homeTimeline.posts = await verifyPublicPosts(response.homeTimeline.posts);
+  if (response.publicTimeline) response.publicTimeline.posts = await verifyPublicPosts(response.publicTimeline.posts);
+  return response;
 }
 
 export async function socialListByAuthor(
@@ -452,7 +485,7 @@ export async function socialListByAuthor(
   cursor?: string,
   limit?: number,
 ): Promise<ListPostsResponse> {
-  return invokeRustProto<
+  const response = await invokeRustProto<
     { author_ptid: string; cursor?: string; limit?: number },
     ListPostsResponse
   >('social_list_by_author', ListPostsResponseSchema, {
@@ -460,6 +493,8 @@ export async function socialListByAuthor(
     cursor,
     limit,
   });
+  response.posts = await verifyPublicPosts(response.posts);
+  return response;
 }
 
 // ---------------------------------------------------------------------------
@@ -470,26 +505,34 @@ export async function socialReact(
   postId: string,
   kind: ReactionKind,
 ): Promise<ReactToPostResponse> {
-  return invokeRustProto<
-    { post_id: string; kind: number },
-    ReactToPostResponse
-  >('social_react', ReactToPostResponseSchema, {
-    post_id: postId,
-    kind,
-  });
+  await submitPublicFeed(FeedEventKind.REACTION_SET, create(FeedPayloadSchema, {
+    mutation: { case: 'reaction', value: create(FeedReactionMutationSchema, { targetPostRef: publicPostRef(postId), reactionKind: kind }) },
+  }));
+  return create(ReactToPostResponseSchema, { reactions: verifiedPublicReactions(postId) });
 }
 
 export async function socialUnreact(
   postId: string,
   kind: ReactionKind = ReactionKind.REACTION_UNSPECIFIED,
 ): Promise<UnreactToPostResponse> {
-  return invokeRustProto<
-    { post_id: string; kind: number },
-    UnreactToPostResponse
-  >('social_unreact', UnreactToPostResponseSchema, {
-    post_id: postId,
-    kind,
-  });
+  const kinds = kind === ReactionKind.REACTION_UNSPECIFIED
+    ? verifiedPublicReactions(postId).filter(r => r.reactedByViewer).map(r => r.kind)
+    : [kind];
+  for (const reactionKind of kinds) await submitPublicFeed(FeedEventKind.REACTION_REMOVED, create(FeedPayloadSchema, {
+    mutation: { case: 'reaction', value: create(FeedReactionMutationSchema, { targetPostRef: publicPostRef(postId), reactionKind }) },
+  }));
+  return create(UnreactToPostResponseSchema, { reactions: verifiedPublicReactions(postId) });
+}
+
+export async function socialSetCommentLike(postId: string, commentId: string, liked: boolean, operationId?: string):
+  Promise<Pick<Comment, 'likesCount' | 'isLiked'>> {
+  const parent = publicPostRef(postId);
+  if (publicCommentTarget(commentId) !== parent) throw new Error('FEED_INVALID');
+  await submitPublicFeed(liked ? FeedEventKind.REACTION_SET : FeedEventKind.REACTION_REMOVED,
+    create(FeedPayloadSchema, { mutation: { case: 'reaction', value: create(FeedReactionMutationSchema, {
+      targetPostRef: parent, targetCommentRef: publicCommentRef(commentId), reactionKind: ReactionKind.REACTION_LIKE,
+    }) } }), operationId);
+  return verifiedPublicCommentLike(commentId);
 }
 
 // ---------------------------------------------------------------------------
@@ -505,7 +548,7 @@ export async function socialGetComments(
   const boundedLimit = Number.isInteger(limit) && Number(limit) > 0
     ? Math.min(Number(limit), 100)
     : 20;
-  return invokeRustProto<
+  const response = await invokeRustProto<
     {
       post_id: ListMomentCommentsRequest['postId'];
       cursor?: ListMomentCommentsRequest['cursor'];
@@ -519,6 +562,20 @@ export async function socialGetComments(
     limit: boundedLimit,
     anchor_comment_id: anchorCommentId,
   });
+  const verified = await verifyPublicComments(postId, response.comments.map(publicCommentFromResource));
+  for (let index = 0; index < verified.length; index++) {
+    const metadata = response.comments[index].metadata;
+    if (metadata) {
+      metadata.reactionsCount = verified[index].likesCount;
+      metadata.isLiked = verified[index].isLiked;
+    }
+    const content = response.comments[index].body;
+    if (content.case === 'publicContent') {
+      content.value.text = verified[index].content;
+      content.value.mentions = verified[index].typedMentions;
+    }
+  }
+  return response;
 }
 
 export function publicCommentFromResource(resource: CommentResource): Comment {
@@ -545,9 +602,12 @@ export function publicCommentFromResource(resource: CommentResource): Comment {
       displayName: author.acct,
     }),
     likesCount: metadata.reactionsCount,
+    isLiked: metadata.isLiked,
     replyToCommentId: metadata.replyToCommentId,
     repliesCount: metadata.repliesCount,
     typedMentions: resource.body.value.mentions ?? [],
+    publicFeedRef: metadata.publicFeedRef,
+    replyToPublicFeedRef: metadata.replyToPublicFeedRef,
   });
 }
 
@@ -565,41 +625,38 @@ export async function socialCreateComment(
   content: string,
   replyToCommentId?: string,
   mentions?: StructuralMention[],
+  operationId?: string,
 ): Promise<Comment | undefined> {
-  const resp = await invokeRustProto<
-    {
-      post_id: string;
-      content: string;
-      reply_to_comment_id?: string;
-      typed_mentions?: Array<{
-        actor_ptid: string;
-        offset: number;
-        length: number;
-        display: string;
-      }>;
-    },
-    CreateCommentResponse
-  >('social_create_comment', CreateCommentResponseSchema, {
-    post_id: postId,
-    content,
-    reply_to_comment_id: replyToCommentId,
-    typed_mentions: (mentions ?? []).map((mention) => ({
-      actor_ptid: mention.actorPtid,
+  const request = create(CreateCommentRequestSchema, {
+    postId: publicPostRef(postId), content,
+    replyToCommentId: replyToCommentId ? publicCommentRef(replyToCommentId) : '',
+    typedMentions: (mentions ?? []).map((mention) => ({
+      actorPtid: mention.actorPtid,
       offset: mention.offset,
       length: mention.length,
       display: mention.display,
     })),
   });
-  return resp.comment;
+  const payload = await submitPublicFeed(FeedEventKind.COMMENT_CREATED, create(FeedPayloadSchema, {
+    mutation: { case: 'comment', value: create(FeedCommentMutationSchema, {
+      commentId: await publicOperationObjectId(operationId), targetPostRef: request.postId,
+      createRequest: toBinary(CreateCommentRequestSchema, request),
+    }) },
+  }), operationId);
+  if (payload.mutation.case !== 'comment') throw new Error('FEED_INVALID_RESPONSE');
+  const commentId = payload.mutation.value.commentId;
+  return committedPublicComment(postId, commentId, replyToCommentId);
 }
 
 export async function socialDeleteComment(commentId: string): Promise<boolean> {
-  const resp = await invokeRustProto<{ comment_id: string }, DeleteCommentResponse>(
-    'social_delete_comment',
-    DeleteCommentResponseSchema,
-    { comment_id: commentId },
-  );
-  return resp.success;
+  const ref = publicCommentRef(commentId);
+  await submitPublicFeed(FeedEventKind.COMMENT_TOMBSTONED, create(FeedPayloadSchema, {
+    mutation: { case: 'comment', value: create(FeedCommentMutationSchema, {
+      commentId: ref.substring(ref.lastIndexOf('/') + 1),
+      targetPostRef: publicCommentTarget(commentId),
+    }) },
+  }));
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -665,7 +722,18 @@ export async function socialGetRelationship(
 export interface SocialRelationshipMutationInput {
   targetActorPtid: string;
   targetHomeStationPeerId: string;
-  observedRevision: number;
+  observedRevision: number | bigint;
+}
+
+function relationshipRevision(input: number | bigint): string {
+  if (typeof input === 'number' && (!Number.isSafeInteger(input) || input < 0)) {
+    throw new Error('SOCIAL_RELATIONSHIP_REVISION_INVALID');
+  }
+  const value = BigInt(input);
+  if (value < 0n || value > 9_223_372_036_854_775_807n) {
+    throw new Error('SOCIAL_RELATIONSHIP_REVISION_INVALID');
+  }
+  return value.toString();
 }
 
 export async function socialGetRelationshipStatus(
@@ -686,14 +754,20 @@ export async function socialBlockActor(
     {
       target_actor_ptid: string;
       target_home_station_peer_id: string;
-      observed_revision: number;
+      observed_revision: string;
     },
     BlockSocialActorResponse
   >('social_block_actor', BlockSocialActorResponseSchema, {
     target_actor_ptid: input.targetActorPtid,
     target_home_station_peer_id: input.targetHomeStationPeerId,
-    observed_revision: input.observedRevision,
+    observed_revision: relationshipRevision(input.observedRevision),
   });
+}
+
+export function socialListBlockedActors(cursor?: string, limit = 100): Promise<ListBlockedActorsResponse> {
+  return invokeRustProto<{ cursor?: string; limit: number }, ListBlockedActorsResponse>(
+    'social_list_blocked_actors', ListBlockedActorsResponseSchema, { cursor, limit },
+  );
 }
 
 export async function socialUnblockActor(
@@ -703,13 +777,13 @@ export async function socialUnblockActor(
     {
       target_actor_ptid: string;
       target_home_station_peer_id: string;
-      observed_revision: number;
+      observed_revision: string;
     },
     UnblockSocialActorResponse
   >('social_unblock_actor', UnblockSocialActorResponseSchema, {
     target_actor_ptid: input.targetActorPtid,
     target_home_station_peer_id: input.targetHomeStationPeerId,
-    observed_revision: input.observedRevision,
+    observed_revision: relationshipRevision(input.observedRevision),
   });
 }
 
@@ -839,11 +913,11 @@ export async function socialCircleDelete(circleId: string): Promise<DeleteCircle
   );
 }
 
-export async function socialCircleListMine(): Promise<ListMyCirclesResponse> {
-  return invokeRustProto<undefined, ListMyCirclesResponse>(
+export async function socialCircleListMine(cursor?: string, limit = 20): Promise<ListMyCirclesResponse> {
+  return invokeRustProto<{ cursor?: string; limit: number }, ListMyCirclesResponse>(
     'social_circle_list_mine',
     ListMyCirclesResponseSchema,
-    undefined,
+    { cursor, limit },
   );
 }
 
@@ -892,10 +966,12 @@ export async function socialGetMyStats(): Promise<GetMyMomentsStatsResponse> {
 
 export async function socialCircleListMembers(
   circleId: string,
+  cursor?: string,
+  limit = 20,
 ): Promise<ListCircleMembersResponse> {
-  return invokeRustProto<{ circle_id: string }, ListCircleMembersResponse>(
+  return invokeRustProto<{ circle_id: string; cursor?: string; limit: number }, ListCircleMembersResponse>(
     'social_circle_list_members',
     ListCircleMembersResponseSchema,
-    { circle_id: circleId },
+    { circle_id: circleId, cursor, limit },
   );
 }

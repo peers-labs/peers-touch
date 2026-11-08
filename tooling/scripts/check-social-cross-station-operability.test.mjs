@@ -123,7 +123,7 @@ function fixture(overrides = {}) {
     desktopMomentStoreText:
       "projection.state === 'REMOTE_SOURCE_UNAVAILABLE'",
     desktopMomentCardText:
-      '<SocialPrivateState state={deliveryNotice} compact />',
+      'const deliveryNotice = privateDeliveryNoticeState(projection?.remoteDeliveryState); <SocialPrivateState state={deliveryNotice} compact />',
     metricTexts: [[...ALLOWED_METRIC_NAMES].map((name) => {
       if (name === 'social_cross_station_object_stream_latency_seconds') {
         return `metrics.Get().Histogram("${name}", "Latency histogram", []float64{1}, "stage", "outcome")`;
@@ -357,4 +357,20 @@ test('rejects privacy-bearing logs and debug endpoints', () => {
     }),
     /hard-coded private telemetry endpoint/,
   );
+});
+
+test('delivery rendering follows its projection binding across local renames', () => {
+  const values = fixture();
+  assert.doesNotThrow(() => validateSocialCrossStationOperability({
+    ...values,
+    desktopMomentCardText: 'const delivery = privateDeliveryNoticeState(projection?.remoteDeliveryState);\n<SocialPrivateState\n state={delivery} compact />',
+  }));
+  assert.throws(() => validateSocialCrossStationOperability({
+    ...values,
+    desktopMomentCardText: 'const delivery = privateDeliveryNoticeState(projection?.remoteDeliveryState);\n<SocialPrivateState state={unrelatedState} compact />',
+  }), /remote delivery status rendering is missing/);
+  assert.throws(() => validateSocialCrossStationOperability({
+    ...values,
+    desktopMomentCardText: 'const delivery = unrelatedState;\n<SocialPrivateState state={delivery} compact />',
+  }), /remote delivery status rendering is missing/);
 });

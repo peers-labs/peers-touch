@@ -17,7 +17,7 @@ import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import { createMomentsFeedStore } from '../features/social/momentsFeedStore';
 import { createMomentsGateway } from '../services/gateways/momentsGateway';
-import { PostDetailOutcome, TimelinePageOutcome } from '../gen/proto/domain/social/post_pb';
+import { PostDetailOutcome, ReactionKind, TimelinePageOutcome } from '../gen/proto/domain/social/post_pb';
 
 const commandMocks = vi.hoisted(() => ({
   activate: vi.fn(),
@@ -77,6 +77,8 @@ import {
   recoverPrivateMoment,
   reconcilePrivateMoments,
   setPrivateMomentReaction,
+  retryPrivateMomentReaction,
+  subscribePrivateMomentsRuntime,
   submitPrivateComment,
   trackPublicMomentPublish,
 } from './privateMomentsRuntime';
@@ -485,6 +487,7 @@ describe('privateMomentsRuntime projection', () => {
       reactionCommands: [{
         commandId: 'reaction-1',
         postId: 'post-a',
+        commentId: '',
         kind: 2,
         operation: 'REACT',
         state: 'REACTION_UNKNOWN_OUTCOME',
@@ -745,6 +748,7 @@ describe('privateMomentsRuntime projection', () => {
       command: {
         commandId: 'reaction-1',
         postId: 'post-a',
+        commentId: '',
         kind: 2,
         operation: 'REACT',
         state: 'REACTION_UNKNOWN_OUTCOME',
@@ -777,6 +781,7 @@ describe('privateMomentsRuntime projection', () => {
       lifecycleGeneration: 1,
       activationGeneration: 7,
       postId: 'post-a',
+      commentId: '',
       kind: 2,
     });
     expect(result.command.state).toBe('REACTION_UNKNOWN_OUTCOME');
@@ -787,6 +792,274 @@ describe('privateMomentsRuntime projection', () => {
         state: 'REACTION_UNKNOWN_OUTCOME',
       }),
     ]);
+  });
+
+  async function activateCommentReactions() {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    commandMocks.readMoment.mockResolvedValue(readProjection('post-a', '1', 'CONTENT_READY'));
+    commandMocks.comments.mockResolvedValue({
+      postId: 'post-a', nextCursor: '', hasMore: false,
+      comments: ['root', 'reply'].map((id) => ({
+        commentId: id, contentId: id, postId: 'post-a', generation: '1',
+        replyToCommentId: id === 'reply' ? 'root' : '', authorPtid: 'ptid:bob',
+        state: 'COMMENT_POSTED', text: id, mentions: [], reactionsCount: 0, repliesCount: 0,
+        reactions: [], reactionRevision: '1', reactionsHydrated: true,
+      })),
+    });
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: { state: 'ACCESS_DECISION_STATE_GRANTED', attemptId: 'attempt-1', gates: [] },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    await readPrivateMoment('post-a');
+    await readPrivateComments('post-a');
+  }
+
+  function commentReactionResult(commentId: string, state = 'REACTION_COMMITTED', revision = '2') {
+    return {
+      command: { commandId: `reaction-${commentId}`, postId: 'post-a', commentId,
+        kind: ReactionKind.REACTION_LIKE, operation: 'REACT', state, attemptCount: 1, projectionRevision: revision },
+      reactions: [{ kind: ReactionKind.REACTION_LIKE, count: '1', reactedByViewer: true }],
+      projectionRevision: revision, exactReplay: false,
+    };
+  }
+
+  it('shares completion for the same comment and rejects the opposite pending action', async () => {
+    await activateCommentReactions();
+    let complete!: (result: ReturnType<typeof commentReactionResult>) => void;
+    commandMocks.react.mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+    const first = setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'root');
+    const second = setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'root');
+    await expect(setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, false, 'root'))
+      .rejects.toThrow('reactionPending');
+    expect(commandMocks.react).toHaveBeenCalledOnce();
+    expect(readPrivateMomentsSnapshot().comments[0].reactionsCount).toBe(0);
+    complete(commentReactionResult('root'));
+    await Promise.all([first, second]);
+    const state = readPrivateMomentsSnapshot();
+    expect(state.comments.find((comment) => comment.commentId === 'root')?.reactionsCount).toBe(1);
+    expect(state.comments.find((comment) => comment.commentId === 'reply')?.reactionsCount).toBe(0);
+    expect(state.postsById['post-a'].reactions).toBeUndefined();
+    expect(state.reactionPendingTargets).toEqual([]);
+  });
+
+  it('retries the exact unknown comment command without changing a sibling command', async () => {
+    await activateCommentReactions();
+    commandMocks.react.mockImplementation((input) => Promise.resolve(
+      commentReactionResult(input.commentId, 'REACTION_UNKNOWN_OUTCOME'),
+    ));
+    await Promise.all([
+      setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'root'),
+      setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'reply'),
+    ]);
+    commandMocks.reactionRetry.mockResolvedValue(commentReactionResult('root'));
+    await retryPrivateMomentReaction('reaction-root');
+    expect(commandMocks.reactionRetry).toHaveBeenCalledWith(expect.objectContaining({ commandId: 'reaction-root' }));
+    expect(commandMocks.react).toHaveBeenCalledTimes(2);
+    expect(readPrivateMomentsSnapshot().reactionCommands).toEqual([
+      expect.objectContaining({ commentId: 'root', state: 'REACTION_COMMITTED' }),
+      expect.objectContaining({ commentId: 'reply', state: 'REACTION_UNKNOWN_OUTCOME' }),
+    ]);
+  });
+
+  it('rejects a receipt bound to another comment and drops completion after the projection fence', async () => {
+    await activateCommentReactions();
+    commandMocks.react.mockResolvedValue(commentReactionResult('reply'));
+    await expect(setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'root')).rejects.toThrow('reactionResultIdentityMismatch');
+    expect(readPrivateMomentsSnapshot().comments.every((comment) => comment.reactionsCount === 0)).toBe(true);
+    let complete!: (result: ReturnType<typeof commentReactionResult>) => void;
+    commandMocks.react.mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+    const pending = setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'root');
+    await Promise.resolve();
+    fencePrivateMomentsRuntimeProjection();
+    complete(commentReactionResult('root'));
+    await expect(pending).rejects.toThrow('staleReactionCompletion');
+    expect(readPrivateMomentsSnapshot().comments).toEqual([]);
+    expect(readPrivateMomentsSnapshot().reactionPendingTargets).toEqual([]);
+  });
+
+  it('does not let an older resource page overwrite a committed comment reaction', async () => {
+    await activateCommentReactions();
+    commandMocks.react.mockResolvedValue(commentReactionResult('root', 'REACTION_COMMITTED', '5'));
+    await setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'root');
+    const page = await readPrivateComments('post-a');
+    const state = readPrivateMomentsSnapshot();
+    expect(state.comments.find((comment) => comment.commentId === 'root')?.reactionRevision).toBe('5');
+    expect(state.commentThreadsByPostId['post-a'].comments.find((comment) => comment.commentId === 'root')?.reactionRevision).toBe('5');
+    expect(page.comments.find((comment) => comment.commentId === 'root')?.reactionRevision).toBe('5');
+  });
+
+  it('opens a private Search anchor through the runtime and returns its confirmed like projection', async () => {
+    await activateCommentReactions();
+    const result = commentReactionResult('root', 'REACTION_COMMITTED', '5');
+    commandMocks.react.mockResolvedValue(result);
+    await setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'root');
+    const gateway = createMomentsGateway(authSession('session-1'));
+    const page = await gateway.fetchComments('post-a', '', 20, {
+      sourceId: 'device.social', anchorCommentId: 'root',
+    });
+    expect(commandMocks.comments).toHaveBeenLastCalledWith(expect.objectContaining({
+      postId: 'post-a', anchorCommentId: 'root', activationGeneration: 7,
+    }));
+    expect(page).toMatchObject({
+      ok: true, data: { comments: [expect.objectContaining({
+        id: 'root', likesCount: 1n, isLiked: true,
+      }), expect.objectContaining({ id: 'reply', likesCount: 0n, isLiked: false })] },
+    });
+  });
+
+  it('does not let an older comment body discard a newer reaction revision', async () => {
+    await activateCommentReactions();
+    const initial = readPrivateMomentsSnapshot().comments;
+    commandMocks.comments.mockResolvedValueOnce({
+      postId: 'post-a', nextCursor: '', hasMore: false,
+      comments: [{ ...initial[0], generation: '2', text: 'edited' }],
+    });
+    await readPrivateComments('post-a');
+    commandMocks.comments.mockResolvedValueOnce({
+      postId: 'post-a', nextCursor: '', hasMore: false,
+      comments: [{
+        ...initial[0], reactionRevision: '8', reactionsCount: 1,
+        reactions: [{ kind: 1, count: '1', reactedByViewer: true }],
+      }],
+    });
+    const page = await readPrivateComments('post-a');
+    expect(page.comments[0]).toMatchObject({
+      text: 'edited', generation: '2', reactionsCount: 1, reactionRevision: '8',
+    });
+  });
+
+  it('drops a Search comment completion after the original runtime scope is fenced', async () => {
+    await activateCommentReactions();
+    let complete!: (value: unknown) => void;
+    const oldComments = readPrivateMomentsSnapshot().comments;
+    commandMocks.comments.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const gateway = createMomentsGateway(authSession('session-1'));
+    const read = gateway.fetchComments('post-a', '', 20, {
+      sourceId: 'device.social', anchorCommentId: 'root',
+    });
+    fencePrivateMomentsRuntimeProjection();
+    complete({ postId: 'post-a', nextCursor: '', hasMore: false, comments: oldComments });
+    await expect(read).resolves.toMatchObject({
+      ok: false, error: { code: 'PRIVATE_SOCIAL_READ_UNAVAILABLE' },
+    });
+    expect(readPrivateMomentsSnapshot().comments).toEqual([]);
+    expect(readPrivateMomentsSnapshot().commentThreadsByPostId).toEqual({});
+  });
+
+  it('shares an equivalent pending comment page until projection publication completes', async () => {
+    await activateCommentReactions();
+    commandMocks.comments.mockClear();
+    let complete!: (value: unknown) => void;
+    commandMocks.comments.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const first = readPrivateComments('post-a', '', 20, 'root');
+    const second = readPrivateComments('post-a', '', 20, 'root');
+    await Promise.resolve();
+    expect(commandMocks.comments).toHaveBeenCalledOnce();
+    complete({
+      postId: 'post-a', nextCursor: 'next-root', hasMore: true,
+      comments: readPrivateMomentsSnapshot().comments,
+    });
+    const pages = await Promise.all([first, second]);
+    expect(pages[0]).toEqual(pages[1]);
+    expect(readPrivateMomentsSnapshot().commentThreadsByPostId['post-a'])
+      .toMatchObject({ loading: false, nextCursor: 'next-root', initialized: true });
+  });
+
+  it('rejects an older anchor page without overwriting the newer thread', async () => {
+    await activateCommentReactions();
+    const comments = readPrivateMomentsSnapshot().comments;
+    let completeOld!: (value: unknown) => void;
+    commandMocks.comments.mockReturnValueOnce(new Promise(resolve => { completeOld = resolve; }));
+    const old = readPrivateComments('post-a', '', 20, 'root');
+    const oldFailure = expect(old).rejects.toThrow('staleCommentReadCompletion');
+    await Promise.resolve();
+    commandMocks.comments.mockResolvedValueOnce({
+      postId: 'post-a', nextCursor: 'next-reply', hasMore: true, comments: [comments[1]],
+    });
+    await readPrivateComments('post-a', '', 20, 'reply');
+    completeOld({ postId: 'post-a', nextCursor: '', hasMore: false, comments: [comments[0]] });
+    await oldFailure;
+    expect(readPrivateMomentsSnapshot().commentThreadsByPostId['post-a']).toMatchObject({
+      comments: [expect.objectContaining({ commentId: 'reply' })],
+      nextCursor: 'next-reply', hasMore: true, errorMessage: null,
+    });
+  });
+
+  it('does not let a superseded comment error release or poison a newer read', async () => {
+    await activateCommentReactions();
+    let failOld!: (error: Error) => void;
+    let completeNew!: (value: unknown) => void;
+    commandMocks.comments
+      .mockReturnValueOnce(new Promise((_, reject) => { failOld = reject; }))
+      .mockReturnValueOnce(new Promise(resolve => { completeNew = resolve; }));
+    const old = readPrivateComments('post-a', '', 20, 'root');
+    const oldFailure = expect(old).rejects.toThrow('old transport failure');
+    await Promise.resolve();
+    const next = readPrivateComments('post-a', '', 20, 'reply');
+    await Promise.resolve();
+    failOld(new Error('old transport failure'));
+    await oldFailure;
+    expect(readPrivateMomentsSnapshot().commentThreadsByPostId['post-a'])
+      .toMatchObject({ loading: true, errorMessage: null });
+    completeNew({ postId: 'post-a', nextCursor: '', hasMore: false, comments: [] });
+    await next;
+  });
+
+  it('rejects comment readback when a publication subscriber fences its scope', async () => {
+    await activateCommentReactions();
+    const unsubscribe = subscribePrivateMomentsRuntime(() => {
+      if (readPrivateMomentsSnapshot().commentThreadsByPostId['post-a']?.loading === false) {
+        fencePrivateMomentsRuntimeProjection();
+      }
+    });
+    try {
+      await expect(readPrivateComments('post-a')).rejects.toThrow('staleCommentReadCompletion');
+      expect(readPrivateMomentsSnapshot().comments).toEqual([]);
+      expect(readPrivateMomentsSnapshot().commentThreadsByPostId).toEqual({});
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('does not dispatch a queued reaction after its scope is fenced', async () => {
+    await activateCommentReactions();
+    commandMocks.react.mockResolvedValue(commentReactionResult('root'));
+    const pending = setPrivateMomentReaction('post-a', ReactionKind.REACTION_LIKE, true, 'root');
+    fencePrivateMomentsRuntimeProjection();
+    await expect(pending).rejects.toThrow('staleReactionCompletion');
+    expect(commandMocks.react).not.toHaveBeenCalled();
+  });
+
+  it('does not dispatch a comment page invalidated before Native invocation', async () => {
+    await activateCommentReactions();
+    commandMocks.comments.mockClear();
+    const pending = readPrivateComments('post-a', '', 20, 'root');
+    fencePrivateMomentsRuntimeProjection();
+    await expect(pending).rejects.toThrow('staleCommentReadCompletion');
+    expect(commandMocks.comments).not.toHaveBeenCalled();
+  });
+
+  it('does not recreate a comment thread after parent revocation rejects a pending read', async () => {
+    await activateCommentReactions();
+    let failRead!: (error: Error) => void;
+    commandMocks.comments.mockReturnValue(new Promise((_, reject) => { failRead = reject; }));
+    const pending = readPrivateComments('post-a');
+    const failure = expect(pending).rejects.toThrow('revoked read failed');
+    await Promise.resolve();
+    commandMocks.reconcile.mockResolvedValueOnce({
+      endpointPrekeysAvailable: 8, recoveryPrekeysAvailable: null,
+      submissionsProcessed: 0, submissionsUnknown: 0, submissionsTerminal: 0,
+      invalidatedReadProjections: [],
+    });
+    await invalidatePrivateMoments([{
+      reason: 'RESOURCE_DELETED', sourceCursor: 'deleted-1', postId: 'post-a',
+    }]);
+    failRead(new Error('revoked read failed'));
+    await failure;
+    expect(readPrivateMomentsSnapshot().comments).toEqual([]);
+    expect(readPrivateMomentsSnapshot().commentThreadsByPostId).toEqual({});
   });
 
   it('projects native-only recovery without accepting secret material', async () => {

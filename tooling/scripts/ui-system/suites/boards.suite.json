@@ -3,6 +3,7 @@
   "capabilityId": "ui.prototype.eles-boards",
   "specRef": "docs/architecture/platform/client/ui-system/prototype/self-training-methodology.md",
   "specimen": {
+    "requireWorktreeIdentity": true,
     "url": "/?site=frontend-eles&eles=elements",
     "anchor": ".ui-view-shell",
     "implementationRefs": [
@@ -16,6 +17,20 @@
       "packages/prototypes/shared/ui-system/boards.css",
       "packages/prototypes/shared/ui-system/view-bar.css",
       "packages/ui/tokens/src/north-star-theme.ts",
+      "packages/ui/web/src/identity-card.tsx",
+      "packages/ui/web/src/identity-card.css",
+      "packages/ui/web/src/image-grid.tsx",
+      "packages/ui/web/src/image-grid.css",
+      "packages/ui/web/src/moment-card.tsx",
+      "packages/ui/web/src/moment-comments.tsx",
+      "packages/ui/web/src/moment-scope-bar.tsx",
+      "packages/ui/web/src/moment-composer.tsx",
+      "packages/ui/web/src/moment-circles.tsx",
+      "packages/ui/web/src/feed-sort-float.tsx",
+      "packages/ui/web/src/moments.css",
+      "packages/ui/tokens/src/index.ts",
+      "packages/prototypes/shared/ui-system/ElementSamples.tsx",
+      "packages/prototypes/shared/ui-system/identity/identity-copy.ts",
       "tooling/scripts/ui-system/craft-battery.mjs"
     ]
   },
@@ -26,6 +41,150 @@
     "urlParam": "elements"
   },
   "scenarios": [
+    {
+      "id": "ui.prototype.eles.social-compose-circle",
+      "title": "发布器与圈友：真实共享展示可输入、选成员并关闭，长文案仍保留内容宽度",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "clickGlobal", "target": "[data-action-id='elements.condition.long']" },
+        { "op": "type", "scope": "global", "target": "[data-element='MomentComposerSurface'] textarea", "value": "一条真实输入的动态草稿" },
+        { "op": "clickGlobal", "target": "[data-element='MomentCircleEditor'] [data-action-id='element.circle.edit']" },
+        { "op": "clickGlobal", "target": "[data-action-id='circle.member.remove.element-circle.chen']" },
+        { "op": "expect", "id": "draft-member-removed", "oracle": {
+          "type": "count", "scope": "global", "target": "[data-circle-member]", "equals": 0
+        }},
+        { "op": "press", "key": "Escape" }
+      ],
+      "oracles": [
+        { "id": "typed-content-retained", "type": "attr", "scope": "global", "target": "[data-element='MomentComposerSurface'] textarea", "attr": "data-compose-value", "equals": "一条真实输入的动态草稿" },
+        { "id": "composer-width", "type": "sameWidth", "scope": "global", "target": "[data-element='MomentComposerSurface'] .sk-compose", "peer": "[data-element='MomentComposerSurface'] .nb-element-stage" },
+        { "id": "circle-card-width", "type": "sameWidth", "scope": "global", "target": "[data-element='MomentCircleCard'] .sk-circle-card", "peer": "[data-element='MomentCircleCard'] .nb-element-stage" },
+        { "id": "closed-editor", "type": "missing", "scope": "global", "target": ".sk-circle-manage" }
+      ],
+      "screenshots": [{ "target": "[data-element='MomentComposerSurface']", "file": "shared-compose-long.png" },
+        { "target": "[data-element='MomentCircleCard']", "file": "shared-circle-card-long.png" }],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.social-moment-normal",
+      "title": "共享动态卡：真实作者名片、受控反应和默认内联评论",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "clickGlobal", "target": "[data-action-id='elements.condition.normal']" },
+        { "op": "clickGlobal", "target": "[data-element='MomentCard'] .sk-post-author" },
+        { "op": "expect", "id": "semantic-author-ref", "oracle": {
+          "type": "exists", "scope": "global", "target": ".sk-author-card"
+        }},
+        { "op": "press", "key": "Escape" },
+        { "op": "clickGlobal", "target": "[data-element='MomentCard'] [data-action-id='moment.reaction.element-moment']" },
+        { "op": "clickGlobal", "target": "[data-action-id='moment.react.like']" },
+        { "op": "press", "key": "Escape" }
+      ],
+      "oracles": [
+        { "id": "selected-reaction", "type": "attr", "scope": "global", "target": "[data-element='MomentCard'] [data-action-id='moment.reaction-chip.element-moment.like']", "attr": "aria-pressed", "equals": "true" },
+        { "id": "inline-comments", "type": "exists", "scope": "global", "target": "[data-element='MomentCard'] [data-comments-open='true']" },
+        { "id": "single-card", "type": "count", "scope": "global", "target": "[data-element='MomentCard'] .sk-post", "equals": 1 }
+      ],
+      "screenshots": [{ "target": "[data-element='MomentCard']", "file": "shared-moment-card.png" }],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.social-moment-long",
+      "title": "共享动态卡与个人头部：长文案展开和名称换行",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "clickGlobal", "target": "[data-action-id='elements.condition.long']" },
+        { "op": "clickGlobal", "target": "[data-element='MomentCard'] .sk-post-expand" }
+      ],
+      "oracles": [
+        { "id": "body-expanded", "type": "attr", "scope": "global", "target": "[data-element='MomentCard'] .sk-post-expand", "attr": "aria-expanded", "equals": "true" },
+        { "id": "canonical-profile-stage", "type": "textContains", "scope": "global", "target": "[data-element='UserProfileHeader'] h2", "contains": "很长的个人主页" }
+      ],
+      "screenshots": [{ "target": "[data-element='UserProfileHeader']", "file": "shared-social-profile-long.png" }],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.social-moment-disabled",
+      "title": "共享动态与个人关系：不可用动作不产生业务状态",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "clickGlobal", "target": "[data-action-id='elements.condition.disabled']" },
+        { "op": "clickGlobal", "target": "[data-element='MomentCard'] [data-action-id='moment.reaction.element-moment']" }
+      ],
+      "oracles": [
+        { "id": "reaction-disabled", "type": "attr", "scope": "global", "target": "[data-action-id='moment.react.like']", "attr": "aria-disabled", "equals": "true" },
+        { "id": "profile-follow-disabled", "type": "attr", "scope": "global", "target": "[data-element='UserProfileHeader'] [data-action-id='el.profile.follow']", "attr": "aria-disabled", "equals": "true" }
+      ],
+      "finalizers": [{ "op": "press", "key": "Escape" }]
+    },
+    {
+      "id": "ui.prototype.eles.social-image-grid",
+      "title": "共享多图网格：九图三列、灯箱左右键、关闭还原来源",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "clickGlobal", "target": "[data-action-id='elements.condition.normal']" },
+        { "op": "clickGlobal", "target": "[data-element='ImageGrid'] [data-action-id='image.open.image-0']" },
+        { "op": "press", "key": "ArrowRight" },
+        { "op": "expect", "id": "keyboard-next", "oracle": {
+          "type": "textContains", "scope": "global", "target": ".pt-lightbox-count", "contains": "2 / 9"
+        }},
+        { "op": "press", "key": "ArrowLeft" }
+      ],
+      "oracles": [
+        { "id": "nine-images", "type": "count", "scope": "global", "target": "[data-element='ImageGrid'] .pt-image-grid-tile", "equals": 9 },
+        { "id": "three-columns", "type": "attr", "scope": "global", "target": "[data-element='ImageGrid'] .pt-image-grid", "attr": "data-columns", "equals": "3" },
+        { "id": "keyboard-previous", "type": "textContains", "scope": "global", "target": ".pt-lightbox-count", "contains": "1 / 9" },
+        { "id": "single-viewer", "type": "count", "scope": "global", "target": ".pt-dialog[role='dialog']", "equals": 1 }
+      ],
+      "screenshots": [{ "target": ".pt-lightbox", "file": "social-nine-image-lightbox.png" }],
+      "finalizers": [
+        { "op": "press", "key": "Escape" }
+      ]
+    },
+    {
+      "id": "ui.prototype.eles.social-image-grid-close",
+      "title": "共享灯箱：关闭释放模态并还原网格来源焦点",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "clickGlobal", "target": "[data-action-id='elements.condition.normal']" },
+        { "op": "clickGlobal", "target": "[data-element='ImageGrid'] [data-action-id='image.open.image-0']" },
+        { "op": "press", "key": "Escape" }
+      ],
+      "oracles": [
+        { "id": "viewer-closed", "type": "missing", "scope": "global", "target": ".pt-dialog[role='dialog']" },
+        { "id": "source-focus", "type": "exists", "scope": "global", "target": "[data-element='ImageGrid'] [data-action-id='image.open.image-0']:focus" }
+      ],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.social-identity-long",
+      "title": "共享名片：长名称与站点、基础元素真实展示",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "clickGlobal", "target": "[data-action-id='elements.condition.long']" }
+      ],
+      "oracles": [
+        { "id": "long-name", "type": "textContains", "scope": "global", "target": "[data-element='IdentityCard'] .sk-author-idcol", "contains": "很长的显示名称" },
+        { "id": "real-follow", "type": "exists", "scope": "global", "target": "[data-element='FollowButton'] .pt-button[aria-pressed='false']" }
+      ],
+      "screenshots": [{ "target": "[data-element='IdentityCard']", "file": "social-identity-long.png" }],
+      "finalizers": []
+    },
+    {
+      "id": "ui.prototype.eles.social-identity-disabled",
+      "title": "共享名片：不可用关系动作禁用，资源失败具名",
+      "level": "L3_DYNAMIC",
+      "operations": [
+        { "op": "clickGlobal", "target": "[data-action-id='elements.condition.disabled']" }
+      ],
+      "oracles": [
+        { "id": "follow-disabled", "type": "attr", "scope": "global", "target": "[data-element='IdentityCard'] .sk-author-follow", "attr": "aria-disabled", "equals": "true" },
+        { "id": "standalone-follow-disabled", "type": "attr", "scope": "global", "target": "[data-element='FollowButton'] .pt-button", "attr": "aria-disabled", "equals": "true" },
+        { "id": "resource-failure-readable", "type": "textContains", "scope": "global", "target": "[data-element='ImageGrid']", "contains": "图片不可用" }
+      ],
+      "screenshots": [{ "target": "[data-element='IdentityCard']", "file": "social-identity-disabled.png" }],
+      "finalizers": []
+    },
     {
       "id": "ui.prototype.eles.view-bar-six-tabs",
       "title": "增量25：Frontend Eles 只剩六个 tab（桌面/手机原型、基础元素、套件、样本、设计理念）",

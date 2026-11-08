@@ -275,13 +275,14 @@ func (c *PostConverter) DomainToProto(p *Post) (*model.Post, error) {
 		return nil, nil
 	}
 	out := &model.Post{
-		Id:         formatID(p.ID),
-		AuthorPtid: p.AuthorPTID,
-		Type:       p.Type,
-		Audience:   p.Audience,
-		IsDeleted:  p.IsDeleted(),
-		CreatedAt:  timestamppb.New(p.CreatedAt),
-		UpdatedAt:  timestamppb.New(p.UpdatedAt),
+		Id:            formatID(p.ID),
+		AuthorPtid:    p.AuthorPTID,
+		PublicFeedRef: p.PublicFeedRef,
+		Type:          p.Type,
+		Audience:      p.Audience,
+		IsDeleted:     p.IsDeleted(),
+		CreatedAt:     timestamppb.New(p.CreatedAt),
+		UpdatedAt:     timestamppb.New(p.UpdatedAt),
 		Stats: &model.PostStats{
 			CommentsCount: p.CommentsCount,
 			ViewsCount:    p.ViewsCount,
@@ -515,13 +516,15 @@ func (c *PostConverter) CommentToProto(d *Comment) *model.Comment {
 		return nil
 	}
 	out := &model.Comment{
-		Id:         formatID(d.ID),
-		PostId:     formatID(d.PostID),
-		AuthorPtid: d.AuthorPTID,
-		Content:    d.TextBody,
-		IsDeleted:  d.DeletedAt != nil,
-		CreatedAt:  timestamppb.New(d.CreatedAt),
-		UpdatedAt:  timestamppb.New(d.UpdatedAt),
+		Id:                   formatID(d.ID),
+		PostId:               formatID(d.PostID),
+		AuthorPtid:           d.AuthorPTID,
+		PublicFeedRef:        d.PublicFeedRef,
+		ReplyToPublicFeedRef: d.ReplyToPublicFeedRef,
+		Content:              d.TextBody,
+		IsDeleted:            d.DeletedAt != nil,
+		CreatedAt:            timestamppb.New(d.CreatedAt),
+		UpdatedAt:            timestamppb.New(d.UpdatedAt),
 	}
 	if d.ParentCommentID != 0 {
 		out.ReplyToCommentId = formatID(d.ParentCommentID)

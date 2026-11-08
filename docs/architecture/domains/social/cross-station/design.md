@@ -259,6 +259,15 @@ payload. Every command has one immutable command ID, canonical request hash,
 and actor-device signature verified by source Social.
 The source returns exact replay results; hash conflict is terminal.
 
+Local private reactions use the same signed command, source mutation and
+durable result journal, omitting only Federation transport. There is no
+unsigned local reaction writer. `ReactionService` is a summary reader.
+Post and Comment targets have independent reaction state and revisions.
+Replay admission and imported results use the original current read policy;
+a cached result cannot reopen a locally deleted, blocked or revoked target.
+Committed wake events include the parent Post and optional Comment ID so the
+existing Moments Runtime can reconcile the affected thread.
+
 Unknown outcomes remain pending and retry with the same command ID. Comment
 draft text stays on Bob's Native Desktop.
 

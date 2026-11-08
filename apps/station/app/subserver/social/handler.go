@@ -112,6 +112,8 @@ func (s *subServer) Handlers() []server.Handler {
 	)
 
 	return []server.Handler{
+		server.NewStrictTypedHandler("social-submit-feed-event", "/api/v1/social/feed/events/submit", server.POST, s.handleSubmitFeedEvent, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
+		server.NewStrictTypedHandler("social-read-feed", "/api/v1/social/feed/read", server.POST, s.handleReadFeed, cw, jw),
 		// Moments (write)
 		server.NewTypedHandler("social-create-moment", routeSocialMoments, server.POST, s.handleCreatePost, cw, jw),
 		server.NewStrictTypedHandler("social-prepare-private-moment", routeSocialPreparePrivateMoment, server.POST, s.handlePreparePrivateMoment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
@@ -1145,7 +1147,7 @@ func getActorPTID(c context.Context) (string, bool) {
 // --- Post / Moment handlers --------------------------------------------------
 
 func (s *subServer) handleCreatePost(ctx context.Context, req *model.CreatePostRequest) (*model.CreatePostResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
+	_, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -1160,12 +1162,7 @@ func (s *subServer) handleCreatePost(ctx context.Context, req *model.CreatePostR
 			"private moments require the prepare-private and submit-private routes",
 		)
 	}
-	post, err := s.momentSvc.CreateMoment(ctx, req, actorPTID)
-	if err != nil {
-		logger.Error(ctx, "failed to create moment", "error", err, "audience_kind", req.Audience.Kind)
-		return nil, server.InternalErrorWithCause("failed to create moment", err)
-	}
-	return &model.CreatePostResponse{Post: post}, nil
+	return nil, signedPublicWriteRequired()
 }
 
 func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostRequest) (*model.DeletePostResponse, error) {
@@ -1197,11 +1194,7 @@ func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostR
 		}
 		return &model.DeletePostResponse{Success: true}, nil
 	}
-	if err := s.momentSvc.DeleteMoment(ctx, req.PostId, actorPTID); err != nil {
-		logger.Error(ctx, "failed to delete moment", "error", err)
-		return nil, server.InternalErrorWithCause("failed to delete moment", err)
-	}
-	return &model.DeletePostResponse{Success: true}, nil
+	return nil, signedPublicWriteRequired()
 }
 
 func (s *subServer) handleGetMomentResource(
@@ -1354,133 +1347,61 @@ func (s *subServer) handleGetMomentResourceWithReader(
 // --- Reaction handlers ----------------------------------------------------
 
 func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostRequest) (*model.ReactToPostResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
+	_, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
+	if _, public := canonicalPublicSocialID(req.PostId); public {
+		return nil, signedPublicWriteRequired()
+	}
 	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED ||
 		model.ReactionKind_name[int32(req.Kind)] == "" {
 		return nil, server.BadRequest("reaction kind is required")
 	}
-	if _, public := canonicalPublicSocialID(req.PostId); !public &&
-		s.privateContentSvc != nil {
-		remote, err := s.privateContentSvc.IsRemotePrivateMoment(
-			ctx,
-			req.PostId,
-			actorPTID,
-		)
-		if err != nil {
-			return nil, privateContentHandlerError(err)
-		}
-		if remote {
-			author, err := s.privateContentAuthor(ctx)
-			if err != nil {
-				return nil, err
-			}
-			response, err := s.privateContentSvc.ReactPrivateMoment(
-				ctx,
-				author,
-				req,
-			)
-			if err != nil {
-				return nil, privateContentHandlerError(err)
-			}
-			return response, nil
-		}
+	if s.privateContentSvc == nil {
+		return nil, server.InternalError("private reaction owner is unavailable")
 	}
-	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
+	author, err := s.privateContentAuthor(ctx)
+	if err != nil {
 		return nil, err
 	}
-	summaries, err := s.reactionSvc.React(ctx, req.PostId, actorPTID, req.Kind)
+	response, err := s.privateContentSvc.ReactPrivateMoment(ctx, author, req)
 	if err != nil {
-		if domain.PrivateContentCodeOf(err) != "" {
-			return nil, privateContentHandlerError(err)
-		}
-		return nil, server.InternalErrorWithCause("react failed", err)
+		return nil, privateContentHandlerError(err)
 	}
-	return &model.ReactToPostResponse{Success: true, Reactions: summaries}, nil
+	return response, nil
 }
 
 func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostRequest) (*model.UnreactToPostResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
+	_, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
+	if _, public := canonicalPublicSocialID(req.PostId); public {
+		return nil, signedPublicWriteRequired()
+	}
 	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED ||
 		model.ReactionKind_name[int32(req.Kind)] == "" {
 		return nil, server.BadRequest("reaction kind is required")
 	}
-	if _, public := canonicalPublicSocialID(req.PostId); !public &&
-		s.privateContentSvc != nil {
-		remote, err := s.privateContentSvc.IsRemotePrivateMoment(
-			ctx,
-			req.PostId,
-			actorPTID,
-		)
-		if err != nil {
-			return nil, privateContentHandlerError(err)
-		}
-		if remote {
-			author, err := s.privateContentAuthor(ctx)
-			if err != nil {
-				return nil, err
-			}
-			response, err := s.privateContentSvc.UnreactPrivateMoment(
-				ctx,
-				author,
-				req,
-			)
-			if err != nil {
-				return nil, privateContentHandlerError(err)
-			}
-			return response, nil
-		}
+	if s.privateContentSvc == nil {
+		return nil, server.InternalError("private reaction owner is unavailable")
 	}
-	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
+	author, err := s.privateContentAuthor(ctx)
+	if err != nil {
 		return nil, err
 	}
-	summaries, err := s.reactionSvc.Unreact(ctx, req.PostId, actorPTID, req.Kind)
+	response, err := s.privateContentSvc.UnreactPrivateMoment(ctx, author, req)
 	if err != nil {
-		if domain.PrivateContentCodeOf(err) != "" {
-			return nil, privateContentHandlerError(err)
-		}
-		return nil, server.InternalErrorWithCause("unreact failed", err)
+		return nil, privateContentHandlerError(err)
 	}
-	return &model.UnreactToPostResponse{Success: true, Reactions: summaries}, nil
-}
-
-func (s *subServer) assertReactionTargetReadable(
-	ctx context.Context,
-	postID string,
-	viewerPTID string,
-) error {
-	if _, public := canonicalPublicSocialID(postID); !public {
-		if err := domain.ValidatePrivateContentID(
-			postID,
-			"post_id",
-			"social.reaction.assert_target",
-		); err != nil {
-			return server.NotFound("post not found")
-		}
-		// Private reaction authorization and mutation share one transaction in
-		// ReactionService, avoiding a stale device-bound ciphertext pre-read.
-		return nil
-	}
-
-	post, err := s.momentSvc.GetMoment(ctx, postID, viewerPTID)
-	if err != nil {
-		return server.InternalErrorWithCause("visibility check failed", err)
-	}
-	if post == nil {
-		return server.NotFound("post not found")
-	}
-	return nil
+	return response, nil
 }
 
 // --- Comment handlers ----------------------------------------------------
@@ -1734,7 +1655,7 @@ func momentCommentNotFound() error {
 }
 
 func (s *subServer) handleCreateComment(ctx context.Context, req *model.CreateCommentRequest) (*model.CreateCommentResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
+	_, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -1745,30 +1666,11 @@ func (s *subServer) handleCreateComment(ctx context.Context, req *model.CreateCo
 	if postID == 0 {
 		return nil, server.BadRequest("invalid post_id")
 	}
-	parent, err := s.momentSvc.GetMoment(ctx, req.PostId, actorPTID)
-	if err != nil {
-		return nil, server.InternalErrorWithCause(
-			"failed to resolve comment parent",
-			err,
-		)
-	}
-	if parent == nil {
-		return nil, server.NotFound("post not found")
-	}
-	if !domain.IsPublic(parent.GetAudience()) {
-		return nil, server.BadRequest(
-			"private comments require the prepare-private and submit-private routes",
-		)
-	}
-	comment, err := s.commentSvc.CreateComment(ctx, req, postID, actorPTID)
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to create comment", err)
-	}
-	return &model.CreateCommentResponse{Comment: comment}, nil
+	return nil, signedPublicWriteRequired()
 }
 
 func (s *subServer) handleDeleteComment(ctx context.Context, req *model.DeleteCommentRequest) (*model.DeleteCommentResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
+	_, ok := getActorPTID(ctx)
 	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
@@ -1779,10 +1681,11 @@ func (s *subServer) handleDeleteComment(ctx context.Context, req *model.DeleteCo
 	if commentID == 0 {
 		return nil, server.BadRequest("invalid comment_id")
 	}
-	if err := s.commentSvc.DeleteComment(ctx, commentID, actorPTID); err != nil {
-		return nil, server.InternalErrorWithCause("failed to delete comment", err)
-	}
-	return &model.DeleteCommentResponse{Success: true}, nil
+	return nil, signedPublicWriteRequired()
+}
+
+func signedPublicWriteRequired() error {
+	return server.Conflict("FEED_SIGNED_WRITE_REQUIRED")
 }
 
 // --- Timeline handler ----------------------------------------------------

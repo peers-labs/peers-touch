@@ -95,6 +95,9 @@ func migrateRemotePrivateResources(database *gorm.DB) error {
 	if err := database.AutoMigrate(RemotePrivateContentModels()...); err != nil {
 		return fmt.Errorf("social remote private resource migrate: %w", err)
 	}
+	if err := migratePrivateReactionProjections(database); err != nil {
+		return err
+	}
 	return backfillRemotePrivateResourceAuthors(database)
 }
 

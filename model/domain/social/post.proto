@@ -52,6 +52,9 @@ message Post {
   // prefer `typed_mentions` which carries offset/length so highlighting
   // works without re-parsing the text.
   repeated Mention typed_mentions = 52;
+  // Discovery hint only. Clients bind it to independently verified Feed events
+  // before displaying public content or using it as a signed mutation target.
+  string public_feed_ref = 53;
 }
 
 enum PostType {
@@ -692,6 +695,8 @@ message ReactToPostRequest {
   string command_id = 3;
   string actor_signing_key_id = 4;
   bytes actor_device_signature = 5;
+  // Optional private comment ID; post_id remains the permission anchor.
+  string comment_id = 6;
 }
 
 message ReactToPostResponse {
@@ -702,6 +707,7 @@ message ReactToPostResponse {
   string command_id = 3;
   bool exact_replay = 4;
   uint64 projection_revision = 5;
+  string comment_id = 6;
 }
 
 message UnreactToPostRequest {
@@ -710,6 +716,7 @@ message UnreactToPostRequest {
   string command_id = 3;
   string actor_signing_key_id = 4;
   bytes actor_device_signature = 5;
+  string comment_id = 6;
 }
 
 message UnreactToPostResponse {
@@ -718,6 +725,7 @@ message UnreactToPostResponse {
   string command_id = 3;
   bool exact_replay = 4;
   uint64 projection_revision = 5;
+  string comment_id = 6;
 }
 
 message ListReactionsRequest {

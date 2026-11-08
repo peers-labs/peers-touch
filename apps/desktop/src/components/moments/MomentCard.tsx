@@ -1,781 +1,199 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dropdown, Popconfirm, Typography, theme, message } from 'antd';
-import { ExternalLink, MapPin, MoreHorizontal, Trash2 } from 'lucide-react';
+import { message } from 'antd';
+import { Button, Dialog, MomentAuthor, MomentCard as PeerMomentCard } from '@peers-touch/ui';
+import { ExternalLink, MapPin, Pencil, Trash2 } from 'lucide-react';
 import {
-  Audience_Kind,
-  RelationshipReason_Kind,
-  PostType,
-  ReactionKind,
-  type FeedObjectExplanation,
-  type Post,
-  type ImageAttachment,
+  Audience_Kind, RelationshipReason_Kind, ReactionKind,
+  type FeedObjectExplanation, type Post, type ReactionSummary,
 } from '../../gen/proto/domain/social/post_pb';
-import type { Comment } from '../../gen/proto/domain/social/comment_pb';
-import { ImageGrid } from './ImageGrid';
-import { PrivateMediaGrid } from './PrivateMediaGrid';
+import { MomentAttachments, MomentVideoAttachment } from './MomentAttachments';
+import { MomentAuthorTrigger } from './MomentAuthorTrigger';
+import { MomentTextEditor } from './MomentTextEditor';
 import { MomentCommentsSection } from './MomentCommentsSection';
-import { MomentCommentAuthorName } from './MomentCommentAuthorName';
+import { PrivateMediaGrid } from './PrivateMediaGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useActorIdentity } from '../common/useActorIdentity';
-import {
-  useActiveMomentsFederationSlice,
-  useActivePrivateMomentsSlice,
-} from './useActiveMomentsStore';
-import { actorDisplayName } from '../../store/socialProfileProjection';
-import {
-  isReadablePrivateMomentProjection,
-  privateDeliveryNoticeState,
-} from '../../services/privateMomentsNative';
-import {
-  SocialTrustMeta,
-  SocialActionBar,
-  SocialPrivateState,
-  SocialThreadDivider,
-  SocialThreadSection,
-} from './surfaces';
-
-const { Paragraph, Text, Link } = Typography;
-
-// MomentCard — renders a single Post in a feed list.
-//
-// Refactored for UI Identity:
-//   - The outer card border is now just a soft container (no heavy border).
-//   - source · reason · audience  →  SocialTrustMeta
-//   - reaction picker + count +  "more"  →  SocialActionBar
-//
-// Anatomy:
-//   ┌─────────────────────────────────────────────┐
-//   │ [avatar]  display_name @username · 5m       │ ← header
-//   │           [SocialTrustMeta: source · reason · audience]
-//   │                                             │
-//   │  Body text here…                            │
-//   │  [image grid if any]                        │
-//   │  [original-post embed if REPOST]            │
-//   │                                             │
-//   │  [SocialActionBar: 👍12  3❤️  💬7   ⋯ ]   │
-//   └─────────────────────────────────────────────┘
+import { useActiveMomentsFederationSlice, useActivePrivateMomentsSlice } from './useActiveMomentsStore';
+import { isReadablePrivateMomentProjection, privateDeliveryNoticeState } from '../../services/privateMomentsNative';
+import { SocialActionBar, SocialPrivateState, SocialTrustMeta } from './surfaces';
 
 interface MomentCardProps {
-  post: Post;
-  reactions?: import('../../gen/proto/domain/social/post_pb').ReactionSummary[];
-  explanation?: FeedObjectExplanation;
-  viewerActorPtid?: string;
-  surface?: 'home' | 'federated' | 'profile' | 'circle';
-  /** Deep-link / menu navigation to the standalone detail surface. */
-  onOpen?: (postId: string) => void;
-  /** Expanded-by-default inline comments (detail surface). */
-  defaultCommentsOpen?: boolean;
-  /** Deep-linked comment id focused when the thread opens. */
-  targetCommentId?: string;
+  post: Post; reactions?: ReactionSummary[]; explanation?: FeedObjectExplanation;
+  viewerActorPtid?: string; surface?: 'home' | 'federated' | 'profile' | 'circle';
+  onOpen?: (postId: string) => void; defaultCommentsOpen?: boolean; targetCommentId?: string;
   onReact?: (postId: string, kind: ReactionKind, operationId: string) => Promise<void> | void;
   onUnreact?: (postId: string, kind: ReactionKind | undefined, operationId: string) => Promise<void> | void;
-  onAuthorClick?: (actorPtid: string) => void;
-  /** Own-Moment delete; the menu entry only renders for the author. */
-  onDelete?: (postId: string) => Promise<void> | void;
-  commentPreview?: Comment[];
+  onAuthorClick?: (actorPtid: string) => void; onDelete?: (postId: string) => Promise<void> | void;
   embedded?: boolean;
 }
 
-function audienceLabel(kind: Audience_Kind, t: (k: string) => string) {
-  switch (kind) {
-    case Audience_Kind.PUBLIC:
-      return t('moments.audience.public');
-    case Audience_Kind.FOLLOWERS:
-      return t('moments.audience.followers');
-    case Audience_Kind.FRIENDS:
-      return t('moments.audience.friends');
-    case Audience_Kind.SELF:
-      return t('moments.audience.self');
-    case Audience_Kind.CIRCLE:
-      return t('moments.audience.circle');
-    case Audience_Kind.GROUP:
-      return t('moments.audience.group');
-    case Audience_Kind.CUSTOM_ALLOW:
-      return t('moments.audience.customAllow');
-    case Audience_Kind.CUSTOM_DENY:
-      return t('moments.audience.customDeny');
-    default:
-      return t('moments.audience.public');
-  }
+const audienceKeys: Partial<Record<Audience_Kind, string>> = {
+  [Audience_Kind.PUBLIC]: 'public', [Audience_Kind.FOLLOWERS]: 'followers',
+  [Audience_Kind.FRIENDS]: 'friends', [Audience_Kind.SELF]: 'self',
+  [Audience_Kind.CIRCLE]: 'circle', [Audience_Kind.GROUP]: 'group',
+  [Audience_Kind.CUSTOM_ALLOW]: 'customAllow', [Audience_Kind.CUSTOM_DENY]: 'customDeny',
+};
+const reasonKeys: Partial<Record<RelationshipReason_Kind, string>> = {
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_SELF]: 'self',
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWING]: 'following',
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWER]: 'follower',
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_MUTUAL]: 'mutual',
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_CIRCLE]: 'circle',
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_MENTIONED]: 'mentioned',
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_PUBLIC_FEDERATED]: 'publicFederated',
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_PROFILE_VIEW]: 'profileView',
+  [RelationshipReason_Kind.RELATIONSHIP_REASON_UNKNOWN]: 'unknown',
+};
+function bodyText(post: Post): string {
+  const content = post.content;
+  if (!content.case) return '';
+  return content.case === 'repostPost' ? content.value.comment : content.value.text;
 }
-
-function reasonLabel({
-  audienceKind,
-  isSelf,
-  hasStation,
-  surface,
-  t,
-}: {
-  audienceKind: Audience_Kind;
-  isSelf: boolean;
-  hasStation: boolean;
-  surface: MomentCardProps['surface'];
-  t: (k: string) => string;
-}) {
-  if (isSelf) return t('moments.reason.self');
-  if (audienceKind === Audience_Kind.CIRCLE) return t('moments.reason.circle');
-  if (surface === 'federated') return t('moments.reason.publicFederated');
-  if (surface === 'profile') return t('moments.reason.profileView');
-  if (hasStation) return t('moments.reason.remotePublic');
-  return t('moments.reason.homeDefault');
-}
-
-function protocolReasonLabel({
-  kind,
-  fallback,
-  t,
-}: {
-  kind?: RelationshipReason_Kind;
-  fallback: string;
-  t: (k: string) => string;
-}) {
-  switch (kind) {
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_SELF:
-      return t('moments.reason.self');
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWING:
-      return t('moments.reason.following');
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_FOLLOWER:
-      return t('moments.reason.follower');
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_MUTUAL:
-      return t('moments.reason.mutual');
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_CIRCLE:
-      return t('moments.reason.circle');
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_MENTIONED:
-      return t('moments.reason.mentioned');
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_PUBLIC_FEDERATED:
-      return t('moments.reason.publicFederated');
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_PROFILE_VIEW:
-      return t('moments.reason.profileView');
-    case RelationshipReason_Kind.RELATIONSHIP_REASON_UNKNOWN:
-      return t('moments.reason.unknown');
-    default:
-      return fallback;
-  }
-}
-
-function relativeTime(
-  seconds: bigint | undefined,
-  t: (k: string, options?: Record<string, number>) => string,
-): string {
+function relativeTime(seconds: bigint | undefined, t: (key: string, options?: { count: number }) => string) {
   if (!seconds) return '';
-  const ms = Number(seconds) * 1000;
-  const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (diffSec < 60) return t('moments.time.seconds', { count: diffSec });
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return t('moments.time.minutes', { count: diffMin });
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return t('moments.time.hours', { count: diffHour });
-  const diffDay = Math.floor(diffHour / 24);
-  if (diffDay < 30) return t('moments.time.days', { count: diffDay });
-  const date = new Date(ms);
-  return date.toLocaleDateString();
+  const age = Math.max(0, Math.floor((Date.now() - Number(seconds) * 1000) / 1000));
+  if (age < 60) return t('moments.time.seconds', { count: age });
+  if (age < 3600) return t('moments.time.minutes', { count: Math.floor(age / 60) });
+  if (age < 86400) return t('moments.time.hours', { count: Math.floor(age / 3600) });
+  if (age < 2592000) return t('moments.time.days', { count: Math.floor(age / 86400) });
+  return new Date(Number(seconds) * 1000).toLocaleDateString();
 }
 
-function getBodyText(post: Post): string {
-  const c = post.content;
-  if (!c.case) return '';
-  switch (c.case) {
-    case 'textPost':
-    case 'imagePost':
-    case 'videoPost':
-    case 'linkPost':
-    case 'pollPost':
-    case 'locationPost':
-      return c.value?.text ?? '';
-    case 'repostPost':
-      return c.value?.comment ?? '';
-    default:
-      return '';
-  }
-}
-
-function getImages(post: Post): ImageAttachment[] {
-  const c = post.content as unknown as { case?: string; value?: { images?: ImageAttachment[] } };
-  if (!c || !c.case) return [];
-  if (c.case === 'imagePost' || c.case === 'locationPost') {
-    return c.value?.images ?? [];
-  }
-  return [];
-}
-
-function getRepostOriginal(post: Post): Post | undefined {
-  if (post.type !== PostType.REPOST) return undefined;
-  const c = post.content as unknown as {
-    case?: string;
-    value?: { originalPost?: Post };
-  };
-  if (c?.case === 'repostPost') {
-    return c.value?.originalPost as Post | undefined;
-  }
-  return undefined;
-}
-
-// Memoized: feed refreshes fan out new arrays every cycle, and cards whose
-// props kept identity (post/reactions/explanation/callbacks) must not commit.
-export const MomentCard = memo(function MomentCard({
-  post,
-  reactions,
-  explanation,
-  viewerActorPtid,
-  surface = 'home',
-  onOpen,
-  defaultCommentsOpen = false,
-  targetCommentId,
-  onReact,
-  onUnreact,
-  onAuthorClick,
-  onDelete,
-  commentPreview,
-  embedded,
-}: MomentCardProps) {
+/** Native/Proto adapter. The shared MomentCard owns the complete visible card anatomy. */
+export const MomentCard = memo(function MomentCard({ post, reactions, explanation, viewerActorPtid,
+  surface = 'home', onOpen, defaultCommentsOpen = true, targetCommentId, onReact, onUnreact,
+  onAuthorClick, onDelete, embedded }: MomentCardProps) {
   const { t } = useTranslation('moments');
-  const { token } = theme.useToken();
-  const selfStationDomain = useActiveMomentsFederationSlice((s) => s.self?.home_station_domain);
-  const selfStationPeerId = useActiveMomentsFederationSlice(
-    (s) => s.self?.home_station_peer_id,
-  );
-  const {
-    privateProjection,
-    privatePlatform,
-    readPrivateMoment,
-    recoverPrivateMoment,
-    openPrivateMedia,
-    privateReaction,
-    retryPrivateReaction,
-  } = useActivePrivateMomentsSlice((s) => ({
-    privateProjection: s.postsById[post.id],
-    privatePlatform: s.platform,
-    readPrivateMoment: s.readMoment,
-    recoverPrivateMoment: s.recoverMoment,
-    openPrivateMedia: s.openMedia,
-    privateReaction: s.reactionsByPost[post.id],
-    retryPrivateReaction: s.retryReaction,
-  }));
-  const [expanded, setExpanded] = useState(false);
+  const selfStation = useActiveMomentsFederationSlice(state => state.self);
+  const { projection, platform, readMoment, recoverMoment, openMedia, reaction, retryReaction } =
+    useActivePrivateMomentsSlice(state => ({
+      projection: state.postsById[post.id], platform: state.platform, readMoment: state.readMoment,
+      recoverMoment: state.recoverMoment, openMedia: state.openMedia,
+      reaction: Object.values(state.reactionCommands).find(command =>
+        command.postId === post.id && !command.commentId), retryReaction: state.retryReaction,
+    }));
   const [commentsOpen, setCommentsOpen] = useState(defaultCommentsOpen);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const author = post.author;
-  const authorPtid = post.authorPtid || author?.id || '';
-  const authorIdentity = useActorIdentity(authorPtid, {
-    requireCanonicalProfile: true,
-  });
-  const audience = post.audience;
-  const audienceKind =
-    explanation?.audienceExplanation?.kind
-    ?? audience?.kind
-    ?? Audience_Kind.PUBLIC;
-  const isPrivate =
-    audienceKind !== Audience_Kind.PUBLIC
-    && audienceKind !== Audience_Kind.KIND_UNSPECIFIED;
-  const privateState = privateProjection?.state ?? (
-    privatePlatform === 'native'
-      ? 'LOADING_AUTHORIZED_RESOURCE'
-      : 'PRIVATE_UNSUPPORTED_ON_DEVICE'
-  );
-  const deliveryNotice = privateDeliveryNoticeState(
-    privateProjection?.remoteDeliveryState,
-  );
-  const privateReadable = privateProjection
-    ? isReadablePrivateMomentProjection(privateProjection)
-    : false;
-  const remoteSourceUnavailable =
-    privateState === 'REMOTE_SOURCE_UNAVAILABLE';
-  const privateBody = privateProjection?.content?.kind === 'REPOST'
-    ? privateProjection.content.comment
-    : privateProjection?.content?.text ?? '';
-  const privateRepost = privateProjection?.content?.kind === 'REPOST'
-    ? privateProjection.content
-    : undefined;
-  const privateLink = privateProjection?.content?.kind === 'LINK'
-    ? privateProjection.content
-    : undefined;
-  const privatePoll = privateProjection?.content?.kind === 'POLL'
-    ? privateProjection.content
-    : undefined;
-  const privateLocation = privateProjection?.content?.kind === 'LOCATION'
-    ? privateProjection.content
-    : undefined;
-  const body = isPrivate ? privateBody : getBodyText(post);
-  const images = isPrivate ? [] : getImages(post);
-  const original = isPrivate ? undefined : getRepostOriginal(post);
-  const visibleReactions = isPrivate && privateProjection?.reactionsHydrated
-    ? privateProjection.reactions ?? []
-    : reactions ?? post.reactions ?? [];
-  const longBody = body.length > 320;
-  const visibleBody = expanded || !longBody ? body : `${body.slice(0, 320)}…`;
-  const commentsCount = Number(post.stats?.commentsCount ?? 0n);
-  const visibleComments = (commentPreview ?? []).slice(0, 2);
-  const displayName = actorDisplayName(
-    authorIdentity.displayName,
-    t('moments.author.unknown'),
-  );
-  const stationDomain = explanation?.source?.stationDomain || author?.homeStationDomain || '';
-  const isSelf = authorIdentity.isSelf
-    || Boolean(viewerActorPtid && authorPtid === viewerActorPtid);
-  const isLocalSource = isSelf
-    || Boolean(
-      authorIdentity.homeStationPeerId
-      && selfStationPeerId
-      && authorIdentity.homeStationPeerId === selfStationPeerId,
-    )
-    || Boolean(
-      stationDomain
-      && selfStationDomain
-      && stationDomain === selfStationDomain,
-    );
-  const sourceKind = isLocalSource
-    ? 'local'
-    : authorIdentity.homeStationPeerId || stationDomain
-      ? 'remote'
-      : 'unknown';
-  const canDelete = isSelf && Boolean(onDelete);
-  const fallbackReason = reasonLabel({
-    audienceKind,
-    isSelf,
-    hasStation: Boolean(stationDomain),
-    surface,
-    t,
-  });
-  const reason = protocolReasonLabel({
-    kind: explanation?.relationshipReason?.kind,
-    fallback: fallbackReason,
-    t,
-  });
-  const handleReact = async (kind: ReactionKind, operationId: string) => {
-    // Per-kind pending state lives in SocialActionBar; the store
-    // fences duplicate intents per post+kind.
-    try {
-      await onReact?.(post.id, kind, operationId);
-    } catch {
-      message.error(t('moments.reaction.status.REACTION_REJECTED'));
-    }
+  const [deleteOpen, setDeleteOpen] = useState(false), [deleting, setDeleting] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const authorPtid = post.authorPtid || post.author?.id || '';
+  const identity = useActorIdentity(authorPtid, { requireCanonicalProfile: true });
+  const name = identity.displayName || t('moments.author.unknown');
+  const audienceKind = explanation?.audienceExplanation?.kind ?? post.audience?.kind ?? Audience_Kind.PUBLIC;
+  const isPrivate = audienceKind !== Audience_Kind.PUBLIC && audienceKind !== Audience_Kind.KIND_UNSPECIFIED;
+  const state = projection?.state ?? (platform === 'native' ? 'LOADING_AUTHORIZED_RESOURCE' : 'PRIVATE_UNSUPPORTED_ON_DEVICE');
+  const readable = Boolean(projection && isReadablePrivateMomentProjection(projection));
+  const privateContent = readable ? projection?.content : undefined;
+  const text = isPrivate ? privateContent?.kind === 'REPOST' ? privateContent.comment : privateContent?.text ?? '' : bodyText(post);
+  const isSelf = identity.isSelf || Boolean(viewerActorPtid && viewerActorPtid === authorPtid);
+  const domain = explanation?.source?.stationDomain || post.author?.homeStationDomain || '';
+  const local = isSelf || Boolean(identity.homeStationPeerId && identity.homeStationPeerId === selfStation?.home_station_peer_id)
+    || Boolean(domain && domain === selfStation?.home_station_domain);
+  const sourceKind = local ? 'local' : identity.homeStationPeerId || domain ? 'remote' : 'unknown';
+  const fallbackReason = isSelf ? 'self' : audienceKind === Audience_Kind.CIRCLE ? 'circle'
+    : surface === 'federated' ? 'publicFederated' : surface === 'profile' ? 'profileView'
+      : domain ? 'remotePublic' : 'homeDefault';
+  const reasonKey = explanation?.relationshipReason
+    ? reasonKeys[explanation.relationshipReason.kind] ?? fallbackReason : fallbackReason;
+  const content = post.content;
+  const images = !isPrivate && (content.case === 'imagePost' || content.case === 'locationPost') ? content.value.images : [];
+  const original = !isPrivate && content.case === 'repostPost' ? content.value.originalPost : undefined;
+  const delivery = privateDeliveryNoticeState(projection?.remoteDeliveryState);
+  const canEdit = isSelf && !isPrivate && Boolean(post.publicFeedRef) && !post.isDeleted;
+  const shownReactions = isPrivate && projection?.reactionsHydrated ? projection.reactions ?? [] : reactions ?? post.reactions;
+  const unavailable = isPrivate && !readable;
+  const react = async (kind: ReactionKind, operationId: string) => {
+    try { await onReact?.(post.id, kind, operationId); }
+    catch { message.error(t('moments.reaction.status.REACTION_REJECTED')); }
   };
-
-  const handleUnreact = async (
-    kind: ReactionKind | undefined,
-    operationId: string,
-  ) => {
-    try {
-      await onUnreact?.(post.id, kind, operationId);
-    } catch {
-      message.error(t('moments.reaction.status.REACTION_REJECTED'));
-    }
+  const unreact = async (kind: ReactionKind | undefined, operationId: string) => {
+    try { await onUnreact?.(post.id, kind, operationId); }
+    catch { message.error(t('moments.reaction.status.REACTION_REJECTED')); }
   };
-
-  const handleRetryReaction = async () => {
-    try {
-      await retryPrivateReaction(post.id);
-    } catch {
-      message.error(t('moments.reaction.retryUnavailable'));
-    }
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!onDelete) return;
+  const confirmDelete = async () => {
+    if (!onDelete || deleting) return;
     setDeleting(true);
-    try {
-      await onDelete(post.id);
-      setDeleteConfirmOpen(false);
-    } catch {
-      message.error(t('moments.delete.error'));
-    } finally {
-      setDeleting(false);
-    }
+    try { await onDelete(post.id); setDeleteOpen(false); }
+    catch { message.error(t('moments.delete.error')); }
+    finally { setDeleting(false); }
   };
-
-  const createdText = relativeTime(post.createdAt?.seconds, t);
-
-  return (
-    <div
-      data-acceptance-id="social-moment-card"
-      data-post-id={post.id}
-      data-moments-comments-region={post.id}
-      style={{
-        background: embedded ? 'transparent' : token.colorBgContainer,
-        border: embedded ? 'none' : `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: embedded ? 0 : 14,
-        padding: embedded ? 0 : 16,
-      }}
-    >
-      <div style={{ display: 'flex', gap: 12 }}>
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            if (authorPtid) onAuthorClick?.(authorPtid);
-          }}
-          style={{ cursor: authorPtid ? 'pointer' : 'default', flexShrink: 0 }}
-        >
-          <UserSquareAvatar
-            remoteUrl={authorIdentity.avatarUrl || undefined}
-            actorPtid={authorPtid || null}
-            name={displayName}
-            size={44}
-            radius={13}
-          />
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
-              <Text
-                data-acceptance-id="social-moment-author"
-                strong
-                style={{
-                  fontSize: 14.5,
-                }}
-              >
-                {displayName}
-              </Text>
-              {createdText && (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  · {createdText}
-                </Text>
-              )}
-            </div>
-
-            {(onOpen || canDelete) && (
-              <Popconfirm
-                open={deleteConfirmOpen}
-                trigger={[]}
-                onOpenChange={(open) => {
-                  if (!deleting) setDeleteConfirmOpen(open);
-                }}
-                title={t('moments.delete.confirmTitle')}
-                description={t('moments.delete.confirmDescription')}
-                okText={t('moments.delete.action')}
-                cancelText={t('moments.action.cancel')}
-                okButtonProps={{ danger: true, loading: deleting }}
-                onConfirm={() => void handleConfirmDelete()}
-              >
-                <Dropdown
-                  trigger={['click']}
-                  menu={{
-                    items: [
-                      ...(onOpen ? [{ key: 'open', label: t('moments.action.openPost') }] : []),
-                      ...(canDelete ? [{
-                        key: 'delete',
-                        danger: true,
-                        icon: <Trash2 size={14} />,
-                        label: t('moments.delete.action'),
-                      }] : []),
-                    ],
-                    onClick: ({ key, domEvent }) => {
-                      domEvent.stopPropagation();
-                      if (key === 'open') onOpen?.(post.id);
-                      if (key === 'delete') setDeleteConfirmOpen(true);
-                    },
-                  }}
-                >
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<MoreHorizontal size={16} />}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </Dropdown>
-              </Popconfirm>
-            )}
-          </div>
-
-          <SocialTrustMeta
-            source={{
-              kind: sourceKind,
-              stationLabel: authorIdentity.homeStationName,
-            }}
-            reason={{ label: reason, kind: explanation?.relationshipReason?.kind }}
-            audience={{ kind: audienceKind, label: audienceLabel(audienceKind, t) }}
-          />
-
-          {isPrivate && privateState !== 'CONTENT_READY' && (
-            <div onClick={(event) => event.stopPropagation()}>
-              <SocialPrivateState
-                state={privateState}
-                revocationReason={privateProjection?.revocationReason}
-                compact
-                onRetry={() => void readPrivateMoment(post.id)}
-                onRecover={() => void recoverPrivateMoment(post.id)}
-              />
-            </div>
-          )}
-          {isPrivate && privateState === 'CONTENT_READY' && deliveryNotice && (
-            <div onClick={(event) => event.stopPropagation()}>
-              <SocialPrivateState state={deliveryNotice} compact />
-            </div>
-          )}
-
-          {body && (
-            <Paragraph
-              style={{
-                marginTop: 8,
-                marginBottom: 0,
-                whiteSpace: 'pre-wrap',
-                lineHeight: 1.68,
-                fontSize: 15,
-              }}
-            >
-              {visibleBody}
-              {longBody && !expanded && (
-                <Link
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpanded(true);
-                  }}
-                  style={{ marginLeft: 4 }}
-                >
-                  {t('moments.action.showMore')}
-                </Link>
-              )}
-            </Paragraph>
-          )}
-
-          {images.length > 0 && (
-            <div style={{ marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
-              <ImageGrid
-                cids={images.slice(0, 9).map((im) => im.url || im.id)}
-              />
-            </div>
-          )}
-
-          {isPrivate
-            && privateReadable
-            && (
-              privateProjection?.content?.kind === 'IMAGE'
-              || privateProjection?.content?.kind === 'VIDEO'
-            )
-            && (
-              <div style={{ marginTop: 8 }} onClick={(event) => event.stopPropagation()}>
-                <PrivateMediaGrid
-                  media={privateProjection.content.media}
-                  onOpen={(objectId) => void openPrivateMedia(post.id, objectId)}
-                />
-              </div>
-            )}
-
-          {isPrivate
-            && privateReadable
-            && privateRepost
-            && (
-              <div
-                style={{
-                  marginTop: 10,
-                  paddingLeft: 12,
-                  borderLeft: `2px solid ${token.colorBorder}`,
-                }}
-              >
-                <Text strong style={{ fontSize: 13 }}>
-                  {privateRepost.sourceAuthorPtid}
-                </Text>
-                <Paragraph
-                  type="secondary"
-                  style={{ margin: '4px 0 0', fontSize: 13, whiteSpace: 'pre-wrap' }}
-                >
-                  {privateRepost.sourceText}
-                </Paragraph>
-              </div>
-            )}
-
-          {isPrivate
-            && privateReadable
-            && privateLink
-            && (
-              <div
-                onClick={(event) => event.stopPropagation()}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  marginTop: 10,
-                  minWidth: 0,
-                }}
-              >
-                <ExternalLink size={15} color={token.colorTextSecondary} />
-                <Link
-                  href={privateLink.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  ellipsis
-                  style={{ minWidth: 0 }}
-                >
-                  {privateLink.title}
-                </Link>
-              </div>
-            )}
-
-          {isPrivate
-            && privateReadable
-            && privatePoll
-            && (
-              <div style={{ marginTop: 10 }}>
-                <Text strong>{privatePoll.question}</Text>
-                <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
-                  {privatePoll.options.map((option) => (
-                    <div
-                      key={option}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-                    >
-                      <span
-                        aria-hidden
-                        style={{
-                          width: 8,
-                          height: 8,
-                          flex: '0 0 8px',
-                          border: `1px solid ${token.colorBorder}`,
-                          borderRadius: '50%',
-                        }}
-                      />
-                      <Text>{option}</Text>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-          {isPrivate
-            && privateState === 'CONTENT_READY'
-            && privateLocation
-            && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 8,
-                  marginTop: 10,
-                }}
-              >
-                <MapPin
-                  size={15}
-                  color={token.colorTextSecondary}
-                  style={{ marginTop: 3, flexShrink: 0 }}
-                />
-                <div style={{ minWidth: 0 }}>
-                  <Text strong>{privateLocation.name}</Text>
-                  {privateLocation.address && (
-                    <div>
-                      <Text type="secondary">{privateLocation.address}</Text>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-          {original && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                marginTop: 8,
-                padding: 12,
-                background: token.colorBgLayout,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                borderRadius: 12,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <UserSquareAvatar
-                  remoteUrl={original.author?.avatarUrl || undefined}
-                  actorPtid={original.author?.id || null}
-                  name={
-                    original.author?.displayName ||
-                    original.author?.username ||
-                    t('moments.author.unknown')
-                  }
-                  size={20}
-                  radius={5}
-                />
-                <Text strong style={{ fontSize: 13 }}>
-                  {original.author?.displayName ||
-                    original.author?.username ||
-                    t('moments.author.unknown')}
-                </Text>
-              </div>
-              <Paragraph style={{ margin: 0, marginTop: 4, fontSize: 13, whiteSpace: 'pre-wrap' }}>
-                {getBodyText(original)}
-              </Paragraph>
-            </div>
-          )}
-
-          {!commentsOpen
-            && !isPrivate
-            && (visibleComments.length > 0 || commentsCount > 0) && (
-            <div
-              role="button"
-              tabIndex={0}
-              aria-expanded={false}
-              data-moments-comments-teaser={post.id}
-              onClick={() => setCommentsOpen(true)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  setCommentsOpen(true);
-                }
-              }}
-              style={{
-                marginTop: 10,
-                padding: '8px 12px',
-                borderRadius: 12,
-                background: token.colorFillQuaternary,
-                cursor: 'pointer',
-              }}
-            >
-              {visibleComments.map((comment) => (
-                <div key={comment.id} style={{ fontSize: 13, lineHeight: 1.6 }}>
-                  <MomentCommentAuthorName actorPtid={comment.authorPtid} />
-                  <Text style={{ fontSize: 13 }}> {comment.content}</Text>
-                </div>
-              ))}
-              <Button
-                type="link"
-                size="small"
-                style={{ padding: 0, height: 22, fontSize: 12 }}
-              >
-                {commentsCount > visibleComments.length
-                  ? `${t('moments.comment.viewAll')} (${commentsCount})`
-                  : t('moments.comment.viewAll')}
-              </Button>
-            </div>
-          )}
-
-          {commentsOpen && (
-            <div style={{ marginTop: 10 }}>
-              <SocialThreadDivider
-                label={t('moments.comment.hide')}
-                expanded
-                onToggle={() => setCommentsOpen(false)}
-              />
-              <SocialThreadSection>
-                <MomentCommentsSection
-                  postId={post.id}
-                  isPrivate={isPrivate}
-                  viewerActorPtid={viewerActorPtid}
-                  targetCommentId={targetCommentId}
-                />
-              </SocialThreadSection>
-            </div>
-          )}
-
-          <div style={{ marginTop: 10 }}>
-            <SocialActionBar
-              reactions={visibleReactions}
-              commentCount={commentsCount}
-              reactionState={isPrivate ? privateReaction?.state : undefined}
-              onRetryReaction={
-                isPrivate && !remoteSourceUnavailable
-                  ? handleRetryReaction
-                  : undefined
-              }
-              onReact={
-                remoteSourceUnavailable
-                  ? undefined
-                  : handleReact
-              }
-              onUnreact={remoteSourceUnavailable ? undefined : handleUnreact}
-              onOpenComments={() => setCommentsOpen(true)}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <PeerMomentCard postId={post.id} text={text} embedded={embedded}
+    data-moments-comments-region={post.id}
+    copy={{ more: t('moments.action.more'), expand: t('moments.action.showMore'), collapse: t('moments.action.showLess') }}
+    author={<MomentAuthorTrigger actorPtid={authorPtid} onOpenProfile={onAuthorClick} onOpenMoment={onOpen}>
+      <MomentAuthor name={name} time={relativeTime(post.createdAt?.seconds, t)}
+        label={t('moments.identity.cardLabel', { name })}
+        avatar={<UserSquareAvatar remoteUrl={identity.avatarUrl || undefined} actorPtid={authorPtid || null}
+          name={name} size={48} radius={13} />} />
+    </MomentAuthorTrigger>}
+    menuActions={[
+      ...(canEdit ? [{ id: `moment.edit.${post.id}`, label: t('moments.edit.action'),
+        leading: <Pencil size={14} />, onActivate: () => setEditOpen(true) }] : []),
+      ...(isSelf && onDelete ? [{ id: `moment.delete.${post.id}`, label: t('moments.delete.action'),
+        leading: <Trash2 size={14} />, tone: 'danger' as const, onActivate: () => setDeleteOpen(true) }] : []),
+    ]}
+    trust={<SocialTrustMeta source={{ kind: sourceKind, stationLabel: identity.homeStationName }}
+      reason={{ label: t(`moments.reason.${reasonKey}`), kind: explanation?.relationshipReason?.kind }}
+      audience={{ kind: audienceKind, label: t(`moments.audience.${audienceKeys[audienceKind] ?? 'public'}`) }} />}
+    notice={isPrivate && <>
+      {state !== 'CONTENT_READY' && <SocialPrivateState state={state} revocationReason={projection?.revocationReason}
+        compact onRetry={() => void readMoment(post.id)} onRecover={() => void recoverMoment(post.id)} />}
+      {state === 'CONTENT_READY' && delivery && <SocialPrivateState state={delivery} compact />}
+    </>}
+    attachments={<>
+      {images.length > 0 && <MomentAttachments cids={images.slice(0, 9).map(image => image.url || image.id)}
+        alts={images.slice(0, 9).map(image => image.altText)} />}
+      {!isPrivate && content.case === 'videoPost' && content.value.video && <MomentVideoAttachment
+        id={content.value.video.url || content.value.video.id} poster={content.value.video.thumbnailUrl} />}
+      {privateContent && (privateContent.kind === 'IMAGE' || privateContent.kind === 'VIDEO') &&
+        <PrivateMediaGrid media={privateContent.media} onOpen={id => void openMedia(post.id, id)} />}
+    </>}
+    content={<>
+      {!isPrivate && content.case === 'linkPost' && content.value.link && <p><ExternalLink size={15} />
+        {/^(https?):\/\//.test(content.value.link.url)
+          ? <a href={content.value.link.url} target="_blank" rel="noreferrer">{content.value.link.title || content.value.link.url}</a>
+          : <span>{content.value.link.title}</span>}
+        {content.value.link.description && <span> · {content.value.link.description}</span>}
+      </p>}
+      {!isPrivate && content.case === 'pollPost' && content.value.poll && <ul>
+        {content.value.poll.options.map((option, index) => <li key={index}>{option.text}</li>)}
+      </ul>}
+      {!isPrivate && content.case === 'locationPost' && content.value.location && <p><MapPin size={15} />
+        {content.value.location.name}{content.value.location.address && <span> · {content.value.location.address}</span>}
+      </p>}
+      {privateContent?.kind === 'REPOST' && <blockquote>
+        <strong>{privateContent.sourceAuthorPtid}</strong><p>{privateContent.sourceText}</p>
+      </blockquote>}
+      {privateContent?.kind === 'LINK' && <p><ExternalLink size={15} />
+        <a href={privateContent.url} target="_blank" rel="noreferrer">{privateContent.title}</a></p>}
+      {privateContent?.kind === 'POLL' && <div><strong>{privateContent.question}</strong>
+        <ul>{privateContent.options.map(option => <li key={option}>{option}</li>)}</ul></div>}
+      {privateContent?.kind === 'LOCATION' && <p><MapPin size={15} /> {privateContent.name}
+        {privateContent.address && <span> · {privateContent.address}</span>}</p>}
+      {original && <blockquote><MomentCard post={original} embedded defaultCommentsOpen={false}
+        viewerActorPtid={viewerActorPtid} onAuthorClick={onAuthorClick} /></blockquote>}
+    </>}
+    actions={<SocialActionBar postId={post.id} reactions={shownReactions} commentCount={Number(post.stats?.commentsCount ?? 0n)}
+      commentsOpen={commentsOpen} reactionState={isPrivate ? reaction?.state : undefined}
+      onRetryReaction={isPrivate && !unavailable ? async () => {
+        try { await retryReaction(post.id, '', reaction?.kind); } catch { message.error(t('moments.reaction.retryUnavailable')); }
+      } : undefined}
+      onReact={!unavailable && onReact ? react : undefined} onUnreact={!unavailable && onUnreact ? unreact : undefined}
+      onOpenComments={() => setCommentsOpen(value => !value)} />}
+    comments={commentsOpen && !unavailable ? <MomentCommentsSection postId={post.id} isPrivate={isPrivate}
+      viewerActorPtid={viewerActorPtid} targetCommentId={targetCommentId} onAuthorClick={onAuthorClick} /> : undefined}
+    dialogs={<>
+      {editOpen && <MomentTextEditor postId={post.id} text={text} onClose={() => setEditOpen(false)} />}
+      <Dialog open={deleteOpen} onDismiss={() => { if (!deleting) setDeleteOpen(false); }}
+        title={t('moments.delete.confirmTitle')} closeLabel={t('moments.action.cancel')}
+        description={t(isPrivate ? 'moments.delete.confirmDescription' : 'moments.delete.publicDescription')}
+        footer={<>
+          <Button actionId={`moment.delete.cancel.${post.id}`} label={t('moments.action.cancel')} emphasis="quiet"
+            availability={deleting ? { kind: 'disabled', reason: t('moments.reaction.pending') } : undefined}
+            onActivate={() => setDeleteOpen(false)} />
+          <Button actionId={`moment.delete.confirm.${post.id}`} label={t('moments.delete.action')} emphasis="primary"
+            tone="danger" execution={deleting ? 'pending' : 'idle'} data-acceptance-id="social-delete-confirm"
+            onActivate={() => void confirmDelete()} />
+        </>} />
+    </>} />;
 });

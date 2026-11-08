@@ -1,0 +1,367 @@
+package infrastructure
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"strconv"
+	"time"
+
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
+	"github.com/peers-labs/peers-touch/station/frame/core/signedlog"
+	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// StoreInteraction is called after independent Actor-root/device verification.
+// Receipts do not advance a chain head. Missing predecessors remain durable
+// and are retried by the bounded projection worker.
+func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
+	receipt *model.FeedInteraction, home string, forwarded bool) (bool, error) {
+	if receipt == nil || receipt.Event == nil || receipt.Event.Statement == nil {
+		return false, domain.ErrFeedInvalid
+	}
+	event := receipt.Event
+	payload := &model.FeedPayload{}
+	if err := signedlog.Decode(event.Payload, payload); err != nil {
+		return false, err
+	}
+	if payload.GetPost() != nil {
+		return false, domain.ErrFeedInvalid
+	}
+	target := payload.GetReaction().GetTargetPostRef()
+	if payload.GetComment() != nil {
+		target = payload.GetComment().TargetPostRef
+	}
+	station, _, err := domain.FeedTargetPost(target)
+	if err != nil {
+		return false, err
+	}
+	wire, err := signedlog.Canonical(receipt)
+	if err != nil {
+		return false, err
+	}
+	hash, err := domain.FeedEventHash(event)
+	if err != nil {
+		return false, err
+	}
+	s := event.Statement
+	if err := checkFeedQuarantine(ctx, tx, s.ActorPtid, s.ChainId); err != nil {
+		return false, err
+	}
+	var chain FeedChainRecord
+	chainErr := tx.WithContext(ctx).Where("actor_ptid = ? AND chain_id = ?", s.ActorPtid, s.ChainId).Take(&chain).Error
+	if chainErr == nil {
+		if chain.Forked {
+			return false, domain.ErrFeedFork
+		}
+		genesis, err := signedlog.Canonical(receipt.Genesis)
+		if err != nil {
+			return false, err
+		}
+		grant, err := signedlog.Canonical(receipt.WriterGrant)
+		if err != nil {
+			return false, err
+		}
+		if chain.HomeStationPeerID != home || !bytes.Equal(chain.Genesis, genesis) || !bytes.Equal(chain.WriterGrant, grant) {
+			return false, domain.ErrFeedWriter
+		}
+	} else if !errors.Is(chainErr, gorm.ErrRecordNotFound) {
+		return false, chainErr
+	}
+	var known FeedEventRecord
+	knownErr := tx.Where("actor_ptid = ? AND chain_id = ? AND sequence = ?", s.ActorPtid, s.ChainId, s.Sequence).Take(&known).Error
+	if knownErr == nil && !bytes.Equal(known.EventHash, hash) {
+		return false, domain.ErrFeedFork
+	}
+	if knownErr != nil && !errors.Is(knownErr, gorm.ErrRecordNotFound) {
+		return false, knownErr
+	}
+	row := FeedInteractionRecord{ActorPTID: s.ActorPtid, ChainID: s.ChainId,
+		Sequence: s.Sequence, EventHash: hash, Interaction: wire,
+		TargetStation: station, HomeStation: home, Forwarded: forwarded || station == p.localStation}
+	result := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	duplicate := result.RowsAffected == 0
+	if duplicate {
+		if err := tx.Where("actor_ptid = ? AND chain_id = ? AND sequence = ?",
+			s.ActorPtid, s.ChainId, s.Sequence).Take(&row).Error; err != nil {
+			return false, err
+		}
+		if !bytes.Equal(row.EventHash, hash) || !bytes.Equal(row.Interaction, wire) {
+			return false, domain.ErrFeedFork
+		}
+	}
+	if station == p.localStation {
+		if err := indexThread(ctx, tx, p.localStation, target, &row); err != nil {
+			return false, err
+		}
+	}
+	if row.Projected {
+		return duplicate, nil
+	}
+	if station == p.localStation {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&FeedInteractionFanout{
+			ActorPTID: s.ActorPtid, ChainID: s.ChainId, Sequence: s.Sequence, PostRef: target,
+		}).Error; err != nil {
+			return false, err
+		}
+	}
+	// A savepoint keeps a deferred projection from partially changing state.
+	if err := tx.SavePoint("feed_interaction_projection").Error; err != nil {
+		return false, err
+	}
+	err = p.projectInteraction(ctx, tx, event, payload, home)
+	if errors.Is(err, domain.ErrFeedGap) {
+		return duplicate, tx.RollbackTo("feed_interaction_projection").Error
+	}
+	if err != nil {
+		if rollback := tx.RollbackTo("feed_interaction_projection").Error; rollback != nil {
+			return false, rollback
+		}
+		return false, err
+	}
+	var post FeedObjectRecord
+	_, objectID, _ := domain.FeedTargetPost(target)
+	if err := tx.Where("home_station = ? AND object_kind = 'post' AND object_id = ?", station, objectID).Take(&post).Error; err != nil {
+		return false, err
+	}
+	if err := p.observe(ctx, tx, event, post.LocalID, post.ActorPTID); err != nil {
+		return false, err
+	}
+	return duplicate, tx.Model(&row).Update("projected", true).Error
+}
+
+func (p *FeedProjector) projectInteraction(ctx context.Context, tx *gorm.DB,
+	event *model.FeedEvent, payload *model.FeedPayload, home string) error {
+	target := payload.GetReaction().GetTargetPostRef()
+	if payload.GetComment() != nil {
+		target = payload.GetComment().TargetPostRef
+	}
+	station, objectID, err := domain.FeedTargetPost(target)
+	if err != nil {
+		return err
+	}
+	var object FeedObjectRecord
+	err = tx.WithContext(ctx).Where("home_station = ? AND object_kind = 'post' AND object_id = ?",
+		station, objectID).Take(&object).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.ErrFeedGap
+	}
+	if err != nil {
+		return err
+	}
+	var post db.SocialPublicPost
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", object.LocalID).Take(&post).Error; err != nil {
+		return err
+	}
+	// A late historical interaction cannot resurrect a hidden parent.
+	if post.DeletedAt != nil {
+		return nil
+	}
+	authorID, err := NewActorIdentity(tx).RequireID(ctx, event.Statement.ActorPtid)
+	if err != nil {
+		return err
+	}
+	when := time.UnixMilli(event.Statement.CreatedAtUnixMs).UTC()
+	if reaction := payload.GetReaction(); reaction != nil {
+		targetRef, commentID := target, ""
+		var comment db.SocialComment
+		if reaction.TargetCommentRef != "" {
+			commentHome, commentObjectID, err := domain.FeedTargetComment(reaction.TargetCommentRef)
+			if err != nil {
+				return err
+			}
+			var commentObject FeedObjectRecord
+			err = tx.Where("home_station = ? AND object_kind = 'comment' AND object_id = ?",
+				commentHome, commentObjectID).Take(&commentObject).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrFeedGap
+			}
+			if err != nil {
+				return err
+			}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND post_class = 'public'", commentObject.LocalID).Take(&comment).Error; err != nil {
+				return err
+			}
+			if comment.PostID != post.ID {
+				return domain.ErrFeedInvalid
+			}
+			if comment.DeletedAt != nil {
+				return nil
+			}
+			targetRef, commentID = reaction.TargetCommentRef, strconv.FormatUint(comment.ID, 10)
+		}
+		version := FeedReactionVersion{TargetRef: targetRef, ActorPTID: event.Statement.ActorPtid, Kind: reaction.ReactionKind}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&version).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("target_ref = ? AND actor_ptid = ? AND kind = ?", targetRef, version.ActorPTID, version.Kind).
+			Take(&version).Error; err != nil {
+			return err
+		}
+		if version.Sequence >= event.Statement.Sequence {
+			return nil
+		}
+		row := db.SocialReaction{PostID: strconv.FormatUint(post.ID, 10), CommentID: commentID, ActorID: authorID,
+			Kind: model.ReactionKind(reaction.ReactionKind).String(), PostClass: db.PostClassPublic, CreatedAt: when}
+		if event.Statement.Kind == model.FeedEventKind_FEED_EVENT_KIND_REACTION_REMOVED {
+			err = tx.Where("post_id = ? AND comment_id = ? AND actor_id = ? AND kind = ? AND post_class = 'public'",
+				row.PostID, row.CommentID, row.ActorID, row.Kind).Delete(&db.SocialReaction{}).Error
+		} else {
+			err = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+		}
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&version).Update("sequence", event.Statement.Sequence).Error; err != nil {
+			return err
+		}
+		if commentID != "" {
+			return nil
+		}
+		var counts []struct {
+			Kind  string
+			Count int64
+		}
+		if err := tx.Model(&db.SocialReaction{}).Select("kind, COUNT(*) AS count").
+			Where("post_id = ? AND comment_id = '' AND post_class = 'public'", row.PostID).Group("kind").Scan(&counts).Error; err != nil {
+			return err
+		}
+		snapshot := make(map[string]int64, len(counts))
+		for _, count := range counts {
+			snapshot[count.Kind] = count.Count
+		}
+		encoded, err := json.Marshal(snapshot)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&post).Update("reactions_count_json", string(encoded)).Error
+	}
+	c := payload.GetComment()
+	key := FeedObjectRecord{HomeStation: home, ObjectKind: "comment", ObjectID: c.CommentId}
+	var commentObject FeedObjectRecord
+	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("home_station = ? AND object_kind = 'comment' AND object_id = ?", home, c.CommentId).
+		Take(&commentObject).Error
+	kind := event.Statement.Kind
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if kind != model.FeedEventKind_FEED_EVENT_KIND_COMMENT_CREATED {
+			return domain.ErrFeedGap
+		}
+		key.ActorPTID, key.Sequence = event.Statement.ActorPtid, event.Statement.Sequence
+		key.LocalID, _ = domain.FeedObjectID(c.CommentId)
+		if home != p.localStation {
+			key.LocalID = id.NextID()
+		}
+		commentObject = key
+	} else if err != nil {
+		return err
+	} else {
+		if commentObject.ActorPTID != event.Statement.ActorPtid {
+			return domain.ErrFeedWriter
+		}
+		if commentObject.Sequence >= event.Statement.Sequence {
+			return nil
+		}
+		if kind == model.FeedEventKind_FEED_EVENT_KIND_COMMENT_CREATED {
+			return domain.ErrFeedInvalid
+		}
+	}
+	var existing db.SocialComment
+	if kind != model.FeedEventKind_FEED_EVENT_KIND_COMMENT_CREATED {
+		if err := tx.Where("id = ? AND post_id = ? AND author_id = ? AND post_class = 'public'",
+			commentObject.LocalID, post.ID, authorID).Take(&existing).Error; err != nil {
+			return err
+		}
+		if existing.DeletedAt != nil {
+			return nil
+		}
+	}
+	if kind == model.FeedEventKind_FEED_EVENT_KIND_COMMENT_TOMBSTONED {
+		if err := tx.Model(&existing).Updates(map[string]interface{}{"deleted_at": when, "updated_at": when}).Error; err != nil {
+			return err
+		}
+	} else {
+		request := &model.CreateCommentRequest{}
+		if err := signedlog.Decode(c.CreateRequest, request); err != nil {
+			return err
+		}
+		mentions, err := domain.ValidateTypedMentions(request.Content, request.TypedMentions)
+		if err != nil {
+			return err
+		}
+		for _, actor := range domain.MentionActorPTIDs(mentions) {
+			if _, err := NewActorIdentity(tx).RequireID(ctx, actor); err != nil {
+				return err
+			}
+		}
+		var parentID *uint64
+		if request.ReplyToCommentId != "" {
+			parentHome, parentObjectID, err := domain.FeedTargetComment(request.ReplyToCommentId)
+			if err != nil {
+				return err
+			}
+			var parentObject FeedObjectRecord
+			err = tx.Where("home_station = ? AND object_kind = 'comment' AND object_id = ?",
+				parentHome, parentObjectID).Take(&parentObject).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrFeedGap
+			}
+			if err != nil {
+				return err
+			}
+			n := parentObject.LocalID
+			var parent db.SocialComment
+			err = tx.Where("id = ? AND post_id = ? AND post_class = 'public' AND deleted_at IS NULL", n, post.ID).
+				Take(&parent).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrFeedGap
+			}
+			if err != nil {
+				return err
+			}
+			if parent.ParentCommentID != nil {
+				return domain.ErrFeedInvalid
+			}
+			parentID = &n
+		}
+		encoded, err := json.Marshal(mentions)
+		if err != nil {
+			return err
+		}
+		if kind == model.FeedEventKind_FEED_EVENT_KIND_COMMENT_CREATED {
+			if err := tx.Create(&commentObject).Error; err != nil {
+				return err
+			}
+			if err := tx.Create(&db.SocialComment{ID: commentObject.LocalID, PostID: post.ID,
+				PostClass: db.PostClassPublic, AuthorID: authorID, ParentCommentID: parentID,
+				TextBody: request.Content, MentionsJSON: string(encoded), CreatedAt: when, UpdatedAt: when}).Error; err != nil {
+				return err
+			}
+		} else {
+			if (existing.ParentCommentID == nil) != (parentID == nil) ||
+				(parentID != nil && *existing.ParentCommentID != *parentID) {
+				return domain.ErrFeedInvalid
+			}
+			if err := tx.Model(&existing).Updates(map[string]interface{}{
+				"text_body": request.Content, "mentions_json": string(encoded), "edited_at": when, "updated_at": when}).Error; err != nil {
+				return err
+			}
+		}
+	}
+	if err := tx.Model(&commentObject).Update("sequence", event.Statement.Sequence).Error; err != nil {
+		return err
+	}
+	return tx.Model(&post).UpdateColumn("comments_count", tx.Model(&db.SocialComment{}).
+		Select("COUNT(*)").Where("post_id = ? AND post_class = 'public' AND deleted_at IS NULL", post.ID)).Error
+}

@@ -15,16 +15,6 @@
 // build their own views.  If you need a new visual shape, add a new
 // component here — don't inline border-radius tokens in a page.
 
-export { SocialContentRail } from './SocialContentRail';
-export type { SocialContentRailProps } from './SocialContentRail';
-
-export { SocialScopeBar } from './SocialScopeBar';
-export type {
-  SocialScopeBarProps,
-  SocialScopeBarTab,
-  SocialScopeEntry,
-} from './SocialScopeBar';
-
 export { SocialTrustMeta } from './SocialTrustMeta';
 export type { SocialTrustMetaProps } from './SocialTrustMeta';
 
@@ -45,9 +35,6 @@ export type {
   SocialThreadBodyProps,
   SocialThreadSectionProps,
 } from './SocialThreadSurface';
-
-export { SocialComposer } from './SocialComposer';
-export type { SocialComposerProps } from './SocialComposer';
 
 export { SocialEmptyState, SocialSearchEmpty } from './SocialEmptyState';
 export type {

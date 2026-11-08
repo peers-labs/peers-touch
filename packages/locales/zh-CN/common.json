@@ -643,6 +643,7 @@
   "mobile.moments.audience.activeMembers": "{{count}} 位活跃成员",
   "mobile.moments.audience.followersExceptSelection": "关注者中排除 {{names}}",
   "mobile.moments.publishUnknown": "发布结果仍在确认中，草稿已保留以供对账。",
+  "mobile.moments.publicSignedWriteRequired": "公开发布需要使用已授权的 Desktop 设备，Mobile 暂未接入签名发布。草稿已保留，仍可选择私密受众。",
   "mobile.moments.publishPrivateFailed": "私密发布失败，草稿已保留。",
   "mobile.moments.reaction.like": "赞",
   "mobile.moments.reaction.love": "爱心",

@@ -97,13 +97,8 @@ CREATE TABLE social_reactions (
 )`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.Create(&dbmodel.SocialReaction{
-		PostID:    "post-1",
-		ActorID:   1,
-		Kind:      "REACTION_LIKE",
-		PostClass: "public",
-		CreatedAt: time.Now().UTC(),
-	}).Error; err != nil {
+	if err := database.Exec("INSERT INTO social_reactions VALUES (?, ?, ?, ?, ?)",
+		"post-1", 1, "REACTION_LIKE", "public", time.Now().UTC()).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,5 +124,20 @@ CREATE TABLE social_reactions (
 	}
 	if count != 2 {
 		t.Fatalf("reaction row count = %d, want 2", count)
+	}
+	comment := dbmodel.SocialReaction{PostID: "post-1", CommentID: "comment-1",
+		ActorID: 1, Kind: "REACTION_LIKE", PostClass: "public", CreatedAt: time.Now().UTC()}
+	if err := database.Create(&comment).Error; err != nil {
+		t.Fatalf("typed target collided with preserved post reaction: %v", err)
+	}
+	if err := database.Create(&comment).Error; err == nil {
+		t.Fatal("typed target lost idempotency key")
+	}
+	if err := MigrateInteractionSchema(database); err != nil {
+		t.Fatal(err)
+	}
+	var retained dbmodel.SocialReaction
+	if err := database.Where("comment_id = ?", comment.CommentID).Take(&retained).Error; err != nil || retained != comment {
+		t.Fatalf("typed-target migration lost row: %+v, %v", retained, err)
 	}
 }

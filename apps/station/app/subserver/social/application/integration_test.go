@@ -133,6 +133,7 @@ func newFixture(t *testing.T) *fixture {
 	if err := gdb.AutoMigrate(
 		&db.Actor{},
 		&db.SocialPublicPost{},
+		&infrastructure.FeedObjectRecord{},
 		&legacyPrivatePostFixture{},
 		&db.SocialMomentDelivery{},
 		&legacyPrivateAudienceGrantFixture{},
@@ -166,7 +167,7 @@ CREATE TABLE friend_chat_friendships (
 	groups := NewNoopGroupMembershipChecker()
 	repos := infrastructure.NewRepos(gdb)
 
-	reactions := NewReactionService(gdb, repos)
+	reactions := NewReactionService(repos)
 	// Tests use the no-op MediaResolver so existing fixtures can keep
 	// fabricating CIDs (`oss://station.local/...`); a dedicated test
 	// in `moment_service_image_test.go` covers the real resolver.
@@ -894,7 +895,7 @@ func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	summaries, err := f.reactions.React(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE)
+	summaries, err := f.projectReaction(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE, false)
 	if err != nil {
 		t.Fatalf("react: %v", err)
 	}
@@ -906,7 +907,7 @@ func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
 	}
 
 	// Idempotent: re-reacting with same kind shouldn't duplicate.
-	if _, err := f.reactions.React(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE); err != nil {
+	if _, err := f.projectReaction(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE, false); err != nil {
 		t.Fatalf("re-react: %v", err)
 	}
 	var n int64
@@ -916,7 +917,7 @@ func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
 	}
 
 	// Different kind from same viewer — second reaction allowed.
-	if _, err := f.reactions.React(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LOVE); err != nil {
+	if _, err := f.projectReaction(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LOVE, false); err != nil {
 		t.Fatalf("react LOVE: %v", err)
 	}
 	f.gdb.Model(&db.SocialReaction{}).Count(&n)
@@ -937,7 +938,7 @@ func TestReact_AddRemoveAndSnapshotRefresh(t *testing.T) {
 
 	// Unreact LIKE: should drop the count to zero for LIKE but keep
 	// LOVE.
-	if _, err := f.reactions.Unreact(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE); err != nil {
+	if _, err := f.projectReaction(ctx, created.Id, fixturePTID(viewer), model.ReactionKind_REACTION_LIKE, true); err != nil {
 		t.Fatalf("unreact: %v", err)
 	}
 	f.gdb.Model(&db.SocialReaction{}).Count(&n)
@@ -965,7 +966,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 	}
 	postID := domain.ParseID(post.Id)
 
-	top, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+	top, err := f.projectComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "first!",
 	}, postID /*viewer*/, fixturePTID(200))
@@ -974,7 +975,7 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 	}
 
 	// Reply to a top-level comment is allowed.
-	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+	if _, err := f.projectComment(ctx, &model.CreateCommentRequest{
 		PostId:           post.Id,
 		Content:          "second",
 		ReplyToCommentId: top.Id,
@@ -997,12 +998,12 @@ func TestComment_OneLevelReplyNesting(t *testing.T) {
 	if lastReplyID == "" {
 		t.Fatal("could not locate reply for two-level test")
 	}
-	_, err = f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+	_, err = f.projectComment(ctx, &model.CreateCommentRequest{
 		PostId:           post.Id,
 		Content:          "third",
 		ReplyToCommentId: lastReplyID,
 	}, postID /*viewer*/, fixturePTID(400))
-	if err == nil || !strings.Contains(err.Error(), "one-level nesting") {
+	if err == nil || !strings.Contains(err.Error(), "FEED_INVALID") {
 		t.Fatalf("two-level reply must be rejected, got err=%v", err)
 	}
 }
@@ -1036,8 +1037,14 @@ func TestComment_DecrementsCountOnDelete(t *testing.T) {
 	}, fixturePTID(author))
 	postID := domain.ParseID(post.Id)
 
-	c, _ := f.comments.CreateComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "a"}, postID, fixturePTID(200))
-	c2, _ := f.comments.CreateComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "b"}, postID, fixturePTID(300))
+	c, err := f.projectComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "a"}, postID, fixturePTID(200))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2, err := f.projectComment(ctx, &model.CreateCommentRequest{PostId: post.Id, Content: "b"}, postID, fixturePTID(300))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var afterCreate int64
 	f.gdb.Model(&db.SocialPublicPost{}).Select("comments_count").Where("id = ?", postID).Scan(&afterCreate)
@@ -1046,13 +1053,74 @@ func TestComment_DecrementsCountOnDelete(t *testing.T) {
 	}
 	_ = c2
 
-	if err := f.comments.DeleteComment(ctx, domain.ParseID(c.Id), fixturePTID(200)); err != nil {
+	if err := f.projectCommentDelete(ctx, domain.ParseID(c.Id), fixturePTID(200)); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	var afterDelete int64
 	f.gdb.Model(&db.SocialPublicPost{}).Select("comments_count").Where("id = ?", postID).Scan(&afterDelete)
 	if afterDelete != 1 {
 		t.Fatalf("comments_count after 1 delete = %d, want 1", afterDelete)
+	}
+}
+
+func TestComment_ReactionsReadFromSignedTargetsWithViewerPolicy(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	seedFollow(t, f, 200, 300)
+	seedFollow(t, f, 300, 200)
+	post, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
+		Type: model.PostType_TEXT, Audience: &model.Audience{Kind: model.Audience_PUBLIC}, Content: textBody("thread"),
+	}, fixturePTID(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	postID := domain.ParseID(post.Id)
+	root, err := f.projectComment(ctx, &model.CreateCommentRequest{Content: "root"}, postID, fixturePTID(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := f.projectComment(ctx, &model.CreateCommentRequest{Content: "reply", ReplyToCommentId: root.Id}, postID, fixturePTID(100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{root.Id, reply.Id} {
+		for _, reactor := range []uint64{200, 300, 400} {
+			if err := f.projectCommentReaction(ctx, post.Id, target, fixturePTID(reactor), false); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	page, err := f.comments.ListByPost(ctx, postID, fixturePTID(200), "", 20)
+	if err != nil || len(page.GetComments()) != 2 {
+		t.Fatalf("read page: %v %+v", err, page)
+	}
+	for _, comment := range page.Comments {
+		if comment.LikesCount != 2 || !comment.IsLiked {
+			t.Fatalf("viewer comment projection: %+v", comment)
+		}
+	}
+	authorRead, err := f.comments.GetByPost(ctx, postID, domain.ParseID(root.Id), fixturePTID(100))
+	if err != nil || authorRead.GetLikesCount() != 3 || authorRead.GetIsLiked() {
+		t.Fatalf("author point projection: %v %+v", err, authorRead)
+	}
+	seedBlock(t, f, 200, 300)
+	blockedRead, err := f.comments.GetByPost(ctx, postID, domain.ParseID(root.Id), fixturePTID(200))
+	if err != nil || blockedRead.GetLikesCount() != 1 || !blockedRead.GetIsLiked() {
+		t.Fatalf("blocked reactor projection: %v %+v", err, blockedRead)
+	}
+	if err := f.projectCommentReaction(ctx, post.Id, root.Id, fixturePTID(200), true); err != nil {
+		t.Fatal(err)
+	}
+	after, err := f.comments.GetByPost(ctx, postID, domain.ParseID(root.Id), fixturePTID(200))
+	if err != nil || after.GetLikesCount() != 0 || after.GetIsLiked() {
+		t.Fatalf("removed projection: %v %+v", err, after)
+	}
+	if err := f.projectCommentDelete(ctx, domain.ParseID(root.Id), fixturePTID(100)); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := f.comments.GetByPost(ctx, postID, domain.ParseID(root.Id), fixturePTID(200))
+	if err != nil || deleted != nil {
+		t.Fatalf("deleted comment is still readable: %v %+v", err, deleted)
 	}
 }
 
@@ -1103,6 +1171,76 @@ func TestCreateMoment_RejectsInvalidAudienceShape(t *testing.T) {
 // Circle service basics (no PTID resolver in P1 — owner ops only)
 // ---------------------------------------------------------------------------
 
+func TestCircle_MemberPaginationPreservesBulkTimestampTies(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	owner := fixturePTID(100)
+	circle, err := f.circles.Create(ctx, &model.CreateCircleRequest{Name: "Paged"}, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	members := make([]string, 45)
+	for i := range members {
+		members[i] = fmt.Sprintf("ptid:circle-member-%03d", i)
+	}
+	if _, _, err := f.circles.AddMembers(ctx, &model.AddCircleMemberRequest{
+		CircleId: circle.Id, MemberPtids: members,
+	}, owner); err != nil {
+		t.Fatal(err)
+	}
+	seen := make(map[string]bool)
+	cursor, firstCursor := "", ""
+	pages := 0
+	for {
+		response, err := f.circles.ListMembers(ctx, &model.ListCircleMembersRequest{
+			CircleId: circle.Id, Cursor: cursor, Limit: 20,
+		}, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages++
+		for _, member := range response.Members {
+			if seen[member.ActorPtid] {
+				t.Fatalf("duplicate member %s", member.ActorPtid)
+			}
+			seen[member.ActorPtid] = true
+			want := members[len(members)-len(seen)]
+			if member.ActorPtid != want {
+				t.Fatalf("unstable order: %s, want %s", member.ActorPtid, want)
+			}
+		}
+		if !response.HasMore {
+			break
+		}
+		if response.NextCursor == "" || response.NextCursor == cursor || pages > 3 {
+			t.Fatal("non-progressing cursor")
+		}
+		cursor = response.NextCursor
+		if firstCursor == "" {
+			firstCursor = cursor
+		}
+	}
+	if len(seen) != len(members) || pages != 3 {
+		t.Fatalf("read %d members in %d pages", len(seen), pages)
+	}
+	other, err := f.circles.Create(ctx, &model.CreateCircleRequest{Name: "Other"}, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.circles.ListMembers(ctx, &model.ListCircleMembersRequest{
+		CircleId: other.Id, Cursor: firstCursor,
+	}, owner); err == nil {
+		t.Fatal("accepted another circle's cursor")
+	}
+	for _, invalid := range []string{" " + firstCursor, firstCursor + "=", domain.Cursor{CreatedAt: time.Now()}.Encode()} {
+		if _, err := f.circles.ListMembers(ctx, &model.ListCircleMembersRequest{
+			CircleId: circle.Id, Cursor: invalid,
+		}, owner); err == nil {
+			t.Fatal("accepted malformed or incomplete cursor")
+		}
+	}
+}
+
 func TestCircle_CreateRenameDelete(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -1139,6 +1277,34 @@ func TestCircle_CreateRenameDelete(t *testing.T) {
 	}
 	if err := f.circles.Delete(ctx, created.Id, fixturePTID(owner)); err != nil {
 		t.Fatalf("owner delete: %v", err)
+	}
+}
+
+func TestCircle_CreateWithMembersIsAtomic(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.gdb.Callback().Create().Before("gorm:create").Register("circle_initial_members_failure", func(tx *gorm.DB) {
+		if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "social_circle_members" {
+			tx.AddError(fmt.Errorf("initial member write failed"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.gdb.Callback().Create().Remove("circle_initial_members_failure") })
+	if _, err := f.circles.Create(ctx, &model.CreateCircleRequest{
+		Name: "Must rollback", MemberPtids: []string{fixturePTID(200)},
+	}, fixturePTID(100)); err == nil {
+		t.Fatal("reported a partially created circle as successful")
+	}
+	var circles, members int64
+	if err := f.gdb.Model(&db.SocialCircle{}).Count(&circles).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.gdb.Model(&db.SocialCircleMember{}).Count(&members).Error; err != nil {
+		t.Fatal(err)
+	}
+	if circles != 0 || members != 0 {
+		t.Fatalf("partial creation retained: circles=%d members=%d", circles, members)
 	}
 }
 
@@ -1339,13 +1505,13 @@ func TestInteractionVisibility_FiltersThirdPartyCommentsAndReactions(t *testing.
 	}
 	postID := domain.ParseID(post.Id)
 
-	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+	if _, err := f.projectComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "mutual can be seen",
 	}, postID, fixturePTID(mutual)); err != nil {
 		t.Fatalf("mutual comment: %v", err)
 	}
-	if _, err := f.comments.CreateComment(ctx, &model.CreateCommentRequest{
+	if _, err := f.projectComment(ctx, &model.CreateCommentRequest{
 		PostId:  post.Id,
 		Content: "stranger must be hidden",
 	}, postID, fixturePTID(stranger)); err != nil {
@@ -1368,10 +1534,10 @@ func TestInteractionVisibility_FiltersThirdPartyCommentsAndReactions(t *testing.
 		t.Fatalf("author should see all comments, got %d", len(authorComments.Comments))
 	}
 
-	if _, err := f.reactions.React(ctx, post.Id, fixturePTID(mutual), model.ReactionKind_REACTION_LIKE); err != nil {
+	if _, err := f.projectReaction(ctx, post.Id, fixturePTID(mutual), model.ReactionKind_REACTION_LIKE, false); err != nil {
 		t.Fatalf("mutual react: %v", err)
 	}
-	if _, err := f.reactions.React(ctx, post.Id, fixturePTID(stranger), model.ReactionKind_REACTION_LIKE); err != nil {
+	if _, err := f.projectReaction(ctx, post.Id, fixturePTID(stranger), model.ReactionKind_REACTION_LIKE, false); err != nil {
 		t.Fatalf("stranger react: %v", err)
 	}
 

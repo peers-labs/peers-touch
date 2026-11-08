@@ -900,6 +900,7 @@ type PrivatePostReadModel struct {
 
 type PrivateCommentReadModel struct {
 	Comment                 dbmodel.SocialPrivateContentComment
+	ParentAuthorPTID        string
 	Snapshot                dbmodel.SocialPrivateAudienceSnapshot
 	Envelope                *dbmodel.SocialPrivateContentEnvelope
 	Objects                 []dbmodel.SocialPrivateObjectAttachment
@@ -1227,6 +1228,7 @@ func loadPrivateCommentReadModel(
 	}
 	return &PrivateCommentReadModel{
 		Comment:                 comment,
+		ParentAuthorPTID:        parent.AuthorPTID,
 		Snapshot:                snapshot,
 		Envelope:                envelope,
 		Objects:                 objects,

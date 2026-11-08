@@ -5,6 +5,12 @@ mod private_mention;
 mod private_moment;
 mod private_reaction;
 mod projection;
+pub(crate) use private_comment::PrivateCommentProjection;
+pub(crate) use private_reaction::project_reaction_target;
+pub(crate) use projection::PrivateReactionSummaryProjection;
+pub(crate) mod public_feed;
+pub(crate) mod public_feed_read;
+mod public_feed_store;
 pub(crate) mod search_projection;
 
 use std::path::Path;

@@ -234,6 +234,33 @@ pub(crate) fn source_reaction_summaries(
     })
 }
 
+pub(crate) fn merge_reaction_fields(
+    current_revision: &mut String,
+    current_reactions: &mut Vec<PrivateReactionSummaryProjection>,
+    current_hydrated: &mut bool,
+    reactions: &[PrivateReactionSummaryProjection],
+    revision: u64,
+    hydrated: bool,
+) -> Result<(), String> {
+    let current = current_revision
+        .parse::<u64>()
+        .map_err(|_| "private Reaction projection revision is invalid".to_string())?;
+    if !hydrated {
+        return Ok(());
+    }
+    if revision == 0 {
+        return Err("private Reaction hydrated revision is invalid".to_string());
+    }
+    if revision > current || (revision == current && !*current_hydrated) {
+        *current_revision = revision.to_string();
+        *current_reactions = reactions.to_vec();
+        *current_hydrated = true;
+    } else if revision == current && current_reactions != reactions {
+        return Err("private Reaction response conflicts at the same revision".to_string());
+    }
+    Ok(())
+}
+
 fn zero_revision() -> String {
     "0".to_string()
 }

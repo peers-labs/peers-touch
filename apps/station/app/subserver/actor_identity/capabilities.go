@@ -2,6 +2,7 @@ package actor_identity
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -29,6 +30,38 @@ type verifiedProfileDeviceKeyHydratorFactory func(
 
 type actorHomeStationResolver interface {
 	ResolveActorHomeStationPeerID(context.Context, string) (string, error)
+}
+
+// ResolveRetainedActorIdentityPublicKey exposes an independently established
+// continuity root, with persistence remaining inside Actor Identity.
+func (c *actorCapabilities) ResolveRetainedActorIdentityPublicKey(
+	ctx context.Context, transaction federationdelivery.Transaction, actorPTID string,
+) ([]byte, error) {
+	const operation = "actor_identity.resolve_retained_identity_public_key"
+	if c == nil || transaction == nil || transaction.DB() == nil {
+		return nil, domain.NewError(domain.ErrorCodeInvalidArgument, operation, "transaction", "is required")
+	}
+	if err := domain.ValidatePTID(operation, actorPTID); err != nil {
+		return nil, err
+	}
+	repository, err := persistence.NewRepository(transaction.DB())
+	if err != nil {
+		return nil, err
+	}
+	root, err := repository.ResolveRetainedIdentityPublicKey(ctx, actorPTID)
+	if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
+		return root, err
+	}
+	manifest, err := c.verifiedManifest(ctx, &actormodel.GetActorEndpointManifestRequest{
+		Actor: &actormodel.ActorRef{Ptid: actorPTID, Kind: actormodel.ActorKind_ACTOR_KIND_PERSON},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := repository.AcceptVerifiedEndpointManifest(ctx, manifest, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	return repository.ResolveRetainedIdentityPublicKey(ctx, actorPTID)
 }
 
 type actorCapabilities struct {

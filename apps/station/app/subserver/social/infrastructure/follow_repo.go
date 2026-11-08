@@ -40,14 +40,34 @@ type FollowRepository interface {
 }
 
 type RelationshipMutation func(context.Context, delivery.Transaction) error
+type FeedSubscriptionMutation func(context.Context, delivery.Transaction, string, string, bool) error
 
 type followRepository struct {
-	db       *gorm.DB
-	identity *ActorIdentity
+	db                *gorm.DB
+	identity          *ActorIdentity
+	feedSubscriptions []FeedSubscriptionMutation
 }
 
-func NewFollowRepository(gdb *gorm.DB) FollowRepository {
-	return &followRepository{db: gdb, identity: NewActorIdentity(gdb)}
+func NewFollowRepository(gdb *gorm.DB, subscriptions ...FeedSubscriptionMutation) FollowRepository {
+	return &followRepository{db: gdb, identity: NewActorIdentity(gdb), feedSubscriptions: subscriptions}
+}
+
+func (r *followRepository) mutateFeedSubscriptions(ctx context.Context, tx *gorm.DB, follower, author string, enabled bool) error {
+	if len(r.feedSubscriptions) == 0 {
+		return nil
+	}
+	outbox, err := delivery.NewGORMRepository(tx, delivery.SystemClock{})
+	if err != nil {
+		return err
+	}
+	for _, mutate := range r.feedSubscriptions {
+		if mutate != nil {
+			if err := mutate(ctx, &feedTransaction{db: tx, outbox: outbox}, follower, author, enabled); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -128,17 +148,20 @@ func (r *followRepository) Follow(ctx context.Context, followerPTID, followingPT
 			Where("follower_id = ? AND following_id = ?", followerID, followingID).
 			First(&existing).Error
 		if err == nil {
-			return nil
+			return r.mutateFeedSubscriptions(ctx, tx, followerPTID, followingPTID, true)
 		}
 		if err != gorm.ErrRecordNotFound {
 			return err
 		}
-		return tx.Create(&db.Follow{
+		if err := tx.Create(&db.Follow{
 			ID:          id.NextID(),
 			FollowerID:  followerID,
 			FollowingID: followingID,
 			CreatedAt:   time.Now(),
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		return r.mutateFeedSubscriptions(ctx, tx, followerPTID, followingPTID, true)
 	})
 }
 
@@ -165,6 +188,9 @@ func (r *followRepository) Unfollow(
 		}
 		if deleted.RowsAffected == 0 {
 			return nil
+		}
+		if err := r.mutateFeedSubscriptions(ctx, tx, followerPTID, followingPTID, false); err != nil {
+			return err
 		}
 		if err := tx.
 			Where(

@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { ChevronLeft } from 'lucide-react';
+import { StatGrid } from '@peers-touch/ui';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { MomentListState } from '../../components/moments/MomentListState';
 import { UserProfileHeader } from '../../components/moments/UserProfileHeader';
@@ -24,6 +25,7 @@ interface MomentsUserViewProps {
   viewerActorPtid?: string;
   onBack: () => void;
   onOpenPost: (postId: string) => void;
+  onAuthorClick: (actorPtid: string) => void;
 }
 
 function discoveryUserAsAuthor(user: DiscoveryUser): PostAuthor {
@@ -43,6 +45,7 @@ export function MomentsUserView({
   viewerActorPtid,
   onBack,
   onOpenPost,
+  onAuthorClick,
 }: MomentsUserViewProps) {
   const { t } = useTranslation('moments');
   const {
@@ -55,6 +58,7 @@ export function MomentsUserView({
     reactToPost,
     unreactToPost,
     deletePost,
+    myStats,
   } = useActiveMomentsSlice((s) => ({
     feed: s.userFeeds[actorPtid],
     postsById: s.postsById,
@@ -65,6 +69,7 @@ export function MomentsUserView({
     reactToPost: s.reactToPost,
     unreactToPost: s.unreactToPost,
     deletePost: s.deletePost,
+    myStats: s.myStats,
   }));
 
   const { followers, following } = useActiveRelationshipsSlice((s) => ({
@@ -113,10 +118,21 @@ export function MomentsUserView({
         viewerActorPtid={viewerActorPtid}
         followerCount={followers?.total}
         followingCount={following?.total}
-        postCount={feed?.loading ? undefined : posts.length}
+        postCount={actorPtid === viewerActorPtid && myStats ? Number(myStats.postsCount) : discoveryUser?.postCount}
+        bio={discoveryUser?.bio}
         loading={!author && profileLoading}
         refreshing={!!author && profileLoading}
       />
+      {actorPtid === viewerActorPtid && <StatGrid statistics={[
+        { id: 'posts', label: t('moments.stats.posts'), value: myStats ? Number(myStats.postsCount) : undefined },
+        { id: 'comments', label: t('moments.stats.commentsGiven'), value: myStats ? Number(myStats.commentsCount) : undefined },
+        { id: 'reactionsGiven', label: t('moments.stats.reactionsGiven'), value: myStats ? Number(myStats.reactionsGivenCount) : undefined },
+        { id: 'commentsReceived', label: t('moments.stats.commentsReceived'), value: myStats ? Number(myStats.commentsReceivedCount) : undefined },
+        { id: 'reactionsReceived', label: t('moments.stats.reactionsReceived'), value: myStats ? Number(myStats.reactionsReceivedCount) : undefined },
+        { id: 'following', label: t('moments.stats.following'), value: myStats ? Number(myStats.followingCount) : undefined },
+        { id: 'followers', label: t('moments.stats.followers'), value: myStats ? Number(myStats.followersCount) : undefined },
+        { id: 'circles', label: t('moments.stats.circles'), value: myStats ? Number(myStats.circlesCount) : undefined },
+      ]} />}
 
       <div style={{ marginTop: 16 }}>
         <MomentListState
@@ -134,6 +150,7 @@ export function MomentsUserView({
             viewerActorPtid={viewerActorPtid}
             surface="profile"
             onOpen={onOpenPost}
+            onAuthorClick={onAuthorClick}
             onReact={handleReact}
             onUnreact={handleUnreact}
             onDelete={handleDelete}

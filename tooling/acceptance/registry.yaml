@@ -3945,6 +3945,25 @@
       ]
     },
     {
+      "id": "social-public-signed-feed",
+      "features": ["social-public-signed-feed"],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/social/**/feed_*",
+          "apps/station/app/subserver/social/feed_*",
+          "apps/desktop/src-tauri/src/social/public_feed*",
+          "apps/desktop/src/services/publicFeed*",
+          "apps/desktop/src/services/social_api.ts",
+          "tooling/acceptance/gates/social/public_feed*",
+          "packages/station-trust/src/feed_log.rs",
+          "model/domain/social/feed_log.proto",
+          "apps/station/frame/core/signedlog/**",
+          "docs/architecture/domains/social/federation/actor-*"
+        ]
+      },
+      "require": ["social-public-feed-source", "station-api-ownership", "social-public-feed-native-e2e"]
+    },
+    {
       "id": "social-cross-station-private",
       "features": [
         "social-private-cross-station-desktop"

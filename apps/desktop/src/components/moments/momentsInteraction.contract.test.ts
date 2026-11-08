@@ -8,12 +8,15 @@ function source(relativePath: string): string {
 
 const composerSource = source('./MomentComposer.tsx');
 const audiencePickerSource = source('./AudiencePicker.tsx');
+const sharedAudienceSource = source('../../../../../packages/ui/web/src/moment-composer.tsx');
+const sharedMomentsCss = source('../../../../../packages/ui/web/src/moments.css');
 const commentListSource = source('./CommentList.tsx');
 const commentsSectionSource = source('./MomentCommentsSection.tsx');
 const detailSource = source('../../pages/moments/MomentDetailPage.tsx');
 const appSource = source('../../pages/moments/MomentsApp.tsx');
 const threadSource = source('./surfaces/SocialThreadSurface.tsx');
-const searchSource = source('../../pages/moments/UserSearchPage.tsx');
+const scopeSource = source('../../../../../packages/ui/web/src/moment-scope-bar.tsx');
+const navigationSource = source('../../store/momentsNavigation.ts');
 const userSource = source('../../pages/moments/MomentsUserPage.tsx');
 const circleSource = source('../../pages/moments/CircleManagePage.tsx');
 const discoverySource = source('../../store/discovery.ts');
@@ -42,8 +45,9 @@ describe('Desktop Moments interaction contract', () => {
 
   it('keeps post text away from its visible input boundary', () => {
     expect(composerSource).toContain('data-moments-composer-input');
-    expect(composerSource).toContain("padding: '8px 12px'");
-    expect(composerSource).toContain('border: `1px solid ${token.colorBorderSecondary}`');
+    expect(composerSource).toContain('<MomentComposerSurface');
+    expect(sharedMomentsCss).toContain('.sk-compose .pt-field-frame');
+    expect(sharedMomentsCss).toContain('padding: 4px 8px');
   });
 
   it('lets users collapse and restore the comment thread inside the card', () => {
@@ -51,7 +55,7 @@ describe('Desktop Moments interaction contract', () => {
     // Comments expand inline in the card; the section anchor stays on the
     // card root so deep-link captures find the thread from its card.
     expect(momentCardSource).toContain('data-moments-comments-region={post.id}');
-    expect(momentCardSource).toContain('commentsOpen && (');
+    expect(momentCardSource).toContain('commentsOpen && !unavailable');
     expect(momentCardSource).toContain('<MomentCommentsSection');
     expect(commentsSectionSource).toContain('<CommentList');
     expect(appSource).toContain('key={view.postId}');
@@ -59,6 +63,8 @@ describe('Desktop Moments interaction contract', () => {
     // revision identity — only thread + viewer identity keys it.
     expect(commentsSectionSource).not.toContain('draftRevision');
     expect(commentsSectionSource).not.toContain('rendererGeneration');
+    expect(commentsSectionSource).toContain('key={commentDraftKey(');
+    expect(commentsSectionSource).toContain('sessionEpoch');
   });
 
   it('keeps a committed private Comment actionable without plaintext', () => {
@@ -85,11 +91,13 @@ describe('Desktop Moments interaction contract', () => {
     );
   });
 
-  it('navigates from a search result only through its avatar', () => {
-    expect(searchSource).toContain('onAvatarClick={() => onOpenUser(u.id)}');
-    expect(searchSource).not.toContain('onClick={() => onOpenUser(u.id)}');
-    expect(searchSource).not.toContain('loading={searching}');
-    expect(searchSource).toContain('searchError && query === normalizedText');
+  it('keeps two scopes and nearby search while identities open their original profile', () => {
+    expect(navigationSource).toContain("MomentsTab = 'feed' | 'circles'");
+    expect(appSource).toContain('<MomentScopeBar');
+    expect(appSource).toContain("setQuery('')");
+    expect(scopeSource).toContain('data-scope-search={value}');
+    expect(scopeSource).toContain('onQueryChange');
+    expect(appSource).toContain('onAuthorClick={goUser}');
     expect(userSource).toContain('discoveryUser: s.usersById[actorPtid]');
     expect(userSource).toContain('loading={!author && profileLoading}');
     expect(userSource).toContain('refreshing={!!author && profileLoading}');
@@ -98,7 +106,9 @@ describe('Desktop Moments interaction contract', () => {
   });
 
   it('adds audience members through identity search instead of typed DIDs', () => {
-    expect(circleSource).toContain('data-moments-circle-person-picker');
+    expect(circleSource).toContain('<MomentCircleEditor');
+    expect(circleSource).toContain('void searchUsers(value)');
+    expect(circleSource).toContain('await saveCircle(');
     expect(circleSource).toContain("t('moments.circle.searchPeoplePlaceholder')");
     expect(circleSource).not.toContain('memberInput');
     expect(runtimeSource).toContain('export async function ensureCircleMemberProfiles');
@@ -117,10 +127,11 @@ describe('Desktop Moments interaction contract', () => {
     expect(admissionIndex).toBeGreaterThan(-1);
     expect(publishIndex).toBeGreaterThan(admissionIndex);
     expect(composerSource).toContain('privateMomentPublishIntent(privateDraft)');
-    expect(audiencePickerSource).toContain('data-moments-audience-kind');
-    expect(audiencePickerSource).toContain('data-moments-audience-target="circle"');
-    expect(audiencePickerSource).toContain('data-moments-audience-target="group"');
-    expect(audiencePickerSource).toContain('data-moments-audience-actors');
+    expect(sharedAudienceSource).toContain('data-moments-audience-kind');
+    expect(sharedAudienceSource).toContain('data-moments-audience-target');
+    expect(audiencePickerSource).toContain("case: 'circleId'");
+    expect(audiencePickerSource).toContain("case: 'groupConversationId'");
+    expect(sharedAudienceSource).toContain('data-moments-audience-actors');
     expect(composerSource).toContain('homeStationPeerId !== localStationPeerId');
     expect(composerSource).toContain('await preparePrivateAudience(intent)');
     expect(composerSource).toContain("privatePublishState === 'READY_PRIVATE'");
@@ -130,8 +141,9 @@ describe('Desktop Moments interaction contract', () => {
   });
 
   it('renders private Reaction status and explicit retry through SocialActionBar', () => {
-    expect(momentCardSource).toContain('privateReaction: s.reactionsByPost[post.id]');
-    expect(momentCardSource).toContain('retryPrivateReaction(post.id)');
+    expect(momentCardSource).toContain('Object.values(state.reactionCommands)');
+    expect(momentCardSource).toContain('command.postId === post.id && !command.commentId');
+    expect(momentCardSource).toContain("retryReaction(post.id, '', reaction?.kind)");
     expect(momentCardSource).not.toContain('message.error(String(err))');
     expect(actionBarSource).toContain("reactionState === 'REACTION_PENDING'");
     expect(actionBarSource).toContain("t('moments.reaction.retry')");
@@ -157,6 +169,7 @@ describe('Desktop Moments interaction contract', () => {
     expect(replyIndex).toBeGreaterThan(-1);
     expect(gateIndex).toBeGreaterThan(replyIndex);
     expect(commentListSource).toContain("t('moments.comment.deleteFailed')");
+    expect(commentListSource).toContain('onSubmit(trimmed, replyRootId, normalized)');
   });
 
   it('routes production and harness PUBLIC media through one composer decision', () => {

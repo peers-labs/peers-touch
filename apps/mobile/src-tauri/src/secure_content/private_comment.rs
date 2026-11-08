@@ -27,10 +27,11 @@ use crate::secure_content::proto::{
     actor::v1 as actor, secure_content::v1 as wire, social::v1 as social,
 };
 use crate::secure_content::receiver::{
-    canonical_identifier, checked_timestamp_millis, current_unix_seconds,
-    object_descriptor_set_hash, purges_private_material, terminal_projection_for_transport_error,
-    verify_recovery_viewer_envelope, verify_station_attestation, verify_viewer_envelope,
-    PrivateMentionProjection,
+    canonical_identifier, canonical_reaction_summaries, checked_timestamp_millis,
+    current_unix_seconds, object_descriptor_set_hash, purges_private_material,
+    terminal_projection_for_transport_error, verify_recovery_viewer_envelope,
+    verify_station_attestation, verify_viewer_envelope, PrivateMentionProjection,
+    PrivateReactionSummaryProjection,
 };
 use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::store::{CommentState, PrivateSocialStore, StoredCommentDraft};
@@ -73,6 +74,12 @@ pub struct PrivateCommentProjection {
     #[serde(default)]
     pub mentions: Vec<PrivateMentionProjection>,
     pub reactions_count: i64,
+    #[serde(default)]
+    pub reactions: Vec<PrivateReactionSummaryProjection>,
+    #[serde(default = "zero_reaction_revision")]
+    pub reaction_revision: String,
+    #[serde(default)]
+    pub reactions_hydrated: bool,
     pub replies_count: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at_millis: Option<i64>,
@@ -81,6 +88,22 @@ pub struct PrivateCommentProjection {
 }
 
 impl PrivateCommentProjection {
+    pub(crate) fn update_reactions_count(&mut self) -> Result<(), String> {
+        self.reactions_count = self.reactions.iter().try_fold(0i64, |total, summary| {
+            let count = summary
+                .count
+                .parse::<i64>()
+                .map_err(|_| "private Comment reaction count is invalid".to_string())?;
+            if count < 0 {
+                return Err("private Comment reaction count is negative".to_string());
+            }
+            total
+                .checked_add(count)
+                .ok_or_else(|| "private Comment reaction count overflows".to_string())
+        })?;
+        Ok(())
+    }
+
     pub(crate) fn encode(&self) -> Result<Vec<u8>, String> {
         serde_json::to_vec(self).map_err(|error| error.to_string())
     }
@@ -88,6 +111,33 @@ impl PrivateCommentProjection {
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
         serde_json::from_slice(bytes).map_err(|error| error.to_string())
     }
+}
+
+fn zero_reaction_revision() -> String {
+    "0".to_string()
+}
+
+pub(crate) fn source_comment_reaction_summaries(
+    response: &social::GetMomentCommentResourceResponse,
+    post_id: &str,
+    comment_id: &str,
+) -> Result<(Vec<PrivateReactionSummaryProjection>, String, bool), String> {
+    let metadata = response
+        .comment
+        .as_ref()
+        .and_then(|comment| comment.metadata.as_ref())
+        .ok_or_else(|| "private Reaction Comment readback is unavailable".to_string())?;
+    if metadata.post_id != post_id
+        || metadata.comment_id != comment_id
+        || metadata.reaction_revision == 0
+    {
+        return Err("private Reaction Comment readback identity is invalid".to_string());
+    }
+    Ok((
+        canonical_reaction_summaries(&metadata.reactions)?,
+        metadata.reaction_revision.to_string(),
+        true,
+    ))
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -514,7 +564,7 @@ fn reconcile_comment_readback(
                     .root_key
                     .map(ContentKey::from_bytes)
                     .ok_or_else(|| "private Comment root key is unavailable".to_string())?;
-                let opened = decrypt_comment(
+                let mut opened = decrypt_comment(
                     session,
                     store,
                     transport,
@@ -523,7 +573,7 @@ fn reconcile_comment_readback(
                     Some(root),
                     None,
                 )?;
-                store.commit_comment_receiver_projection(
+                let committed = store.commit_comment_receiver_projection(
                     session_generation,
                     &opened.projection.content_id,
                     draft.generation,
@@ -533,6 +583,7 @@ fn reconcile_comment_readback(
                     opened.consumed_prekey_id.as_deref(),
                     &opened.projection.encode()?,
                 )?;
+                opened.projection = PrivateCommentProjection::decode(&committed)?;
                 Ok::<_, String>(opened)
             })();
             match verified {
@@ -694,7 +745,7 @@ pub fn list(
             .generation
             .parse::<u64>()
             .map_err(|_| "private Comment generation is invalid".to_string())?;
-        store.commit_comment_receiver_projection(
+        let committed = store.commit_comment_receiver_projection(
             session_generation,
             &decrypted.projection.content_id,
             generation,
@@ -704,7 +755,7 @@ pub fn list(
             decrypted.consumed_prekey_id.as_deref(),
             &decrypted.projection.encode()?,
         )?;
-        comments.push(decrypted.projection);
+        comments.push(PrivateCommentProjection::decode(&committed)?);
     }
     Ok(PrivateCommentPage {
         post_id: post_id.to_string(),
@@ -1473,6 +1524,10 @@ fn decrypt_comment(
         display: mention.display,
     })
     .collect();
+    let reactions = canonical_reaction_summaries(&metadata.reactions)?;
+    if metadata.reaction_revision == 0 && (!reactions.is_empty() || metadata.reactions_count != 0) {
+        return Err("private Comment reaction projection lacks a revision".to_string());
+    }
     Ok(DecryptedPrivateComment {
         projection: PrivateCommentProjection {
             comment_id: metadata.comment_id.clone(),
@@ -1489,6 +1544,9 @@ fn decrypt_comment(
             text: Some(decoded.text),
             mentions,
             reactions_count: metadata.reactions_count,
+            reactions,
+            reaction_revision: metadata.reaction_revision.to_string(),
+            reactions_hydrated: metadata.reaction_revision > 0,
             replies_count: metadata.replies_count,
             created_at_millis: checked_timestamp_millis(
                 metadata.created_at.as_ref(),

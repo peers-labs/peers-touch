@@ -90,6 +90,7 @@ import {
   readPrivateTextMoment,
   recoverPrivateMoment,
   reconcilePrivateMoments,
+  setPrivateMomentReaction,
   submitPrivateComment,
 } from '../runtimes/privateMomentsRuntime';
 import {
@@ -1429,7 +1430,16 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const text = requireString(input?.text, 'moments.publish.text');
     const audienceKind = requireAudienceKind(input?.audienceKind);
     if (audienceKind !== Audience_Kind.PUBLIC) {
-      throw new Error('acceptance.mobile.privateMomentRequiresNativeAction');
+      const published = await publishPrivateTextMoment({
+        draftId: globalThis.crypto.randomUUID(),
+        draftRevision: 1,
+        text,
+        audience: requirePrivateSocialAudience(input?.audience),
+      });
+      if (published.state !== 'PUBLISHED' || !published.postId) {
+        throw new Error(`acceptance.mobile.privateMomentPublishFailed:${published.errorCode ?? published.state}`);
+      }
+      return { postId: published.postId, text, deleted: false, reactions: [], authorPtid: runtime.scope.actorPtid };
     }
     const result = await runtime.intents.publishMoment({
       draftId: globalThis.crypto.randomUUID(),
@@ -1442,6 +1452,9 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     });
     if (result.route !== 'PUBLIC') {
       throw new Error('acceptance.mobile.momentsPublishRouteMismatch');
+    }
+    if (!result.outcome.ok && result.outcome.error.code === 'FEED_SIGNED_WRITE_REQUIRED') {
+      return { rejected: true, code: result.outcome.error.code, text };
     }
     const created = requireAcceptanceOutcome(
       result.outcome,
@@ -1457,6 +1470,14 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     const runtime = requireMomentsRuntime();
     const postId = requireString(input?.postId, 'moments.react.postId');
     const reactionKind = requireReactionKind(input?.reactionKind);
+    const post = runtime.state().home.posts.find(candidate => candidate.id === postId);
+    if (post?.audience && post.audience.kind !== Audience_Kind.PUBLIC) {
+      const result = await setPrivateMomentReaction(postId, reactionKind, Boolean(input?.active));
+      if (result.command.state !== 'REACTION_COMMITTED') {
+        throw new Error('acceptance.mobile.privateReactionFailed');
+      }
+      return result.reactions;
+    }
     const result = await runtime.intents.setPublicReaction(
       postId,
       reactionKind,
@@ -1475,6 +1496,21 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.comment': async (input) => {
     const runtime = requireMomentsRuntime();
+    const postId = requireString(input?.postId, 'moments.comment.postId');
+    const post = runtime.state().home.posts.find(candidate => candidate.id === postId);
+    if (post?.audience && post.audience.kind !== Audience_Kind.PUBLIC) {
+      const result = await runtime.intents.submitPrivateComment({
+        draftId: globalThis.crypto.randomUUID(), draftRevision: 1, postId,
+        text: requireString(input?.content, 'moments.comment.content'),
+        replyToCommentId: input?.replyToCommentId?.trim() || undefined,
+        mentions: [],
+      });
+      if (result.comment?.state !== 'COMMENT_POSTED') {
+        throw new Error('acceptance.mobile.privateCommentFailed');
+      }
+      return { commentId: result.comment.commentId, postId, authorPtid: result.comment.authorPtid,
+        content: result.comment.text ?? '', replyToCommentId: result.comment.replyToCommentId, deleted: false };
+    }
     const result = await runtime.intents.createPublicComment(
       requireString(input?.postId, 'moments.comment.postId'),
       requireString(input?.content, 'moments.comment.content'),
@@ -1492,6 +1528,13 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.comments.read': async (input) => {
     const runtime = requireMomentsRuntime();
+    const postId = requireString(input?.postId, 'moments.comments.read.postId');
+    const post = runtime.state().home.posts.find(candidate => candidate.id === postId);
+    if (post?.audience && post.audience.kind !== Audience_Kind.PUBLIC) {
+      return (await runtime.intents.readPrivateComments(postId, '', 50)).comments
+        .map(comment => ({ commentId: comment.commentId, postId, content: comment.text ?? '',
+          authorPtid: comment.authorPtid, replyToCommentId: comment.replyToCommentId, deleted: false }));
+    }
     const result = await runtime.intents.readPublicComments(
       requireString(input?.postId, 'moments.comments.read.postId'),
       '',

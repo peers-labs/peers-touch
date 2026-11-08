@@ -386,6 +386,13 @@ message CommentMetadata {
   bool is_deleted = 8;
   int64 reactions_count = 9;
   int64 replies_count = 10;
+  // Public Feed discovery hints, never evidence of signature validity.
+  string public_feed_ref = 11;
+  string reply_to_public_feed_ref = 12;
+  // Viewer-bound LIKE projection; public clients derive it from verified Feed.
+  bool is_liked = 13;
+  uint64 reaction_revision = 14;
+  repeated ReactionSummary reactions = 15;
 }
 
 message PublicCommentContent {

@@ -71,6 +71,9 @@ test('FLOW-A01 Hook permits ordinary work without identity, declaration, or Plan
     assert.equal(result.action, 'ALLOW');
     assert.equal(result.executionRoot, root);
     assert.match(result.additionalContext, /docs\/global\/workflow\.md/);
+    assert.match(result.additionalContext, /pt-god-view\/SKILL\.md/);
+    assert.match(result.additionalContext, /pt-dev-workflow\/SKILL\.md/);
+    assert.match(result.additionalContext, /pt-read-before-edit\/SKILL\.md/);
   } finally {
     cleanupFixture(root);
   }

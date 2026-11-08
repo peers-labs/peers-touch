@@ -2,6 +2,39 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "social-public-signed-feed-native",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-public-signed-feed"],
+      "required_gates": ["social-public-feed-source", "station-api-ownership", "social-public-feed-native-e2e"],
+      "synthetic_paths": ["apps/desktop/src/services/publicFeedNative.ts"],
+      "evidence": {
+        "truth_sources": ["Native-verified public/v1 bytes and two deployed Station projections"],
+        "surfaces": ["Native Desktop composer, remote feed, comment, reaction and restart"],
+        "proven_by": ["social-public-feed-native-e2e"],
+        "proven_scope": ["Only publication, late follower history, non-follower interaction and restart after current-source Native proof"],
+        "unproven_scope": ["Native edit/tombstone and public Search", "Lost ACK and dropped notification faults", "Second writer denial, projection tamper and head rollback faults", "Prototype visual parity", "Mobile Native"]
+      }
+    },
+    {
+      "id": "social-public-signed-feed-source-integrity",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-public-signed-feed"],
+      "required_gates": ["social-public-feed-source", "station-api-ownership", "social-public-feed-native-e2e"],
+      "synthetic_paths": [
+        "apps/station/app/subserver/social/application/feed_log_service.go",
+        "apps/desktop/src-tauri/src/social/public_feed_store.rs"
+      ],
+      "evidence": {
+        "truth_sources": ["Actor root/device authorization, signed public/v1 log and Native encrypted journal"],
+        "surfaces": ["Go source checks and Native Rust journal/cache tests"],
+        "proven_by": ["social-public-feed-source"],
+        "proven_scope": ["Source-level authorization, projection, bounded replication, receipt conflict and ACK retry checks, Desktop consumption and Mobile typed public-write denial"],
+        "unproven_scope": ["AFL-J01 through AFL-J04 Native double-Station product Journeys", "Mobile Native cutover", "Desktop Native consumer Journeys"]
+      }
+    },
+    {
       "id": "social-content-search",
       "domain": "social",
       "direction": "acceptance_validates_product",

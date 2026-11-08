@@ -1,10 +1,10 @@
 package domain
 
 import (
-	"crypto/sha256"
 	"crypto/subtle"
 
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	"github.com/peers-labs/peers-touch/station/frame/core/signedlog"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -17,8 +17,7 @@ func (h *HashService) ComputePayloadHash(payload proto.Message) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	hash := sha256.Sum256(data)
-	return hash[:], nil
+	return signedlog.HashBytes(data), nil
 }
 
 func (h *HashService) ComputeEventHash(input *pb.EventHashInput) ([]byte, error) {
@@ -26,8 +25,7 @@ func (h *HashService) ComputeEventHash(input *pb.EventHashInput) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-	hash := sha256.Sum256(data)
-	return hash[:], nil
+	return signedlog.HashBytes(data), nil
 }
 
 func (h *HashService) VerifyEventHash(event *pb.LedgerEvent, expectedPayloadHash []byte) (bool, error) {

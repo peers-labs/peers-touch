@@ -2,7 +2,7 @@ import { createDesktopStore } from './createDesktopStore';
 import { useMomentsStore } from './moments';
 import { usePrivateCommentsStore } from './privateComments';
 
-export type MomentsTab = 'feed' | 'explore' | 'search' | 'circles';
+export type MomentsTab = 'feed' | 'circles';
 export type MomentsView =
   | { kind: 'tab'; tab: MomentsTab }
   | { kind: 'detail'; postId: string; commentId?: string; from: MomentsTab }

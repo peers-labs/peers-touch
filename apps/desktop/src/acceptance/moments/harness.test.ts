@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { create } from '@bufbuild/protobuf';
 import { invoke } from '@tauri-apps/api/core';
 import { api } from '../../services/desktop_api';
 import {
@@ -9,12 +10,13 @@ import {
 import {
   Audience_Kind,
   ReactionKind,
+  ReactionSummarySchema,
 } from '../../gen/proto/domain/social/post_pb';
 import {
   FriendRequestState,
   SocialRelationshipCommandResultKind,
 } from '../../gen/proto/domain/social/relationship_pb';
-import { privateMomentsNative } from '../../services/privateMomentsNative';
+import { privateMomentsNative, type PrivateReactionMutationResult } from '../../services/privateMomentsNative';
 
 declare const __PT_SOURCE_COMMIT__: string;
 
@@ -176,6 +178,7 @@ function harness() {
 }
 
 describe('Moments acceptance harness', () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     vi.stubGlobal('window', {
       location: {
@@ -1030,6 +1033,71 @@ describe('Moments acceptance harness', () => {
       errorCode: 'PRIVATE_NATIVE_COMMAND_FAILED',
       transientPostId: undefined,
     });
+  });
+
+  function committedCommentLike() {
+    const command = {
+      commandId: 'original-durable-command', postId: 'private-parent', commentId: 'private-reply',
+      kind: ReactionKind.REACTION_LIKE, operation: 'REACT' as const, state: 'REACTION_COMMITTED' as const,
+      attemptCount: 1, projectionRevision: '7',
+    };
+    vi.spyOn(privateMomentsNative, 'bootstrap').mockResolvedValue({ reactionCommands: [command] } as never);
+    const result: PrivateReactionMutationResult = {
+      command, reactions: [create(ReactionSummarySchema, {
+        kind: ReactionKind.REACTION_LIKE, count: 1n, reactedByViewer: true,
+      })],
+      projectionRevision: '7', exactReplay: false };
+    const retry = vi.spyOn(privateMomentsNative, 'retryReaction').mockResolvedValue(result);
+    return { command, result, retry };
+  }
+
+  it('retries private comment LIKE with the original durable identity twice', async () => {
+    const { retry } = committedCommentLike();
+    const result = await harness().replayPrivateCommentLike({ postId: 'private-parent', commentId: 'private-reply' });
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(retry).toHaveBeenCalledWith({
+      actorPtid: 'ptid:test:alice', rendererGeneration: 9, commandId: 'original-durable-command',
+    });
+    expect(result).toMatchObject({
+      nativeRetryCount: 2, state: 'REACTION_COMMITTED',
+      replays: [{ count: 1, liked: true, projectionRevision: '7' }, { count: 1, liked: true, projectionRevision: '7' }],
+    });
+  });
+
+  it.each([
+    { commandId: 'replacement-command' }, { postId: 'wrong-parent' }, { commentId: 'wrong-reply' },
+    { kind: ReactionKind.REACTION_LOVE }, { operation: 'UNREACT' }, { attemptCount: 2 },
+  ])('rejects private comment LIKE replay identity drift %j', async (changed) => {
+    const { command, result, retry } = committedCommentLike();
+    retry.mockResolvedValue({ ...result, command: { ...command, ...changed } } as never);
+    await expect(harness().replayPrivateCommentLike({
+      postId: 'private-parent', commentId: 'private-reply',
+    })).rejects.toThrow('moments.acceptance.reactionReplayMismatch');
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('fences queued private comment LIKE replay after same-value scope replacement', async () => {
+    const { command, retry } = committedCommentLike();
+    vi.mocked(privateMomentsNative.bootstrap).mockImplementation(async () => {
+      privateState.scope = { ...privateState.scope };
+      return { reactionCommands: [command] } as never;
+    });
+    await expect(harness().replayPrivateCommentLike({
+      postId: 'private-parent', commentId: 'private-reply',
+    })).rejects.toThrow('moments.acceptance.sessionReplaced');
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it('fences completed private comment LIKE replay after same-value scope replacement', async () => {
+    const { result, retry } = committedCommentLike();
+    retry.mockImplementation(async () => {
+      privateState.scope = { ...privateState.scope };
+      return result;
+    });
+    await expect(harness().replayPrivateCommentLike({
+      postId: 'private-parent', commentId: 'private-reply',
+    })).rejects.toThrow('moments.acceptance.reactionReplayMismatch');
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 
   it('uses the production reaction store for private Moment add and remove', async () => {

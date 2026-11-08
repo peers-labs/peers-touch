@@ -129,6 +129,7 @@ export type PrivateReactionState =
 export interface PrivateReactionCommandProjection {
   commandId: string;
   postId: string;
+  commentId: string;
   kind: ReactionKind;
   operation: 'REACT' | 'UNREACT';
   state: PrivateReactionState;
@@ -144,6 +145,14 @@ export interface PrivateReactionMutationResult {
   reactions: ReactionSummary[];
   projectionRevision: string;
   exactReplay: boolean;
+}
+
+export function privateReactionTargetKey(
+  postId: string,
+  commentId = '',
+  kind: ReactionKind = ReactionKind.REACTION_LIKE,
+): string {
+  return JSON.stringify([postId, commentId, kind]);
 }
 
 export interface PrivateMomentMention {
@@ -552,7 +561,7 @@ function generationField(value: unknown): string {
   return /^\d+$/.test(raw) ? raw : '';
 }
 
-function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
+export function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
   if (!Array.isArray(value) || value.length > SUPPORTED_REACTION_KINDS.size) {
     throw privateProjectionContractError('private Reaction summaries are malformed');
   }
@@ -570,7 +579,9 @@ function normalizeReactionSummaries(value: unknown): ReactionSummary[] {
       || !SUPPORTED_REACTION_KINDS.has(kind)
       || seen.has(kind)
       || !count
+      || BigInt(count) > 0xffffffffffffffffn
       || typeof reactedByViewer !== 'boolean'
+      || (count === '0' && reactedByViewer)
     ) {
       throw privateProjectionContractError('private Reaction summary is invalid');
     }
@@ -589,6 +600,7 @@ function normalizeReactionCommand(value: unknown): PrivateReactionCommandProject
   }
   const commandId = stringField(value.command_id ?? value.commandId);
   const postId = stringField(value.post_id ?? value.postId);
+  const commentId = stringField(value.comment_id ?? value.commentId);
   const kind = optionalNumber(value.kind) as ReactionKind | undefined;
   const operation = stringField(value.operation).toUpperCase() as
     PrivateReactionCommandProjection['operation'];
@@ -604,6 +616,8 @@ function normalizeReactionCommand(value: unknown): PrivateReactionCommandProject
     !commandId
     || !postId
     || kind === undefined
+    || !SUPPORTED_REACTION_KINDS.has(kind)
+    || (commentId !== '' && kind !== ReactionKind.REACTION_LIKE)
     || !REACTION_OPERATIONS.has(operation)
     || !REACTION_STATES.has(state)
     || attemptCount === undefined
@@ -616,6 +630,7 @@ function normalizeReactionCommand(value: unknown): PrivateReactionCommandProject
   return {
     commandId,
     postId,
+    commentId,
     kind,
     operation,
     state,
@@ -993,11 +1008,12 @@ function normalizeSnapshot(value: unknown): PrivateMomentsNativeSnapshot {
   }
   const normalizedReactionCommands = reactionCommands.map(normalizeReactionCommand);
   if (
-    new Set(normalizedReactionCommands.map((command) => command.postId)).size
+    new Set(normalizedReactionCommands.map((command) =>
+      privateReactionTargetKey(command.postId, command.commentId, command.kind))).size
       !== normalizedReactionCommands.length
   ) {
     throw privateProjectionContractError(
-      'private Reaction snapshot contains duplicate post commands',
+      'private Reaction snapshot contains duplicate target commands',
     );
   }
   return {
@@ -1344,6 +1360,7 @@ export const privateMomentsNative = {
     actorPtid: string;
     rendererGeneration: number;
     postId: string;
+    commentId?: string;
     kind: ReactionKind;
   }): Promise<PrivateReactionMutationResult> {
     assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
@@ -1353,6 +1370,7 @@ export const privateMomentsNative = {
         actor_ptid: input.actorPtid,
         renderer_generation: input.rendererGeneration,
         post_id: input.postId,
+        comment_id: input.commentId ?? '',
         kind: input.kind,
       },
       'REACTION_REJECTED',
@@ -1363,6 +1381,7 @@ export const privateMomentsNative = {
     actorPtid: string;
     rendererGeneration: number;
     postId: string;
+    commentId?: string;
     kind: ReactionKind;
   }): Promise<PrivateReactionMutationResult> {
     assertNative('PRIVATE_UNSUPPORTED_ON_DEVICE');
@@ -1372,6 +1391,7 @@ export const privateMomentsNative = {
         actor_ptid: input.actorPtid,
         renderer_generation: input.rendererGeneration,
         post_id: input.postId,
+        comment_id: input.commentId ?? '',
         kind: input.kind,
       },
       'REACTION_REJECTED',

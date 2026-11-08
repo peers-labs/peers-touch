@@ -23,8 +23,6 @@ import type { DescMessage, MessageInitShape } from '@bufbuild/protobuf';
 import {
   AudienceSchema,
   Audience_Kind,
-  CreatePostResponseSchema,
-  GetPostResponseSchema,
   GetTimelineResponseSchema,
   SyncMomentsProjectionResponseSchema,
   ListPostsResponseSchema,
@@ -40,7 +38,6 @@ import {
 } from '../gen/proto/domain/social/post_pb';
 import {
   CommentSchema,
-  CreateCommentResponseSchema,
 } from '../gen/proto/domain/social/comment_pb';
 import {
   GetMomentResourceResponseSchema,
@@ -52,6 +49,7 @@ import {
 import { ListMyCirclesResponseSchema } from '../gen/proto/domain/social/circle_pb';
 import { selectMomentComments, useMomentsStore } from '../store/moments';
 import { usePrivateMomentsStore } from '../store/privateMoments';
+import { privateReactionTargetKey } from '../services/privateMomentsNative';
 import {
   selectPrivateCommentDraft,
   selectPrivateCommentThread,
@@ -79,6 +77,7 @@ import { clearSearchQueries, invalidateSearchSources, reconcileSearchQuery, runS
 import { searchActions } from '../runtimes/searchRuntime';
 import { useMomentsNavigationStore } from '../store/momentsNavigation';
 import * as socialApi from '../services/social_api';
+import * as publicFeedNative from '../services/publicFeedNative';
 import { QueryClient } from '@tanstack/query-core';
 import { searchRowKey, searchService } from '../services/search';
 
@@ -812,11 +811,9 @@ describe('moments store: syncProjection', () => {
 
 describe('moments store: createPost / deletePost', () => {
   it('createPost prepends id to HOME and stores the post', async () => {
-    enqueue('social_create_moment',
-      bytesOk(CreatePostResponseSchema, {
-        post: { id: 'pNEW', authorPtid: 'a', type: PostType.TEXT },
-      }),
-    );
+    const publish = vi.spyOn(socialApi, 'socialCreateMoment').mockResolvedValue(create(PostSchema, {
+      id: 'pNEW', authorPtid: 'a', type: PostType.TEXT,
+    }));
 
     const id = await useMomentsStore
       .getState()
@@ -825,18 +822,13 @@ describe('moments store: createPost / deletePost', () => {
     expect(id).toBe('pNEW');
     expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pNEW');
     expect(useMomentsStore.getState().postsById['pNEW']?.id).toBe('pNEW');
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ kind: 'text', text: 'hi' }));
   });
 
-  it('createPost(image) carries image_ids through the wire layer', async () => {
-    // The store delegates to socialCreateMoment which delegates to
-    // buildCreatePostRequest. We don't need to introspect the bytes
-    // here — what matters is the call succeeds and the returned id
-    // ingests as IMAGE so the renderer picks the image branch.
-    enqueue('social_create_moment',
-      bytesOk(CreatePostResponseSchema, {
-        post: { id: 'pIMG', authorPtid: 'a', type: PostType.IMAGE },
-      }),
-    );
+  it('createPost(image) delegates the complete intent to the signed feed adapter', async () => {
+    const publish = vi.spyOn(socialApi, 'socialCreateMoment').mockResolvedValue(create(PostSchema, {
+      id: 'pIMG', authorPtid: 'a', type: PostType.IMAGE,
+    }));
 
     const id = await useMomentsStore.getState().createPost({
       kind: 'image',
@@ -852,6 +844,12 @@ describe('moments store: createPost / deletePost', () => {
     const stored = useMomentsStore.getState().postsById['pIMG'];
     expect(stored?.type).toBe(PostType.IMAGE);
     expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pIMG');
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'image', imageIds: [
+        'oss://station.local/2026/04/29/aaa.png',
+        'oss://station.local/2026/04/29/bbb.jpg',
+      ],
+    }));
   });
 
   it('createPost(private image) delegates local file intent to Native only', async () => {
@@ -1530,12 +1528,12 @@ describe('moments store: createPost / deletePost', () => {
         hasMore: false,
       }),
     );
-    // The Rust DELETE returns the response proto; an empty {} encodes to zero bytes.
-    enqueue('social_delete_moment', bytesOk(GetPostResponseSchema, {}));
+    const remove = vi.spyOn(socialApi, 'socialDeleteMoment').mockResolvedValue(true);
 
     await useMomentsStore.getState().loadFeed('home');
     await useMomentsStore.getState().loadUserFeed('a');
     await useMomentsStore.getState().deletePost('p2');
+    expect(remove).toHaveBeenCalledWith('p2');
 
     expect(useMomentsStore.getState().feeds.home.postIds).toEqual(['p1']);
     expect(useMomentsStore.getState().userFeeds['a'].postIds).toEqual(['p3']);
@@ -1995,6 +1993,7 @@ describe('moments store: comments', () => {
   });
 
   it('executes a distinct historical anchor while pagination is pending and fences the old page', async () => {
+    vi.spyOn(publicFeedNative, 'verifyPublicComments').mockImplementation(async (_postId, comments) => comments);
     const reply = (commentId: string, nextCursor = '') => bytesOk(ListMomentCommentsResponseSchema, {
       comments: [{
         metadata: { commentId, contentId: commentId, postId: 'p1', author: { ptid: 'alice' } },
@@ -2216,6 +2215,7 @@ describe('moments store: comments', () => {
   });
 
   it('paginates via per-post cursor', async () => {
+    vi.spyOn(publicFeedNative, 'verifyPublicComments').mockImplementation(async (_postId, comments) => comments);
     enqueueMatch(
       (cmd, args) => cmd === 'social_get_comments'
         && (args as { input?: { limit?: number } })?.input?.limit === 20,
@@ -2781,7 +2781,7 @@ describe('moments store: comments', () => {
     expect(usePrivateCommentsStore.getState().draftsById).toEqual({});
   });
 
-  it('createComment optimistically bumps stats.commentsCount', async () => {
+  it('adds a confirmed signed comment to the thread and its count', async () => {
     enqueue('social_get_timeline',
       bytesOk(GetTimelineResponseSchema, {
         posts: [
@@ -2796,14 +2796,13 @@ describe('moments store: comments', () => {
         hasMore: false,
       }),
     );
-    enqueue('social_create_comment',
-      bytesOk(CreateCommentResponseSchema, {
-        comment: { id: 'cNEW', postId: 'p1', content: 'hello' },
-      }),
-    );
+    const submit = vi.spyOn(socialApi, 'socialCreateComment').mockResolvedValue(create(CommentSchema, {
+      id: 'cNEW', postId: 'p1', content: 'hello',
+    }));
 
     await useMomentsStore.getState().loadFeed('home');
     await useMomentsStore.getState().createComment('p1', 'hello');
+    expect(submit).toHaveBeenCalledWith('p1', 'hello', undefined, [], undefined);
 
     expect(useMomentsStore.getState().postsById['p1']?.stats?.commentsCount).toBe(1n);
     expect(useMomentsStore.getState().comments['p1']?.[0]?.id).toBe('cNEW');
@@ -2811,17 +2810,16 @@ describe('moments store: comments', () => {
 });
 
 describe('moments store: reactions', () => {
-  it('replaces (not merges) the reaction list from server', async () => {
-    enqueue('social_react',
-      bytesOk(ReactToPostResponseSchema, {
+  it('replaces the reaction list with the verified adapter projection', async () => {
+    const react = vi.spyOn(socialApi, 'socialReact').mockResolvedValue(create(ReactToPostResponseSchema, {
         success: true,
         reactions: [
           { kind: ReactionKind.REACTION_LIKE, count: 1n, reactedByViewer: true },
         ],
-      }),
-    );
+      }));
 
     await useMomentsStore.getState().reactToPost('p1', ReactionKind.REACTION_LIKE);
+    expect(react).toHaveBeenCalledWith('p1', ReactionKind.REACTION_LIKE);
 
     expect(useMomentsStore.getState().reactions['p1']?.length).toBe(1);
     expect(useMomentsStore.getState().reactions['p1']?.[0]?.kind).toBe(
@@ -3003,7 +3001,7 @@ describe('moments store: reactions', () => {
       reactedByViewer: true,
     });
     expect(
-      usePrivateMomentsStore.getState().reactionsByPost['private-pending-post'],
+      usePrivateMomentsStore.getState().reactionCommands[privateReactionTargetKey('private-pending-post', '', ReactionKind.REACTION_LOVE)],
     ).toBeUndefined();
   });
 
@@ -3108,7 +3106,7 @@ describe('moments store: reactions', () => {
       .getState()
       .reactToPost('private-retry-post', ReactionKind.REACTION_LOVE);
     expect(
-      usePrivateMomentsStore.getState().reactionsByPost['private-retry-post'],
+      usePrivateMomentsStore.getState().reactionCommands[privateReactionTargetKey('private-retry-post', '', ReactionKind.REACTION_LOVE)],
     ).toMatchObject({
       commandId: 'reaction-v1-stable',
       state: 'REACTION_PENDING',
@@ -3134,7 +3132,7 @@ describe('moments store: reactions', () => {
     }));
     const retried = await usePrivateMomentsStore
       .getState()
-      .retryReaction('private-retry-post');
+      .retryReaction('private-retry-post', '', ReactionKind.REACTION_LOVE);
 
     expect(retried.exactReplay).toBe(true);
     expect(invokeMock).toHaveBeenCalledWith(
@@ -3146,7 +3144,7 @@ describe('moments store: reactions', () => {
       }),
     );
     expect(
-      usePrivateMomentsStore.getState().reactionsByPost['private-retry-post'],
+      usePrivateMomentsStore.getState().reactionCommands[privateReactionTargetKey('private-retry-post', '', ReactionKind.REACTION_LOVE)],
     ).toBeUndefined();
   });
 
@@ -3208,12 +3206,12 @@ describe('moments store: reactions', () => {
     }));
     await usePrivateMomentsStore
       .getState()
-      .reactToPost('private-bootstrap-reaction', ReactionKind.REACTION_LIKE);
+      .setReaction('private-bootstrap-reaction', ReactionKind.REACTION_LIKE, 'REACT');
 
     resolveBootstrap?.(statusOk({
       actor_ptid: 'ptid:viewer',
       device_id: 'device-1',
-      session_generation: '9',
+      session_generation: '8',
       projections: [{
         post_id: 'private-bootstrap-reaction',
         content_id: 'private-bootstrap-reaction',
@@ -3239,7 +3237,7 @@ describe('moments store: reactions', () => {
     await pendingBootstrap;
 
     expect(
-      usePrivateMomentsStore.getState().reactionsByPost['private-bootstrap-reaction'],
+      usePrivateMomentsStore.getState().reactionCommands[privateReactionTargetKey('private-bootstrap-reaction')],
     ).toBeUndefined();
     expect(
       usePrivateMomentsStore.getState().postsById['private-bootstrap-reaction']

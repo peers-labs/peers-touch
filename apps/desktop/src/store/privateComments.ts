@@ -10,7 +10,11 @@ import {
   type PrivateCommentsNativeSnapshot,
   type PrivateCommentState,
 } from '../services/privateCommentsNative';
-import { resolvePrivateMomentsPlatform } from '../services/privateMomentsNative';
+import {
+  resolvePrivateMomentsPlatform, PrivateMomentsNativeError,
+} from '../services/privateMomentsNative';
+import { ReactionKind } from '../gen/proto/domain/social/post_pb';
+import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
 
 const TAG = 'private-comments-store';
@@ -63,6 +67,7 @@ interface PrivateCommentsState {
     mentions?: PrivateCommentMention[],
   ) => Promise<void>;
   retryComment: (postId: string) => Promise<void>;
+  setCommentLike: (postId: string, commentId: string, liked: boolean) => Promise<void>;
   markParentUnavailable: (postId: string, errorCode?: string) => void;
   clearPost: (postId: string) => void;
   reset: () => void;
@@ -114,9 +119,17 @@ function newerComment(
   current: PrivateCommentProjection,
   incoming: PrivateCommentProjection,
 ): PrivateCommentProjection {
-  return compareGeneration(incoming.generation, current.generation) >= 0
-    ? incoming
-    : current;
+  const content = compareGeneration(incoming.generation, current.generation) < 0
+    ? current : incoming;
+  const reaction = compareGeneration(incoming.reactionRevision, current.reactionRevision) < 0
+    ? current : incoming;
+  return {
+    ...content,
+    reactions: reaction.reactions,
+    reactionsCount: reaction.reactionsCount,
+    reactionRevision: reaction.reactionRevision,
+    isLiked: reaction.isLiked,
+  };
 }
 
 function createDraftId(): string {
@@ -355,7 +368,8 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           const index = indexById.get(comment.commentId);
           if (index === undefined) {
             indexById.set(comment.commentId, comments.length);
-            comments.push(comment);
+            const retained = current.comments.find(item => item.commentId === comment.commentId);
+            comments.push(retained ? newerComment(retained, comment) : comment);
           } else {
             comments[index] = newerComment(comments[index]!, comment);
           }
@@ -513,10 +527,10 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
               mutatedPostIds,
             );
           return {
-            scope: {
+            scope: replacesSession ? {
               ...state.scope,
               nativeSessionGeneration: snapshot.sessionGeneration,
-            },
+            } : state.scope,
             ...draftState,
             threadsByPost,
           };
@@ -613,7 +627,6 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
             if (!isCurrentRead(trimmedPostId, read)) return;
             const nativeError = error instanceof PrivateCommentsNativeError ? error : undefined;
             log.warn(TAG, 'private Comment list failed', {
-              postId: trimmedPostId,
               state: nativeError?.state ?? 'COMMENT_FAILED',
               errorCode: nativeError?.code ?? 'COMMENT_FAILED',
             });
@@ -660,6 +673,36 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           },
         }));
         return completion;
+      },
+
+      setCommentLike: async (postId, commentId, liked) => {
+        const scope = get().scope;
+        const thread = get().threadsByPost[postId];
+        if (!scope.actorPtid || !thread?.comments.some(comment => comment.commentId === commentId)
+          || thread.state === 'COMMENT_PARENT_UNAVAILABLE') {
+          throw new PrivateMomentsNativeError({ code: 'REACTION_PRIVATE_COMMENT_REQUIRED', state: 'REACTION_REJECTED' });
+        }
+        const result = await usePrivateMomentsStore.getState().setReaction(
+          postId, ReactionKind.REACTION_LIKE, liked ? 'REACT' : 'UNREACT', commentId,
+        );
+        if (get().scope !== scope) return;
+        const currentThread = get().threadsByPost[postId];
+        const target = currentThread?.comments.find(comment => comment.commentId === commentId);
+        if (!target || currentThread.state === 'COMMENT_PARENT_UNAVAILABLE') return;
+        if (result.command.state !== 'REACTION_COMMITTED') {
+          throw new PrivateMomentsNativeError({
+            code: result.command.errorCode ?? 'REACTION_RESULT_UNKNOWN',
+            state: result.command.state,
+          });
+        }
+        const like = result.reactions.find(summary => summary.kind === ReactionKind.REACTION_LIKE);
+        applyComment({
+          ...target,
+          reactions: result.reactions,
+          reactionRevision: result.projectionRevision,
+          reactionsCount: Number(result.reactions.reduce((total, summary) => total + summary.count, 0n)),
+          isLiked: like?.reactedByViewer ?? false,
+        }, scope.actorPtid, scope.rendererGeneration);
       },
 
       submitComment: async (postId, text, replyToCommentId, mentions = []) => {

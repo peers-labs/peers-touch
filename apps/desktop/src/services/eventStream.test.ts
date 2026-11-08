@@ -16,6 +16,7 @@ import {
 import type {
   MomentCreatedPayload,
   MomentRevokedPayload,
+  MomentReactedPayload,
   RelationshipChangedPayload,
   RealtimeGroupFederationEventPayload,
   RealtimeGroupMembershipChangeKind,
@@ -216,6 +217,51 @@ describe('event stream group membership decode', () => {
     unsubscribe();
 
     expect(payloads).toEqual([]);
+  });
+
+  it.each(['', 'comment-1'])('preserves the reaction target %s through the Native stream', async commentId => {
+    let handler: TauriEventHandler = () => { throw new Error('stream not installed'); };
+    listenMock.mockImplementation(async (name: string, callback: TauriEventHandler) => {
+      if (name === 'realtime:event') handler = callback;
+      return () => undefined;
+    });
+    const payloads: MomentReactedPayload[] = [];
+    const unsubscribe = eventBus.subscribe(EVENT.MOMENT_REACTED, payload => payloads.push(payload));
+    try {
+      await installEventStreamBridge();
+      const event = create(StreamEventSchema, {
+        eventId: 'reaction-1',
+        kind: {
+          case: 'moment',
+          value: {
+            kind: MomentEvent_Kind.REACTED,
+            postId: 'post-1',
+            commentId,
+            actorPtid: 'ptid:bob',
+            authorActorPtid: 'ptid:alice',
+            reactionKind: 'REACTION_LIKE',
+            removed: true,
+            occurredTsUnixMs: 789n,
+          },
+        },
+      });
+      handler({
+        payload: {
+          actor_ptid: 'ptid:bob', session_epoch: 7,
+          station_peer_id: 'station-b', station_url: 'https://station-b.test/',
+          data_b64: Buffer.from(toBinary(StreamEventSchema, event)).toString('base64'),
+        },
+      });
+      expect(payloads).toEqual([{
+        eventId: 'reaction-1', targetActorPtid: 'ptid:bob', sessionEpoch: 7,
+        stationPeerId: 'station-b', stationUrl: 'https://station-b.test',
+        postId: 'post-1', commentId: commentId || undefined,
+        authorActorPtid: 'ptid:alice', reactionActorPtid: 'ptid:bob',
+        kind: 'REACTION_LIKE', removed: true, occurredAtUnixMs: 789,
+      }]);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('dispatches a typed private revocation and preserves its reason', async () => {

@@ -26,6 +26,7 @@ test('FLOW-A04 normalizes workspace context without constructing OWNER authority
   assert.equal(Object.hasOwn(normalized, 'bindingIdentity'), false);
   assert.equal(Object.hasOwn(normalized, 'toolName'), false);
   assert.equal(Object.hasOwn(normalized, 'toolInput'), false);
+  assert.deepEqual(normalized.willEditFilepaths, ['/workspace/file.ts']);
 });
 
 test('FLOW-A04 multi-root ambient cwd does not select a sibling worktree', () => {

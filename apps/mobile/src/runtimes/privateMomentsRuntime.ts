@@ -10,6 +10,7 @@ import {
   type MobileAuthSession,
 } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
+import { ReactionKind } from '../gen/proto/domain/social/post_pb';
 import {
   privateSocialActivate,
   privateSocialComments,
@@ -91,6 +92,8 @@ export interface PrivateMomentsRuntimeSnapshot {
   readonly commentDrafts: readonly PrivateCommentSubmitResult['draft'][];
   readonly comments: readonly NonNullable<PrivateCommentSubmitResult['comment']>[];
   readonly reactionCommands: readonly PrivateReactionCommandProjection[];
+  readonly reactionPendingTargets: readonly string[];
+  readonly reactionErrorsByTarget: Readonly<Record<string, string>>;
   readonly commentThreadsByPostId: Readonly<Record<string, PrivateCommentThreadProjection>>;
   readonly publishStateHistory: readonly PrivateSocialVisiblePublishState[];
   readonly readStateHistoryByPostId: Readonly<Record<string, readonly PrivateSocialVisibleReadState[]>>;
@@ -104,11 +107,29 @@ interface PrivateSocialSessionScope extends PrivateSocialAccountInput {
   readonly projectionFenceRevision: number;
 }
 
+interface PrivateCommentReadFlight {
+  readonly scope: PrivateSocialSessionScope;
+  readonly cursor: string;
+  readonly limit: number;
+  readonly anchorCommentId: string;
+  readonly promise: Promise<PrivateCommentPage>;
+}
+
 const listeners = new Set<() => void>();
 let snapshot: PrivateMomentsRuntimeSnapshot = emptySnapshot();
 let activeScope: PrivateSocialSessionScope | null = null;
 let transition: Promise<void> = Promise.resolve();
 let projectionFenceRevision = 0;
+const commentReadFlights = new Map<string, PrivateCommentReadFlight>();
+const reactionFlights = new Map<string, {
+  scope: PrivateSocialSessionScope;
+  active: boolean;
+  promise: Promise<PrivateReactionMutationResult>;
+}>();
+
+export function privateReactionTargetKey(postId: string, commentId: string, kind: number): string {
+  return JSON.stringify([postId, commentId, kind]);
+}
 
 export function usePrivateMomentsRuntime(): PrivateMomentsRuntimeSnapshot {
   return useSyncExternalStore(subscribe, readPrivateMomentsSnapshot, readPrivateMomentsSnapshot);
@@ -120,6 +141,8 @@ export function readPrivateMomentsSnapshot(): PrivateMomentsRuntimeSnapshot {
 
 export function fencePrivateMomentsRuntimeProjection(): void {
   projectionFenceRevision += 1;
+  commentReadFlights.clear();
+  reactionFlights.clear();
   setSnapshot(emptySnapshot());
 }
 
@@ -458,6 +481,7 @@ export async function readPrivateComments(
   postId: string,
   cursor = '',
   limit = 20,
+  anchorCommentId = '',
 ): Promise<PrivateCommentPage> {
   const scope = requireActiveScope();
   const stablePostId = postId.trim();
@@ -465,6 +489,67 @@ export async function readPrivateComments(
     throw new Error('mobile.privateSocial.invalidPostId');
   }
   requirePrivateMomentAccessOpen(stablePostId);
+  const previous = commentReadFlights.get(stablePostId);
+  if (previous && isCurrentScope(previous.scope) && previous.cursor === cursor
+    && previous.limit === limit && previous.anchorCommentId === anchorCommentId) {
+    return previous.promise;
+  }
+  const flight: PrivateCommentReadFlight = {
+    scope, cursor, limit, anchorCommentId,
+    promise: Promise.resolve().then(async () => {
+      try {
+        requireCurrentCommentRead(stablePostId, flight);
+        const page = await privateSocialComments({
+          ...operationScope(scope), postId: stablePostId, cursor, limit, anchorCommentId,
+        });
+        requireCurrentCommentRead(stablePostId, flight);
+        if (page.postId !== stablePostId
+          || page.comments.some((comment) => comment.postId !== stablePostId)) {
+          throw new Error('mobile.privateSocial.commentResultIdentityMismatch');
+        }
+        const comments = mergeCommentLists(snapshot.comments, page.comments);
+        const commentThreadsByPostId = updatePrivateCommentThread(
+          snapshot.commentThreadsByPostId,
+          stablePostId,
+          (thread) => ({
+            comments: cursor
+              ? mergeCommentLists(thread.comments, page.comments)
+              : comments.filter((comment) => (
+                page.comments.some((incoming) => incoming.commentId === comment.commentId)
+              )),
+            nextCursor: page.nextCursor,
+            hasMore: page.hasMore,
+            loading: false,
+            initialized: true,
+            errorMessage: null,
+          }),
+        );
+        const retained = new Map(commentThreadsByPostId[stablePostId]!.comments
+          .map((comment) => [comment.commentId, comment]));
+        const result = { ...page, comments: page.comments.map((comment) => retained.get(comment.commentId)!) };
+        setSnapshot({ ...snapshot, comments, commentThreadsByPostId, errorMessage: null });
+        requireCurrentCommentRead(stablePostId, flight);
+        return result;
+      } catch (error) {
+        if (commentReadFlights.get(stablePostId) === flight && isCurrentScope(scope)) {
+          setSnapshot({
+            ...snapshot,
+            commentThreadsByPostId: updatePrivateCommentThread(
+              snapshot.commentThreadsByPostId, stablePostId,
+              (thread) => ({
+                ...thread, loading: false, initialized: true,
+                errorMessage: readableErrorMessage(error),
+              }),
+            ),
+          });
+        }
+        throw error;
+      } finally {
+        if (commentReadFlights.get(stablePostId) === flight) commentReadFlights.delete(stablePostId);
+      }
+    }),
+  };
+  commentReadFlights.set(stablePostId, flight);
   setSnapshot({
     ...snapshot,
     commentThreadsByPostId: updatePrivateCommentThread(
@@ -473,92 +558,116 @@ export async function readPrivateComments(
       (thread) => ({ ...thread, loading: true, errorMessage: null }),
     ),
   });
-  try {
-    const page = await privateSocialComments({
-      ...operationScope(scope),
-      postId: stablePostId,
-      cursor,
-      limit,
-    });
-    requireCurrentPostCompletion(
-      scope,
-      stablePostId,
-      'mobile.privateSocial.staleCommentReadCompletion',
-    );
-    setSnapshot({
-      ...snapshot,
-      comments: mergeCommentLists(snapshot.comments, page.comments),
-      commentThreadsByPostId: updatePrivateCommentThread(
-        snapshot.commentThreadsByPostId,
-        stablePostId,
-        (thread) => ({
-          comments: cursor
-            ? mergeCommentLists(thread.comments, page.comments)
-            : mergeCommentLists([], page.comments),
-          nextCursor: page.nextCursor,
-          hasMore: page.hasMore,
-          loading: false,
-          initialized: true,
-          errorMessage: null,
-        }),
-      ),
-      errorMessage: null,
-    });
-    return page;
-  } catch (error) {
-    if (isCurrentScope(scope)) {
-      setSnapshot({
-        ...snapshot,
-        commentThreadsByPostId: updatePrivateCommentThread(
-          snapshot.commentThreadsByPostId,
-          stablePostId,
-          (thread) => ({
-            ...thread,
-            loading: false,
-            initialized: true,
-            errorMessage: readableErrorMessage(error),
-          }),
-        ),
-      });
-    }
-    throw error;
+  return flight.promise;
+}
+
+function requireCurrentCommentRead(postId: string, flight: PrivateCommentReadFlight): void {
+  if (commentReadFlights.get(postId) !== flight) {
+    throw new Error('mobile.privateSocial.staleCommentReadCompletion');
   }
+  requireCurrentPostCompletion(flight.scope, postId, 'mobile.privateSocial.staleCommentReadCompletion');
 }
 
 export async function setPrivateMomentReaction(
   postId: string,
   kind: number,
   active: boolean,
+  commentId = '',
 ): Promise<PrivateReactionMutationResult> {
   const scope = requireActiveScope();
   const stablePostId = postId.trim();
-  if (!stablePostId || stablePostId !== postId || !Number.isInteger(kind) || kind <= 0) {
+  if (!stablePostId || stablePostId !== postId || commentId !== commentId.trim()
+    || !Number.isInteger(kind) || kind <= 0 || (commentId && kind !== ReactionKind.REACTION_LIKE)) {
     throw new Error('mobile.privateSocial.invalidReaction');
   }
   requirePrivateMomentAccessOpen(stablePostId);
-  const result = await (active ? privateSocialReact : privateSocialUnreact)({
-    ...operationScope(scope),
-    postId: stablePostId,
-    kind,
+  const key = privateReactionTargetKey(postId, commentId, kind);
+  const pending = snapshot.reactionCommands.find((command) => (
+    privateReactionTargetKey(command.postId, command.commentId, command.kind) === key
+    && command.state !== 'REACTION_COMMITTED' && command.state !== 'REACTION_REJECTED'
+  ));
+  if (pending) {
+    if ((pending.operation === 'REACT') !== active) {
+      return Promise.reject(new Error('mobile.privateSocial.reactionPending'));
+    }
+    return retryPrivateMomentReaction(pending.commandId);
+  }
+  return shareReactionFlight(scope, key, active, async () => {
+    requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleReactionCompletion');
+    const result = await (active ? privateSocialReact : privateSocialUnreact)({
+      ...operationScope(scope), postId: stablePostId, commentId, kind,
+    });
+    requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleReactionCompletion');
+    requireReactionResultTarget(result, postId, commentId, kind, active);
+    applyPrivateReactionResult(result);
+    return result;
   });
-  requireCurrentPostCompletion(scope, stablePostId, 'mobile.privateSocial.staleReactionCompletion');
-  applyPrivateReactionResult(result);
-  return result;
 }
 
 export async function retryPrivateMomentReaction(
   commandId: string,
 ): Promise<PrivateReactionMutationResult> {
   const scope = requireActiveScope();
-  const result = await privateSocialReactionRetry({
-    ...operationScope(scope),
-    commandId,
-  });
-  if (!isCurrentScope(scope)) {
-    throw new Error('mobile.privateSocial.staleReactionCompletion');
+  const command = snapshot.reactionCommands.find((candidate) => candidate.commandId === commandId);
+  if (!command) {
+    return Promise.reject(new Error('mobile.privateSocial.reactionCommandUnavailable'));
   }
-  applyPrivateReactionResult(result);
-  return result;
+  const active = command.operation === 'REACT';
+  const key = privateReactionTargetKey(command.postId, command.commentId, command.kind);
+  return shareReactionFlight(scope, key, active, async () => {
+    requireCurrentPostCompletion(scope, command.postId, 'mobile.privateSocial.staleReactionCompletion');
+    const result = await privateSocialReactionRetry({ ...operationScope(scope), commandId });
+    requireCurrentPostCompletion(scope, command.postId, 'mobile.privateSocial.staleReactionCompletion');
+    requireReactionResultTarget(result, command.postId, command.commentId, command.kind, active);
+    if (result.command.commandId !== commandId) {
+      throw new Error('mobile.privateSocial.reactionResultIdentityMismatch');
+    }
+    applyPrivateReactionResult(result);
+    return result;
+  });
+}
+
+function shareReactionFlight(
+  scope: PrivateSocialSessionScope,
+  key: string,
+  active: boolean,
+  operation: () => Promise<PrivateReactionMutationResult>,
+): Promise<PrivateReactionMutationResult> {
+  const previous = reactionFlights.get(key);
+  if (previous && isCurrentScope(previous.scope)) {
+    return previous.active === active ? previous.promise
+      : Promise.reject(new Error('mobile.privateSocial.reactionPending'));
+  }
+  const flight = { scope, active, promise: Promise.resolve().then(operation).catch((error: unknown) => {
+    if (isCurrentScope(scope)) {
+      setSnapshot({ ...snapshot, reactionErrorsByTarget: {
+        ...snapshot.reactionErrorsByTarget, [key]: readableErrorMessage(error),
+      } });
+    }
+    throw error;
+  }) };
+  flight.promise = flight.promise.finally(() => {
+    if (reactionFlights.get(key) !== flight) return;
+    reactionFlights.delete(key);
+    if (isCurrentScope(scope)) {
+      setSnapshot({ ...snapshot, reactionPendingTargets: [...reactionFlights.keys()] });
+    }
+  });
+  reactionFlights.set(key, flight);
+  const errors = { ...snapshot.reactionErrorsByTarget };
+  delete errors[key];
+  setSnapshot({ ...snapshot, reactionPendingTargets: [...reactionFlights.keys()], reactionErrorsByTarget: errors });
+  return flight.promise;
+}
+
+function requireReactionResultTarget(
+  result: PrivateReactionMutationResult, postId: string, commentId: string, kind: number, active: boolean,
+): void {
+  if (!result.command.commandId?.trim() || result.command.postId !== postId
+    || result.command.commentId !== commentId || result.command.kind !== kind
+    || result.command.operation !== (active ? 'REACT' : 'UNREACT')) {
+    throw new Error('mobile.privateSocial.reactionResultIdentityMismatch');
+  }
 }
 
 export async function reconcilePrivateMoments(): Promise<PrivateSocialReconciliationReport | null> {
@@ -593,14 +702,17 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialReconcilia
       commentDrafts: nativeSnapshot.commentDrafts.filter(
         (draft) => !revokedPostIds.has(draft.postId),
       ),
-      comments: nativeSnapshot.comments.filter(
+      comments: mergeCommentLists(snapshot.comments, nativeSnapshot.comments).filter(
         (comment) => !revokedPostIds.has(comment.postId),
       ),
       reactionCommands: nativeSnapshot.reactionCommands.filter(
         (command) => !revokedPostIds.has(command.postId),
       ),
       commentThreadsByPostId: omitPrivateCommentThreads(
-        snapshot.commentThreadsByPostId,
+        Object.fromEntries(Object.entries(snapshot.commentThreadsByPostId).map(([postId, thread]) => [
+          postId, { ...thread, comments: mergeCommentLists(thread.comments,
+            nativeSnapshot.comments.filter((comment) => comment.postId === postId)) },
+        ])),
         revokedPostIds,
       ),
       lastReport: report,
@@ -685,7 +797,8 @@ export function mergeReadProjectionMap(
       || existing.state !== 'CONTENT_READY'
       || compareGeneration(projection.generation, existing.generation) >= 0
     ) {
-      merged[projection.postId] = projection;
+      merged[projection.postId] = existing?.state === 'CONTENT_READY' && projection.state === 'CONTENT_READY'
+        ? mergeReactionProjection(existing, projection) : projection;
     }
   }
   return merged;
@@ -716,9 +829,18 @@ function mergeCommentLists(
   );
   for (const comment of incoming) {
     const existing = byComment.get(comment.commentId);
-    if (!existing || compareGeneration(comment.generation, existing.generation) >= 0) {
-      byComment.set(comment.commentId, comment);
+    if (existing && existing.postId !== comment.postId) {
+      throw new Error('mobile.privateSocial.commentResultIdentityMismatch');
     }
+    const content = existing && compareGeneration(comment.generation, existing.generation) < 0
+      ? existing : comment;
+    byComment.set(comment.commentId, existing ? mergeReactionProjection(existing, {
+      ...content,
+      reactions: comment.reactions,
+      reactionRevision: comment.reactionRevision,
+      reactionsHydrated: comment.reactionsHydrated,
+      reactionsCount: comment.reactionsCount,
+    }) : comment);
   }
   return [...byComment.values()];
 }
@@ -760,6 +882,7 @@ function applyPrivateInvalidationProjections(
 ): void {
   if (projections.length === 0) return;
   const revokedPostIds = new Set(projections.map((projection) => projection.postId));
+  for (const postId of revokedPostIds) commentReadFlights.delete(postId);
   const readStateHistoryByPostId = { ...snapshot.readStateHistoryByPostId };
   for (const postId of revokedPostIds) {
     const history = readStateHistoryByPostId[postId] ?? [];
@@ -813,7 +936,7 @@ function applyPrivateReactionResult(result: PrivateReactionMutationResult): void
   if (!current || current.state !== 'CONTENT_READY') {
     throw new Error('mobile.privateSocial.reactionProjectionUnavailable');
   }
-  const postsById = result.command.state === 'REACTION_COMMITTED'
+  const postsById = !result.command.commentId && result.command.state === 'REACTION_COMMITTED'
     ? mergeReadProjectionMap(snapshot.postsById, [{
       ...current,
       reactions: result.reactions,
@@ -821,9 +944,25 @@ function applyPrivateReactionResult(result: PrivateReactionMutationResult): void
       reactionsHydrated: true,
     }])
     : snapshot.postsById;
+  let comments = snapshot.comments;
+  let commentThreadsByPostId = snapshot.commentThreadsByPostId;
+  if (result.command.commentId) {
+    const comment = comments.find((candidate) => candidate.postId === result.command.postId
+      && candidate.commentId === result.command.commentId);
+    if (!comment) throw new Error('mobile.privateSocial.reactionProjectionUnavailable');
+    if (result.command.state === 'REACTION_COMMITTED') {
+      const updated = { ...comment, reactions: result.reactions, reactionRevision: result.projectionRevision,
+        reactionsHydrated: true, reactionsCount: result.reactions.reduce((total, reaction) => total + Number(reaction.count), 0) };
+      comments = mergeCommentLists(comments, [updated]);
+      commentThreadsByPostId = updatePrivateCommentThread(commentThreadsByPostId, comment.postId,
+        (thread) => ({ ...thread, comments: mergeCommentLists(thread.comments, [updated]) }));
+    }
+  }
   setSnapshot({
     ...snapshot,
     postsById,
+    comments,
+    commentThreadsByPostId,
     reactionCommands: mergeReactionCommands(
       snapshot.reactionCommands,
       [result.command],
@@ -836,13 +975,28 @@ function mergeReactionCommands(
   current: readonly PrivateReactionCommandProjection[],
   incoming: readonly PrivateReactionCommandProjection[],
 ): readonly PrivateReactionCommandProjection[] {
-  const byPost = new Map(
-    current.map((command) => [command.postId, command] as const),
+  const byTarget = new Map(
+    current.map((command) => [privateReactionTargetKey(command.postId, command.commentId, command.kind), command] as const),
   );
   for (const command of incoming) {
-    byPost.set(command.postId, command);
+    byTarget.set(privateReactionTargetKey(command.postId, command.commentId, command.kind), command);
   }
-  return [...byPost.values()];
+  return [...byTarget.values()];
+}
+
+function mergeReactionProjection<T extends {
+  reactions?: PrivateReactionMutationResult['reactions']; reactionRevision?: string; reactionsHydrated?: boolean;
+}>(current: T, incoming: T): T {
+  const previous = BigInt(current.reactionRevision ?? '0');
+  const next = BigInt(incoming.reactionRevision ?? '0');
+  if (previous === next && current.reactionsHydrated && incoming.reactionsHydrated
+    && JSON.stringify(current.reactions) !== JSON.stringify(incoming.reactions)) {
+    throw new Error('mobile.privateSocial.reactionRevisionConflict');
+  }
+  return current.reactionsHydrated && (!incoming.reactionsHydrated || previous > next)
+    ? { ...incoming, reactions: current.reactions, reactionRevision: current.reactionRevision,
+      reactionsHydrated: true, ...('reactionsCount' in current ? { reactionsCount: current.reactionsCount } : {}) }
+    : incoming;
 }
 
 function updatePrivateCommentThread(
@@ -978,6 +1132,8 @@ async function synchronizeSession(
       commentDrafts: nativeSnapshot.commentDrafts,
       comments: nativeSnapshot.comments,
       reactionCommands: nativeSnapshot.reactionCommands,
+      reactionPendingTargets: [],
+      reactionErrorsByTarget: {},
       commentThreadsByPostId: {},
       postsById: mergeReadProjectionMap({}, nativeSnapshot.readProjections),
       publishStateHistory: ['AUDIENCE_REQUIRED'],
@@ -1245,6 +1401,8 @@ function emptySnapshot(): PrivateMomentsRuntimeSnapshot {
     commentDrafts: [],
     comments: [],
     reactionCommands: [],
+    reactionPendingTargets: [],
+    reactionErrorsByTarget: {},
     commentThreadsByPostId: {},
     publishStateHistory: ['AUDIENCE_REQUIRED'],
     readStateHistoryByPostId: {},

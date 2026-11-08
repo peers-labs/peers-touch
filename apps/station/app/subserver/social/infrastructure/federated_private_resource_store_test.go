@@ -105,6 +105,79 @@ func TestRemotePrivateResourceSchemaMatchesViewerProjectionContract(
 	}
 }
 
+func TestPrivateReactionProjectionMigrationPreservesRowsAndWidensActualKey(t *testing.T) {
+	for _, columnAlreadyAdded := range []bool{false, true} {
+		t.Run(fmt.Sprintf("column-added-%t", columnAlreadyAdded), func(t *testing.T) {
+			database, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			connection, err := database.DB()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = connection.Close() })
+			if err := database.Exec(`CREATE TABLE social_private_reaction_projections (
+				source_station_peer_id TEXT NOT NULL, post_id TEXT NOT NULL, viewer_ptid TEXT NOT NULL,
+				projection_revision INTEGER NOT NULL, command_id TEXT NOT NULL,
+				projection_bytes BLOB NOT NULL, updated_at DATETIME NOT NULL,
+				PRIMARY KEY (source_station_peer_id, post_id, viewer_ptid)
+			)`).Error; err != nil {
+				t.Fatal(err)
+			}
+			if columnAlreadyAdded {
+				if err := database.Exec("ALTER TABLE social_private_reaction_projections ADD COLUMN comment_id TEXT NOT NULL DEFAULT ''").Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			legacy, err := proto.MarshalOptions{Deterministic: true}.Marshal(&actormodel.Post{
+				Id: "post-1", Reactions: []*actormodel.ReactionSummary{
+					{Kind: actormodel.ReactionKind_REACTION_LIKE, Count: 3, ReactedByViewer: true},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC()
+			if err := database.Exec(`INSERT INTO social_private_reaction_projections
+				(source_station_peer_id, post_id, viewer_ptid, projection_revision, command_id, projection_bytes, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?)`, "source-1", "post-1", "ptid:bob", 7, "old-command", legacy, now).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := migrateRemotePrivateResources(database); err != nil {
+				t.Fatal(err)
+			}
+			if err := migrateRemotePrivateResources(database); err != nil {
+				t.Fatalf("repeat migration: %v", err)
+			}
+			store, err := NewGORMPrivateContentStore(database)
+			if err != nil {
+				t.Fatal(err)
+			}
+			preserved, err := store.LoadFederatedPrivateReactionProjection(context.Background(), nil,
+				"source-1", "post-1", "", "ptid:bob")
+			if err != nil || preserved == nil || preserved.ProjectionRevision != 7 ||
+				preserved.CommandID != "old-command" || len(preserved.Reactions) != 1 ||
+				preserved.Reactions[0].GetCount() != 3 {
+				t.Fatalf("preserved projection = %+v, %v", preserved, err)
+			}
+			for _, commentID := range []string{"comment-1", "comment-2"} {
+				projection := *preserved
+				projection.CommentID = commentID
+				projection.CommandID = "command-" + commentID
+				projection.ProjectionRevision = 1
+				if applied, err := store.PutFederatedPrivateReactionProjection(context.Background(), nil, projection); err != nil || !applied {
+					t.Fatalf("insert distinct typed target %s = %t, %v", commentID, applied, err)
+				}
+			}
+			var count int64
+			if err := database.Model(&federatedPrivateReactionProjectionModel{}).Count(&count).Error; err != nil || count != 3 {
+				t.Fatalf("typed projection row count = %d, %v", count, err)
+			}
+		})
+	}
+}
+
 func TestRemotePrivateResourceDeliveryIdentityIsSourceAndViewerScoped(
 	t *testing.T,
 ) {

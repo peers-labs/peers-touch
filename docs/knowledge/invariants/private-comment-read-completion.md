@@ -5,9 +5,12 @@ status: active
 owns:
   - apps/desktop/src/store/privateComments.ts
   - apps/desktop/src/store/privateComments.test.ts
+  - apps/mobile/src/runtimes/privateMomentsRuntime.ts
+  - apps/mobile/src/runtimes/privateMomentsRuntime.test.ts
 referenced-by: []
 related:
   - docs/client/desktop/runtime-projections.md
+  - docs/architecture/platform/client/mobile/social-parity/data-model.md
 detected: 2026-10-25
 ---
 
@@ -15,7 +18,7 @@ detected: 2026-10-25
 
 ## What must hold
 
-The original private Comment Store MUST own completion of its asynchronous
+The original private Comment Store or Mobile Runtime MUST own completion of its asynchronous
 reads. An equivalent in-flight read MUST NOT resolve before the shared Native
 read and projection publication complete. A different refresh, cursor or
 historical anchor MUST NOT be silently dropped because the thread is loading.
@@ -25,6 +28,16 @@ Actor activation, renderer teardown, Native session replacement, post removal,
 and unavailable-parent transitions invalidate the corresponding in-flight
 read. Late callbacks MUST NOT recreate cleared private content. An unchanged
 or older Native bootstrap generation MUST NOT cancel the current read.
+
+Content generation and reaction revision are independent lanes. Replacement
+pages and snapshots retain the newer lane of each current comment. A reaction
+completion updates only the currently retained target; it cannot overwrite a
+newer body or recreate a removed comment. Reactivating the same Actor with equal
+renderer and Native-session values still invalidates old completions.
+Mobile reads validate ownership before Native dispatch and after synchronous
+publication subscribers run. A subscriber can fence or supersede the read;
+the caller must then receive a stale-completion refusal, never cleared content
+or an undefined comment. Deferred reaction dispatch rechecks scope and access.
 
 ## Why this is non-negotiable
 
@@ -44,12 +57,19 @@ Run the owning package's tests:
 ```bash
 pnpm --dir apps/desktop exec vitest run \
   src/store/privateComments.test.ts src/runtimes/momentsRuntime.test.ts
+pnpm --dir apps/mobile exec vitest run \
+  src/runtimes/privateMomentsRuntime.test.ts src/services/gateways/momentsGateway.test.ts
 ```
 
 The controlled pending-Native cases must prove shared completion and errors,
 independent retry, refresh during pagination, historical anchor replacement,
 subscriber reentrancy, scope and post invalidation, terminal parent state, and
 unchanged versus replaced Native session generations.
+
+The reaction cases must also prove refresh/bootstrap lane merging, delayed
+reaction versus body edit, target removal, and same-value scope reactivation.
+Use generated protobuf summaries and enums in tests so a copied numeric kind
+cannot mask a client/protocol mismatch.
 
 Run the existing `social-content-search-desktop-native-e2e` Journey against
 the current native source. Its original recipient acquisition, historical

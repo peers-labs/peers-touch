@@ -46,11 +46,14 @@ func ProjectPublicCommentResource(
 				Acct: authorAcct,
 				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
 			},
-			CreatedAt:      comment.GetCreatedAt(),
-			UpdatedAt:      comment.GetUpdatedAt(),
-			IsDeleted:      comment.GetIsDeleted(),
-			ReactionsCount: comment.GetLikesCount(),
-			RepliesCount:   comment.GetRepliesCount(),
+			CreatedAt:            comment.GetCreatedAt(),
+			UpdatedAt:            comment.GetUpdatedAt(),
+			IsDeleted:            comment.GetIsDeleted(),
+			ReactionsCount:       comment.GetLikesCount(),
+			RepliesCount:         comment.GetRepliesCount(),
+			IsLiked:              comment.GetIsLiked(),
+			PublicFeedRef:        comment.GetPublicFeedRef(),
+			ReplyToPublicFeedRef: comment.GetReplyToPublicFeedRef(),
 		},
 		Body: &privatecontentpb.CommentResource_PublicContent{
 			PublicContent: &privatecontentpb.PublicCommentContent{
@@ -420,7 +423,7 @@ func (s *PrivateContentService) projectRemotePrivateComment(
 		}
 		verification.ReceiverVerifiedSenderSigningKey = authorKey
 	}
-	return &privatecontentpb.CommentResource{
+	resource := &privatecontentpb.CommentResource{
 		Metadata: proto.Clone(
 			message.GetComment(),
 		).(*privatecontentpb.CommentMetadata),
@@ -434,7 +437,12 @@ func (s *PrivateContentService) projectRemotePrivateComment(
 				Verification:   verification,
 			},
 		},
-	}, nil
+	}
+	if err := s.projectPrivateCommentReactions(ctx, transaction,
+		message.GetSourceStationPeerId(), "", message.GetTargetActor().GetPtid(), resource.GetMetadata()); err != nil {
+		return nil, err
+	}
+	return resource, nil
 }
 
 func (s *PrivateContentService) validatePrivateContentViewer(
@@ -798,7 +806,7 @@ func (s *PrivateContentService) projectPrivateComment(
 		}
 		access.Verification.ReceiverVerifiedSenderSigningKey = authorKey
 	}
-	return &privatecontentpb.CommentResource{
+	resource := &privatecontentpb.CommentResource{
 		Metadata: &privatecontentpb.CommentMetadata{
 			CommentId:        read.Comment.CommentID,
 			ContentId:        read.Comment.ContentID,
@@ -815,5 +823,10 @@ func (s *PrivateContentService) projectPrivateComment(
 		Body: &privatecontentpb.CommentResource_PrivateContent{
 			PrivateContent: access,
 		},
-	}, nil
+	}
+	if err := s.projectPrivateCommentReactions(ctx, transaction, s.localStationPeerID,
+		read.ParentAuthorPTID, viewer.GetActor().GetPtid(), resource.GetMetadata()); err != nil {
+		return nil, err
+	}
+	return resource, nil
 }

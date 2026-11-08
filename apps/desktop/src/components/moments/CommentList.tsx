@@ -3,11 +3,11 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Button, Input, Space, Spin, Typography, message, theme } from 'antd';
-import type { TextAreaRef } from 'antd/es/input/TextArea';
-import { SendHorizontal } from 'lucide-react';
+import { message } from 'antd';
+import { Button, Dialog, IconButton, MomentCommentComposer, MomentCommentRow as PeerCommentRow, Spin, TextArea } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 import type { PrivateCommentPublicationState, PrivateCommentState } from '../../services/privateCommentsNative';
+import { publicFeedErrorKey } from '../../services/publicFeedNative';
 import { useSessionStore } from '../../store/session';
 import {
   commentDraftKey,
@@ -24,9 +24,9 @@ import {
 import { useSocialMentionCandidates } from './mentions/useSocialMentionCandidates';
 import { SocialMentionPopover } from './mentions/SocialMentionPopover';
 import { MomentCommentAuthorName } from './MomentCommentAuthorName';
-
-const { Text } = Typography;
-const { TextArea } = Input;
+import { MomentAuthorTrigger } from './MomentAuthorTrigger';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { useActorIdentity } from '../common/useActorIdentity';
 
 // CommentList — thread for a single post.
 //
@@ -47,6 +47,10 @@ export interface MomentCommentItem {
   authorPtid: string;
   replyToCommentId: string;
   content: string;
+  likesCount?: bigint | number;
+  isLiked?: boolean;
+  createdAt?: { seconds: bigint };
+  createdAtMillis?: number;
   author?: {
     username: string;
     displayName: string;
@@ -77,9 +81,23 @@ interface CommentListProps {
   ) => Promise<void>;
   onRetry?: () => Promise<void>;
   onDelete?: (commentId: string) => Promise<void>;
+  onLike?: (commentId: string, liked: boolean) => Promise<void>;
+  reactionCommands?: Record<string, { pending: boolean; error?: string; retry?: () => Promise<void> }>;
+  onAuthorClick?: (actorPtid: string) => void;
 }
 
 type ComposerAction = 'submit' | 'retry' | 'reconcile';
+
+function rootComment(comment: MomentCommentItem, byId: ReadonlyMap<string, MomentCommentItem>): MomentCommentItem {
+  let current = comment;
+  const seen = new Set([comment.id]);
+  while (current.replyToCommentId) {
+    const parent = byId.get(current.replyToCommentId);
+    if (!parent || seen.has(parent.id)) break;
+    seen.add(parent.id); current = parent;
+  }
+  return current;
+}
 
 export function CommentList({
   postId,
@@ -98,10 +116,12 @@ export function CommentList({
   onSubmit,
   onRetry,
   onDelete,
+  onLike,
+  reactionCommands,
+  onAuthorClick,
 }: CommentListProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('moments');
-  const textareaRef = useRef<TextAreaRef | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const submitInFlight = useRef(false);
 
   const authenticatedPtid = useSessionStore((s) => (
@@ -119,7 +139,24 @@ export function CommentList({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [publicSubmitError, setPublicSubmitError] = useState(false);
-  const [replyTarget, setReplyTarget] = useState<MomentCommentItem | null>(null);
+  const [replyTargetId, setReplyTargetId] = useState(storedDraft?.replyToCommentId ?? '');
+  const commentsById = useMemo(() => new Map(comments.map(comment => [comment.id, comment])), [comments]);
+  const replyTarget = commentsById.get(replyTargetId);
+  const replyRootId = replyTarget ? rootComment(replyTarget, commentsById).id : replyTargetId || undefined;
+  const threads = useMemo(() => {
+    const replies = new Map<string, MomentCommentItem[]>();
+    const roots: MomentCommentItem[] = [];
+    const time = (comment: MomentCommentItem) => comment.createdAtMillis ?? Number(comment.createdAt?.seconds ?? 0n) * 1000;
+    for (const comment of comments) {
+      const parent = rootComment(comment, commentsById);
+      if (parent.id !== comment.id) {
+        const list = replies.get(parent.id) ?? [];
+        list.push(comment); replies.set(parent.id, list);
+      } else roots.push(comment);
+    }
+    const recent = (a: MomentCommentItem, b: MomentCommentItem) => time(b) - time(a) || b.id.localeCompare(a.id);
+    return roots.sort(recent).map(comment => ({ comment, replies: (replies.get(comment.id) ?? []).sort(recent) }));
+  }, [comments, commentsById]);
 
   const [text, setText] = useState(() => storedDraft?.text ?? composerDraftText ?? '');
   const [mentions, setMentions] = useState<SocialTextMention[]>(
@@ -176,7 +213,7 @@ export function CommentList({
     setStoredDraft(draftKey, {
       text: nextText,
       mentions: nextMentions,
-      replyToCommentId: replyTarget?.id,
+      replyToCommentId: replyRootId,
     });
   };
 
@@ -193,7 +230,7 @@ export function CommentList({
     // microtask runs after the commit paint boundary without
     // scheduling a component state update from an effect.
     queueMicrotask(() => {
-      const target = textareaRef.current?.resizableTextArea?.textArea;
+      const target = textareaRef.current;
       if (!target) return;
       target.focus();
       target.setSelectionRange(nextCaret, nextCaret);
@@ -231,10 +268,10 @@ export function CommentList({
     setSubmitError(null);
     setPublicSubmitError(false);
     try {
-      await onSubmit(trimmed, replyTarget?.id, normalized);
+      await onSubmit(trimmed, replyRootId, normalized);
       setText('');
       setMentions([]);
-      setReplyTarget(null);
+      setReplyTargetId('');
       clearStoredDraft(draftKey);
     } catch (err) {
       setPublicSubmitError(failureVariant === 'public');
@@ -286,7 +323,7 @@ export function CommentList({
     setPendingClearApplied(true);
     setText('');
     setMentions([]);
-    setReplyTarget(null);
+    setReplyTargetId('');
   } else if (!committedPending && pendingClearApplied) {
     setPendingClearApplied(false);
   }
@@ -306,77 +343,47 @@ export function CommentList({
     || (retryDeadlinePending && withinRetryDeadline);
   const retrySeconds = composerRetryAfterSeconds ?? 0;
 
-  return (
-    <div
-      data-moments-comment-thread={postId}
-      style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
-    >
-      {comments.length === 0 && !loading && (
-        <div style={{ padding: '8px 0' }}>
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            {t('moments.comment.empty')}
-          </Text>
-        </div>
-      )}
-
-      {loading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}>
-          <Spin size="small" />
-        </div>
-      )}
-
-      {comments.map((c) => (
-        <MomentCommentRow
-          key={c.id}
-          comment={c}
-          highlighted={c.id === targetCommentId}
-          canModerate={!!viewerActorPtid && c.authorPtid === viewerActorPtid}
-          onReply={(target) => {
-            setReplyTarget(target);
-            textareaRef.current?.focus();
-          }}
-          onDelete={onDelete}
-        />
-      ))}
-
-      {hasMore && !loading && (
-        <Button block type="text" size="small" onClick={onLoadMore}>
-          {t('moments.action.loadMore')}
-        </Button>
-      )}
-
-      {replyTarget && (
-        <Space size={8}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {t('moments.comment.replyingTo')}
-          </Text>
-          <MomentCommentAuthorName actorPtid={replyTarget.authorPtid} />
-          <Button
-            size="small"
-            type="link"
-            style={{ padding: 0, fontSize: 12 }}
-            onClick={() => setReplyTarget(null)}
-          >
-            {t('moments.action.cancel')}
-          </Button>
-        </Space>
-      )}
-
-      {/* Composer boundary: textarea, mention popover, status, and
-          submit all live inside one container so Post reads as part
-          of the input, never a detached row. */}
-      <div
-        style={{
-          position: 'relative',
-          border: `1px solid ${submitError ? token.colorErrorBorder : token.colorBorderSecondary}`,
-          borderRadius: token.borderRadius,
-          padding: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          background: token.colorBgContainer,
-        }}
-      >
+  const row = (comment: MomentCommentItem, depth = 0, replies?: React.ReactNode) => (
+    <MomentCommentRow key={comment.id} comment={comment} depth={depth} replies={replies}
+      highlighted={comment.id === targetCommentId}
+      canModerate={!!viewerActorPtid && comment.authorPtid === viewerActorPtid}
+      onAuthorClick={onAuthorClick}
+      onLike={onLike} reactionCommand={reactionCommands?.[comment.id]}
+      onReply={target => {
+        const rootId = rootComment(target, commentsById).id;
+        setReplyTargetId(target.id);
+        setStoredDraft(draftKey, { text, mentions, replyToCommentId: rootId });
+        textareaRef.current?.focus();
+      }}
+      onDelete={onDelete} />
+  );
+  const status = <>
+    {submitError && <span>{publicSubmitError ? t(publicFeedErrorKey(submitError))
+      : t('moments.private.state.PUBLISH_FAILED.description')}</span>}
+    {!submitError && composerErrorCode && !committedPending && <span>{t(parentUnavailable
+      ? 'moments.private.state.NOT_FOUND_OR_NOT_AUTHORIZED.description'
+      : 'moments.private.state.PUBLISH_FAILED.description')}</span>}
+    {committedPending && <span>{t('moments.comment.readbackPending')}</span>}
+    {retryDeadlinePending && withinRetryDeadline && <span>{t('moments.comment.retryIn', { count: retrySeconds })}</span>}
+  </>;
+  return <div data-moments-comment-thread={postId} className="sk-comment-list">
+      {comments.length === 0 && !loading && <span className="sk-comment-status">{t('moments.comment.empty')}</span>}
+      {loading && <Spin label={t('moments.follow.loading')} />}
+      <ul className="sk-comment-list">
+        {threads.map(thread => row(thread.comment, 0,
+          thread.replies.length > 0 ? thread.replies.map(reply => row(reply, 1)) : undefined))}
+      </ul>
+      {hasMore && !loading && <Button actionId={`comments.more.${postId}`} emphasis="quiet"
+        className="sk-comment-pager" label={t('moments.action.loadMore')} onActivate={onLoadMore} />}
+      {replyTarget && <div className="sk-comment-meta">
+        <span>{t('moments.comment.replyingTo')}</span><MomentCommentAuthorName actorPtid={replyTarget.authorPtid} />
+        <Button actionId={`comments.reply.cancel.${postId}`} emphasis="quiet" density="compact"
+          className="sk-comment-action" label={t('moments.action.cancel')} onActivate={() => {
+            setReplyTargetId(''); setStoredDraft(draftKey, { text, mentions });
+          }} />
+      </div>}
+      <MomentCommentComposer invalid={Boolean(submitError || composerErrorCode)}
+        status={submitError || composerErrorCode || committedPending || withinRetryDeadline ? status : undefined}>
         <SocialMentionPopover
           open={mentionPopoverOpen}
           candidates={mentionCandidates}
@@ -386,6 +393,7 @@ export function CommentList({
         />
         <TextArea
           ref={textareaRef}
+          data-acceptance-id="social-comment-input"
           value={text}
           onChange={(event) => updateText(
             event.target.value,
@@ -402,62 +410,24 @@ export function CommentList({
           }}
           onFocus={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
           disabled={composerDisabled}
-          autoSize={{ minRows: 1, maxRows: 4 }}
+          minimumRows={1} maximumRows={4} aria-label={t('moments.comment.placeholder')}
           placeholder={t('moments.comment.placeholder')}
-          style={{ borderRadius: token.borderRadius, border: 'none', padding: 0 }}
         />
-
-        {submitError && (
-          <Text type="danger" style={{ fontSize: 12 }}>
-            {publicSubmitError
-              ? t('moments.comment.publicSubmitFailed')
-              : t('moments.private.state.PUBLISH_FAILED.description')}
-          </Text>
-        )}
-        {!submitError && composerErrorCode && !committedPending && (
-          <Text type="danger" style={{ fontSize: 12 }}>
-            {parentUnavailable
-              ? t('moments.private.state.NOT_FOUND_OR_NOT_AUTHORIZED.description')
-              : t('moments.private.state.PUBLISH_FAILED.description')}
-          </Text>
-        )}
-        {committedPending && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {t('moments.comment.readbackPending')}
-          </Text>
-        )}
-        {retryDeadlinePending && withinRetryDeadline && (
-          <Text type="danger" style={{ fontSize: 12 }}>
-            {t('moments.comment.retryIn', { count: retrySeconds })}
-          </Text>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           {composerAction !== 'submit' && onRetry ? (
-            <Button
-              type="primary"
-              size="small"
-              loading={submitting || nativePending}
-              onClick={() => void onRetry()}
-            >
-              {t('moments.comment.confirmResult')}
-            </Button>
+            <Button actionId={`comments.retry.${postId}`} emphasis="primary" density="compact"
+              execution={submitting || nativePending ? 'pending' : 'idle'}
+              availability={withinRetryDeadline ? { kind: 'disabled', reason: t('moments.comment.retryIn', { count: retrySeconds }) } : undefined}
+              label={t('moments.comment.confirmResult')}
+              onActivate={() => void onRetry().catch(() => setSubmitError(t('moments.private.state.PUBLISH_FAILED.description')))} />
           ) : (
-            <Button
-              type="primary"
-              size="small"
-              disabled={composerDisabled || !text.trim()}
-              loading={submitting || nativePending}
-              onClick={() => void submit()}
-              icon={<SendHorizontal size={12} />}
-            >
-              {t('moments.comment.publish')}
-            </Button>
+            <IconButton actionId={`comments.send.${postId}`} iconId="send"
+              emphasis="primary" density="compact" label={t('moments.comment.publish')}
+              data-acceptance-id="social-comment-send"
+              availability={composerDisabled || !text.trim() ? { kind: 'disabled', reason: t('moments.comment.placeholder') } : undefined}
+              execution={submitting || nativePending ? 'pending' : 'idle'} onActivate={() => void submit()} />
           )}
-        </div>
-      </div>
-    </div>
-  );
+      </MomentCommentComposer>
+    </div>;
 }
 
 function MomentCommentRow({
@@ -466,61 +436,76 @@ function MomentCommentRow({
   canModerate,
   onReply,
   onDelete,
+  onLike,
+  reactionCommand,
+  onAuthorClick,
+  depth,
+  replies,
 }: {
   comment: MomentCommentItem;
   highlighted: boolean;
   canModerate: boolean;
   onReply: (comment: MomentCommentItem) => void;
   onDelete?: (commentId: string) => Promise<void>;
+  onLike?: (commentId: string, liked: boolean) => Promise<void>;
+  reactionCommand?: { pending: boolean; error?: string; retry?: () => Promise<void> };
+  onAuthorClick?: (actorPtid: string) => void;
+  depth: number;
+  replies?: React.ReactNode;
 }) {
   const { t } = useTranslation('moments');
+  const identity = useActorIdentity(comment.authorPtid, { requireCanonicalProfile: true });
+  const name = identity.displayName || t('moments.author.unknown');
   const [deleting, setDeleting] = useState(false);
-  return (
-    <div
-      data-moments-comment={comment.id}
-      tabIndex={highlighted ? 0 : -1}
-      style={{
-        padding: '8px 0',
-        borderBottom: '1px solid rgba(0,0,0,0.04)',
-        outline: highlighted ? '2px solid #1677ff' : 'none',
-      }}
-    >
-      <Space size={8} style={{ marginBottom: 2 }}>
-        <MomentCommentAuthorName actorPtid={comment.authorPtid} />
-        {/* Reply is always available, including on private detail
-            threads; only Delete is gated by ownership. */}
-        <Button
-          size="small"
-          type="link"
-          style={{ padding: 0, fontSize: 12 }}
-          data-moments-comment-reply={comment.id}
-          onClick={() => onReply(comment)}
-        >
-          {t('moments.comment.reply')}
-        </Button>
-        {canModerate && onDelete && (
-          <Button
-            size="small"
-            type="link"
-            danger
-            style={{ padding: 0, fontSize: 12 }}
-            loading={deleting}
-            disabled={deleting}
-            onClick={async () => {
-              setDeleting(true);
-              try {
-                await onDelete(comment.id);
-              } catch {
-                setDeleting(false);
-                message.error(t('moments.comment.deleteFailed'));
-              }
-            }}
-          >
-            {t('moments.comment.delete')}
-          </Button>
-        )}
-      </Space>
-      <Text>{comment.content}</Text>
-    </div>
-  );
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const date = comment.createdAtMillis ?? (comment.createdAt ? Number(comment.createdAt.seconds) * 1000 : undefined);
+  const remove = async () => {
+    if (!onDelete || deleting) return;
+    setDeleting(true);
+    try { await onDelete(comment.id); setConfirmOpen(false); }
+    catch { message.error(t('moments.comment.deleteFailed')); }
+    finally { setDeleting(false); }
+  };
+  return <PeerCommentRow commentId={comment.id} content={comment.content} own={canModerate}
+    reaction={onLike ? { count: comment.likesCount ?? 0n, liked: comment.isLiked ?? false,
+      label: BigInt(comment.likesCount ?? 0) > 0n
+        ? t('moments.comment.likeCount', { value: String(comment.likesCount) }) : t('moments.reaction.like'),
+      pending: reactionCommand?.pending,
+      error: reactionCommand?.error ? t(publicFeedErrorKey(reactionCommand.error)) : undefined,
+      onActivate: () => { void onLike(comment.id, !comment.isLiked).catch(() => {}); },
+      retry: reactionCommand?.retry ? {
+        label: t('moments.comment.confirmResult'),
+        onActivate: () => { void reactionCommand.retry?.().catch(() => {}); },
+      } : undefined,
+    } : undefined}
+    highlighted={highlighted} depth={depth} replies={replies}
+    time={date === undefined ? undefined : <time dateTime={new Date(date).toISOString()}>{new Date(date).toLocaleString()}</time>}
+    avatar={<MomentAuthorTrigger actorPtid={comment.authorPtid} onOpenProfile={onAuthorClick}>
+      <Button actionId={`comment.avatar.${comment.id}`} emphasis="quiet" density="compact"
+        className="sk-comment-avatar" aria-label={t('moments.identity.cardLabel', { name })}>
+        <UserSquareAvatar actorPtid={comment.authorPtid} remoteUrl={identity.avatarUrl || undefined}
+          name={name} size={depth ? 24 : 30} radius={depth ? 7 : 9} />
+      </Button>
+    </MomentAuthorTrigger>}
+    author={<MomentAuthorTrigger actorPtid={comment.authorPtid} onOpenProfile={onAuthorClick}>
+      <button type="button" className="sk-comment-author" aria-label={t('moments.identity.cardLabel', { name })}>{name}</button>
+    </MomentAuthorTrigger>}
+    actions={<>
+      <Button actionId={`comment.reply.${comment.id}`} emphasis="quiet" density="compact"
+        className="sk-comment-action" data-moments-comment-reply={comment.id}
+        label={t('moments.comment.reply')} onActivate={() => onReply(comment)} />
+      {canModerate && onDelete && <Button actionId={`comment.delete.${comment.id}`} emphasis="quiet" density="compact"
+        tone="danger" className="sk-comment-action is-danger" data-comment-delete
+        label={t('moments.comment.delete')} execution={deleting ? 'pending' : 'idle'}
+        onActivate={() => setConfirmOpen(true)} />}
+      <Dialog open={confirmOpen} onDismiss={() => { if (!deleting) setConfirmOpen(false); }}
+        title={t('moments.comment.delete')} closeLabel={t('moments.action.cancel')}
+        description={t('moments.comment.deleteConfirm')}
+        footer={<>
+          <Button actionId={`comment.delete.cancel.${comment.id}`} emphasis="quiet" label={t('moments.action.cancel')}
+            onActivate={() => setConfirmOpen(false)} />
+          <Button actionId={`comment.delete.confirm.${comment.id}`} emphasis="primary" tone="danger"
+            label={t('moments.comment.delete')} execution={deleting ? 'pending' : 'idle'} onActivate={() => void remove()} />
+        </>} />
+    </>} />;
 }
