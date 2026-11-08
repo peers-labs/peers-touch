@@ -342,7 +342,7 @@ class TestSelectedMobileSimulatorProvisioner(
     SelectedMobileSimulatorProvisioner
 ):
     def _git_commit(self) -> str:
-        return "source-commit"
+        return "1" * 40
 
     def _git_workspace_digest(self) -> str:
         return "clean"
@@ -4416,6 +4416,75 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertNotIn("chromedriver", manifest.to_dict()["mobileSimulator"])
         self.provisioner.cleanup()
+
+    def test_selected_build_preserves_exact_dirty_source_identity(self) -> None:
+        spec = load_mobile_simulator_spec(self.contract_path)
+        provisioner = TestSelectedMobileSimulatorProvisioner(
+            self.contract, clients=spec.clients, runtime_source_commit="1" * 40,
+            executor=self.executor, repo_root=self.repo_root,
+            contract_path=self.contract_path,
+        )
+        dirty = "sha256:" + "d" * 64
+        with patch.object(provisioner, "_git_workspace_digest", return_value=dirty):
+            manifest = provisioner._new_base_manifest("selected-source")
+            identities = [
+                provisioner._platform_build_identity(
+                    manifest, platform=platform, command_env={},
+                ) for platform in ("ios", "android")
+            ]
+        for identity in identities:
+            self.assertEqual(identity["sourceCommit"], manifest.source_commit)
+            self.assertEqual(identity["workspaceState"], "dirty")
+            self.assertEqual(identity["workspaceDigest"], dirty)
+        self.assertEqual(self.executor.events, [])
+
+    def test_selected_build_rejects_runtime_or_workspace_source_drift(self) -> None:
+        spec = load_mobile_simulator_spec(self.contract_path)
+        provisioner = TestSelectedMobileSimulatorProvisioner(
+            self.contract, clients=spec.clients, runtime_source_commit="1" * 40,
+            executor=self.executor, repo_root=self.repo_root,
+            contract_path=self.contract_path,
+        )
+        manifest = provisioner._new_base_manifest("selected-source")
+        for candidate in (
+            dataclasses.replace(manifest, source_commit="2" * 40),
+            dataclasses.replace(manifest, workspace_digest="sha256:" + "d" * 64),
+        ):
+            with self.subTest(candidate=candidate.source_commit):
+                with self.assertRaises(BlockedError) as failure:
+                    provisioner._platform_build_identity(
+                        candidate, platform="ios", command_env={},
+                    )
+                self.assertEqual(failure.exception.resource, "mobile-simulator:source-identity")
+        with patch.object(provisioner, "_git_commit", return_value="2" * 40):
+            blocked = provisioner.provision("selected-source")
+        self.assertEqual(blocked.state, ProvisioningState.BLOCKED)
+        self.assertEqual(blocked.blocked_resource, "mobile-simulator:source-identity")
+        self.assertEqual(self.executor.events, [])
+
+    def test_selected_build_rejects_input_drift_before_installation(self) -> None:
+        spec = load_mobile_simulator_spec(self.contract_path)
+        provisioner = TestSelectedMobileSimulatorProvisioner(
+            self.contract, clients=spec.clients, runtime_source_commit="1" * 40,
+            executor=self.executor, repo_root=self.repo_root,
+            runtime_base=self.root / "selected-runtime",
+            runtime_cache_base=self.cache_root, contract_path=self.contract_path,
+            sleep=lambda _: None,
+        )
+        observed: set[str] = set()
+
+        def digest(platform: str) -> str:
+            first = platform not in observed
+            observed.add(platform)
+            return "sha256:" + ("a" if first else "b") * 64
+
+        with patch.object(provisioner, "_build_inputs_digest", side_effect=digest):
+            manifest = provisioner.provision("selected-source")
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(manifest.blocked_resource, "mobile-simulator:source-identity")
+        self.assertFalse(any("install" in command for command in self.executor.commands))
+        completed = provisioner.cleanup()
+        self.assertIn("storage:mobile-simulator", completed)
 
     def test_secure_content_provisioner_owns_selected_platform_clients(
         self,

@@ -4003,8 +4003,16 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         self.selected_clients = selected
         self.runtime_source_commit = runtime_source_commit
 
-    def _build_inputs_digest(self, platform: str) -> str:
-        return canonical_build_inputs_digest(self.repo_root, platform)
+    def _validate_runtime_source(self, manifest: RuntimeManifest) -> None:
+        if (
+            manifest.source_commit != self.runtime_source_commit
+            or self._git_commit() != manifest.source_commit
+            or self._git_workspace_digest() != manifest.workspace_digest
+        ):
+            raise BlockedError(
+                reason="Selected Mobile simulator source changed or conflicts with its runtime",
+                resource="mobile-simulator:source-identity",
+            )
 
     def _platform_build_identity(
         self,
@@ -4013,35 +4021,10 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
         platform: str,
         command_env: Mapping[str, str],
     ) -> dict[str, Any]:
-        if manifest.workspace_digest != "clean":
-            raise BlockedError(
-                reason=(
-                    "Selected Mobile simulator builds require a clean "
-                    "source projection"
-                ),
-                resource="mobile-simulator:source-identity",
-            )
-        environment = {
-            name: command_env[name]
-            for name in sorted(SELECTED_BUILD_ENVIRONMENT_KEYS)
-            if name in command_env
-        }
-        try:
-            return create_build_identity(
-                build_id=f"{manifest.run_id}-{platform}",
-                platform=platform,
-                source=SourceIdentity(
-                    source_commit=self.runtime_source_commit,
-                    workspace_state="clean",
-                    workspace_digest="clean",
-                ),
-                build_inputs_digest=self._build_inputs_digest(platform),
-                environment_digest=canonical_value_digest(environment),
-            )
-        except MobileNativeBuildError as error:
-            raise ProvisioningError(
-                f"Selected Mobile simulator build identity is invalid: {error}"
-            ) from error
+        self._validate_runtime_source(manifest)
+        return super()._platform_build_identity(
+            manifest, platform=platform, command_env=command_env,
+        )
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -4054,6 +4037,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                     reason="Mobile simulator source identity is unavailable",
                     resource="mobile-simulator:source-identity",
                 )
+            self._validate_runtime_source(self._manifest)
             spec = load_mobile_simulator_spec(self.contract_path)
             command_env = {
                 **os.environ,
@@ -4188,6 +4172,13 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                         ):
                             android_manifest_guard.restore()
 
+            self._validate_runtime_source(manifest)
+            for platform, identity in build_identities.items():
+                if self._build_inputs_digest(platform) != identity["buildInputsDigest"]:
+                    raise BlockedError(
+                        reason="Selected Mobile simulator build inputs changed during compilation",
+                        resource="mobile-simulator:source-identity",
+                    )
             applications: dict[str, dict[str, Any]] = {}
             for platform in platforms:
                 application = self._stage_application(
