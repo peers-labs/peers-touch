@@ -195,12 +195,12 @@ class Gate(DeviceSearchGate):
         try:
             self.verify_fixture_ready()
             for actor in ("alice", "bob"):
+                version = read_station_version(runtime_station_service(self.manifest, actor)["endpoint"])
+                self.assert_condition(f"{actor}-station-source",
+                    commits_match(str(version.get("build_commit") or ""), source["commit"]), "current source")
                 self.start_client(actor)
                 ledger.record(SuiteRuntimeAction.CLIENT_LAUNCH, resource_id=f"client:{actor}")
                 ledger.record(SuiteRuntimeAction.LOGIN, resource_id=f"session:{actor}")
-                version = read_station_version(runtime_station_service(self.manifest, actor)["endpoint"])
-                self.assert_condition(f"{actor}-station-source",
-                    commits_match(str(version.get("commit") or ""), source["commit"]), "current source")
             primary = runtime_station_service(self.manifest, "alice")
             secondary = runtime_station_service(self.manifest, "bob")
             self.assert_condition("two-distinct-stations",

@@ -3,8 +3,9 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from tooling.acceptance.core import GateError
 from tooling.acceptance.core.suite_runtime import SuiteRuntimeLedger, SuiteRuntimeError
 from tooling.acceptance.core.e2e_preflight import (
     PREFLIGHT_ENV, load_catalog, prepare_e2e, preflight_binding,
@@ -78,6 +79,47 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
             with self.assertRaisesRegex(SuiteRuntimeError, "SUITE_RUNTIME_SOURCE_INVALID"):
                 gate.run()
         fixture.assert_not_called()
+
+    def test_station_source_uses_app_meta_contract_before_client_launch(self):
+        commit = "a" * 40
+        for version, accepted in (
+            ({"build_commit": commit}, True),
+            ({"build_commit": "b" * 40}, False),
+            ({"commit": commit}, False),
+            ({}, False),
+        ):
+            with self.subTest(version=version):
+                gate = object.__new__(Gate)
+                gate.manifest = {
+                    "source": {"commit": commit, "workspaceDigest": "clean"},
+                    "runId": "version-contract-fixture",
+                }
+                gate.actor_manifest = {"runId": "version-contract-fixture"}
+                gate.report = SimpleNamespace(runtime={}, add_assertion=Mock())
+                with patch(
+                    "tooling.acceptance.gates.social.public_feed_native.read_station_version",
+                    return_value=version,
+                ), patch(
+                    "tooling.acceptance.gates.social.public_feed_native.runtime_station_service",
+                    side_effect=lambda manifest, actor: {
+                        "endpoint": f"http://{actor}.invalid",
+                        "runtimeIdentity": actor,
+                    },
+                ), patch.object(
+                    gate, "verify_fixture_ready",
+                ), patch.object(
+                    gate, "start_client",
+                ) as launch, patch.object(
+                    gate, "source_identity", side_effect=RuntimeError("source identity boundary"),
+                ), patch.object(gate, "cleanup_clients", return_value={}):
+                    if accepted:
+                        with self.assertRaisesRegex(RuntimeError, "source identity boundary"):
+                            gate.run()
+                        self.assertEqual(launch.call_count, 2)
+                    else:
+                        with self.assertRaisesRegex(GateError, "alice-station-source"):
+                            gate.run()
+                        launch.assert_not_called()
 
 
 if __name__ == "__main__":
