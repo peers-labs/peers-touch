@@ -74,6 +74,7 @@ class Gate(DeviceSearchGate):
         if self.manifest.get("environmentId") != "cross-station-social-native":
             raise GateError("Public feed requires the reviewed two-Station environment")
         self.report.runtime["search"] = {}
+        self.active_social_scenario: str | None = None
 
     @property
     def receiver(self) -> Any:
@@ -173,10 +174,15 @@ class Gate(DeviceSearchGate):
         wait_until(settled, f"{actor} confirmed comment LIKE {count}/{liked}", timeout=120)
         return selector
 
+    def begin_scenario(self, ledger: SuiteRuntimeLedger, scenario: str) -> None:
+        ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=scenario)
+        self.active_social_scenario = scenario
+
     def complete_scenario(self, ledger: SuiteRuntimeLedger, scenario: str, action: str, receiver: str) -> None:
         ledger.record(SuiteRuntimeAction.UI_ACTION, scenario_id=scenario, resource_id=action)
         ledger.record(SuiteRuntimeAction.RECEIVER_ASSERTION, scenario_id=scenario, resource_id=receiver)
         ledger.record(SuiteRuntimeAction.SCENARIO_END, scenario_id=scenario)
+        self.active_social_scenario = None
 
     def run(self) -> dict[str, Any]:
         source = self.manifest["source"]
@@ -213,7 +219,7 @@ class Gate(DeviceSearchGate):
                     self.click(actor, '[data-pt-primary-nav="moments"] [role="button"]')
                     self.click(actor, '[data-action-id="segment.feed"]')
 
-                ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=SCENARIOS[0])
+                self.begin_scenario(ledger, SCENARIOS[0])
                 self.click("alice", '[data-acceptance-id="social-composer-open"]')
                 wait_until(lambda: self.visible_element("alice", 'textarea[data-moments-composer-input]'),
                            "Alice composer input", timeout=30).send_keys(text)
@@ -227,7 +233,7 @@ class Gate(DeviceSearchGate):
                 self.capture("bob", SCENARIOS[0])
                 self.complete_scenario(ledger, SCENARIOS[0], "alice:composer-publish", "bob:painted-signed-body")
 
-                ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=SCENARIOS[1])
+                self.begin_scenario(ledger, SCENARIOS[1])
                 self.action("bob", "unfollowActor", {"actorPtid": fixture["alicePtid"]})
                 bob_selector = f'[data-post-id="{bob_id}"]'
                 self.open_comments("bob", bob_selector)
@@ -247,7 +253,7 @@ class Gate(DeviceSearchGate):
                 self.capture("alice", SCENARIOS[1])
                 self.complete_scenario(ledger, SCENARIOS[1], "bob:comment-send-and-reaction-pick", "alice:painted-thread-and-reaction")
 
-                ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=SCENARIOS[6])
+                self.begin_scenario(ledger, SCENARIOS[6])
                 alice_root = self.assert_comment_like("alice", alice_selector, comment_text, 0, False)
                 self.click("alice", alice_root)
                 bob_root = self.assert_comment_like("bob", bob_selector, comment_text, 1, False)
@@ -283,7 +289,7 @@ class Gate(DeviceSearchGate):
                 self.complete_scenario(ledger, SCENARIOS[6],
                     "alice,bob:root-and-reply-like-set-remove", "alice,bob:painted-confirmed-counts")
 
-                ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=SCENARIOS[2])
+                self.begin_scenario(ledger, SCENARIOS[2])
                 self.action("bob", "followActor", {"actorPtid": fixture["alicePtid"]})
                 self.click("alice", f'{alice_selector} [data-acceptance-id="social-moment-menu"]')
                 self.click("alice", f'[data-action-id="moment.edit.{alice_id}"]')
@@ -299,7 +305,7 @@ class Gate(DeviceSearchGate):
                 self.capture("bob", SCENARIOS[2])
                 self.complete_scenario(ledger, SCENARIOS[2], "alice:edit-save", "bob:painted-updated-signed-body")
 
-                ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=SCENARIOS[3])
+                self.begin_scenario(ledger, SCENARIOS[3])
                 self.restart_client("bob")
                 ledger.record(SuiteRuntimeAction.CLIENT_REPLACEMENT, resource_id="client:bob", scenario_id=SCENARIOS[3])
                 self.click("bob", '[data-pt-primary-nav="moments"] [role="button"]')
@@ -311,7 +317,7 @@ class Gate(DeviceSearchGate):
                 self.capture("bob", SCENARIOS[3])
                 self.complete_scenario(ledger, SCENARIOS[3], "bob:native-restart", "bob:painted-replayed-updated-body")
 
-                ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=SCENARIOS[4])
+                self.begin_scenario(ledger, SCENARIOS[4])
                 self.open_search()
                 self.click("bob", '[data-search-filter="social"]')
                 self.fill(edited_text)
@@ -333,7 +339,7 @@ class Gate(DeviceSearchGate):
                 self.complete_scenario(ledger, SCENARIOS[4],
                     "bob:search-social-query", "bob:painted-replicated-updated-result")
 
-                ledger.record(SuiteRuntimeAction.SCENARIO_START, scenario_id=SCENARIOS[5])
+                self.begin_scenario(ledger, SCENARIOS[5])
                 self.click("alice", f'{alice_selector} [data-acceptance-id="social-moment-menu"]')
                 self.click("alice", f'[data-action-id="moment.delete.{alice_id}"]')
                 self.click("alice", '[data-acceptance-id="social-delete-confirm"]')
@@ -361,7 +367,15 @@ class Gate(DeviceSearchGate):
                 cleanup = self.cleanup_clients()
                 if cleanup.get("cleanupErrors"):
                     raise GateError("Public Native Suite cleanup failed")
+                if self.active_social_scenario is not None:
+                    # End the failed scenario's lifetime without supplying a
+                    # successful UI action or receiver assertion. The ledger
+                    # remains invalid; actual cleanup is recorded separately.
+                    ledger.record(SuiteRuntimeAction.SCENARIO_END,
+                                  scenario_id=self.active_social_scenario)
+                    self.active_social_scenario = None
                 ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE, resource_id="suite")
+                self.report.runtime["suiteRuntimeReport"] = ledger.report()
             cleanup_preserving_primary_failure(release, self.report, "Public signed-feed Native")
         runtime_report = ledger.report()
         validate_suite_runtime_report(runtime_report, RUNTIME_REUSE)

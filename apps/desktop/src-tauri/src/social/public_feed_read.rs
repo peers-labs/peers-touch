@@ -18,10 +18,24 @@ pub struct PublicFeedReadInput {
     /// PTID and retained root, never by this renderer-provided handle.
     pub federated_handle: String,
     pub limit: u32,
-    #[serde(default)]
-    pub after_sequence: u64,
-    #[serde(default)]
-    pub after_thread_cursor: u64,
+    // IPC preserves protobuf's 64-bit decimal representation. JavaScript
+    // numbers cannot carry arbitrary signed-feed sequences without rounding.
+    #[serde(default = "zero_cursor")]
+    pub after_sequence: String,
+    #[serde(default = "zero_cursor")]
+    pub after_thread_cursor: String,
+}
+
+fn zero_cursor() -> String {
+    "0".into()
+}
+
+fn parse_cursor(value: &str) -> Result<u64, String> {
+    let cursor = value.parse::<u64>().map_err(|_| "FEED_INVALID")?;
+    if cursor.to_string() != value {
+        return Err("FEED_INVALID".into());
+    }
+    Ok(cursor)
 }
 
 /// Returns original verified event bytes rather than trusting a Station's
@@ -29,6 +43,8 @@ pub struct PublicFeedReadInput {
 #[tauri::command]
 pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     input: PublicFeedReadInput) -> Result<Value, String> {
+    let after_sequence = parse_cursor(&input.after_sequence)?;
+    let after_thread_cursor = parse_cursor(&input.after_thread_cursor)?;
     if input.limit == 0 || input.limit > 64 || input.actor_ptid.trim().is_empty() {
         return Err("FEED_INVALID".into());
     }
@@ -109,9 +125,9 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     let head = store.import_remote_page(&request, &response, &root, home)?;
     store.import_thread(&request,&response,&roots)?;
     let (page, page_head) = store.remote_page(&request.actor_ptid, &root, home,
-        input.after_sequence, input.limit)?;
-    let threads = store.thread_page(&request.actor_ptid,input.after_thread_cursor)?;
-    let next_thread = threads.last().map_or(input.after_thread_cursor,|e| e.cursor);
+        after_sequence, input.limit)?;
+    let threads = store.thread_page(&request.actor_ptid,after_thread_cursor)?;
+    let next_thread = threads.last().map_or(after_thread_cursor,|e| e.cursor);
     let thread_cursor = store.thread_cursor(&request.actor_ptid)?;
     Ok(json!({"actorPtid": request.actor_ptid, "homeStationPeerId": home, "state": "VERIFIED",
         "bundleB64": STANDARD.encode(page.bundle.ok_or("FEED_INVALID_RESPONSE")?.encode_to_vec()),
@@ -122,4 +138,31 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
         "nextThreadCursor": next_thread.to_string(), "threadCursor": thread_cursor.to_string(),
         "threadHasMore": next_thread < thread_cursor || response.thread_has_more,
         "hasMore": page.has_more || response.has_more}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ipc_cursors_preserve_decimal_precision_and_reject_noncanonical_values() {
+        let input: PublicFeedReadInput = serde_json::from_value(json!({
+            "actor_ptid": "actor", "federated_handle": "", "limit": 64,
+            "after_sequence": "9007199254740993", "after_thread_cursor": "0"
+        })).unwrap();
+        assert_eq!(parse_cursor(&input.after_sequence).unwrap(), 9_007_199_254_740_993);
+        assert_eq!(parse_cursor(&input.after_thread_cursor).unwrap(), 0);
+        for value in ["", "00", "01", "+1", "-1", " 1", "1.0", "18446744073709551616"] {
+            assert!(parse_cursor(value).is_err(), "{value}");
+        }
+        let omitted: PublicFeedReadInput = serde_json::from_value(json!({
+            "actor_ptid": "actor", "federated_handle": "", "limit": 64
+        })).unwrap();
+        assert_eq!(omitted.after_sequence, "0");
+        assert_eq!(omitted.after_thread_cursor, "0");
+        assert!(serde_json::from_value::<PublicFeedReadInput>(json!({
+            "actor_ptid": "actor", "federated_handle": "", "limit": 64,
+            "after_sequence": 9007199254740992u64
+        })).is_err());
+    }
 }
