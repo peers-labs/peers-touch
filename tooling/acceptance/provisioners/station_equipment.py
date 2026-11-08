@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 from collections.abc import Mapping
+from uuid import uuid4
 
 from tooling.acceptance.core.errors import (
     BlockedError, EphemeralLaunchCleanupFailed, EphemeralLaunchError,
@@ -74,17 +75,19 @@ def equip_station_profile(
     if recreate_runtime:
         deployment_environment["PT_STATION_RECREATE_RUNTIME"] = "true"
     observation: dict[str, object] = {"profile": profile_name, "commit": source_commit}
+    # Preparation and ordinary-runtime restoration are distinct process
+    # lifetimes, even when Profile, source and parent evidence run match.
+    log_relative = f"runtime/station-equipment/{profile_name}/{uuid4().hex}.log"
 
     def capture(stdout: str, stderr: str) -> None:
         if not environment.get("PT_ACCEPTANCE_RUN_ID"):
             return
-        relative = f"runtime/station-equipment/{profile_name}.log"
         write_current_artifact(
-            relative, (stdout + stderr).encode(), repo_root=repo_root,
+            log_relative, (stdout + stderr).encode(), repo_root=repo_root,
             environment=environment,
         )
         observation["log"] = current_artifact_ref(
-            relative, repo_root=repo_root, environment=environment,
+            log_relative, repo_root=repo_root, environment=environment,
         ).to_dict()
 
     try:

@@ -11,12 +11,51 @@ from unittest.mock import patch
 from tooling.acceptance.core.errors import BlockedError, EphemeralLaunchCleanupFailed
 from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
 from tooling.acceptance.core.provisioning import new_manifest
+from tooling.acceptance.core.evidence_store import EvidenceStore, write_current_artifact
 from tooling.acceptance.fixtures.social_feed_notification import SocialFeedNotificationHandler
 from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import CrossStationSocialNativeProvisioner
 from tooling.acceptance.provisioners.station_equipment import equip_station_profile
 
 
 class StationEquipmentTests(unittest.TestCase):
+    def test_same_run_preparation_and_restore_keep_distinct_immutable_logs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            entry = root / "tooling/devctl/index.mjs"
+            entry.parent.mkdir(parents=True)
+            entry.write_text(
+                "process.stdout.write(process.env.PT_SOCIAL_ACCEPTANCE_BUILD === '1'"
+                " ? 'notification runtime prepared' : 'ordinary runtime restored');",
+            )
+            store = EvidenceStore(Path(directory) / "artifacts", worktree=root)
+            run = store.begin_run("equipment-lifecycle", source={"commit": "a" * 40})
+            try:
+                with patch.dict(os.environ, run.subprocess_environment()):
+                    equip_station_profile(
+                        "four", "a" * 40, repo_root=root, timeout_seconds=5,
+                        social_notification_run_id="b" * 16,
+                    )
+                    equip_station_profile(
+                        "four", "a" * 40, repo_root=root, timeout_seconds=5,
+                        recreate_runtime=True,
+                    )
+                    logs = sorted((run.run_dir / "runtime/station-equipment/four").glob("*.log"))
+                    self.assertEqual(len(logs), 2)
+                    self.assertEqual({log.read_bytes() for log in logs}, {
+                        b"notification runtime prepared", b"ordinary runtime restored",
+                    })
+                    for log in logs:
+                        self.assertRegex(log.name, r"^[0-9a-f]{32}\.log$")
+                    # Each completed process still has one immutable writer.
+                    from tooling.acceptance.core.errors import EvidenceConflict
+                    with self.assertRaises(EvidenceConflict):
+                        write_current_artifact(
+                            str(logs[0].relative_to(run.run_dir)), b"replacement",
+                            repo_root=root,
+                        )
+            finally:
+                run.close()
+
     def test_notification_equipment_and_parent_use_original_manifest_epoch(self):
         root = Path(__file__).resolve().parents[3]
         manifest = new_manifest(
@@ -155,7 +194,7 @@ class StationEquipmentTests(unittest.TestCase):
                     artifact_ref.return_value.to_dict.return_value = {
                         "artifactKind": "acceptance-artifact-ref",
                         "workspaceId": "synthetic", "gateId": "equipment",
-                        "runId": run_id, "path": "runtime/station-equipment/four.log",
+                        "runId": run_id, "path": "runtime/station-equipment/four/operation.log",
                         "sha256": "b" * 64, "mediaType": "text/plain",
                     }
                     equip_station_profile("four", "a" * 40, repo_root=root, timeout_seconds=5)
@@ -163,10 +202,13 @@ class StationEquipmentTests(unittest.TestCase):
                 diagnostic = caught.exception.diagnostic.to_dict()["resourceChecks"][0]["observed"]
                 write_artifact.assert_called_once()
                 artifact_ref.assert_called_once()
-                self.assertEqual(write_artifact.call_args.args, (
-                    "runtime/station-equipment/four.log",
-                    b'original deployment output{"error":{"code":"TARGET_DEPLOY_FAILED"}}',
-                ))
+                self.assertRegex(
+                    write_artifact.call_args.args[0],
+                    r"^runtime/station-equipment/four/[0-9a-f]{32}\.log$",
+                )
+                self.assertEqual(write_artifact.call_args.args[1],
+                    b'original deployment output{"error":{"code":"TARGET_DEPLOY_FAILED"}}')
+                self.assertEqual(artifact_ref.call_args.args[0], write_artifact.call_args.args[0])
                 self.assertEqual(write_artifact.call_args.kwargs["environment"]["PT_ACCEPTANCE_RUN_ID"], run_id)
                 self.assertEqual(artifact_ref.call_args.kwargs["environment"]["PT_ACCEPTANCE_RUN_ID"], run_id)
                 self.assertEqual(diagnostic["exitCode"], 2)

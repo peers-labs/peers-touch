@@ -64,6 +64,12 @@ Only the bound receiver gets the tagged build and run/profile projection.
 Its restoration callback is registered before equipment and runs after retained
 source/service leases release, requesting the ordinary variant at the same source.
 Rule and channel cleanup cannot substitute for restoring that runtime.
+Preparation and restoration are separate equipment process lifetimes under one
+parent evidence run. Each invocation allocates one immutable log key beneath
+`runtime/station-equipment/<profile>/<operation-id>.log`; sharing a Profile-level
+log key makes successful restoration collide with the preparation bytes.
+The original Evidence Store must continue rejecting different bytes at the same
+key. A distinct operation log is required even at the same source commit.
 
 - Run `node --test tooling/scripts/local-dev/machine-dev.test.mjs`; target
   deployment must preserve binding bytes, reject the wrong deployment, reject
@@ -73,6 +79,9 @@ Rule and channel cleanup cannot substitute for restoring that runtime.
   actual process while retaining its diagnostic. Native and Mobile child
   processes must observe no inherited runtime fields; capture must preserve
   the original parent run ID, failure bytes, machine code and log reference.
+- Run the original same-run preparation/restoration regression against the real
+  process launcher and immutable Evidence Store: both final logs must survive,
+  and overwriting either completed operation must still fail.
 - Inject the typed failure at `GateProcessLauncher.run`: require the same
   exception and cleanup result at the equipment caller. The actual Runner
   regression must release source/profile resources in reverse order, retain
