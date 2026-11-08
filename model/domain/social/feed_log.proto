@@ -129,6 +129,9 @@ message ReadFeedRequest {
   uint32 limit = 4;
   bool include_thread = 5;
   uint64 after_thread_cursor = 6;
+  // An authenticated foreground PUBLIC read. It does not create a follow or
+  // subscription. False retains subscription-authorized automatic replication.
+  bool explicit_public_read = 7;
 }
 
 message ReadFeedResponse {

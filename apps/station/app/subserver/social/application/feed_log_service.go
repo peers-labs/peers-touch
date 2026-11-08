@@ -138,11 +138,21 @@ func (s *FeedLogService) Import(ctx context.Context, actorPTID, sourceStation st
 }
 
 func (s *FeedLogService) Read(ctx context.Context, request *model.ReadFeedRequest) (*model.ReadFeedResponse, error) {
+	return s.read(ctx, request, "")
+}
+
+func (s *FeedLogService) read(ctx context.Context, request *model.ReadFeedRequest, viewer string) (*model.ReadFeedResponse, error) {
 	if request == nil {
 		return nil, domain.ErrFeedInvalid
 	}
 	var response *model.ReadFeedResponse
 	err := s.store.Execute(ctx, func(tx delivery.Transaction) error {
+		if viewer != "" {
+			if err := NewPublicReadPort(infrastructure.NewRepos(tx.DB())).
+				AuthorizeFeed(ctx, viewer, request.ActorPtid); err != nil {
+				return err
+			}
+		}
 		var err error
 		response, err = s.store.Read(ctx, tx.DB(), request)
 		if err != nil {

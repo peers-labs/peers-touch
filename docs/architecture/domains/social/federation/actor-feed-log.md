@@ -179,7 +179,15 @@ Secure Content 保留其已冻结的独立 canonical 协议。
 订阅持久化并使用单调 revision 防止撤订后旧通知重新激活；作者站按订阅站聚合，
 本地提交事务只登记 fanout intent，工作线程按有界页面物化共享 outbox。
 接收站持久化脏游标，并周期执行有界同步，因此最后通知丢失或过期后仍可追平。
-补拉必须在作者站核验请求站和有效订阅，撤订与 block 停止新复制。
+自动补拉必须在作者站核验请求站和有效订阅，撤订与 block 停止自动复制。
+客户端主动读取公开帖子使用同一 `ReadFeedRequest` 的 `explicit_public_read`；
+由本站 authenticated viewer 触发一次有界 pull，再写入原副本和线程索引。
+该意图进入原 scope 的 canonical-request 哈希；作者站还核验 viewer 的 Home
+等于请求站、作者 Home 等于本站，并通过原 `PublicReadPort` 检查双方 block
+与 Station moderation。主动读取不修改关注或订阅，不扩展私密受众。
+取证游标来自原 Station 副本；每次最多补拉 32 个事件和 32 条线程回执，
+远端尚有后续页时不能把本地已导入前缀呈现为完整尾部。返回在原读取事务中
+再次检查 viewer 权限；离线失败不能降级为缓存成功。
 
 非关注者互动携带创世、writer grant 与单条事件，证明该互动的作者真实性；
 独立线程投影和作者连续链分开存储，不把未取得前缀当成已证明完整历史。
@@ -201,6 +209,10 @@ Comment 绑定稳定 comment ID，
 该扩展仍在原公开链、线程投影和 Delivery 总线中完成；私密投票与评论反应
 保持原 Secure Content/private interaction 权威。创建后的投票定义不可变，
 正文编辑不能重置定义或已提交的互动。
+
+帖子 `created_at/updated_at/edited_at` 属于原作者签名正文。反应及评论计数是
+独立的派生状态，更新计数不能通过 ORM 自动更新时间改写这些字段；
+Native 正文比对保持严格，不能把这类漂移当作可信的作者编辑。
 
 Rust 持久化原始签名 journal 与已验证 head。重试发送同一签名字节，
 已见序号回退或同序不同哈希必须拒绝。投影正文必须与已验证事件重放结果绑定，

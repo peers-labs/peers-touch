@@ -87,7 +87,7 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     let previous = store.remote_head(&input.actor_ptid, &root, home)?;
     let request = ReadFeedRequest{actor_ptid: input.actor_ptid.clone(), chain_id: feed::PUBLIC_CHAIN_ID.into(),
         after_sequence: previous.as_ref().map_or(0, |h| h.sequence), limit: input.limit,
-        include_thread: true, after_thread_cursor: store.thread_cursor(&input.actor_ptid)?};
+        include_thread: true, after_thread_cursor: store.thread_cursor(&input.actor_ptid)?, ..Default::default()};
     let response: ReadFeedResponse = client.request_proto_for_device(
         reqwest::Method::POST, "/api/v1/social/feed/read", &active.jwt, None,
         Some(&request), &engine.endpoint().device_id).map_err(|e| format!("FEED_HISTORY_READ_FAILED: {e}"))?;

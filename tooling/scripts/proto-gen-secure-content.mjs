@@ -39,6 +39,7 @@ export const PROTO_INPUTS = Object.freeze([
   'domain/secure_content/prekey.proto',
   'domain/secure_content/object.proto',
   'domain/social/post.proto',
+  'domain/social/feed_log.proto',
   'domain/social/comment.proto',
   'domain/social/media.proto',
   'domain/social/poll.proto',
@@ -54,6 +55,14 @@ export const PROTO_INPUTS = Object.freeze([
 
 export const CONTENT_PREKEY_CLIENT_SCOPE = 'content-prekey-client';
 export const FEDERATION_RESOLVE_PROOF_SCOPE = 'federation-resolve-proof';
+export const SOCIAL_INTERACTION_SCOPE = 'social-interaction';
+export const SOCIAL_INTERACTION_PROTO_INPUTS = Object.freeze([
+  'domain/social/feed_log.proto',
+  'domain/social/post.proto',
+  'domain/social/poll.proto',
+  'domain/social/private_content.proto',
+  'domain/social/private_federation.proto',
+]);
 export const FEDERATION_RESOLVE_PROOF_PROTO_INPUTS = Object.freeze([
   'domain/federation/profile.proto',
   'domain/federation/federation_resolve.proto',
@@ -79,6 +88,7 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/secure_content/prekey.proto': 'frame/core/types/securecontent',
   'domain/secure_content/object.proto': 'frame/core/types/securecontent',
   'domain/social/post.proto': 'frame/touch/model',
+  'domain/social/feed_log.proto': 'frame/touch/model',
   'domain/social/comment.proto': 'frame/touch/model',
   'domain/social/media.proto': 'frame/touch/model',
   'domain/social/poll.proto': 'frame/touch/model',
@@ -99,6 +109,7 @@ const GO_PACKAGE_NAMES = Object.freeze({
   'domain/secure_content/prekey.proto': 'securecontent',
   'domain/secure_content/object.proto': 'securecontent',
   'domain/social/post.proto': 'model',
+  'domain/social/feed_log.proto': 'model',
   'domain/social/comment.proto': 'model',
   'domain/social/media.proto': 'model',
   'domain/social/poll.proto': 'model',
@@ -246,6 +257,9 @@ function assertAllowedInput(relativePath) {
 
 function inputsForScope(scope) {
   if (scope === undefined || scope === null) return PROTO_INPUTS;
+  if (scope === SOCIAL_INTERACTION_SCOPE) {
+    return SOCIAL_INTERACTION_PROTO_INPUTS;
+  }
   if (scope === FEDERATION_RESOLVE_PROOF_SCOPE) {
     return FEDERATION_RESOLVE_PROOF_PROTO_INPUTS;
   }

@@ -29,13 +29,14 @@ func (s *subServer) handleSubmitFeedEvent(ctx context.Context, request *model.Su
 }
 
 func (s *subServer) handleReadFeed(ctx context.Context, request *model.ReadFeedRequest) (*model.ReadFeedResponse, error) {
-	if _, ok := getActorPTID(ctx); !ok {
+	viewer, ok := getActorPTID(ctx)
+	if !ok {
 		return nil, server.Unauthorized("authentication required")
 	}
 	if s.feedLogSvc == nil {
 		return nil, server.InternalError("Social feed service unavailable")
 	}
-	response, err := s.feedLogSvc.Read(ctx, request)
+	response, err := s.feedLogSvc.ReadForViewer(ctx, viewer, request)
 	if err != nil {
 		return nil, feedHandlerError(err)
 	}

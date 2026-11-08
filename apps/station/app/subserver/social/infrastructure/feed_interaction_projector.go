@@ -245,7 +245,9 @@ func (p *FeedProjector) projectInteraction(ctx context.Context, tx *gorm.DB,
 		if err != nil {
 			return err
 		}
-		return tx.Model(&post).Update("reactions_count_json", string(encoded)).Error
+		// Counts are derived interaction state. GORM's Update would also
+		// rewrite updated_at, which belongs to the author's signed post event.
+		return tx.Model(&post).UpdateColumn("reactions_count_json", string(encoded)).Error
 	}
 	c := payload.GetComment()
 	key := FeedObjectRecord{HomeStation: home, ObjectKind: "comment", ObjectID: c.CommentId}

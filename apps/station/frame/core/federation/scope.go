@@ -343,7 +343,7 @@ var peerScopes = []scope.Scope{
 	},
 	{
 		Name:        SocialPublicFeedReadScope,
-		Description: "read a bounded public chain for a retained subscription",
+		Description: "read a bounded public chain for a retained subscription or authorized explicit viewer",
 		Policy: scope.Policy{
 			TTLMax:           time.Minute,
 			AudienceRequired: true,

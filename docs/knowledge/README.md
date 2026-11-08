@@ -191,6 +191,7 @@ Pick one based on intent:
 
 ### Pitfalls
 
+- [`pitfalls/feed-derived-counts-must-preserve-authored-time.md`](pitfalls/feed-derived-counts-must-preserve-authored-time.md) — derived reaction counts cannot rewrite the author's signed post timestamps.
 - [`pitfalls/agent-user-message-identity-placeholder.md`](pitfalls/agent-user-message-identity-placeholder.md) — Agent user messages project the authenticated session actor through the shared avatar path.
 - [`pitfalls/c1-tombstone-only-broadcast.md`](pitfalls/c1-tombstone-only-broadcast.md) — first cut of Tier C1 fired invalidation only on tombstone, leaving BY_HANDLE/INDEXED transitions and profile updates on the slow path.
 - [`pitfalls/republisher-broadcast-spam.md`](pitfalls/republisher-broadcast-spam.md) — naive "broadcast on every PublishVisibility success" turns periodic republisher into a relay traffic generator.

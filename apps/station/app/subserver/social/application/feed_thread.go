@@ -22,13 +22,15 @@ func (s *FeedLogService) verifyThreadResponse(ctx context.Context, tx delivery.T
 	return nil
 }
 
-func (s *FeedLogService) importThread(ctx context.Context, subscription infrastructure.FeedSubscriptionRecord, response *model.ReadFeedResponse) error {
-	if len(response.ThreadEntries) > 32 || proto.Size(response) > signedlog.MaxMessageBytes {
+func (s *FeedLogService) importThread(ctx context.Context, author, authorStation string, after uint64,
+	response *model.ReadFeedResponse, complete func(context.Context, delivery.Transaction, uint64) error) error {
+	if author == "" || authorStation == "" || response == nil ||
+		len(response.ThreadEntries) > 32 || proto.Size(response) > signedlog.MaxMessageBytes {
 		return domain.ErrFeedInvalid
 	}
 	var conflictingActor, conflictingChain string
 	err := s.store.Execute(ctx, func(tx delivery.Transaction) error {
-		cursor := subscription.ThreadCursor
+		cursor := after
 		for _, entry := range response.ThreadEntries {
 			if entry == nil || entry.Cursor != cursor+1 || entry.Receipt == nil {
 				return domain.ErrFeedGap
@@ -45,11 +47,11 @@ func (s *FeedLogService) importThread(ctx context.Context, subscription infrastr
 				target = payload.GetComment().TargetPostRef
 			}
 			home, id, err := domain.FeedTargetPost(target)
-			if err != nil || home != subscription.AuthorStation {
+			if err != nil || home != authorStation {
 				return domain.ErrFeedWriter
 			}
 			var post infrastructure.FeedObjectRecord
-			if err := tx.DB().Where("home_station = ? AND object_kind = 'post' AND object_id = ? AND actor_ptid = ?", home, id, subscription.AuthorPTID).Take(&post).Error; err != nil {
+			if err := tx.DB().Where("home_station = ? AND object_kind = 'post' AND object_id = ? AND actor_ptid = ?", home, id, author).Take(&post).Error; err != nil {
 				return domain.ErrFeedGap
 			}
 			if _, err := s.projector.StoreInteraction(infrastructure.FeedTransactionContext(ctx, tx), tx.DB(), entry.Receipt, entry.InteractionHomeStation, true); err != nil {
@@ -60,13 +62,13 @@ func (s *FeedLogService) importThread(ctx context.Context, subscription infrastr
 				return err
 			}
 			statement := entry.Receipt.Event.Statement
-			index := infrastructure.FeedThreadRecord{AuthorPTID: subscription.AuthorPTID, Cursor: entry.Cursor,
+			index := infrastructure.FeedThreadRecord{AuthorPTID: author, Cursor: entry.Cursor,
 				ActorPTID: statement.ActorPtid, ChainID: statement.ChainId, Sequence: statement.Sequence}
 			if err := tx.DB().Clauses(clause.OnConflict{DoNothing: true}).Create(&index).Error; err != nil {
 				return err
 			}
 			var existing infrastructure.FeedThreadRecord
-			if err := tx.DB().Where("author_ptid = ? AND cursor = ?", subscription.AuthorPTID, entry.Cursor).Take(&existing).Error; err != nil {
+			if err := tx.DB().Where("author_ptid = ? AND cursor = ?", author, entry.Cursor).Take(&existing).Error; err != nil {
 				return err
 			}
 			if existing.ActorPTID != index.ActorPTID || existing.ChainID != index.ChainID || existing.Sequence != index.Sequence {
@@ -77,14 +79,17 @@ func (s *FeedLogService) importThread(ctx context.Context, subscription infrastr
 		if response.ThreadCursor != cursor {
 			return domain.ErrFeedGap
 		}
-		head := infrastructure.FeedThreadHead{AuthorPTID: subscription.AuthorPTID, Cursor: cursor}
+		head := infrastructure.FeedThreadHead{AuthorPTID: author, Cursor: cursor}
 		if err := tx.DB().Clauses(clause.OnConflict{DoNothing: true}).Create(&head).Error; err != nil {
 			return err
 		}
 		if err := tx.DB().Model(&head).Where("cursor < ?", cursor).Update("cursor", cursor).Error; err != nil {
 			return err
 		}
-		return s.store.AdvanceThreadCursor(ctx, tx.DB(), subscription, cursor)
+		if complete != nil {
+			return complete(ctx, tx, cursor)
+		}
+		return nil
 	})
 	if errors.Is(err, domain.ErrFeedFork) && conflictingActor != "" {
 		if quarantine := s.store.Execute(ctx, func(tx delivery.Transaction) error {

@@ -230,10 +230,28 @@ func (s *FeedLogService) ReadFederated(ctx context.Context, claims *authfed.Veri
 			return nil, domain.ErrFeedWriter
 		}
 	}
+	viewerHome, err := s.actors.ResolveActorHomeStationPeerID(ctx, claims.Subject)
+	if err != nil {
+		return nil, err
+	}
+	authorHome, err := s.actors.ResolveActorHomeStationPeerID(ctx, request.ActorPtid)
+	if err != nil {
+		return nil, err
+	}
+	if viewerHome != claims.Issuer || authorHome != s.localStation {
+		return nil, domain.ErrFeedWriter
+	}
 	var response *model.ReadFeedResponse
 	err = s.store.Execute(ctx, func(tx delivery.Transaction) error {
-		if err := s.store.AuthorizeSubscription(ctx, tx.DB(), request.ActorPtid, claims.Subject, claims.Issuer); err != nil {
-			return err
+		if request.ExplicitPublicRead {
+			if err := NewPublicReadPort(infrastructure.NewRepos(tx.DB())).
+				AuthorizeFeed(ctx, claims.Subject, request.ActorPtid); err != nil {
+				return err
+			}
+		} else {
+			if err := s.store.AuthorizeSubscription(ctx, tx.DB(), request.ActorPtid, claims.Subject, claims.Issuer); err != nil {
+				return err
+			}
 		}
 		var err error
 		response, err = s.store.Read(ctx, tx.DB(), request)
@@ -318,7 +336,10 @@ func (s *FeedLogService) ProcessFederation(ctx context.Context) error {
 				readErr = s.verifyPulledHead(ctx, row.AuthorPTID, response)
 			}
 			if readErr == nil {
-				readErr = s.importThread(ctx, row, response)
+				readErr = s.importThread(ctx, row.AuthorPTID, row.AuthorStation, row.ThreadCursor, response,
+					func(ctx context.Context, tx delivery.Transaction, cursor uint64) error {
+						return s.store.AdvanceThreadCursor(ctx, tx.DB(), row, cursor)
+					})
 			}
 		}
 		more := response != nil && (response.HasMore || response.ThreadHasMore)

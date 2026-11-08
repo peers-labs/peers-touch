@@ -191,3 +191,15 @@ Home-signed profile 字节，与同一 Actor 展示投影一起刷新。缓存�
 signed locator 的 revision、Home Station、key pin、membership 与原 envelope
 签名/有效期；不得从展示列重建无签名信封。旧缓存没有原证明时按 miss 重新读取
 Home Station，已有信任固定不能被缓存或重新读取结果替换。
+
+## 9. 公开主动读取与自动复制
+
+IC-J01 的非关注者必须能主动回读公开线程。原客户端 Feed read 传入当前
+authenticated viewer；远端作者通过原 peer read/pull 补齐本站副本，再返回原
+验签前缀。`explicit_public_read` 明确进入签名请求哈希，不能由转发站把订阅
+请求升级为主动读取。请求 Actor 只能由自己的 Home Station 代表，作者站与
+请求站都消费原 block/moderation Owner。自动补拉仍要求有效订阅；
+主动读取不创建关注边，也不创建第二套权限或同步 Store。
+
+作者签名的正文时间和互动派生计数独立：更新反应计数不能修改帖子
+`updated_at`。Native 保持严格的完整正文比对，不能豁免这类漂移。

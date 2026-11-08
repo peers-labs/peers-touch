@@ -165,6 +165,46 @@ func TestFeedInteractionOutOfOrderReactionAndExactReplay(t *testing.T) {
 	}
 }
 
+func TestFeedInteractionCountsPreserveSignedParentTimestamps(t *testing.T) {
+	store, database, bundle := interactionFixture(t)
+	ctx := context.Background()
+	authored := time.UnixMilli(bundle.Events[0].Statement.CreatedAtUnixMs).UTC()
+	if err := database.Model(&db.SocialPublicPost{}).Where("id = ?", 901).
+		Updates(map[string]interface{}{"created_at": authored, "updated_at": authored}).Error; err != nil {
+		t.Fatal(err)
+	}
+	projector := NewFeedProjector("station-a")
+	reaction := &model.FeedPayload{Mutation: &model.FeedPayload_Reaction{
+		Reaction: &model.FeedReactionMutation{TargetPostRef: "oss://station-a/post/101", ReactionKind: 1}}}
+	for index, kind := range []model.FeedEventKind{
+		model.FeedEventKind_FEED_EVENT_KIND_REACTION_SET,
+		model.FeedEventKind_FEED_EVENT_KIND_REACTION_REMOVED,
+	} {
+		receipt := makeInteraction(t, bundle, uint64(index+2), kind, reaction)
+		if err := store.Transaction(ctx, func(tx *gorm.DB) error {
+			_, err := projector.StoreInteraction(ctx, tx, receipt, "station-b", true)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		var post db.SocialPublicPost
+		if err := database.Where("id = ?", 901).Take(&post).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !post.CreatedAt.Equal(authored) || !post.UpdatedAt.Equal(authored) || post.EditedAt != nil {
+			t.Fatalf("derived reaction count rewrote authored timestamps: created=%s updated=%s",
+				post.CreatedAt, post.UpdatedAt)
+		}
+		expected := "{}"
+		if index == 0 {
+			expected = `{"REACTION_LIKE":1}`
+		}
+		if post.ReactionsCountJSON != expected {
+			t.Fatalf("reaction count was not updated: got=%s want=%s", post.ReactionsCountJSON, expected)
+		}
+	}
+}
+
 func TestFeedInteractionDeferredCommentAndPortableReply(t *testing.T) {
 	store, database, bundle := interactionFixture(t)
 	ctx := context.Background()

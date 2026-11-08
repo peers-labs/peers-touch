@@ -1036,8 +1036,11 @@ type ReadFeedRequest struct {
 	Limit             uint32                 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
 	IncludeThread     bool                   `protobuf:"varint,5,opt,name=include_thread,json=includeThread,proto3" json:"include_thread,omitempty"`
 	AfterThreadCursor uint64                 `protobuf:"varint,6,opt,name=after_thread_cursor,json=afterThreadCursor,proto3" json:"after_thread_cursor,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// An authenticated foreground PUBLIC read. It does not create a follow or
+	// subscription. False retains subscription-authorized automatic replication.
+	ExplicitPublicRead bool `protobuf:"varint,7,opt,name=explicit_public_read,json=explicitPublicRead,proto3" json:"explicit_public_read,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ReadFeedRequest) Reset() {
@@ -1110,6 +1113,13 @@ func (x *ReadFeedRequest) GetAfterThreadCursor() uint64 {
 		return x.AfterThreadCursor
 	}
 	return 0
+}
+
+func (x *ReadFeedRequest) GetExplicitPublicRead() bool {
+	if x != nil {
+		return x.ExplicitPublicRead
+	}
+	return false
 }
 
 type ReadFeedResponse struct {
@@ -1570,7 +1580,7 @@ const file_domain_social_feed_log_proto_rawDesc = "" +
 	"\x06bundle\x18\x01 \x01(\v2,.peers_touch.model.social.feed.v1.FeedBundleR\x06bundle\"w\n" +
 	"\x17SubmitFeedEventResponse\x12>\n" +
 	"\x04head\x18\x01 \x01(\v2*.peers_touch.model.social.feed.v1.FeedHeadR\x04head\x12\x1c\n" +
-	"\tduplicate\x18\x02 \x01(\bR\tduplicate\"\xdf\x01\n" +
+	"\tduplicate\x18\x02 \x01(\bR\tduplicate\"\x91\x02\n" +
 	"\x0fReadFeedRequest\x12\x1d\n" +
 	"\n" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x19\n" +
@@ -1578,7 +1588,8 @@ const file_domain_social_feed_log_proto_rawDesc = "" +
 	"\x0eafter_sequence\x18\x03 \x01(\x04R\rafterSequence\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\rR\x05limit\x12%\n" +
 	"\x0einclude_thread\x18\x05 \x01(\bR\rincludeThread\x12.\n" +
-	"\x13after_thread_cursor\x18\x06 \x01(\x04R\x11afterThreadCursor\"\xda\x02\n" +
+	"\x13after_thread_cursor\x18\x06 \x01(\x04R\x11afterThreadCursor\x120\n" +
+	"\x14explicit_public_read\x18\a \x01(\bR\x12explicitPublicRead\"\xda\x02\n" +
 	"\x10ReadFeedResponse\x12D\n" +
 	"\x06bundle\x18\x01 \x01(\v2,.peers_touch.model.social.feed.v1.FeedBundleR\x06bundle\x12>\n" +
 	"\x04head\x18\x02 \x01(\v2*.peers_touch.model.social.feed.v1.FeedHeadR\x04head\x12\x19\n" +
