@@ -246,6 +246,16 @@ Private recovery-key preparation is a per-client Suite fixture operation.
 Prepare each receiver before scenarios begin; attach-only iOS/Android legs
 reuse that preparation. Recreating a random recovery phrase at the same epoch
 inside each leg violates the original Store's epoch-conflict contract.
+Public Social Search seeds belong to an independent prepared Desktop signing
+actor. The original Mobile Search Suite starts that third client, logs it in
+and creates public posts plus the older comment and 22 newer comments before
+the first scenario. Mobile's unsigned public write remains a typed denial.
+The shared Mobile Provisioner alone owns Desktop storage and fresh identity
+fixtures; the original Native Cell owns its executable. Mixed Runtime acquires
+Mobile binding only when it actually manages a Mobile client.
+Exact SHA local snapshots must match the original runtime and binary proof;
+remote Station source and protocol stay clean and exact. No clean relabeling,
+late author startup or copied runtime proof can satisfy that contract.
 Native reference diagnostics perform a fresh original-owner read and may be
 partial even after the UI showed a target. Before policy invalidation, the Gate
 must acquire every required reference from one response inside its existing
@@ -444,6 +454,12 @@ Search publication order and can deadlock the native UI during reconciliation.
 - Social native Gates must prove outage recovery and parent deletion before
   blocking their independent targets, with all four targets visible before block
   and all four old references denied after it.
+- Confirm the Social Mobile Search environment selects one independent
+  Desktop author and both existing receivers while ordinary Mobile Search
+  still selects two clients. The original four scenario IDs and receiver
+  proofs remain unchanged; all public seed writes precede first scenario.
+  Original mixed-runtime tests reject Cell/binary/source drift and require
+  unconsumed Mobile bindings to remain unopened through Desktop cleanup.
 - Both Mobile legs must establish their next FRIENDS fixture through original
   relationship authority. After unblock, a new request must be accepted on both
   clients while every old private block reference remains unavailable.

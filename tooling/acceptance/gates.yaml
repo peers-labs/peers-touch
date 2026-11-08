@@ -20,13 +20,127 @@
       "description": "Reuse one exact-source native Desktop Suite for mixed Search, public/private posts and comments, exact historical anchors, Return and read-policy invalidation."
     },
     "social-content-search-mobile-native-e2e": {
+      "e2e": {
+        "journeys": [
+          {
+            "id": "bilateral-social-search",
+            "uses": [
+              "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+              "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.search_scenario",
+              "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.account_scenario"
+            ]
+          }
+        ],
+        "implementations": [
+          {
+            "ref": "tooling/acceptance/gates/mobile/simulator_social_e2e.py#SimulatorSocialGate.execute",
+            "purpose": "Run the original prepared Suite and finalize all client cleanup before result publication",
+            "lifetime": "suite",
+            "dependsOn": [
+              "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.prepare_suite",
+              "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.seed",
+              "tooling/acceptance/provisioners/mobile_search.py#MobileSearchSimulatorProvisioner.provision"
+            ],
+            "invalidatedBy": ["source", "environment", "fixture", "client", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.prepare_suite",
+            "purpose": "Attach one independent Desktop signed author through the existing mixed runtime",
+            "lifetime": "suite",
+            "dependsOn": [
+              "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client",
+              "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.source_identity"
+            ],
+            "invalidatedBy": ["source", "environment", "fixture", "client", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.start_client",
+            "purpose": "Reuse original Native Desktop launch, isolated storage, login and actor binding",
+            "lifetime": "suite",
+            "dependsOn": ["tooling/acceptance/drivers/native/runtime.py#NativeDesktopRuntimeBinding.create_bound_session"],
+            "invalidatedBy": ["source", "toolchain", "environment", "client", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/drivers/native/runtime.py#NativeDesktopRuntimeBinding.create_bound_session",
+            "purpose": "Consume the parent's exact-source Desktop executable and current Cell binding",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "toolchain", "environment", "client"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/chat/mixed_native_runtime.py#MixedNativeRuntime.source_identity",
+            "purpose": "Verify exact local snapshot, clean deployed Station source and the original binary digest",
+            "lifetime": "suite",
+            "dependsOn": ["tooling/acceptance/gates/chat/native_support.py#native_runtime_source_identity"],
+            "invalidatedBy": ["source", "environment", "toolchain"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/chat/native_support.py#native_runtime_source_identity",
+            "purpose": "Retain the existing Native source and Station checkpoint verifier",
+            "lifetime": "implementation",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "environment", "toolchain"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.seed",
+            "purpose": "Prepare public posts and historical comments, receiver recovery keys and unsigned-write denial once",
+            "lifetime": "suite",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.public_seed"],
+            "invalidatedBy": ["source", "fixture", "client", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.public_seed",
+            "purpose": "Publish signed public seeds with the existing Desktop Moments actions",
+            "lifetime": "suite",
+            "dependsOn": ["tooling/acceptance/core/harness.py#call_async_harness"],
+            "invalidatedBy": ["source", "fixture", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/core/harness.py#call_async_harness",
+            "purpose": "Reuse the existing asynchronous production Harness transport",
+            "lifetime": "implementation",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "toolchain"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.search_scenario",
+            "purpose": "Prove both receivers' four original targets, historical anchors, Return, outage and deletion",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.block_policy"],
+            "invalidatedBy": ["source", "oracle", "action-plan", "fixture"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.block_policy",
+            "purpose": "Block both original authors and deny old private references after relationship reacceptance",
+            "lifetime": "scenario",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "oracle", "action-plan", "fixture"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_mobile.py#SocialContentSearchMobileGate.account_scenario",
+            "purpose": "Preserve original account isolation and SELF-resource acquisition",
+            "lifetime": "scenario",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "oracle", "action-plan", "fixture", "session"]
+          },
+          {
+            "ref": "tooling/acceptance/provisioners/mobile_search.py#MobileSearchSimulatorProvisioner.provision",
+            "purpose": "Compose original Mobile resources, actor fixture and Desktop storage identity at Suite scope",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "environment", "fixture", "toolchain"]
+          }
+        ]
+      },
       "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_mobile"],
       "timeout_seconds": 1800,
       "environment": "chat-mobile-search-simulator",
       "provisioner": "chat-mobile-search-simulator",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "runtimeCellArtifact": "acceptance-binary",
       "ephemeralCapabilities": ["mobile.station-outage"],
       "tier": "env-evidence",
-      "description": "Reuse one exact-source iOS/Android Suite for public/private content Search, independent comment anchors, Return, current policy and account/lifecycle isolation."
+      "description": "Reuse one exact-source Desktop author and iOS/Android receiver Suite for signed public seeds, private content, historical comments, Return, policy and account isolation."
     },
     "chat-device-search-contract": {
       "argv": ["python3", "-m", "tooling.acceptance.gates.chat.device_search_contract"],

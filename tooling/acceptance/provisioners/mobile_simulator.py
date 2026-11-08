@@ -48,6 +48,7 @@ from tooling.acceptance.core import (
     RuntimeManifest,
     require_runtime_client_service,
     verify_client_binding_observation,
+    source_identity,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR, REPO_ROOT
 from tooling.acceptance.core.attestation import (
@@ -71,6 +72,7 @@ from tooling.acceptance.core.reset_authority import (
     require_station_reset_authority,
     station_reset_authorization_ref,
 )
+from tooling.acceptance.core.runtime_cell import runtime_source_matches
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     ACTOR_PASSWORD,
@@ -7960,6 +7962,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
     actor_manifest_kind = ""
     actor_manifest_path = ""
     additional_fixture_roles_by_gate: Mapping[str, tuple[str, ...]] = {}
+    allowed_desktop_client_sets: tuple[frozenset[str], ...] = ()
 
     def __init__(
         self,
@@ -7988,6 +7991,124 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         self._base_manifest: MobileSimulatorRuntimeManifest | None = None
         self._transport_environment: dict[str, str] = {}
         self._transport_trust: dict[str, Any] = {}
+
+    def _desktop_clients(
+        self,
+        run_id: str,
+        *,
+        clients: Sequence[EnvironmentClient] | None = None,
+    ) -> tuple[ClientRuntime, ...]:
+        declared = tuple(
+            client for client in (clients or self.contract.clients)
+            if client.runtime == "native-tauri"
+        )
+        if frozenset(client.id for client in declared) not in self.allowed_desktop_client_sets:
+            raise BlockedError(
+                reason=f"{self.environment_id} has an unsupported Desktop client set",
+                resource=f"{self.environment_id}:desktop-clients",
+            )
+        runtime_root = Path(
+            tempfile.mkdtemp(prefix=f"peers-touch-{self.environment_id}-")
+        )
+        self.register_cleanup(
+            f"{self.environment_id}:desktop-storage",
+            partial(shutil.rmtree, runtime_root),
+        )
+        ports: set[int] = set()
+
+        def available_port() -> int:
+            while True:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                    listener.bind(("127.0.0.1", 0))
+                    port = int(listener.getsockname()[1])
+                if port not in ports:
+                    ports.add(port)
+                    return port
+
+        return tuple(
+            ClientRuntime(
+                id=client.id,
+                actor=client.actor,
+                runtime=client.runtime,
+                worktree=str(REPO_ROOT),
+                gateway_port=available_port(),
+                renderer_port=available_port(),
+                webdriver_port=available_port(),
+                profile=f"{self.environment_id}-{run_id}-{client.id}",
+                storage_root=str(runtime_root / client.id),
+                required_service_roles=client.required_service_roles,
+                service_bindings=client.service_bindings,
+            )
+            for client in declared
+        )
+
+    def _prepare_desktop_actor_identity_fixtures(
+        self,
+        clients: Sequence[ClientRuntime],
+        actor_manifest: Mapping[str, Any],
+    ) -> None:
+        routes = actor_manifest.get("clients")
+        stations = actor_manifest.get("stations")
+        if not isinstance(routes, list) or not isinstance(stations, Mapping):
+            raise BlockedError(
+                reason=f"{self.environment_id} actor manifest is invalid",
+                resource=f"{self.environment_id}:actor-identity-fixture",
+            )
+        seeds: dict[tuple[str, str], bytearray] = {}
+        try:
+            for client in clients:
+                route = next(
+                    (
+                        value for value in routes
+                        if isinstance(value, Mapping) and value.get("id") == client.id
+                    ), None,
+                )
+                station = (
+                    stations.get(route.get("serviceId"))
+                    if isinstance(route, Mapping) else None
+                )
+                actors = station.get("actors") if isinstance(station, Mapping) else None
+                actor = next(
+                    (
+                        value for value in actors
+                        if isinstance(value, Mapping) and value.get("role") == client.actor
+                    ), None,
+                ) if isinstance(actors, list) else None
+                station_peer_id = (
+                    str(actor.get("homeStationPeerId") or "")
+                    if isinstance(actor, Mapping) else ""
+                )
+                actor_ptid = (
+                    str(actor.get("ptid") or "")
+                    if isinstance(actor, Mapping) else ""
+                )
+                if not station_peer_id or not actor_ptid.startswith("ptid:"):
+                    raise BlockedError(
+                        reason=f"{self.environment_id} Desktop actor identity scope is incomplete: {client.id}",
+                        resource=f"{self.environment_id}:actor-identity:{client.id}",
+                    )
+                seed = seeds.setdefault(
+                    (station_peer_id, actor_ptid),
+                    bytearray(secrets.token_bytes(32)),
+                )
+                identity_root = (
+                    Path(client.storage_root) / "peers-touch" / "desktop"
+                    / "data" / "secure-store" / "identity-keys"
+                )
+                identity_root.mkdir(parents=True, mode=0o700)
+                identity_root.chmod(0o700)
+                identity_file = identity_root / actor_identity_key_name(
+                    station_peer_id, actor_ptid,
+                )
+                descriptor = os.open(
+                    identity_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0), 0o600,
+                )
+                with os.fdopen(descriptor, "w", encoding="ascii") as target:
+                    target.write(seed.hex())
+        finally:
+            for seed in seeds.values():
+                seed[:] = b"\x00" * len(seed)
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -9490,6 +9611,10 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
     actor_manifest_path = "runtime/chat-mixed-native-actors.json"
     gate_ids = CHAT_MIXED_NATIVE_GATE_IDS
     child_harness_actions = CHAT_MIXED_NATIVE_HARNESS_ACTIONS
+    allowed_desktop_client_sets = (
+        frozenset({"desktop-alice", "desktop-bob"}),
+        frozenset({"desktop-alice", "desktop-bob", "desktop-bob-peer"}),
+    )
 
     def __init__(
         self,
@@ -9530,11 +9655,14 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
         ):
             return manifest
         try:
-            if manifest.workspace_digest != "clean":
+            if not runtime_source_matches(
+                {"commit": manifest.source_commit, "workspaceDigest": manifest.workspace_digest},
+                source_identity(REPO_ROOT),
+            ):
                 raise BlockedError(
                     reason=(
-                        "Chat mixed-native proof requires a clean "
-                        "orchestrator source"
+                        "Mixed native orchestrator does not match the current "
+                        "exact source snapshot"
                     ),
                     resource="source-identity:workspace",
                 )
@@ -9687,165 +9815,6 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             )
             self._appium_cleanup_registered = True
         return context
-
-    def _desktop_clients(
-        self,
-        run_id: str,
-        *,
-        clients: Sequence[EnvironmentClient] | None = None,
-    ) -> tuple[ClientRuntime, ...]:
-        declared = tuple(
-            client
-            for client in (clients or self.contract.clients)
-            if client.runtime == "native-tauri"
-        )
-        declared_ids = {client.id for client in declared}
-        allowed_client_sets = {
-            frozenset({"desktop-alice", "desktop-bob"}),
-            frozenset({
-                "desktop-alice",
-                "desktop-bob",
-                "desktop-bob-peer",
-            }),
-        }
-        if frozenset(declared_ids) not in allowed_client_sets:
-            raise BlockedError(
-                reason=(
-                    "Chat mixed-native environment has an unsupported "
-                    "Desktop client set"
-                ),
-                resource=f"{self.environment_id}:desktop-clients",
-            )
-        runtime_root = Path(
-            tempfile.mkdtemp(prefix=f"peers-touch-{self.environment_id}-")
-        )
-        self.register_cleanup(
-            "chat-mixed-desktop-storage",
-            partial(shutil.rmtree, runtime_root),
-        )
-        ports: set[int] = set()
-
-        def available_port() -> int:
-            while True:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-                    listener.bind(("127.0.0.1", 0))
-                    port = int(listener.getsockname()[1])
-                if port not in ports:
-                    ports.add(port)
-                    return port
-
-        return tuple(
-            ClientRuntime(
-                id=client.id,
-                actor=client.actor,
-                runtime=client.runtime,
-                worktree=str(REPO_ROOT),
-                gateway_port=available_port(),
-                renderer_port=available_port(),
-                webdriver_port=available_port(),
-                profile=f"{self.environment_id}-{run_id}-{client.id}",
-                storage_root=str(runtime_root / client.id),
-                required_service_roles=client.required_service_roles,
-                service_bindings=client.service_bindings,
-            )
-            for client in declared
-        )
-
-    @staticmethod
-    def _prepare_desktop_actor_identity_fixtures(
-        clients: Sequence[ClientRuntime],
-        actor_manifest: Mapping[str, Any],
-    ) -> None:
-        routes = actor_manifest.get("clients")
-        stations = actor_manifest.get("stations")
-        if not isinstance(routes, list) or not isinstance(stations, Mapping):
-            raise BlockedError(
-                reason="Chat mixed-native actor manifest is invalid",
-                resource="chat-mixed-native:actor-identity-fixture",
-            )
-        seeds: dict[tuple[str, str], bytearray] = {}
-        try:
-            for client in clients:
-                route = next(
-                    (
-                        value
-                        for value in routes
-                        if isinstance(value, Mapping)
-                        and value.get("id") == client.id
-                    ),
-                    None,
-                )
-                station = (
-                    stations.get(route.get("serviceId"))
-                    if isinstance(route, Mapping)
-                    else None
-                )
-                actors = (
-                    station.get("actors")
-                    if isinstance(station, Mapping)
-                    else None
-                )
-                actor = next(
-                    (
-                        value
-                        for value in actors
-                        if isinstance(value, Mapping)
-                        and value.get("role") == client.actor
-                    ),
-                    None,
-                ) if isinstance(actors, list) else None
-                station_peer_id = (
-                    str(actor.get("homeStationPeerId") or "")
-                    if isinstance(actor, Mapping)
-                    else ""
-                )
-                actor_ptid = (
-                    str(actor.get("ptid") or "")
-                    if isinstance(actor, Mapping)
-                    else ""
-                )
-                if not station_peer_id or not actor_ptid.startswith("ptid:"):
-                    raise BlockedError(
-                        reason=(
-                            "Chat mixed-native Desktop actor identity "
-                            f"scope is incomplete: {client.id}"
-                        ),
-                        resource=(
-                            f"chat-mixed-native:actor-identity:"
-                            f"{client.id}"
-                        ),
-                    )
-                seed = seeds.setdefault(
-                    (station_peer_id, actor_ptid),
-                    bytearray(secrets.token_bytes(32)),
-                )
-                identity_root = (
-                    Path(client.storage_root)
-                    / "peers-touch"
-                    / "desktop"
-                    / "data"
-                    / "secure-store"
-                    / "identity-keys"
-                )
-                identity_root.mkdir(parents=True, mode=0o700)
-                identity_root.chmod(0o700)
-                identity_file = identity_root / actor_identity_key_name(
-                    station_peer_id,
-                    actor_ptid,
-                )
-                descriptor = os.open(
-                    identity_file,
-                    os.O_WRONLY
-                    | os.O_CREAT
-                    | os.O_EXCL
-                    | getattr(os, "O_NOFOLLOW", 0),
-                    0o600,
-                )
-                with os.fdopen(descriptor, "w", encoding="ascii") as target:
-                    target.write(seed.hex())
-        finally:
-            for seed in seeds.values():
-                seed[:] = b"\x00" * len(seed)
 
     def _cleanup_appium_sessions(self) -> None:
         if self._appium_handler is None:
