@@ -428,6 +428,14 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async maintainCurrentRecoveryPreKeys(input: RecoveryAdvanceInput) {
+      if (!Number.isSafeInteger(input.expectedEpoch) || input.expectedEpoch < 1) {
+        throw new Error('secureContentFixture.recoveryEpochInvalid');
+      }
+      const recoveryPreKeyAvailable = await maintainRecoveryPreKeys(input.expectedEpoch);
+      return { recoveryEpoch: input.expectedEpoch, recoveryPreKeyAvailable };
+    },
+
     async prepareHistoricalRecoveryEpoch() {
       const revision = await messagingRecoveryService.createAcceptanceRevision();
       if (!Number.isSafeInteger(revision.recoveryEpoch) || revision.recoveryEpoch < 1) {

@@ -2288,23 +2288,18 @@ class RuntimeOwnerTest(unittest.TestCase):
     ) -> None:
         def native_result(
             payload: Mapping[str, object],
-            *,
-            stub_payload: bool = True,
         ) -> Mapping[str, object]:
             return {
                 "ok": True,
                 "value": {
                     "ok": True,
-                    "data": (
-                        {"status": json.dumps(payload)}
-                        if stub_payload
-                        else dict(payload)
-                    ),
+                    "data": {"status": json.dumps(payload)},
                 },
             }
 
         client = MagicMock()
         client.spec = SimpleNamespace(profile="bob")
+        client.harness_namespace = "moments"
         words = [f"word-{index}" for index in range(24)]
         client.driver.execute_async_script.side_effect = (
             native_result({"words": words}),
@@ -2314,14 +2309,10 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "recoveryEpoch": 7,
                 }
             ),
-            native_result(
-                {
-                    "recoveryEpoch": 7,
-                    "recoveryPreKeyAvailable": 100,
-                },
-                stub_payload=False,
-            ),
         )
+        client.harness.return_value = {
+            "recoveryEpoch": 7, "recoveryPreKeyAvailable": 100,
+        }
 
         phrase, prepared = _prepare_portable_recovery(client)
 
@@ -2336,28 +2327,17 @@ class RuntimeOwnerTest(unittest.TestCase):
             },
             prepared,
         )
-        maintenance = client.driver.execute_async_script.call_args_list[2]
-        self.assertIn(
-            "import('/src/store/privateMoments.ts')",
-            maintenance.args[0],
+        client.harness.assert_called_once_with(
+            "maintainCurrentRecoveryPreKeys", {"expectedEpoch": 7}, timeout=120,
         )
-        self.assertEqual(
-            "social_private_moments_acceptance_maintain_prekeys",
-            maintenance.args[1],
-        )
+        self.assertEqual(2, client.driver.execute_async_script.call_count)
+        self.assertEqual("moments", client.harness_namespace)
 
     def test_portable_recovery_rejects_mismatched_prekey_epoch(self) -> None:
         client = MagicMock()
         client.spec = SimpleNamespace(profile="bob")
-        client.driver.execute_async_script.return_value = {
-            "ok": True,
-            "value": {
-                "ok": True,
-                "data": {
-                    "recoveryEpoch": 8,
-                    "recoveryPreKeyAvailable": 100,
-                },
-            },
+        client.harness.return_value = {
+            "recoveryEpoch": 8, "recoveryPreKeyAvailable": 100,
         }
 
         with self.assertRaisesRegex(

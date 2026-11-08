@@ -363,6 +363,32 @@ describe('Secure Content fixture harness', () => {
     );
   });
 
+  it('maintains the current recovery epoch through the bundled renderer scope', async () => {
+    privateState.scope.rendererGeneration = 4;
+    const result = await harness().maintainCurrentRecoveryPreKeys({ expectedEpoch: 1 });
+    expect(result).toEqual({ recoveryEpoch: 1, recoveryPreKeyAvailable: 100 });
+    expect(mocks.createAcceptanceRevision).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'social_private_moments_acceptance_maintain_prekeys',
+      { input: { actor_ptid: 'ptid:primary', renderer_generation: 4 } },
+    );
+  });
+
+  it('rejects a different recovery epoch without creating another revision', async () => {
+    mocks.invoke.mockResolvedValue({
+      ok: true, data: { recoveryEpoch: 2, recoveryPreKeyAvailable: 100 },
+    });
+    await expect(harness().maintainCurrentRecoveryPreKeys({ expectedEpoch: 1 }))
+      .rejects.toThrow('secureContentFixture.recoveryPreKeyUnavailable');
+    expect(mocks.createAcceptanceRevision).not.toHaveBeenCalled();
+  });
+
+  it.each([0, -1, 1.5, NaN])('rejects invalid recovery epoch %s before Native maintenance', async (epoch) => {
+    await expect(harness().maintainCurrentRecoveryPreKeys({ expectedEpoch: epoch }))
+      .rejects.toThrow('secureContentFixture.recoveryEpochInvalid');
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
   it('prepares a recovery epoch and confirms its Recovery PreKey pool', async () => {
     mocks.createAcceptanceRevision.mockResolvedValue({
       backup: { backupId: 'backup-1' },

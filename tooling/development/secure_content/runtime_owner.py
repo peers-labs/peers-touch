@@ -1189,60 +1189,13 @@ def _maintain_current_recovery_prekeys(
     *,
     expected_recovery_epoch: int,
 ) -> Mapping[str, Any]:
-    # Renderer generation is frontend-owned. Resolve it from the live store
-    # before invoking the build-gated Native fixture command.
-    result = client.driver.execute_async_script(
-        """
-        const command = arguments[0];
-        const done = arguments[arguments.length - 1];
-        Promise.resolve(import('/src/store/privateMoments.ts'))
-          .then(async ({ usePrivateMomentsStore }) => {
-            const scope = usePrivateMomentsStore.getState().scope;
-            if (
-              !scope
-              || typeof scope.actorPtid !== 'string'
-              || !scope.actorPtid
-              || !Number.isSafeInteger(scope.rendererGeneration)
-              || scope.rendererGeneration < 1
-            ) {
-              throw new Error('current private Moment scope is unavailable');
-            }
-            const value = await window.__TAURI_INTERNALS__.invoke(command, {
-              input: {
-                actor_ptid: scope.actorPtid,
-                renderer_generation: scope.rendererGeneration,
-              },
-            });
-            done({ ok: true, value });
-          })
-          .catch((error) => done({
-            ok: false,
-            error: String(error && error.message ? error.message : error),
-          }));
-        """,
-        "social_private_moments_acceptance_maintain_prekeys",
+    # The bundled fixture owns the live renderer scope in both dev and Native
+    # builds; source-module URLs are not a runtime interface.
+    decoded = _fixture_harness(
+        client,
+        "maintainCurrentRecoveryPreKeys",
+        {"expectedEpoch": expected_recovery_epoch},
     )
-    if not isinstance(result, Mapping) or result.get("ok") is not True:
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Native portable recovery PreKey maintenance failed",
-            resource=f"fixture-recovery:{client.spec.profile}",
-        )
-    app_result = result.get("value")
-    if (
-        not isinstance(app_result, Mapping)
-        or app_result.get("ok") is not True
-        or not isinstance(app_result.get("data"), Mapping)
-    ):
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            (
-                "Native portable recovery PreKey maintenance returned "
-                "a failed AppResult"
-            ),
-            resource=f"fixture-recovery:{client.spec.profile}",
-        )
-    decoded = app_result["data"]
     available = decoded.get("recoveryPreKeyAvailable")
     if (
         decoded.get("recoveryEpoch") != expected_recovery_epoch

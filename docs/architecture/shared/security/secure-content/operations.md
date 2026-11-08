@@ -52,6 +52,14 @@ distributed database transaction:
 
 This chooses safe key loss over unsafe PreKey reuse.
 
+Native Suite recovery preparation uses the bundled
+`secure-content-fixture.maintainCurrentRecoveryPreKeys` action for an already
+created recovery epoch. That original fixture owns the current Actor and
+renderer generation and delegates to canonical Native maintenance. It must
+reject an epoch mismatch or empty inventory without creating another revision.
+Runtime owners do not import development source-module URLs to obtain Store
+scope; the same action operates in the prepared Native executable.
+
 ### 2.1 Accepted Client Publication Boundary
 
 Under accepted `SC-D20`, Native publishes and inventories Content PreKeys only
