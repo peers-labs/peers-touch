@@ -648,30 +648,39 @@ def read_control(process_id, *, deadline=None, focus_refs=None):
     focused = windows_value = window = None
     try:
         focused = copy_attribute(application, "AXFocusedUIElement", deadline=deadline)
-        windows_value = copy_attribute(application, "AXWindows", required=True, deadline=deadline)
-        windows = array_items(windows_value)
-        sheet_count = 0
-        for enumerated_window in windows:
-            sheets = copy_attribute(enumerated_window, "AXSheets", deadline=deadline)
-            try:
-                sheet_count += len(array_items(sheets))
-            finally:
-                if sheets:
-                    core_foundation.CFRelease(sheets)
+        if focus_refs is None:
+            windows_value = copy_attribute(application, "AXWindows", required=True, deadline=deadline)
+            windows = array_items(windows_value)
+            sheet_count = 0
+            for enumerated_window in windows:
+                sheets = copy_attribute(enumerated_window, "AXSheets", deadline=deadline)
+                try:
+                    sheet_count += len(array_items(sheets))
+                finally:
+                    if sheets:
+                        core_foundation.CFRelease(sheets)
         window = copy_attribute(application, "AXFocusedWindow", deadline=deadline)
         if window is None:
             window = copy_attribute(application, "AXMainWindow", deadline=deadline)
         result = {
             "role": copied_text(focused, "AXRole", deadline=deadline) if focused else "",
             "subrole": copied_text(focused, "AXSubrole", deadline=deadline) if focused else "",
-            "title": copied_text(focused, "AXTitle", deadline=deadline) if focused else "",
-            "value": copied_text(focused, "AXValue", deadline=deadline) if focused else "",
-            "windowCount": len(windows), "sheetCount": sheet_count,
+        }
+        # Scoped keyboard focus compares actual CF objects and identity flags.
+        # Display values and window enumeration do not participate in that
+        # proof and must not spend its one-second two-sample deadline.
+        if focus_refs is None:
+            result.update({
+                "title": copied_text(focused, "AXTitle", deadline=deadline) if focused else "",
+                "value": copied_text(focused, "AXValue", deadline=deadline) if focused else "",
+                "windowCount": len(windows), "sheetCount": sheet_count,
+            })
+        result.update({
             "frontmost": copied_boolean(application, "AXFrontmost", deadline=deadline),
             "mainWindow": copied_boolean(window, "AXMain", deadline=deadline) if window else False,
             "focusedWindow": copied_boolean(window, "AXFocused", deadline=deadline) if window else False,
             "actualFrontmostPid": frontmost_pid(),
-        }
+        })
         if focus_refs is not None:
             focus_refs.extend((focused, window))
             focused = window = None

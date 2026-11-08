@@ -93,6 +93,15 @@ focus attribute reads narrow the shared AX session deadline, which must not
 leak into the separately bounded panel phase. Regression must use the actual
 `AXReadSession.begin_observation`, not a panel stub that ignores its deadline.
 
+The shared focus consumer reads only its actual AX objects, role/subrole,
+frontmost PID and window identity flags. It does not request AXTitle, AXValue,
+AXWindows or AXSheets for a keyboard-focus comparison. Those incidental reads
+can consume the one-second two-sample budget or fail despite available focus
+objects. General control observation still reads and validates display fields;
+panel observation still requires its own exact-PID native presence. Failures
+of any required identity field remain terminal, with the original status,
+deadline, sticky baseline and CF ownership.
+
 Binding discovers and proves the reviewed canonical Station origin before a
 loopback fault proxy is switched in, and restores that origin before restart.
 An early loopback origin cannot satisfy signed discovery.

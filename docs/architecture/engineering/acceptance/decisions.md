@@ -1809,6 +1809,11 @@ focus or HID delivery.
   identify those objects. Missing objects or role fail closed. Every fresh
   read after baseline rejects a different object or identity field immediately;
   A→B→A cannot clear an intermediate failure.
+  The shared control reader returns only those object/identity fields to the
+  scoped focus consumer. It does not read titles, values, window enumeration
+  or sheet counts within that focus deadline. General control observation
+  still reads those display fields with its existing bounds and error policy.
+  Exact-PID panel presence remains a separate native read in the same scope.
   Pointer observation uses the same ctypes boundary for
   CoreGraphics and releases its event; it does not initialize a separate Quartz
   Python module. Focus must stabilize within the original one-second deadline,

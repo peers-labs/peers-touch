@@ -379,10 +379,70 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                 for ref in refs:
                     cf.CFRelease(ref)
                 self.assertEqual(releases.count(34), 1)
-                self.assertEqual(releases.count(22), 1)
+                self.assertEqual(releases.count(22), 0)
                 self.assertEqual(releases.count(42), 1)
         self.assertEqual(len(states), 2)
         self.assertEqual(states[0], states[1])
+
+    def test_scoped_focus_reads_only_object_identity_within_original_deadline(self) -> None:
+        identity = (
+            "AXFocusedUIElement", "AXFocusedWindow", "AXRole", "AXSubrole",
+            "AXFrontmost", "AXMain", "AXFocused",
+        )
+        incidental = ("AXWindows", "AXSheets", "AXTitle", "AXValue")
+        for attribute in incidental:
+            with self.subTest(unavailable_attribute=attribute):
+                probe, reads, releases = control_probe({
+                    attribute: (-25204, 0, 0.1),
+                    "AXFocusedWindow": (0, 34, 0.0),
+                })
+                references = []
+                control = probe["read_control"](41, deadline=1.0, focus_refs=references)
+                self.assertEqual(control["role"], "AXTextArea")
+                self.assertEqual([ref.value for ref in references], [23, 34])
+                self.assertNotIn(attribute, [name for name, _, _ in reads])
+                for ref in references:
+                    probe["core_foundation"].CFRelease(ref)
+                self.assertEqual(releases.count(23), 1)
+                self.assertEqual(releases.count(34), 1)
+                self.assertEqual(releases.count(42), 1)
+                full, _, _ = control_probe({attribute: (-25204, 0, 0.1)})
+                with self.assertRaises(NativeAXReadUnavailable) as caught:
+                    full["read_control"](41, deadline=1.0)
+                self.assertEqual(caught.exception.observed["axAttribute"], attribute)
+
+        # Two real shared-reader samples fit the same one-second deadline.
+        # Slow display values and counts are unrelated to CFEqual identity.
+        probe, reads, releases = control_probe({
+            **{name: (0, 23 if name == "AXFocusedUIElement" else 44, 0.02)
+               for name in identity},
+            **{name: (0, 22 if name == "AXWindows" else 44, 0.2)
+               for name in incidental},
+        })
+        for _ in range(2):
+            references = []
+            probe["read_control"](41, deadline=1.0, focus_refs=references)
+            for ref in references:
+                probe["core_foundation"].CFRelease(ref)
+        self.assertEqual([name for name, _, _ in reads], list(identity) * 2)
+        self.assertEqual(releases.count(42), 2)
+
+    def test_scoped_focus_still_propagates_every_required_identity_failure(self) -> None:
+        for attribute in (
+            "AXFocusedUIElement", "AXFocusedWindow", "AXRole", "AXSubrole",
+            "AXFrontmost", "AXMain", "AXFocused",
+        ):
+            with self.subTest(attribute=attribute):
+                probe, _, releases = control_probe({
+                    attribute: (-25204, 44, 0.1),
+                })
+                references = []
+                with self.assertRaises(NativeAXReadUnavailable) as caught:
+                    probe["read_control"](41, deadline=1.0, focus_refs=references)
+                self.assertEqual(caught.exception.observed["axAttribute"], attribute)
+                self.assertEqual(caught.exception.observed["actualControlRequestPid"], 41)
+                self.assertFalse(references)
+                self.assertEqual(releases.count(42), 1)
 
     def test_missing_focused_window_uses_only_the_authoritative_main_window(self) -> None:
         for main_status, main_value in ((0, 34), (-25212, 0)):
@@ -503,9 +563,9 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
              ["AXFocusedUIElement"], [0.5]),
             (0.0, {
                 "AXFocusedUIElement": (0, 23, 0.35),
-                "AXWindows": (0, 22, 0.35),
-                "AXSheets": (-25205, 0, 0.31),
-            }, ["AXFocusedUIElement", "AXWindows", "AXSheets"], [0.5, 0.5, 0.3]),
+                "AXFocusedWindow": (0, 34, 0.35),
+                "AXRole": (0, 44, 0.31),
+            }, ["AXFocusedUIElement", "AXFocusedWindow", "AXRole"], [0.5, 0.5, 0.3]),
         ):
             with self.subTest(started=started, replies=replies):
                 probe, reads, releases = control_probe(replies, started=started)
@@ -516,7 +576,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                     self.assertAlmostEqual(actual[2], expected)
                     self.assertLess(actual[1], 1.0)
                 self.assertEqual(releases.count(23), bool(expected_reads))
-                self.assertEqual(releases.count(22), len(expected_reads) == 3)
+                self.assertEqual(releases.count(34), len(expected_reads) == 3)
 
     def test_actual_ax_window_read_preserves_status_and_releases_ownership(self) -> None:
         tree = ast.parse(_NATIVE_AX_SUPPORT)
