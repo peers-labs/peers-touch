@@ -200,10 +200,12 @@ pub fn resolve_station_signing_key_for_actor(
         });
     }
 
+    let canonical_handle = crate::secure_content::adapter::canonical_federated_handle(actor_handle)
+        .ok_or_else(|| "ACTOR_IDENTITY_INVALID_PROOF".to_string())?;
     let envelope = load_actor_profile_envelope(station_client, station_peer_id,
-        actor_handle, token, device_id, expected_actor)?;
+        &canonical_handle, token, device_id, expected_actor)?;
     let trusted =
-        verify_profile_envelope(&envelope, actor_handle, station_peer_id, current_unix_ms())?;
+        verify_profile_envelope(&envelope, &canonical_handle, station_peer_id, current_unix_ms())?;
     if let Some(actor) = expected_actor {
         if envelope.profile.as_ref().and_then(|p| p.peers_touch.as_ref())
             .map(|p| p.network_id.as_str()) != Some(actor) {
@@ -490,6 +492,33 @@ mod tests {
         changed.signing_key_kid = "substituted-key".into();
         assert!(resolved_profile_envelope(changed, "federation-1",
             "station-1", "@alice@station.test", Some("ptid:alice")).is_err());
+    }
+
+    #[test]
+    fn remote_profile_hint_uses_original_account_canonicalization() {
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let envelope = signed_profile(&signing_key, "@alice@station.test", "station-1", 1_900_000_000_000);
+        let view = FederationResolveView {
+            federation_id: "federation-1".into(),
+            federated_handle: envelope.federated_handle.clone(),
+            home_station_peer_id: envelope.home_station_peer_id.clone(),
+            home_station_domain: envelope.home_station_domain.clone(),
+            profile: envelope.profile.clone(),
+            signing_key_kid: envelope.signing_key_kid.clone(),
+            issued_at_unix_ms: envelope.issued_at_unix_ms,
+            expires_at_unix_ms: envelope.expires_at_unix_ms,
+            signed_profile: Some(envelope.clone()),
+            ..Default::default()
+        };
+        for acct in ["alice@station.test", "@alice@station.test", "Alice@Station.Test"] {
+            let handle = crate::secure_content::adapter::canonical_federated_handle(acct).unwrap();
+            let resolved = resolved_profile_envelope(view.clone(), "federation-1",
+                "station-1", &handle, Some("ptid:alice")).unwrap();
+            assert_eq!(resolved, envelope);
+        }
+        for invalid in ["", "alice", "@alice", "alice@@station.test", " alice@station.test"] {
+            assert!(crate::secure_content::adapter::canonical_federated_handle(invalid).is_none());
+        }
     }
 
     #[test]

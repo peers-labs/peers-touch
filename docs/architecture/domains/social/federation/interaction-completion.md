@@ -178,6 +178,10 @@ Native 使用当前 Actor 可见的 active Federation contexts，逐一以明确
 PTID、key fingerprint 与原始 envelope 必须一致，随后独立验证签名和有效期。
 相同 Home Station 的已有 key pin 不得被新回包替换。
 
+`ActorRef.acct` 的持久化投影与 resolver 的 `@user@host` 查询格式通过现有
+Secure Content canonicalizer 统一；只规范查询提示，不修改已签名的 manifest
+或 envelope，PTID 与 Home Station 的证明绑定保持严格一致。
+
 Station Registry 可保存只有身份用途的远端 Federation key pin。该记录不产生
 Station transport entry、route、Access binding 或 Session；传输目标的注册和
 准入仍由原 Station Runtime / Node Connectivity Owner 完成。

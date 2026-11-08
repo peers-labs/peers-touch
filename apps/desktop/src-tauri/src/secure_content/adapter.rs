@@ -883,7 +883,7 @@ fn canonical_actor_federated_handle(
     })
 }
 
-fn canonical_federated_handle(value: &str) -> Option<String> {
+pub(crate) fn canonical_federated_handle(value: &str) -> Option<String> {
     if value.trim().is_empty() || value.trim() != value || value.as_bytes().contains(&0) {
         return None;
     }
