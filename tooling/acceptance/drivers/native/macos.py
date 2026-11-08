@@ -438,12 +438,20 @@ core_foundation.CFArrayCreate.restype = CFRef
 core_foundation.CFRetain.argtypes = [CFRef]
 core_foundation.CFRetain.restype = CFRef
 core_foundation.CFRelease.argtypes = [CFRef]
-reads = AXReadSession(
-    application_services, core_foundation,
-    deadline=time.monotonic() + (29 if sys.argv[1].isdigit() else 2.5),
+reads = (
+    None if sys.argv[1] == "observation-scope" else AXReadSession(
+        application_services, core_foundation,
+        deadline=time.monotonic() + (29 if sys.argv[1].isdigit() else 2.5),
+    )
 )
-create_string = reads.string
-perform_action = reads.perform_action
+
+
+def create_string(name):
+    return reads.string(name)
+
+
+def perform_action(element, name):
+    return reads.perform_action(element, name)
 
 
 def copy_attribute(element, name, *, required=False, deadline=None):

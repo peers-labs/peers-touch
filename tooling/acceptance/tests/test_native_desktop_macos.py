@@ -38,7 +38,7 @@ from tooling.acceptance.drivers.native.base import (
 )
 from tooling.acceptance.drivers.native.macos import (
     MacOSNativeDesktopAdapter, _ACTIVATION_PROBE,
-    _NATIVE_OBSERVATION_PROBE, _pixel_buffer_has_visible_alpha,
+    _NATIVE_AX_SUPPORT, _NATIVE_OBSERVATION_PROBE, _pixel_buffer_has_visible_alpha,
 )
 from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 from tooling.acceptance.provisioners.native_desktop_macos import (
@@ -647,6 +647,22 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         adapter = MacOSNativeDesktopAdapter()
         with self.assertRaisesRegex(DriverError, "active operator scope"):
             adapter.snapshot_operator_and_file_chooser(42)
+
+    def test_scope_support_defers_native_reads_until_a_deadline_bound_request(self) -> None:
+        library = Mock()
+        namespace = {}
+        with patch("ctypes.CDLL", return_value=library), patch.object(
+            sys, "argv", ["probe", "observation-scope"],
+        ):
+            exec(_NATIVE_AX_SUPPORT, namespace)
+        library.AXUIElementCreateSystemWide.assert_not_called()
+        self.assertIsNone(namespace["reads"])
+        reads = Mock()
+        namespace["reads"] = reads
+        namespace["create_string"]("AXWindows")
+        namespace["perform_action"](12, "AXPress")
+        reads.string.assert_called_once_with("AXWindows")
+        reads.perform_action.assert_called_once_with(12, "AXPress")
 
     def test_complete_native_probe_initializes_with_mode_and_pid_arguments(self) -> None:
         library = Mock()
