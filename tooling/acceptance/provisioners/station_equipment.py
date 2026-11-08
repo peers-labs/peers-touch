@@ -61,7 +61,7 @@ def equip_station_profile(
     ):
         deployment_environment.pop(field, None)
     if social_notification_run_id is not None:
-        if (not re.fullmatch(r"[0-9]{8}T[0-9]{12}Z-[0-9a-f]{32}",
+        if (not re.fullmatch(r"[0-9a-f]{16}",
                              social_notification_run_id)
                 or profile_name.lower().endswith("stable")):
             raise ValueError("Social notification equipment requires a reviewed non-stable run")

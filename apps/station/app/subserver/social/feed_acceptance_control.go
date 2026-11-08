@@ -21,7 +21,7 @@ import (
 const feedAcceptanceLease = 90 * time.Second
 const feedAcceptanceMaxRuleBytes = 4096
 
-var feedAcceptanceRunPattern = regexp.MustCompile(`^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{32}$`)
+var feedAcceptanceRunPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 var feedAcceptanceProfilePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 type feedAcceptanceScope struct {

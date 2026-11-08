@@ -177,7 +177,7 @@ social_acceptance_env_prefix() {
     return
   fi
   if [[ "$PT_DEPLOY_ROLE" != "station" || "$build" != "1" ]] \
-    || [[ ! "$run_id" =~ ^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{32}$ ]] \
+    || [[ ! "$run_id" =~ ^[0-9a-f]{16}$ ]] \
     || [[ ! "$profile" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] \
     || [[ "$env_name" =~ [Ss][Tt][Aa][Bb][Ll][Ee]$ ]] \
     || [[ "$profile" =~ [Ss][Tt][Aa][Bb][Ll][Ee]$ ]] \

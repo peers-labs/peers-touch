@@ -10,6 +10,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/peers-labs/peers-touch/station/app/subserver/app_meta"
+	"github.com/peers-labs/peers-touch/station/app/subserver/social/application"
 )
 
 func testFeedAcceptanceControl(t *testing.T) (*feedAcceptanceControl, feedAcceptanceRule, time.Time) {
@@ -20,7 +23,7 @@ func testFeedAcceptanceControl(t *testing.T) (*feedAcceptanceControl, feedAccept
 	}
 	now := time.Now()
 	scope := feedAcceptanceScope{
-		RunID:   "20261108T163511078101Z-144e7dea1a92051044b7986f84702d67",
+		RunID:   "144e7dea1a920510",
 		Profile: "reviewed-fixture", Commit: strings.Repeat("a", 40), Station: "receiver",
 	}
 	rule := feedAcceptanceRule{
@@ -31,6 +34,32 @@ func testFeedAcceptanceControl(t *testing.T) (*feedAcceptanceControl, feedAccept
 	}
 	writeFeedAcceptanceRule(t, root, rule)
 	return &feedAcceptanceControl{root: root, scope: scope}, rule, now
+}
+
+func TestNotificationControlCompositionRequiresProvisioningEpoch(t *testing.T) {
+	buildCommit := app_meta.BuildCommit
+	app_meta.BuildCommit = "unknown"
+	t.Cleanup(func() { app_meta.BuildCommit = buildCommit })
+	t.Setenv("PEERS_TOUCH_BUILD_COMMIT", strings.Repeat("a", 40))
+	t.Setenv("PT_SOCIAL_ACCEPTANCE_PROFILE", "reviewed-fixture")
+	for _, input := range []struct {
+		run      string
+		accepted bool
+	}{
+		{"144e7dea1a920510", true},
+		{"20261108T163511078101Z-144e7dea1a92051044b7986f84702d67", false},
+		{strings.Repeat("a", 32), false},
+		{strings.Repeat("A", 16), false},
+		{"", false},
+	} {
+		t.Run(input.run, func(t *testing.T) {
+			t.Setenv("PT_SOCIAL_ACCEPTANCE_RUN_ID", input.run)
+			err := configureFeedAcceptance(&application.FeedLogService{}, "receiver")
+			if (err == nil) != input.accepted {
+				t.Fatal("composition confused provisioning epoch and evidence run")
+			}
+		})
+	}
 }
 
 func writeFeedAcceptanceRule(t *testing.T, root string, rule feedAcceptanceRule) {

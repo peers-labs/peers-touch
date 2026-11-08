@@ -16,7 +16,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
 )
 
 CAPABILITY_ID = "social-feed-notification"
-RUN_PATTERN = re.compile(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{32}$")
+RUN_PATTERN = re.compile(r"^[0-9a-f]{16}$")
 PROFILE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 RULE_FIELDS = frozenset({

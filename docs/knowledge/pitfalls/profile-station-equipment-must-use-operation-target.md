@@ -56,6 +56,10 @@ Changing a run-scoped runtime variant at the same commit must reach the original
 deployment bridge rather than reuse a merely healthy source-identical process.
 The Social Suite supplies its bounded notification run explicitly through the
 equipment caller; ambient Social and Agent control variables are stripped.
+That notification scope is the original RuntimeManifest provisioning epoch
+(`new_manifest`, 16 lowercase hex characters), independently of the timestamped
+Evidence Run ID. Equipment, deployment, the parent handler and Station composition
+must validate the same epoch; substituting the Evidence Run ID fails closed.
 Only the bound receiver gets the tagged build and run/profile projection.
 Its restoration callback is registered before equipment and runs after retained
 source/service leases release, requesting the ordinary variant at the same source.

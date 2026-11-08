@@ -3,15 +3,73 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from tooling.acceptance.core.errors import BlockedError, EphemeralLaunchCleanupFailed
+from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
+from tooling.acceptance.core.provisioning import new_manifest
+from tooling.acceptance.fixtures.social_feed_notification import SocialFeedNotificationHandler
+from tooling.acceptance.provisioners.native_tauri_embedded_webdriver import CrossStationSocialNativeProvisioner
 from tooling.acceptance.provisioners.station_equipment import equip_station_profile
 
 
 class StationEquipmentTests(unittest.TestCase):
+    def test_notification_equipment_and_parent_use_original_manifest_epoch(self):
+        root = Path(__file__).resolve().parents[3]
+        manifest = new_manifest(
+            "cross-station-social-native", "social-public-feed-native-e2e",
+            "four", "four", 0, "a" * 40, str(root), "clean",
+        )
+        evidence_run = "20261108T173415871632Z-" + "b" * 32
+        self.assertNotEqual(manifest.run_id, evidence_run)
+        provisioner = CrossStationSocialNativeProvisioner(
+            EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "cross-station-social-native.yaml"),
+            station_profiles={"station-four": "fiveArm", "station-five-arm": "four"},
+        )
+        with patch.object(provisioner, "register_cleanup") as cleanup:
+            self.assertEqual(provisioner._station_equipment_options(
+                manifest, "station-four", "fiveArm",
+            ), {})
+            cleanup.assert_not_called()
+            options = provisioner._station_equipment_options(
+                manifest, "station-five-arm", "four",
+            )
+            cleanup.assert_called_once()
+        with patch(
+            "tooling.acceptance.provisioners.station_equipment.GateProcessLauncher",
+            autospec=True,
+        ) as launcher, patch.dict(os.environ, {"PT_ACCEPTANCE_RUN_ID": evidence_run}):
+            launcher.return_value.run.return_value = subprocess.CompletedProcess([], 0)
+            equip_station_profile("four", manifest.source_commit, repo_root=root, **options)
+        environment = launcher.call_args.kwargs["environment"]
+        self.assertEqual(environment["PT_SOCIAL_ACCEPTANCE_RUN_ID"], manifest.run_id)
+        self.assertEqual(environment["PT_SOCIAL_ACCEPTANCE_PROFILE"], "four")
+        self.assertEqual(environment["PT_STATION_RECREATE_RUNTIME"], "true")
+        self.assertNotIn("PT_ACCEPTANCE_RUN_ID", environment)
+        owner = SocialFeedNotificationHandler(
+            deployment={
+                "PT_DEPLOY_ROLE": "station",
+                "PT_DEPLOY_BUILD_CMD": "docker compose -p pt-fixture build station",
+            },
+            run_id=manifest.run_id, profile="four", commit=manifest.source_commit,
+            station="receiver", source_station="sender",
+        )
+        self.assertEqual(owner._scope["runId"], environment["PT_SOCIAL_ACCEPTANCE_RUN_ID"])
+        self.assertTrue(owner.close().closed)
+
+    def test_notification_equipment_rejects_evidence_run_before_launch(self):
+        with patch(
+            "tooling.acceptance.provisioners.station_equipment.GateProcessLauncher",
+        ) as launcher, self.assertRaises(ValueError):
+            equip_station_profile(
+                "four", "a" * 40, repo_root=Path("/synthetic"),
+                social_notification_run_id="20261108T173415871632Z-" + "b" * 32,
+            )
+        launcher.assert_not_called()
+
     def test_equipment_preserves_failed_process_cleanup(self):
         error = EphemeralLaunchCleanupFailed(
             "equipment descendant did not stop", operation="gate_process",

@@ -21,7 +21,7 @@ class DeployOrchestrationTest(unittest.TestCase):
             "\n}\n", 1,
         )[0]
         script = "social_acceptance_env_prefix() {" + function + "\n}\nsocial_acceptance_env_prefix\n"
-        run_id = "20261108T173415871632Z-" + "a" * 32
+        run_id = "a" * 16
         valid = {
             "PT_DEPLOY_ROLE": "station", "PT_DEPLOY_BUILD_CMD": "compose build station",
             "PT_DEPLOY_RESTART_CMD": "compose up station", "env_name": "four",
@@ -33,6 +33,8 @@ class DeployOrchestrationTest(unittest.TestCase):
             ({"PT_SOCIAL_ACCEPTANCE_PROFILE": "corpstable"}, False),
             ({"env_name": "corpstable"}, False),
             ({"PT_SOCIAL_ACCEPTANCE_RUN_ID": "foreign"}, False),
+            ({"PT_SOCIAL_ACCEPTANCE_RUN_ID": "20261108T173415871632Z-" + "a" * 32}, False),
+            ({"PT_SOCIAL_ACCEPTANCE_RUN_ID": "A" * 16}, False),
             ({"PT_DEPLOY_RESTART_CMD": ""}, False),
             ({"PT_SOCIAL_ACCEPTANCE_BUILD": "0", "PT_SOCIAL_ACCEPTANCE_PROFILE": "",
               "PT_SOCIAL_ACCEPTANCE_RUN_ID": ""}, True),

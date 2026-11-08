@@ -34,7 +34,7 @@ class FixtureTransport:
 
 
 class ParentBoundaryTest(unittest.TestCase):
-    def owner(self):
+    def owner(self, run_id="afe5f8ecb507de90"):
         return parent.SocialFeedNotificationHandler(
             deployment={
                 "PT_DEPLOY_HOST": "fixture.invalid", "PT_DEPLOY_USER": "fixture",
@@ -42,7 +42,7 @@ class ParentBoundaryTest(unittest.TestCase):
                 "PT_DEPLOY_BUILD_CMD": "docker compose -p pt-fixture build station",
                 "PEERS_AUTH_SECRET": "must-not-be-retained",
             },
-            run_id="20261108T171148023763Z-afe5f8ecb507de907b142d87efb29c12",
+            run_id=run_id,
             profile="fixture", commit="a" * 40, station="receiver", source_station="source",
         )
 
@@ -52,6 +52,14 @@ class ParentBoundaryTest(unittest.TestCase):
             deadline_monotonic=time.monotonic() + 10,
             cancellation=threading.Event(),
         )
+
+    def test_parent_rejects_evidence_run_as_notification_scope(self):
+        for run_id in (
+            "20261108T171148023763Z-afe5f8ecb507de907b142d87efb29c12",
+            "a" * 32, "A" * 16, "",
+        ):
+            with self.subTest(run_id=run_id), self.assertRaises(ValueError):
+                self.owner(run_id)
 
     def test_actual_rule_uses_stdin_and_response_has_no_actor_or_deployment_secrets(self):
         transport, owner = FixtureTransport(), self.owner()
