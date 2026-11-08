@@ -1830,6 +1830,11 @@ focus or HID delivery.
   receive caller PID zero or a chooser target while querying another frontmost
   application; the caller PID cannot identify the failed AX recipient.
   Original status, read duration, deadline and code origin remain unchanged.
+  Window focus flags come from the application's actual `AXFocusedWindow`,
+  falling back only to `AXMainWindow` on explicit optional absence.
+  `AXWindows` enumeration order never identifies the focused window.
+  Both reads consume the same focus deadline and release their copied CF
+  references; failure cannot fall back to the first enumerated window.
   Chooser Home lookup first requires an AXStaticText node inside the AXOutline
   sidebar, then reads its AXValue. Structural nodes are not text candidates;
   an actual eligible-node read failure still stops selection. The selector

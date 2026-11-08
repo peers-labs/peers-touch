@@ -305,6 +305,63 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
         self.assertEqual(releases.count(22), 2)
         self.assertEqual(releases.count(42), 2)
 
+    def test_operator_window_identity_does_not_depend_on_window_enumeration(self) -> None:
+        states = []
+        for windows in ((33, 34), (34, 33)):
+            with self.subTest(windows=windows):
+                probe, _, releases = control_probe({
+                    "AXFocusedWindow": (0, 34, 0.0),
+                })
+                cf = probe["core_foundation"]
+                cf.CFArrayGetCount = lambda value: len(windows)
+                cf.CFArrayGetValueAtIndex = lambda value, index: windows[index]
+                probe["copied_boolean"] = lambda element, name, **kwargs: (
+                    name == "AXFrontmost"
+                    or (element.value if isinstance(element, ctypes.c_void_p) else element) == 34
+                )
+                observation = probe["observe_native"]("operator", 0, 1.0, 0.05)["operator"]
+                control = observation["control"]
+                self.assertTrue(control["mainWindow"])
+                self.assertTrue(control["focusedWindow"])
+                states.append(MacOSNativeDesktopAdapter._operator_state(observation))
+                self.assertEqual(releases.count(34), 2)
+                self.assertEqual(releases.count(22), 2)
+                self.assertEqual(releases.count(42), 2)
+        self.assertEqual(len(states), 2)
+        self.assertEqual(states[0], states[1])
+
+    def test_missing_focused_window_uses_only_the_authoritative_main_window(self) -> None:
+        for main_status, main_value in ((0, 34), (-25212, 0)):
+            with self.subTest(main_status=main_status):
+                probe, reads, releases = control_probe({
+                    "AXFocusedWindow": (-25212, 0, 0.0),
+                    "AXMainWindow": (main_status, main_value, 0.0),
+                })
+                control = probe["read_control"](41, deadline=1.0)
+                self.assertEqual(control["mainWindow"], bool(main_value))
+                self.assertEqual(control["focusedWindow"], bool(main_value))
+                self.assertIn("AXMainWindow", [read[0] for read in reads])
+                self.assertEqual(releases.count(34), bool(main_value))
+                self.assertEqual(releases.count(42), 1)
+
+    def test_window_focus_read_failure_preserves_status_deadline_and_release(self) -> None:
+        for attribute in ("AXFocusedWindow", "AXMainWindow"):
+            replies = {attribute: (-25204, 34, 0.1)}
+            if attribute == "AXMainWindow":
+                replies["AXFocusedWindow"] = (-25212, 0, 0.0)
+            with self.subTest(attribute=attribute):
+                probe, reads, releases = control_probe(replies)
+                with self.assertRaises(NativeAXReadUnavailable) as caught:
+                    probe["read_control"](41, deadline=1.0)
+                self.assertEqual(caught.exception.observed["axAttribute"], attribute)
+                self.assertEqual(caught.exception.observed["actualControlRequestPid"], 41)
+                self.assertTrue(caught.exception.observed["focusDeadlineExceeded"])
+                self.assertEqual(reads[-1][0], attribute)
+                self.assertEqual(releases.count(42), 1)
+                self.assertEqual(releases.count(22), 1)
+                self.assertEqual(releases.count(23), 1)
+                self.assertGreaterEqual(releases.count(34), 1)
+
     def test_control_failure_retains_queried_pid_through_probe_and_adapter(self) -> None:
         suffix = _NATIVE_OBSERVATION_PROBE.removeprefix(
             _NATIVE_AX_SUPPORT + _NATIVE_OBSERVATION_BODY,

@@ -7,6 +7,7 @@ owns:
   - apps/desktop/src-tauri/src/main.rs
   - tooling/acceptance/provisioners/native_desktop_macos.py
   - tooling/acceptance/tests/test_native_desktop_macos.py
+  - tooling/acceptance/tests/test_native_observation_diagnostics.py
   - tooling/acceptance/core/runtime_cell.py
   - tooling/acceptance/drivers/native/
   - tooling/acceptance/gates/chat/native_file_picker.py
@@ -312,3 +313,22 @@ Run `macos_test.AXOneShotActionTest`, the real
 same selected current-source Native Journey. Synthetic checks and a passing
 cancel operation cannot prove Search selection, operator preservation or
 Social product behavior.
+
+## Focus flags belong to the focused window
+
+A live read of the operator returned two AXWindows: the first had no title
+and both AXMain/AXFocused false; the second had both flags true and matched
+the application's AXFocusedWindow and AXMainWindow. The shared control reader
+used the first enumerated window for those flags, even though its focused UI
+element belonged to the second. This proves an incorrect window observation,
+not the cause of a historical digest change whose field values were not saved.
+
+The original reader obtains AXFocusedWindow, falling back to AXMainWindow only
+on explicit optional absence. It retains the same deadline, status propagation
+and CF ownership. It never substitutes AXWindows[0]. Enumeration still supplies
+window/sheet counts, which do not define keyboard focus.
+
+Run the original `test_native_observation_diagnostics` cases for both enumeration
+orders, absent focused/main windows and failed focus-window reads. Recheck the
+actual bounded observer, then the same current-source Native Journey. Preserve
+the frozen baseline, sticky mismatch, exact deadlines and owned cleanup.

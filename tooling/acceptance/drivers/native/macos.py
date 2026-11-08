@@ -639,7 +639,7 @@ def pointer_location():
 def read_control(process_id, *, deadline=None):
     reads.begin_observation()
     application = application_services.AXUIElementCreateApplication(process_id)
-    focused = windows_value = None
+    focused = windows_value = window = None
     try:
         focused = copy_attribute(application, "AXFocusedUIElement", deadline=deadline)
         windows_value = copy_attribute(application, "AXWindows", required=True, deadline=deadline)
@@ -652,7 +652,9 @@ def read_control(process_id, *, deadline=None):
             finally:
                 if sheets:
                     core_foundation.CFRelease(sheets)
-        window = windows[0] if windows else None
+        window = copy_attribute(application, "AXFocusedWindow", deadline=deadline)
+        if window is None:
+            window = copy_attribute(application, "AXMainWindow", deadline=deadline)
         return {
             "role": copied_text(focused, "AXRole", deadline=deadline) if focused else "",
             "subrole": copied_text(focused, "AXSubrole", deadline=deadline) if focused else "",
@@ -672,6 +674,8 @@ def read_control(process_id, *, deadline=None):
             core_foundation.CFRelease(windows_value)
         if focused:
             core_foundation.CFRelease(focused)
+        if window:
+            core_foundation.CFRelease(window)
         core_foundation.CFRelease(application)
 
 
