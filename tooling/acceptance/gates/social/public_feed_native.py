@@ -18,13 +18,13 @@ from tooling.acceptance.core import (
 from tooling.acceptance.gates.chat.native_two_client_runner import NativeTwoClientGate
 from tooling.acceptance.gates.chat.device_search_runner import DeviceSearchGate
 from tooling.acceptance.gates.chat.native_support import (
-    DEV_ACCOUNT_PASSWORD, cleanup_preserving_primary_failure, commits_match, read_station_version,
+    cleanup_preserving_primary_failure, commits_match, read_station_version,
     runtime_station_service, selected_native_runtime, wait_until,
 )
 from tooling.development.secure_content.runtime_owner import (
     _prepare_cross_station_social_fixture, _prepare_social_suite_federation,
     _prepare_portable_recovery, _restore_portable_recovery,
-    _register_runtime_account, _runtime_account_search_query,
+    _provision_runtime_accounts, _runtime_account_search_query,
 )
 
 GATE_ID = "social-public-feed-native-e2e"
@@ -112,12 +112,13 @@ class Gate(DeviceSearchGate):
             federation_id=federation_id)
         # Expensive identity provisioning belongs to this preparation lifetime.
         # All candidates subsequently come from the original production search.
-        suffix = hashlib.sha256(self.manifest["runId"].encode()).hexdigest()[:10]
-        for index in range(22):
-            role = f"circle-member-{index}"
-            account = _register_runtime_account(
-                primary["endpoint"], role=role, suffix=suffix, password=DEV_ACCOUNT_PASSWORD)
-            self.circle_account_queries.append(_runtime_account_search_query(account, role=role))
+        roles = tuple(f"circle-member-{index}" for index in range(22))
+        accounts, _ = _provision_runtime_accounts(
+            primary_station_url=primary["endpoint"],
+            run_id=self.manifest["runId"], roles=roles)
+        self.circle_account_queries = [
+            _runtime_account_search_query(accounts[role], role=role) for role in roles
+        ]
         return fixture
 
     def start_suite_clients(self, ledger: SuiteRuntimeLedger,
