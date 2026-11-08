@@ -1,9 +1,11 @@
 """Social's concrete Native entry consumes its selected parent scope."""
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from tooling.acceptance.core.suite_runtime import SuiteRuntimeLedger, SuiteRuntimeError
 from tooling.acceptance.core.e2e_preflight import (
     PREFLIGHT_ENV, load_catalog, prepare_e2e, preflight_binding,
 )
@@ -40,6 +42,42 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
             with self.assertRaisesRegex(ExecutionBudgetError, "outside E2E request closure"):
                 Gate()
         constructor.assert_not_called()
+
+    def test_original_run_binds_runner_workspace_digest_before_fixture_work(self):
+        current = source_identity(ROOT)
+        for workspace_digest, expected in (
+            (current["workspaceDigest"], current["workspaceDigest"].removeprefix("sha256:")),
+            ("clean", current["commit"]),
+        ):
+            with self.subTest(workspace_digest=workspace_digest):
+                gate = object.__new__(Gate)
+                gate.manifest = {
+                    "source": {**current, "workspaceDigest": workspace_digest},
+                    "runId": "source-binding-fixture",
+                }
+                gate.actor_manifest = {"runId": "source-binding-fixture"}
+                gate.report = SimpleNamespace(runtime={})
+                with patch(
+                    "tooling.acceptance.gates.social.public_feed_native.SuiteRuntimeLedger",
+                    wraps=SuiteRuntimeLedger,
+                ) as ledger, patch.object(
+                    gate, "verify_fixture_ready", side_effect=RuntimeError("fixture boundary"),
+                ), patch.object(gate, "cleanup_clients", return_value={}):
+                    with self.assertRaisesRegex(RuntimeError, "fixture boundary"):
+                        gate.run()
+                self.assertEqual(ledger.call_args.kwargs["source_digest"], expected)
+
+    def test_original_run_rejects_invalid_workspace_digest_before_fixture_work(self):
+        gate = object.__new__(Gate)
+        gate.manifest = {
+            "source": {"commit": "a" * 40, "workspaceDigest": "sha256:invalid"},
+            "runId": "source-binding-fixture",
+        }
+        gate.actor_manifest = {"runId": "source-binding-fixture"}
+        with patch.object(gate, "verify_fixture_ready") as fixture:
+            with self.assertRaisesRegex(SuiteRuntimeError, "SUITE_RUNTIME_SOURCE_INVALID"):
+                gate.run()
+        fixture.assert_not_called()
 
 
 if __name__ == "__main__":

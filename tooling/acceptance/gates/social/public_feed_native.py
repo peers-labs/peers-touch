@@ -182,7 +182,9 @@ class Gate(DeviceSearchGate):
         source = self.manifest["source"]
         ledger = SuiteRuntimeLedger(RUNTIME_REUSE,
             suite_runtime_id=self.manifest["runId"],
-            source_digest=source.get("workspaceDigest") or source["commit"],
+            source_digest=(source["commit"]
+                if source.get("workspaceDigest") in (None, "", "clean")
+                else source["workspaceDigest"].removeprefix("sha256:")),
             fixture_epoch=self.actor_manifest["runId"])
         ledger.record(SuiteRuntimeAction.PROVISION, resource_id="two-station-runtime")
         ledger.record(SuiteRuntimeAction.ACCOUNT_PROVISION, resource_id="alice,bob")
