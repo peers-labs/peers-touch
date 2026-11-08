@@ -314,6 +314,12 @@ Orchestrator quiesces channel -> closes descriptors -> joins broker
 Gate只持有一次性channel capability；具体业务Provisioner注册哪些操作属于业务注入，
 Core只拥有channel、framing、binding、timeout、cancel和cleanup语义。
 
+每个 Provisioner cleanup 回调重新借用该 Owner 仍然存活的 SSH source
+connection。释放 source lease 后，后续普通运行态恢复必须使用新的连接；
+不能继承已关闭的 ControlMaster 描述。cleanup 失败仍使整体结果
+`FAILED/UNPROVEN`，Runner 在 `primaryFailure` 中保留此前失败的阶段、类型、
+资源和原始结构化诊断，使资源清理错误与最初的拒绝分别可追溯。
+
 ---
 
 ## 3. 核心接口

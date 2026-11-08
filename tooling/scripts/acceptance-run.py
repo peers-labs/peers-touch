@@ -3971,6 +3971,14 @@ def main() -> int:
             if cleanup_artifact is not None:
                 result["cleanupArtifact"] = cleanup_artifact
             if cleanup_error:
+                if result.get("status") in {"blocked", "failed"}:
+                    result["primaryFailure"] = {
+                        field: result[field] for field in (
+                            "status", "completionStatus", "proofStatus", "reason",
+                            "errorType", "blockedReason", "blockedResource",
+                            "diagnostic", "sourcePhase",
+                        ) if field in result
+                    }
                 result.pop("diagnostic", None)
                 for field in ("blockedReason", "blockedResource", "sourceArtifact"):
                     result.pop(field, None)

@@ -1789,6 +1789,77 @@ class AcceptanceRunTest(unittest.TestCase):
             self.assertFalse((root / "source").exists())
             self.assertFalse((root / "profile").exists())
 
+    def test_cleanup_failure_retains_original_cell_refusal_diagnostic(self) -> None:
+        from tooling.acceptance.core import BlockedError, ProvisioningError
+        from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
+
+        module = load_module()
+        output = io.StringIO()
+        diagnostic = ResourceDiagnostic.observed(
+            owner="macos-native-driver", resource="runtime-cell-operator-focus",
+            expected={"operation": "operator"},
+            observed={"axAttribute": "AXFocusedUIElement", "axStatus": -25204},
+            recovery_action="Repair the original observer under the same deadline.",
+        )
+        refusal = BlockedError(
+            "macOS scoped native observation failed",
+            resource="runtime-cell-operator-focus", diagnostic=diagnostic,
+        )
+        provisioner = HomeStationProvisioner(EnvironmentContract.from_yaml(
+            REPO_ROOT / "tooling/acceptance/environments/home-station.yaml",
+        ))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifacts = root / "artifacts"
+            catalog = root / "gates.json"
+            catalog.write_text(json.dumps({"gates": {"cell-refusal": {
+                "argv": [sys.executable, "-c", "pass"],
+                "environment": "home-station", "provisioner": "home-station",
+                "requiredRuntimeCells": ["desktop-linux-native"],
+                "tier": "env-evidence",
+            }}}))
+            with (
+                mock.patch.dict(os.environ, {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifacts)}),
+                mock.patch.object(sys, "argv", [
+                    "acceptance-run.py", "--gates", str(catalog),
+                    "--gate", "cell-refusal", "--runtime-cell", "desktop-linux-native",
+                ]),
+                mock.patch("tooling.acceptance.core.source_identity", return_value={
+                    "commit": "a" * 40, "workspaceDigest": "clean",
+                    "canonicalWorktreeHash": workspace_id(REPO_ROOT),
+                }),
+                mock.patch.object(module, "environment_provisioner", return_value=provisioner),
+                mock.patch.object(provisioner, "prepare_fixture_authority", return_value={}),
+                mock.patch.object(provisioner, "prepare_credentials", return_value=((), {})),
+                mock.patch.object(module, "provision_environment", return_value=(
+                    provisioner, {"state": "FIXTURE_READY", "runId": "prepared"}, None,
+                )),
+                mock.patch.object(module, "provision_runtime_cell", side_effect=refusal),
+                mock.patch.object(provisioner, "cleanup", side_effect=ProvisioningError(
+                    "ordinary Station restoration failed",
+                )),
+                mock.patch("tooling.acceptance.core.GateProcessLauncher.run") as launch,
+                contextlib.redirect_stdout(output),
+            ):
+                exit_code = module.main()
+            store = EvidenceStore(artifacts, worktree=REPO_ROOT)
+            reference = next(line.removeprefix("run: ")
+                             for line in output.getvalue().splitlines()
+                             if line.startswith("run: "))
+            report = store.read_json(ArtifactRef.from_dict(json.loads(reference)))
+            result = next(item for item in report["results"] if item["id"] == "cell-refusal")
+            self.assertEqual(exit_code, 1)
+            launch.assert_not_called()
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["cleanupStatus"], "failed")
+            self.assertEqual(result["proofStatus"], "UNPROVEN")
+            self.assertEqual(result["reason"], "ordinary Station restoration failed")
+            primary = result["primaryFailure"]
+            self.assertEqual(primary["status"], "blocked")
+            self.assertEqual(primary["completionStatus"], "BLOCKED")
+            self.assertEqual(primary["blockedResource"], "runtime-cell-operator-focus")
+            self.assertEqual(primary["diagnostic"], diagnostic.to_dict())
+
     def test_failed_quarantine_defers_resource_release(self) -> None:
         cleanup = EphemeralCleanupResult(
             descriptors_closed=True,

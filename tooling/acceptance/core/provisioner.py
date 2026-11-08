@@ -517,7 +517,10 @@ class EnvironmentProvisioner(ABC):
         completed: list[str] = []
         for name, handler in reversed(self._cleanup_handlers):
             try:
-                handler()
+                # Earlier handlers may have released a source connection.
+                # Each operation borrows only this owner's still-live leases.
+                with self.remote_source_context():
+                    handler()
                 completed.append(name)
             except Exception as error:
                 failures.append(f"{name}: {error}")
