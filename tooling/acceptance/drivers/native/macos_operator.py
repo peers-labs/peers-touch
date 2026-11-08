@@ -377,6 +377,10 @@ class FocusObjects:
                         "keyboardFocusSha256": hashlib.sha256(_encode(focus)).hexdigest(),
                     }}
                     if mode == "operator-panel":
+                        # Focus attributes narrow the shared read deadline.
+                        # Panel observation has its own original read cap
+                        # inside the unchanged enclosing request deadline.
+                        native["reads"].begin_observation()
                         result["panel"] = native["panel_presence"](pid)
                     if native["frontmost_pid"]() != operator_pid:
                         raise ValueError("native operator frontmost process changed")

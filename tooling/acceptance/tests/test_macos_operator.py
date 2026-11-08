@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 from tooling.acceptance.core.errors import BlockedError, DriverError
 from tooling.acceptance.drivers.native.base import NativeOperatorObservation
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
+from tooling.acceptance.drivers.native.macos_ax import AXReadSession
 from tooling.acceptance.drivers.native.macos_operator import (
     FocusObjects, OperatorScope, _encode, _failure, _read_line,
 )
@@ -77,7 +78,7 @@ class FocusObjectTests(unittest.TestCase):
         native["core_foundation"].CFEqual = compare
         native["read_control"] = read
         objects = FocusObjects("a" * 32, native)
-        session = SimpleNamespace()
+        session = SimpleNamespace(begin_observation=Mock())
         return objects, native, clock, session, live, counts, equal
 
     def observe(
@@ -93,14 +94,31 @@ class FocusObjectTests(unittest.TestCase):
 
     def test_panel_uses_original_observation_budget_after_bounded_focus(self):
         objects, native, clock, session, live, *_ = self.fixture([(11, 21), (12, 22)])
+        session = object.__new__(AXReadSession)
+        session.deadline = 3.0
+        session.read_budget_seconds = 1.5
+        session.read_deadline = 1.5
+        original_read = native["read_control"]
+
+        def read(*args, **kwargs):
+            # copy_attribute narrows the shared session to the focus budget.
+            session.read_deadline = min(session.read_deadline, kwargs["deadline"])
+            return original_read(*args, **kwargs)
+
+        native["read_control"] = read
+
         def panel(pid):
             clock.now = 1.2
+            self.assertLess(clock.now, session.read_deadline)
+            self.assertEqual(session.deadline, 3.0)
+            self.assertLessEqual(session.read_deadline, 1.55)
             return {"processId": pid, "present": True}
         native["panel_presence"] = panel
-        result = self.observe(
-            objects, clock, session, mode="operator-panel", pid=42,
-            end=3.0, focus_end=1.0,
-        )
+        with patch("tooling.acceptance.drivers.native.macos_ax.time", clock):
+            result = self.observe(
+                objects, clock, session, mode="operator-panel", pid=42,
+                end=3.0, focus_end=1.0,
+            )
         self.assertTrue(result["panel"]["present"])
         objects.close()
         self.assertEqual(live, [])

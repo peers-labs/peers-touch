@@ -81,6 +81,11 @@ one-shot mutations use their original operation deadline rather than inheriting
 the short read cap. No budget, cache, exception text or private title is added
 to manufacture a successful sample.
 
+The scoped observer starts a panel read observation after focus stabilizes:
+focus attribute reads narrow the shared AX session deadline, which must not
+leak into the separately bounded panel phase. Regression must use the actual
+`AXReadSession.begin_observation`, not a panel stub that ignores its deadline.
+
 Binding discovers and proves the reviewed canonical Station origin before a
 loopback fault proxy is switched in, and restores that origin before restart.
 An early loopback origin cannot satisfy signed discovery.
