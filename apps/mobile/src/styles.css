@@ -1986,6 +1986,11 @@ select,
   border-radius: 10px;
 }
 
+.chat-search-bar .contact-search-field {
+  height: 44px;
+  border-radius: 10px;
+}
+
 .chat-search-bar.thread {
   padding-top: 8px;
   background: #f2f4fb;
@@ -2123,27 +2128,67 @@ select,
 
 .conversation-item,
 .contact-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-height: 68px;
-  padding: 10px 12px !important;
+  padding: 10px 12px;
   cursor: pointer;
 }
 
-.conversation-item .ant-list-item-meta,
-.contact-item .ant-list-item-meta {
+.conversation-item .ant-list-item-meta {
   align-items: center !important;
 }
 
-.friend-request-item .ant-list-item-action .ant-btn {
+.contact-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-item-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.contact-item-description {
+  max-width: 210px;
+  overflow: hidden;
+  color: var(--pt-secondary);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.friend-request-item .contact-item-actions .pt-icon-button {
   min-width: 44px;
   height: 44px;
   padding-inline: 12px;
 }
 
-.conversation-item .ant-avatar,
-.contact-item .ant-avatar {
+.conversation-item .ant-avatar {
   width: 48px;
   height: 48px;
   border-radius: 14px !important;
+  font-size: 17px;
+}
+
+.contact-item .mobile-user-avatar {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   font-size: 17px;
 }
 
@@ -2166,8 +2211,7 @@ select,
   box-shadow: 0 2px 5px rgba(15, 23, 42, 0.16);
 }
 
-.conversation-item .ant-list-item-meta-title,
-.contact-item .ant-list-item-meta-title {
+.conversation-item .ant-list-item-meta-title {
   margin-bottom: 2px !important;
 }
 
@@ -2308,20 +2352,32 @@ select,
   margin: 0;
 }
 
-/* Inline Search lives inside the input border as a blue link, mirroring
-   Desktop, rather than as a separate solid button. */
-.find-people-modal .people-search-button.ant-btn-link {
-  height: auto;
-  padding: 0;
-  color: #1677ff;
+.people-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.find-people-modal .people-search-button.ant-btn-link:hover {
-  color: #4096ff;
+.people-search-input {
+  display: flex;
+  min-width: 0;
+  flex: 1;
 }
 
-.find-people-modal .people-search-prefix {
-  color: var(--ant-color-text-quaternary, rgba(0, 0, 0, 0.25));
+.people-search-input > * {
+  width: 100%;
+}
+
+.people-search-leading {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pt-muted);
+}
+
+.group-create-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .group-management-panel {
@@ -4702,10 +4758,10 @@ select,
   background: rgba(0, 0, 0, 0.03);
 }
 
-.contact-item-row .ant-avatar {
+.contact-item-row .mobile-user-avatar {
   width: 44px;
   height: 44px;
-  border-radius: 14px !important;
+  border-radius: 14px;
 }
 
 .contact-item-row .conversation-avatar-frame {

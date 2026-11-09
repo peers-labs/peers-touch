@@ -8,9 +8,21 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Button, Checkbox, Empty, Input, List, Modal, Spin, Tag, Typography } from 'antd';
-import { ArrowLeft, Ban, Check, ChevronRight, Globe, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
+import {
+  Button,
+  Checkbox,
+  Empty,
+  Icon,
+  IconButton,
+  Spin,
+  Tag,
+  Text,
+  TextArea,
+  TextField,
+  Dialog,
+} from '@peers-touch/ui';
 
+import { confirm, confirmDestructive } from '../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../app/mobileI18n';
 import type {
   MobileChatDetailRoute,
@@ -50,7 +62,6 @@ import { dispatchBlockUser, dispatchUnblockUser } from '../features/chat/chatCom
 import { groupCommandOutcomeKey } from '../features/chat/groupCommandState';
 import { ContactsAcceptanceSurface } from './contacts/ContactsAcceptanceSurface';
 
-const { Text } = Typography;
 /** Maximum contacts mounted in one traversable window. */
 const CONTACT_WINDOW_SIZE = 100;
 
@@ -389,10 +400,12 @@ function ContactsPageInner({
 
   const confirmBlockSelectedContact = () => {
     if (!selectedContact) return;
-    Modal.confirm({
-      title: t('mobile.contacts.blockConfirmTitle'), content: t('mobile.contacts.blockConfirmBody'),
-      okText: t('mobile.contacts.block'), cancelText: t('common.action.cancel'), okButtonProps: { danger: true },
-      onOk: async () => {
+    void confirmDestructive({
+      title: t('mobile.contacts.blockConfirmTitle'),
+      description: t('mobile.contacts.blockConfirmBody'),
+      confirmLabel: t('mobile.contacts.block'),
+      cancelLabel: t('common.action.cancel'),
+      onConfirm: async () => {
         await dispatchBlockUser(selectedContact.peerPtid);
         onBack();
       },
@@ -401,10 +414,12 @@ function ContactsPageInner({
 
   const confirmUnblockSelectedContact = () => {
     if (!selectedContact) return;
-    Modal.confirm({
-      title: t('mobile.contacts.unblockConfirmTitle'), content: t('mobile.contacts.unblockConfirmBody'),
-      okText: t('mobile.contacts.unblock'), cancelText: t('common.action.cancel'),
-      onOk: async () => { await dispatchUnblockUser(selectedContact.peerPtid); },
+    void confirm({
+      title: t('mobile.contacts.unblockConfirmTitle'),
+      description: t('mobile.contacts.unblockConfirmBody'),
+      confirmLabel: t('mobile.contacts.unblock'),
+      cancelLabel: t('common.action.cancel'),
+      onConfirm: async () => { await dispatchUnblockUser(selectedContact.peerPtid); },
     });
   };
 
@@ -423,7 +438,7 @@ function ContactsPageInner({
             onClick={onBack}
             aria-label={t('common.action.back')}
           >
-            <ArrowLeft size={20} />
+            <Icon iconId="arrow-left" size={20} />
           </button>
           <h1 className="header-title compact">
             {selectedContact?.peerName || t('mobile.contacts.profile')}
@@ -432,16 +447,16 @@ function ContactsPageInner({
         <div className="mobile-detail-body">
           {selectedContact ? (
             <div className="contact-profile-card">
-              <Spin spinning={selectedProfileLoading}>
+              <Spin active={selectedProfileLoading}>
                 <MobileAvatar src={selectedProfile?.avatar || selectedContact.peerAvatar} size={64}>
                   {(selectedProfile?.displayName || selectedContact.peerName).slice(0, 1)}
                 </MobileAvatar>
               </Spin>
               <div className="contact-profile-copy">
                 <Text strong className="contact-profile-name">{selectedProfile?.displayName || selectedContact.peerName}</Text>
-                {selectedProfile?.acct || selectedProfile?.username ? <Text type="secondary">{selectedProfile.acct || selectedProfile.username}</Text> : null}
+                {selectedProfile?.acct || selectedProfile?.username ? <Text tone="secondary">{selectedProfile.acct || selectedProfile.username}</Text> : null}
                 {selectedProfile?.note ? <Text className="contact-profile-note">{selectedProfile.note}</Text> : null}
-                <Tag color={selectedContact.peerOnline ? 'success' : 'default'}>
+                <Tag tone={selectedContact.peerOnline ? 'success' : 'neutral'}>
                   {selectedContact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
                 </Tag>
               </div>
@@ -455,23 +470,40 @@ function ContactsPageInner({
               {selectedProfile?.tags.length ? (
                 <div className="contact-profile-tags">{selectedProfile.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div>
               ) : null}
-              {selectedProfileError ? <Text type="danger">{formatSocialError(selectedProfileError)}</Text> : null}
-              {selectedBlocked ? <Tag color="error">{t('mobile.contacts.blocked')}</Tag> : null}
+              {selectedProfileError ? <Text tone="danger">{formatSocialError(selectedProfileError)}</Text> : null}
+              {selectedBlocked ? <Tag tone="danger">{t('mobile.contacts.blocked')}</Tag> : null}
               {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
-              <Button type="primary" block loading={openingChat} disabled={selectedBlocked} onClick={() => void openContactChat(selectedContact)}>
+              <Button
+                actionId="contact-profile-open-chat"
+                emphasis="primary"
+                fullWidth
+                execution={openingChat ? 'pending' : 'idle'}
+                availability={selectedBlocked
+                  ? { kind: 'disabled', reason: t('mobile.contacts.openChat') }
+                  : undefined}
+                onActivate={() => void openContactChat(selectedContact)}
+              >
                 {t('mobile.contacts.openChat')}
               </Button>
               {selectedBlocked ? (
-                <Button block icon={<RotateCcw size={14} />} onClick={confirmUnblockSelectedContact}>{t('mobile.contacts.unblock')}</Button>
+                <Button
+                  actionId="contact-profile-unblock"
+                  fullWidth
+                  leading={<Icon iconId="rotate-ccw" size={14} />}
+                  onActivate={confirmUnblockSelectedContact}
+                >{t('mobile.contacts.unblock')}</Button>
               ) : (
-                <Button block danger icon={<Ban size={14} />} onClick={confirmBlockSelectedContact}>{t('mobile.contacts.block')}</Button>
+                <Button
+                  actionId="contact-profile-block"
+                  fullWidth
+                  tone="danger"
+                  leading={<Icon iconId="ban" size={14} />}
+                  onActivate={confirmBlockSelectedContact}
+                >{t('mobile.contacts.block')}</Button>
               )}
             </div>
           ) : (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('mobile.contacts.unavailable')}
-            />
+            <Empty description={t('mobile.contacts.unavailable')} />
           )}
         </div>
       </div>
@@ -492,7 +524,7 @@ function ContactsPageInner({
           onClick={() => onOpenOverlay({ routeId: 'overlay:create-group' })}
           aria-label={t('mobile.group.create')}
         >
-          <Users size={20} />
+          <Icon iconId="users" size={20} />
         </button>
         <button
           className="header-action"
@@ -500,67 +532,89 @@ function ContactsPageInner({
           onClick={() => onOpenOverlay({ routeId: 'overlay:add-friend' })}
           aria-label={t('mobile.contacts.findPeople')}
         >
-          <UserPlus size={20} />
+          <Icon iconId="user-plus" size={20} />
         </button>
       </header>
 
       <div className="chat-search-bar">
-        <Input value={contactQuery} onChange={(e) => { setContactQuery(e.target.value); saveRouteQuery('tab:contacts', e.target.value); }} prefix={<Search size={16} color="#9ca0ab" />} placeholder={t('mobile.contacts.searchPlaceholder')} allowClear />
+        <TextField
+          value={contactQuery}
+          className="contact-search-field"
+          leading={<Icon iconId="search" size={16} className="chat-search-leading" />}
+          clearable
+          onClear={() => { setContactQuery(''); saveRouteQuery('tab:contacts', ''); }}
+          placeholder={t('mobile.contacts.searchPlaceholder')}
+          onValueChange={(value) => { setContactQuery(value); saveRouteQuery('tab:contacts', value); }}
+        />
       </div>
 
       {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
       {error ? <MobileNotice onClose={clearSocialError}>{formatSocialError(error)}</MobileNotice> : null}
 
       <section className="contacts-body">
-        <Spin spinning={loading && windowedContacts.length === 0 && inboundRequests.length === 0 && sentRequests.length === 0}>
+        <Spin active={loading && windowedContacts.length === 0 && inboundRequests.length === 0 && sentRequests.length === 0}>
           {/* --- Friend requests --- */}
           {inboundRequests.length > 0 ? (
             <div className="contact-section">
               <div className="section-header"><span>{t('mobile.contacts.friendRequests')}</span></div>
               <BoundedList surfaceKey="contacts:inbound" items={inboundRequests} itemKey={(request) => request.requestId}>
-              {(rows) => <List dataSource={rows} rowKey="requestId" renderItem={(request) => {
+              {(rows) => rows.map((request) => {
                 const decision = requestDecisionStates[request.requestId];
+                const acceptPending = decision?.phase === 'pending' && decision.action === 'accept';
+                const rejectPending = decision?.phase === 'pending' && decision.action === 'reject';
                 return (
-                  <List.Item
+                  <div
+                    key={request.requestId}
                     data-scroll-anchor-id={request.requestId}
                     data-request-decision-state={decision?.phase}
                     aria-busy={decision?.phase === 'pending'}
                     className="contact-item friend-request-item"
-                    actions={[
-                      <Button
-                        key="accept"
-                        type="primary"
-                        aria-label={t('mobile.contacts.acceptRequest')}
-                        icon={<Check size={14} />}
-                        loading={decision?.phase === 'pending' && decision.action === 'accept'}
-                        disabled={Boolean(decision)}
-                        onClick={() => void handleAcceptRequest(request.requestId)}
-                      />,
-                      <Button
-                        key="reject"
-                        aria-label={t('mobile.contacts.rejectRequest')}
-                        icon={<X size={14} />}
-                        loading={decision?.phase === 'pending' && decision.action === 'reject'}
-                        disabled={Boolean(decision)}
-                        onClick={() => void handleRejectRequest(request.requestId)}
-                      />,
-                    ]}
                   >
-                    <List.Item.Meta
-                      avatar={<MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, request.senderPtid, t).slice(0, 1)}</MobileAvatar>}
-                      title={<Text strong>{displayPeerName(request.senderDisplayName, request.senderPtid, t)}</Text>}
-                      description={request.message || t('mobile.contacts.defaultRequestMessage')}
-                    />
+                    <div className="contact-item-meta">
+                      <MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, request.senderPtid, t).slice(0, 1)}</MobileAvatar>
+                      <span className="contact-item-copy">
+                        <Text strong>{displayPeerName(request.senderDisplayName, request.senderPtid, t)}</Text>
+                        <span className="contact-item-description">
+                          {request.message || t('mobile.contacts.defaultRequestMessage')}
+                        </span>
+                      </span>
+                    </div>
                     {decision ? (
-                      <Tag color={decision.phase === 'unknown' ? 'warning' : 'processing'}>
+                      <Tag tone={decision.phase === 'unknown' ? 'warning' : 'info'}>
                         {t(decision.phase === 'unknown'
                           ? 'mobile.recovery.command.state.unknown-outcome'
                           : 'mobile.recovery.command.state.pending')}
                       </Tag>
                     ) : null}
-                  </List.Item>
+                    <span className="contact-item-actions">
+                      <IconButton
+                        actionId="contact-request-accept"
+                        iconId="check"
+                        iconSize={14}
+                        label={t('mobile.contacts.acceptRequest')}
+                        emphasis="primary"
+                        execution={acceptPending ? 'pending' : 'idle'}
+                        availability={Boolean(decision)
+                          ? { kind: 'disabled', reason: t('mobile.contacts.acceptRequest') }
+                          : undefined}
+                        onActivate={() => void handleAcceptRequest(request.requestId)}
+                      />
+                      <IconButton
+                        actionId="contact-request-reject"
+                        iconId="close"
+                        iconSize={14}
+                        label={t('mobile.contacts.rejectRequest')}
+                        execution={rejectPending ? 'pending' : 'idle'}
+                        availability={Boolean(decision)
+                          ? { kind: 'disabled', reason: t('mobile.contacts.rejectRequest') }
+                          : undefined}
+                        onActivate={() => void handleRejectRequest(request.requestId)}
+                      />
+                    </span>
+                  </div>
                 );
-              }} />}</BoundedList>
+              })}
+              </BoundedList>
             </div>
           ) : null}
 
@@ -582,23 +636,24 @@ function ContactsPageInner({
                         </span>
                         <div className="contact-info">
                           <Text strong>{displayPeerName(contact.peerName, contact.peerPtid, t)}</Text>
-                          <Text type="secondary">{contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}</Text>
+                          <Text tone="secondary">{contact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}</Text>
                         </div>
                       </div>
                   </div>
                 ))}</BoundedList>
               </div>
             ) : contacts.length > 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.contacts.noSearchResults')} />
+              <Empty description={t('mobile.contacts.noSearchResults')} />
             ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={
+              <Empty description={
                 <div className="empty-copy">
                   <Text strong>{t('mobile.contacts.emptyTitle')}</Text>
-                  <Text type="secondary">{t('mobile.contacts.emptySubtitle')}</Text>
+                  <Text tone="secondary">{t('mobile.contacts.emptySubtitle')}</Text>
                   <Button
-                    type="primary"
-                    icon={<UserPlus size={16} />}
-                    onClick={() => onOpenOverlay({ routeId: 'overlay:add-friend' })}
+                    actionId="contacts-empty-find-people"
+                    emphasis="primary"
+                    leading={<Icon iconId="user-plus" size={16} />}
+                    onActivate={() => onOpenOverlay({ routeId: 'overlay:add-friend' })}
                   >
                     {t('mobile.contacts.findPeople')}
                   </Button>
@@ -612,59 +667,69 @@ function ContactsPageInner({
             <div className="contact-section">
               <div className="section-header"><span>{t('mobile.contacts.sentRequests')}</span></div>
               <BoundedList surfaceKey="contacts:outbound" items={sentRequests} itemKey={(request) => request.requestId}>
-              {(rows) => <List dataSource={rows} rowKey="requestId" renderItem={(request) => (
-                <List.Item data-scroll-anchor-id={request.requestId} className="contact-item">
-                  <List.Item.Meta
-                    avatar={<MobileAvatar src={request.receiverAvatar}>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t).slice(0, 1)}</MobileAvatar>}
-                    title={<Text strong>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}</Text>}
-                    description={t('mobile.contacts.waitingForAccept')}
-                  />
-                  <Tag color="processing">{t('mobile.contacts.requestPending')}</Tag>
-                </List.Item>
-              )} />}</BoundedList>
+              {(rows) => rows.map((request) => (
+                <div key={request.requestId} data-scroll-anchor-id={request.requestId} className="contact-item">
+                  <div className="contact-item-meta">
+                    <MobileAvatar src={request.receiverAvatar}>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t).slice(0, 1)}</MobileAvatar>
+                    <span className="contact-item-copy">
+                      <Text strong>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}</Text>
+                      <span className="contact-item-description">{t('mobile.contacts.waitingForAccept')}</span>
+                    </span>
+                  </div>
+                  <Tag tone="info">{t('mobile.contacts.requestPending')}</Tag>
+                </div>
+              ))}
+              </BoundedList>
             </div>
           ) : null}
         </Spin>
       </section>
 
-      {/* --- Find People modal --- */}
-      <Modal
+      {/* --- Find People dialog --- */}
+      <Dialog
         title={t('mobile.contacts.findPeople')}
         open={activeOverlay?.routeId === 'overlay:add-friend'}
-        footer={null}
-        onCancel={closeFindPeople}
-        destroyOnHidden
+        closeLabel={t('common.action.close')}
+        onDismiss={closeFindPeople}
       >
         <div
           className="find-people-modal"
           data-product-surface="contacts.add-friend"
         >
-          <Input
-            value={peopleQuery}
-            onChange={(e) => {
-              setPeopleQuery(e.target.value);
-              setSubmittedPeopleQuery('');
-              clearPeopleSearch();
-            }}
-            onPressEnter={() => void runPeopleSearch(peopleQuery)}
-            prefix={<Search size={16} className="people-search-prefix" />}
-            placeholder={t('mobile.contacts.findPeoplePlaceholder')}
-            allowClear
-            autoComplete="off"
-            disabled={!requestFederationId}
-            suffix={(
-              <Button
-                type="link"
-                size="small"
-                className="people-search-button"
-                loading={peopleSearching}
-                disabled={!peopleQuery.trim() || !requestFederationId}
-                onClick={() => void runPeopleSearch(peopleQuery)}
-              >
-                {t('mobile.contacts.search')}
-              </Button>
-            )}
-          />
+          <div className="people-search-row">
+            <span className="people-search-input">
+              <TextField
+                value={peopleQuery}
+                leading={<Icon iconId="search" size={16} className="people-search-leading" />}
+                clearable
+                onClear={() => {
+                  setPeopleQuery('');
+                  setSubmittedPeopleQuery('');
+                  clearPeopleSearch();
+                }}
+                placeholder={t('mobile.contacts.findPeoplePlaceholder')}
+                autoComplete="off"
+                disabled={!requestFederationId}
+                onEnter={() => void runPeopleSearch(peopleQuery)}
+                onValueChange={(value) => {
+                  setPeopleQuery(value);
+                  setSubmittedPeopleQuery('');
+                  clearPeopleSearch();
+                }}
+              />
+            </span>
+            <IconButton
+              actionId="people-search-run"
+              iconId="search"
+              iconSize={16}
+              label={t('mobile.contacts.search')}
+              execution={peopleSearching ? 'pending' : 'idle'}
+              availability={!peopleQuery.trim() || !requestFederationId
+                ? { kind: 'disabled', reason: t('mobile.contacts.search') }
+                : undefined}
+              onActivate={() => void runPeopleSearch(peopleQuery)}
+            />
+          </div>
           {peopleFederationsError ? (
             <MobileNotice tone="error">{t('mobile.contacts.federationsFailed')}</MobileNotice>
           ) : peopleFederations.length === 0 ? (
@@ -684,7 +749,7 @@ function ContactsPageInner({
                       clearPeopleSearch();
                     }}
                   >
-                    <Globe size={14} />
+                    <Icon iconId="globe" size={14} />
                     <span>{t('mobile.contacts.federation')}: {federation.name || federation.federationId}</span>
                   </button>
                 );
@@ -692,7 +757,7 @@ function ContactsPageInner({
             </div>
           )}
           {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
-          <Spin spinning={peopleSearching && peopleResults.length === 0}>
+          <Spin active={peopleSearching && peopleResults.length === 0}>
             <div className="people-result-list">
               {peopleResults.length > 0 ? (
                 peopleResults.map((result) => {
@@ -706,6 +771,7 @@ function ContactsPageInner({
                   const stationLabel = result.homeStationPeerId
                     ? `${result.homeStationPeerId.slice(0, 18)}…`
                     : '';
+                  const actionUnavailable = isSelf || alreadyPending || inboundPending || alreadyFriend || peopleSearching || sendingRequest || !requestFederationId || !result.homeStationPeerId;
                   return (
                     <div className="people-result-card" key={receiverPtid || result.username}>
                       <MobileAvatar src={result.avatar} size={44}>{displayPeerName(
@@ -713,27 +779,38 @@ function ContactsPageInner({
                       ).slice(0, 1)}</MobileAvatar>
                       <div className="people-result-copy">
                         <div className="people-result-title">
-                          <Text strong ellipsis>{displayPeerName(
+                          <Text strong truncate>{displayPeerName(
                             result.displayName || result.username, receiverPtid, t,
                           )}</Text>
                           {result.federation ? (
-                            <Tag color="success" icon={<ShieldCheck size={11} />}>{t('mobile.contacts.verified')}</Tag>
+                            <Tag tone="success" className="people-result-verified"
+                              leading={<Icon iconId="shield-check" size={11} />}>{t('mobile.contacts.verified')}</Tag>
                           ) : null}
                         </div>
-                        <Text type="secondary" ellipsis className="people-result-handle">{handle}</Text>
+                        <Text tone="secondary" truncate className="people-result-handle">{handle}</Text>
                         {stationLabel ? (
-                          <Text type="secondary" ellipsis className="people-result-station">
+                          <Text tone="secondary" truncate className="people-result-station">
                             {t('mobile.contacts.station')}: {stationLabel}
                           </Text>
                         ) : null}
                       </div>
                       <Button
-                        type="primary"
-                        size="small"
+                        actionId="people-result-send-request"
+                        emphasis="primary"
+                        density="compact"
                         className="people-result-action"
-                        loading={sendingRequest}
-                        disabled={isSelf || alreadyPending || inboundPending || alreadyFriend || peopleSearching || sendingRequest || !requestFederationId || !result.homeStationPeerId}
-                        onClick={() => sendRequestToResult(result)}
+                        execution={sendingRequest ? 'pending' : 'idle'}
+                        availability={actionUnavailable
+                          ? {
+                              kind: 'disabled',
+                              reason: isSelf ? t('mobile.contacts.self')
+                                : alreadyFriend ? t('mobile.contacts.alreadyFriend')
+                                : alreadyPending ? t('mobile.contacts.requestSent')
+                                : inboundPending ? t('mobile.contacts.requestPending')
+                                : t('mobile.contacts.sendRequest'),
+                            }
+                          : undefined}
+                        onActivate={() => sendRequestToResult(result)}
                       >
                         {isSelf ? t('mobile.contacts.self')
                           : alreadyFriend ? t('mobile.contacts.alreadyFriend')
@@ -746,7 +823,7 @@ function ContactsPageInner({
                 })
               ) : peopleSearchFeedback === 'loading' ? null : (
                 <div data-people-search-state={peopleSearchFeedback}>
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={
+                  <Empty description={
                     <div className="empty-copy">
                       <Text>
                         {peopleSearchFeedback === 'unresolved-federated-handle'
@@ -763,8 +840,10 @@ function ContactsPageInner({
                       </Text>
                       {peopleSearchFeedback !== 'idle' ? (
                         <Button
-                          size="small"
-                          onClick={() => void runPeopleSearch(peopleQuery)}
+                          actionId="people-search-retry"
+                          emphasis="secondary"
+                          density="compact"
+                          onActivate={() => void runPeopleSearch(peopleQuery)}
                         >
                           {t(peopleSearchFeedback === 'local-no-result'
                             ? 'common.action.search'
@@ -778,22 +857,37 @@ function ContactsPageInner({
             </div>
           </Spin>
         </div>
-      </Modal>
+      </Dialog>
 
-      <Modal
+      <Dialog
         title={t('mobile.group.create')}
         open={activeOverlay?.routeId === 'overlay:create-group'}
-        onCancel={closeCreateGroup}
-        onOk={() => void submitCreateGroup()}
-        okText={t('mobile.group.create')}
-        cancelText={t('common.action.cancel')}
-        confirmLoading={creatingGroup}
-        okButtonProps={{
-          disabled: !groupName.trim()
-            || selectedGroupMemberPtids.length === 0
-            || creatingGroup,
-        }}
-        destroyOnHidden
+        closeLabel={t('common.action.cancel')}
+        onDismiss={closeCreateGroup}
+        footer={
+          <div className="group-create-footer">
+            <Button
+              actionId="create-group-cancel"
+              emphasis="quiet"
+              onActivate={closeCreateGroup}
+            >
+              {t('common.action.cancel')}
+            </Button>
+            <Button
+              actionId="create-group-submit"
+              emphasis="primary"
+              execution={creatingGroup ? 'pending' : 'idle'}
+              availability={!groupName.trim()
+                || selectedGroupMemberPtids.length === 0
+                || creatingGroup
+                ? { kind: 'disabled', reason: t('mobile.group.create') }
+                : undefined}
+              onActivate={() => void submitCreateGroup()}
+            >
+              {t('mobile.group.create')}
+            </Button>
+          </div>
+        }
       >
         <div
           className="group-create-form"
@@ -810,25 +904,26 @@ function ContactsPageInner({
               {localActionError}
             </MobileNotice>
           ) : null}
-          <Input
+          <TextField
             value={groupName}
-            onChange={(event) => setGroupName(event.target.value)}
             placeholder={t('mobile.group.namePlaceholder')}
             disabled={creatingGroup}
+            onValueChange={setGroupName}
           />
-          <Input.TextArea
+          <TextArea
             value={groupDescription}
-            onChange={(event) => setGroupDescription(event.target.value)}
             placeholder={t('mobile.group.descriptionPlaceholder')}
-            autoSize={{ minRows: 2, maxRows: 4 }}
+            minimumRows={2}
+            maximumRows={4}
             disabled={creatingGroup}
+            onValueChange={setGroupDescription}
           />
           <SectionTitle
             title={t('mobile.group.initialMembers')}
             count={selectedGroupMemberPtids.length}
           />
           {contacts.length > 0 && selectedGroupMemberPtids.length === 0 ? (
-            <Text type="secondary">{t('mobile.group.initialMembersRequired')}</Text>
+            <Text tone="secondary">{t('mobile.group.initialMembersRequired')}</Text>
           ) : null}
           {contacts.length > 0 ? (
             <BoundedList
@@ -836,49 +931,38 @@ function ContactsPageInner({
               items={contacts}
               itemKey={(contact) => contact.peerPtid}
             >
-              {(rows) => (
-                <List
-                  dataSource={rows}
-                  rowKey="peerPtid"
-                  renderItem={(contact) => (
-                    <List.Item data-scroll-anchor-id={contact.peerPtid}>
-                      <List.Item.Meta
-                        avatar={(
-                          <MobileAvatar src={contact.peerAvatar}>
-                            {displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}
-                          </MobileAvatar>
-                        )}
-                        title={<Text strong>{displayPeerName(contact.peerName, contact.peerPtid, t)}</Text>}
-                        description={(
-                          <Text type="secondary">
-                            {contact.peerOnline
-                              ? t('mobile.social.online')
-                              : t('mobile.social.offline')}
-                          </Text>
-                        )}
-                      />
-                      <Checkbox
-                        aria-label={displayPeerName(contact.peerName, contact.peerPtid, t)}
-                        checked={selectedGroupMemberPtids.includes(contact.peerPtid)}
-                        disabled={creatingGroup}
-                        onChange={(event) => toggleInitialGroupMember(
-                          contact.peerPtid,
-                          event.target.checked,
-                        )}
-                      />
-                    </List.Item>
-                  )}
-                />
-              )}
+              {(rows) => rows.map((contact) => (
+                <div key={contact.peerPtid} className="contact-item group-member-picker-row" data-scroll-anchor-id={contact.peerPtid}>
+                  <div className="contact-item-meta">
+                    <MobileAvatar src={contact.peerAvatar}>
+                      {displayPeerName(contact.peerName, contact.peerPtid, t).slice(0, 1)}
+                    </MobileAvatar>
+                    <span className="contact-item-copy">
+                      <Text strong>{displayPeerName(contact.peerName, contact.peerPtid, t)}</Text>
+                      <span className="contact-item-description">
+                        {contact.peerOnline
+                          ? t('mobile.social.online')
+                          : t('mobile.social.offline')}
+                      </span>
+                    </span>
+                  </div>
+                  <Checkbox
+                    aria-label={displayPeerName(contact.peerName, contact.peerPtid, t)}
+                    checked={selectedGroupMemberPtids.includes(contact.peerPtid)}
+                    disabled={creatingGroup}
+                    onCheckedChange={(checked) => toggleInitialGroupMember(
+                      contact.peerPtid,
+                      checked,
+                    )}
+                  />
+                </div>
+              ))}
             </BoundedList>
           ) : (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('mobile.group.noInitialMembers')}
-            />
+            <Empty description={t('mobile.group.noInitialMembers')} />
           )}
         </div>
-      </Modal>
+      </Dialog>
     </div>
   );
 }
@@ -888,7 +972,7 @@ function ContactsPageInner({
 // ---------------------------------------------------------------------------
 
 function ProfileStat({ label, value }: { label: string; value: number }) {
-  return <div className="contact-profile-stat"><Text strong>{value}</Text><Text type="secondary">{label}</Text></div>;
+  return <div className="contact-profile-stat"><Text strong>{value}</Text><Text tone="secondary">{label}</Text></div>;
 }
 
 function displayPeerName(
@@ -903,7 +987,7 @@ function SectionTitle({ title, count }: { title: string; count: number }) {
   return (
     <div className="social-section-title">
       <Text strong>{title}</Text>
-      <Text type="secondary">{count}</Text>
+      <Text tone="secondary">{count}</Text>
     </div>
   );
 }
