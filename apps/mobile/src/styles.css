@@ -4168,9 +4168,15 @@ select,
 /* Profile header card */
 
 .settings-profile-header-card {
-  border-radius: 14px !important;
-  border: 1px solid rgba(15, 23, 42, 0.06) !important;
+  border-radius: 14px;
+  border: 1px solid var(--pt-border);
+  background: var(--pt-surface);
   box-shadow: 0 1px 3px rgba(31, 35, 48, 0.03);
+  padding: 16px;
+}
+
+.settings-profile-chevron {
+  color: var(--pt-muted);
 }
 
 .settings-profile-trigger {
@@ -4182,10 +4188,6 @@ select,
   color: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.settings-profile-header-card > .ant-card-body {
-  padding: 16px !important;
 }
 
 .settings-profile-header {
@@ -4271,13 +4273,10 @@ select,
 }
 
 .settings-group-card {
-  border-radius: 14px !important;
-  border: 1px solid rgba(15, 23, 42, 0.06) !important;
+  border-radius: 14px;
+  border: 1px solid var(--pt-border);
+  background: var(--pt-surface);
   box-shadow: 0 1px 3px rgba(31, 35, 48, 0.03);
-}
-
-.settings-group-card > .ant-card-body {
-  padding: 0 !important;
 }
 
 /* Settings row */
@@ -4313,6 +4312,8 @@ select,
   height: 32px;
   border-radius: 6px;
   flex: 0 0 auto;
+  background: color-mix(in srgb, var(--setting-tint, var(--pt-accent)) 10%, transparent);
+  color: var(--setting-tint, var(--pt-accent));
 }
 
 .setting-row-label {
@@ -4332,6 +4333,11 @@ select,
 
 .setting-row-control {
   flex: 0 0 auto;
+}
+
+.setting-row-chevron {
+  flex: 0 0 auto;
+  color: var(--pt-muted);
 }
 
 /* Sign out button */
@@ -4387,16 +4393,25 @@ select,
 }
 
 .settings-section {
-  border: 1px solid rgba(15, 23, 42, 0.06) !important;
-  border-radius: 14px !important;
+  border: 1px solid var(--pt-border);
+  border-radius: 14px;
+  background: var(--pt-surface);
   box-shadow: 0 1px 3px rgba(31, 35, 48, 0.03);
 }
 
-.settings-section > .ant-card-body {
+.settings-section > .ant-card-body,
+.settings-section-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 16px !important;
+  padding: 16px;
+}
+
+.settings-exit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .settings-section-header,

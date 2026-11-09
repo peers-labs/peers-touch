@@ -18,22 +18,10 @@
  * The page never fetches or persists data directly.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Avatar, Button, Card, Empty, Modal, Spin, Typography } from 'antd';
-import type { LucideIcon } from 'lucide-react';
-import {
-  ArrowLeft,
-  Ban,
-  Bell,
-  ChevronRight,
-  Globe,
-  MessageCircle,
-  Server,
-  Shield,
-  ShieldCheck,
-  User,
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { Button, Dialog, Empty, Icon, Spin, Text, type IconId } from '@peers-touch/ui';
 
+import { confirmDestructive } from '../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../app/mobileI18n';
 import {
   registerSettingsExitGuard,
@@ -52,6 +40,7 @@ import {
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
 import { stationDisplayName } from '../features/station/stationDisplayName';
+import { MobileAvatar } from '../components/MobileAvatar';
 import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
 import {
   useBlockedUsersController,
@@ -72,16 +61,16 @@ import {
   StorageSection,
 } from './settings/SettingsSections';
 
-const { Text } = Typography;
-
-// ---------------------------------------------------------------------------
-// Setting group types (prototype-aligned)
-// ---------------------------------------------------------------------------
+const tintAccent = 'var(--pt-accent)';
+const tintWarning = 'var(--pt-warning)';
+const tintSuccess = 'var(--pt-success)';
+const tintDanger = 'var(--pt-danger)';
+const tintInfo = 'var(--pt-info)';
 
 interface SettingEntry {
   id: MobileSettingDetailId;
   labelKey: string;
-  icon: LucideIcon;
+  icon: IconId;
   tint: string;
   valueKey?: string | undefined;
   valueOverride?: string | undefined;
@@ -120,19 +109,24 @@ function ProfileUnavailable({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Card
+    <section
       className="settings-section"
-      variant="borderless"
       role="alert"
       data-product-surface="settings.detail-unavailable"
     >
-      <Text type="secondary">
-        {t(reason ?? 'mobile.settings.profileUnavailable')}
-      </Text>
-      <Button block onClick={() => void onRetry()}>
-        {t('common.action.retry')}
-      </Button>
-    </Card>
+      <div className="settings-section-body">
+        <Text tone="secondary">
+          {t(reason ?? 'mobile.settings.profileUnavailable')}
+        </Text>
+        <Button
+          actionId="settings-detail-retry"
+          fullWidth
+          onActivate={() => void onRetry()}
+        >
+          {t('common.action.retry')}
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -180,7 +174,6 @@ function SettingsPageContent({
 }: SettingsPageProps) {
   const { t, language } = useMobileI18n();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [pendingExit, setPendingExit] = useState<{
     readonly action: SettingsExitAction;
   } | null>(null);
@@ -306,18 +299,14 @@ function SettingsPageContent({
     await finishPendingExit();
   }, [finishPendingExit, selectedOwner]);
 
-  const requestLogout = useCallback(() => {
-    requestExit(() => setLogoutConfirmOpen(true));
-  }, [requestExit]);
-
   // --- Setting groups (prototype-aligned) ---
   const settingGroups: SettingGroup[] = useMemo(() => [
     {
       titleKey: 'mobile.settings.group.account',
       items: [
-        { id: 'account-info', labelKey: 'mobile.settings.accountInfo', icon: User, tint: '#6366f1' },
-        { id: 'notifications', labelKey: 'mobile.settings.section.notifications', valueOverride: notificationController.unavailable ? unavailableLabel : undefined, icon: Bell, tint: '#f59e0b' },
-        { id: 'privacy-security', labelKey: 'mobile.settings.privacySecurity', icon: Shield, tint: '#22c55e' },
+        { id: 'account-info', labelKey: 'mobile.settings.accountInfo', icon: 'user', tint: tintAccent },
+        { id: 'notifications', labelKey: 'mobile.settings.section.notifications', valueOverride: notificationController.unavailable ? unavailableLabel : undefined, icon: 'bell', tint: tintWarning },
+        { id: 'privacy-security', labelKey: 'mobile.settings.privacySecurity', icon: 'shield', tint: tintSuccess },
         {
           id: 'blocked-users',
           labelKey: 'mobile.settings.blockedUsers',
@@ -326,28 +315,28 @@ function SettingsPageContent({
             : blockedUsersProjectionReady
               ? String(blockedUsersCount)
               : undefined,
-          icon: Ban,
-          tint: '#ef4444',
+          icon: 'ban',
+          tint: tintDanger,
         },
       ],
     },
     {
       titleKey: 'mobile.settings.group.chat',
       items: [
-        { id: 'chat-settings', labelKey: 'mobile.settings.chatSettings', icon: MessageCircle, tint: '#6366f1' },
+        { id: 'chat-settings', labelKey: 'mobile.settings.chatSettings', icon: 'message-circle', tint: tintAccent },
       ],
     },
     {
       titleKey: 'mobile.settings.group.network',
       items: [
-        { id: 'station-connection', labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation ? activeStationLabel : t('mobile.settings.stationNotSelected'), icon: Server, tint: '#22c55e' },
-        { id: 'language', labelKey: 'mobile.settings.section.language', valueOverride: language === 'zh-CN' ? '简体中文' : 'English', icon: Globe, tint: '#0ea5e9' },
+        { id: 'station-connection', labelKey: 'mobile.settings.stationConnection', valueOverride: activeStation ? activeStationLabel : t('mobile.settings.stationNotSelected'), icon: 'server', tint: tintSuccess },
+        { id: 'language', labelKey: 'mobile.settings.section.language', valueOverride: language === 'zh-CN' ? '简体中文' : 'English', icon: 'globe', tint: tintInfo },
       ],
     },
     {
       titleKey: 'mobile.settings.group.about',
       items: [
-        { id: 'about', labelKey: 'mobile.settings.aboutApp', valueOverride: controller.appVersion ?? unavailableLabel, icon: ShieldCheck, tint: '#f59e0b' },
+        { id: 'about', labelKey: 'mobile.settings.aboutApp', valueOverride: controller.appVersion ?? unavailableLabel, icon: 'shield-check', tint: tintWarning },
       ],
     },
   ], [
@@ -368,13 +357,12 @@ function SettingsPageContent({
     ) ?? null,
     [activeSettingId, settingGroups],
   );
-  const ActiveSettingIcon = activeSetting?.icon;
+  const activeSettingIconId = activeSetting?.icon ?? null;
 
   const profileSubtitle = t('mobile.settings.connected');
 
   // --- Logout flow ---
   const handleLogoutConfirm = useCallback(async () => {
-    setLogoutConfirmOpen(false);
     setLoggingOut(true);
     try {
       await onLogout();
@@ -382,6 +370,20 @@ function SettingsPageContent({
       setLoggingOut(false);
     }
   }, [onLogout]);
+
+  const confirmLogout = useCallback(() => {
+    void confirmDestructive({
+      title: t('mobile.settings.station.logoutConfirmTitle'),
+      description: t('mobile.settings.station.logoutConfirmBody'),
+      confirmLabel: t('mobile.settings.logout'),
+      cancelLabel: t('common.action.cancel'),
+      onConfirm: () => void handleLogoutConfirm(),
+    });
+  }, [handleLogoutConfirm, t]);
+
+  const requestLogout = useCallback(() => {
+    requestExit(confirmLogout);
+  }, [confirmLogout, requestExit]);
 
   const detailContent = (() => {
     switch (activeSettingId) {
@@ -473,26 +475,25 @@ function SettingsPageContent({
       case 'encryption':
       case 'about':
         return (
-          <Card className="settings-section" variant="borderless">
-            <div className="settings-section-header">
-              {ActiveSettingIcon ? <ActiveSettingIcon size={16} /> : null}
-              <Text strong>{activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}</Text>
-            </div>
-            {activeSetting?.valueOverride ? (
-              <div className="settings-row">
-                <Text>{t(activeSetting.labelKey)}</Text>
-                <Text type="secondary">{activeSetting.valueOverride}</Text>
+          <section className="settings-section">
+            <div className="settings-section-body">
+              <div className="settings-section-header">
+                {activeSettingIconId ? <Icon iconId={activeSettingIconId} size={16} /> : null}
+                <Text strong>{activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}</Text>
               </div>
-            ) : null}
-          </Card>
+              {activeSetting?.valueOverride ? (
+                <div className="settings-row">
+                  <Text>{t(activeSetting.labelKey)}</Text>
+                  <Text tone="secondary">{activeSetting.valueOverride}</Text>
+                </div>
+              ) : null}
+            </div>
+          </section>
         );
       case 'safety-number':
       case 'chat-background':
         return (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t('mobile.launch.unavailable')}
-          />
+          <Empty description={t('mobile.launch.unavailable')} />
         );
       default:
         return null;
@@ -524,7 +525,7 @@ function SettingsPageContent({
           aria-label={t('common.action.back')}
           onClick={() => requestExit(onBack)}
         >
-          <ArrowLeft size={20} />
+          <Icon iconId="arrow-left" size={20} />
         </button>
         <h1 className="header-title compact">
           {activeSetting ? t(activeSetting.labelKey) : t('mobile.settings.title')}
@@ -563,61 +564,59 @@ function SettingsPageContent({
           className="settings-profile-trigger"
           onClick={() => onOpenSetting('account-info')}
         >
-          <Card className="settings-profile-header-card" variant="borderless">
+          <div className="settings-profile-header-card">
             <div className="settings-profile-header">
-              <Avatar
+              <MobileAvatar
                 size={64}
-                src={visibleProfile?.avatar || undefined}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea, #764ba2)',
-                  borderRadius: 16,
-                }}
+                src={visibleProfile?.avatar}
+                identityKey={currentUserPtid || ''}
+                name={displayName || t('mobile.settings.notLoggedIn')}
               >
                 {displayName ? displayName.slice(0, 2).toUpperCase() : '?'}
-              </Avatar>
+              </MobileAvatar>
               <div className="settings-profile-info">
                 <Text strong className="settings-profile-name">
                   {displayName || t('mobile.settings.notLoggedIn')}
                 </Text>
-                <Text type="secondary" className="settings-profile-subtitle">
+                <Text tone="secondary" className="settings-profile-subtitle">
                   {profileSubtitle}
                 </Text>
               </div>
-              <ChevronRight size={20} color="#9ca0ab" />
+              <Icon iconId="chevron-right" size={20} className="settings-profile-chevron" />
             </div>
             <div className="settings-profile-stats">
               <div className="settings-stat">
                 <Text strong className="settings-stat-value">{friendCount}</Text>
-                <Text type="secondary" className="settings-stat-label">
+                <Text tone="secondary" className="settings-stat-label">
                   {t('mobile.settings.stats.friends')}
                 </Text>
               </div>
               <div className="settings-stat-divider" />
               <div className="settings-stat">
                 <Text strong className="settings-stat-value">{groupCount}</Text>
-                <Text type="secondary" className="settings-stat-label">
+                <Text tone="secondary" className="settings-stat-label">
                   {t('mobile.settings.stats.groups')}
                 </Text>
               </div>
               <div className="settings-stat-divider" />
               <div className="settings-stat">
                 <Text strong className="settings-stat-value">{momentsCount}</Text>
-                <Text type="secondary" className="settings-stat-label">
+                <Text tone="secondary" className="settings-stat-label">
                   {t('mobile.settings.stats.moments')}
                 </Text>
               </div>
             </div>
-          </Card>
+          </div>
         </button>
 
         {/* Setting groups (prototype-aligned) */}
         {settingGroups.map((group) => (
           <div key={group.titleKey} className="settings-group-block">
             <div className="settings-group-block-title">{t(group.titleKey)}</div>
-            <Card className="settings-group-card" variant="borderless">
+            <div className="settings-group-card">
               {group.items.map((item, idx) => {
-                const Icon = item.icon;
                 const displayValue = item.valueOverride ?? (item.valueKey ? t(item.valueKey) : undefined);
+                const iconStyle = { '--setting-tint': item.tint } as CSSProperties;
                 return (
                   <button
                     type="button"
@@ -627,24 +626,21 @@ function SettingsPageContent({
                   >
                     <span
                       className="setting-row-icon"
-                      style={{
-                        backgroundColor: `${item.tint}14`,
-                        color: item.tint,
-                      }}
+                      style={iconStyle}
                     >
-                      <Icon size={17} />
+                      <Icon iconId={item.icon} size={17} />
                     </span>
                     <Text className="setting-row-label">{t(item.labelKey)}</Text>
                     {displayValue && (
-                      <Text type="secondary" className="setting-row-value">
+                      <Text tone="secondary" className="setting-row-value">
                         {displayValue}
                       </Text>
                     )}
-                    <ChevronRight size={17} color="#c1c4cc" />
+                    <Icon iconId="chevron-right" size={17} className="setting-row-chevron" />
                   </button>
                 );
               })}
-            </Card>
+            </div>
           </div>
         ))}
 
@@ -664,38 +660,44 @@ function SettingsPageContent({
   return (
     <>
       {content}
-      <Modal
+      <Dialog
         title={t('mobile.settings.exit.title')}
         open={pendingExit !== null}
-        closable={!exitSaving}
-        maskClosable={false}
-        onCancel={() => setPendingExit(null)}
-        footer={[
-          <Button
-            key="stay"
-            disabled={exitSaving}
-            onClick={() => setPendingExit(null)}
-          >
-            {t('mobile.settings.exit.stay')}
-          </Button>,
-          <Button
-            key="discard"
-            danger
-            disabled={exitSaving}
-            onClick={() => void discardAndExit()}
-          >
-            {t('mobile.settings.exit.discard')}
-          </Button>,
-          <Button
-            key="save"
-            type="primary"
-            loading={exitSaving}
-            onClick={() => void saveAndExit()}
-          >
-            {t('mobile.settings.exit.save')}
-          </Button>,
-        ]}
-        destroyOnClose
+        closeLabel={t('common.action.close')}
+        dismissOutside={false}
+        onDismiss={() => setPendingExit(null)}
+        footer={
+          <div className="settings-exit-actions">
+            <Button
+              actionId="settings-exit-stay"
+              emphasis="secondary"
+              availability={exitSaving
+                ? { kind: 'disabled', reason: t('mobile.settings.exit.stay') }
+                : undefined}
+              onActivate={() => setPendingExit(null)}
+            >
+              {t('mobile.settings.exit.stay')}
+            </Button>
+            <Button
+              actionId="settings-exit-discard"
+              tone="danger"
+              availability={exitSaving
+                ? { kind: 'disabled', reason: t('mobile.settings.exit.discard') }
+                : undefined}
+              onActivate={() => void discardAndExit()}
+            >
+              {t('mobile.settings.exit.discard')}
+            </Button>
+            <Button
+              actionId="settings-exit-save"
+              emphasis="primary"
+              execution={exitSaving ? 'pending' : 'idle'}
+              onActivate={() => void saveAndExit()}
+            >
+              {t('mobile.settings.exit.save')}
+            </Button>
+          </div>
+        }
       >
         <div
           data-acceptance-id="settings-unsaved-exit"
@@ -703,22 +705,7 @@ function SettingsPageContent({
         >
           {t('mobile.settings.exit.body')}
         </div>
-      </Modal>
-      {/* Logout confirmation modal */}
-      <Modal
-        title={t('mobile.settings.station.logoutConfirmTitle')}
-        open={logoutConfirmOpen}
-        okText={t('mobile.settings.logout')}
-        okButtonProps={{ danger: true }}
-        cancelText={t('common.action.cancel')}
-        onOk={() => void handleLogoutConfirm()}
-        onCancel={() => setLogoutConfirmOpen(false)}
-        destroyOnClose
-      >
-        <div data-product-surface="settings.logout-confirm">
-          {t('mobile.settings.station.logoutConfirmBody')}
-        </div>
-      </Modal>
+      </Dialog>
     </>
   );
 }
