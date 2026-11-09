@@ -20,6 +20,74 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class PublicFeedNativeEntryTest(unittest.TestCase):
+    def test_poll_timeout_retains_actual_predicate_and_rendering_before_cleanup(self):
+        for present, capture_error in (
+            (True, None), (False, None), (True, RuntimeError("capture failed")),
+        ):
+            with self.subTest(present=present, capture_error=capture_error is not None):
+                gate = object.__new__(Gate)
+                gate.active_social_scenario = "poll-single-choice"
+                gate.report = SimpleNamespace(runtime={})
+                client = Mock()
+                actual = {
+                    "present": True, "state": "ready", "counts": [1, 1],
+                    "choices": [], "voters": 2, "disabled": False,
+                    "top": 40, "bottom": 300, "height": 260,
+                    "viewportHeight": 600, "hitInside": True,
+                }
+                client.execute_script.return_value = actual
+                gate.clients = {"bob": client}
+                gate.visible_element = Mock(return_value=Mock() if present else None)
+                gate.capture = Mock(side_effect=capture_error)
+                failure = GateError("timed out waiting for bob verified poll counts and selection")
+                with patch(
+                    "tooling.acceptance.gates.social.public_feed_native.wait_until",
+                    side_effect=failure,
+                ) as wait:
+                    with self.assertRaises(GateError) as caught:
+                        gate.assert_poll("bob", "original-poll", "post", [1, 1], [1])
+                self.assertIs(caught.exception, failure)
+                self.assertEqual(wait.call_count, 1)
+                self.assertEqual(wait.call_args.kwargs["timeout"], 120)
+                self.assertEqual(gate.report.runtime["pollFailureObservations"], [{
+                    "actor": "bob",
+                    "expected": {"counts": [1, 1], "choices": [1], "closed": False},
+                    "actual": actual if present else {"present": False},
+                }])
+                gate.capture.assert_called_once_with(
+                    "bob", "poll-single-choice-bob-verification-failure")
+
+    def test_poll_rendering_capture_is_attempted_when_state_observation_fails(self):
+        gate = object.__new__(Gate)
+        gate.active_social_scenario = "poll-single-choice"
+        gate.report = SimpleNamespace(runtime={})
+        gate.visible_element = Mock(side_effect=RuntimeError("state capture failed"))
+        gate.capture = Mock()
+        failure = GateError("original poll failure")
+        with patch(
+            "tooling.acceptance.gates.social.public_feed_native.wait_until",
+            side_effect=failure,
+        ):
+            with self.assertRaises(GateError) as caught:
+                gate.assert_poll("bob", "original-poll", "post", [1, 1], [1])
+        self.assertIs(caught.exception, failure)
+        gate.capture.assert_called_once_with(
+            "bob", "poll-single-choice-bob-verification-failure")
+        self.assertNotIn("pollFailureObservations", gate.report.runtime)
+
+    def test_settled_poll_does_not_add_failure_observations_or_captures(self):
+        gate = object.__new__(Gate)
+        gate.report = SimpleNamespace(runtime={})
+        gate.capture = Mock()
+        with patch(
+            "tooling.acceptance.gates.social.public_feed_native.wait_until",
+            return_value=True,
+        ) as wait:
+            gate.assert_poll("bob", "original-poll", "post", [1, 1], [1])
+        self.assertEqual(wait.call_args.kwargs["timeout"], 120)
+        self.assertEqual(gate.report.runtime, {})
+        gate.capture.assert_not_called()
+
     def test_original_circle_suite_declares_block_and_intermediate_epoch_without_extra_launches(self):
         self.assertIn("circle-block", SCENARIOS)
         self.assertIn("circle-account-epoch", SCENARIOS)

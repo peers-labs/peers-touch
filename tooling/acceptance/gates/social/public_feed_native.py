@@ -846,7 +846,38 @@ class Gate(DeviceSearchGate):
                   && Number(el.querySelector('[data-poll-voters]')?.dataset.pollVoters) === (counts.some(n => n > 0) ? 2 : 0)
                   && (!closed || [...el.querySelectorAll('input')].every(e => e.disabled));
             """, element, counts, choices, closed))
-        wait_until(settled, f"{actor} verified poll counts and selection", timeout=120)
+        try:
+            wait_until(settled, f"{actor} verified poll counts and selection", timeout=120)
+        except Exception:
+            # Preserve the actual failed predicate before the Suite releases its
+            # clients. Counts, selection and paint geometry are independent:
+            # a timeout alone cannot identify which original owner failed.
+            def observe() -> None:
+                element = self.visible_element(actor, selector)
+                actual = {"present": False} if element is None else self.clients[actor].execute_script("""
+                    const el = arguments[0], r = el.getBoundingClientRect();
+                    const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+                    return {
+                      present: true, state: el.dataset.pollState,
+                      counts: [...el.querySelectorAll('[data-poll-count]')].map(e => Number(e.dataset.pollCount)),
+                      choices: [...el.querySelectorAll('input')].flatMap((e, i) => e.checked ? [i] : []),
+                      voters: Number(el.querySelector('[data-poll-voters]')?.dataset.pollVoters),
+                      disabled: [...el.querySelectorAll('input')].every(e => e.disabled),
+                      top: r.top, bottom: r.bottom, height: r.height, viewportHeight: innerHeight,
+                      hitInside: Boolean(hit && el.contains(hit)),
+                    };
+                """, element)
+                self.report.runtime.setdefault("pollFailureObservations", []).append({
+                    "actor": actor,
+                    "expected": {"counts": counts, "choices": choices, "closed": closed},
+                    "actual": actual,
+                })
+            cleanup_preserving_primary_failure(
+                observe, self.report, "Poll verification state diagnostic")
+            cleanup_preserving_primary_failure(
+                lambda: self.capture(actor, f"{self.active_social_scenario or 'poll'}-{actor}-verification-failure"),
+                self.report, "Poll verification Native rendering diagnostic")
+            raise
 
     def select_poll(self, actor: str, post_id: str, indices: list[int]) -> None:
         selector = self.poll_selector(post_id)
