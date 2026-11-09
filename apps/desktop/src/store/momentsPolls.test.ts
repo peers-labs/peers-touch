@@ -4,9 +4,9 @@ import { PollPostSchema, PostSchema, AudienceSchema, Audience_Kind } from '../ge
 import { PollResultSchema } from '../gen/proto/domain/social/poll_pb';
 import { useMomentsStore } from './moments';
 
-const api = vi.hoisted(() => ({ vote: vi.fn(), read: vi.fn() }));
+const api = vi.hoisted(() => ({ vote: vi.fn(), read: vi.fn(), commands: vi.fn() }));
 vi.mock('../services/social_api', () => ({ socialVotePoll: api.vote, socialGetMomentResponse: api.read }));
-vi.mock('../services/publicFeedNative', () => ({ resetPublicFeed: vi.fn() }));
+vi.mock('../services/publicFeedNative', () => ({ resetPublicFeed: vi.fn(), readPublicPollCommands: api.commands }));
 vi.mock('../utils/logger', () => ({ log: { warn: vi.fn(), info: vi.fn() } }));
 vi.mock('../storage/desktopClientStorage', () => ({ readDesktopPreferenceSync: vi.fn() }));
 
@@ -42,7 +42,7 @@ describe('Original Moments poll command ownership', () => {
       .mockResolvedValueOnce(create(PollResultSchema, { totalVotes: 1n, userVotes: [0, 1], hasVoted: true }));
     await expect(state().votePoll('post', [0, 1])).rejects.toThrow('FEED_POLL_ADMISSION_PENDING');
     await state().retryPoll('post');
-    expect(api.vote.mock.calls[1]).toEqual(api.vote.mock.calls[0]);
+    expect(api.vote.mock.calls[1].slice(0, 3)).toEqual(api.vote.mock.calls[0].slice(0, 3));
     expect(state().pollCommands.post.state).toBe('committed');
   });
 
@@ -70,5 +70,75 @@ describe('Original Moments poll command ownership', () => {
     const retained = state().postsById.post;
     await state().loadPost('post');
     expect(state().postsById.post).toBe(retained);
+  });
+
+  it('settles the exact journal command after verified readback without another vote or optimistic count', async () => {
+    api.vote.mockImplementationOnce((_post, _options, _operation, identified) => {
+      identified('journal-command');
+      return Promise.reject(new Error('FEED_POLL_ADMISSION_PENDING'));
+    });
+    await expect(state().votePoll('post', [1])).rejects.toThrow('FEED_POLL_ADMISSION_PENDING');
+    expect(state().pollCommands.post.operationId).toBe('journal-command');
+    const verified = post(create(PollResultSchema, { totalVotes: 2n, userVotes: [1], hasVoted: true }));
+    useMomentsStore.setState({ postsById: { post: verified } });
+    api.commands.mockResolvedValue([{ commandId: 'journal-command', targetPostRef: verified.publicFeedRef,
+      options: [1], state: 'committed' }]);
+    await state().reconcilePublicPollCommands();
+    expect(api.commands).toHaveBeenCalledExactlyOnceWith(['journal-command']);
+    expect(api.vote).toHaveBeenCalledTimes(1);
+    expect(state().pollCommands.post.state).toBe('committed');
+    expect(state().postsById.post).toBe(verified);
+  });
+
+  it('does not settle from equal old choices, the wrong target or a missing qualified admission', async () => {
+    api.vote.mockRejectedValue(new Error('FEED_POLL_ADMISSION_PENDING'));
+    await expect(state().votePoll('post', [1])).rejects.toThrow('FEED_POLL_ADMISSION_PENDING');
+    const retained = state().pollCommands.post;
+    const verified = post(create(PollResultSchema, { totalVotes: 2n, userVotes: [1], hasVoted: true }));
+    useMomentsStore.setState({ postsById: { post: verified } });
+    for (const settlements of [[], [{ commandId: 'older', targetPostRef: verified.publicFeedRef, options: [1], state: 'committed' }],
+      [{ commandId: retained.operationId, targetPostRef: 'oss://home/post/2', options: [1], state: 'committed' }],
+      [{ commandId: retained.operationId, targetPostRef: verified.publicFeedRef, options: [0], state: 'committed' }]]) {
+      api.commands.mockResolvedValue(settlements);
+      await state().reconcilePublicPollCommands();
+      expect(state().pollCommands.post).toBe(retained);
+    }
+    api.commands.mockResolvedValue([{ commandId: retained.operationId, targetPostRef: verified.publicFeedRef,
+      options: [1], state: 'rejected', error: 'FEED_POLL_CLOSED' }]);
+    await state().reconcilePublicPollCommands();
+    expect(state().pollCommands.post.state).toBe('rejected');
+    expect(state().postsById.post).toBe(verified);
+  });
+
+  it.each(['reset', 'delete', 'replace', 'retry'] as const)('fences delayed command readback across %s', async action => {
+    api.vote.mockRejectedValueOnce(new Error('FEED_POLL_ADMISSION_PENDING'));
+    await expect(state().votePoll('post', [1])).rejects.toThrow('FEED_POLL_ADMISSION_PENDING');
+    const retained = state().pollCommands.post;
+    let release!: (value: unknown) => void;
+    api.commands.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const query = state().reconcilePublicPollCommands();
+    let retry: Promise<void> | undefined;
+    if (action === 'reset') state().reset();
+    if (action === 'delete') state().evictPost('post');
+    if (action === 'replace') useMomentsStore.setState({ pollCommands: {
+      post: { ...retained, operationId: 'newer-command' },
+    } });
+    if (action === 'retry') {
+      const reply = deferred();
+      api.vote.mockReturnValueOnce(reply.promise);
+      retry = state().retryPoll('post');
+      await state().reconcilePublicPollCommands();
+      expect(api.commands).toHaveBeenCalledTimes(1);
+      release([{ commandId: retained.operationId, targetPostRef: 'oss://home/post/1', options: [1], state: 'committed' }]);
+      await query;
+      expect(state().pollCommands.post.state).toBe('pending');
+      reply.resolve(create(PollResultSchema, { totalVotes: 2n, userVotes: [1] }));
+      await retry;
+      return;
+    }
+    const expected = state().pollCommands;
+    release([{ commandId: retained.operationId, targetPostRef: 'oss://home/post/1', options: [1], state: 'committed' }]);
+    await query;
+    expect(state().pollCommands).toBe(expected);
   });
 });

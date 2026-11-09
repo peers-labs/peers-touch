@@ -56,7 +56,7 @@ import type {
 import { isReadablePrivateMomentProjection } from '../services/privateMomentsNative';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
-import { resetPublicFeed } from '../services/publicFeedNative';
+import { readPublicPollCommands, resetPublicFeed } from '../services/publicFeedNative';
 import { useSessionStore } from './session';
 import { commentDraftKey, useSocialCommentDraftsStore } from './socialCommentDrafts';
 import { loadAllSocialCircleMembers, loadAllSocialCircles } from '../services/socialCirclePages';
@@ -532,6 +532,7 @@ interface MomentsState {
   setCommentLike: (postId: string, commentId: string, liked: boolean) => Promise<void>;
   votePoll: (postId: string, options: readonly number[]) => Promise<void>;
   retryPoll: (postId: string) => Promise<void>;
+  reconcilePublicPollCommands: () => Promise<void>;
 
   /** Re-fetch only one post's reaction projection. Used by post-scoped
    * realtime wakeups so a reaction event never reloads feeds/threads. */
@@ -1309,16 +1310,21 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       return Promise.reject(new Error('FEED_POLL_NOT_POLL'));
     }
     const generation = storeGeneration;
-    const command: PollCommand = {
+    let command: PollCommand = {
       operationId: unresolved && same ? retained.operationId : makeReactionOperationId(),
       options: [...options], state: 'pending',
     };
     set(state => ({ pollCommands: { ...state.pollCommands, [postId]: command } }));
-    const flight = socialVotePoll(postId, command.options, command.operationId).then(result => {
-      if (generation !== storeGeneration) return;
+    const flight = socialVotePoll(postId, command.options, command.operationId, commandId => {
+      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
+      command = { ...command, operationId: commandId };
+      set(state => ({ pollCommands: { ...state.pollCommands, [postId]: command } }));
+    }).then(result => {
+      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
       set(state => {
         const current = state.postsById[postId];
-        if (!current || current.isDeleted || current.content.case !== 'pollPost') return {};
+        if (!current || current.isDeleted || current.content.case !== 'pollPost'
+          || current.publicFeedRef !== post.publicFeedRef) return {};
         return {
           postsById: { ...state.postsById, [postId]: { ...current,
             content: { case: 'pollPost', value: { ...current.content.value, result } } } },
@@ -1326,8 +1332,9 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         };
       });
     }).catch(error => {
-      if (generation !== storeGeneration) return;
-      if (!get().postsById[postId]) return;
+      if (generation !== storeGeneration || get().pollCommands[postId] !== command) return;
+      const current = get().postsById[postId];
+      if (!current || current.isDeleted || current.publicFeedRef !== post.publicFeedRef) return;
       set(state => ({ pollCommands: { ...state.pollCommands, [postId]: {
         ...command, state: pollFailureState(error), error: String(error),
       } } }));
@@ -1347,6 +1354,34 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const retained = get().pollCommands[postId];
     if (!retained) return Promise.reject(new Error('FEED_POLL_TARGET_UNAVAILABLE'));
     return get().votePoll(postId, retained.options);
+  },
+
+  reconcilePublicPollCommands: async () => {
+    const generation = storeGeneration;
+    const candidates = Object.entries(get().pollCommands).filter(([postId, command]) => {
+      const post = get().postsById[postId];
+      return !pollFlights.has(postId) && !['pending', 'committed', 'rejected'].includes(command.state)
+        && post && !post.isDeleted && post.content.case === 'pollPost' && Boolean(post.publicFeedRef);
+    }).map(([postId, command]) => ({ postId, command, ref: get().postsById[postId].publicFeedRef }));
+    if (!candidates.length) return;
+    const settlements = await readPublicPollCommands(candidates.map(({ command }) => command.operationId));
+    if (generation !== storeGeneration) return;
+    set(state => {
+      const pollCommands = { ...state.pollCommands };
+      let changed = false;
+      for (const { postId, command, ref } of candidates) {
+        const post = state.postsById[postId];
+        if (pollFlights.has(postId) || pollCommands[postId] !== command || !post
+          || post.isDeleted || post.publicFeedRef !== ref || post.content.case !== 'pollPost') continue;
+        const settlement = settlements.find(result => result.commandId === command.operationId
+          && result.targetPostRef === ref && result.options.length === command.options.length
+          && result.options.every((option, index) => option === command.options[index]));
+        if (!settlement) continue;
+        pollCommands[postId] = { ...command, state: settlement.state, error: settlement.error };
+        changed = true;
+      }
+      return changed ? { pollCommands } : {};
+    });
   },
 
   refreshPostReactions: async (postId) => {

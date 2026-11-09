@@ -236,7 +236,8 @@ pub fn social_public_feed_submit(state: State<'_, Arc<AppState>>, window: Window
 /// Reopen retained intent after a process restart or a lost ACK. Returning the
 /// original payload/command lets submit reuse the exact journal event.
 #[tauri::command]
-pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window) -> Result<Value, String> {
+pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window,
+    command_ids: Option<Vec<String>>) -> Result<Value, String> {
     let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
     let active = state.sessions.get(window.label()).ok_or("FEED_AUTHENTICATION_REQUIRED")?;
     if active.jwt.is_empty() { return Err("FEED_AUTHENTICATION_REQUIRED".into()); }
@@ -246,7 +247,7 @@ pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window
     let root = identity.verifying_key.to_bytes();
     let store = PublicFeedStore::open(actor)?;
     if store.authorization(actor, &root)?.is_none() {
-        return Ok(json!({"state": "NOT_INITIALIZED", "pending": [], "pendingAdmissions": []}));
+        return Ok(json!({"state": "NOT_INITIALIZED", "pending": [], "pendingAdmissions": [], "confirmedPollCommands": []}));
     }
     let head = store.head(actor)?;
     let pending: Vec<Value> = store.pending(actor, &root)?.into_iter().map(|(command, event)| {
@@ -259,6 +260,15 @@ pub fn social_public_feed_status(state: State<'_, Arc<AppState>>, window: Window
             "payloadB64": STANDARD.encode(&event.payload), "eventB64": STANDARD.encode(event.encode_to_vec()),
             "sourceState": "COMMITTED", "state": "PENDING_ADMISSION"})
     }).collect();
+    let confirmed_poll_commands: Vec<Value> = store.confirmed_poll_commands(actor,&root,
+        &command_ids.unwrap_or_default(),&|home| poll_station_key(&state,home))?
+        .into_iter().map(|(command,event,admission)| {
+            json!({"commandId": command, "actorPtid": actor,
+                "kind": event.statement.as_ref().map(|s| s.kind),
+                "payloadB64": STANDARD.encode(&event.payload),
+                "pollResult": admission.statement.as_ref().map(|s| s.result)})
+        }).collect();
     Ok(json!({"headB64": STANDARD.encode(head.encode_to_vec()), "sequence": head.sequence.to_string(),
-        "pending": pending, "pendingAdmissions": pending_admissions}))
+        "pending": pending, "pendingAdmissions": pending_admissions,
+        "confirmedPollCommands": confirmed_poll_commands}))
 }

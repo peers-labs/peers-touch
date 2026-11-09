@@ -40,7 +40,18 @@ export function publicFeedErrorKey(error: unknown): string {
   return 'moments.publicFeed.retry';
 }
 type Pending = { commandId: string; kind: FeedEventKind; payloadB64: string };
-type Status = { pending?: Pending[]; pendingAdmissions?: Pending[] };
+type ConfirmedPollCommand = Pending & { actorPtid: string; pollResult: FeedPollAdmissionResult };
+type Status = { pending?: Pending[]; pendingAdmissions?: Pending[]; confirmedPollCommands?: ConfirmedPollCommand[] };
+export type PublicPollCommandSettlement = {
+  commandId: string; targetPostRef: string; options: readonly number[];
+  state: 'committed' | 'rejected'; error?: string;
+};
+const pollAdmissionErrors: Partial<Record<FeedPollAdmissionResult, string>> = {
+  [FeedPollAdmissionResult.CLOSED]: 'FEED_POLL_CLOSED',
+  [FeedPollAdmissionResult.INVALID_SELECTION]: 'FEED_POLL_INVALID_SELECTION',
+  [FeedPollAdmissionResult.DEFINITION_CHANGED]: 'FEED_POLL_DEFINITION_CHANGED',
+  [FeedPollAdmissionResult.TARGET_UNAVAILABLE]: 'FEED_POLL_TARGET_UNAVAILABLE',
+};
 type NativeSubmission = {
   state: string; sourceState?: string; bundleB64: string; homeStationPeerId: string;
   pollAdmissionB64?: string; errorCode?: string;
@@ -92,19 +103,47 @@ export async function resumePublicFeed(): Promise<void> {
   }
 }
 
+// Native re-verifies the exact journal event and Home receipt, including those
+// already imported by a feed read and no longer present in pendingAdmissions.
+export async function readPublicPollCommands(commandIds: readonly string[]): Promise<PublicPollCommandSettlement[]> {
+  const expected = generation;
+  const actor = useSessionStore.getState().currentUser?.actorPtid;
+  const settlements: PublicPollCommandSettlement[] = [];
+  for (let offset = 0; offset < commandIds.length; offset += 64) {
+    const batch = commandIds.slice(offset, offset + 64);
+    const status = await invoke<Status>('social_public_feed_status', { commandIds: batch });
+    if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
+    for (const confirmed of status.confirmedPollCommands ?? []) {
+      const payload = fromBinary(FeedPayloadSchema, bytes(confirmed.payloadB64));
+      if (confirmed.actorPtid !== actor || !batch.includes(confirmed.commandId)
+        || confirmed.kind !== FeedEventKind.POLL_BALLOT_SET || payload.mutation.case !== 'pollBallot') {
+        throw new Error('FEED_INVALID_RESPONSE');
+      }
+      const error = pollAdmissionErrors[confirmed.pollResult];
+      if (confirmed.pollResult !== FeedPollAdmissionResult.ACCEPTED && !error) throw new Error('FEED_INVALID_RESPONSE');
+      settlements.push({ commandId: confirmed.commandId,
+        targetPostRef: payload.mutation.value.targetPostRef, options: payload.mutation.value.optionIndices,
+        state: error ? 'rejected' : 'committed', error });
+    }
+  }
+  return settlements;
+}
+
 // Reuse a retained command only for the same intent. Native is the sole owner
 // of sequence, key selection and exact retry bytes, including process restart.
-export async function submitPublicFeed(kind: FeedEventKind, payload: FeedPayload, operationId?: string): Promise<FeedPayload> {
+export async function submitPublicFeed(kind: FeedEventKind, payload: FeedPayload, operationId?: string,
+  onCommandId?: (commandId: string) => void): Promise<FeedPayload> {
   const expected = generation;
   const flight = writeTail.catch(() => undefined).then(() => {
     if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
-    return submit(kind, payload, operationId);
+    return submit(kind, payload, operationId, onCommandId);
   });
   writeTail = flight;
   return flight;
 }
 
-async function submit(kind: FeedEventKind, payload: FeedPayload, operationId?: string): Promise<FeedPayload> {
+async function submit(kind: FeedEventKind, payload: FeedPayload, operationId?: string,
+  onCommandId?: (commandId: string) => void): Promise<FeedPayload> {
   const expected = generation;
   const status = await invoke<Status>('social_public_feed_status');
   if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
@@ -133,6 +172,8 @@ async function submit(kind: FeedEventKind, payload: FeedPayload, operationId?: s
       break;
     }
   }
+  onCommandId?.(commandId);
+  if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
   const input = { command_id: commandId, kind, payload_b64: feedBase64(toBinary(FeedPayloadSchema, payload)) };
   await invoke('social_public_feed_prepare', { input });
   if (expected !== generation) throw new Error('MOMENTS_SESSION_STALE');
@@ -150,14 +191,8 @@ async function submit(kind: FeedEventKind, payload: FeedPayload, operationId?: s
       throw new Error(result.errorCode ?? 'FEED_POLL_ADMISSION_PENDING');
     }
     if (!admission?.statement) throw new Error('FEED_INVALID_RESPONSE');
-    const errors: Partial<Record<FeedPollAdmissionResult, string>> = {
-      [FeedPollAdmissionResult.CLOSED]: 'FEED_POLL_CLOSED',
-      [FeedPollAdmissionResult.INVALID_SELECTION]: 'FEED_POLL_INVALID_SELECTION',
-      [FeedPollAdmissionResult.DEFINITION_CHANGED]: 'FEED_POLL_DEFINITION_CHANGED',
-      [FeedPollAdmissionResult.TARGET_UNAVAILABLE]: 'FEED_POLL_TARGET_UNAVAILABLE',
-    };
     if (admission.statement.result !== FeedPollAdmissionResult.ACCEPTED) {
-      throw new Error(errors[admission.statement.result] ?? 'FEED_INVALID_RESPONSE');
+      throw new Error(pollAdmissionErrors[admission.statement.result] ?? 'FEED_INVALID_RESPONSE');
     }
     if (result.state !== 'COMMITTED') throw new Error('FEED_INVALID_RESPONSE');
   }

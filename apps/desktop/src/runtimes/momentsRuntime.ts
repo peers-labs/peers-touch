@@ -405,6 +405,8 @@ async function refreshMomentsProjectionNow(
   }
   try {
     await moments.syncProjection(label);
+    if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
+    await moments.reconcilePublicPollCommands();
   } catch (error) {
     if (!isCurrentScope(scope)) throw new MomentsRuntimeScopeChangedError();
     if (!/\bFEED_[A-Z_]+\b/.test(String(error))) throw error;

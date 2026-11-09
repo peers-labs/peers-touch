@@ -121,6 +121,14 @@ duplicate committed 或 verified readback；HTTP 成功码和 optimistic toggle 
 定义变化、已截止、结果未知、提交后回读等待、设备写权拒绝和身份已替换。
 不把超时解释为未提交，不把首次无结果解释为永久不可读。
 
+原 Moments Runtime 在原 Feed 恢复与验签回读后，将未确定的客户端投票命令交回
+原 Native journal 查询。查询绑定当前 Actor、原 command ID、已确认链内事件及
+作者 Home 的验签接纳回执；回读已取得回执后，即使该事件退出 pending 列表，
+仍可核定原命令。Store 仅结算同一目标、完整选择集合和仍保留的命令，不能用
+汇总或相同旧选择推导提交成功。adapter 复用重启前 journal 命令时，将实际
+command ID 交回原 Store。进行中提交、命令替换、目标删除与身份变化均栅栏
+迟到查询；Runtime 的事件回读与周期协调消费同一路径，不增加第二套重试队列。
+
 Mobile 的公开写权仍按 AD-08 拒绝；此次为既有 Search 验收接入真实 Desktop
 签名作者。由原 Mobile Search Provisioner 在 Suite 准备期组合现有 Desktop
 启动/身份/build Owner，提前创建一个独立作者并一次性准备公开帖子和历史评论。

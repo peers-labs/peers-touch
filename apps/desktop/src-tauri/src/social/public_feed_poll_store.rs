@@ -172,6 +172,42 @@ pub(super) fn remember_pending_admission(connection: &Connection, event: &FeedEv
 }
 
 impl PublicFeedStore {
+    /// Query only the caller's exact retained commands. An equal older ballot
+    /// cannot settle a newer command, and a source ACK alone is insufficient.
+    pub(in crate::social) fn confirmed_poll_commands(&self, actor: &str, root: &[u8],
+        commands: &[String], keys: &PollKeyResolver<'_>)
+        -> Result<Vec<(String,FeedEvent,FeedPollAdmission)>,String> {
+        if commands.len() > 64 || commands.iter().any(|command|
+            command.is_empty() || command.len() > 128 || command.trim() != command) {
+            return Err("FEED_INVALID".into());
+        }
+        if commands.is_empty() { return Ok(Vec::new()); }
+        let bundle = self.authorization(actor,root)?.ok_or("FEED_WRITER_NOT_AUTHORIZED")?;
+        let grant = bundle.writer_grant.as_ref().ok_or("FEED_INVALID")?;
+        let head = Self::verified_head(&self.connection,actor)?;
+        let mut confirmed = Vec::new();
+        for command in commands {
+            let row: Option<(u64,Vec<u8>,bool)> = self.connection.query_row(
+                "SELECT sequence,event,confirmed FROM social_feed_journal
+                 WHERE actor=?1 AND chain=?2 AND command_id=?3",
+                params![actor,feed::PUBLIC_CHAIN_ID,command],|r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))
+                .optional().map_err(|e| e.to_string())?;
+            let Some((sequence,wire,true)) = row else { continue; };
+            let event: FeedEvent = feed::decode_canonical(&wire).map_err(|e| e.to_string())?;
+            feed::verify_event(&event,grant).map_err(|e| e.to_string())?;
+            let s = event.statement.as_ref().ok_or("FEED_INVALID")?;
+            if s.actor_ptid != actor || s.chain_id != feed::PUBLIC_CHAIN_ID
+                || s.sequence != sequence || sequence > head.sequence
+                || s.kind != FeedEventKind::PollBallotSet as i32 {
+                return Err("FEED_INVALID".into());
+            }
+            if let Some(admission) = verified_admission(&self.connection,&event,keys)? {
+                confirmed.push((command.clone(),event,admission));
+            }
+        }
+        Ok(confirmed)
+    }
+
     pub(in crate::social) fn pending_poll_admissions(&self, actor: &str) -> Result<Vec<(String,FeedEvent)>,String> {
         let head = Self::verified_head(&self.connection,actor)?;
         let mut query = self.connection.prepare(

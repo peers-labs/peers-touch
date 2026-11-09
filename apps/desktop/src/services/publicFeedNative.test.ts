@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import {
   FeedBundleSchema, FeedEventSchema, FeedEventStatementSchema, FeedEventKind,
-  FeedPayloadSchema, FeedPostMutationSchema, FeedPollBallotMutationSchema, FeedReactionMutationSchema,
+  FeedPayloadSchema, FeedPostMutationSchema, FeedPollBallotMutationSchema, FeedReactionMutationSchema, FeedPollAdmissionResult,
 } from '../gen/proto/domain/social/feed_log_pb';
 import {
   AudienceSchema, Audience_Kind, CreatePostRequestSchema, CreateTextPostRequestSchema,
@@ -16,7 +16,7 @@ vi.mock('./desktop_api', () => ({ invokeRustProto: mocks.readback }));
 
 import {
   feedBase64, resetPublicFeed, resumePublicFeed, submitPublicFeed,
-  verifyPublicPosts, committedPublicPost,
+  verifyPublicPosts, committedPublicPost, readPublicPollCommands,
 } from './publicFeedNative';
 import { socialCreateMoment, socialCreateComment, socialReact, socialUnreact, socialSetCommentLike, socialUpdateMomentText, socialDeleteMoment } from './social_api';
 
@@ -117,6 +117,57 @@ describe('Public Feed Native adapter source regressions', () => {
       value: create(FeedPollBallotMutationSchema, { targetPostRef: 'oss://home-a/post/42',
         definitionHash: new Uint8Array(32), optionIndices: [1] }) } });
     await expect(submitPublicFeed(FeedEventKind.POLL_BALLOT_SET, changed)).rejects.toThrow('FEED_POLL_ADMISSION_PENDING');
+  });
+
+  it('publishes the actual retained command identity before its admission remains pending', async () => {
+    const ballot = create(FeedPayloadSchema, { mutation: { case: 'pollBallot',
+      value: create(FeedPollBallotMutationSchema, { targetPostRef: 'oss://home-a/post/42',
+        definitionHash: new Uint8Array(32), optionIndices: [1] }) } });
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (name: string, args?: { input: Input }) => {
+      if (name === 'social_public_feed_status') return { pendingAdmissions: [{
+        commandId: 'journal-command', kind: FeedEventKind.POLL_BALLOT_SET,
+        payloadB64: feedBase64(toBinary(FeedPayloadSchema, ballot)),
+      }] };
+      const result = await original(name,args);
+      return name === 'social_public_feed_submit'
+        ? { ...result, sourceState: 'COMMITTED', state: 'PENDING_ADMISSION' } : result;
+    });
+    const identified = vi.fn();
+    await expect(submitPublicFeed(FeedEventKind.POLL_BALLOT_SET, ballot, 'new-renderer-command', identified))
+      .rejects.toThrow('FEED_POLL_ADMISSION_PENDING');
+    expect(identified).toHaveBeenCalledExactlyOnceWith('journal-command');
+  });
+
+  it('queries an exact admitted command after it has left the Native pending list without resubmitting', async () => {
+    const ballot = create(FeedPayloadSchema, { mutation: { case: 'pollBallot',
+      value: create(FeedPollBallotMutationSchema, { targetPostRef: 'oss://home-a/post/42',
+        definitionHash: new Uint8Array(32), optionIndices: [1] }) } });
+    const confirmed = { commandId: 'journal-command', actorPtid: 'ptid:alice',
+      kind: FeedEventKind.POLL_BALLOT_SET, payloadB64: feedBase64(toBinary(FeedPayloadSchema, ballot)),
+      pollResult: FeedPollAdmissionResult.ACCEPTED };
+    mocks.invoke.mockResolvedValue({ pending: [], pendingAdmissions: [], confirmedPollCommands: [confirmed] });
+    expect(await readPublicPollCommands(['journal-command'])).toEqual([{
+      commandId: 'journal-command', targetPostRef: 'oss://home-a/post/42',
+      options: [1], state: 'committed', error: undefined,
+    }]);
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('social_public_feed_status', { commandIds: ['journal-command'] });
+    mocks.invoke.mockResolvedValue({ confirmedPollCommands: [{ ...confirmed, pollResult: FeedPollAdmissionResult.CLOSED }] });
+    expect((await readPublicPollCommands(['journal-command']))[0]).toMatchObject({ state: 'rejected', error: 'FEED_POLL_CLOSED' });
+    for (const invalid of [{ ...confirmed, actorPtid: 'ptid:bob' }, { ...confirmed, commandId: 'older-command' },
+      { ...confirmed, pollResult: FeedPollAdmissionResult.UNSPECIFIED }]) {
+      mocks.invoke.mockResolvedValue({ confirmedPollCommands: [invalid] });
+      await expect(readPublicPollCommands(['journal-command'])).rejects.toThrow('FEED_INVALID_RESPONSE');
+    }
+  });
+
+  it('fences a delayed command query after reset', async () => {
+    let release!: (value: unknown) => void;
+    mocks.invoke.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const flight = readPublicPollCommands(['journal-command']);
+    resetPublicFeed();
+    release({ confirmedPollCommands: [] });
+    await expect(flight).rejects.toThrow('MOMENTS_SESSION_STALE');
   });
 
   it('fences delayed Native completion after an account reset', async () => {

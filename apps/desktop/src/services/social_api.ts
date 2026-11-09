@@ -541,9 +541,10 @@ export async function socialSetCommentLike(postId: string, commentId: string, li
   return verifiedPublicCommentLike(commentId);
 }
 
-export async function socialVotePoll(postId: string, options: readonly number[], operationId: string) {
+export async function socialVotePoll(postId: string, options: readonly number[], operationId: string,
+  onCommandId?: (commandId: string) => void) {
   const payload = await publicPollBallotPayload(postId, options);
-  await submitPublicFeed(FeedEventKind.POLL_BALLOT_SET, payload, operationId);
+  await submitPublicFeed(FeedEventKind.POLL_BALLOT_SET, payload, operationId, onCommandId);
   return verifiedPublicPoll(postId);
 }
 

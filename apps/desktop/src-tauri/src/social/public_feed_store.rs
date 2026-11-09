@@ -814,6 +814,8 @@ mod tests {
         store.confirm(actor,&root,"ballot",&head).unwrap();
         assert!(store.pending(actor,&root).unwrap().is_empty());
         assert_eq!(store.pending_poll_admissions(actor).unwrap(),vec![("ballot".into(),issued.events[0].clone())]);
+        assert!(store.confirmed_poll_commands(actor,&root,&["ballot".into()],
+            &|_| Err("no Home receipt yet".into())).unwrap().is_empty());
         assert_eq!(store.stage(actor,&root,"ballot",9,&ballot,now+2,&writer).unwrap(),issued);
         assert_eq!(store.stage(actor,&root,"other-ballot",9,&ballot,now+2,&writer).unwrap_err(),"FEED_POLL_ADMISSION_PENDING");
         let reaction: FeedPayload = feed::decode_canonical(&bundle.events[0].payload).unwrap();
@@ -836,6 +838,12 @@ mod tests {
         store.retain_poll_admission(&issued.events[0],&admission,&keys).unwrap();
         assert!(store.pending_poll_admissions(actor).unwrap().is_empty());
         assert_eq!(store.poll_admission_for(&issued.events[0],&keys).unwrap(),Some(admission.clone()));
+        assert_eq!(store.confirmed_poll_commands(actor,&root,&["ballot".into(),"missing".into()],&keys).unwrap(),
+            vec![("ballot".into(),issued.events[0].clone(),admission.clone())]);
+        assert!(store.confirmed_poll_commands(actor,&root,&["create".into()],&keys).is_err());
+        assert!(store.confirmed_poll_commands(actor,&[9;32],&["ballot".into()],&keys).is_err());
+        assert!(store.confirmed_poll_commands(actor,&root,&["ballot".into()],
+            &|_| Ok(("foreign".into(),vec![8;32]))).is_err());
         assert!(store.poll_admission_for(&issued.events[0],&|_| Ok(("foreign".into(),vec![8;32]))).is_err());
         let receipt = FeedInteraction {genesis: issued.genesis.clone(),writer_grant: issued.writer_grant.clone(),
             event: Some(issued.events[0].clone()),poll_admission: Some(admission.clone())};
