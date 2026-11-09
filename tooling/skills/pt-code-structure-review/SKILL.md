@@ -98,7 +98,8 @@ conformance. Cross-model claims require a separate evaluation run.
    python3 tooling/scripts/review/code_structure_decision.py record \
      --range <base>...<head> <<'JSON'
    {
-     "findings": []
+     "findings": [],
+     "signalDispositions": []
    }
    JSON
    ```
@@ -168,9 +169,25 @@ The recorder accepts this semantic payload:
       "correction": "Move the transition into one owner.",
       "exception": "none"
     }
+  ],
+  "signalDispositions": [
+    {
+      "signal": "SIGNAL_ID@path/to/source.ts",
+      "resolution": "finding",
+      "findingId": "stable-local-id",
+      "rationale": ""
+    }
   ]
 }
 ```
+
+Both top-level fields are required. Every prepared advisory signal needs one
+disposition. Use `resolution: "finding"` with a finding on the same file and an
+empty rationale, or `resolution: "accepted-advisory"` with an empty findingId
+and a concrete nonempty rationale. Empty dispositions are valid only when the
+prepared target has no signals. `signalsReviewed` alone does not dispose them.
+Set `PT_ACCEPTANCE_ARTIFACT_ROOT` to the selected evidence root when the current
+environment requires it; the recorder owns the output path and source binding.
 
 The recorded decision adds:
 

@@ -13,10 +13,30 @@ from typing import Iterable, Mapping
 
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _MATRIX_RESULT_DOMAIN = "pt.acceptance.finalization.platform-matrix-result.v1"
+DEVELOPMENT_RESULT_KINDS = MappingProxyType({
+    "SOURCE_CHECK": "development-source-result",
+    "STRUCTURAL_CHECK": "development-structural-result",
+    "UX_REVIEW": "development-ux-result",
+    "FUNCTIONAL_CHECK": "development-functional-result",
+})
 
 
 class ResultContractError(ValueError):
     """A canonical result contract is incomplete or internally inconsistent."""
+
+
+def development_verification_class(result: Mapping[str, object]) -> str:
+    """Preserve declared check strength; local checks do not imply a Journey."""
+    declared = result.get("verificationClass")
+    if declared is not None:
+        if not isinstance(declared, str) or declared not in DEVELOPMENT_RESULT_KINDS:
+            raise ResultContractError("invalid development verificationClass")
+        return declared
+    if result.get("tier") == "ci-structure":
+        return "STRUCTURAL_CHECK"
+    if result.get("tier") == "env-evidence" or result.get("environment", "local") != "local":
+        return "FUNCTIONAL_CHECK"
+    return "SOURCE_CHECK"
 
 
 class CanonicalResultTuple(Enum):

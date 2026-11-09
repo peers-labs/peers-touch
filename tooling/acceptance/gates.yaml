@@ -9,6 +9,92 @@
       "description": "Validate Social Search contract injection, original read authority and source-bound native proof requirements; source evidence only."
     },
     "social-content-search-desktop-native-e2e": {
+      "e2e": {
+        "journeys": [
+          {
+            "id": "mixed-search",
+            "uses": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.mixed"
+            ]
+          },
+          {
+            "id": "original-open-return",
+            "uses": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.original_open_return"
+            ]
+          },
+          {
+            "id": "current-policy",
+            "uses": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.policy"
+            ]
+          },
+          {
+            "id": "session-fence",
+            "uses": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.fence"
+            ]
+          }
+        ],
+        "implementations": [
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.run",
+            "purpose": "Prepare and reuse the original two-client Search Suite and finalize its owned cleanup",
+            "lifetime": "suite",
+            "dependsOn": [
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social",
+              "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.finish_cleanup"
+            ],
+            "invalidatedBy": ["source", "environment", "fixture", "client", "session", "oracle", "action-plan", "verification-mode"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social",
+            "purpose": "Seed the existing public and private Social resources once before scenarios",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "fixture", "client", "session", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.finish_cleanup",
+            "purpose": "Close the original capability channel and clients and finalize the Suite lifecycle",
+            "lifetime": "suite",
+            "dependsOn": [],
+            "invalidatedBy": ["source", "environment", "client", "session", "oracle", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.mixed",
+            "purpose": "Prove mixed source Search and current public/private post and comment results",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social"],
+            "invalidatedBy": ["source", "session", "oracle", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.original_open_return",
+            "purpose": "Open original post/comment anchors and restore the real Search return context",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social"],
+            "invalidatedBy": ["source", "client", "session", "oracle", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.policy",
+            "purpose": "Prove source outage recovery, deletion and block invalidation at original read owners",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social"],
+            "invalidatedBy": ["source", "environment", "session", "oracle", "action-plan"]
+          },
+          {
+            "ref": "tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.fence",
+            "purpose": "Prove private Search concealment across account switching and logout",
+            "lifetime": "scenario",
+            "dependsOn": ["tooling/acceptance/gates/social/content_search_desktop.py#SocialContentSearchDesktopGate.seed_social"],
+            "invalidatedBy": ["source", "fixture", "client", "session", "oracle", "action-plan"]
+          }
+        ]
+      },
       "argv": ["python3", "-m", "tooling.acceptance.gates.social.content_search_desktop"],
       "timeout_seconds": 1200,
       "environment": "chat-storage-native",
