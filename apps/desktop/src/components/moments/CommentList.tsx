@@ -23,6 +23,7 @@ import {
 } from './mentions/socialMentionModel';
 import { useSocialMentionCandidates } from './mentions/useSocialMentionCandidates';
 import { SocialMentionPopover } from './mentions/SocialMentionPopover';
+import { resolvePrivateCommentComposerAction } from './privateCommentComposerState';
 import { MomentCommentAuthorName } from './MomentCommentAuthorName';
 import { MomentAuthorTrigger } from './MomentAuthorTrigger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -330,12 +331,14 @@ export function CommentList({
 
   const composerAction: ComposerAction = useMemo(() => {
     if (!onRetry) return 'submit';
-    if (committedPending) return 'reconcile';
-    if (composerState === 'COMMENT_FAILED' || composerState === 'COMMENT_RATE_LIMITED') {
-      return 'retry';
-    }
-    return 'submit';
-  }, [committedPending, composerState, onRetry]);
+    return resolvePrivateCommentComposerAction({
+      state: composerState,
+      publicationState: composerPublicationState,
+      retryDeadlinePending: withinRetryDeadline,
+      text,
+      draftText: composerDraftText,
+    });
+  }, [composerDraftText, composerPublicationState, composerState, onRetry, text, withinRetryDeadline]);
 
   const composerDisabled = parentUnavailable
     || nativePending
