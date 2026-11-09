@@ -1,0 +1,575 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Cryptography architecture",
+    "subtitle": "Messages use end-to-end keys (devices only); login uses a Station↔Broker shared secret injected at make station via git-crypt→SSH. Two distinct key kinds.",
+    "locale": "en",
+    "output": "peers-multicenter-architecture-20261021/crypto.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "flow",
+        "focus": [
+          "sender",
+          "encrypt",
+          "station",
+          "relay",
+          "sfu",
+          "federation",
+          "decrypt",
+          "receiver"
+        ],
+        "label": "End-to-end data flow",
+        "note": "Every service in the middle touches only ciphertext; plaintext exists only on the two devices."
+      },
+      {
+        "id": "keys",
+        "focus": [
+          "sender-key",
+          "pair-key",
+          "server-nokey",
+          "receiver-key",
+          "local-db",
+          "local-key",
+          "host-secrets",
+          "deploy-secrets"
+        ],
+        "label": "Who holds the keys",
+        "note": "End-to-end keys stay on devices; servers hold none; at-rest/deployment keys are layered below."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "sender",
+      "type": "frontend",
+      "label": "Sending device",
+      "sublabel": "Plaintext",
+      "tag": "Trusted end",
+      "pos": [
+        16,
+        150
+      ],
+      "size": [
+        150,
+        92
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src",
+          "label": "client",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "encrypt",
+      "type": "security",
+      "label": "E2E encrypt",
+      "sublabel": "MLS · HPKE · X25519",
+      "tag": "On device",
+      "pos": [
+        216,
+        150
+      ],
+      "size": [
+        170,
+        92
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/mls/provider.rs",
+          "label": "provider.rs",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "station",
+      "type": "cloud",
+      "label": "Home Station",
+      "sublabel": "Relays / stores ciphertext",
+      "tag": "No content access",
+      "pos": [
+        430,
+        92
+      ],
+      "size": [
+        168,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "sfu",
+      "type": "messagebus",
+      "label": "Media SFU / TURN",
+      "sublabel": "Forwards encrypted media",
+      "tag": "No content access",
+      "pos": [
+        624,
+        92
+      ],
+      "size": [
+        168,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/p2p",
+          "label": "p2p",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "external",
+      "label": "Relay",
+      "sublabel": "Opaque Circuit relay",
+      "tag": "No content access",
+      "pos": [
+        430,
+        230
+      ],
+      "size": [
+        168,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "federation",
+      "type": "database",
+      "label": "Federation peer",
+      "sublabel": "Stores ciphertext · verifies",
+      "tag": "No content access",
+      "pos": [
+        624,
+        230
+      ],
+      "size": [
+        168,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/domain/repository.go",
+          "label": "repository.go",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "decrypt",
+      "type": "security",
+      "label": "E2E decrypt",
+      "sublabel": "Recipient Ed25519 key",
+      "tag": "On device",
+      "pos": [
+        838,
+        150
+      ],
+      "size": [
+        170,
+        92
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/Cargo.toml",
+          "label": "messaging-core",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "receiver",
+      "type": "frontend",
+      "label": "Receiving device",
+      "sublabel": "Plaintext",
+      "tag": "Trusted end",
+      "pos": [
+        1058,
+        150
+      ],
+      "size": [
+        150,
+        92
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src",
+          "label": "client",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "sender-key",
+      "type": "security",
+      "label": "Held by sender",
+      "sublabel": "Own private key · on device",
+      "tag": "Key holder",
+      "pos": [
+        16,
+        404
+      ],
+      "size": [
+        150,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/station-trust/Cargo.toml",
+          "label": "station-trust",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "pair-key",
+      "type": "security",
+      "label": "E2E session key",
+      "sublabel": "X25519 · derived on both ends",
+      "tag": "Key holder",
+      "pos": [
+        216,
+        404
+      ],
+      "size": [
+        170,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/mls/provider.rs",
+          "label": "provider.rs",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "server-nokey",
+      "type": "external",
+      "label": "Servers: no content key",
+      "sublabel": "No E2E message key",
+      "tag": "No key",
+      "pos": [
+        430,
+        404
+      ],
+      "size": [
+        168,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/oauth/legacy.go",
+          "label": "legacy.go",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "receiver-key",
+      "type": "security",
+      "label": "Held by receiver",
+      "sublabel": "Recipient private key · on device",
+      "tag": "Key holder",
+      "pos": [
+        838,
+        404
+      ],
+      "size": [
+        170,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/station-trust/Cargo.toml",
+          "label": "station-trust",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "local-db",
+      "type": "database",
+      "label": "On-device database",
+      "sublabel": "Full-disk SQLCipher",
+      "tag": "At rest",
+      "pos": [
+        150,
+        548
+      ],
+      "size": [
+        200,
+        66
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/Cargo.toml",
+          "label": "Cargo.toml",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "local-key",
+      "type": "database",
+      "label": "Local DB key",
+      "sublabel": "OS keychain/DPAPI · Argon2id",
+      "tag": "At rest",
+      "pos": [
+        372,
+        548
+      ],
+      "size": [
+        210,
+        66
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs",
+          "label": "key_provider.rs",
+          "line": 1,
+          "end_line": 100
+        }
+      ]
+    },
+    {
+      "id": "host-secrets",
+      "type": "backend",
+      "label": "Station/Relay host secrets",
+      "sublabel": "AUTH/DB · host-generated · TLS/Noise",
+      "tag": "Server",
+      "pos": [
+        604,
+        548
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "tooling/docker/entrypoint.sh",
+          "label": "entrypoint.sh",
+          "line": 1,
+          "end_line": 90
+        }
+      ]
+    },
+    {
+      "id": "deploy-secrets",
+      "type": "backend",
+      "label": "Deployment secret delivery",
+      "sublabel": "git-crypt → SSH/TLS → 0600",
+      "tag": "Server",
+      "pos": [
+        856,
+        548
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "tooling/scripts/deploy",
+          "label": "deploy",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "broker",
+      "type": "cloud",
+      "label": "OAuth Broker (Vercel)",
+      "sublabel": "Login broker · hosted externally",
+      "tag": "Login service",
+      "pos": [
+        635,
+        404
+      ],
+      "size": [
+        168,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/oauth2-client",
+          "label": "oauth2-client",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Untrusted transit zone: ciphertext only, no keys held",
+      "wraps": [
+        "station",
+        "sfu",
+        "relay",
+        "federation"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "encrypt",
+      "to": "station",
+      "variant": "security",
+      "route": "orthogonal-h",
+      "label": "Ciphertext"
+    },
+    {
+      "from": "encrypt",
+      "to": "relay",
+      "variant": "security",
+      "route": "orthogonal-h",
+      "label": "Ciphertext"
+    },
+    {
+      "from": "station",
+      "to": "sfu",
+      "variant": "security",
+      "route": "straight"
+    },
+    {
+      "from": "relay",
+      "to": "federation",
+      "variant": "dashed",
+      "route": "straight"
+    },
+    {
+      "from": "sfu",
+      "to": "decrypt",
+      "variant": "security",
+      "route": "orthogonal-h",
+      "label": "Ciphertext"
+    },
+    {
+      "from": "federation",
+      "to": "decrypt",
+      "variant": "dashed",
+      "route": "orthogonal-h",
+      "label": "Signed"
+    },
+    {
+      "from": "sender",
+      "to": "encrypt",
+      "variant": "emphasis",
+      "route": "straight",
+      "label": "Plaintext"
+    },
+    {
+      "from": "decrypt",
+      "to": "receiver",
+      "variant": "emphasis",
+      "route": "straight",
+      "label": "Plaintext"
+    },
+    {
+      "from": "sender",
+      "to": "sender-key",
+      "variant": "default",
+      "route": "straight",
+      "label": "holds",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "encrypt",
+      "to": "pair-key",
+      "variant": "default",
+      "route": "straight",
+      "label": "uses",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "decrypt",
+      "to": "receiver-key",
+      "variant": "default",
+      "route": "straight",
+      "label": "uses",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "receiver-key",
+      "to": "receiver",
+      "variant": "default",
+      "route": "orthogonal-h",
+      "label": "holds"
+    },
+    {
+      "from": "broker",
+      "to": "host-secrets",
+      "variant": "security",
+      "label": "same bridge secret (HMAC)",
+      "route": "orthogonal-v",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Two key kinds — do not conflate",
+      "items": [
+        "Content keys (MLS/HPKE/Ed25519) protect messages and live only on the two end devices; middle services hold none (second row).",
+        "The login bridge key PEERS_OAUTH_BRIDGE_SECRET does not protect content: it is a shared HMAC held by both Station and the OAuth Broker to verify login callbacks."
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "How the bridge key reaches Station (make station)",
+      "items": [
+        "The authoritative value is configured at the OAuth Broker (Vercel); the same value is written to the env repo per-role git-crypt runtime.env.",
+        "At make station, deploy ships it over SSH/TLS with the namespaced runtime.env to the host (0600), and compose injects it into the Station container.",
+        "The red vertical link between Broker and Station/Relay host secrets means the same bridge secret (HMAC); a missing value fails closed at deploy/startup.",
+        "Bottom row: SQLCipher+OS keychain, host-generated AUTH/DB secrets, and git-crypt-deployed secrets; product code ships no deployment-secret crypto."
+      ]
+    }
+  ]
+}

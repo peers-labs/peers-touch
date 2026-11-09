@@ -1,64 +1,37 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import type { ReactNode } from 'react';
-import { Flexbox } from 'react-layout-kit';
 import {
-  Switch, Typography, theme, message,
-  Spin, Divider, Modal, Form, Slider, Checkbox, AutoComplete, Select,
-} from 'antd';
-import { Input, Button, Tag, Avatar, Tooltip, InputPassword } from '@lobehub/ui';
-import {
-  CheckCircle2, Settings2, ExternalLink, Lock, Trash2, Plus,
-  Brain, X, Wrench, Eye, Sparkles, Pencil,
-  Image, Globe, Video, Search, RadioTower,
-} from 'lucide-react';
-import { ProviderIcon } from './ProviderIcon';
+  Button,
+  Checkbox,
+  Dialog,
+  Divider,
+  Empty,
+  Field,
+  Flex,
+  Icon,
+  IconButton,
+  NumberField,
+  Select,
+  Slider,
+  Spin,
+  Switch,
+  Tag,
+  Text,
+  TextField,
+  Tooltip,
+  type Tone,
+} from '@peers-touch/ui';
 import { UpdateProviderModal } from './UpdateProviderModal';
 import { CliProviderDetail } from './CliProviderDetail';
 import { api, type ProviderDetail as ProviderDetailRecord } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { useActiveProviderSlice } from './useActiveSettingsStores';
-
-const { Text, Title, Link } = Typography;
-
-function FormRow({
-  label,
-  desc,
-  children,
-  last,
-  extra,
-}: {
-  label: string;
-  desc?: ReactNode;
-  children: ReactNode;
-  last?: boolean;
-  extra?: ReactNode;
-}) {
-  const { token } = theme.useToken();
-  return (
-    <>
-      <Flexbox
-        gap={8}
-        style={{ padding: '16px 0', minHeight: 56 }}
-      >
-        <Flexbox gap={2}>
-          <Flexbox horizontal align="center" gap={4}>
-            <Text strong style={{ fontSize: 14, whiteSpace: 'nowrap' }}>{label}</Text>
-            {extra}
-          </Flexbox>
-          {desc && (
-            <Text type="secondary" style={{ fontSize: 12, lineHeight: '18px' }}>
-              {desc}
-            </Text>
-          )}
-        </Flexbox>
-        <div>
-          {children}
-        </div>
-      </Flexbox>
-      {!last && <Divider style={{ margin: 0, borderColor: token.colorBorderSecondary }} />}
-    </>
-  );
-}
+import { SettingsSection, SettingsRow } from './SettingsLayout';
+import {
+  confirmRequest,
+  notifyError,
+  notifySuccess,
+  notifyWarning,
+} from '../../ui/feedback';
 
 const CONTEXT_MARKS: Record<number, string> = {
   0: '0',
@@ -72,6 +45,10 @@ const CONTEXT_MARKS: Record<number, string> = {
   8: '1M',
   9: '2M',
 };
+const CONTEXT_TICKS = Object.entries(CONTEXT_MARKS).map(([value, label]) => ({
+  value: Number(value),
+  label,
+}));
 const CONTEXT_VALUES = [0, 4000, 8000, 16000, 32000, 64000, 128000, 200000, 1000000, 2000000];
 
 function contextToSlider(v: number): number {
@@ -89,6 +66,46 @@ function formatContextWindow(v: number): string {
   return String(v);
 }
 
+function readinessTone(readiness: string): Tone {
+  if (readiness === 'ready') return 'success';
+  if (readiness === 'invalid' || readiness === 'error') return 'danger';
+  if (readiness === 'saving' || readiness === 'checking') return 'info';
+  return 'neutral';
+}
+
+interface ModelCapabilityField {
+  key:
+    | 'streaming'
+    | 'function_call'
+    | 'vision'
+    | 'reasoning'
+    | 'search'
+    | 'image_output'
+    | 'video';
+  labelKey: string;
+  extraKey: string;
+}
+
+const MODEL_CAPABILITIES: readonly ModelCapabilityField[] = [
+  { key: 'streaming', labelKey: 'provider.addModel.supportStreaming', extraKey: 'provider.addModel.supportStreamingExtra' },
+  { key: 'function_call', labelKey: 'provider.addModel.supportToolUse', extraKey: 'provider.addModel.supportToolUseExtra' },
+  { key: 'vision', labelKey: 'provider.addModel.supportVision', extraKey: 'provider.addModel.supportVisionExtra' },
+  { key: 'reasoning', labelKey: 'provider.addModel.supportDeepThinking', extraKey: 'provider.addModel.supportDeepThinkingExtra' },
+  { key: 'search', labelKey: 'provider.addModel.supportSearch', extraKey: 'provider.addModel.supportSearchExtra' },
+  { key: 'image_output', labelKey: 'provider.addModel.supportImageGen', extraKey: 'provider.addModel.supportImageGenExtra' },
+  { key: 'video', labelKey: 'provider.addModel.supportVideo', extraKey: 'provider.addModel.supportVideoExtra' },
+];
+
+const MODEL_TYPE_OPTIONS = [
+  'chat',
+  'image',
+  'video',
+  'embedding',
+  'stt',
+  'tts',
+  'realtime',
+] as const;
+
 export function ProviderDetail() {
   const { t } = useTranslation('provider');
   const { detail, loading, selectedId } = useActiveProviderSlice((state) => ({
@@ -99,25 +116,25 @@ export function ProviderDetail() {
 
   if (loading && !detail) {
     return (
-      <Flexbox flex={1} align="center" justify="center">
-        <Spin />
-      </Flexbox>
+      <Flex align="center" justify="center" className="sc-provider-detail__state">
+        <Spin active />
+      </Flex>
     );
   }
 
   if (!detail) {
     return (
-      <Flexbox flex={1} align="center" justify="center">
-        <Text type="secondary">{t('provider.detail.selectProvider')}</Text>
-      </Flexbox>
+      <Flex align="center" justify="center" className="sc-provider-detail__state">
+        <Text tone="secondary">{t('provider.detail.selectProvider')}</Text>
+      </Flex>
     );
   }
 
   if (selectedId && detail.id !== selectedId) {
     return (
-      <Flexbox flex={1} align="center" justify="center">
-        <Spin />
-      </Flexbox>
+      <Flex align="center" justify="center" className="sc-provider-detail__state">
+        <Spin active />
+      </Flex>
     );
   }
 
@@ -131,6 +148,21 @@ export function ProviderDetail() {
       detail={detail}
     />
   );
+}
+
+interface ModelFormState {
+  id: string;
+  display_name: string;
+  type: string;
+  contextWindow: number;
+  enabled: boolean;
+  streaming: boolean;
+  function_call: boolean;
+  vision: boolean;
+  reasoning: boolean;
+  search: boolean;
+  image_output: boolean;
+  video: boolean;
 }
 
 function DirectProviderDetail({ detail }: { detail: ProviderDetailRecord }) {
@@ -164,7 +196,6 @@ function DirectProviderDetail({ detail }: { detail: ProviderDetailRecord }) {
   const [showAddModel, setShowAddModel] = useState(false);
   const [modelSearchKeyword, setModelSearchKeyword] = useState('');
   const [editModel, setEditModel] = useState<{ id: string; display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean } | null>(null);
-  const { token } = theme.useToken();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const debouncedSave = useCallback(
@@ -174,7 +205,7 @@ function DirectProviderDetail({ detail }: { detail: ProviderDetailRecord }) {
         try {
           await updateProvider(detail.id, key, url, detail.enabled);
         } catch {
-          message.error(t('provider.detail.saveFailed'));
+          notifyError(t('provider.detail.saveFailed'));
         }
       }, 800);
     },
@@ -215,7 +246,7 @@ function DirectProviderDetail({ detail }: { detail: ProviderDetailRecord }) {
 
   const handleCheck = async () => {
     if (!checkModel) {
-      message.warning(t('provider.detail.checkWarning'));
+      notifyWarning(t('provider.detail.checkWarning'));
       return;
     }
     setChecking(true);
@@ -224,12 +255,12 @@ function DirectProviderDetail({ detail }: { detail: ProviderDetailRecord }) {
       const result = await checkProvider(detail.id, apiKey || undefined, baseUrl || undefined, checkModel);
       if (result.ok) {
         setCheckPass(true);
-        message.success(t('provider.detail.connectionSuccessful'));
+        notifySuccess(t('provider.detail.connectionSuccessful'));
       } else {
-        message.error(result.error || t('provider.detail.connectionFailed'));
+        notifyError(result.error || t('provider.detail.connectionFailed'));
       }
     } catch {
-      message.error(t('provider.detail.connectionCheckFailed'));
+      notifyError(t('provider.detail.connectionCheckFailed'));
     } finally {
       setChecking(false);
     }
@@ -238,449 +269,390 @@ function DirectProviderDetail({ detail }: { detail: ProviderDetailRecord }) {
   const handleDelete = async () => {
     try {
       await deleteProvider(detail.id);
-      message.success(t('provider.detail.deleted'));
+      notifySuccess(t('provider.detail.deleted'));
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : t('provider.detail.failedToDelete'));
+      notifyError(e instanceof Error ? e.message : t('provider.detail.failedToDelete'));
     }
+  };
+
+  const requestDelete = () => {
+    void confirmRequest({
+      tone: 'danger',
+      title: t('provider.detail.deleteConfirm.title'),
+      description: t('provider.detail.deleteConfirm.content', { name: detail.name }),
+      confirmLabel: t('provider.detail.deleteConfirm.ok'),
+      cancelLabel: t('provider.detail.disableConfirm.cancel'),
+      onConfirm: () => void handleDelete(),
+    });
   };
 
   const handleDeleteModel = async (modelId: string) => {
     try {
       await deleteModel(detail.id, modelId);
-      message.success(t('provider.model.removed'));
+      notifySuccess(t('provider.model.removed'));
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : t('provider.model.failedToRemove'));
+      notifyError(e instanceof Error ? e.message : t('provider.model.failedToRemove'));
+    }
+  };
+
+  const handleToggleEnabled = async (checked: boolean) => {
+    if (!checked) {
+      try {
+        const refs = await api.getProviderReferences(detail.id);
+        if (refs.length > 0) {
+          const slotNames = refs
+            .map((r) => `• ${r.slot || r.service || r.key || 'default'} (${r.model})`)
+            .join('\n');
+          const confirmed = await confirmRequest({
+            tone: 'warning',
+            title: t('provider.detail.disableConfirm.title'),
+            description: (
+              <div className="sc-provider-disable">
+                <p>{t('provider.detail.disableConfirm.desc')}</p>
+                <pre className="sc-provider-disable__list">{slotNames}</pre>
+                <p>{t('provider.detail.disableConfirm.note')}</p>
+              </div>
+            ),
+            confirmLabel: t('provider.detail.disableConfirm.ok'),
+            cancelLabel: t('provider.detail.disableConfirm.cancel'),
+          });
+          if (!confirmed) return;
+          setEnabled(false);
+          try {
+            await toggleProvider(detail.id, false);
+          } catch {
+            setEnabled(true);
+            notifyError(t('provider.detail.failedToToggle'));
+          }
+          return;
+        }
+      } catch {
+        // Station remains authoritative; continue with the explicit toggle.
+      }
+    }
+
+    setEnabled(checked);
+    try {
+      await toggleProvider(detail.id, checked);
+    } catch {
+      setEnabled(!checked);
+      notifyError(t('provider.detail.failedToToggle'));
     }
   };
 
   const readiness = readinessById[detail.id]?.status ?? 'loading';
   const isUnconfigured = readiness === 'unconfigured' && apiKey.trim().length === 0;
-  const readinessColor = readiness === 'ready'
-    ? 'success'
-    : readiness === 'invalid' || readiness === 'error'
-      ? 'error'
-      : readiness === 'saving' || readiness === 'checking'
-        ? 'processing'
-        : 'default';
-  const modelOptions = allModels.map((m) => ({
+  const [showKey, setShowKey] = useState(false);
+  const checkModelOptions = allModels.map((m) => ({
     value: m.id,
     label: m.display_name || m.id,
+    searchText: `${m.id} ${m.display_name || m.id}`,
   }));
 
   return (
-    <Flexbox
-      gap={16}
-      style={{
-        padding: '16px 24px 24px',
-        height: '100%',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Config Card - fixed height */}
-      <div
-        style={{
-          borderRadius: 12,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer,
-          overflow: 'hidden',
-          flexShrink: 0,
-        }}
-      >
-        {/* Header */}
-        <Flexbox
-          horizontal
-          justify="space-between"
-          align="center"
-          style={{
-            padding: '16px 20px',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          }}
-        >
-          <Flexbox
-            horizontal
-            align="center"
-            gap={10}
-            style={{
-              ...(enabled ? {} : { filter: 'grayscale(100%)', opacity: 0.66 }),
-              transition: 'all 0.2s',
-              minWidth: 0,
-              flex: 1,
-            }}
-          >
-            {detail.logo ? (
-              <Avatar src={detail.logo} shape="circle" size={32} style={{ flexShrink: 0 }} />
+    <div className="sc-provider-detail">
+      <SettingsSection
+        title={detail.name}
+        extra={
+          <Flex direction="row" gap={8} align="center" className="sc-provider-detail__actions">
+            <Tag tone={detail.runtime_kind === 'cli' ? 'warning' : 'info'}>
+              {t(`provider.runtime.${detail.runtime_kind}`)}
+            </Tag>
+            {isUnconfigured ? (
+              <Tag tone="neutral">{t('provider.detail.notConfigured')}</Tag>
             ) : (
-              <ProviderIcon providerId={detail.id} providerName={detail.name} size={32} />
-            )}
-            <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
-              <Title level={5} style={{ margin: 0, fontSize: 16, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{detail.name}</Title>
-              <Tag
-                bordered={false}
-                color={detail.runtime_kind === 'cli' ? 'purple' : 'blue'}
-                style={{ margin: 0, fontSize: 11, lineHeight: '16px', paddingInline: 6, flexShrink: 0 }}
-              >
-                {t(`provider.runtime.${detail.runtime_kind}`)}
+              <Tag tone={readinessTone(readiness)}>
+                {t(`provider.readiness.${readiness}`)}
               </Tag>
-              {isUnconfigured && (
-                <Tag
-                  bordered={false}
-                  color="default"
-                  style={{
-                    margin: 0,
-                    fontSize: 11,
-                    lineHeight: '16px',
-                    paddingInline: 6,
-                    color: token.colorTextTertiary,
-                    flexShrink: 0,
-                  }}
-                >
-                  {t('provider.detail.notConfigured')}
-                </Tag>
-              )}
-              {!isUnconfigured && (
-                <Tag
-                  bordered={false}
-                  color={readinessColor}
-                  style={{ margin: 0, fontSize: 11, lineHeight: '16px', paddingInline: 6, flexShrink: 0 }}
-                >
-                  {t(`provider.readiness.${readiness}`)}
-                </Tag>
-              )}
-            </Flexbox>
-          </Flexbox>
-          <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
-            <Tooltip title={t('provider.detail.providerSettings')}>
+            )}
+            {detail.show_checker && (
               <Button
-                type="text"
-                size="small"
-                icon={<Settings2 size={14} />}
-                onClick={() => setShowEditModal(true)}
-                style={{ color: token.colorTextSecondary }}
+                actionId="provider-connection-check"
+                emphasis="secondary"
+                density="compact"
+                className={checkPass ? 'sc-provider-check__pass' : undefined}
+                leading={
+                  checking
+                    ? <Icon iconId="refresh-cw" size={14} className="sk-spin" />
+                    : checkPass
+                      ? <Icon iconId="circle-check-big" size={14} />
+                      : <Icon iconId="activity" size={14} />
+                }
+                execution={checking ? 'pending' : 'idle'}
+                availability={!checkModel
+                  ? { kind: 'disabled', reason: t('provider.detail.checkWarning') }
+                  : undefined}
+                label={checking
+                  ? t('provider.detail.checking')
+                  : checkPass ? t('provider.detail.checkPass') : t('provider.detail.check')}
+                onActivate={() => void handleCheck()}
+              />
+            )}
+            <Tooltip label={t('provider.detail.providerSettings')}>
+              <IconButton
+                actionId="provider-edit-settings"
+                iconId="settings-2"
+                iconSize={14}
+                density="compact"
+                emphasis="quiet"
+                label={t('provider.detail.providerSettings')}
+                onActivate={() => setShowEditModal(true)}
               />
             </Tooltip>
             {!detail.builtin && (
-              <Button
-                danger
-                size="small"
-                icon={<Trash2 size={14} />}
-                onClick={() => {
-                  Modal.confirm({
-                    title: t('provider.detail.deleteConfirm.title'),
-                    content: t('provider.detail.deleteConfirm.content', { name: detail.name }),
-                    okText: t('provider.detail.deleteConfirm.ok'),
-                    okButtonProps: { danger: true },
-                    onOk: handleDelete,
-                  });
-                }}
-              >
-                {t('provider.detail.delete')}
-              </Button>
+              <Tooltip label={t('provider.detail.delete')}>
+                <IconButton
+                  actionId="provider-delete"
+                  iconId="delete"
+                  iconSize={14}
+                  density="compact"
+                  emphasis="quiet"
+                  tone="danger"
+                  label={t('provider.detail.delete')}
+                  onActivate={requestDelete}
+                />
+              </Tooltip>
             )}
-            <Switch
-              data-pt-provider-enabled-toggle={detail.id}
-              checked={enabled}
-              onChange={async (checked, event) => {
-                event?.stopPropagation();
+          </Flex>
+        }
+      >
+        <SettingsRow
+          label={t('provider.detail.enabled')}
+          description={t('provider.detail.enabledDesc')}
+        >
+          <Switch
+            data-pt-provider-enabled-toggle={detail.id}
+            checked={enabled}
+            aria-label={t('provider.detail.enabled')}
+            onCheckedChange={(value) => void handleToggleEnabled(value)}
+          />
+        </SettingsRow>
 
-                // When disabling, check if Model Service references this provider
-                if (!checked) {
-                  try {
-                    const refs = await api.getProviderReferences(detail.id);
-                    if (refs.length > 0) {
-                      const slotNames = refs.map((r) => `• ${r.slot || r.service || r.key || 'default'} (${r.model})`).join('\n');
-                      Modal.confirm({
-                        title: t('provider.detail.disableConfirm.title'),
-                        content: (
-                          <div>
-                            <p>{t('provider.detail.disableConfirm.desc')}</p>
-                            <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{slotNames}</pre>
-                            <p>{t('provider.detail.disableConfirm.note')}</p>
-                          </div>
-                        ),
-                        onOk: async () => {
-                          setEnabled(false);
-                          try { await toggleProvider(detail.id, false); }
-                          catch { setEnabled(true); message.error(t('provider.detail.failedToToggle')); }
-                        },
-                        okText: t('provider.detail.disableConfirm.ok'),
-                        cancelText: t('provider.detail.disableConfirm.cancel'),
-                      });
-                      return;
-                    }
-                  } catch { /* proceed if ref check fails */ }
-                }
-
-                setEnabled(checked);
-                try {
-                  await toggleProvider(detail.id, checked);
-                } catch {
-                  setEnabled(!checked);
-                  message.error(t('provider.detail.failedToToggle'));
-                }
-              }}
-            />
-          </Flexbox>
-        </Flexbox>
-
-        {/* Form Body */}
-        <div style={{ padding: '0 20px' }}>
-          {detail.show_api_key !== false && (
-            <FormRow
-              label={t('provider.detail.apiKey')}
-              desc={
-                detail.api_key_url ? (
-                  <>
-                    {t('provider.detail.apiKeyDescWithLink', { name: detail.name })}{' '}
-                    <Link href={detail.api_key_url} target="_blank" style={{ fontSize: 12 }}>
-                      {t('provider.detail.getApiKey')} <ExternalLink size={10} style={{ marginLeft: 2 }} />
-                    </Link>
-                  </>
-                ) : (
-                  t('provider.detail.apiKeyDesc', { name: detail.name })
-                )
-              }
-            >
-              <InputPassword
+        {detail.show_api_key !== false && (
+          <SettingsRow
+            label={t('provider.detail.apiKey')}
+            description={
+              detail.api_key_url ? (
+                <>
+                  {t('provider.detail.apiKeyDescWithLink', { name: detail.name })}{' '}
+                  <a
+                    className="pt-link"
+                    href={detail.api_key_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t('provider.detail.getApiKey')}{' '}
+                    <Icon iconId="external-link" size={10} />
+                  </a>
+                </>
+              ) : (
+                t('provider.detail.apiKeyDesc', { name: detail.name })
+              )
+            }
+          >
+            <span className="sk-key-row">
+              <TextField
+                type={showKey ? 'text' : 'password'}
                 value={apiKey}
-                onChange={(e) => handleApiKeyChange(e.target.value)}
+                onValueChange={handleApiKeyChange}
                 placeholder={detail.has_api_key && !apiKey ? '••••••••••••••••' : t('provider.detail.apiKeyPlaceholder')}
                 autoComplete="new-password"
-                style={{ width: '100%' }}
+                aria-label={t('provider.detail.apiKey')}
               />
-            </FormRow>
-          )}
-
-          <FormRow
-            label={t('provider.detail.apiProxyUrl')}
-            desc={t('provider.detail.apiProxyUrlDesc')}
-          >
-            <Input
-              value={baseUrl}
-              onChange={(e) => handleBaseUrlChange(e.target.value)}
-              placeholder={detail.default_base_url || t('provider.detail.apiProxyUrlPlaceholder')}
-              allowClear
-              style={{ width: '100%' }}
-            />
-          </FormRow>
-
-          {detail.show_checker && (
-            <FormRow
-              label={t('provider.detail.connectivityCheck')}
-              desc={t('provider.detail.connectivityCheckDesc')}
-            >
-              <Flexbox horizontal gap={8} style={{ width: '100%' }}>
-                <AutoComplete
-                  value={checkModel}
-                  onChange={(val) => {
-                    setCheckModel(val);
-                    setCheckPass(false);
-                  }}
-                  options={modelOptions}
-                  placeholder={t('provider.detail.enterModelId')}
-                  style={{ flex: 1 }}
-                  filterOption={(input, option) =>
-                    (option?.value as string)?.toLowerCase().includes(input.toLowerCase()) ||
-                    (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
-                  }
-                />
-                <Button
-                  onClick={handleCheck}
-                  loading={checking}
-                  disabled={!checkModel}
-                  icon={checkPass ? <CheckCircle2 size={14} /> : undefined}
-                  style={
-                    checkPass
-                      ? { borderColor: token.colorSuccess, color: token.colorSuccess }
-                      : undefined
-                  }
-                >
-                  {checkPass ? t('provider.detail.checkPass') : t('provider.detail.check')}
-                </Button>
-              </Flexbox>
-            </FormRow>
-          )}
-
-          <Flexbox
-            horizontal
-            align="center"
-            justify="center"
-            gap={4}
-            style={{
-              padding: '12px 0 16px',
-              fontSize: 12,
-              color: token.colorTextDescription,
-              opacity: 0.66,
-            }}
-          >
-            <Lock size={12} />
-            <span>
-              {t('provider.detail.encryptionNotice')}
+              <IconButton
+                actionId="provider-toggle-key"
+                iconId={showKey ? 'eye-off' : 'eye'}
+                iconSize={14}
+                density="compact"
+                emphasis="quiet"
+                label={showKey ? 'Hide' : 'Show'}
+                onActivate={() => setShowKey((v) => !v)}
+              />
             </span>
-          </Flexbox>
-        </div>
-      </div>
-
-      {/* Model List - takes remaining space with independent scroll */}
-      <Flexbox gap={12} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        <Flexbox horizontal justify="space-between" align="center" style={{ flexShrink: 0 }}>
-          <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
-            <Title level={5} style={{ margin: 0, whiteSpace: 'nowrap' }}>{t('provider.model.title')}</Title>
-            <Text type="secondary" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
-              {t('provider.model.count', { filtered: filteredModels.length, total: allModels.length })}
-            </Text>
-          </Flexbox>
-          <Flexbox horizontal gap={8} align="center" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Button size="small" icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-              {t('provider.model.addModel')}
-            </Button>
-          </Flexbox>
-        </Flexbox>
-
-        {allModels.length > 0 && (
-          <Input
-            size="middle"
-            placeholder={t('provider.model.searchModels')}
-            prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
-            value={modelSearchKeyword}
-            onChange={(e) => setModelSearchKeyword(e.target.value)}
-            allowClear
-            style={{ marginBottom: 8 }}
-          />
+          </SettingsRow>
         )}
 
-        <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-          {filteredModels.length > 0 ? (
-            <div
-              style={{
-                borderRadius: 12,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                background: token.colorBgContainer,
-                overflow: 'hidden',
-              }}
-            >
-              {filteredModels.map((m, i) => (
-                <Flexbox
-                  key={m.id}
-                  horizontal
-                  align="center"
-                  gap={12}
-                  style={{
-                    padding: '12px 16px',
-                    borderBottom: i < filteredModels.length - 1 ? `1px solid ${token.colorBorderSecondary}` : undefined,
-                  }}
-                >
-                  <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <ProviderIcon providerId={detail.id} providerName={detail.name} size={22} />
-                  </div>
-                  <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
-                    <Text strong style={{ fontSize: 13 }} ellipsis>
-                      {m.display_name || m.id}
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 11 }} ellipsis>{m.id}</Text>
-                  </Flexbox>
-                  <Flexbox horizontal align="center" gap={6} style={{ flexShrink: 0 }}>
-                    {m.context_window > 0 && (
-                      <Tag style={{ fontSize: 11, margin: 0 }}>{formatContextWindow(m.context_window)}</Tag>
-                    )}
-                    <Tag style={{ fontSize: 11, margin: 0 }}>{m.type}</Tag>
-                    {m.type === 'embedding' && (
-                      <Tag color="green" style={{ fontSize: 10, margin: 0 }}>{t('provider.model.embeddingTag')}</Tag>
-                    )}
-                    {m.streaming && (
-                      <Tooltip title={t('provider.model.capability.streaming')}><RadioTower size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
-                    )}
-                    {m.function_call && (
-                      <Tooltip title={t('provider.model.capability.toolUse')}><Wrench size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
-                    )}
-                    {m.vision && (
-                      <Tooltip title={t('provider.model.capability.vision')}><Eye size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
-                    )}
-                    {m.reasoning && (
-                      <Tooltip title={t('provider.model.capability.deepThinking')}><Sparkles size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
-                    )}
-                    {m.search && (
-                      <Tooltip title={t('provider.model.capability.builtInSearch')}><Globe size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
-                    )}
-                    {m.image_output && (
-                      <Tooltip title={t('provider.model.capability.imageOutput')}><Image size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
-                    )}
-                    {m.video && (
-                      <Tooltip title={t('provider.model.capability.videoRecognition')}><Video size={13} style={{ color: token.colorTextSecondary }} /></Tooltip>
-                    )}
-                    <Switch
-                      data-pt-provider-model-toggle={m.id}
-                      data-pt-provider-model-provider={detail.id}
-                      size="small"
-                      checked={m.enabled}
-                      onChange={async (checked) => {
-                        try {
-                          await toggleModel(detail.id, m.id, checked);
-                        } catch {
-                          message.error(t('provider.model.failedToToggle'));
-                        }
-                      }}
-                    />
-                    <Tooltip title={t('provider.model.editConfig')}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<Pencil size={14} />}
-                        onClick={() => setEditModel({ id: m.id, display_name: m.display_name, type: m.type, context_window: m.context_window, enabled: m.enabled, streaming: m.streaming, function_call: m.function_call, vision: m.vision, reasoning: m.reasoning, search: m.search, image_output: m.image_output, video: m.video })}
-                        style={{ width: 24, height: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: token.colorTextSecondary }}
-                      />
-                    </Tooltip>
-                    <Tooltip title={t('provider.model.removeModel')}>
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        icon={<X size={14} />}
-                        onClick={() => handleDeleteModel(m.id)}
-                        style={{ width: 24, height: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      />
-                    </Tooltip>
-                  </Flexbox>
-                </Flexbox>
-              ))}
-            </div>
-          ) : (
-            <Flexbox
-              align="center"
-              justify="center"
-              gap={16}
-              style={{
-                padding: '48px 24px',
-                borderRadius: 12,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                background: token.colorBgContainer,
-              }}
-            >
-              <div
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: '50%',
-                  background: token.colorFillQuaternary,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+        <SettingsRow
+          label={t('provider.detail.apiProxyUrl')}
+          description={t('provider.detail.apiProxyUrlDesc')}
+        >
+          <TextField
+            clearable
+            value={baseUrl}
+            onValueChange={handleBaseUrlChange}
+            placeholder={detail.default_base_url || t('provider.detail.apiProxyUrlPlaceholder')}
+            aria-label={t('provider.detail.apiProxyUrl')}
+            style={{ width: 280 }}
+          />
+        </SettingsRow>
+
+        {detail.show_checker && (
+          <SettingsRow
+            vertical
+            label={t('provider.detail.connectivityCheck')}
+            description={t('provider.detail.connectivityCheckDesc')}
+          >
+            <span className="sk-key-row">
+              <Select
+                searchable
+                createValue={(query) => query}
+                value={checkModel || undefined}
+                options={checkModelOptions}
+                placeholder={t('provider.detail.enterModelId')}
+                onValueChange={(value) => {
+                  if (typeof value === 'string') {
+                    setCheckModel(value);
+                    setCheckPass(false);
+                  }
                 }}
-              >
-                <Brain size={28} style={{ color: token.colorTextQuaternary }} />
+              />
+            </span>
+          </SettingsRow>
+        )}
+
+        <div className="sc-provider-notice">
+          <Icon iconId="lock" size={12} />
+          <span>{t('provider.detail.encryptionNotice')}</span>
+        </div>
+
+        <div className="sk-model-list" data-pt-provider-models={detail.id}>
+          <div className="sk-model-head">
+            <strong>{t('provider.model.title')}</strong>
+            <Button
+              actionId="provider-add-model"
+              emphasis="quiet"
+              density="compact"
+              leading={<Icon iconId="plus" size={13} />}
+              label={t('provider.model.addModel')}
+              onActivate={() => setShowAddModel(true)}
+            />
+          </div>
+
+          {allModels.length > 0 && (
+            <TextField
+              className="sc-provider-models__search"
+              clearable
+              leading={<Icon iconId="search" size={14} />}
+              placeholder={t('provider.model.searchModels')}
+              value={modelSearchKeyword}
+              onValueChange={setModelSearchKeyword}
+            />
+          )}
+
+          {filteredModels.length > 0 ? (
+            filteredModels.map((m) => (
+              <div key={m.id} className="sk-model-row">
+                <span className="sk-model-name">{m.display_name || m.id}</span>
+                {m.context_window > 0 && (
+                  <Tag>{formatContextWindow(m.context_window)}</Tag>
+                )}
+                <Tag tone={m.type === 'embedding' ? 'success' : 'info'}>{m.type}</Tag>
+                {m.streaming && (
+                  <Tooltip label={t('provider.model.capability.streaming')}>
+                    <Icon iconId="radio-tower" size={13} className="sc-provider-capability" />
+                  </Tooltip>
+                )}
+                {m.function_call && (
+                  <Tooltip label={t('provider.model.capability.toolUse')}>
+                    <Icon iconId="wrench" size={13} className="sc-provider-capability" />
+                  </Tooltip>
+                )}
+                {m.vision && (
+                  <Tooltip label={t('provider.model.capability.vision')}>
+                    <Icon iconId="eye" size={13} className="sc-provider-capability" />
+                  </Tooltip>
+                )}
+                {m.reasoning && (
+                  <Tooltip label={t('provider.model.capability.deepThinking')}>
+                    <Icon iconId="sparkles" size={13} className="sc-provider-capability" />
+                  </Tooltip>
+                )}
+                {m.search && (
+                  <Tooltip label={t('provider.model.capability.builtInSearch')}>
+                    <Icon iconId="globe" size={13} className="sc-provider-capability" />
+                  </Tooltip>
+                )}
+                {m.image_output && (
+                  <Tooltip label={t('provider.model.capability.imageOutput')}>
+                    <Icon iconId="image" size={13} className="sc-provider-capability" />
+                  </Tooltip>
+                )}
+                {m.video && (
+                  <Tooltip label={t('provider.model.capability.videoRecognition')}>
+                    <Icon iconId="video" size={13} className="sc-provider-capability" />
+                  </Tooltip>
+                )}
+                <Switch
+                  data-pt-provider-model-toggle={m.id}
+                  data-pt-provider-model-provider={detail.id}
+                  checked={m.enabled}
+                  aria-label={t('provider.model.title')}
+                  onCheckedChange={(checked) => {
+                    void (async () => {
+                      try {
+                        await toggleModel(detail.id, m.id, checked);
+                      } catch {
+                        notifyError(t('provider.model.failedToToggle'));
+                      }
+                    })();
+                  }}
+                />
+                <Tooltip label={t('provider.model.editConfig')}>
+                  <IconButton
+                    actionId={`provider-model-edit-${m.id}`}
+                    iconId="pencil-line"
+                    iconSize={14}
+                    density="compact"
+                    emphasis="quiet"
+                    label={t('provider.model.editConfig')}
+                    onActivate={() => setEditModel({
+                      id: m.id,
+                      display_name: m.display_name,
+                      type: m.type,
+                      context_window: m.context_window,
+                      enabled: m.enabled,
+                      streaming: m.streaming,
+                      function_call: m.function_call,
+                      vision: m.vision,
+                      reasoning: m.reasoning,
+                      search: m.search,
+                      image_output: m.image_output,
+                      video: m.video,
+                    })}
+                  />
+                </Tooltip>
+                <Tooltip label={t('provider.model.removeModel')}>
+                  <IconButton
+                    actionId={`provider-model-remove-${m.id}`}
+                    iconId="close"
+                    iconSize={14}
+                    density="compact"
+                    emphasis="quiet"
+                    tone="danger"
+                    label={t('provider.model.removeModel')}
+                    onActivate={() => void handleDeleteModel(m.id)}
+                  />
+                </Tooltip>
               </div>
-              <Flexbox align="center" gap={4}>
-                <Text strong style={{ fontSize: 14 }}>{t('provider.model.empty.title')}</Text>
-                <Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>
-                  {t('provider.model.empty.desc')}
-                </Text>
-              </Flexbox>
-              <Button icon={<Plus size={14} />} onClick={() => setShowAddModel(true)}>
-                {t('provider.model.addModel')}
-              </Button>
-            </Flexbox>
+            ))
+          ) : (
+            <Empty
+              className="sc-provider-empty"
+              icon={<Icon iconId="brain" size={28} />}
+              description={t('provider.model.empty.title')}
+              action={
+                <Button
+                  actionId="provider-add-model-empty"
+                  emphasis="secondary"
+                  leading={<Icon iconId="plus" size={14} />}
+                  label={t('provider.model.addModel')}
+                  onActivate={() => setShowAddModel(true)}
+                />
+              }
+            />
           )}
         </div>
-      </Flexbox>
+      </SettingsSection>
 
       <UpdateProviderModal
         open={showEditModal}
@@ -702,16 +674,56 @@ function DirectProviderDetail({ detail }: { detail: ProviderDetailRecord }) {
           onClose={() => setEditModel(null)}
           onSave={async (data) => {
             await updateModel(detail.id, editModel.id, data);
-            message.success(t('provider.model.updated'));
+            notifySuccess(t('provider.model.updated'));
             setEditModel(null);
           }}
         />
       ) : null}
-    </Flexbox>
+    </div>
   );
 }
 
-// ── Add Model Modal (LobeHub-style) ──
+function modelTypeSelectOptions(t: (key: string) => string) {
+  return MODEL_TYPE_OPTIONS.map((kind) => ({
+    value: kind,
+    label: t(`provider.addModel.type.${kind}`),
+  }));
+}
+
+function ContextRangeControl({
+  sliderValue,
+  numericValue,
+  onSliderChange,
+  onNumericChange,
+}: {
+  sliderValue: number;
+  numericValue: number;
+  onSliderChange: (index: number) => void;
+  onNumericChange: (raw: number) => void;
+}) {
+  return (
+    <div className="sc-provider-context">
+      <div className="sc-provider-context__row">
+        <Slider
+          className="sc-provider-context__slider"
+          min={0}
+          max={9}
+          ticks={CONTEXT_TICKS}
+          value={sliderValue}
+          valueLabel={(index) => formatContextWindow(sliderToContext(index))}
+          onValueChange={onSliderChange}
+        />
+        <NumberField
+          style={{ width: 96 }}
+          value={numericValue}
+          onValueChange={(value) => onNumericChange(value ?? 0)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Add Model Modal ──
 
 function AddModelModal({
   open,
@@ -729,185 +741,153 @@ function AddModelModal({
   }) => Promise<void>;
 }) {
   const { t } = useTranslation('provider');
-  const [form] = Form.useForm();
+  const [form, setForm] = useState<ModelFormState>(() => ({
+    id: '',
+    display_name: '',
+    type: 'chat',
+    contextWindow: 128000,
+    enabled: true,
+    streaming: true,
+    function_call: false,
+    vision: false,
+    reasoning: false,
+    search: false,
+    image_output: false,
+    video: false,
+  }));
   const [loading, setLoading] = useState(false);
-  const [ctxSlider, setCtxSlider] = useState(6);
-  const [ctxValue, setCtxValue] = useState(128000);
-  const { token } = theme.useToken();
+  const [submitted, setSubmitted] = useState(false);
 
-  const handleSliderChange = (v: number) => {
-    setCtxSlider(v);
-    const val = sliderToContext(v);
-    setCtxValue(val);
-    form.setFieldValue('context_window', val);
-  };
+  const ctxSlider = contextToSlider(form.contextWindow);
+  const idMissing = form.id.trim().length === 0;
+  const showIdError = submitted && idMissing;
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = parseInt(e.target.value.replace(/[^\d]/g, '') || '0');
-    setCtxValue(raw);
-    setCtxSlider(contextToSlider(raw));
-    form.setFieldValue('context_window', raw);
+  const patch = <K extends keyof ModelFormState>(key: K, value: ModelFormState[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
   };
 
   const handleOk = async () => {
+    setSubmitted(true);
+    if (idMissing) return;
     try {
-      const values = await form.validateFields();
       setLoading(true);
-      values.context_window = ctxValue;
-      await onAdd(providerId, values);
-      message.success(t('provider.addModel.created'));
-      form.resetFields();
-      setCtxSlider(6);
-      setCtxValue(128000);
+      await onAdd(providerId, {
+        id: form.id.trim(),
+        display_name: form.display_name,
+        type: form.type,
+        context_window: form.contextWindow,
+        streaming: form.streaming,
+        function_call: form.function_call,
+        vision: form.vision,
+        reasoning: form.reasoning,
+        search: form.search,
+        image_output: form.image_output,
+        video: form.video,
+      });
+      notifySuccess(t('provider.addModel.created'));
       onClose();
     } catch (e: unknown) {
-      if (e instanceof Error) message.error(e.message);
+      if (e instanceof Error) notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={t('provider.addModel.title')}
+    <Dialog
       open={open}
-      onCancel={onClose}
-      footer={null}
-      destroyOnHidden
+      onDismiss={onClose}
+      title={t('provider.addModel.title')}
       width={560}
+      closeLabel={t('provider.detail.disableConfirm.cancel')}
+      footer={
+        <>
+          <Button
+            actionId="add-model-cancel"
+            emphasis="quiet"
+            label={t('provider.detail.disableConfirm.cancel')}
+            onActivate={onClose}
+          />
+          <Button
+            actionId="add-model-ok"
+            emphasis="primary"
+            execution={loading ? 'pending' : 'idle'}
+            availability={idMissing
+              ? { kind: 'disabled', reason: t('provider.addModel.modelIdRequired') }
+              : undefined}
+            label={t('provider.addModel.createBtn')}
+            onActivate={() => void handleOk()}
+          />
+        </>
+      }
     >
-      <Form
-        form={form}
-        layout="horizontal"
-        labelCol={{ span: 7 }}
-        wrapperCol={{ span: 17 }}
-        style={{ marginTop: 24 }}
-        initialValues={{ type: 'chat', context_window: 128000, streaming: true }}
-        labelAlign="left"
-        colon={false}
-      >
-        <Form.Item
-          name="id"
+      <div className="sc-provider-form">
+        <Field
           label={t('provider.addModel.modelId')}
-          rules={[{ required: true, message: t('provider.addModel.modelIdRequired') }]}
-          extra={t('provider.addModel.modelIdExtra')}
+          required
+          description={t('provider.addModel.modelIdExtra')}
+          validation={showIdError
+            ? { state: 'invalid', message: t('provider.addModel.modelIdRequired') }
+            : undefined}
         >
-          <Input placeholder={t('provider.addModel.modelIdPlaceholder')} autoFocus />
-        </Form.Item>
+          <TextField
+            autoFocus
+            placeholder={t('provider.addModel.modelIdPlaceholder')}
+            value={form.id}
+            onValueChange={(value) => patch('id', value)}
+          />
+        </Field>
 
-        <Form.Item
-          name="display_name"
-          label={t('provider.addModel.displayName')}>
-          <Input placeholder={t('provider.addModel.displayNamePlaceholder')} />
-        </Form.Item>
+        <Field label={t('provider.addModel.displayName')}>
+          <TextField
+            placeholder={t('provider.addModel.displayNamePlaceholder')}
+            value={form.display_name}
+            onValueChange={(value) => patch('display_name', value)}
+          />
+        </Field>
 
-        <Form.Item label={t('provider.addModel.maxContext')}>
-          <Flexbox gap={12}>
-            <Flexbox horizontal gap={16} align="center">
-              <Slider
-                min={0}
-                max={9}
-                marks={CONTEXT_MARKS}
-                value={ctxSlider}
-                onChange={handleSliderChange}
-                tooltip={{ formatter: (v) => (v !== undefined ? formatContextWindow(sliderToContext(v)) : '') }}
-                style={{ flex: 1 }}
-              />
-              <Input
-                value={ctxValue}
-                onChange={handleInputChange}
-                style={{ width: 90, textAlign: 'right' }}
-                suffix={null}
-              />
-            </Flexbox>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {t('provider.addModel.maxContextDesc')}
-            </Text>
-          </Flexbox>
-        </Form.Item>
+        <Field
+          label={t('provider.addModel.maxContext')}
+          description={t('provider.addModel.maxContextDesc')}
+        >
+          <ContextRangeControl
+            sliderValue={ctxSlider}
+            numericValue={form.contextWindow}
+            onSliderChange={(index) => patch('contextWindow', sliderToContext(index))}
+            onNumericChange={(raw) => patch('contextWindow', raw)}
+          />
+        </Field>
 
-        <Divider style={{ margin: '8px 0 16px', borderColor: token.colorBorderSecondary }} />
+        <Divider />
 
-        <Form.Item
-          name="streaming"
-          valuePropName="checked"
-          label={t('provider.addModel.supportStreaming')}
-          extra={t('provider.addModel.supportStreamingExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="function_call"
-          valuePropName="checked"
-          label={t('provider.addModel.supportToolUse')}
-          extra={t('provider.addModel.supportToolUseExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="vision"
-          valuePropName="checked"
-          label={t('provider.addModel.supportVision')}
-          extra={t('provider.addModel.supportVisionExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="reasoning"
-          valuePropName="checked"
-          label={t('provider.addModel.supportDeepThinking')}
-          extra={t('provider.addModel.supportDeepThinkingExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="search"
-          valuePropName="checked"
-          label={t('provider.addModel.supportSearch')}
-          extra={t('provider.addModel.supportSearchExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="image_output"
-          valuePropName="checked"
-          label={t('provider.addModel.supportImageGen')}
-          extra={t('provider.addModel.supportImageGenExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="video"
-          valuePropName="checked"
-          label={t('provider.addModel.supportVideo')}
-          extra={t('provider.addModel.supportVideoExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="type"
+        {MODEL_CAPABILITIES.map((capability) => (
+          <Field
+            key={capability.key}
+            label={t(capability.labelKey)}
+            description={t(capability.extraKey)}
+          >
+            <Checkbox
+              checked={form[capability.key]}
+              onCheckedChange={(checked) => patch(capability.key, checked)}
+            />
+          </Field>
+        ))}
+
+        <Field
           label={t('provider.addModel.modelType')}
-          extra={t('provider.addModel.modelTypeExtra')}
+          description={t('provider.addModel.modelTypeExtra')}
         >
           <Select
-            options={[
-              { value: 'chat', label: t('provider.addModel.type.chat') },
-              { value: 'image', label: t('provider.addModel.type.image') },
-              { value: 'video', label: t('provider.addModel.type.video') },
-              { value: 'embedding', label: t('provider.addModel.type.embedding') },
-              { value: 'stt', label: t('provider.addModel.type.stt') },
-              { value: 'tts', label: t('provider.addModel.type.tts') },
-              { value: 'realtime', label: t('provider.addModel.type.realtime') },
-            ]}
+            options={modelTypeSelectOptions(t)}
+            value={form.type}
             placeholder={t('provider.addModel.modelTypePlaceholder')}
+            onValueChange={(value) => {
+              if (typeof value === 'string') patch('type', value);
+            }}
           />
-        </Form.Item>
-
-        <Button type="primary" block size="large" onClick={handleOk} loading={loading}>
-          {t('provider.addModel.createBtn')}
-        </Button>
-      </Form>
-    </Modal>
+        </Field>
+      </div>
+    </Dialog>
   );
 }
 
@@ -923,187 +903,137 @@ function EditModelModal({
   onSave: (data: { display_name?: string; type?: string; context_window?: number; enabled?: boolean; streaming?: boolean; function_call?: boolean; vision?: boolean; reasoning?: boolean; search?: boolean; image_output?: boolean; video?: boolean }) => Promise<void>;
 }) {
   const { t } = useTranslation('provider');
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
   const initialContext = model.context_window ?? 128000;
-  const [ctxSlider, setCtxSlider] = useState(contextToSlider(initialContext));
-  const [ctxValue, setCtxValue] = useState(initialContext);
-  const { token } = theme.useToken();
+  const [form, setForm] = useState<ModelFormState>(() => ({
+    id: model.id,
+    display_name: model.display_name || model.id,
+    type: model.type || 'chat',
+    contextWindow: initialContext,
+    enabled: model.enabled ?? true,
+    streaming: model.streaming ?? false,
+    function_call: model.function_call ?? false,
+    vision: model.vision ?? false,
+    reasoning: model.reasoning ?? false,
+    search: model.search ?? false,
+    image_output: model.image_output ?? false,
+    video: model.video ?? false,
+  }));
+  const [loading, setLoading] = useState(false);
 
-  const handleSliderChange = (v: number) => {
-    setCtxSlider(v);
-    const val = sliderToContext(v);
-    setCtxValue(val);
-    form.setFieldValue('context_window', val);
-  };
+  const ctxSlider = contextToSlider(form.contextWindow);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = parseInt(e.target.value.replace(/[^\d]/g, '') || '0');
-    setCtxValue(raw);
-    setCtxSlider(contextToSlider(raw));
-    form.setFieldValue('context_window', raw);
+  const patch = <K extends keyof ModelFormState>(key: K, value: ModelFormState[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
   };
 
   const handleOk = async () => {
     try {
-      const values = await form.validateFields();
       setLoading(true);
-      values.context_window = ctxValue;
-      await onSave(values);
+      await onSave({
+        display_name: form.display_name,
+        type: form.type,
+        context_window: form.contextWindow,
+        enabled: form.enabled,
+        streaming: form.streaming,
+        function_call: form.function_call,
+        vision: form.vision,
+        reasoning: form.reasoning,
+        search: form.search,
+        image_output: form.image_output,
+        video: form.video,
+      });
       onClose();
     } catch (e: unknown) {
-      if (e instanceof Error) message.error(e.message);
+      if (e instanceof Error) notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={t('provider.editModel.title')}
+    <Dialog
       open
-      onCancel={onClose}
-      footer={null}
-      destroyOnHidden
+      onDismiss={onClose}
+      title={t('provider.editModel.title')}
       width={560}
+      closeLabel={t('provider.detail.disableConfirm.cancel')}
+      footer={
+        <>
+          <Button
+            actionId="edit-model-cancel"
+            emphasis="quiet"
+            label={t('provider.detail.disableConfirm.cancel')}
+            onActivate={onClose}
+          />
+          <Button
+            actionId="edit-model-ok"
+            emphasis="primary"
+            execution={loading ? 'pending' : 'idle'}
+            label={t('provider.editModel.saveChanges')}
+            onActivate={() => void handleOk()}
+          />
+        </>
+      }
     >
-      <Form
-        form={form}
-        initialValues={{
-          display_name: model.display_name || model.id,
-          type: model.type || 'chat',
-          context_window: initialContext,
-          enabled: model.enabled ?? true,
-          streaming: model.streaming ?? false,
-          function_call: model.function_call ?? false,
-          vision: model.vision ?? false,
-          reasoning: model.reasoning ?? false,
-          search: model.search ?? false,
-          image_output: model.image_output ?? false,
-          video: model.video ?? false,
-        }}
-        layout="horizontal"
-        labelCol={{ span: 7 }}
-        wrapperCol={{ span: 17 }}
-        style={{ marginTop: 24 }}
-        labelAlign="left"
-        colon={false}
-      >
-        <Form.Item label={t('provider.editModel.modelId')}>
-          <Text type="secondary">{model.id}</Text>
-        </Form.Item>
+      <div className="sc-provider-form">
+        <Field label={t('provider.editModel.modelId')}>
+          <Text tone="secondary">{model.id}</Text>
+        </Field>
 
-        <Form.Item name="display_name" label={t('provider.editModel.displayName')}>
-          <Input placeholder={t('provider.editModel.displayNamePlaceholder')} />
-        </Form.Item>
+        <Field label={t('provider.editModel.displayName')}>
+          <TextField
+            placeholder={t('provider.editModel.displayNamePlaceholder')}
+            value={form.display_name}
+            onValueChange={(value) => patch('display_name', value)}
+          />
+        </Field>
 
-        <Form.Item label={t('provider.editModel.maxContext')}>
-          <Flexbox gap={12}>
-            <Flexbox horizontal gap={16} align="center">
-              <Slider
-                min={0}
-                max={9}
-                marks={CONTEXT_MARKS}
-                value={ctxSlider}
-                onChange={handleSliderChange}
-                tooltip={{ formatter: (v) => (v !== undefined ? formatContextWindow(sliderToContext(v)) : '') }}
-                style={{ flex: 1 }}
-              />
-              <Input
-                value={ctxValue}
-                onChange={handleInputChange}
-                style={{ width: 90, textAlign: 'right' }}
-                suffix={null}
-              />
-            </Flexbox>
-          </Flexbox>
-        </Form.Item>
+        <Field label={t('provider.editModel.maxContext')}>
+          <ContextRangeControl
+            sliderValue={ctxSlider}
+            numericValue={form.contextWindow}
+            onSliderChange={(index) => patch('contextWindow', sliderToContext(index))}
+            onNumericChange={(raw) => patch('contextWindow', raw)}
+          />
+        </Field>
 
-        <Form.Item name="enabled" valuePropName="checked" label={t('provider.editModel.enabled')}>
-          <Switch />
-        </Form.Item>
+        <Field label={t('provider.editModel.enabled')}>
+          <Switch
+            checked={form.enabled}
+            aria-label={t('provider.editModel.enabled')}
+            onCheckedChange={(checked) => patch('enabled', checked)}
+          />
+        </Field>
 
-        <Divider style={{ margin: '8px 0 16px', borderColor: token.colorBorderSecondary }} />
+        <Divider />
 
-        <Form.Item
-          name="streaming"
-          valuePropName="checked"
-          label={t('provider.addModel.supportStreaming')}
-          extra={t('provider.addModel.supportStreamingExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="function_call"
-          valuePropName="checked"
-          label={t('provider.addModel.supportToolUse')}
-          extra={t('provider.addModel.supportToolUseExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="vision"
-          valuePropName="checked"
-          label={t('provider.addModel.supportVision')}
-          extra={t('provider.addModel.supportVisionExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="reasoning"
-          valuePropName="checked"
-          label={t('provider.addModel.supportDeepThinking')}
-          extra={t('provider.addModel.supportDeepThinkingExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="search"
-          valuePropName="checked"
-          label={t('provider.addModel.supportSearch')}
-          extra={t('provider.addModel.supportSearchExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="image_output"
-          valuePropName="checked"
-          label={t('provider.addModel.supportImageGen')}
-          extra={t('provider.addModel.supportImageGenExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="video"
-          valuePropName="checked"
-          label={t('provider.addModel.supportVideo')}
-          extra={t('provider.addModel.supportVideoExtra')}
-        >
-          <Checkbox />
-        </Form.Item>
-        <Form.Item
-          name="type"
+        {MODEL_CAPABILITIES.map((capability) => (
+          <Field
+            key={capability.key}
+            label={t(capability.labelKey)}
+            description={t(capability.extraKey)}
+          >
+            <Checkbox
+              checked={form[capability.key]}
+              onCheckedChange={(checked) => patch(capability.key, checked)}
+            />
+          </Field>
+        ))}
+
+        <Field
           label={t('provider.addModel.modelType')}
-          extra={t('provider.addModel.modelTypeExtra')}
+          description={t('provider.addModel.modelTypeExtra')}
         >
           <Select
-            options={[
-              { value: 'chat', label: t('provider.addModel.type.chat') },
-              { value: 'image', label: t('provider.addModel.type.image') },
-              { value: 'video', label: t('provider.addModel.type.video') },
-              { value: 'embedding', label: t('provider.addModel.type.embedding') },
-              { value: 'stt', label: t('provider.addModel.type.stt') },
-              { value: 'tts', label: t('provider.addModel.type.tts') },
-              { value: 'realtime', label: t('provider.addModel.type.realtime') },
-            ]}
+            options={modelTypeSelectOptions(t)}
+            value={form.type}
             placeholder={t('provider.addModel.modelTypePlaceholder')}
+            onValueChange={(value) => {
+              if (typeof value === 'string') patch('type', value);
+            }}
           />
-        </Form.Item>
-
-        <Button type="primary" block size="large" onClick={handleOk} loading={loading}>
-          {t('provider.editModel.saveChanges')}
-        </Button>
-      </Form>
-    </Modal>
+        </Field>
+      </div>
+    </Dialog>
   );
 }

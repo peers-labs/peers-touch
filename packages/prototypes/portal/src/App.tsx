@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
-import { CloudCog, Layers, Maximize2, Minimize2, Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
+import { Archive, CloudCog, Layers, Maximize2, Minimize2, Monitor, PanelsTopLeft, Smartphone } from 'lucide-react';
 import { LOCAL_PROTOTYPES } from './registry/localManifests';
 import { WORKTREE_TARGETS } from './registry/worktrees';
 import type { PrototypeManifest, PrototypeSite, PrototypeWorktreeTarget } from './registry/types';
@@ -37,14 +37,21 @@ const SITE_META: Record<PrototypeSite, { title: string; subtitle: string; icon: 
   },
 };
 
+// The current prototype system is the self-training Frontend Eles surface;
+// the legacy standalone desktop/mobile prototype sites stay available in the
+// collapsed Archive group for traceability, not as implementation authority.
+const PRIMARY_SITES: PrototypeSite[] = ['frontend-eles', 'dashboard', 'control'];
+const ARCHIVE_SITES: PrototypeSite[] = ['desktop', 'mobile'];
+
 function normalizeSite(value: unknown): PrototypeSite {
   return value === 'mobile' || value === 'dashboard' || value === 'control' || value === 'desktop' || value === 'frontend-eles'
     ? value
-    : 'desktop';
+    : 'frontend-eles';
 }
 
 export function PrototypePortal() {
   const [site, setSite] = useState<PrototypeSite>(DEFAULT_SITE);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [targetId, setTargetId] = useState(WORKTREE_TARGETS[0]?.id ?? 'current');
   const [selectedPrototypeId, setSelectedPrototypeId] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -95,6 +102,12 @@ export function PrototypePortal() {
     window.history.replaceState(null, '', url);
   }, [site]);
 
+  // Deep links (or old bookmarks) into an archived site expand the archive so
+  // the selected entry is visible instead of looking unselected.
+  useEffect(() => {
+    if (ARCHIVE_SITES.includes(site)) setArchiveOpen(true);
+  }, [site]);
+
   return (
     <div className="prototype-portal" style={styles.page}>
       <header
@@ -126,7 +139,7 @@ export function PrototypePortal() {
           inert={fullscreen ? true : undefined}
           aria-hidden={fullscreen || undefined}
         >
-          {(Object.keys(SITE_META) as PrototypeSite[]).map((key) => {
+          {PRIMARY_SITES.map((key) => {
             const item = SITE_META[key];
             const active = key === site;
             return (
@@ -145,6 +158,40 @@ export function PrototypePortal() {
               </button>
             );
           })}
+
+          <div className="prototype-portal-archive" style={styles.archiveGroup}>
+            <button
+              type="button"
+              aria-expanded={archiveOpen}
+              style={styles.archiveToggle}
+              onClick={() => setArchiveOpen((open) => !open)}
+            >
+              <Archive size={15} />
+              <span>归档 Archive</span>
+              <span style={styles.archiveChevron}>{archiveOpen ? '▾' : '▸'}</span>
+            </button>
+            {archiveOpen
+              ? ARCHIVE_SITES.map((key) => {
+                  const item = SITE_META[key];
+                  const active = key === site;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      style={{ ...styles.siteItem, ...styles.archiveItem, ...(active ? styles.siteItemActive : null), cursor: 'pointer' }}
+                      aria-pressed={active}
+                      onClick={() => setSite(key)}
+                    >
+                      {item.icon}
+                      <div>
+                        <div style={styles.siteTitle}>{key}</div>
+                        <div style={styles.siteSubtitle}>{item.title}</div>
+                      </div>
+                    </button>
+                  );
+                })
+              : null}
+          </div>
         </aside>
 
         <section className="prototype-portal-content" style={styles.content}>
@@ -512,6 +559,38 @@ const styles: Record<string, CSSProperties> = {
   siteItemActive: {
     background: '#eef2ff',
     color: '#312e81',
+  },
+  archiveGroup: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTop: '1px solid #e5e7eb',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  archiveToggle: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '6px 12px',
+    marginBottom: 4,
+    border: 0,
+    borderRadius: 8,
+    background: 'transparent',
+    color: '#8a9096',
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  archiveChevron: {
+    marginLeft: 'auto',
+    fontSize: 10,
+  },
+  archiveItem: {
+    opacity: 0.72,
   },
   siteTitle: {
     fontSize: 13,

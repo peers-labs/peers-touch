@@ -1,20 +1,20 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Button, Empty, SearchBar } from '@lobehub/ui';
 import {
   Alert,
-  App,
-  Descriptions,
+  Button,
   Drawer,
-  Input,
-  Modal,
+  Dialog,
+  Empty,
+  Icon,
   Segmented,
   Spin,
   Tag,
-  theme,
-} from 'antd';
-import { Bot, Plus, Puzzle, RefreshCw, SearchX, ShieldCheck, Store, Wrench } from 'lucide-react';
+  Text,
+  TextField,
+  TextArea,
+  type Tone,
+} from '@peers-touch/ui';
 
 import { api } from '../../services/desktop_api';
 import type {
@@ -25,6 +25,12 @@ import type {
 import { usePrefetch } from '../../kernel/usePrefetch';
 import { PageColumn } from '../../layout/PageColumn';
 import { MarketplacePackageCard } from './discover/PackageCard';
+import {
+  confirmRequest,
+  notifyError,
+  notifyInfo,
+  notifySuccess,
+} from '../../ui/feedback';
 
 type TabKey = 'agents' | 'skills' | 'tools';
 const PACKAGE_BATCH_SIZE = 24;
@@ -85,8 +91,6 @@ function belongsToTab(entry: MarketSkillEntry, tab: TabKey): boolean {
 
 export const DiscoverSettings = memo(() => {
   const { t } = useTranslation('agent');
-  const { token } = theme.useToken();
-  const { message, modal } = App.useApp();
 
   const [activeTab, setActiveTab] = useState<TabKey>('agents');
   const [search, setSearch] = useState('');
@@ -134,30 +138,30 @@ export const DiscoverSettings = memo(() => {
     () => [
       {
         label: (
-          <span data-testid="marketplace-tab-agents">
+          <span data-testid="marketplace-tab-agents" className="sc-discover-tab">
+            <Icon iconId="bot" size={14} />
             {t('agent.marketplace.tabs.agents')}
           </span>
         ),
         value: 'agents' as TabKey,
-        icon: <Bot size={14} />,
       },
       {
         label: (
-          <span data-testid="marketplace-tab-skills">
+          <span data-testid="marketplace-tab-skills" className="sc-discover-tab">
+            <Icon iconId="puzzle" size={14} />
             {t('agent.marketplace.tabs.skills')}
           </span>
         ),
         value: 'skills' as TabKey,
-        icon: <Puzzle size={14} />,
       },
       {
         label: (
-          <span data-testid="marketplace-tab-tools">
+          <span data-testid="marketplace-tab-tools" className="sc-discover-tab">
+            <Icon iconId="wrench" size={14} />
             {t('agent.marketplace.tabs.tools')}
           </span>
         ),
         value: 'tools' as TabKey,
-        icon: <Wrench size={14} />,
       },
     ],
     [t],
@@ -182,17 +186,30 @@ export const DiscoverSettings = memo(() => {
       ).length;
       reloadCatalog();
       if (failed > 0) {
-        void message.warning(t('agent.marketplace.syncPartial', {
+        notifyInfo(t('agent.marketplace.syncPartial', {
           failed,
           total: markets.length,
         }));
       } else {
-        void message.success(t('agent.marketplace.syncSuccess'));
+        notifySuccess(t('agent.marketplace.syncSuccess'));
       }
     } finally {
       setSyncing(false);
     }
-  }, [markets, message, reloadCatalog, t]);
+  }, [markets, reloadCatalog, t]);
+
+  const resetSourceForm = () => {
+    setSourceUrl('');
+    setSourceName('');
+    setSourceBranch('main');
+    setSourceId('');
+    setSourcePublisherId('');
+    setSourceSigningKeyId('');
+    setSourcePublicKey('');
+    setSourceManifestPath(
+      'packages/agent-catalog/official-catalog.v1.envelope.json',
+    );
+  };
 
   const handleAddSource = useCallback(async () => {
     const url = sourceUrl.trim();
@@ -204,7 +221,7 @@ export const DiscoverSettings = memo(() => {
       || !sourcePublicKey.trim()
       || !sourceManifestPath.trim()
     ) {
-      void message.warning(t('agent.marketplace.sourceUrlRequired'));
+      notifyInfo(t('agent.marketplace.sourceUrlRequired'));
       return;
     }
 
@@ -228,32 +245,22 @@ export const DiscoverSettings = memo(() => {
       }
       sourceAdded = true;
       await api.syncSkillMarket(result.id);
-      void message.success(t('agent.marketplace.addSourceSuccess'));
+      notifySuccess(t('agent.marketplace.addSourceSuccess'));
     } catch (error) {
       const fallbackKey = sourceAdded
         ? 'agent.marketplace.addedButSyncFailed'
         : 'agent.marketplace.addSourceFailed';
       const detail = error instanceof Error ? error.message : t(fallbackKey);
-      void message.error(detail);
+      notifyError(detail);
     } finally {
       if (sourceAdded) {
         setAddSourceOpen(false);
-        setSourceUrl('');
-        setSourceName('');
-        setSourceBranch('main');
-        setSourceId('');
-        setSourcePublisherId('');
-        setSourceSigningKeyId('');
-        setSourcePublicKey('');
-        setSourceManifestPath(
-          'packages/agent-catalog/official-catalog.v1.envelope.json',
-        );
+        resetSourceForm();
         reloadCatalog();
       }
       setAddingSource(false);
     }
   }, [
-    message,
     reloadCatalog,
     sourceBranch,
     sourceId,
@@ -269,60 +276,58 @@ export const DiscoverSettings = memo(() => {
   const handleInstall = useCallback(async (entry: MarketSkillEntry) => {
     if (!entry.marketId) return;
     if (entry.installPolicy === 'blocked' || entry.revoked) {
-      void message.error(t('agent.marketplace.installBlocked'));
+      notifyError(t('agent.marketplace.installBlocked'));
       return;
     }
     let riskAcknowledged = false;
     if (entry.installPolicy === 'confirmation_required') {
-      riskAcknowledged = await new Promise<boolean>((resolve) => {
-        modal.confirm({
-          title: t('agent.marketplace.riskConfirmTitle'),
-          content: t('agent.marketplace.riskConfirmDescription', {
-            name: entry.name,
-            risk: entry.riskLevel || t('agent.marketplace.risk.unknown'),
-          }),
-          okText: t('agent.marketplace.install'),
-          okButtonProps: { danger: true },
-          onCancel: () => resolve(false),
-          onOk: () => resolve(true),
-        });
+      riskAcknowledged = await confirmRequest({
+        tone: 'danger',
+        title: t('agent.marketplace.riskConfirmTitle'),
+        description: t('agent.marketplace.riskConfirmDescription', {
+          name: entry.name,
+          risk: entry.riskLevel || t('agent.marketplace.risk.unknown'),
+        }),
+        confirmLabel: t('agent.marketplace.install'),
+        cancelLabel: t('agent.settings.cancel'),
       });
       if (!riskAcknowledged) return;
     }
     try {
       await api.installMarketSkill(entry.marketId, entry.filePath, riskAcknowledged);
-      void message.success(t('agent.marketplace.installSuccess'));
+      notifySuccess(t('agent.marketplace.installSuccess'));
       setSelectedEntry(null);
       setSelectedDetail(null);
       reloadCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : t('agent.marketplace.installFailed');
-      void message.error(detail);
+      notifyError(detail);
     }
-  }, [message, modal, reloadCatalog, t]);
+  }, [reloadCatalog, t]);
 
   const handleUninstall = useCallback(async (entry: MarketSkillEntry) => {
     if (!entry.marketId) return;
     try {
       await api.uninstallMarketSkill(entry.marketId, entry.filePath);
-      void message.success(t('agent.marketplace.uninstallSuccess'));
+      notifySuccess(t('agent.marketplace.uninstallSuccess'));
       setSelectedEntry(null);
       setSelectedDetail(null);
       reloadCatalog();
     } catch (error) {
       const detail = error instanceof Error ? error.message : t('agent.marketplace.uninstallFailed');
-      void message.error(detail);
+      notifyError(detail);
     }
-  }, [message, reloadCatalog, t]);
+  }, [reloadCatalog, t]);
 
   const handleRemoveSource = useCallback((market: MarketSummary) => {
     if (market.builtIn) return;
-    modal.confirm({
+    void confirmRequest({
+      tone: 'danger',
       title: t('agent.marketplace.removeSourceTitle'),
-      content: t('agent.marketplace.removeSourceDescription', { name: market.name }),
-      okText: t('agent.marketplace.removeSource'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
+      description: t('agent.marketplace.removeSourceDescription', { name: market.name }),
+      confirmLabel: t('agent.marketplace.removeSource'),
+      cancelLabel: t('agent.settings.cancel'),
+      onConfirm: async () => {
         try {
           await api.removeSkillMarketSource(market.id);
           reloadCatalog();
@@ -330,12 +335,12 @@ export const DiscoverSettings = memo(() => {
           const detail = error instanceof Error
             ? error.message
             : t('agent.marketplace.removeSourceFailed');
-          void message.error(detail);
+          notifyError(detail);
           throw error;
         }
       },
     });
-  }, [message, modal, reloadCatalog, t]);
+  }, [reloadCatalog, t]);
 
   const handleOpenDetail = useCallback(async (entry: MarketSkillEntry) => {
     setSelectedEntry(entry);
@@ -348,11 +353,11 @@ export const DiscoverSettings = memo(() => {
       setSelectedDetail(detail);
     } catch (error) {
       const detail = error instanceof Error ? error.message : t('agent.marketplace.detailFailed');
-      void message.error(detail);
+      notifyError(detail);
     } finally {
       setDetailLoading(false);
     }
-  }, [message, t]);
+  }, [t]);
 
   const closeDetail = () => {
     setSelectedEntry(null);
@@ -362,58 +367,65 @@ export const DiscoverSettings = memo(() => {
   const renderContent = () => {
     if (loading) {
       return (
-        <Flexbox align="center" justify="center" style={{ minHeight: 220 }}>
+        <div className="sc-discover-loading">
           <Spin />
-        </Flexbox>
+        </div>
       );
     }
 
     if (catalogError) {
       return (
         <Alert
-          action={(
-            <Button size="small" onClick={reloadCatalog}>
-              {t('agent.marketplace.retry')}
-            </Button>
-          )}
+          tone="danger"
+          title={t('agent.marketplace.loadFailed')}
           description={catalogError instanceof Error ? catalogError.message : undefined}
-          message={t('agent.marketplace.loadFailed')}
-          showIcon
-          type="error"
+          action={(
+            <Button
+              actionId="marketplace-retry"
+              density="compact"
+              label={t('agent.marketplace.retry')}
+              onActivate={reloadCatalog}
+            />
+          )}
         />
       );
     }
 
     if (markets.length === 0) {
       return (
-        <Empty
-          icon={Store}
-          title={t('agent.marketplace.noMarketSource')}
-          action={
-            <Button icon={<Plus size={14} />} onClick={() => setAddSourceOpen(true)}>
-              {t('agent.marketplace.addSource')}
-            </Button>
-          }
-          padding="64px 16px"
-        />
+        <div className="sc-discover-empty">
+          <Empty
+            icon={<Icon iconId="store" size={40} />}
+            description={t('agent.marketplace.noMarketSource')}
+            action={(
+              <Button
+                actionId="marketplace-add-first-source"
+                leading={<Icon iconId="plus" size={14} />}
+                label={t('agent.marketplace.addSource')}
+                onActivate={() => setAddSourceOpen(true)}
+              />
+            )}
+          />
+        </div>
       );
     }
 
     if (filteredPackages.length === 0) {
       return (
-        <Empty
-          icon={SearchX}
-          title={search
-            ? t('agent.marketplace.noResults')
-            : t('agent.marketplace.noPackagesForTab')}
-          padding="64px 16px"
-        />
+        <div className="sc-discover-empty">
+          <Empty
+            icon={<Icon iconId="search" size={40} />}
+            description={search
+              ? t('agent.marketplace.noResults')
+              : t('agent.marketplace.noPackagesForTab')}
+          />
+        </div>
       );
     }
 
     return (
-      <Flexbox gap={token.marginLG}>
-        <Flexbox horizontal wrap="wrap" gap={token.marginMD}>
+      <div className="sc-discover-content">
+        <div className="sc-discover-grid">
           {visiblePackages.map((entry) => (
             <MarketplacePackageCard
               key={`${entry.marketId}-${entry.filePath}`}
@@ -423,301 +435,313 @@ export const DiscoverSettings = memo(() => {
               onUninstall={handleUninstall}
             />
           ))}
-        </Flexbox>
+        </div>
         {visiblePackages.length < filteredPackages.length && (
-          <Flexbox align="center">
-            <Button onClick={() => setVisibleLimit((limit) => limit + PACKAGE_BATCH_SIZE)}>
-              {t('agent.marketplace.loadMore', {
+          <div className="sc-discover-load-more">
+            <Button
+              actionId="marketplace-load-more"
+              label={t('agent.marketplace.loadMore', {
                 shown: visiblePackages.length,
                 total: filteredPackages.length,
               })}
-            </Button>
-          </Flexbox>
+              onActivate={() => setVisibleLimit((limit) => limit + PACKAGE_BATCH_SIZE)}
+            />
+          </div>
         )}
-      </Flexbox>
+      </div>
     );
   };
 
   const detail = selectedDetail || selectedEntry;
   const detailPackageType = detail?.packageType || 'skill';
 
+  const detailRows: { label: string; value: React.ReactNode; full?: boolean }[] = detail ? [
+    {
+      label: t('agent.marketplace.detail.packageType'),
+      value: t(`agent.marketplace.packageType.${detailPackageType}`),
+    },
+    { label: t('agent.marketplace.detail.version'), value: detail.version || '1' },
+    {
+      label: t('agent.marketplace.detail.publisher'),
+      value: selectedDetail?.publisher || detail.author || t('agent.marketplace.unknownPublisher'),
+    },
+    {
+      label: t('agent.marketplace.detail.license'),
+      value: detail.license || t('agent.marketplace.notProvided'),
+    },
+    {
+      label: t('agent.marketplace.detail.trust'),
+      value: detail.trustLevel || t('agent.marketplace.trust.unknown'),
+    },
+    {
+      label: t('agent.marketplace.detail.risk'),
+      value: detail.riskLevel || t('agent.marketplace.risk.unknown'),
+    },
+    {
+      label: t('agent.marketplace.detail.source'),
+      value: selectedDetail?.repository || detail.source || detail.filePath,
+      full: true,
+    },
+    {
+      label: t('agent.marketplace.detail.signature'),
+      value: detail.signatureStatus || t('agent.marketplace.signature.invalid'),
+    },
+    {
+      label: t('agent.marketplace.detail.policy'),
+      value: t(`agent.marketplace.policy.${detail.installPolicy || 'blocked'}`),
+    },
+  ] : [];
+
   return (
-    <Flexbox
-      data-testid="marketplace-page"
-      style={{ height: '100%', overflow: 'auto' }}
-    >
-      <PageColumn tier="standard" style={{ paddingBlock: token.paddingLG }}>
-      <Flexbox gap={token.marginLG}>
-      <Flexbox horizontal align="center" justify="space-between" wrap="wrap" gap={12}>
-        <Flexbox gap={4}>
-          <h2 style={{ margin: 0, fontSize: token.fontSizeHeading4, color: token.colorText }}>
-            {t('agent.marketplace.title')}
-          </h2>
-          <span style={{ color: token.colorTextSecondary, fontSize: token.fontSizeSM }}>
-            {t('agent.marketplace.summary', {
-              packages: packages.length,
-              sources: markets.length,
+    <div className="sc-discover" data-testid="marketplace-page">
+      <PageColumn tier="standard">
+        <div className="sc-discover-column">
+        <div className="sc-discover-header">
+          <div className="sc-discover-header__text">
+            <h2 className="sc-discover-title">{t('agent.marketplace.title')}</h2>
+            <span className="sc-discover-summary">
+              {t('agent.marketplace.summary', {
+                packages: packages.length,
+                sources: markets.length,
+              })}
+            </span>
+          </div>
+          <div className="sc-discover-header__actions">
+            <Button
+              actionId="marketplace-sync"
+              leading={<Icon iconId="refresh-cw" size={14} />}
+              execution={syncing ? 'pending' : 'idle'}
+              label={t('agent.marketplace.sync')}
+              onActivate={() => void handleSyncAll()}
+            />
+            <Button
+              actionId="marketplace-add-source"
+              emphasis="primary"
+              leading={<Icon iconId="plus" size={14} />}
+              label={t('agent.marketplace.addSource')}
+              onActivate={() => setAddSourceOpen(true)}
+            />
+          </div>
+        </div>
+
+        {markets.length > 0 && (
+          <div className="sc-discover-sources">
+            {markets.map((market) => {
+              let tone: Tone = 'neutral';
+              if (market.revoked || market.signatureStatus === 'invalid') tone = 'danger';
+              else if (market.stale) tone = 'warning';
+              else if (market.synced) tone = 'success';
+              return (
+                <Tag
+                  key={market.id}
+                  tone={tone}
+                  data-testid={`marketplace-source-${market.id}`}
+                  title={[
+                    market.url,
+                    market.branch,
+                    market.catalogRevision,
+                    market.publicKeyFingerprint,
+                    market.error,
+                  ].filter(Boolean).join('\n')}
+                  leading={market.signatureStatus === 'verified'
+                    ? <Icon iconId="shield-check" size={10} />
+                    : undefined}
+                  onDismiss={market.builtIn ? undefined : () => handleRemoveSource(market)}
+                  dismissLabel={t('agent.marketplace.removeSource')}
+                >
+                  {market.name} · {market.skillCount} · {market.trustLevel}
+                </Tag>
+              );
             })}
-          </span>
-        </Flexbox>
-        <Flexbox horizontal gap={8}>
-          <Button
-            icon={<RefreshCw size={14} />}
-            loading={syncing}
-            onClick={handleSyncAll}
-          >
-            {t('agent.marketplace.sync')}
-          </Button>
-          <Button
-            icon={<Plus size={14} />}
-            type="primary"
-            onClick={() => setAddSourceOpen(true)}
-          >
-            {t('agent.marketplace.addSource')}
-          </Button>
-        </Flexbox>
-      </Flexbox>
+          </div>
+        )}
 
-      {markets.length > 0 && (
-        <Flexbox horizontal wrap="wrap" gap={6}>
-          {markets.map((market) => (
-            <Tag
-              key={market.id}
-              color={market.revoked || market.signatureStatus === 'invalid'
-                ? 'error'
-                : market.stale
-                  ? 'warning'
-                  : market.synced
-                    ? 'success'
-                    : 'default'}
-              icon={market.signatureStatus === 'verified' ? <ShieldCheck size={10} /> : undefined}
-              title={[
-                market.url,
-                market.branch,
-                market.catalogRevision,
-                market.publicKeyFingerprint,
-                market.error,
-              ].filter(Boolean).join('\n')}
-              style={{ margin: 0 }}
-              data-testid={`marketplace-source-${market.id}`}
-              closable={!market.builtIn}
-              onClose={(event) => {
-                event.preventDefault();
-                handleRemoveSource(market);
-              }}
-            >
-              {market.name} · {market.skillCount} · {market.trustLevel}
-            </Tag>
-          ))}
-        </Flexbox>
-      )}
+        {catalog && catalog.failedSources > 0 && (
+          <Alert
+            tone="warning"
+            title={t('agent.marketplace.partialLoadFailed', {
+              count: catalog.failedSources,
+            })}
+          />
+        )}
 
-      {catalog && catalog.failedSources > 0 && (
-        <Alert
-          message={t('agent.marketplace.partialLoadFailed', {
-            count: catalog.failedSources,
-          })}
-          showIcon
-          type="warning"
-        />
-      )}
-
-      <Flexbox horizontal gap={token.marginMD} align="center" justify="space-between" wrap="wrap">
-        <Segmented
-          options={tabOptions}
-          value={activeTab}
-          onChange={(value) => {
-            setActiveTab(value as TabKey);
-            setVisibleLimit(PACKAGE_BATCH_SIZE);
-          }}
-        />
-        <SearchBar
-          allowClear
-          enableShortKey={false}
-          placeholder={t('agent.marketplace.search')}
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            setVisibleLimit(PACKAGE_BATCH_SIZE);
-          }}
-          style={{ width: 260 }}
-        />
-      </Flexbox>
-
-      <Flexbox style={{ flex: 1, minHeight: 0 }}>
-        {renderContent()}
-      </Flexbox>
-
-      <Modal
-        title={t('agent.marketplace.addSource')}
-        open={addSourceOpen}
-        confirmLoading={addingSource}
-        okText={t('agent.marketplace.addAndSync')}
-        onCancel={() => setAddSourceOpen(false)}
-        onOk={handleAddSource}
-      >
-        <Flexbox gap={12} style={{ paddingBlock: 12 }}>
-          <Input
-            autoFocus
-            placeholder={t('agent.marketplace.sourceUrl')}
-            value={sourceUrl}
-            onChange={(event) => {
-              const value = event.target.value;
-              setSourceUrl(value);
-              if (!sourceName.trim()) setSourceName(defaultNameFromUrl(value));
+        <div className="sc-discover-toolbar">
+          <Segmented<TabKey>
+            density="compact"
+            options={tabOptions}
+            value={activeTab}
+            onValueChange={(value) => {
+              if (value === 'agents' || value === 'skills' || value === 'tools') {
+                setActiveTab(value);
+                setVisibleLimit(PACKAGE_BATCH_SIZE);
+              }
             }}
           />
-          <Input
-            placeholder={t('agent.marketplace.sourceName')}
-            value={sourceName}
-            onChange={(event) => setSourceName(event.target.value)}
+          <TextField
+            className="sc-discover-search"
+            clearable
+            leading={<Icon iconId="search" size={14} />}
+            placeholder={t('agent.marketplace.search')}
+            value={search}
+            onValueChange={(value) => {
+              setSearch(value);
+              setVisibleLimit(PACKAGE_BATCH_SIZE);
+            }}
           />
-          <Input
-            placeholder={t('agent.marketplace.sourceId')}
-            value={sourceId}
-            onChange={(event) => setSourceId(event.target.value)}
-          />
-          <Input
-            placeholder={t('agent.marketplace.sourceBranch')}
-            value={sourceBranch}
-            onChange={(event) => setSourceBranch(event.target.value)}
-          />
-          <Input
-            placeholder={t('agent.marketplace.sourceManifestPath')}
-            value={sourceManifestPath}
-            onChange={(event) => setSourceManifestPath(event.target.value)}
-          />
-          <Input
-            placeholder={t('agent.marketplace.sourcePublisherId')}
-            value={sourcePublisherId}
-            onChange={(event) => setSourcePublisherId(event.target.value)}
-          />
-          <Input
-            placeholder={t('agent.marketplace.sourceSigningKeyId')}
-            value={sourceSigningKeyId}
-            onChange={(event) => setSourceSigningKeyId(event.target.value)}
-          />
-          <Input.TextArea
-            autoSize={{ minRows: 2, maxRows: 3 }}
-            placeholder={t('agent.marketplace.sourcePublicKey')}
-            value={sourcePublicKey}
-            onChange={(event) => setSourcePublicKey(event.target.value)}
-          />
-        </Flexbox>
-      </Modal>
+        </div>
 
-      <Drawer
-        width={720}
-        title={detail?.name}
-        open={Boolean(selectedEntry)}
-        onClose={closeDetail}
-        extra={detail?.installed ? (
-          <Button
-            danger
-            onClick={() => detail && void handleUninstall(detail)}
-          >
-            {t('agent.marketplace.uninstall')}
-          </Button>
-        ) : (
-          <Button
-            disabled={detail?.installPolicy === 'blocked' || detail?.revoked}
-            type="primary"
-            onClick={() => detail && void handleInstall(detail)}
-          >
-            {t('agent.marketplace.install')}
-          </Button>
-        )}
-      >
-        {detailLoading ? (
-          <Flexbox align="center" justify="center" style={{ minHeight: 180 }}>
-            <Spin />
-          </Flexbox>
-        ) : detail ? (
-          <Flexbox
-            data-package-id={detail.identifier}
-            data-testid="marketplace-package-detail"
-            gap={16}
-          >
-            <Descriptions bordered column={2} size="small">
-              <Descriptions.Item label={t('agent.marketplace.detail.packageType')}>
-                {t(`agent.marketplace.packageType.${detailPackageType}`)}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('agent.marketplace.detail.version')}>
-                {detail.version || '1'}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('agent.marketplace.detail.publisher')}>
-                {selectedDetail?.publisher
-                  || detail.author
-                  || t('agent.marketplace.unknownPublisher')}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('agent.marketplace.detail.license')}>
-                {detail.license || t('agent.marketplace.notProvided')}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('agent.marketplace.detail.trust')}>
-                {detail.trustLevel || t('agent.marketplace.trust.unknown')}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('agent.marketplace.detail.risk')}>
-                {detail.riskLevel || t('agent.marketplace.risk.unknown')}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('agent.marketplace.detail.source')} span={2}>
-                {selectedDetail?.repository || detail.source || detail.filePath}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('agent.marketplace.detail.signature')}>
-                {detail.signatureStatus || t('agent.marketplace.signature.invalid')}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('agent.marketplace.detail.policy')}>
-                {t(`agent.marketplace.policy.${detail.installPolicy || 'blocked'}`)}
-              </Descriptions.Item>
-              {detail.contentHash && (
-                <Descriptions.Item label={t('agent.marketplace.detail.digest')} span={2}>
-                  <code style={{ wordBreak: 'break-all' }}>{detail.contentHash}</code>
-                </Descriptions.Item>
+        <div className="sc-discover-stage">
+          {renderContent()}
+        </div>
+
+        <Dialog
+          open={addSourceOpen}
+          onDismiss={() => setAddSourceOpen(false)}
+          title={t('agent.marketplace.addSource')}
+          width={520}
+          footer={(
+            <Button
+              actionId="marketplace-add-and-sync"
+              emphasis="primary"
+              execution={addingSource ? 'pending' : 'idle'}
+              label={t('agent.marketplace.addAndSync')}
+              onActivate={() => void handleAddSource()}
+            />
+          )}
+        >
+          <div className="sc-discover-source-form">
+            <TextField
+              autoFocus
+              placeholder={t('agent.marketplace.sourceUrl')}
+              value={sourceUrl}
+              onValueChange={(value) => {
+                setSourceUrl(value);
+                if (!sourceName.trim()) setSourceName(defaultNameFromUrl(value));
+              }}
+            />
+            <TextField
+              placeholder={t('agent.marketplace.sourceName')}
+              value={sourceName}
+              onValueChange={setSourceName}
+            />
+            <TextField
+              placeholder={t('agent.marketplace.sourceId')}
+              value={sourceId}
+              onValueChange={setSourceId}
+            />
+            <TextField
+              placeholder={t('agent.marketplace.sourceBranch')}
+              value={sourceBranch}
+              onValueChange={setSourceBranch}
+            />
+            <TextField
+              placeholder={t('agent.marketplace.sourceManifestPath')}
+              value={sourceManifestPath}
+              onValueChange={setSourceManifestPath}
+            />
+            <TextField
+              placeholder={t('agent.marketplace.sourcePublisherId')}
+              value={sourcePublisherId}
+              onValueChange={setSourcePublisherId}
+            />
+            <TextField
+              placeholder={t('agent.marketplace.sourceSigningKeyId')}
+              value={sourceSigningKeyId}
+              onValueChange={setSourceSigningKeyId}
+            />
+            <TextArea
+              rows={3}
+              placeholder={t('agent.marketplace.sourcePublicKey')}
+              value={sourcePublicKey}
+              onValueChange={setSourcePublicKey}
+            />
+          </div>
+        </Dialog>
+
+        <Drawer
+          width={720}
+          title={detail?.name}
+          open={Boolean(selectedEntry)}
+          onDismiss={closeDetail}
+          extra={detail?.installed ? (
+            <Button
+              actionId="marketplace-detail-uninstall"
+              tone="danger"
+              label={t('agent.marketplace.uninstall')}
+              onActivate={() => detail && void handleUninstall(detail)}
+            />
+          ) : (
+            <Button
+              actionId="marketplace-detail-install"
+              emphasis="primary"
+              label={t('agent.marketplace.install')}
+              availability={(detail?.installPolicy === 'blocked' || detail?.revoked)
+                ? { kind: 'disabled', reason: t('agent.marketplace.installBlocked') }
+                : undefined}
+              onActivate={() => detail && void handleInstall(detail)}
+            />
+          )}
+        >
+          {detailLoading ? (
+            <div className="sc-discover-loading">
+              <Spin />
+            </div>
+          ) : detail ? (
+            <div
+              className="sc-discover-detail"
+              data-package-id={detail.identifier}
+              data-testid="marketplace-package-detail"
+            >
+              <dl className="sc-discover-descriptions">
+                {detailRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className={`sc-discover-descriptions__item${row.full ? ' is-full' : ''}`}
+                  >
+                    <dt>{row.label}</dt>
+                    <dd>{row.value}</dd>
+                  </div>
+                ))}
+                {detail.contentHash && (
+                  <div className="sc-discover-descriptions__item is-full">
+                    <dt>{t('agent.marketplace.detail.digest')}</dt>
+                    <dd><code className="sc-discover-digest">{detail.contentHash}</code></dd>
+                  </div>
+                )}
+                {detail.revoked && (
+                  <div className="sc-discover-descriptions__item is-full">
+                    <dt>{t('agent.marketplace.detail.revocation')}</dt>
+                    <dd>
+                      <Tag tone="danger">{t('agent.marketplace.revoked')}</Tag>
+                      {detail.revokedAt}
+                    </dd>
+                  </div>
+                )}
+                {detail.scanVerdict && (
+                  <div className="sc-discover-descriptions__item is-full">
+                    <dt>{t('agent.marketplace.detail.scan')}</dt>
+                    <dd>{detail.scanVerdict}</dd>
+                  </div>
+                )}
+                {detail.installed && detail.targetAuthority && (
+                  <div className="sc-discover-descriptions__item is-full">
+                    <dt>{t('agent.marketplace.detail.authority')}</dt>
+                    <dd>{detail.targetAuthority}</dd>
+                  </div>
+                )}
+              </dl>
+              {selectedDetail?.content && (
+                <div className="sc-discover-content-pre">
+                  <Text strong>{t('agent.marketplace.detail.content')}</Text>
+                  <pre className="sc-discover-pre">{selectedDetail.content}</pre>
+                </div>
               )}
-              {detail.revoked && (
-                <Descriptions.Item label={t('agent.marketplace.detail.revocation')} span={2}>
-                  <Tag color="error">{t('agent.marketplace.revoked')}</Tag>
-                  {detail.revokedAt}
-                </Descriptions.Item>
-              )}
-              {detail.scanVerdict && (
-                <Descriptions.Item label={t('agent.marketplace.detail.scan')} span={2}>
-                  {detail.scanVerdict}
-                </Descriptions.Item>
-              )}
-              {detail.installed && detail.targetAuthority && (
-                <Descriptions.Item label={t('agent.marketplace.detail.authority')} span={2}>
-                  {detail.targetAuthority}
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-            {selectedDetail?.content && (
-              <Flexbox gap={6}>
-                <strong>{t('agent.marketplace.detail.content')}</strong>
-                <pre
-                  style={{
-                    maxHeight: 280,
-                    margin: 0,
-                    padding: 12,
-                    overflow: 'auto',
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                    borderRadius: token.borderRadiusSM,
-                    background: token.colorFillQuaternary,
-                    color: token.colorText,
-                    fontSize: 12,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {selectedDetail.content}
-                </pre>
-              </Flexbox>
-            )}
-          </Flexbox>
-        ) : null}
-      </Drawer>
-      </Flexbox>
+            </div>
+          ) : null}
+        </Drawer>
+        </div>
       </PageColumn>
-    </Flexbox>
+    </div>
   );
 });
 

@@ -71,6 +71,25 @@ if [ "$PEERS_NODE_ROLE" = "station" ] &&
   : "${STATION_RELAY_CONTROL_ORIGIN:?STATION_RELAY_CONTROL_ORIGIN is required}"
 fi
 
+# ── Profile-driven required-secret gate (fail closed) ───────────────────────
+# PEERS_REQUIRED_SECRET_KEYS is rendered by deploy-time secret reconciliation
+# from the role's secret-manifest (Class B / externally-shared keys only). It
+# is a space-separated list of variable NAMES. When set, every named variable
+# must be present and non-empty before the process starts. Local/compose
+# profiles that do not reconcile secrets leave this unset, so they are
+# unaffected. Values are never printed.
+if [ -n "${PEERS_REQUIRED_SECRET_KEYS:-}" ]; then
+  for __secret_name in $PEERS_REQUIRED_SECRET_KEYS; do
+    eval "__secret_value=\${$__secret_name:-}"
+    if [ -z "$__secret_value" ]; then
+      echo "[entrypoint] required secret '$__secret_name' is missing or empty (fail closed)" >&2
+      echo "[entrypoint] provision it with 'make secret-set' and redeploy; see runtime/runtime-secrets/" >&2
+      exit 1
+    fi
+  done
+  unset __secret_name __secret_value
+fi
+
 case "${PEERS_STATION_CLUSTER_MODE:-single}" in
   single)
     ;;

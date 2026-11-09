@@ -183,8 +183,13 @@
   "provider.logs.pause": "暂停",
   "provider.logs.refresh": "刷新",
   "provider.logs.exportVisible": "导出可见",
+  "provider.logs.clear": "清空",
   "provider.logs.levels": "级别：",
   "provider.logs.onlyWarnings": "仅警告+",
+  "provider.logs.colTime": "时间",
+  "provider.logs.colSource": "来源",
+  "provider.logs.colLevel": "级别",
+  "provider.logs.colMessage": "消息",
   "provider.logs.noLogs": "未找到日志",
   "provider.logs.showing": "显示 {{filtered}} / {{total}} 条记录。",
   "provider.logs.autoFollow": "自动追踪",
@@ -503,6 +508,7 @@
   "provider.account.identity.copied": "已复制",
   "provider.account.identity.copyFailed": "复制失败",
   "provider.account.identity.changeHeader": "更换横幅",
+  "provider.account.identity.changeAvatar": "更换头像",
   "provider.account.avatarHeader.title": "头像与横幅",
   "provider.account.avatarHeader.subtitle": "点击图片区域选择并上传新照片。",
   "provider.account.avatarHeader.avatar": "头像",
@@ -839,5 +845,8 @@
   "provider.deviceLink.expired": "登录码已失效",
   "provider.deviceLink.refresh": "刷新登录码",
   "provider.deviceLink.retry": "重试",
-  "provider.deviceLink.failed": "暂时无法完成，请重试"
+  "provider.deviceLink.failed": "暂时无法完成，请重试",
+  "provider.detail.enabled": "启用",
+  "provider.detail.enabledDesc": "将该服务商纳入模型发现与路由。",
+  "provider.detail.checking": "检测中…"
 }

@@ -9,9 +9,10 @@
 import { useState } from 'react';
 import {
   ChevronDown, ChevronRight, Clock3, Command as CommandIcon,
-  Cpu, Database, Flame, HelpCircle, Info, MessageSquare, ScrollText, Send, Trash2,
+  Cpu, Database, FileText, Flame, HelpCircle, Info, MessageSquare, RotateCcw,
+  ScrollText, Send, Trash2, Upload,
 } from 'lucide-react';
-import { Button, Dialog, Empty, Tag, TextField } from '@peers-touch/ui';
+import { Button, Dialog, Empty, Segmented, Switch, Tag, TextField } from '@peers-touch/ui';
 import { makeTranslate, usePrefs, type StringKey, type Translate } from '../../prefs';
 import { SettingsRow, SettingsSection } from '../SettingsPrimitives';
 import '../settings.css';
@@ -338,6 +339,156 @@ export function AboutSection() {
         })}
       </SettingsSection>
     </>
+  );
+}
+
+/* ── Tool registry (desktop ToolsTab parity: read-only tools_list view) ─ */
+
+type ToolCategory = 'filesystem' | 'shell' | 'web' | 'memory' | 'mcp' | 'agent';
+
+type ToolFixture = { id: string; name: string; category: ToolCategory; needsApproval: boolean };
+
+const TOOL_FIXTURES: ToolFixture[] = [
+  { id: 'fs-read', name: 'fs.read_text_file', category: 'filesystem', needsApproval: false },
+  { id: 'fs-write', name: 'fs.write_text_file', category: 'filesystem', needsApproval: true },
+  { id: 'shell-exec', name: 'shell.exec_command', category: 'shell', needsApproval: true },
+  { id: 'web-fetch', name: 'web.fetch_url', category: 'web', needsApproval: false },
+  { id: 'memory-remember', name: 'memory.remember', category: 'memory', needsApproval: false },
+  { id: 'mcp-call', name: 'mcp.invoke_tool', category: 'mcp', needsApproval: true },
+  { id: 'agent-spawn', name: 'agent.spawn_subagent', category: 'agent', needsApproval: true },
+];
+
+const TOOL_CATEGORY_TONE: Record<ToolCategory, 'neutral' | 'info' | 'success' | 'warning' | 'danger'> = {
+  filesystem: 'neutral', shell: 'danger', web: 'info',
+  memory: 'success', mcp: 'warning', agent: 'info',
+};
+
+export function ToolsSection() {
+  const { t } = useT();
+  return (
+    <SettingsSection icon={Cpu} title={t('toolreg.title')} subtitle={t('toolreg.desc')}>
+      <div className="sk-tool-registry" data-tool-registry>
+        <div className="sk-tool-row sk-tool-head">
+          <span>{t('toolreg.column.name')}</span>
+          <span>{t('toolreg.column.category')}</span>
+          <span>{t('toolreg.column.approval')}</span>
+        </div>
+        {TOOL_FIXTURES.map(tool => (
+          <div key={tool.id} className="sk-tool-row" data-tool-id={tool.id}
+            data-tool-category={tool.category} data-tool-approval={tool.needsApproval ? 'required' : 'auto'}>
+            <span className="sk-tool-name"><code>{tool.name}</code></span>
+            <span><Tag tone={TOOL_CATEGORY_TONE[tool.category]}>{t(`toolreg.cat.${tool.category}` as StringKey)}</Tag></span>
+            <span>
+              <Tag tone={tool.needsApproval ? 'warning' : 'neutral'}>
+                {tool.needsApproval ? t('toolreg.approval.required') : t('toolreg.approval.auto')}
+              </Tag>
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="sk-settings-note">{t('toolreg.note')}</p>
+    </SettingsSection>
+  );
+}
+
+/* ── My Files (desktop oss MyFilesSettings parity: object storage inventory) */
+
+type FileVisibility = 'public' | 'chat' | 'private';
+type FileFixture = {
+  id: string; name: string; bucket: string; mime: string;
+  visibility: FileVisibility; sizeLabel: string; updatedAt: string; deleted: boolean;
+};
+
+const INITIAL_FILES: FileFixture[] = [
+  { id: 'f1', name: '番茄育苗手册.pdf', bucket: 'attachments', mime: 'application/pdf',
+    visibility: 'chat', sizeLabel: '2.4 MB', updatedAt: '2026-11-02', deleted: false },
+  { id: 'f2', name: '罗勒苗交换清单.xlsx', bucket: 'attachments', mime: 'application/vnd.ms-excel',
+    visibility: 'private', sizeLabel: '86 KB', updatedAt: '2026-10-28', deleted: false },
+  { id: 'f3', name: '书架值班排期.png', bucket: 'media', mime: 'image/png',
+    visibility: 'public', sizeLabel: '1.1 MB', updatedAt: '2026-10-21', deleted: false },
+  { id: 'f4', name: '旧协议草稿.md', bucket: 'exports', mime: 'text/markdown',
+    visibility: 'private', sizeLabel: '12 KB', updatedAt: '2026-09-14', deleted: true },
+];
+
+type VisibilityFilter = 'all' | FileVisibility;
+
+export function FilesSection() {
+  const { t } = useT();
+  const [files, setFiles] = useState<FileFixture[]>(INITIAL_FILES);
+  const [bucketQuery, setBucketQuery] = useState('');
+  const [mimeQuery, setMimeQuery] = useState('');
+  const [visibility, setVisibility] = useState<VisibilityFilter>('all');
+  const [includeDeleted, setIncludeDeleted] = useState(false);
+
+  const visible = files.filter(file => {
+    if (file.deleted && !includeDeleted) return false;
+    if (visibility !== 'all' && file.visibility !== visibility) return false;
+    if (bucketQuery.trim() && !file.bucket.toLowerCase().includes(bucketQuery.trim().toLowerCase())) return false;
+    if (mimeQuery.trim() && !file.mime.toLowerCase().includes(mimeQuery.trim().toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <SettingsSection icon={Database} title={t('myfiles.title')} subtitle={t('myfiles.desc')}>
+      <div className="sk-files-filters" data-files-filters>
+        <TextField density="compact" className="sk-files-filter" placeholder={t('myfiles.filterBucket')} aria-label={t('myfiles.filterBucket')}
+          value={bucketQuery} onValueChange={setBucketQuery} data-files-bucket-filter />
+        <TextField density="compact" className="sk-files-filter" placeholder={t('myfiles.filterMime')} aria-label={t('myfiles.filterMime')}
+          value={mimeQuery} onValueChange={setMimeQuery} data-files-mime-filter />
+        <Segmented<VisibilityFilter> density="compact"
+          aria-label={t('myfiles.visibility')}
+          options={[
+            { value: 'all', label: t('myfiles.visibility.all') },
+            { value: 'public', label: t('myfiles.visibility.public') },
+            { value: 'chat', label: t('myfiles.visibility.chat') },
+            { value: 'private', label: t('myfiles.visibility.private') },
+          ]}
+          value={visibility}
+          onValueChange={value => setVisibility(value ?? 'all')} />
+        <label className="sk-files-include">
+          <Switch checked={includeDeleted} aria-label={t('myfiles.includeDeleted')}
+            data-files-include-deleted onCheckedChange={setIncludeDeleted} />
+          <span>{t('myfiles.includeDeleted')}</span>
+        </label>
+      </div>
+
+      <div className="sk-files-list" data-files-list>
+        {visible.length === 0 && <Empty description={t('myfiles.empty')} />}
+        {visible.map(file => (
+          <div key={file.id} className="sk-file-row" data-file-id={file.id}
+            data-file-state={file.deleted ? 'deleted' : 'live'}
+            data-file-visibility={file.visibility}>
+            <span className="sk-file-id">
+              <FileText size={15} />
+              <span className="sk-file-name">{file.name}</span>
+            </span>
+            <Tag tone={file.visibility === 'public' ? 'success' : file.visibility === 'chat' ? 'info' : 'neutral'}>
+              {t(`myfiles.visibility.${file.visibility}` as StringKey)}
+            </Tag>
+            <span className="sk-file-size">{file.sizeLabel}</span>
+            <span className="sk-file-state">{file.deleted ? t('myfiles.state.deleted') : t('myfiles.state.live')}</span>
+            <span className="sk-file-actions">
+              {file.deleted
+                ? <Button emphasis="quiet" density="compact" leading={<RotateCcw size={13} />}
+                    actionId={`files.restore-${file.id}`} label={t('myfiles.restore')}
+                    onActivate={() => setFiles(list => list.map(item =>
+                      item.id === file.id ? { ...item, deleted: false } : item))} />
+                : <Button emphasis="quiet" tone="danger" density="compact" leading={<Trash2 size={13} />}
+                    actionId={`files.delete-${file.id}`} label={t('myfiles.delete')}
+                    onActivate={() => setFiles(list => list.map(item =>
+                      item.id === file.id ? { ...item, deleted: true } : item))} />}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="sk-files-footer">
+        <Button emphasis="primary" density="compact" leading={<Upload size={14} />}
+          actionId="files.upload" label={t('myfiles.upload')}
+          availability={{ kind: 'disabled', reason: t('myfiles.uploadDisabled') }} />
+        <p className="sk-settings-note">{t('myfiles.note')}</p>
+      </div>
+    </SettingsSection>
   );
 }
 

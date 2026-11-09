@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,9 +12,14 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, toast } from '@lobehub/ui';
-import { Popover, Progress, theme, Tooltip, Typography } from 'antd';
-import { Flexbox } from 'react-layout-kit';
+import {
+  Button as PtButton,
+  Icon,
+  IconButton,
+  Popover as PtPopover,
+  TextArea,
+  Tooltip as PtTooltip,
+} from '@peers-touch/ui';
 import {
   AlertCircle,
   File as FileIcon,
@@ -25,7 +31,6 @@ import {
   Mic,
   RotateCcw,
   Scissors,
-  Send,
   Smile,
   Square,
   Trash2,
@@ -68,10 +73,9 @@ import {
   desktopChatVisualCssVars,
   type DesktopChatVisualSurface,
 } from './chatPresentationPolicy';
+import { notifyError } from '../../ui/feedback';
 
 export type { ChatComposerCapabilities } from '@peers-touch/client-chat-core';
-
-const { Text } = Typography;
 
 const EMOJI_RECENT_STORAGE_KEY = 'peers-touch:chat:composer:recent-emojis';
 
@@ -173,7 +177,6 @@ export function ChatComposer({
   sending,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const lastCompositionEndRef = useRef(0);
@@ -242,7 +245,7 @@ export function ChatComposer({
     disabled,
     editing,
     fallbackName: t('chat.social.composer.attachmentFallbackName'),
-    onUploadFailed: () => toast.error(t('chat.social.composer.uploadFailed')),
+    onUploadFailed: () => notifyError(t('chat.social.composer.uploadFailed')),
   });
   const discardRecordedVoice = useCallback(() => {
     setRecordedVoice(null);
@@ -277,7 +280,7 @@ export function ChatComposer({
         });
       }
       log.error('chat', 'voice message send failed', error);
-      toast.error(t('chat.social.composer.voiceSendFailed'));
+      notifyError(t('chat.social.composer.voiceSendFailed'));
     } finally {
       setVoiceSending(false);
     }
@@ -298,8 +301,8 @@ export function ChatComposer({
         previewUrl: URL.createObjectURL(file),
       });
     },
-    onDenied: () => toast.error(t('chat.social.composer.voiceDenied')),
-    onUnsupported: () => toast.error(t('chat.social.composer.voiceUnsupported')),
+    onDenied: () => notifyError(t('chat.social.composer.voiceDenied')),
+    onUnsupported: () => notifyError(t('chat.social.composer.voiceUnsupported')),
   });
   const { captureScreenshot, capturing } = useChatScreenshotCapture({
     conversationId: activeConversationId,
@@ -307,7 +310,7 @@ export function ChatComposer({
     editing,
     enabled: activeCapabilities.screenshot,
     onCaptured: appendReadyAttachment,
-    onFailed: (reason) => toast.error(
+    onFailed: (reason) => notifyError(
       reason === 'capture_permission_or_display_failed'
         ? t('chat.social.composer.screenshotPermissionFailed')
         : t('chat.social.composer.screenshotFailed'),
@@ -325,13 +328,7 @@ export function ChatComposer({
       attachmentCount: readyAttachments.length,
       capabilities: activeCapabilities,
     });
-  const composerShellBorder = dragging ? `1px solid ${token.colorPrimaryBorder}` : '1px solid transparent';
-  const toolButtonStyle: CSSProperties = {
-    width: visualLayout.composerToolButtonSize,
-    height: visualLayout.composerToolButtonSize,
-    borderRadius: 8,
-    color: token.colorTextSecondary,
-  };
+  const composerShellBorder = dragging ? '1px solid var(--pt-borderStrong)' : '1px solid transparent';
 
   useEffect(() => {
     setEmojiOpen(false);
@@ -350,7 +347,7 @@ export function ChatComposer({
     } catch (error) {
       if (error instanceof RustCommandException && error.code === 'INVALID_ARGUMENT') return;
       log.error('chat', 'native attachment picker failed', error);
-      toast.error(t('chat.social.composer.uploadFailed'));
+      notifyError(t('chat.social.composer.uploadFailed'));
     }
   };
 
@@ -395,68 +392,46 @@ export function ChatComposer({
   };
 
   const emojiPanel = (
-    <Flexbox gap={12} style={{ width: 420, maxWidth: '70vw', padding: 14 }}>
+    <div className="sc-emoji-panel">
       {recentEmojis.length > 0 && (
-        <Flexbox gap={8}>
-          <Text style={{ fontSize: 13, color: token.colorTextSecondary }}>
-            {t('chat.social.composer.emojiRecent')}
-          </Text>
-          <Flexbox horizontal wrap="wrap" gap={6}>
+        <div className="sc-emoji-panel__group">
+          <span className="sc-emoji-panel__label">{t('chat.social.composer.emojiRecent')}</span>
+          <div className="sc-emoji-panel__grid">
             {recentEmojis.map((emoji) => (
               <button
                 key={emoji}
                 type="button"
+                className="sc-emoji-panel__item"
                 aria-label={t('chat.social.composer.emojiInsert')}
                 onClick={() => insertEmoji(emoji)}
-                style={{
-                  width: 32,
-                  height: 32,
-                  border: 0,
-                  borderRadius: 6,
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  fontSize: 21,
-                }}
               >
                 {emoji}
               </button>
             ))}
-          </Flexbox>
-        </Flexbox>
+          </div>
+        </div>
       )}
-      <Flexbox gap={8}>
-        <Text style={{ fontSize: 13, color: token.colorTextSecondary }}>
-          {t('chat.social.composer.emojiAll')}
-        </Text>
-        <Flexbox horizontal wrap="wrap" gap={6}>
+      <div className="sc-emoji-panel__group">
+        <span className="sc-emoji-panel__label">{t('chat.social.composer.emojiAll')}</span>
+        <div className="sc-emoji-panel__grid">
           {DEFAULT_EMOJI_GROUPS.flat().map((emoji) => (
             <button
               key={emoji}
               type="button"
+              className="sc-emoji-panel__item"
               aria-label={t('chat.social.composer.emojiInsert')}
               onClick={() => insertEmoji(emoji)}
-              style={{
-                width: 32,
-                height: 32,
-                border: 0,
-                borderRadius: 6,
-                background: 'transparent',
-                cursor: 'pointer',
-                fontSize: 21,
-              }}
             >
               {emoji}
             </button>
           ))}
-        </Flexbox>
-      </Flexbox>
-      <Flexbox horizontal align="center" justify="space-between" style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 8 }}>
+        </div>
+      </div>
+      <div className="sc-emoji-panel__footer">
         <Smile size={18} />
-        <Text style={{ fontSize: 12, color: token.colorTextQuaternary }}>
-          {t('chat.social.composer.emoji')}
-        </Text>
-      </Flexbox>
-    </Flexbox>
+        <span>{t('chat.social.composer.emoji')}</span>
+      </div>
+    </div>
   );
 
   const submit = async () => {
@@ -504,10 +479,11 @@ export function ChatComposer({
   };
 
   const renderDraftIcon = (item: ChatDraftAttachment) => {
-    if (item.status === 'uploading') return <Loader2 size={15} className="chat-composer-spin" />;
-    if (item.status === 'failed') return <AlertCircle size={15} />;
+    // Prototype .sk-draft-thumb stages icons at 20px inside the 44px tile.
+    if (item.status === 'uploading') return <Loader2 size={20} className="chat-composer-spin" />;
+    if (item.status === 'failed') return <AlertCircle size={20} />;
     const Icon = fileIconForMime(item.mimeType);
-    return <Icon size={15} />;
+    return <Icon size={20} />;
   };
 
   const renderDraftLabels = (item: ChatDraftAttachment) => {
@@ -558,396 +534,386 @@ export function ChatComposer({
     : visualLayout.composerInputMinHeight;
   const inputMaxHeight = inputExpanded ? visualLayout.composerInputExpandedMaxHeight : 180;
 
+  // North-star composer auto-grow (prototype sk-composer parity): the native
+  // rows=1 box never grows on its own, so clamp its explicit height between the
+  // CSS min/max contract from scrollHeight. Collapsed starts at one line and
+  // grows with content; expand switches to the policy's large surface.
+  useLayoutEffect(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    const computed = window.getComputedStyle(element);
+    const minHeight = Number.parseFloat(computed.minHeight) || 0;
+    const maxHeight = Number.parseFloat(computed.maxHeight) || Number.POSITIVE_INFINITY;
+    element.style.height = 'auto';
+    const nextHeight = Math.min(Math.max(element.scrollHeight, minHeight), maxHeight);
+    element.style.height = `${nextHeight}px`;
+    element.style.overflowY = element.scrollHeight > maxHeight + 1 ? 'auto' : 'hidden';
+  }, [value, inputExpanded, editing]);
+
+  const toolUnavailable = (reason: string) => ({ kind: 'disabled' as const, reason });
+
   return (
-    <Flexbox
+    <div
+      className={`sc-composer${visualSurface === 'desktop-thread' ? ' sc-composer--thread' : ''}`}
       data-chat-composer={activeConversationId}
       data-chat-send-outcome-revision={latestSendOutcome?.revision ?? 0}
       data-chat-send-outcome-state={latestSendOutcome?.outcome.state || ''}
       data-chat-send-outcome-message-id={latestSendOutcome?.outcome.messageId || ''}
       data-chat-send-outcome-attachment-count={latestSendOutcome?.outcome.attachmentCount ?? 0}
       data-chat-send-outcome-attachment-ids={latestSendOutcome?.outcome.attachmentIds.join(',') || ''}
-      gap={8}
       onDragOver={handleDragOver}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       style={{
         ...(desktopChatVisualCssVars(visualLayout) as CSSProperties),
-        padding: visualLayout.composerOuterPadding,
-        background: surfaceBackground ?? token.colorBgLayout,
-        position: 'relative',
-        flexShrink: 0,
+        // The thread-surface footer padding/border is owned by
+        // .sc-composer--thread (prototype .sk-thread-composer grammar).
+        ...(visualSurface === 'desktop-thread'
+          ? null
+          : { padding: visualLayout.composerOuterPadding }),
+        background: surfaceBackground ?? 'var(--pt-canvas)',
       }}
     >
-      <style>
-        {'.chat-composer-spin{animation:chat-composer-spin 1s linear infinite}@keyframes chat-composer-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}'}
-      </style>
       {dragging && (
-        <Flexbox
-          align="center"
-          justify="center"
-          style={{
-            position: 'absolute',
-            inset: 8,
-            zIndex: 4,
-            border: `1px dashed ${token.colorPrimary}`,
-            borderRadius: 8,
-            background: token.colorPrimaryBg,
-            color: token.colorPrimary,
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
+        <div className="sc-composer__drop" data-chat-composer-drop>
           {t('chat.social.composer.dropHint')}
-        </Flexbox>
+        </div>
       )}
 
       {banner && (
-        <Flexbox
-          horizontal
-          align="center"
-          justify="space-between"
-          style={{
-            padding: '7px 10px',
-            borderRadius: 8,
-            background: token.colorBgContainer,
-            borderLeft: `3px solid ${token.colorPrimary}`,
-            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
-          }}
-        >
-          <Flexbox style={{ minWidth: 0, flex: 1 }}>
-            <Text style={{ fontSize: 11, color: token.colorPrimary, fontWeight: 600 }}>
-              {banner.label}
-            </Text>
-            <Text ellipsis type="secondary" style={{ fontSize: 12 }}>
-              {banner.text}
-            </Text>
-          </Flexbox>
-          <Button
-            type="text"
-            size="small"
-            icon={<X size={13} />}
+        <div className="sc-composer__banner">
+          <div className="sc-composer__banner-body">
+            <div className="sc-composer__banner-label">{banner.label}</div>
+            <div className="sc-composer__banner-text">{banner.text}</div>
+          </div>
+          <PtButton
+            actionId="composer-cancel-banner"
+            className="sc-composer__banner-cancel"
+            emphasis="quiet"
+            density="compact"
+            leading={<X size={14} />}
             aria-label={t('chat.social.messageArea.cancel')}
-            onClick={banner.action}
+            onActivate={banner.action}
           />
-        </Flexbox>
+        </div>
       )}
 
-      <Flexbox
-        gap={0}
-        style={{
-          background: token.colorBgContainer,
-          border: composerShellBorder,
-          borderRadius: visualLayout.composerShellRadius,
-          overflow: 'hidden',
-          boxShadow: visualLayout.composerShellShadow,
-        }}
-      >
-        {drafts.length > 0 && (
-          <Flexbox
-            data-chat-attachment-drafts={drafts.length}
-            horizontal
-            gap={8}
-            style={{ padding: '8px 10px 0', overflowX: 'auto' }}
+      {recording && (
+        <div
+          className="sc-composer__recording"
+          data-chat-voice-recording
+          data-chat-voice-recording-seconds={recordingSeconds}
+        >
+          <span className="sc-composer__recording-label">
+            <span className="sc-composer__recording-dot" />
+            {t('chat.social.composer.recording', { seconds: recordingSeconds })}
+          </span>
+          <span className="sc-composer__recording-actions">
+            <PtButton
+              actionId="voice-record-cancel"
+              density="compact"
+              leading={<X size={13} />}
+              data-chat-voice-cancel
+              onActivate={() => stopRecording(true)}
+            >
+              {t('chat.social.composer.cancelRecord')}
+            </PtButton>
+            <PtButton
+              actionId="voice-record-finish"
+              density="compact"
+              emphasis="primary"
+              leading={<Square size={13} />}
+              data-chat-voice-finish
+              onActivate={() => stopRecording(false)}
+            >
+              {t('chat.social.composer.finishRecord')}
+            </PtButton>
+          </span>
+        </div>
+      )}
+
+      {recordedVoice && !recording && (
+        <div
+          className="sc-composer__voice-draft"
+          data-chat-voice-draft="preview"
+          data-chat-voice-duration-ms={Math.round(recordedVoice.durationSeconds * 1000)}
+        >
+          <audio
+            controls
+            data-chat-voice-preview
+            preload="metadata"
+            src={recordedVoice.previewUrl}
+          />
+          <span className="sc-composer__voice-duration">
+            {formatMediaDurationSeconds(recordedVoice.durationSeconds)}
+          </span>
+          <PtTooltip label={t('chat.social.composer.discardVoice')}>
+            <PtButton
+              actionId="voice-discard"
+              className="sc-composer__voice-discard"
+              emphasis="quiet"
+              density="compact"
+              leading={<Trash2 size={14} />}
+              aria-label={t('chat.social.composer.discardVoice')}
+              data-chat-voice-discard
+              onActivate={discardRecordedVoice}
+              availability={voiceSending ? toolUnavailable(t('chat.social.composer.uploading')) : undefined}
+            />
+          </PtTooltip>
+          <PtButton
+            actionId="voice-send"
+            className="sc-composer__voice-send"
+            density="compact"
+            emphasis="primary"
+            leading={voiceSending
+              ? <Loader2 size={14} className="chat-composer-spin" />
+              : <Icon iconId="send" size={14} />}
+            data-chat-voice-send
+            onActivate={() => {
+              void sendRecordedVoice(recordedVoice);
+            }}
+            availability={voiceSending ? toolUnavailable(t('chat.social.composer.uploading')) : undefined}
           >
-            {drafts.map((item) => {
-              const labels = renderDraftLabels(item);
-              return (
-              <Flexbox
+            {t('chat.social.composer.sendVoice')}
+          </PtButton>
+        </div>
+      )}
+
+      {drafts.length > 0 && (
+        <div className="sc-composer__drafts" data-chat-attachment-drafts={drafts.length}>
+          {drafts.map((item) => {
+            const labels = renderDraftLabels(item);
+            return (
+              <div
                 key={item.id}
+                className={`sc-composer__draft${item.status === 'failed' ? ' is-failed' : ''}`}
                 data-chat-attachment-draft={item.id}
                 data-chat-attachment-attempt={item.attempt}
                 data-chat-attachment-status={item.status}
                 data-chat-attachment-preview={item.previewUrl || ''}
-                gap={6}
-                style={{
-                  width: 126,
-                  flex: '0 0 126px',
-                  border: `1px solid ${item.status === 'failed' ? token.colorErrorBorder : token.colorBorderSecondary}`,
-                  borderRadius: 8,
-                  padding: 6,
-                  background: item.status === 'failed' ? token.colorErrorBg : token.colorFillQuaternary,
-                }}
               >
-                <Flexbox
-                  align="center"
-                  justify="center"
-                  style={{
-                    height: 66,
-                    borderRadius: 6,
-                    overflow: 'hidden',
-                    background: token.colorFillSecondary,
-                    color: item.status === 'failed' ? token.colorError : token.colorTextSecondary,
-                  }}
-                >
+                <div className="sc-composer__draft-preview">
                   {item.previewUrl && item.mimeType.startsWith('image/') ? (
-                    <img src={item.previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={item.previewUrl} alt="" />
                   ) : item.previewUrl && item.mimeType.startsWith('video/') ? (
-                    <video src={item.previewUrl} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <video src={item.previewUrl} muted />
                   ) : (
                     renderDraftIcon(item)
                   )}
-                </Flexbox>
-                <Flexbox horizontal align="center" justify="space-between" gap={4}>
-                  <Flexbox style={{ minWidth: 0, flex: 1 }}>
-                    <Text ellipsis style={{ fontSize: 11 }}>{labels.primary}</Text>
-                    {labels.secondary && (
-                      <Text type="secondary" style={{ fontSize: 10 }}>{labels.secondary}</Text>
-                    )}
-                  </Flexbox>
-                  {item.status === 'failed' && (
-                    <Tooltip title={t('chat.social.composer.retryUpload')}>
-                      <Button type="text" size="small" icon={<RotateCcw size={13} />} onClick={() => retryDraft(item.id)} />
-                    </Tooltip>
+                  {item.status === 'uploading' && (
+                    <span
+                      className="sc-composer__draft-progress"
+                      role="progressbar"
+                      aria-label={t('chat.social.composer.uploading')}
+                      data-chat-attachment-uploading
+                    >
+                      <span className="sc-composer__draft-progress-bar" />
+                    </span>
                   )}
-                  <Tooltip title={t('chat.social.composer.removeAttachment')}>
-                    <Button type="text" size="small" icon={<Trash2 size={13} />} onClick={() => removeDraft(item.id)} />
-                  </Tooltip>
-                </Flexbox>
-                {item.status === 'uploading' && <Progress percent={55} showInfo={false} size="small" status="active" />}
-              </Flexbox>
-              );
-            })}
-          </Flexbox>
-        )}
+                </div>
+                <div className="sc-composer__draft-meta">
+                  <strong className="sc-composer__draft-primary">{labels.primary}</strong>
+                  {labels.secondary && (
+                    <span className="sc-composer__draft-secondary">{labels.secondary}</span>
+                  )}
+                </div>
+                <div className="sc-composer__draft-actions">
+                  {item.status === 'failed' && (
+                    <PtTooltip label={t('chat.social.composer.retryUpload')}>
+                      <PtButton
+                        actionId={`composer-retry-upload-${item.id}`}
+                        className="sc-composer__draft-action"
+                        emphasis="quiet"
+                        density="compact"
+                        leading={<RotateCcw size={13} />}
+                        aria-label={t('chat.social.composer.retryUpload')}
+                        onActivate={() => retryDraft(item.id)}
+                      />
+                    </PtTooltip>
+                  )}
+                  <PtTooltip label={t('chat.social.composer.removeAttachment')}>
+                    <PtButton
+                      actionId={`composer-remove-attachment-${item.id}`}
+                      className="sc-composer__draft-action"
+                      emphasis="quiet"
+                      density="compact"
+                      leading={<Trash2 size={13} />}
+                      aria-label={t('chat.social.composer.removeAttachment')}
+                      onActivate={() => removeDraft(item.id)}
+                    />
+                  </PtTooltip>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-        {recording && (
-          <Flexbox
-            horizontal
-            align="center"
-            justify="space-between"
-            data-chat-voice-recording
-            data-chat-voice-recording-seconds={recordingSeconds}
-            style={{ padding: '8px 10px 0' }}
-          >
-            <Flexbox horizontal align="center" gap={8}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: token.colorError }} />
-              <Text style={{ color: token.colorError, fontSize: 13 }}>
-                {t('chat.social.composer.recording', { seconds: recordingSeconds })}
-              </Text>
-            </Flexbox>
-            <Flexbox horizontal gap={6}>
-              <Button
-                size="small"
-                icon={<X size={13} />}
-                data-chat-voice-cancel
-                onClick={() => stopRecording(true)}
-              >
-                {t('chat.social.composer.cancelRecord')}
-              </Button>
-              <Button
-                size="small"
-                type="primary"
-                icon={<Square size={13} />}
-                data-chat-voice-finish
-                onClick={() => stopRecording(false)}
-              >
-                {t('chat.social.composer.finishRecord')}
-              </Button>
-            </Flexbox>
-          </Flexbox>
-        )}
-
-        {recordedVoice && !recording && (
-          <Flexbox
-            horizontal
-            align="center"
-            gap={10}
-            data-chat-voice-draft="preview"
-            data-chat-voice-duration-ms={Math.round(recordedVoice.durationSeconds * 1000)}
-            style={{ padding: '8px 10px 0' }}
-          >
-            <audio
-              controls
-              data-chat-voice-preview
-              preload="metadata"
-              src={recordedVoice.previewUrl}
-              style={{ flex: 1, minWidth: 0, height: 34 }}
-            />
-            <Text style={{ flex: '0 0 auto', fontSize: 12, color: token.colorTextSecondary }}>
-              {formatMediaDurationSeconds(recordedVoice.durationSeconds)}
-            </Text>
-            <Tooltip title={t('chat.social.composer.discardVoice')}>
-              <Button
-                type="text"
-                size="small"
-                icon={<Trash2 size={14} />}
-                aria-label={t('chat.social.composer.discardVoice')}
-                data-chat-voice-discard
-                onClick={discardRecordedVoice}
-                disabled={voiceSending}
-              />
-            </Tooltip>
-            <Button
-              size="small"
-              type="primary"
-              icon={voiceSending ? <Loader2 size={14} className="chat-composer-spin" /> : <Send size={14} />}
-              data-chat-voice-send
-              onClick={() => {
-                void sendRecordedVoice(recordedVoice);
-              }}
-              disabled={voiceSending}
-            >
-              {t('chat.social.composer.sendVoice')}
-            </Button>
-          </Flexbox>
-        )}
-
-        <textarea
-          ref={textareaRef}
-          data-pt-text-input="chat-composer"
-          value={value}
-          disabled={disabled || sending || recording || voiceSending || Boolean(recordedVoice)}
-          rows={3}
-          onInput={handleTextInputObserved}
-          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => commitValue(event.target.value)}
-          onCompositionStart={() => {
-            composingRef.current = true;
-          }}
-          onCompositionEnd={() => {
-            composingRef.current = false;
-            lastCompositionEndRef.current = Date.now();
-          }}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          onBlur={onBlurInput}
-          placeholder={placeholder ?? t('chat.social.messageArea.placeholder')}
-          style={{
-            width: '100%',
-            minHeight: inputMinHeight,
-            maxHeight: inputMaxHeight,
-            resize: 'none',
-            border: 0,
-            outline: 'none',
-            boxShadow: 'none',
-            padding: '12px 14px 6px',
-            background: 'transparent',
-            color: token.colorText,
-            caretColor: token.colorPrimary,
-            font: 'inherit',
-            lineHeight: 1.55,
-            overflowY: 'auto',
-            transition: 'min-height 0.18s ease, max-height 0.18s ease',
-          }}
-        />
-
-        <Flexbox
-          horizontal
-          align="center"
-          justify="space-between"
-          style={{
-            height: 38,
-            padding: '0 8px 6px',
-            background: token.colorBgContainer,
-          }}
-        >
-          <Flexbox horizontal align="center" gap={2}>
+      <div
+        className="sc-composer__shell"
+        data-dragging={dragging || undefined}
+        style={{
+          border: composerShellBorder,
+          borderRadius: visualLayout.composerShellRadius,
+          boxShadow: visualLayout.composerShellShadow,
+        }}
+      >
+        <div className="sc-composer__row">
+          <span className="sc-composer__tools">
             {activeCapabilities.emoji && (
-              <Popover
+              <PtPopover
                 open={emojiOpen}
                 onOpenChange={setEmojiOpen}
-                trigger="click"
-                placement="topRight"
+                placement="top"
                 content={emojiPanel}
-                styles={{ content: { padding: 0 } }}
-                destroyTooltipOnHide
-                motion={{ motionName: '' }}
+                label={t('chat.social.composer.emoji')}
               >
-                <Tooltip title={t('chat.social.composer.emoji')}>
-                  <Button
-                    type="text"
-                    icon={<Smile size={20} />}
+                <PtTooltip label={t('chat.social.composer.emoji')}>
+                  <PtButton
+                    actionId="composer-emoji"
+                    className="sc-composer__tool"
+                    emphasis="quiet"
+                    density="compact"
+                    leading={<Smile size={18} />}
                     aria-label={t('chat.social.composer.emoji')}
-                  disabled={Boolean(recordedVoice)}
-                    style={toolButtonStyle}
+                    availability={recordedVoice ? toolUnavailable(t('chat.social.composer.voice')) : undefined}
                   />
-                </Tooltip>
-              </Popover>
+                </PtTooltip>
+              </PtPopover>
             )}
             {activeCapabilities.file && (
-              <Tooltip title={t('chat.social.composer.file')}>
-                <Button
+              <PtTooltip label={t('chat.social.composer.file')}>
+                <PtButton
+                  actionId="composer-attach-file"
+                  className="sc-composer__tool"
                   data-chat-attachment-picker
-                  type="text"
-                  icon={<FolderOpen size={20} />}
+                  emphasis="quiet"
+                  density="compact"
+                  leading={<FolderOpen size={18} />}
                   aria-label={t('chat.social.composer.file')}
-                  onClick={() => {
+                  onActivate={() => {
                     void handlePickAttachment();
                   }}
-                  disabled={disabled || editing || recording || voiceSending || Boolean(recordedVoice)}
-                  style={toolButtonStyle}
+                  availability={
+                    disabled || editing || recording || voiceSending || Boolean(recordedVoice)
+                      ? toolUnavailable(t('chat.social.composer.sendDisabled'))
+                      : undefined
+                  }
                 />
-              </Tooltip>
+              </PtTooltip>
             )}
             {activeCapabilities.screenshot && (
-              <Tooltip title={t('chat.social.composer.screenshot', { shortcut: formatChatScreenshotShortcut(screenshotShortcut) })}>
-                <Button
-                  type="text"
-                  icon={capturing ? <Loader2 size={20} className="chat-composer-spin" /> : <Scissors size={20} />}
+              <PtTooltip label={t('chat.social.composer.screenshot', { shortcut: formatChatScreenshotShortcut(screenshotShortcut) })}>
+                <PtButton
+                  actionId="composer-screenshot"
+                  className="sc-composer__tool"
+                  emphasis="quiet"
+                  density="compact"
+                  leading={capturing ? <Loader2 size={18} className="chat-composer-spin" /> : <Scissors size={18} />}
                   aria-label={t('chat.social.composer.screenshot', { shortcut: formatChatScreenshotShortcut(screenshotShortcut) })}
                   data-chat-screenshot-capture
-                  onClick={captureScreenshot}
-                  disabled={disabled || editing || recording || capturing || voiceSending || Boolean(recordedVoice)}
-                  style={toolButtonStyle}
+                  onActivate={captureScreenshot}
+                  availability={
+                    disabled || editing || recording || capturing || voiceSending || Boolean(recordedVoice)
+                      ? toolUnavailable(t('chat.social.composer.sendDisabled'))
+                      : undefined
+                  }
                 />
-              </Tooltip>
+              </PtTooltip>
             )}
             {activeCapabilities.voice && (
-              <Tooltip title={recording ? t('chat.social.composer.recordingTooltip') : t('chat.social.composer.voice')}>
-                <Button
-                  type="text"
-                  icon={voiceSending ? <Loader2 size={20} className="chat-composer-spin" /> : <Mic size={20} />}
+              <PtTooltip label={recording ? t('chat.social.composer.recordingTooltip') : t('chat.social.composer.voice')}>
+                <PtButton
+                  actionId="composer-voice"
+                  className={`sc-composer__tool${recording ? ' is-recording' : ''}`}
+                  emphasis="quiet"
+                  density="compact"
+                  leading={voiceSending ? <Loader2 size={18} className="chat-composer-spin" /> : <Mic size={18} />}
                   aria-label={t('chat.social.composer.voice')}
                   data-chat-voice-record
-                  onClick={recording ? () => stopRecording(false) : startRecording}
-                  disabled={disabled || editing || voiceSending || Boolean(recordedVoice)}
-                  style={{ ...toolButtonStyle, color: recording ? token.colorError : token.colorTextSecondary }}
+                  onActivate={recording ? () => stopRecording(false) : startRecording}
+                  availability={
+                    disabled || editing || voiceSending || Boolean(recordedVoice)
+                      ? toolUnavailable(t('chat.social.composer.sendDisabled'))
+                      : undefined
+                  }
                 />
-              </Tooltip>
+              </PtTooltip>
             )}
-          </Flexbox>
+          </span>
 
-          <Flexbox horizontal align="center" gap={8}>
-            <Tooltip title={inputExpanded ? t('chat.social.composer.collapseInput') : t('chat.social.composer.expandInput')}>
-              <Button
-                type="text"
-                icon={inputExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          <div className="sc-composer__input-wrap">
+            <TextArea
+              ref={textareaRef}
+              framing="embedded"
+              className="sc-composer__input"
+              data-pt-text-input="chat-composer"
+              value={value}
+              disabled={disabled || sending || recording || voiceSending || Boolean(recordedVoice)}
+              rows={1}
+              onInput={handleTextInputObserved}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => commitValue(event.target.value)}
+              onCompositionStart={() => {
+                composingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                composingRef.current = false;
+                lastCompositionEndRef.current = Date.now();
+              }}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onBlur={onBlurInput}
+              placeholder={placeholder ?? t('chat.social.messageArea.placeholder')}
+              style={{
+                // Consumed by the embedded frame + native textarea CSS so the
+                // auto-grow effect (which writes height on the native element)
+                // keeps the same min/max contract as the former raw textarea.
+                // Auto-grow is instant, matching the prototype composer.
+                '--sc-composer-input-min-height': `${inputMinHeight}px`,
+                '--sc-composer-input-max-height': `${inputMaxHeight}px`,
+              } as CSSProperties}
+            />
+          </div>
+
+          <span className="sc-composer__send-group">
+            <PtTooltip label={inputExpanded ? t('chat.social.composer.collapseInput') : t('chat.social.composer.expandInput')}>
+              <PtButton
+                actionId="composer-expand"
+                className="sc-composer__tool"
+                emphasis="quiet"
+                density="compact"
+                leading={inputExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                 aria-label={inputExpanded ? t('chat.social.composer.collapseInput') : t('chat.social.composer.expandInput')}
                 aria-pressed={inputExpanded}
-                onClick={handleToggleInputExpanded}
-                disabled={disabled}
-                style={toolButtonStyle}
+                onActivate={handleToggleInputExpanded}
+                availability={disabled ? toolUnavailable(t('chat.social.composer.sendDisabled')) : undefined}
               />
-            </Tooltip>
-            <Tooltip title={canSend ? t('chat.composer.send') : t('chat.social.composer.sendDisabled')}>
-              <button
-                type="button"
-                data-chat-send
-                aria-label={t('chat.composer.send')}
-                onClick={() => {
-                  submit().catch((error) => {
-                    log.error('chat', 'composer send failed', error);
-                  });
-                }}
-                disabled={!canSend}
-                style={{
-                  ...toolButtonStyle,
-                  border: 0,
-                  background: canSend ? token.colorPrimary : token.colorFillSecondary,
-                  color: canSend ? token.colorTextLightSolid : token.colorTextQuaternary,
-                  cursor: canSend ? 'pointer' : 'not-allowed',
-                }}
-              >
-                <Send size={18} />
-              </button>
-            </Tooltip>
+            </PtTooltip>
+            <IconButton
+              actionId="chat-send-message"
+              className="sc-composer__send"
+              data-chat-send
+              iconId="send"
+              iconSize={16}
+              emphasis="primary"
+              label={t('chat.composer.send')}
+              availability={canSend
+                ? { kind: 'enabled' }
+                : { kind: 'disabled', reason: t('chat.social.composer.sendDisabled') }}
+              onActivate={() => {
+                submit().catch((error) => {
+                  log.error('chat', 'composer send failed', error);
+                });
+              }}
+            />
             {(uploading || voiceSending) && (
-              <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>
+              <span className="sc-composer__uploading">
                 {t('chat.social.composer.uploading')}
-              </Text>
+              </span>
             )}
-          </Flexbox>
-        </Flexbox>
-      </Flexbox>
-    </Flexbox>
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }

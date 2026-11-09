@@ -1,18 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { log } from '@/utils/logger';
-import { Flexbox } from 'react-layout-kit';
 import {
-  Card, Descriptions, Divider, Drawer, Empty, Modal,
-  Popconfirm, Progress, Select, Spin, Switch, Typography, Upload, message, theme,
-} from 'antd';
-import { Alert, Avatar, Button, Empty as LobeEmpty, Input, Tabs, Tag, Tooltip, TextArea } from '@lobehub/ui';
-import {
-  Blocks, BookOpen, ChevronRight, Code2, Download, Edit, ExternalLink,
-  FolderOpen, History, Link as LinkIcon, PackageSearch, Plus, RefreshCw,
-  RotateCcw, Search, Sparkles, Store, Trash2, Upload as UploadIcon,
-} from 'lucide-react';
+  Alert,
+  Button,
+  Card,
+  ConfirmAction,
+  Dialog,
+  Divider,
+  Drawer,
+  Empty,
+  FilePicker,
+  Flex,
+  Icon,
+  IconButton,
+  Progress,
+  Segmented,
+  Select,
+  Spin,
+  Switch,
+  Tag,
+  Text,
+  TextArea,
+  TextField,
+  Tooltip,
+  type Tone,
+} from '@peers-touch/ui';
 import { LazyMarkdown } from './LazyMarkdown';
-import { chatMarkdownProps } from './messages/markdownConfig';
 import { useTranslation } from 'react-i18next';
 import {
   api,
@@ -31,11 +44,36 @@ import {
 import { isTextResourceReadable, skillService } from '../services/skill-service';
 import { useSkillStore } from '../store/skill';
 import { SettingsContainer } from './settings/SettingsLayout';
-const { Text, Title, Paragraph } = Typography;
+import { confirmRequest, notifyError, notifySuccess, notifyWarning } from '../ui/feedback';
+
+function SkillAvatar({ children, size = 36, variant = 'muted' }: { children: ReactNode; size?: number; variant?: 'primary' | 'muted' }) {
+  return (
+    <span
+      className={variant === 'primary' ? 'sc-skill-avatar sc-skill-avatar--primary' : 'sc-skill-avatar'}
+      style={{ width: size, height: size, fontSize: size * 0.5 }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function DetailDescriptions({ items }: { items: Array<{ label: string; node?: ReactNode }> }) {
+  return (
+    <dl className="sc-skill-desc">
+      {items
+        .filter((i) => i.node !== undefined && i.node !== null && i.node !== '')
+        .map((i) => (
+          <div key={i.label} className="sc-skill-desc__item">
+            <dt>{i.label}</dt>
+            <dd>{i.node}</dd>
+          </div>
+        ))}
+    </dl>
+  );
+}
 
 export function SkillsTab() {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const skills = useSkillStore(s => s.skills);
   const builtins = useSkillStore(s => s.builtins);
   const loading = useSkillStore(s => s.loading);
@@ -55,24 +93,24 @@ export function SkillsTab() {
     try {
       await toggleSkill(id, enabled);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     }
   };
 
   const handleDelete = async (id: string) => {
     try {
       await deleteSkill(id);
-      message.success(t('provider.skills.deleted'));
+      notifySuccess(t('provider.skills.deleted'));
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     }
   };
 
   const handleImportDone = (result: SkillImportResult | SkillImportBatchResult) => {
     if ('imported' in result) {
-      message.success(t('provider.skills.importedBatch', { total: result.total, kind: result.kind }));
+      notifySuccess(t('provider.skills.importedBatch', { total: result.total, kind: result.kind }));
     } else {
-      message.success(result.isNew ? t('provider.skills.importedSingle', { name: result.name }) : t('provider.skills.updatedSingle', { name: result.name }));
+      notifySuccess(result.isNew ? t('provider.skills.importedSingle', { name: result.name }) : t('provider.skills.updatedSingle', { name: result.name }));
     }
     setImportModal(null);
     loadSkills();
@@ -82,7 +120,7 @@ export function SkillsTab() {
     try {
       await api.openSkillsDir();
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     }
   };
 
@@ -102,142 +140,127 @@ export function SkillsTab() {
 
   return (
     <SettingsContainer fullHeight tier="standard">
-      <Flexbox horizontal justify="space-between" align="center">
-        <Title level={5} style={{ margin: 0 }}>{t('provider.skills.title')}</Title>
-        <Flexbox horizontal gap={8}>
-          <Button size="small" icon={<Plus size={14} />} onClick={() => setImportModal('create')}>
-            {t('provider.skills.create')}
-          </Button>
-          <Button size="small" icon={<LinkIcon size={14} />} onClick={() => setImportModal('source')}>
-            {t('provider.skills.fromUrl')}
-          </Button>
-          <Button size="small" icon={<UploadIcon size={14} />} onClick={() => setImportModal('zip')}>
-            {t('provider.skills.uploadZip')}
-          </Button>
-        </Flexbox>
-      </Flexbox>
-      <Input
-        size="small"
+      <Flex direction="row" justify="space-between" align="center">
+        <Text strong style={{ fontSize: 15 }}>{t('provider.skills.title')}</Text>
+        <Flex direction="row" gap={8}>
+          <Button
+            actionId="skills-create-open"
+            density="compact"
+            leading={<Icon iconId="plus" size={14} />}
+            label={t('provider.skills.create')}
+            onActivate={() => setImportModal('create')}
+          />
+          <Button
+            actionId="skills-from-url"
+            density="compact"
+            leading={<Icon iconId="link" size={14} />}
+            label={t('provider.skills.fromUrl')}
+            onActivate={() => setImportModal('source')}
+          />
+          <Button
+            actionId="skills-upload-zip"
+            density="compact"
+            leading={<Icon iconId="upload" size={14} />}
+            label={t('provider.skills.uploadZip')}
+            onActivate={() => setImportModal('zip')}
+          />
+        </Flex>
+      </Flex>
+      <TextField
+        clearable
+        leading={<Icon iconId="search" size={12} />}
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onValueChange={setQuery}
         placeholder={t('provider.skills.searchPlaceholder')}
-        prefix={<Search size={12} />}
-        allowClear
         style={{ fontSize: 12 }}
       />
       {error && (
-        <Alert
-          type="error"
-          showIcon
-          message={t('provider.skills.operationFailed')}
-          description={error}
-        />
+        <Alert tone="danger" title={t('provider.skills.operationFailed')} description={error} />
       )}
 
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          {
-            key: 'installed',
-            label: t('provider.skills.tab.installed', { count: skills.length }),
-            children: (
-              <Flexbox gap={12}>
-                <Flexbox horizontal justify="flex-start" align="center" gap={8}>
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<FolderOpen size={14} />}
-                    onClick={handleOpenDir}
-                  >
-                    {t('provider.skills.openLocalDir')}
-                  </Button>
-                </Flexbox>
-                {filteredInstalled.length === 0 && !loading && (
-                  <LobeEmpty icon={Sparkles} title={t('provider.skills.noInstalled')} />
-                )}
-                {filteredInstalled.map((s) => (
-                  <SkillCard
-                    key={s.id}
-                    skill={s}
-                    onToggle={handleToggle}
-                    onDelete={handleDelete}
-                    onDetail={() => setDetail({ kind: 'installed', key: s.id })}
-                    token={token}
-                  />
-                ))}
-              </Flexbox>
-            ),
-          },
-          {
-            key: 'builtin',
-            label: t('provider.skills.tab.builtin', { count: builtins.length }),
-            children: (
-              <Flexbox gap={12}>
-                {filteredBuiltins.length === 0 && !loading && (
-                  <LobeEmpty icon={Blocks} title={t('provider.skills.noBuiltin')} />
-                )}
-                {filteredBuiltins.map((s) => (
-                  <Card
-                    key={s.identifier}
-                    size="small"
-                    style={{ borderColor: token.colorBorderSecondary, cursor: 'pointer' }}
-                    onClick={() => setDetail({ kind: 'builtin', key: s.identifier })}
-                  >
-                    <Flexbox horizontal justify="space-between" align="center">
-                      <Flexbox horizontal gap={12} align="center">
-                        <span style={{ fontSize: 20 }}>{s.avatar || '📄'}</span>
-                        <Flexbox>
-                          <Text strong>{s.name}</Text>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            {s.description || t('provider.skills.builtInSkill')}
-                          </Text>
-                        </Flexbox>
-                      </Flexbox>
-                      <Flexbox horizontal gap={4}>
-                        {s.useCount > 0 && <Tag color="gold">{t('provider.skills.usedCount', { count: s.useCount })}</Tag>}
-                        <Tag color="blue">{t('provider.skills.builtInTag')}</Tag>
-                        {s.keywords.slice(0, 3).map((kw) => (
-                          <Tag key={kw} style={{ fontSize: 11 }}>{kw}</Tag>
-                        ))}
-                      </Flexbox>
-                    </Flexbox>
-                  </Card>
-                ))}
-              </Flexbox>
-            ),
-          },
-          {
-            key: 'market',
-            label: t('provider.skills.tab.market'),
-            children: <MarketTab onInstalled={loadSkills} />,
-          },
+      <Segmented<string>
+        value={activeTab}
+        onValueChange={(value) => { if (value) setActiveTab(value); }}
+        options={[
+          { value: 'installed', label: t('provider.skills.tab.installed', { count: skills.length }) },
+          { value: 'builtin', label: t('provider.skills.tab.builtin', { count: builtins.length }) },
+          { value: 'market', label: t('provider.skills.tab.market') },
         ]}
       />
 
+      {activeTab === 'installed' && (
+        <Flex gap={12}>
+          <Button
+            actionId="skills-open-dir"
+            emphasis="quiet"
+            density="compact"
+            leading={<Icon iconId="folder-open" size={14} />}
+            label={t('provider.skills.openLocalDir')}
+            onActivate={handleOpenDir}
+          />
+          {filteredInstalled.length === 0 && !loading && (
+            <Empty icon={<Icon iconId="sparkles" size={32} />} description={t('provider.skills.noInstalled')} />
+          )}
+          {filteredInstalled.map((s) => (
+            <SkillCard
+              key={s.id}
+              skill={s}
+              onToggle={handleToggle}
+              onDelete={handleDelete}
+              onDetail={() => setDetail({ kind: 'installed', key: s.id })}
+            />
+          ))}
+        </Flex>
+      )}
+
+      {activeTab === 'builtin' && (
+        <Flex gap={12}>
+          {filteredBuiltins.length === 0 && !loading && (
+            <Empty icon={<Icon iconId="blocks" size={32} />} description={t('provider.skills.noBuiltin')} />
+          )}
+          {filteredBuiltins.map((s) => (
+            <Card
+              key={s.identifier}
+              flat
+              className="sc-skill-card sc-skill-card--clickable"
+              onClick={() => setDetail({ kind: 'builtin', key: s.identifier })}
+            >
+              <Flex direction="row" justify="space-between" align="center">
+                <Flex direction="row" gap={12} align="center">
+                  <span style={{ fontSize: 20 }}>{s.avatar || '📄'}</span>
+                  <Flex>
+                    <Text strong>{s.name}</Text>
+                    <Text tone="secondary" style={{ fontSize: 12 }}>
+                      {s.description || t('provider.skills.builtInSkill')}
+                    </Text>
+                  </Flex>
+                </Flex>
+                <Flex direction="row" gap={4}>
+                  {s.useCount > 0 && <Tag tone="warning">{t('provider.skills.usedCount', { count: s.useCount })}</Tag>}
+                  <Tag tone="info">{t('provider.skills.builtInTag')}</Tag>
+                  {s.keywords.slice(0, 3).map((kw) => (
+                    <Tag key={kw} style={{ fontSize: 11 }}>{kw}</Tag>
+                  ))}
+                </Flex>
+              </Flex>
+            </Card>
+          ))}
+        </Flex>
+      )}
+
+      {activeTab === 'market' && <MarketTab onInstalled={loadSkills} />}
+
       {importModal === 'source' && (
-        <ImportFromAddressModal
-          onDone={handleImportDone}
-          onCancel={() => setImportModal(null)}
-        />
+        <ImportFromAddressModal onDone={handleImportDone} onCancel={() => setImportModal(null)} />
       )}
       {importModal === 'zip' && (
-        <ImportZipModal
-          onDone={handleImportDone}
-          onCancel={() => setImportModal(null)}
-        />
+        <ImportZipModal onDone={handleImportDone} onCancel={() => setImportModal(null)} />
       )}
       {importModal === 'create' && (
-        <CreateSkillModal
-          onDone={handleImportDone}
-          onCancel={() => setImportModal(null)}
-        />
+        <CreateSkillModal onDone={handleImportDone} onCancel={() => setImportModal(null)} />
       )}
       {detail && (
-        <SkillDetailBoard
-          detail={detail}
-          onClose={() => { setDetail(null); loadSkills(); }}
-        />
+        <SkillDetailBoard detail={detail} onClose={() => { setDetail(null); loadSkills(); }} />
       )}
     </SettingsContainer>
   );
@@ -249,7 +272,6 @@ export function SkillsTab() {
 
 function MarketTab({ onInstalled }: { onInstalled: () => void }) {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const [markets, setMarkets] = useState<MarketSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMarket, setSelectedMarket] = useState<MarketSummary | null>(null);
@@ -261,7 +283,7 @@ function MarketTab({ onInstalled }: { onInstalled: () => void }) {
       const data = await api.listSkillMarkets();
       setMarkets(data);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setLoading(false);
     }
@@ -270,44 +292,41 @@ function MarketTab({ onInstalled }: { onInstalled: () => void }) {
   useEffect(() => { loadMarkets(); }, [loadMarkets]);
 
   return (
-    <Flexbox gap={16}>
-      <Flexbox horizontal justify="space-between" align="center">
-        <Text type="secondary">
-          {t('provider.skills.market.browseDesc')}
-        </Text>
-        <Button icon={<Plus size={14} />} onClick={() => setAddModal(true)} size="small">
-          {t('provider.skills.market.addMarket')}
-        </Button>
-      </Flexbox>
+    <Flex gap={16}>
+      <Flex direction="row" justify="space-between" align="center">
+        <Text tone="secondary">{t('provider.skills.market.browseDesc')}</Text>
+        <Button
+          actionId="skills-market-add"
+          density="compact"
+          leading={<Icon iconId="plus" size={14} />}
+          label={t('provider.skills.market.addMarket')}
+          onActivate={() => setAddModal(true)}
+        />
+      </Flex>
 
-      {loading && markets.length === 0 && <Spin />}
+      {loading && markets.length === 0 && <Flex align="center" justify="center" style={{ padding: 48 }}><Spin active /></Flex>}
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-        gap: 12,
-      }}>
+      <div className="sc-skill-market-grid">
         {markets.map((m) => (
           <MarketCard
             key={m.id}
             market={m}
-            token={token}
             onClick={() => setSelectedMarket(m)}
             onDelete={async () => {
               try {
                 await api.removeSkillMarketSource(m.id);
                 loadMarkets();
               } catch (e: any) {
-                message.error(e.message);
+                notifyError(e.message);
               }
             }}
           />
         ))}
         {!loading && markets.length === 0 && (
-          <LobeEmpty
-            icon={Store}
-            title={t('provider.skills.market.noMarkets')}
-            style={{ gridColumn: '1 / -1' }}
+          <Empty
+            className="sc-skill-market-empty"
+            icon={<Icon iconId="store" size={32} />}
+            description={t('provider.skills.market.noMarkets')}
           />
         )}
       </div>
@@ -321,23 +340,18 @@ function MarketTab({ onInstalled }: { onInstalled: () => void }) {
       )}
 
       {addModal && (
-        <AddMarketModal
-          onDone={() => { setAddModal(false); loadMarkets(); }}
-          onCancel={() => setAddModal(false)}
-        />
+        <AddMarketModal onDone={() => { setAddModal(false); loadMarkets(); }} onCancel={() => setAddModal(false)} />
       )}
-    </Flexbox>
+    </Flex>
   );
 }
 
 function MarketCard({
   market,
-  token,
   onClick,
   onDelete,
 }: {
   market: MarketSummary;
-  token: any;
   onClick: () => void;
   onDelete: () => void;
 }) {
@@ -349,97 +363,79 @@ function MarketCard({
     setSyncing(true);
     try {
       const result = await api.syncSkillMarket(market.id);
-      message.success(t('provider.skills.market.synced', { total: result.total }));
+      notifySuccess(t('provider.skills.market.synced', { total: result.total }));
     } catch (err: any) {
-      message.error(err.message);
+      notifyError(err.message);
     } finally {
       setSyncing(false);
     }
   };
 
   return (
-    <Card
-      hoverable
-      size="small"
-      style={{
-        borderColor: token.colorBorderSecondary,
-        minHeight: 140,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-      styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 16 } }}
-      onClick={onClick}
-    >
-      <Flexbox gap={8} style={{ flex: 1 }}>
-        <Flexbox horizontal justify="space-between" align="flex-start">
-          <Flexbox horizontal gap={10} align="center">
-            <Avatar
-              size={36}
-              shape="square"
-              style={{
-                background: token.colorPrimaryBg,
-                color: token.colorPrimary,
-                fontSize: 18,
-              }}
-            >
-              {market.name.charAt(0).toUpperCase()}
-            </Avatar>
-            <Flexbox>
+    <Card flat className="sc-skill-market-card" onClick={onClick}>
+      <Flex gap={8} style={{ flex: 1 }}>
+        <Flex direction="row" justify="space-between" align="flex-start">
+          <Flex direction="row" gap={10} align="center">
+            <SkillAvatar size={36} variant="primary">{market.name.charAt(0).toUpperCase()}</SkillAvatar>
+            <Flex>
               <Text strong style={{ fontSize: 14 }}>{market.name}</Text>
-              <Flexbox horizontal gap={6} align="center" style={{ marginTop: 2 }}>
-                <Tag color={market.synced ? 'green' : 'default'}>
+              <Flex direction="row" gap={6} align="center" style={{ marginTop: 2 }}>
+                <Tag tone={market.synced ? 'success' : 'neutral'}>
                   {market.synced ? t('provider.skills.market.syncedStatus') : t('provider.skills.market.notSynced')}
                 </Tag>
                 {market.synced && (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
+                  <Text tone="secondary" style={{ fontSize: 12 }}>
                     {t('provider.skills.market.skillCount', { count: market.skillCount })}
                   </Text>
                 )}
-              </Flexbox>
-            </Flexbox>
-          </Flexbox>
-          <Flexbox horizontal gap={4}>
-            <Tooltip title={t('provider.skills.market.sync')}>
-              <Button
-                type="text"
-                size="small"
-                loading={syncing}
-                icon={<RefreshCw size={14} />}
-                onClick={handleSync}
+              </Flex>
+            </Flex>
+          </Flex>
+          <Flex direction="row" gap={4} onClick={(e) => e.stopPropagation()}>
+            <Tooltip label={t('provider.skills.market.sync')}>
+              <IconButton
+                actionId={`skill-market-sync-${market.id}`}
+                iconId="refresh-cw"
+                iconSize={14}
+                density="compact"
+                emphasis="quiet"
+                execution={syncing ? 'pending' : 'idle'}
+                label={t('provider.skills.market.sync')}
+                onActivate={handleSync}
               />
             </Tooltip>
             {!market.builtIn && (
-              <Popconfirm title={t('provider.skills.market.removeConfirm')} onConfirm={(e) => { e?.stopPropagation(); onDelete(); }}>
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  icon={<Trash2 size={14} />}
-                  onClick={(e) => e.stopPropagation()}
+              <ConfirmAction
+                actionId={`skill-market-remove-${market.id}`}
+                title={t('provider.skills.market.removeConfirm')}
+                confirmLabel={t('common.action.delete', { ns: 'common' })}
+                cancelLabel={t('common.action.cancel', { ns: 'common' })}
+                onConfirm={onDelete}
+              >
+                <IconButton
+                  actionId={`skill-market-remove-trigger-${market.id}`}
+                  iconId="delete"
+                  iconSize={14}
+                  density="compact"
+                  emphasis="quiet"
+                  tone="danger"
+                  label={t('provider.skills.market.removeConfirm')}
                 />
-              </Popconfirm>
+              </ConfirmAction>
             )}
-          </Flexbox>
-        </Flexbox>
-        <Paragraph
-          type="secondary"
-          style={{ fontSize: 12, margin: 0, flex: 1 }}
-          ellipsis={{ rows: 2 }}
-        >
-          {market.url}
-        </Paragraph>
-        <Flexbox horizontal gap={4} wrap="wrap">
-          <Tag color={market.signatureStatus === 'verified' ? 'green' : 'red'}>
-            {market.signatureStatus}
-          </Tag>
+          </Flex>
+        </Flex>
+        <Text tone="secondary" className="sc-skill-market-url" title={market.url}>{market.url}</Text>
+        <Flex direction="row" gap={4} wrap="wrap">
+          <Tag tone={market.signatureStatus === 'verified' ? 'success' : 'danger'}>{market.signatureStatus}</Tag>
           <Tag>{market.trustLevel}</Tag>
-          {market.stale && <Tag color="orange">{t('provider.skills.market.stale')}</Tag>}
-          {market.revoked && <Tag color="red">{t('provider.skills.market.revoked')}</Tag>}
-        </Flexbox>
+          {market.stale && <Tag tone="warning">{t('provider.skills.market.stale')}</Tag>}
+          {market.revoked && <Tag tone="danger">{t('provider.skills.market.revoked')}</Tag>}
+        </Flex>
         {market.error && (
-          <Text type="danger" style={{ fontSize: 11 }}>{market.error}</Text>
+          <Text tone="danger" style={{ fontSize: 11 }}>{market.error}</Text>
         )}
-      </Flexbox>
+      </Flex>
     </Card>
   );
 }
@@ -450,13 +446,7 @@ function defaultNameFromUrl(url: string): string {
   return idx >= 0 ? u.slice(idx + 1) : u;
 }
 
-function AddMarketModal({
-  onDone,
-  onCancel,
-}: {
-  onDone: () => void;
-  onCancel: () => void;
-}) {
+function AddMarketModal({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const { t } = useTranslation('provider');
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
@@ -486,7 +476,7 @@ function AddMarketModal({
       || !publicKeyBase64.trim()
       || !manifestPath.trim()
     ) {
-      message.warning(t('provider.skills.market.add.urlRequired'));
+      notifyWarning(t('provider.skills.market.add.urlRequired'));
       return;
     }
     setLoading(true);
@@ -499,95 +489,71 @@ function AddMarketModal({
         signingKeyId: signingKeyId.trim(),
         publicKeyBase64: publicKeyBase64.trim(),
       });
-      message.success(t('provider.skills.market.add.success'));
+      notifySuccess(t('provider.skills.market.add.success'));
       onDone();
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={t('provider.skills.market.add.title')}
+    <Dialog
       open
-      onCancel={onCancel}
-      onOk={handleOk}
-      confirmLoading={loading}
-      okText={t('provider.skills.market.add.ok')}
+      onDismiss={onCancel}
+      title={t('provider.skills.market.add.title')}
+      width={560}
+      closeLabel={t('common.action.cancel', { ns: 'common' })}
+      footer={
+        <>
+          <Button actionId="skill-market-add-cancel" emphasis="quiet" label={t('common.action.cancel', { ns: 'common' })} onActivate={onCancel} />
+          <Button actionId="skill-market-add-ok" emphasis="primary" execution={loading ? 'pending' : 'idle'} label={t('provider.skills.market.add.ok')} onActivate={() => void handleOk()} />
+        </>
+      }
     >
-      <Flexbox gap={12} style={{ paddingBlock: 12 }}>
-        <Text type="secondary">
-          {t('provider.skills.market.add.desc')}
-        </Text>
-        <Input
-          placeholder={t('provider.skills.market.add.urlPlaceholder')}
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          autoFocus
-        />
-        <Input
-          placeholder={t('provider.skills.market.add.namePlaceholder')}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <Input
-          placeholder={t('provider.skills.market.add.sourceIdPlaceholder')}
-          value={sourceId}
-          onChange={(e) => setSourceId(e.target.value)}
-        />
-        <Flexbox gap={8}>
-          <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.skills.market.add.branch')}</Text>
-          <Flexbox horizontal gap={8}>
-            <Select
-              value={branch}
-              onChange={setBranch}
-              style={{ minWidth: 120 }}
-              options={[
-                { value: 'main', label: 'main' },
-                { value: 'master', label: 'master' },
-                { value: 'custom', label: t('provider.skills.market.add.custom') },
-              ]}
+      <div className="sc-provider-form">
+        <Text tone="secondary">{t('provider.skills.market.add.desc')}</Text>
+        <TextField autoFocus placeholder={t('provider.skills.market.add.urlPlaceholder')} value={url} onValueChange={setUrl} />
+        <TextField placeholder={t('provider.skills.market.add.namePlaceholder')} value={name} onValueChange={setName} />
+        <TextField placeholder={t('provider.skills.market.add.sourceIdPlaceholder')} value={sourceId} onValueChange={setSourceId} />
+        <Flex direction="row" gap={8} align="center">
+          <Text tone="secondary" style={{ fontSize: 12 }}>{t('provider.skills.market.add.branch')}</Text>
+          <Select<string>
+            value={branch}
+            style={{ minWidth: 120 }}
+            options={[
+              { value: 'main', label: 'main' },
+              { value: 'master', label: 'master' },
+              { value: 'custom', label: t('provider.skills.market.add.custom') },
+            ]}
+            onValueChange={(value) => { if (typeof value === 'string') setBranch(value); }}
+          />
+          {branch === 'custom' && (
+            <TextField
+              style={{ flex: 1 }}
+              placeholder={t('provider.skills.market.add.branchPlaceholder')}
+              value={branchCustom}
+              onValueChange={setBranchCustom}
             />
-            {branch === 'custom' && (
-              <Input
-                placeholder={t('provider.skills.market.add.branchPlaceholder')}
-                value={branchCustom}
-                onChange={(e) => setBranchCustom(e.target.value)}
-                style={{ flex: 1 }}
-              />
-            )}
-          </Flexbox>
-        </Flexbox>
-        <Input
-          placeholder={t('provider.skills.market.add.manifestPathPlaceholder')}
-          value={manifestPath}
-          onChange={(e) => setManifestPath(e.target.value)}
-        />
-        <Input
-          placeholder={t('provider.skills.market.add.publisherPlaceholder')}
-          value={publisherId}
-          onChange={(e) => setPublisherId(e.target.value)}
-        />
-        <Input
-          placeholder={t('provider.skills.market.add.signingKeyPlaceholder')}
-          value={signingKeyId}
-          onChange={(e) => setSigningKeyId(e.target.value)}
-        />
+          )}
+        </Flex>
+        <TextField placeholder={t('provider.skills.market.add.manifestPathPlaceholder')} value={manifestPath} onValueChange={setManifestPath} />
+        <TextField placeholder={t('provider.skills.market.add.publisherPlaceholder')} value={publisherId} onValueChange={setPublisherId} />
+        <TextField placeholder={t('provider.skills.market.add.signingKeyPlaceholder')} value={signingKeyId} onValueChange={setSigningKeyId} />
         <TextArea
-          autoSize={{ minRows: 2, maxRows: 3 }}
+          rows={2}
           placeholder={t('provider.skills.market.add.publicKeyPlaceholder')}
           value={publicKeyBase64}
-          onChange={(e) => setPublicKeyBase64(e.target.value)}
+          onValueChange={setPublicKeyBase64}
         />
-      </Flexbox>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }
 
 // ────────────────────────────────────────────────────────
-// Market Browser Dialog — shows skills in a market
+// Market Browser Drawer
 // ────────────────────────────────────────────────────────
 
 function MarketBrowserDialog({
@@ -600,7 +566,6 @@ function MarketBrowserDialog({
   onInstalled: () => void;
 }) {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const [skills, setSkills] = useState<MarketSkillEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -614,12 +579,7 @@ function MarketBrowserDialog({
       const seenCursors = new Set<string>();
       let cursor: string | undefined;
       do {
-        const result = await api.listMarketSkills(
-          market.id,
-          searchQuery || undefined,
-          cursor,
-          100,
-        );
+        const result = await api.listMarketSkills(market.id, searchQuery || undefined, cursor, 100);
         packages.push(...(result.skills || []));
         cursor = result.nextCursor;
         if (cursor && !seenCursors.add(cursor)) {
@@ -631,7 +591,7 @@ function MarketBrowserDialog({
       } while (cursor);
       setSkills(packages);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setLoading(false);
     }
@@ -639,58 +599,51 @@ function MarketBrowserDialog({
 
   useEffect(() => { loadSkills(); }, [loadSkills]);
 
-  const handleInstall = async (entry: MarketSkillEntry) => {
-    if (entry.installPolicy === 'blocked' || entry.revoked) {
-      message.error(t('provider.skills.market.installBlocked'));
-      return;
-    }
-    if (entry.installPolicy === 'confirmation_required') {
-      Modal.confirm({
-        title: t('provider.skills.market.riskConfirmTitle'),
-        content: t('provider.skills.market.riskConfirmDescription', {
-          name: entry.name,
-          risk: entry.riskLevel || 'unknown',
-        }),
-        okText: t('provider.skills.market.install'),
-        okButtonProps: { danger: true },
-        onOk: async () => {
-          setInstalling(entry.filePath);
-          try {
-            await api.installMarketSkill(market.id, entry.filePath, true);
-            message.success(t('provider.skills.market.installSuccess', { name: entry.name }));
-            onInstalled();
-            await loadSkills();
-          } catch (e: any) {
-            message.error(e.message);
-          } finally {
-            setInstalling(null);
-          }
-        },
-      });
-      return;
-    }
+  const installEntry = async (entry: MarketSkillEntry, requireConfirm: boolean) => {
     setInstalling(entry.filePath);
     try {
-      await api.installMarketSkill(market.id, entry.filePath);
-      message.success(t('provider.skills.market.installSuccess', { name: entry.name }));
+      await api.installMarketSkill(market.id, entry.filePath, requireConfirm);
+      notifySuccess(t('provider.skills.market.installSuccess', { name: entry.name }));
       onInstalled();
-      loadSkills();
+      await loadSkills();
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setInstalling(null);
     }
+  };
+
+  const handleInstall = async (entry: MarketSkillEntry) => {
+    if (entry.installPolicy === 'blocked' || entry.revoked) {
+      notifyError(t('provider.skills.market.installBlocked'));
+      return;
+    }
+    if (entry.installPolicy === 'confirmation_required') {
+      void confirmRequest({
+        tone: 'danger',
+        title: t('provider.skills.market.riskConfirmTitle'),
+        description: t('provider.skills.market.riskConfirmDescription', {
+          name: entry.name,
+          risk: entry.riskLevel || 'unknown',
+        }),
+        confirmLabel: t('provider.skills.market.install'),
+        cancelLabel: t('common.action.cancel', { ns: 'common' }),
+        onConfirm: () => installEntry(entry, true),
+      });
+      return;
+    }
+    await installEntry(entry, false);
   };
 
   const handleUninstall = async (entry: MarketSkillEntry) => {
     setInstalling(entry.filePath);
     try {
       await api.uninstallMarketSkill(market.id, entry.filePath);
-      message.success(t('provider.skills.market.uninstallSuccess', { name: entry.name }));
+      notifySuccess(t('provider.skills.market.uninstallSuccess', { name: entry.name }));
       onInstalled();
       loadSkills();
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setInstalling(null);
     }
@@ -699,125 +652,110 @@ function MarketBrowserDialog({
   return (
     <>
       <Drawer
+        open
+        onDismiss={onClose}
+        side="right"
+        width={720}
+        closeLabel={t('common.action.close', { ns: 'common' })}
         title={
-          <Flexbox horizontal gap={10} align="center">
-            <Avatar
-              size={28}
-              shape="square"
-              style={{ background: token.colorPrimaryBg, color: token.colorPrimary }}
-            >
-              {market.name.charAt(0).toUpperCase()}
-            </Avatar>
-            <Flexbox>
+          <Flex direction="row" gap={10} align="center">
+            <SkillAvatar size={28} variant="primary">{market.name.charAt(0).toUpperCase()}</SkillAvatar>
+            <Flex>
               <Text strong>{market.name}</Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>
+              <Text tone="secondary" style={{ fontSize: 11 }}>
                 {t('provider.skills.market.skillsAvailable', { count: skills.length })}
               </Text>
-            </Flexbox>
-          </Flexbox>
+            </Flex>
+          </Flex>
         }
-        open
-        onClose={onClose}
-        size="large"
-        placement="right"
       >
-        <Flexbox gap={16}>
-          <Input
-            size="small"
-            prefix={<Search size={12} />}
+        <Flex gap={16}>
+          <TextField
+            clearable
+            leading={<Icon iconId="search" size={12} />}
             placeholder={t('provider.skills.market.searchPlaceholder')}
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onPressEnter={loadSkills}
-            allowClear
+            onValueChange={setSearchQuery}
+            onEnter={loadSkills}
             style={{ fontSize: 12 }}
           />
 
-          {loading && <Spin style={{ alignSelf: 'center', marginTop: 40 }} />}
+          {loading && <Flex align="center" justify="center" style={{ padding: 40 }}><Spin active /></Flex>}
 
           {!loading && skills.length === 0 && (
-            <LobeEmpty icon={PackageSearch} title={t('provider.skills.market.noSkills')} />
+            <Empty icon={<Icon iconId="blocks" size={32} />} description={t('provider.skills.market.noSkills')} />
           )}
 
-          <Flexbox gap={8}>
+          <Flex gap={8}>
             {skills.map((entry) => (
               <Card
                 key={entry.filePath}
-                size="small"
-                hoverable
-                style={{ borderColor: token.colorBorderSecondary, cursor: 'pointer' }}
+                flat
+                className="sc-skill-card sc-skill-card--clickable"
                 onClick={() => setSelectedSkill(entry)}
               >
-                <Flexbox horizontal justify="space-between" align="center">
-                  <Flexbox horizontal gap={12} align="center" style={{ flex: 1, minWidth: 0 }}>
-                    <Avatar
-                      size={40}
-                      shape="square"
-                      style={{
-                        background: token.colorFillSecondary,
-                        color: token.colorTextSecondary,
-                        fontSize: 18,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {entry.name.charAt(0).toUpperCase()}
-                    </Avatar>
-                    <Flexbox style={{ minWidth: 0 }}>
-                      <Text strong ellipsis>{entry.name}</Text>
-                      <Text
-                        type="secondary"
-                        style={{ fontSize: 12 }}
-                        ellipsis
-                      >
+                <Flex direction="row" justify="space-between" align="center">
+                  <Flex direction="row" gap={12} align="center" style={{ flex: 1, minWidth: 0 }}>
+                    <SkillAvatar size={40}>{entry.name.charAt(0).toUpperCase()}</SkillAvatar>
+                    <Flex style={{ minWidth: 0 }}>
+                      <Text strong truncate>{entry.name}</Text>
+                      <Text tone="secondary" truncate style={{ fontSize: 12 }}>
                         {entry.description || entry.identifier}
                       </Text>
-                      <Flexbox horizontal gap={4} wrap="wrap" style={{ marginTop: 4 }}>
+                      <Flex direction="row" gap={4} wrap="wrap" style={{ marginTop: 4 }}>
                         {entry.packageType && <Tag>{entry.packageType}</Tag>}
-                        {entry.trustLevel && <Tag color="cyan">{entry.trustLevel}</Tag>}
+                        {entry.trustLevel && <Tag tone="info">{entry.trustLevel}</Tag>}
                         {entry.riskLevel && (
-                          <Tag color={entry.riskLevel === 'low' ? 'green' : 'orange'}>
+                          <Tag tone={entry.riskLevel === 'low' ? 'success' : 'warning'}>
                             {t('provider.skills.market.risk', { level: entry.riskLevel })}
                           </Tag>
                         )}
-                      </Flexbox>
-                    </Flexbox>
-                  </Flexbox>
-                  <Flexbox horizontal gap={8} align="center" style={{ flexShrink: 0 }}>
+                      </Flex>
+                    </Flex>
+                  </Flex>
+                  <Flex direction="row" gap={8} align="center" style={{ flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
                     {entry.installed ? (
                       <>
-                        <Tag color="green">{t('provider.skills.market.installed')}</Tag>
-                        <Popconfirm
+                        <Tag tone="success">{t('provider.skills.market.installed')}</Tag>
+                        <ConfirmAction
+                          actionId={`market-uninstall-${entry.filePath}`}
                           title={t('provider.skills.market.uninstallConfirm')}
-                          onConfirm={(e) => {
-                            e?.stopPropagation();
-                            handleUninstall(entry);
-                          }}
+                          confirmLabel={t('provider.skills.market.uninstall')}
+                          cancelLabel={t('common.action.cancel', { ns: 'common' })}
+                          onConfirm={() => handleUninstall(entry)}
                         >
-                          <Button
-                            type="text"
-                            danger
-                            icon={<Trash2 size={14} />}
-                            loading={installing === entry.filePath}
-                            onClick={(e) => e.stopPropagation()}
+                          <IconButton
+                            actionId={`market-uninstall-trigger-${entry.filePath}`}
+                            iconId="delete"
+                            iconSize={14}
+                            density="compact"
+                            emphasis="quiet"
+                            tone="danger"
+                            execution={installing === entry.filePath ? 'pending' : 'idle'}
+                            label={t('provider.skills.market.uninstall')}
                           />
-                        </Popconfirm>
+                        </ConfirmAction>
                       </>
                     ) : (
-                      <Button
-                        disabled={entry.installPolicy === 'blocked' || entry.revoked}
-                        type="text"
-                        icon={<Plus size={14} />}
-                        loading={installing === entry.filePath}
-                        onClick={(e) => { e.stopPropagation(); handleInstall(entry); }}
+                      <IconButton
+                        actionId={`market-install-${entry.filePath}`}
+                        iconId="plus"
+                        iconSize={14}
+                        density="compact"
+                        emphasis="quiet"
+                        execution={installing === entry.filePath ? 'pending' : 'idle'}
+                        availability={entry.installPolicy === 'blocked' || entry.revoked ? { kind: 'disabled', reason: '' } : undefined}
+                        label={t('provider.skills.market.install')}
+                        onActivate={() => void handleInstall(entry)}
                       />
                     )}
-                    <ChevronRight size={14} style={{ color: token.colorTextQuaternary }} />
-                  </Flexbox>
-                </Flexbox>
+                    <Icon iconId="chevron-right" size={14} className="sc-skill-chevron" />
+                  </Flex>
+                </Flex>
               </Card>
             ))}
-          </Flexbox>
-        </Flexbox>
+          </Flex>
+        </Flex>
       </Drawer>
 
       {selectedSkill && (
@@ -835,7 +773,7 @@ function MarketBrowserDialog({
 }
 
 // ────────────────────────────────────────────────────────
-// Market Skill Detail Modal — LobeHub-style detail view
+// Market Skill Detail Modal
 // ────────────────────────────────────────────────────────
 
 function MarketSkillDetailModal({
@@ -854,7 +792,6 @@ function MarketSkillDetailModal({
   installing: boolean;
 }) {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const [detail, setDetail] = useState<MarketSkillDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -863,303 +800,253 @@ function MarketSkillDetailModal({
     setLoading(true);
     api.getMarketSkillDetail(marketId, entry.filePath)
       .then(setDetail)
-      .catch((e) => message.error(e.message))
+      .catch((e) => notifyError(e.message))
       .finally(() => setLoading(false));
   }, [marketId, entry.filePath]);
 
   const skillData = detail || entry;
 
   return (
-    <Modal
+    <Dialog
       open
-      onCancel={onClose}
+      onDismiss={onClose}
       width={800}
-      footer={null}
-      styles={{
-        body: { padding: 0 },
-      }}
+      closeLabel={t('common.action.close', { ns: 'common' })}
+      title={skillData.name}
     >
-      {/* Header — icon + title + description + install button */}
-      <Flexbox style={{ padding: '24px 24px 0' }} gap={16}>
-        <Flexbox horizontal gap={16} align="flex-start">
-          <Avatar
-            size={56}
-            shape="square"
-            style={{
-              background: token.colorFillSecondary,
-              color: token.colorTextSecondary,
-              fontSize: 28,
-              flexShrink: 0,
-            }}
-          >
-            {(detail?.avatar) || skillData.name.charAt(0).toUpperCase()}
-          </Avatar>
-          <Flexbox style={{ flex: 1, minWidth: 0 }} gap={4}>
-            <Flexbox horizontal justify="space-between" align="center">
+      <Flex gap={16}>
+        <Flex direction="row" gap={16} align="flex-start">
+          <SkillAvatar size={56}>{(detail?.avatar) || skillData.name.charAt(0).toUpperCase()}</SkillAvatar>
+          <Flex style={{ flex: 1, minWidth: 0 }} gap={4}>
+            <Flex direction="row" justify="space-between" align="center">
               <Text strong style={{ fontSize: 18 }}>{skillData.name}</Text>
               {skillData.installed ? (
-                <Flexbox horizontal gap={8} align="center">
-                  <Tag color="green" style={{ fontSize: 13 }}>{t('provider.skills.market.installed')}</Tag>
-                  <Popconfirm title={t('provider.skills.market.uninstallConfirm')} onConfirm={onUninstall}>
-                    <Button danger icon={<Trash2 size={14} />} loading={installing}>
-                      {t('provider.skills.market.uninstall')}
-                    </Button>
-                  </Popconfirm>
-                </Flexbox>
+                <Flex direction="row" gap={8} align="center">
+                  <Tag tone="success" style={{ fontSize: 13 }}>{t('provider.skills.market.installed')}</Tag>
+                  <ConfirmAction
+                    actionId="market-detail-uninstall"
+                    title={t('provider.skills.market.uninstallConfirm')}
+                    confirmLabel={t('provider.skills.market.uninstall')}
+                    cancelLabel={t('common.action.cancel', { ns: 'common' })}
+                    onConfirm={onUninstall}
+                  >
+                    <Button
+                      actionId="market-detail-uninstall-btn"
+                      tone="danger"
+                      leading={<Icon iconId="delete" size={14} />}
+                      execution={installing ? 'pending' : 'idle'}
+                      label={t('provider.skills.market.uninstall')}
+                    />
+                  </ConfirmAction>
+                </Flex>
               ) : (
                 <Button
-                  disabled={skillData.installPolicy === 'blocked' || skillData.revoked}
-                  type="primary"
-                  icon={<Download size={14} />}
-                  onClick={onInstall}
-                  loading={installing}
-                >
-                  {t('provider.skills.market.install')}
-                </Button>
+                  actionId="market-detail-install"
+                  emphasis="primary"
+                  leading={<Icon iconId="download" size={14} />}
+                  execution={installing ? 'pending' : 'idle'}
+                  availability={skillData.installPolicy === 'blocked' || skillData.revoked ? { kind: 'disabled', reason: '' } : undefined}
+                  label={t('provider.skills.market.install')}
+                  onActivate={onInstall}
+                />
               )}
-            </Flexbox>
-            <Text type="secondary">{skillData.description || skillData.identifier}</Text>
-            <Flexbox horizontal gap={6} wrap="wrap">
+            </Flex>
+            <Text tone="secondary">{skillData.description || skillData.identifier}</Text>
+            <Flex direction="row" gap={6} wrap="wrap">
               {skillData.packageType && <Tag>{skillData.packageType}</Tag>}
-              {skillData.trustLevel && <Tag color="cyan">{skillData.trustLevel}</Tag>}
+              {skillData.trustLevel && <Tag tone="info">{skillData.trustLevel}</Tag>}
               {skillData.riskLevel && (
-                <Tag color={skillData.riskLevel === 'low' ? 'green' : 'orange'}>
+                <Tag tone={skillData.riskLevel === 'low' ? 'success' : 'warning'}>
                   {t('provider.skills.market.risk', { level: skillData.riskLevel })}
                 </Tag>
               )}
-              {skillData.scanVerdict && <Tag color="blue">{skillData.scanVerdict}</Tag>}
-            </Flexbox>
-          </Flexbox>
-        </Flexbox>
-      </Flexbox>
+              {skillData.scanVerdict && <Tag tone="info">{skillData.scanVerdict}</Tag>}
+            </Flex>
+          </Flex>
+        </Flex>
 
-      {/* Tabs */}
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        style={{ padding: '0 24px' }}
-        items={[
-          {
-            key: 'overview',
-            label: (
-              <Flexbox horizontal gap={6} align="center">
-                <BookOpen size={14} />
-                <span>{t('provider.skills.detail.overview')}</span>
-              </Flexbox>
-            ),
-            children: loading ? (
-              <Spin style={{ display: 'block', margin: '40px auto' }} />
-            ) : (
-              <MarketSkillOverview detail={detail} token={token} />
-            ),
-          },
-          {
-            key: 'content',
-            label: (
-              <Flexbox horizontal gap={6} align="center">
-                <Code2 size={14} />
-                <span>{t('provider.skills.detail.manifestFile')}</span>
-              </Flexbox>
-            ),
-            children: loading ? (
-              <Spin style={{ display: 'block', margin: '40px auto' }} />
-            ) : (
-              <MarketSkillContent detail={detail} token={token} />
-            ),
-          },
-        ]}
-      />
-    </Modal>
+        <Segmented<string>
+          value={activeTab}
+          onValueChange={(value) => { if (value) setActiveTab(value); }}
+          options={[
+            { value: 'overview', label: t('provider.skills.detail.overview'), leading: <Icon iconId="book-open" size={14} /> },
+            { value: 'content', label: t('provider.skills.detail.manifestFile'), leading: <Icon iconId="code" size={14} /> },
+          ]}
+        />
+
+        {loading ? (
+          <Flex align="center" justify="center" style={{ padding: 40 }}><Spin active /></Flex>
+        ) : activeTab === 'overview' ? (
+          <MarketSkillOverview detail={detail} />
+        ) : (
+          <MarketSkillContent detail={detail} />
+        )}
+      </Flex>
+    </Dialog>
   );
 }
 
-function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null; token?: any }) {
+function MarketSkillOverview({ detail }: { detail: MarketSkillDetail | null }) {
   const { t } = useTranslation('provider');
   if (!detail) {
-    return <Flexbox align="center" justify="center" padding={48}><Spin /></Flexbox>;
+    return <Flex align="center" justify="center" style={{ padding: 48 }}><Spin active /></Flex>;
   }
 
   const sections = parseSkillProtocol(detail.content);
 
   return (
-    <Flexbox gap={16} style={{ paddingBottom: 24 }}>
-      {/* Markdown content */}
+    <Flex gap={16}>
       {sections.body && (
         <div style={{ maxHeight: 400, overflow: 'auto' }}>
-          <LazyMarkdown {...chatMarkdownProps} fontSize={14}>{sections.body}</LazyMarkdown>
+          <LazyMarkdown content={sections.body} style={{ fontSize: 14 }} />
         </div>
       )}
 
       {detail.author && (
         <>
-          <Divider style={{ margin: '8px 0' }} />
-          <Flexbox gap={4}>
+          <Divider />
+          <Flex gap={4}>
             <Text strong style={{ fontSize: 12 }}>{t('provider.skills.detail.developedBy')}</Text>
-            <Flexbox horizontal gap={6} align="center">
+            <Flex direction="row" gap={6} align="center">
               <Text>{detail.author}</Text>
               {detail.authorUrl && (
                 <a href={detail.authorUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink size={12} />
+                  <Icon iconId="external-link" size={12} />
                 </a>
               )}
-            </Flexbox>
-          </Flexbox>
+            </Flex>
+          </Flex>
         </>
       )}
 
-      <Divider style={{ margin: '8px 0' }} />
+      <Divider />
       <Text strong style={{ fontSize: 12 }}>{t('provider.skills.detail.details')}</Text>
-      <Descriptions column={2} size="small" bordered={false}>
-        {detail.version && (
-          <Descriptions.Item label={t('provider.skills.detail.version')}>{detail.version}</Descriptions.Item>
-        )}
-        {detail.license && (
-          <Descriptions.Item label={t('provider.skills.detail.license')}>{detail.license}</Descriptions.Item>
-        )}
-        {detail.author && (
-          <Descriptions.Item label={t('provider.skills.detail.author')}>{detail.author}</Descriptions.Item>
-        )}
-        {detail.publisher && (
-          <Descriptions.Item label={t('provider.skills.market.publisher')}>{detail.publisher}</Descriptions.Item>
-        )}
-        {detail.repository && (
-          <Descriptions.Item label={t('provider.skills.market.repository')}>
-            <a href={detail.repository} target="_blank" rel="noopener noreferrer">{detail.repository}</a>
-          </Descriptions.Item>
-        )}
-        {detail.homepage && (
-          <Descriptions.Item label={t('provider.skills.market.homepage')}>
-            <a href={detail.homepage} target="_blank" rel="noopener noreferrer">{detail.homepage}</a>
-          </Descriptions.Item>
-        )}
-      </Descriptions>
+      <DetailDescriptions
+        items={[
+          { label: t('provider.skills.detail.version'), node: detail.version },
+          { label: t('provider.skills.detail.license'), node: detail.license },
+          { label: t('provider.skills.detail.author'), node: detail.author },
+          { label: t('provider.skills.market.publisher'), node: detail.publisher },
+          { label: t('provider.skills.market.repository'), node: detail.repository ? <a href={detail.repository} target="_blank" rel="noopener noreferrer">{detail.repository}</a> : undefined },
+          { label: t('provider.skills.market.homepage'), node: detail.homepage ? <a href={detail.homepage} target="_blank" rel="noopener noreferrer">{detail.homepage}</a> : undefined },
+        ]}
+      />
 
       {((detail.keywords?.length ?? 0) > 0 || (detail.tags?.length ?? 0) > 0) && (
-        <Flexbox horizontal gap={4} wrap="wrap">
-          {(detail.tags || []).map(t => <Tag key={t} color="blue">{t}</Tag>)}
-          {(detail.keywords || []).map(kw => <Tag key={kw}>{kw}</Tag>)}
-        </Flexbox>
+        <Flex direction="row" gap={4} wrap="wrap">
+          {(detail.tags || []).map((tag) => <Tag key={tag} tone="info">{tag}</Tag>)}
+          {(detail.keywords || []).map((kw) => <Tag key={kw}>{kw}</Tag>)}
+        </Flex>
       )}
-    </Flexbox>
+    </Flex>
   );
 }
 
-function MarketSkillContent({ detail, token }: { detail: MarketSkillDetail | null; token: any }) {
+function MarketSkillContent({ detail }: { detail: MarketSkillDetail | null }) {
   if (!detail) {
-    return <Flexbox align="center" justify="center" padding={48}><Spin /></Flexbox>;
+    return <Flex align="center" justify="center" style={{ padding: 48 }}><Spin active /></Flex>;
   }
 
   return (
-    <Flexbox gap={12} style={{ paddingBottom: 24 }}>
-      <Card
-        size="small"
-        style={{ borderColor: token.colorBorderSecondary }}
-      >
-        <div style={{
-          maxHeight: 500,
-          overflow: 'auto',
-          fontFamily: 'monospace',
-          whiteSpace: 'pre-wrap',
-          fontSize: 12,
-          lineHeight: 1.6,
-        }}>
+    <Flex gap={12}>
+      <Card flat className="sc-skill-content-card">
+        <div className="selectable sc-skill-raw">
           {detail.content}
         </div>
       </Card>
-    </Flexbox>
+    </Flex>
   );
 }
 
 // ────────────────────────────────────────────────────────
-// Existing components (SkillCard, ImportFromAddressModal, etc.)
+// Installed / builtin skill card
 // ────────────────────────────────────────────────────────
+
+const SKILL_SOURCE_TONES: Record<string, Tone> = {
+  url: 'info',
+  github: 'neutral',
+  zip: 'warning',
+  user: 'success',
+  market: 'info',
+};
 
 function SkillCard({
   skill,
   onToggle,
   onDelete,
   onDetail,
-  token,
 }: {
   skill: SkillListItem;
   onToggle: (id: string, enabled: boolean) => void;
   onDelete: (id: string) => void;
   onDetail: () => void;
-  token: any;
 }) {
   const { t } = useTranslation('provider');
-  const sourceColors: Record<string, string> = {
-    url: 'cyan',
-    github: 'purple',
-    zip: 'orange',
-    user: 'green',
-    market: 'blue',
-  };
 
   return (
-    <Card
-      size="small"
-      hoverable
-      style={{ borderColor: token.colorBorderSecondary, cursor: 'default' }}
-    >
-      <Flexbox horizontal justify="space-between" align="center">
-        <Flexbox
-          horizontal gap={12} align="center"
-          style={{ cursor: 'pointer', flex: 1 }}
+    <Card flat className="sc-skill-card">
+      <Flex direction="row" justify="space-between" align="center">
+        <Flex
+          direction="row"
+          gap={12}
+          align="center"
+          className="sc-skill-card__identity"
           onClick={onDetail}
         >
           <span style={{ fontSize: 20 }}>{skill.metaAvatar || '📄'}</span>
-          <Flexbox>
-            <Flexbox horizontal gap={6} align="center">
+          <Flex>
+            <Flex direction="row" gap={6} align="center">
               <Text strong>{skill.metaTitle || skill.name}</Text>
               {skill.version && (
-                <Text type="secondary" style={{ fontSize: 11 }}>v{skill.version}</Text>
+                <Text tone="secondary" style={{ fontSize: 11 }}>v{skill.version}</Text>
               )}
-            </Flexbox>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            </Flex>
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {skill.description || skill.identifier}
             </Text>
-          </Flexbox>
-        </Flexbox>
-        <Flexbox horizontal gap={8} align="center">
+          </Flex>
+        </Flex>
+        <Flex direction="row" gap={8} align="center">
           {skill.metaTags?.slice(0, 2).map((tag) => (
-            <Tag key={tag} style={{ fontSize: 11, margin: 0 }}>{tag}</Tag>
+            <Tag key={tag} style={{ fontSize: 11 }}>{tag}</Tag>
           ))}
           {skill.useCount > 0 && (
-            <Tag color="gold" style={{ margin: 0 }}>
-              {t('provider.skills.usedCount', { count: skill.useCount })}
-            </Tag>
+            <Tag tone="warning">{t('provider.skills.usedCount', { count: skill.useCount })}</Tag>
           )}
           {typeof skill.resourceCount === 'number' && skill.resourceCount > 0 && (
-            <Tag color="geekblue" style={{ margin: 0 }}>
-              {t('provider.skills.resourceCount', { count: skill.resourceCount })}
-            </Tag>
+            <Tag tone="info">{t('provider.skills.resourceCount', { count: skill.resourceCount })}</Tag>
           )}
-          <Tag color={sourceColors[skill.source] || 'default'} style={{ margin: 0 }}>
-            {skill.source}
-          </Tag>
-          {skill.trustLevel && (
-            <Tag color="cyan" style={{ margin: 0 }}>
-              {skill.trustLevel}
-            </Tag>
-          )}
+          <Tag tone={SKILL_SOURCE_TONES[skill.source] ?? 'neutral'}>{skill.source}</Tag>
+          {skill.trustLevel && <Tag tone="info">{skill.trustLevel}</Tag>}
           {skill.scanVerdict && (
-            <Tag color={skill.scanVerdict === 'safe' ? 'green' : 'orange'} style={{ margin: 0 }}>
-              {skill.scanVerdict}
-            </Tag>
+            <Tag tone={skill.scanVerdict === 'safe' ? 'success' : 'warning'}>{skill.scanVerdict}</Tag>
           )}
-          <Tooltip title={skill.enabled ? t('common.action.disable', { ns: 'common' }) : t('common.action.enable', { ns: 'common' })}>
+          <Tooltip label={skill.enabled ? t('common.action.disable', { ns: 'common' }) : t('common.action.enable', { ns: 'common' })}>
             <Switch
-              size="small"
               checked={skill.enabled}
-              onChange={(checked) => onToggle(skill.id, checked)}
+              aria-label={skill.enabled ? t('common.action.disable', { ns: 'common' }) : t('common.action.enable', { ns: 'common' })}
+              onCheckedChange={(checked) => onToggle(skill.id, checked)}
             />
           </Tooltip>
-          <Popconfirm title={t('provider.skills.deleteConfirm')} onConfirm={() => onDelete(skill.id)}>
-            <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
-          </Popconfirm>
-        </Flexbox>
-      </Flexbox>
+          <ConfirmAction
+            actionId={`skill-delete-${skill.id}`}
+            title={t('provider.skills.deleteConfirm')}
+            confirmLabel={t('common.action.delete', { ns: 'common' })}
+            cancelLabel={t('common.action.cancel', { ns: 'common' })}
+            onConfirm={() => onDelete(skill.id)}
+          >
+            <IconButton
+              actionId={`skill-delete-trigger-${skill.id}`}
+              iconId="delete"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              tone="danger"
+              label={t('provider.skills.deleteConfirm')}
+            />
+          </ConfirmAction>
+        </Flex>
+      </Flex>
     </Card>
   );
 }
@@ -1182,36 +1069,40 @@ function ImportFromAddressModal({
       const result = await api.importSkillFromAddress(address.trim(), undefined);
       onDone(result);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={t('provider.skills.import.title')}
+    <Dialog
       open
-      onCancel={onCancel}
-      onOk={handleOk}
-      confirmLoading={loading}
-      okText={t('provider.skills.import.ok')}
+      onDismiss={onCancel}
+      title={t('provider.skills.import.title')}
+      closeLabel={t('common.action.cancel', { ns: 'common' })}
+      footer={
+        <>
+          <Button actionId="skill-import-cancel" emphasis="quiet" label={t('common.action.cancel', { ns: 'common' })} onActivate={onCancel} />
+          <Button actionId="skill-import-ok" emphasis="primary" execution={loading ? 'pending' : 'idle'} label={t('provider.skills.import.ok')} onActivate={() => void handleOk()} />
+        </>
+      }
     >
-      <Flexbox gap={12} style={{ paddingBlock: 12 }}>
-        <Text type="secondary">
+      <div className="sc-provider-form">
+        <Text tone="secondary">
           {t('provider.skills.import.desc1')}
           <br />
           {t('provider.skills.import.desc2')}
         </Text>
-        <Input
+        <TextField
+          autoFocus
           placeholder={t('provider.skills.import.placeholder')}
           value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          onPressEnter={handleOk}
-          autoFocus
+          onValueChange={setAddress}
+          onEnter={handleOk}
         />
-      </Flexbox>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }
 
@@ -1229,6 +1120,13 @@ function ImportZipModal({
   const [stage, setStage] = useState<'idle' | 'validating' | 'ready' | 'importing'>('idle');
   const [loading, setLoading] = useState(false);
 
+  const resetPicker = () => {
+    setFile(null);
+    setValidation(null);
+    setStage('idle');
+    setProgress(0);
+  };
+
   const handleValidate = async () => {
     if (!file) return;
     setLoading(true);
@@ -1245,7 +1143,7 @@ function ImportZipModal({
         setProgress(0);
       }
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
       setStage('idle');
       setProgress(0);
     } finally {
@@ -1263,64 +1161,86 @@ function ImportZipModal({
       setProgress(100);
       onDone(result);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={t('provider.skills.zip.title')}
+    <Dialog
       open
-      onCancel={onCancel}
+      onDismiss={onCancel}
+      title={t('provider.skills.zip.title')}
+      closeLabel={t('provider.skills.zip.cancel')}
       footer={
-        <Flexbox horizontal justify="flex-end" gap={8}>
-          <Button onClick={onCancel}>{t('provider.skills.zip.cancel')}</Button>
-          <Button loading={loading} onClick={handleValidate} disabled={!file || stage === 'importing'}>
-            {t('provider.skills.zip.validate')}
-          </Button>
-          <Button type="primary" loading={loading} onClick={handleImport} disabled={!validation?.valid || stage !== 'ready'}>
-            {t('provider.skills.zip.import')}
-          </Button>
-        </Flexbox>
+        <>
+          <Button actionId="skill-zip-cancel" emphasis="quiet" label={t('provider.skills.zip.cancel')} onActivate={onCancel} />
+          <Button
+            actionId="skill-zip-validate"
+            execution={loading ? 'pending' : 'idle'}
+            availability={!file || stage === 'importing' ? { kind: 'disabled', reason: '' } : undefined}
+            label={t('provider.skills.zip.validate')}
+            onActivate={() => void handleValidate()}
+          />
+          <Button
+            actionId="skill-zip-import"
+            emphasis="primary"
+            execution={loading ? 'pending' : 'idle'}
+            availability={!validation?.valid || stage !== 'ready' ? { kind: 'disabled', reason: '' } : undefined}
+            label={t('provider.skills.zip.import')}
+            onActivate={() => void handleImport()}
+          />
+        </>
       }
     >
-      <Flexbox gap={12} style={{ paddingBlock: 12 }}>
-        <Text type="secondary">
-          {t('provider.skills.zip.desc')}
-        </Text>
-        <Upload
-          accept=".zip"
-          maxCount={1}
-          beforeUpload={(nextFile) => {
-            setFile(nextFile);
-            setValidation(null);
-            setStage('idle');
-            setProgress(0);
-            return false;
-          }}
-          onRemove={() => {
-            setFile(null);
-            setValidation(null);
-            setStage('idle');
-            setProgress(0);
-          }}
-        >
-          <Button icon={<UploadIcon size={14} />}>{t('provider.skills.zip.selectZip')}</Button>
-        </Upload>
-        {file && <Text type="secondary">{t('provider.skills.zip.selected', { name: file.name })}</Text>}
+      <div className="sc-provider-form">
+        <Text tone="secondary">{t('provider.skills.zip.desc')}</Text>
+        <Flex direction="row" gap={8} align="center">
+          <FilePicker
+            accept=".zip"
+            label={t('provider.skills.zip.selectZip')}
+            onFiles={(files) => {
+              const next = files[0];
+              if (next) {
+                setFile(next);
+                setValidation(null);
+                setStage('idle');
+                setProgress(0);
+              }
+            }}
+          />
+          {file && (
+            <IconButton
+              actionId="skill-zip-clear"
+              iconId="close"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              label={t('provider.skills.zip.cancel')}
+              onActivate={resetPicker}
+            />
+          )}
+        </Flex>
+        {file && <Text tone="secondary">{t('provider.skills.zip.selected', { name: file.name })}</Text>}
         {(stage === 'validating' || stage === 'ready' || stage === 'importing') && (
-          <Progress percent={progress} status={validation?.valid === false ? 'exception' : 'active'} />
+          <Progress
+            value={progress}
+            maximum={100}
+            tone={validation?.valid === false ? 'danger' : 'info'}
+            showValue={false}
+          />
         )}
         {validation && (
           <Alert
-            type={validation.valid ? 'success' : 'error'}
-            message={validation.valid ? t('provider.skills.zip.validated', { name: validation.skillName || validation.skillPath }) : validation.error || t('provider.skills.zip.invalidFormat')}
+            tone={validation.valid ? 'success' : 'danger'}
+            title={validation.valid
+              ? t('provider.skills.zip.validated', { name: validation.skillName || validation.skillPath })
+              : validation.error || t('provider.skills.zip.invalidFormat')}
           />
         )}
-      </Flexbox>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }
 
@@ -1350,40 +1270,42 @@ Your skill instructions here...
       const result = await api.createSkill(n, content);
       onDone(result);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={t('provider.skills.createModal.title')}
+    <Dialog
       open
-      onCancel={onCancel}
-      onOk={handleOk}
-      confirmLoading={loading}
-      okText={t('provider.skills.createModal.ok')}
+      onDismiss={onCancel}
+      title={t('provider.skills.createModal.title')}
       width={640}
+      closeLabel={t('common.action.cancel', { ns: 'common' })}
+      footer={
+        <>
+          <Button actionId="skill-create-cancel" emphasis="quiet" label={t('common.action.cancel', { ns: 'common' })} onActivate={onCancel} />
+          <Button actionId="skill-create-ok" emphasis="primary" execution={loading ? 'pending' : 'idle'} label={t('provider.skills.createModal.ok')} onActivate={() => void handleOk()} />
+        </>
+      }
     >
-      <Flexbox gap={12} style={{ paddingBlock: 12 }}>
-        <Input
+      <div className="sc-provider-form">
+        <TextField
+          autoFocus
           placeholder={t('provider.skills.createModal.namePlaceholder')}
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          autoFocus
+          onValueChange={setName}
         />
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {t('provider.skills.createModal.formatDesc')}
-        </Text>
+        <Text tone="secondary" style={{ fontSize: 12 }}>{t('provider.skills.createModal.formatDesc')}</Text>
         <TextArea
+          className="sc-skill-code-area"
           rows={14}
           value={content}
-          onChange={(e) => setContent(e.target.value)}
-          style={{ fontFamily: 'monospace', fontSize: 13 }}
+          onValueChange={setContent}
         />
-      </Flexbox>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }
 
@@ -1395,7 +1317,6 @@ function SkillDetailBoard({
   onClose: () => void;
 }) {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const [skill, setSkill] = useState<SkillRecord | BuiltinSkillRecord | null>(null);
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState('');
@@ -1421,7 +1342,7 @@ function SkillDetailBoard({
       });
       setActiveResource({ path: resourcePath, content: resourceContent });
     } catch (error) {
-      message.error(t('provider.skills.detail.readResourceFailed'));
+      notifyError(t('provider.skills.detail.readResourceFailed'));
       log.error('skills', 'Failed to read skill resource', { path: resourcePath, owner, error: String(error) });
     } finally {
       setResourceLoading(false);
@@ -1467,14 +1388,14 @@ function SkillDetailBoard({
   const handleSave = async () => {
     try {
       await api.updateSkill(detail.key, { content });
-      message.success(t('provider.skills.detail.updated'));
+      notifySuccess(t('provider.skills.detail.updated'));
       setEditing(false);
       if (detail.kind === 'installed') {
         await loadInstalledSkill();
         await loadVersions();
       }
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     }
   };
 
@@ -1482,11 +1403,11 @@ function SkillDetailBoard({
     setRollbackVersion(version);
     try {
       await api.rollbackSkill(detail.key, version);
-      message.success(t('provider.skills.detail.rollbackSuccess', { version }));
+      notifySuccess(t('provider.skills.detail.rollbackSuccess', { version }));
       await loadInstalledSkill();
       await loadVersions();
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setRollbackVersion(null);
     }
@@ -1495,137 +1416,139 @@ function SkillDetailBoard({
   if (!skill) return null;
   const installedSkill = 'resourceTree' in skill ? skill : null;
 
+  const footer = editing && canEdit ? (
+    <>
+      <Button actionId="skill-detail-cancel" emphasis="quiet" label={t('provider.skills.detail.cancel')} onActivate={() => setEditing(false)} />
+      <Button actionId="skill-detail-save" emphasis="primary" label={t('provider.skills.detail.save')} onActivate={() => void handleSave()} />
+    </>
+  ) : (
+    <Button
+      actionId="skill-detail-edit"
+      leading={<Icon iconId="edit" size={14} />}
+      availability={!canEdit ? { kind: 'disabled', reason: '' } : undefined}
+      label={t('provider.skills.detail.editContent')}
+      onActivate={() => setEditing(true)}
+    />
+  );
+
   return (
-    <Modal
-      title={installedSkill?.metaTitle || skill.name}
-      open
-      onCancel={onClose}
-      width={700}
-      footer={
-        editing && canEdit ? (
-          <Flexbox horizontal gap={8} justify="flex-end">
-            <Button onClick={() => setEditing(false)}>{t('provider.skills.detail.cancel')}</Button>
-            <Button type="primary" onClick={handleSave}>{t('provider.skills.detail.save')}</Button>
-          </Flexbox>
-        ) : (
-          <Button onClick={() => setEditing(true)} icon={<Edit size={14} />} disabled={!canEdit}>
-            {t('provider.skills.detail.editContent')}
-          </Button>
-        )
-      }
-    >
-      <Flexbox gap={12} style={{ paddingBlock: 8 }}>
-        <Flexbox horizontal gap={8} wrap="wrap">
-          {installedSkill?.source && <Tag color="blue">{installedSkill.source}</Tag>}
-          {installedSkill?.trustLevel && <Tag color="cyan">{installedSkill.trustLevel}</Tag>}
-          {installedSkill?.scanVerdict && <Tag color={installedSkill.scanVerdict === 'safe' ? 'green' : 'orange'}>{installedSkill.scanVerdict}</Tag>}
-          {installedSkill?.version && <Tag>v{installedSkill.version}</Tag>}
-          {installedSkill?.license && <Tag color="green">{installedSkill.license}</Tag>}
-          {installedSkill?.authorName && <Tag>by {installedSkill.authorName}</Tag>}
-          {skill.useCount > 0 && <Tag color="gold">used {skill.useCount}</Tag>}
-        </Flexbox>
+    <>
+      <Dialog
+        open
+        onDismiss={onClose}
+        width={700}
+        title={installedSkill?.metaTitle || skill.name}
+        footer={footer}
+      >
+        <Flex gap={12}>
+          <Flex direction="row" gap={8} wrap="wrap">
+            {installedSkill?.source && <Tag tone="info">{installedSkill.source}</Tag>}
+            {installedSkill?.trustLevel && <Tag tone="info">{installedSkill.trustLevel}</Tag>}
+            {installedSkill?.scanVerdict && <Tag tone={installedSkill.scanVerdict === 'safe' ? 'success' : 'warning'}>{installedSkill.scanVerdict}</Tag>}
+            {installedSkill?.version && <Tag>v{installedSkill.version}</Tag>}
+            {installedSkill?.license && <Tag tone="success">{installedSkill.license}</Tag>}
+            {installedSkill?.authorName && <Tag>by {installedSkill.authorName}</Tag>}
+            {skill.useCount > 0 && <Tag tone="warning">used {skill.useCount}</Tag>}
+          </Flex>
 
-        {skill.description && (
-          <Text type="secondary">{skill.description}</Text>
-        )}
+          {skill.description && (
+            <Text tone="secondary">{skill.description}</Text>
+          )}
 
-        {installedSkill && (
-          <SkillVersionHistory
-            currentVersion={Number(installedSkill.version || 0)}
-            loading={versionsLoading}
-            total={versionTotal}
-            versions={versions}
-            rollbackVersion={rollbackVersion}
-            onRefresh={loadVersions}
-            onRollback={handleRollback}
-          />
-        )}
+          {installedSkill && (
+            <SkillVersionHistory
+              currentVersion={Number(installedSkill.version || 0)}
+              loading={versionsLoading}
+              total={versionTotal}
+              versions={versions}
+              rollbackVersion={rollbackVersion}
+              onRefresh={loadVersions}
+              onRollback={handleRollback}
+            />
+          )}
 
-        {skill.keywords?.length > 0 && (
-          <Flexbox horizontal gap={4} wrap="wrap">
-            <Text type="secondary" style={{ fontSize: 12 }}>{t('provider.skills.detail.keywords')}</Text>
-            {skill.keywords.map((kw: string) => (
-              <Tag key={kw} style={{ fontSize: 11 }}>{kw}</Tag>
-            ))}
-          </Flexbox>
-        )}
+          {skill.keywords?.length > 0 && (
+            <Flex direction="row" gap={4} wrap="wrap">
+              <Text tone="secondary" style={{ fontSize: 12 }}>{t('provider.skills.detail.keywords')}</Text>
+              {skill.keywords.map((kw: string) => (
+                <Tag key={kw} style={{ fontSize: 11 }}>{kw}</Tag>
+              ))}
+            </Flex>
+          )}
 
-        {editing ? (
-          <TextArea
-            rows={16}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            style={{ fontFamily: 'monospace', fontSize: 13 }}
-          />
-        ) : (
-          <SkillProtocolPreview
-            skill={skill}
-            content={skill.content}
-            token={token}
-            onReadResource={readVersionedResource}
-            resourceLoading={resourceLoading}
-          />
-        )}
-      </Flexbox>
-      <Modal
+          {editing ? (
+            <TextArea
+              className="sc-skill-code-area"
+              rows={16}
+              value={content}
+              onValueChange={setContent}
+            />
+          ) : (
+            <SkillProtocolPreview
+              skill={skill}
+              content={skill.content}
+              onReadResource={readVersionedResource}
+              resourceLoading={resourceLoading}
+            />
+          )}
+        </Flex>
+      </Dialog>
+      <Dialog
         open={activeResource !== null}
+        onDismiss={() => setActiveResource(null)}
         title={activeResource?.path}
-        footer={null}
-        onCancel={() => setActiveResource(null)}
         width={760}
+        closeLabel={t('common.action.close', { ns: 'common' })}
       >
         <div className="selectable" style={{ whiteSpace: 'pre-wrap', maxHeight: '60vh', overflow: 'auto' }}>
           {activeResource?.content}
         </div>
-      </Modal>
-    </Modal>
+      </Dialog>
+    </>
   );
 }
 
 function SkillProtocolPreview({
   skill,
   content,
-  token,
   onReadResource,
   resourceLoading,
 }: {
   skill: SkillRecord | BuiltinSkillRecord;
   content: string;
-  token: any;
   onReadResource?: (path: string, owner?: string, contentHash?: string) => void;
   resourceLoading?: boolean;
 }) {
   const { t } = useTranslation('provider');
   const sections = parseSkillProtocol(content);
   return (
-    <Flexbox gap={12}>
+    <Flex gap={12}>
       {'resourceTree' in skill && skill.resourceTree && (
         <SkillResourceTreePanel
           skill={skill}
-          token={token}
           onReadResource={onReadResource}
           resourceLoading={resourceLoading}
         />
       )}
-      <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
+      <Card flat className="sc-skill-content-card">
         <Text strong>{t('provider.skills.detail.manifest')}</Text>
-        <div className="selectable" style={{ marginTop: 8, fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 12 }}>
+        <div className="selectable sc-skill-frontmatter">
           {sections.frontmatter || t('provider.skills.detail.noFrontmatter')}
         </div>
       </Card>
-      <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
+      <Card flat className="sc-skill-content-card">
         <Text strong>{t('provider.skills.detail.content')}</Text>
         <div className="selectable" style={{ marginTop: 8, maxHeight: 360, overflow: 'auto' }}>
-          <LazyMarkdown {...chatMarkdownProps} fontSize={14}>{sections.body || ''}</LazyMarkdown>
+          <LazyMarkdown content={sections.body || ''} style={{ fontSize: 14 }} />
         </div>
       </Card>
-      <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
+      <Card flat className="sc-skill-content-card">
         <Text strong>{t('provider.skills.detail.rawProtocol')}</Text>
-        <div className="selectable" style={{ marginTop: 8, maxHeight: 220, overflow: 'auto', fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 12 }}>
+        <div className="selectable sc-skill-raw" style={{ maxHeight: 220 }}>
           {content}
         </div>
       </Card>
-    </Flexbox>
+    </Flex>
   );
 }
 
@@ -1649,74 +1572,77 @@ function SkillVersionHistory({
   const { t } = useTranslation('provider');
 
   return (
-    <Card size="small">
-      <Flexbox gap={10}>
-        <Flexbox horizontal justify="space-between" align="center">
-          <Flexbox horizontal gap={8} align="center">
-            <History size={14} />
+    <Card flat className="sc-skill-version">
+      <Flex gap={10}>
+        <Flex direction="row" justify="space-between" align="center">
+          <Flex direction="row" gap={8} align="center">
+            <Icon iconId="history" size={14} />
             <Text strong>{t('provider.skills.detail.versions')}</Text>
             <Tag>v{currentVersion}</Tag>
             <Tag>{t('provider.skills.detail.versionTotal', { total })}</Tag>
-          </Flexbox>
-          <Button type="text" size="small" icon={<RefreshCw size={14} />} loading={loading} onClick={onRefresh}>
-            {t('provider.skills.detail.refreshVersions')}
-          </Button>
-        </Flexbox>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {t('provider.skills.detail.rollbackPolicy')}
-        </Text>
+          </Flex>
+          <Button
+            actionId="skill-versions-refresh"
+            emphasis="quiet"
+            density="compact"
+            leading={<Icon iconId="refresh-cw" size={14} />}
+            execution={loading ? 'pending' : 'idle'}
+            label={t('provider.skills.detail.refreshVersions')}
+            onActivate={onRefresh}
+          />
+        </Flex>
+        <Text tone="secondary" style={{ fontSize: 12 }}>{t('provider.skills.detail.rollbackPolicy')}</Text>
         {versions.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('provider.skills.detail.noVersions')} />
+          <Empty description={t('provider.skills.detail.noVersions')} />
         ) : (
-          <Flexbox gap={8}>
+          <Flex gap={8}>
             {versions.map((version) => {
               const versionNumber = version.version;
               const createdAt = version.created_at || version.createdAt || '';
               const versionId = version.version_id || version.versionId || `${versionNumber}`;
               return (
-                <Card key={versionId} size="small" styles={{ body: { padding: 10 } }}>
-                  <Flexbox horizontal justify="space-between" align="center" gap={8}>
-                    <Flexbox gap={4}>
-                      <Flexbox horizontal gap={6} align="center">
-                        <Tag color={versionNumber === currentVersion ? 'green' : 'blue'}>
-                          v{versionNumber}
-                        </Tag>
+                <Card key={versionId} flat className="sc-skill-version-item">
+                  <Flex direction="row" justify="space-between" align="center" gap={8}>
+                    <Flex gap={4}>
+                      <Flex direction="row" gap={6} align="center">
+                        <Tag tone={versionNumber === currentVersion ? 'success' : 'info'}>v{versionNumber}</Tag>
                         <Tag>{version.trigger}</Tag>
-                      </Flexbox>
-                      {createdAt && <Text type="secondary" style={{ fontSize: 12 }}>{createdAt}</Text>}
-                    </Flexbox>
-                    <Popconfirm
+                      </Flex>
+                      {createdAt && <Text tone="secondary" style={{ fontSize: 12 }}>{createdAt}</Text>}
+                    </Flex>
+                    <ConfirmAction
+                      actionId={`skill-rollback-${versionId}`}
                       title={t('provider.skills.detail.rollbackConfirm', { version: versionNumber })}
+                      confirmLabel={t('provider.skills.detail.rollback')}
+                      cancelLabel={t('common.action.cancel', { ns: 'common' })}
                       onConfirm={() => onRollback(versionNumber)}
                     >
                       <Button
-                        size="small"
-                        icon={<RotateCcw size={14} />}
-                        loading={rollbackVersion === versionNumber}
-                        disabled={versionNumber === currentVersion}
-                      >
-                        {t('provider.skills.detail.rollback')}
-                      </Button>
-                    </Popconfirm>
-                  </Flexbox>
+                        actionId={`skill-rollback-trigger-${versionId}`}
+                        density="compact"
+                        leading={<Icon iconId="rotate-ccw" size={14} />}
+                        execution={rollbackVersion === versionNumber ? 'pending' : 'idle'}
+                        availability={versionNumber === currentVersion ? { kind: 'disabled', reason: '' } : undefined}
+                        label={t('provider.skills.detail.rollback')}
+                      />
+                    </ConfirmAction>
+                  </Flex>
                 </Card>
               );
             })}
-          </Flexbox>
+          </Flex>
         )}
-      </Flexbox>
+      </Flex>
     </Card>
   );
 }
 
 function SkillResourceTreePanel({
   skill,
-  token,
   onReadResource,
   resourceLoading,
 }: {
   skill: SkillRecord;
-  token: any;
   onReadResource?: (path: string, owner?: string, contentHash?: string) => void;
   resourceLoading?: boolean;
 }) {
@@ -1725,52 +1651,47 @@ function SkillResourceTreePanel({
   const runtimeLoad = skill.runtimeLoad;
 
   return (
-    <Card size="small" style={{ borderColor: token.colorBorderSecondary }}>
-      <Flexbox gap={10}>
-        <Flexbox horizontal justify="space-between" align="center">
+    <Card flat className="sc-skill-content-card">
+      <Flex gap={10}>
+        <Flex direction="row" justify="space-between" align="center">
           <Text strong>{t('provider.skills.detail.resources')}</Text>
-          <Tag color="blue">{runtimeLoad?.systemPrompt.policy || 'index-only'}</Tag>
-        </Flexbox>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+          <Tag tone="info">{runtimeLoad?.systemPrompt.policy || 'index-only'}</Tag>
+        </Flex>
+        <Text tone="secondary" style={{ fontSize: 12 }}>
           {runtimeLoad?.systemPrompt.description || t('provider.skills.detail.resourcePolicyDesc')}
         </Text>
-        <Flexbox horizontal gap={8} wrap="wrap">
-          <Tag color="green">
+        <Flex direction="row" gap={8} wrap="wrap">
+          <Tag tone="success">
             {t('provider.skills.detail.systemPromptLoads', { count: runtimeLoad?.systemPrompt.loadedResources.length ?? 0 })}
           </Tag>
-          <Tag color="purple">
+          <Tag tone="neutral">
             {t('provider.skills.detail.skillViewLoads', { count: runtimeLoad?.skillView.loadedResources.length ?? 0 })}
           </Tag>
           {runtimeLoad?.skillView.bytes !== undefined && (
             <Tag>{t('provider.skills.detail.resourceBytes', { bytes: runtimeLoad.skillView.bytes })}</Tag>
           )}
-        </Flexbox>
-        <Flexbox gap={8}>
+        </Flex>
+        <Flex gap={8}>
           {resources.map((resource) => (
             <SkillResourceRow
               key={resource.id}
               resource={resource}
-              token={token}
-              onReadResource={onReadResource && isTextResourceReadable(resource)
-                ? onReadResource
-                : undefined}
+              onReadResource={onReadResource && isTextResourceReadable(resource) ? onReadResource : undefined}
               loading={resourceLoading}
             />
           ))}
-        </Flexbox>
-      </Flexbox>
+        </Flex>
+      </Flex>
     </Card>
   );
 }
 
 function SkillResourceRow({
   resource,
-  token,
   onReadResource,
   loading,
 }: {
   resource: SkillResourceNode;
-  token: any;
   onReadResource?: (path: string, owner?: string, contentHash?: string) => void;
   loading?: boolean;
 }) {
@@ -1778,54 +1699,50 @@ function SkillResourceRow({
   const hash = resource.sha256 ? `${resource.sha256.slice(0, 12)}...` : '';
 
   return (
-    <Card
-      size="small"
-      style={{ borderColor: token.colorBorderSecondary, background: token.colorFillQuaternary }}
-      styles={{ body: { padding: 10 } }}
-    >
-      <Flexbox gap={6}>
-        <Flexbox horizontal justify="space-between" align="center">
-          <Flexbox horizontal gap={8} align="center">
-            <Code2 size={14} />
+    <Card flat className="sc-skill-resource-row">
+      <Flex gap={6}>
+        <Flex direction="row" justify="space-between" align="center">
+          <Flex direction="row" gap={8} align="center">
+            <Icon iconId="code" size={14} />
             <Text strong style={{ fontSize: 13 }}>{resource.path}</Text>
             <Tag>{resource.kind}</Tag>
-            {resource.role && <Tag color="cyan">{resource.role}</Tag>}
+            {resource.role && <Tag tone="info">{resource.role}</Tag>}
             {resource.executionOwner && (
-              <Tag color={resource.executionOwner === 'station' ? 'blue' : 'purple'}>
+              <Tag tone={resource.executionOwner === 'station' ? 'info' : 'neutral'}>
                 {t(resource.executionOwner === 'station'
                   ? 'provider.skills.detail.stationOwner'
                   : 'provider.skills.detail.clientOwner')}
               </Tag>
             )}
-          </Flexbox>
+          </Flex>
           {onReadResource ? (
             <Button
-              size="small"
-              loading={loading}
-              onClick={() => onReadResource(resource.path, resource.executionOwner, resource.sha256)}
-            >
-              {t('provider.skills.detail.readResource')}
-            </Button>
+              actionId={`skill-resource-read-${resource.path}`}
+              density="compact"
+              execution={loading ? 'pending' : 'idle'}
+              label={t('provider.skills.detail.readResource')}
+              onActivate={() => onReadResource(resource.path, resource.executionOwner, resource.sha256)}
+            />
           ) : (
-            <Tag color={resource.loadedAtRuntime ? 'green' : 'default'}>
+            <Tag tone={resource.loadedAtRuntime ? 'success' : 'neutral'}>
               {resource.loadedAtRuntime
                 ? t('provider.skills.detail.loaded')
                 : t('provider.skills.detail.onDemand')}
             </Tag>
           )}
-        </Flexbox>
+        </Flex>
         {resource.summary && (
-          <Text type="secondary" style={{ fontSize: 12 }}>{resource.summary}</Text>
+          <Text tone="secondary" style={{ fontSize: 12 }}>{resource.summary}</Text>
         )}
-        <Flexbox horizontal gap={6} wrap="wrap">
+        <Flex direction="row" gap={6} wrap="wrap">
           <Tag>{t('provider.skills.detail.resourceBytes', { bytes: resource.bytes })}</Tag>
           {typeof resource.lineCount === 'number' && (
             <Tag>{t('provider.skills.detail.resourceLines', { lines: resource.lineCount })}</Tag>
           )}
           <Tag>{t('provider.skills.detail.loadTrigger', { trigger: resource.loadTrigger })}</Tag>
           {hash && <Tag>{t('provider.skills.detail.sha256', { hash })}</Tag>}
-        </Flexbox>
-      </Flexbox>
+        </Flex>
+      </Flex>
     </Card>
   );
 }

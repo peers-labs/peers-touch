@@ -1,17 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { Typography, Modal, Form, theme, Divider, Avatar, Radio, Select, Switch } from 'antd';
-import { Input, Button, TextArea, InputPassword, Tag, toast } from '@lobehub/ui';
-import { Search, Plus, Brain, TerminalSquare, Star } from 'lucide-react';
+import {
+  Button,
+  Dialog,
+  Field,
+  Icon,
+  IconButton,
+  Radio,
+  Select,
+  Switch,
+  Tag,
+  Text,
+  TextField,
+  TextArea,
+} from '@peers-touch/ui';
 import { ProviderIcon } from './ProviderIcon';
 import { useTranslation } from 'react-i18next';
 import { isProviderUsable, mapProviderUIStatus } from '../../store/providerReadiness';
-import type { ProviderReadinessStatus } from '../../store/providerReadiness';
 import { useActiveProviderSlice, useActiveSettingsSlice } from './useActiveSettingsStores';
 import { useAgentStore } from '../../store/agent';
-
-const { Text } = Typography;
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
 export function ProviderMenu() {
   const { t } = useTranslation('provider');
@@ -32,7 +39,6 @@ export function ProviderMenu() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const providerListRef = useRef<HTMLDivElement>(null);
-  const { token } = theme.useToken();
 
   const usableProviders = useMemo(
     () => providers.filter((provider) =>
@@ -70,14 +76,14 @@ export function ProviderMenu() {
       && (candidate.type === 'chat' || !candidate.type),
     );
     if (!model) {
-      toast.error(t('provider.menu.defaultNeedsModel'));
+      notifyError(t('provider.menu.defaultNeedsModel'));
       return;
     }
     try {
       await setRuntimeDefault(providerId, model.id);
-      toast.success(t('provider.menu.defaultSet'));
+      notifySuccess(t('provider.menu.defaultSet'));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'set runtime default failed');
+      notifyError(error instanceof Error ? error.message : 'set runtime default failed');
     }
   };
 
@@ -85,136 +91,114 @@ export function ProviderMenu() {
     const isSelected = p.id === selectedId;
     const readiness = readinessById[p.id];
     const status = readiness?.status ?? mapProviderUIStatus(p).status;
-    const dotColor = statusColor(status, token);
     const isDefaultProvider = runtimeDefault?.providerId === p.id;
 
     return (
-      <Flexbox
+      <div
         key={p.id}
+        className={`sc-provider-menu-row${isSelected ? ' is-selected' : ''}`}
         data-item-id={p.id}
-        horizontal
-        align="center"
-        gap={10}
-        onClick={(e) => {
-          e.stopPropagation();
+        role="button"
+        tabIndex={0}
+        aria-current={isSelected}
+        aria-label={p.name}
+        onClick={() => selectProvider(p.id)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
           selectProvider(p.id);
-        }}
-        style={{
-          padding: '10px 14px',
-          borderRadius: 8,
-          cursor: 'pointer',
-          background: isSelected ? token.colorPrimaryBg : 'transparent',
-          border: isSelected ? `1px solid ${token.colorPrimaryBorderHover}` : '1px solid transparent',
-          transition: 'all 0.15s',
         }}
       >
         {p.logo ? (
-          <Avatar src={p.logo} shape="circle" size={28} />
+          <img className="sc-provider-menu-row__logo" src={p.logo} alt="" width={28} height={28} />
         ) : (
           <ProviderIcon providerId={p.id} providerName={p.name} size={28} />
         )}
-        <Flexbox flex={1} gap={4} style={{ minWidth: 0 }}>
-          <Text strong ellipsis style={{ fontSize: 14 }}>{p.name}</Text>
-          <Flexbox horizontal gap={4} style={{ flexWrap: 'wrap' }}>
-            <Tag
-              color={p.runtime_kind === 'cli' ? 'purple' : 'blue'}
-              style={{ margin: 0, fontSize: 10, lineHeight: '16px', paddingInline: 6 }}
-            >
+        <div className="sc-provider-menu-row__body">
+          <Text strong truncate style={{ fontSize: 14 }}>{p.name}</Text>
+          <span className="sc-provider-menu-row__tags">
+            <Tag tone={p.runtime_kind === 'cli' ? 'info' : 'neutral'}>
               {t(`provider.runtime.${p.runtime_kind}`)}
             </Tag>
-          </Flexbox>
-        </Flexbox>
-        <Button
-          size="small"
-          type="text"
+          </span>
+        </div>
+        <IconButton
+          actionId={`provider-default-${p.id}`}
           data-default-provider={isDefaultProvider ? 'true' : 'false'}
-          icon={(
-            <Star
-              size={14}
-              fill={isDefaultProvider ? token.colorWarning : 'none'}
-              color={isDefaultProvider ? token.colorWarning : token.colorTextTertiary}
-            />
-          )}
+          iconId="star"
+          iconSize={14}
+          density="compact"
+          emphasis="quiet"
+          className={isDefaultProvider
+            ? 'sc-provider-menu-row__star is-default'
+            : 'sc-provider-menu-row__star'}
           title={isDefaultProvider
             ? t('provider.menu.defaultCurrent')
             : t('provider.menu.setDefault')}
-          onClick={(event) => {
+          label={isDefaultProvider
+            ? t('provider.menu.defaultCurrent')
+            : t('provider.menu.setDefault')}
+          onActivate={(event) => {
             event.stopPropagation();
             void makeDefault(p.id);
           }}
         />
         <div
+          className="sc-provider-menu-row__dot"
+          data-provider-status={status}
           title={t(`provider.menu.status.${status}`)}
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: dotColor,
-            flexShrink: 0,
-          }}
         />
-      </Flexbox>
+      </div>
     );
   };
 
   return (
-    <Flexbox gap={8} style={{ height: '100%', padding: '16px 12px 12px' }}>
-      <Flexbox horizontal gap={6}>
-        <Input
-          prefix={<Search size={12} style={{ color: token.colorTextQuaternary }} />}
+    <div className="sc-provider-menu">
+      <div className="sc-provider-menu__search">
+        <TextField
+          clearable
+          density="compact"
+          leading={<Icon iconId="search" size={12} className="sc-provider-menu__search-icon" />}
           placeholder={t('provider.menu.searchPlaceholder')}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          allowClear
-          size="small"
-          style={{ borderRadius: 8, flex: 1, fontSize: 12 }}
+          onValueChange={setSearch}
         />
-        <Button
-          icon={<Plus size={14} />}
-          size="small"
-          onClick={() => setShowCreate(true)}
+        <IconButton
+          actionId="provider-add-custom"
+          iconId="plus"
+          iconSize={14}
+          density="compact"
+          label={t('provider.menu.addCustomProvider')}
           title={t('provider.menu.addCustomProvider')}
-          style={{ borderRadius: 8, flexShrink: 0 }}
+          onActivate={() => setShowCreate(true)}
         />
-      </Flexbox>
+      </div>
 
-      <Flexbox horizontal align="center" justify="space-between" style={{ minHeight: 32, padding: '0 4px' }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+      <div className="sc-provider-menu__filter">
+        <Text tone="secondary" style={{ fontSize: 12 }}>
           {t('provider.menu.showUsableOnly')}
         </Text>
         <Switch
-          size="small"
           checked={showUsableOnly}
           aria-label={t('provider.menu.showUsableOnly')}
-          onChange={(checked) => {
+          onCheckedChange={(checked) => {
             void setShowUsableOnly(checked).catch(() => {
-              toast.error(t('provider.menu.preferenceSaveFailed'));
+              notifyError(t('provider.menu.preferenceSaveFailed'));
             });
           }}
         />
-      </Flexbox>
+      </div>
 
-      <Flexbox
-        ref={providerListRef}
-        flex={1}
-        gap={4}
-        style={{
-          minHeight: 0,
-          overflowX: 'hidden',
-          overflowY: 'auto',
-          paddingRight: 4,
-          scrollbarWidth: 'thin',
-        }}
-      >
+      <div className="sc-provider-menu__list" ref={providerListRef}>
         {filtered.map(renderItem)}
         {filtered.length === 0 && (
-          <Text type="secondary" style={{ padding: '16px 8px', fontSize: 12 }}>
+          <Text tone="secondary" className="sc-provider-menu__empty">
             {showUsableOnly
               ? t('provider.menu.noUsableProviders')
               : t('provider.menu.noMatchingProviders')}
           </Text>
         )}
-      </Flexbox>
+      </div>
 
       <CreateProviderModal
         open={showCreate}
@@ -226,48 +210,22 @@ export function ProviderMenu() {
           await selectProvider(providerId);
         }}
       />
-    </Flexbox>
+    </div>
   );
 }
 
-function statusColor(status: ProviderReadinessStatus, token: {
-  colorSuccess: string;
-  colorError: string;
-  colorWarning: string;
-  colorTextTertiary: string;
-  colorTextQuaternary: string;
-  colorInfo: string;
-}): string {
-  switch (status) {
-    case 'ready':
-      return token.colorSuccess;
-    case 'invalid':
-    case 'error':
-      return token.colorError;
-    case 'unconfigured':
-      return token.colorWarning;
-    case 'checking':
-    case 'loading':
-      return token.colorInfo;
-    case 'unavailable':
-      return token.colorTextQuaternary;
-    case 'unverified':
-    default:
-      return token.colorTextTertiary;
-  }
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  const { token } = theme.useToken();
+function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <Divider style={{ margin: '8px 0 16px' }} />
-      <Text strong style={{ fontSize: 14, color: token.colorText, display: 'block', marginBottom: 16 }}>
+      <hr className="sc-provider-section-divider" />
+      <Text strong className="sc-provider-section-title">
         {children}
       </Text>
     </>
   );
 }
+
+type ProviderKind = 'direct' | 'cli';
 
 function CreateProviderModal({
   open,
@@ -283,145 +241,200 @@ function CreateProviderModal({
   onSelectProvider: (providerId: string) => Promise<void>;
 }) {
   const { t } = useTranslation('provider');
-  const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const providerKind = Form.useWatch<'direct' | 'cli'>('kind', form) ?? 'direct';
+  const [kind, setKind] = useState<ProviderKind>('direct');
+  const [cliProviderId, setCliProviderId] = useState<string>('');
+  const [id, setId] = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [logo, setLogo] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+
+  // Reset to direct whenever the modal opens (antd afterOpenChange parity).
+  useEffect(() => {
+    if (open) setKind('direct');
+  }, [open]);
+
   const cliProviders = providers.filter((provider) => provider.runtime_kind === 'cli');
 
+  const idValid = /^[\d_a-z-]+$/.test(id);
+  const formInvalid = kind === 'cli'
+    ? !cliProviderId
+    : !id.trim() || !idValid || !baseUrl.trim();
+
+  const submitLabel = kind === 'cli'
+    ? t('provider.menu.configureBtn')
+    : t('provider.menu.createBtn');
+
   const handleOk = async () => {
+    if (formInvalid) return;
+    setLoading(true);
     try {
-      const values = await form.validateFields();
-      setLoading(true);
-      if (values.kind === 'cli') {
-        await onSelectProvider(values.cli_provider_id);
+      if (kind === 'cli') {
+        await onSelectProvider(cliProviderId);
       } else {
-        await onCreate(values);
-        toast.success(t('provider.menu.created'));
+        await onCreate({
+          id,
+          name: name || id,
+          description: description || undefined,
+          logo: logo || undefined,
+          base_url: baseUrl,
+          api_key: apiKey || undefined,
+        });
+        notifySuccess(t('provider.menu.created'));
       }
-      form.resetFields();
+      setCliProviderId('');
+      setId('');
+      setName('');
+      setDescription('');
+      setLogo('');
+      setBaseUrl('');
+      setApiKey('');
       onClose();
     } catch (e: unknown) {
-      if (e instanceof Error) toast.error(e.message);
+      if (e instanceof Error) notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={
-        <Flexbox horizontal gap={8} align="center">
-          <Brain size={18} />
-          <span>{t('provider.menu.createTitle')}</span>
-        </Flexbox>
-      }
+    <Dialog
       open={open}
-      onCancel={onClose}
+      onDismiss={onClose}
+      width={520}
+      title={(
+        <span className="sc-provider-create-title">
+          <Icon iconId="brain" size={18} />
+          <span>{t('provider.menu.createTitle')}</span>
+        </span>
+      )}
       footer={
         <Button
-          type="primary"
-          block
-          size="large"
-          loading={loading}
-          onClick={handleOk}
-          style={{ borderRadius: 8 }}
-        >
-          {providerKind === 'cli'
-            ? t('provider.menu.configureBtn')
-            : t('provider.menu.createBtn')}
-        </Button>
+          actionId="provider-create-submit"
+          className="sc-provider-create-submit"
+          emphasis="primary"
+          execution={loading ? 'pending' : 'idle'}
+          label={submitLabel}
+          availability={formInvalid
+            ? { kind: 'disabled', reason: submitLabel }
+            : undefined}
+          onActivate={() => void handleOk()}
+        />
       }
-      destroyOnHidden
-      width={520}
-      afterOpenChange={(nextOpen) => {
-        if (nextOpen) form.setFieldsValue({ kind: 'direct' });
-      }}
     >
-      <Form form={form} layout="horizontal" labelCol={{ span: 8 }} wrapperCol={{ span: 16 }} style={{ marginTop: 8 }}>
-        <Form.Item name="kind" label={t('provider.menu.providerType')} initialValue="direct">
-          <Radio.Group>
-            <Radio value="direct" className="pt-provider-kind-direct">
+      <div className="sc-provider-create-form">
+        <Field label={t('provider.menu.providerType')}>
+          <div className="sc-provider-kind">
+            <Radio
+              name="provider-kind"
+              value="direct"
+              className="pt-provider-kind-direct"
+              checked={kind === 'direct'}
+              onChange={() => setKind('direct')}
+            >
               {t('provider.menu.directModel')}
             </Radio>
-            <Radio value="cli" className="pt-provider-kind-cli">
+            <Radio
+              name="provider-kind"
+              value="cli"
+              className="pt-provider-kind-cli"
+              checked={kind === 'cli'}
+              onChange={() => setKind('cli')}
+            >
               {t('provider.menu.cli')}
             </Radio>
-          </Radio.Group>
-        </Form.Item>
+          </div>
+        </Field>
 
-        {providerKind === 'cli' ? (
-          <Form.Item
-            name="cli_provider_id"
-            label={t('provider.menu.registeredAdapter')}
-            rules={[{ required: true, message: t('provider.menu.registeredAdapterRequired') }]}
-          >
+        {kind === 'cli' ? (
+          <Field label={t('provider.menu.registeredAdapter')}>
             <Select
               className="pt-provider-cli-adapter-select"
+              value={cliProviderId || undefined}
+              placeholder={t('provider.menu.registeredAdapterPlaceholder')}
               options={cliProviders.map((provider) => ({
                 value: provider.id,
-                className: 'pt-provider-cli-adapter-option',
+                attributes: { className: 'pt-provider-cli-adapter-option' },
                 label: (
-                  <Flexbox horizontal align="center" gap={8}>
-                    <TerminalSquare size={14} />
+                  <span className="sc-provider-cli-option">
+                    <Icon iconId="terminal" size={14} />
                     <span>{provider.name}</span>
-                  </Flexbox>
+                  </span>
                 ),
               }))}
-              placeholder={t('provider.menu.registeredAdapterPlaceholder')}
+              onValueChange={(value) => {
+                if (typeof value === 'string') setCliProviderId(value);
+              }}
             />
-          </Form.Item>
+          </Field>
         ) : (
           <>
-        <SectionTitle>{t('provider.menu.basicInfo')}</SectionTitle>
+            <SectionTitle>{t('provider.menu.basicInfo')}</SectionTitle>
 
-        <Form.Item
-          name="id"
-          label={t('provider.menu.providerId')}
-          rules={[
-            { required: true, message: t('provider.menu.providerIdRequired') },
-            { pattern: /^[\d_a-z-]+$/, message: t('provider.menu.providerIdPattern') },
-          ]}
-          extra={
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {t('provider.menu.providerIdExtra')}
-            </Text>
-          }
-        >
-          <Input placeholder={t('provider.menu.providerIdPlaceholder')} variant="filled" />
-        </Form.Item>
+            <Field
+              label={t('provider.menu.providerId')}
+              description={t('provider.menu.providerIdExtra')}
+              validation={id && !idValid
+                ? { state: 'invalid', message: t('provider.menu.providerIdPattern') }
+                : undefined}
+            >
+              <TextField
+                placeholder={t('provider.menu.providerIdPlaceholder')}
+                value={id}
+                onValueChange={setId}
+              />
+            </Field>
 
-        <Form.Item name="name" label={t('provider.menu.providerName')}>
-          <Input placeholder={t('provider.menu.providerNamePlaceholder')} variant="filled" />
-        </Form.Item>
+            <Field label={t('provider.menu.providerName')}>
+              <TextField
+                placeholder={t('provider.menu.providerNamePlaceholder')}
+                value={name}
+                onValueChange={setName}
+              />
+            </Field>
 
-        <Form.Item name="description" label={t('provider.menu.providerDescription')}>
-          <TextArea placeholder={t('provider.menu.providerDescPlaceholder')} rows={3} variant="filled" />
-        </Form.Item>
+            <Field label={t('provider.menu.providerDescription')}>
+              <TextArea
+                placeholder={t('provider.menu.providerDescPlaceholder')}
+                rows={3}
+                value={description}
+                onValueChange={setDescription}
+              />
+            </Field>
 
-        <Form.Item name="logo" label={t('provider.menu.providerLogo')}>
-          <Input placeholder={t('provider.menu.providerLogoPlaceholder')} variant="filled" allowClear />
-        </Form.Item>
+            <Field label={t('provider.menu.providerLogo')}>
+              <TextField
+                clearable
+                placeholder={t('provider.menu.providerLogoPlaceholder')}
+                value={logo}
+                onValueChange={setLogo}
+              />
+            </Field>
 
-        <SectionTitle>{t('provider.menu.configInfo')}</SectionTitle>
+            <SectionTitle>{t('provider.menu.configInfo')}</SectionTitle>
 
-        <Form.Item
-          name="base_url"
-          label={t('provider.menu.proxyUrl')}
-          rules={[{ required: true, message: t('provider.menu.proxyUrlRequired') }]}
-        >
-          <Input placeholder={t('provider.menu.proxyUrlPlaceholder')} variant="filled" />
-        </Form.Item>
+            <Field label={t('provider.menu.proxyUrl')}>
+              <TextField
+                placeholder={t('provider.menu.proxyUrlPlaceholder')}
+                value={baseUrl}
+                onValueChange={setBaseUrl}
+              />
+            </Field>
 
-        <Form.Item name="api_key" label={t('provider.menu.apiKey')}>
-          <InputPassword
-            placeholder={t('provider.menu.apiKeyPlaceholder')}
-            variant="filled"
-            autoComplete="new-password"
-          />
-        </Form.Item>
+            <Field label={t('provider.menu.apiKey')}>
+              <TextField
+                type="password"
+                autoComplete="new-password"
+                placeholder={t('provider.menu.apiKeyPlaceholder')}
+                value={apiKey}
+                onValueChange={setApiKey}
+              />
+            </Field>
           </>
         )}
-      </Form>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }

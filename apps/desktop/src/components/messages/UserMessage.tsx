@@ -1,18 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { TextArea, Tag, toast } from '@lobehub/ui';
-import { theme } from 'antd';
+import { Button, TextArea } from '@peers-touch/ui';
 import type { ChatMessage } from '../../store/chat';
 import { useChatStore } from '../../store/chat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { LazyMarkdown as Markdown } from '../LazyMarkdown';
-import { chatMarkdownProps } from './markdownConfig';
 import { MessageActionBar } from '../messages';
 import { ForwardMessageModal } from './ForwardMessageModal';
 import { MessageAttachments } from './MessageAttachments';
 import { useTranslation } from 'react-i18next';
 import { timeAgo, fullTime } from './shared';
 import { useUserAvatar } from '../UserProfilePopover';
+import { notifySuccess } from '../../ui/feedback';
 
 interface UserMessageProps {
   message: ChatMessage;
@@ -23,7 +21,6 @@ interface UserMessageProps {
  * markdown content, and the action bar.
  */
 export function UserMessage({ message }: UserMessageProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   // Agent conversations are single-owner (Station enforces ownership via
   // JWT + conversation.actor_ptid), so the session actor is the author of
@@ -34,7 +31,7 @@ export function UserMessage({ message }: UserMessageProps) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [forwardOpen, setForwardOpen] = useState(false);
-  const editRef = useRef<{ focus: (options?: { cursor?: string }) => void; blur: () => void; nativeElement: HTMLTextAreaElement } | null>(null);
+  const editRef = useRef<HTMLTextAreaElement>(null);
 
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
   const deleteMessage = useChatStore(s => s.deleteMessage);
@@ -42,13 +39,16 @@ export function UserMessage({ message }: UserMessageProps) {
 
   useEffect(() => {
     if (editing && editRef.current) {
-      editRef.current.focus({ cursor: 'end' });
+      const el = editRef.current;
+      el.focus();
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
     }
   }, [editing]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content).then(() => {
-      toast.success(t('chat.message.toast.copied'));
+      notifySuccess(t('chat.message.toast.copied'));
     });
   }, [message.content, t]);
 
@@ -77,79 +77,44 @@ export function UserMessage({ message }: UserMessageProps) {
   }, []);
 
   return (
-    <Flexbox
+    <div
+      className={`sc-user-message${hovered ? ' is-hovered' : ''}`}
       data-pt-agent-message="user"
       data-pt-agent-message-id={message.id}
       data-pt-user-actor-ptid={user.ptid}
       id={`agent-message-${message.id}`}
-      align="flex-end"
-      gap={8}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        position: 'relative',
-        paddingBlock: 8,
-        paddingInlineStart: 36,
-        paddingInlineEnd: 0,
-      }}
     >
       {/* Header: avatar + name + timestamp. The label stays "You"; the tile
           renders the logged-in actor's real avatar (remote image or name
           initial), resolved from the session identity. */}
-      <Flexbox direction="horizontal-reverse" align="center" gap={8}>
-        <span title={user.name} style={{ display: 'inline-flex' }}>
+      <div className="sc-user-message__head">
+        <span title={user.name} className="sc-user-message__avatar">
           <UserSquareAvatar remoteUrl={user.url} name={user.name} size={32} radius={8} />
         </span>
-        <strong style={{ fontSize: 13, color: token.colorText, fontWeight: 600 }}>
-          {t('chat.message.you')}
-        </strong>
-        <span
-          style={{
-            fontSize: 12,
-            color: token.colorTextQuaternary,
-            opacity: hovered ? 1 : 0,
-            transition: 'opacity 0.2s',
-          }}
-          title={fullTime(message.timestamp)}
-        >
+        <strong className="sc-user-message__name">{t('chat.message.you')}</strong>
+        <span className="sc-user-message__time" title={fullTime(message.timestamp)}>
           {timeAgo(message.timestamp, t)}
         </span>
-      </Flexbox>
+      </div>
 
       {/* Message body */}
-      <Flexbox
-        gap={8}
-        style={{
-          maxWidth: '100%',
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-      >
-        <div
-          style={{
-            borderRadius: token.borderRadiusLG,
-            padding: editing ? 4 : '8px 12px',
-            background: token.colorFillTertiary,
-            alignSelf: 'flex-end',
-          }}
-        >
+      <div className="sc-user-message__body">
+        <div className={`sc-user-message__bubble${editing ? ' is-editing' : ''}`}>
           {/* Images */}
           {message.images && message.images.length > 0 && (
-            <Flexbox horizontal gap={8} wrap="wrap" style={{ marginBottom: message.content ? 8 : 0 }}>
+            <div className="sc-user-message__images">
               {message.images.map((src, i) => (
                 <img
                   key={i}
                   src={src}
                   alt=""
-                  style={{
-                    maxWidth: 240, maxHeight: 240, borderRadius: 8,
-                    objectFit: 'contain', cursor: 'pointer',
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                  }}
+                  className="sc-user-message__image"
                   onClick={() => window.open(src, '_blank')}
                 />
               ))}
-            </Flexbox>
+            </div>
           )}
 
           {/* Non-image attachments */}
@@ -162,72 +127,59 @@ export function UserMessage({ message }: UserMessageProps) {
 
           {/* Edit mode / content */}
           {editing ? (
-            <Flexbox gap={8}>
+            <div className="sc-user-message__editor">
               <TextArea
                 ref={editRef}
+                className="sc-user-message__edit-input"
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                autoSize={{ minRows: 2, maxRows: 12 }}
-                style={{ fontSize: 14 }}
+                rows={3}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') handleCancelEdit();
                   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSaveEdit();
                 }}
               />
-              <Flexbox horizontal gap={8} justify="flex-end">
-                <button
-                  onClick={handleCancelEdit}
-                  style={{
-                    padding: '4px 12px', borderRadius: 6,
-                    border: `1px solid ${token.colorBorder}`,
-                    background: token.colorBgContainer,
-                    color: token.colorText, cursor: 'pointer', fontSize: 12,
-                  }}
-                >
-                  {t('chat.message.edit.cancel')}
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  style={{
-                    padding: '4px 12px', borderRadius: 6, border: 'none',
-                    background: token.colorPrimary, color: '#fff',
-                    cursor: 'pointer', fontSize: 12,
-                  }}
-                >
-                  {t('chat.message.edit.save')}
-                </button>
-              </Flexbox>
-            </Flexbox>
+              <div className="sc-user-message__edit-actions">
+                <Button
+                  actionId="user-message-edit-cancel"
+                  density="compact"
+                  emphasis="secondary"
+                  label={t('chat.message.edit.cancel')}
+                  onActivate={handleCancelEdit}
+                />
+                <Button
+                  actionId="user-message-edit-save"
+                  density="compact"
+                  emphasis="primary"
+                  label={t('chat.message.edit.save')}
+                  onActivate={handleSaveEdit}
+                />
+              </div>
+            </div>
           ) : message.content ? (
             <div className="selectable">
-              <Markdown {...chatMarkdownProps} variant="chat" fontSize={14}>
-                {message.content}
-              </Markdown>
+              <Markdown content={message.content} style={{ fontSize: 14 }} />
             </div>
           ) : null}
         </div>
 
         {/* Audit row */}
         {(message.operation || message.replacementOf || message.replacedBy) && !message.loading && (
-          <Flexbox horizontal align="center" gap={4}>
+          <div className="sc-user-message__audit">
             {message.operation && (
-              <Tag bordered={false} color="processing" style={{ margin: 0, fontSize: 11 }}>
+              <span className="sc-tool-tag is-processing">
                 {t(`chat.message.audit.${message.operation}`)}
-              </Tag>
+              </span>
             )}
             {message.replacementOf && (
-              <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
-                {t('chat.message.audit.replacement')}
-              </Tag>
+              <span className="sc-tool-tag">{t('chat.message.audit.replacement')}</span>
             )}
             {message.replacedBy && (
-              <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
-                {t('chat.message.audit.replaced')}
-              </Tag>
+              <span className="sc-tool-tag">{t('chat.message.audit.replaced')}</span>
             )}
-          </Flexbox>
+          </div>
         )}
-      </Flexbox>
+      </div>
 
       {/* Action bar */}
       {!message.loading && !editing && (
@@ -265,6 +217,6 @@ export function UserMessage({ message }: UserMessageProps) {
         messages={[message]}
         onClose={() => setForwardOpen(false)}
       />
-    </Flexbox>
+    </div>
   );
 }

@@ -183,8 +183,13 @@
   "provider.logs.pause": "Pause",
   "provider.logs.refresh": "Refresh",
   "provider.logs.exportVisible": "Export Visible",
+  "provider.logs.clear": "Clear",
   "provider.logs.levels": "Levels:",
   "provider.logs.onlyWarnings": "Only Warnings+",
+  "provider.logs.colTime": "Time",
+  "provider.logs.colSource": "Source",
+  "provider.logs.colLevel": "Level",
+  "provider.logs.colMessage": "Message",
   "provider.logs.noLogs": "No logs found",
   "provider.logs.showing": "Showing {{filtered}} of {{total}} entries.",
   "provider.logs.autoFollow": "Auto-follow",
@@ -503,6 +508,7 @@
   "provider.account.identity.copied": "Copied",
   "provider.account.identity.copyFailed": "Copy failed",
   "provider.account.identity.changeHeader": "Change header",
+  "provider.account.identity.changeAvatar": "Change avatar",
   "provider.account.avatarHeader.title": "Avatar & Header",
   "provider.account.avatarHeader.subtitle": "Click the image areas to pick and upload a new photo.",
   "provider.account.avatarHeader.avatar": "Avatar",
@@ -839,5 +845,8 @@
   "provider.deviceLink.expired": "Sign-in code is no longer valid",
   "provider.deviceLink.refresh": "Refresh code",
   "provider.deviceLink.retry": "Try again",
-  "provider.deviceLink.failed": "Unable to complete right now. Try again."
+  "provider.deviceLink.failed": "Unable to complete right now. Try again.",
+  "provider.detail.enabled": "Enabled",
+  "provider.detail.enabledDesc": "Include this provider in model discovery and routing.",
+  "provider.detail.checking": "Checking…"
 }

@@ -1,6 +1,6 @@
-import { toast } from '@lobehub/ui';
 import i18n from '../i18n';
 import { resolveError } from '../i18n/error-resolver';
+import { feedbackChannel } from '../ui/feedback';
 import { RustCommandException } from './desktop_api';
 
 export type PresentedErrorSeverity = 'info' | 'warning' | 'error';
@@ -72,7 +72,12 @@ export function presentError<TContext = Record<string, unknown>>(
     ?? mapErrorToPresentation(error, options.fallbackKey);
 
   if (options.mode !== 'silent' && options.mode !== 'inline') {
-    toast.error(presentation.message);
+    const tone = presentation.severity === 'warning'
+      ? 'warning'
+      : presentation.severity === 'info'
+        ? 'info'
+        : 'danger';
+    feedbackChannel.notify({ message: presentation.message, tone });
   }
 
   return presentation;

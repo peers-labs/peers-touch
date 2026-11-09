@@ -1,32 +1,25 @@
-import { ReactNode } from 'react';
-import { Button } from '@lobehub/ui';
-import { Segmented, Tooltip, Typography, theme } from 'antd';
-import { Plus } from 'lucide-react';
+import { IconButton, Segmented } from '@peers-touch/ui';
+import type { IconId } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
+import './social-scope.css';
 
-// SocialScopeBar — the single header block that owns the Social page title,
-// optional scope tabs (Home / Public / Search / Circles), and the primary
-// New Post CTA.
+// SocialScopeBar — the single header for the Social surface.
 //
-// Why one component instead of three disconnected pieces:
-//   - The title, tabs, and CTA must share height, radius, and padding
-//     rhythm, otherwise they look assembled from different designs.
-//   - Narrow (low-width) windows collapse the CTA under tabs, but the
-//     group stays one visual unit.
-//
-// Visual contract (Quiet Protocol Minimalism):
-//   - No heavy bordered container.
-//   - Title = primary text; subtitle = secondary text; both compact.
-//   - Tabs = Segmented using the theme primary token (the same visual
-//     system that styles the primary button).
-//   - New Post CTA = one primary button with the same token; it does
-//     not out-weight the tabs.
-
-const { Text } = Typography;
+// Per the confirmed mobile-social-parity prototype the persistent control is a
+// thin two-way scope segment (Home / Explore). Full-screen destinations that are
+// not part of the feed (Search, Audiences) are quiet icon entries beside it, not
+// additional top-level tabs. The New Post CTA stays one primary icon action.
 
 export interface SocialScopeBarTab {
   value: string;
   label: string;
+}
+
+export interface SocialScopeEntry {
+  value: string;
+  iconId: IconId;
+  label: string;
+  onActivate: () => void;
 }
 
 export interface SocialScopeBarProps {
@@ -35,12 +28,14 @@ export interface SocialScopeBarProps {
   tabs?: SocialScopeBarTab[];
   activeTab?: string;
   onTabChange?: (value: string) => void;
+  /** Quiet icon entries for full-screen destinations (search, audiences). */
+  entries?: SocialScopeEntry[];
   primaryAction?: {
     label: string;
+    iconId?: IconId;
     onClick: () => void;
     disabled?: boolean;
   };
-  extra?: ReactNode;
   compact?: boolean;
 }
 
@@ -50,96 +45,58 @@ export function SocialScopeBar({
   tabs,
   activeTab,
   onTabChange,
+  entries,
   primaryAction,
-  extra,
   compact,
 }: SocialScopeBarProps) {
   const { t } = useTranslation('moments');
-  const { token } = theme.useToken();
 
   const defaultTitle = title ?? t('moments.title');
   const defaultSubtitle = subtitle ?? t('moments.subtitle');
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: compact ? 'column' : 'row',
-        alignItems: compact ? 'flex-start' : 'flex-end',
-        justifyContent: 'space-between',
-        gap: compact ? 10 : 18,
-        padding: `${compact ? 4 : 6}px 2px ${compact ? 4 : 6}px`,
-      }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-        <Text strong style={{ fontSize: compact ? 16 : 19, lineHeight: 1.3 }}>
-          {defaultTitle}
-        </Text>
-        <Text type="secondary" style={{ fontSize: 12.5, lineHeight: 1.5, maxWidth: 620 }}>
-          {defaultSubtitle}
-        </Text>
+    <header className={`pt-social-scope${compact ? ' pt-social-scope--compact' : ''}`}>
+      <div className="pt-social-scope__heading">
+        <h1 className="pt-social-scope__title">{defaultTitle}</h1>
+        {defaultSubtitle && (
+          <p className="pt-social-scope__subtitle">{defaultSubtitle}</p>
+        )}
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 10,
-          width: compact ? '100%' : undefined,
-          justifyContent: compact ? 'flex-start' : 'flex-end',
-        }}
-      >
+      <div className="pt-social-scope__controls">
         {tabs && tabs.length > 0 && (
           <Segmented
+            aria-label={t('moments.scope.label', { defaultValue: 'Social scope' })}
             value={activeTab}
-            onChange={(value) => onTabChange?.(String(value))}
-            size={compact ? 'small' : 'middle'}
+            onValueChange={(value) => onTabChange?.(String(value))}
             options={tabs.map((tab) => ({ value: tab.value, label: tab.label }))}
           />
         )}
+        {entries?.map((entry) => (
+          <IconButton
+            key={entry.value}
+            actionId={`social.scope.${entry.value}`}
+            iconId={entry.iconId}
+            iconSize={17}
+            label={entry.label}
+            emphasis="quiet"
+            aria-current={activeTab === entry.value ? 'page' : undefined}
+            data-active={activeTab === entry.value || undefined}
+            onActivate={entry.onActivate}
+          />
+        ))}
         {primaryAction && (
-          <Tooltip title={primaryAction.label}>
-            <Button
-              type="text"
-              shape="circle"
-              size={compact ? 'small' : 'middle'}
-              icon={<Plus size={compact ? 16 : 18} />}
-              onClick={primaryAction.onClick}
-              disabled={primaryAction.disabled}
-              aria-label={primaryAction.label}
-              style={{
-                color: token.colorTextSecondary,
-                minHeight: compact ? 28 : 32,
-              }}
-            />
-          </Tooltip>
+          <IconButton
+            actionId="social.scope.compose"
+            iconId={primaryAction.iconId ?? 'plus'}
+            iconSize={18}
+            label={primaryAction.label}
+            emphasis="primary"
+            availability={primaryAction.disabled ? { kind: 'disabled', reason: primaryAction.label } : undefined}
+            onActivate={primaryAction.onClick}
+          />
         )}
-        {extra}
       </div>
-    </div>
-  );
-}
-
-// ScopeHint — the small contextual description under the scope bar
-// (Home / Federated / Search / Circles body text).
-// Kept as a single-component rule to keep the look consistent across tabs.
-export interface SocialScopeHintProps {
-  children?: ReactNode;
-}
-
-export function SocialScopeHint({ children }: SocialScopeHintProps) {
-  const { token } = theme.useToken();
-  return (
-    <Text
-      type="secondary"
-      style={{
-        fontSize: 12.5,
-        lineHeight: 1.6,
-        color: token.colorTextSecondary,
-      }}
-    >
-      {children}
-    </Text>
+    </header>
   );
 }

@@ -1,11 +1,15 @@
 import {
-  Children, cloneElement, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState,
+  Children, cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState,
   type CSSProperties, type HTMLAttributes, type ReactElement, type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { DismissReason, MenuAction, OverlayPlacement } from '@peers-touch/ui-contracts';
 import { nextEnabledIndex, asActionTone } from '@peers-touch/ui-semantics';
 import { useOverlayHost } from './provider';
+
+/** Re-exported so consumers can type menu action arrays from the package entry
+ *  without taking a direct dependency on @peers-touch/ui-contracts. */
+export type { MenuAction } from '@peers-touch/ui-contracts';
 import { Button, IconButton } from './actions';
 import { Icon } from './icon';
 
@@ -85,7 +89,6 @@ function OverlayLayer({
       const minLeft = clip ? Math.max(gap, clip.left + gap) : gap;
       const maxLeft = clip ? Math.min(win.innerWidth - r.width - gap, clip.right - r.width - gap)
         : win.innerWidth - r.width - gap;
-      const minTop = clip ? Math.max(gap, clip.top + gap) : gap;
       const maxTop = clip ? Math.min(win.innerHeight - r.height - gap, clip.bottom - r.height - gap)
         : win.innerHeight - r.height - gap;
       // Viewport wins over the clip frame vertically. The frame is a scroll
@@ -247,24 +250,46 @@ export function Menu({ actions, ...props }: MenuProps) {
     </div>;return props.contentFrame?props.contentFrame(content):content;})()}
   </OverlayLayer></>;
 }
-export function ContextMenu({children,actions,label}: {children:ReactNode;actions:readonly MenuAction[];label:string}) {
+export function ContextMenu({children,actions,label,onOpenChange}: {children:ReactNode;actions:readonly MenuAction[];label:string;onOpenChange?:(open:boolean)=>void}) {
   const [open,setOpen]=useState(false),[point,setPoint]=useState<{x:number;y:number}|undefined>();
-  return <div onContextMenu={event=>{event.preventDefault();setPoint({x:event.clientX,y:event.clientY});setOpen(true);}}>
-    {children}<Menu label={label} actions={actions} open={open} anchorPoint={point}
-      onOpenChange={next=>{if(!next)setPoint(undefined);setOpen(next);}}>
-      <Button actionId="context-menu.open" label={label} emphasis="quiet" onPointerDown={()=>setPoint(undefined)}/>
+  const show=(next:boolean)=>{ setOpen(next); if(!next) setPoint(undefined); onOpenChange?.(next); };
+  return <div className="pt-context-menu" onContextMenu={event=>{event.preventDefault();setPoint({x:event.clientX,y:event.clientY});show(true);}}>
+    {children}<Menu label={label} actions={actions} open={open} anchorPoint={point} onOpenChange={show}>
+      <Button actionId="context-menu.open" label={label} emphasis="quiet" className="pt-sr-only"
+        aria-hidden tabIndex={-1} onPointerDown={()=>setPoint(undefined)}/>
     </Menu></div>;
 }
-export interface TooltipProps { children: ReactNode; label: ReactNode; placement?: OverlayPlacement }
-export function Tooltip({ children, label, placement }: TooltipProps) {
+export interface TooltipProps extends HTMLAttributes<HTMLSpanElement> {
+  label: ReactNode; placement?: OverlayPlacement;
+}
+// Popover/Menu inject an anchor ref and activation props onto their single
+// trigger child. Tooltip must forward that contract to its anchor span —
+// otherwise Popover > Tooltip > control compositions render a control whose
+// only open path is silently dropped (the trigger child never receives the
+// injected onClick and the panel has no anchor). Mirrors Badge's spread.
+export const Tooltip = forwardRef<HTMLSpanElement, TooltipProps>(function Tooltip(
+  { children, label, placement, className, onFocus, onBlur, onClick, onKeyDown, ...props },
+  forwardedRef,
+) {
   const [open, setOpen] = useState(false), [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  return <span className="pt-tooltip-trigger" ref={setAnchor} onPointerEnter={() => setOpen(true)}
-    onPointerLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}>
+  return <span {...props}
+    ref={(node) => {
+      setAnchor(node);
+      if (typeof forwardedRef === 'function') forwardedRef(node);
+      else if (forwardedRef) forwardedRef.current = node;
+    }}
+    className={`pt-tooltip-trigger${className ? ` ${className}` : ''}`}
+    onPointerEnter={() => setOpen(true)}
+    onPointerLeave={() => setOpen(false)}
+    onFocus={(event) => { onFocus?.(event); setOpen(true); }}
+    onBlur={(event) => { onBlur?.(event); setOpen(false); }}
+    onClick={onClick}
+    onKeyDown={onKeyDown}>
     {children}<OverlayLayer open={open} kind="tooltip" anchor={anchor} placement={placement} onDismiss={() => setOpen(false)}>
       {label}
     </OverlayLayer>
   </span>;
-}
+});
 export interface DialogProps {
   open: boolean; title: ReactNode; children?: ReactNode; description?: ReactNode;
   footer?: ReactNode; onDismiss: (reason: DismissReason) => void;

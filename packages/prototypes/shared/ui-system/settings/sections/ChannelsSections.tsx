@@ -347,6 +347,9 @@ export function LarkSection() {
   const [appId, setAppId] = useState('');
   const [appSecret, setAppSecret] = useState('');
   const [qrPhase, setQrPhase] = useState<QrPhase>('waiting');
+  // Bumped by the QR refresh action so the staged scan timers re-run with a
+  // clean waiting state instead of the previous no-op button.
+  const [qrNonce, setQrNonce] = useState(0);
   const [checking, setChecking] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
 
@@ -364,7 +367,7 @@ export function LarkSection() {
 
   const openWizard = () => {
     setMode('managed'); setStep('form'); setAppName(''); setPlatform('feishu');
-    setAppId(''); setAppSecret(''); setQrPhase('waiting'); setChecking(false);
+    setAppId(''); setAppSecret(''); setQrPhase('waiting'); setQrNonce(0); setChecking(false);
     setWizard(true);
   };
 
@@ -383,8 +386,9 @@ export function LarkSection() {
       }, 2150),
     ];
     return () => timers.forEach(window.clearTimeout);
+    // qrNonce re-arms the staged scan when the user requests a QR refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizard, step, mode]);
+  }, [wizard, step, mode, qrNonce]);
 
   const existingReady = appId.trim().length > 0 && appSecret.trim().length > 0;
   const checkExisting = () => {
@@ -533,7 +537,7 @@ export function LarkSection() {
                 <Button actionId="channel.qr.refresh" emphasis="quiet" density="compact"
                   className="sk-wiz-qr-refresh"
                   leading={<RefreshCw size={12} />} label={t('channels.qr.refresh')}
-                  onActivate={() => undefined} />
+                  onActivate={() => { setQrPhase('waiting'); setQrNonce(n => n + 1); }} />
               </div>
               <div className="sk-wiz-qr-side">
                 <span className="sk-wiz-qr-eyebrow">{t('channels.qr.eyebrow')}</span>

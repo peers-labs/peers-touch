@@ -111,6 +111,7 @@ Rules:
 - Selected tab must be visible without heavy contrast.
 - Tabs and primary CTA must share one header rhythm.
 - Do not mix pill tabs, underlined tabs, and segmented buttons in one module without a module contract.
+- **Cross-module hierarchy symmetry (spatial symmetry).** Controls at the SAME navigation hierarchy level across DIFFERENT modules must be the same primitive with the identical geometry — component, density, height, font size, icon size, corner radius, sub-bar insets. In the desktop prototype every level-2 surface partition (moments 动态/圈友, chat 消息/联系人, settings 通用/网络/AI/通道/高级) is the **compact-density** peers-ui `Segmented` island (36px island / 28px targets / 12px / 13px icon / 6px radius) — the thin grammar, never one module's underline tab beside another module's thicker default-density pill. "Same level, same expression" is judged by the whole-app hierarchy, not by a surface-local renumbering. A new level may introduce a new grammar; a reused level may not drift in size or thickness per module. Geometry equality across surfaces is machine-asserted, not eyeballed.
 
 ## 6. Chips And Badges
 
@@ -154,6 +155,7 @@ Rules:
   bottom edge across resize and content changes; fixed viewport offsets alone
   cannot establish this relationship.
 - Popovers must not cover the content the user is acting on unless no safe position exists.
+- A menu/select panel hugs its content: its width is exactly `max(anchor width, widest item)` plus the panel's own padding. Arbitrary fixed min-widths (e.g. a hardcoded 220px under four short options) that paint dead space are prohibited; text-to-container proportion is owned by this rule, not per-call-site guesses.
 - Reaction pickers must remain compact and reversible.
 - Menus need keyboard access and focus restoration.
 - Expanding a compact preview into a complete viewer replaces the preview

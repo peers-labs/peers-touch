@@ -14,10 +14,16 @@
 // to anchor the UX). It is mounted by `ChatDetailPanel` inside
 // the existing "Encryption" section.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Alert, Button, Spin, Tag, theme, Tooltip, Typography } from 'antd';
+import {
+  Alert as PtAlert,
+  Button as PtButton,
+  Spin as PtSpin,
+  Tag as PtTag,
+  Tooltip as PtTooltip,
+  type Tone,
+} from '@peers-touch/ui';
 import { Check, RefreshCw, ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
 import { Schema } from '@peers-touch/schema';
 import { api, pickLatestKeyExchangeBundle } from '../../services/desktop_api';
@@ -33,8 +39,6 @@ import {
   clearTrust,
   type PeerTrustState,
 } from '../../modules/identity/peerTrust';
-
-const { Text, Paragraph } = Typography;
 
 interface Props {
   /** The local actor's DID — used to scope the trust ledger. */
@@ -59,22 +63,21 @@ function formatSafetyNumber(s: string): string {
 
 function statusFor(state: PeerTrustState, t: ReturnType<typeof useTranslation>['t']): {
   label: string;
-  color: 'success' | 'warning' | 'error';
-  icon: React.ReactNode;
+  tone: Tone;
+  icon: ReactNode;
 } {
   switch (state) {
     case 'verified':
-      return { label: t('chat.social.verify.statusVerified'), color: 'success', icon: <ShieldCheck size={14} /> };
+      return { label: t('chat.social.verify.statusVerified'), tone: 'success', icon: <ShieldCheck size={14} /> };
     case 'changed':
-      return { label: t('chat.social.verify.statusChanged'), color: 'error', icon: <ShieldAlert size={14} /> };
+      return { label: t('chat.social.verify.statusChanged'), tone: 'danger', icon: <ShieldAlert size={14} /> };
     case 'unverified':
     default:
-      return { label: t('chat.social.verify.statusUnverified'), color: 'warning', icon: <ShieldQuestion size={14} /> };
+      return { label: t('chat.social.verify.statusUnverified'), tone: 'warning', icon: <ShieldQuestion size={14} /> };
   }
 }
 
 export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peerPtid }: Props) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [peerMat, setPeerMat] = useState<PeerMaterial | null>(null);
   const [loading, setLoading] = useState(false);
@@ -127,7 +130,7 @@ export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peer
         if (!cancelled) setSafetyNumber(sn);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (!cancelled) return;
         log.warn('safetyPanel', 'derive safety number failed', { error: String(err) });
         setSafetyNumber('');
       });
@@ -168,57 +171,28 @@ export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peer
   const ready = !loading && peerMat?.fingerprint && localFingerprint;
 
   return (
-    <Flexbox gap={10} style={{ padding: '12px 16px' }}>
-      <Flexbox horizontal align="center" justify="space-between">
-        <Flexbox horizontal align="center" gap={6}>
-          <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.verify.title')}
-          </Text>
-        </Flexbox>
-        <Tag color={status.color} icon={status.icon} style={{ marginInlineEnd: 0 }}>
-          {status.label}
-        </Tag>
-      </Flexbox>
+    <div className="sc-verify">
+      <div className="sc-verify__head">
+        <strong>{t('chat.social.verify.title')}</strong>
+        <PtTag tone={status.tone} leading={status.icon}>{status.label}</PtTag>
+      </div>
 
-      <Paragraph type="secondary" style={{ fontSize: 11, margin: 0 }}>
-        {t('chat.social.verify.description')}
-      </Paragraph>
+      <p className="sc-verify__description">{t('chat.social.verify.description')}</p>
 
       {trustState === 'changed' && (
-        <Alert
-          showIcon
-          type="error"
-          message={t('chat.social.verify.changedWarning')}
-          style={{ padding: '6px 10px', fontSize: 12 }}
-        />
+        <PtAlert tone="danger" title={t('chat.social.verify.changedWarning')} />
       )}
 
       {!ready && (
-        <Flexbox align="center" justify="center" style={{ padding: '12px 0' }}>
-          <Spin size="small" />
-        </Flexbox>
+        <div className="sc-verify__loading"><PtSpin size="small" /></div>
       )}
 
       {ready && (
         <>
-          <Flexbox gap={4}>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              {t('chat.social.verify.safetyNumberLabel')}
-            </Text>
+          <div className="sc-verify__number-block">
+            <span className="sc-verify__label">{t('chat.social.verify.safetyNumberLabel')}</span>
             {safetyNumber ? (
-              <Text
-                code
-                style={{
-                  fontSize: 13,
-                  letterSpacing: 1.5,
-                  background: token.colorFillTertiary,
-                  padding: '8px 10px',
-                  borderRadius: 6,
-                  lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                }}
-              >
+              <code className="sc-verify__number">
                 {/* Re-group into 4 rows of 3 groups for readability;
                     the wire form is the same single-line string. */}
                 {(() => {
@@ -229,23 +203,16 @@ export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peer
                   }
                   return rows.join('\n');
                 })()}
-              </Text>
+              </code>
             ) : (
-              <Spin size="small" />
+              <PtSpin size="small" />
             )}
-          </Flexbox>
+          </div>
 
-          <Flexbox gap={12} align="center">
-            <Flexbox align="center" gap={6} style={{ flexShrink: 0 }}>
+          <div className="sc-verify__material">
+            <div className="sc-verify__qr">
               {qrPayload ? (
-                <div
-                  style={{
-                    background: '#fff',
-                    padding: 6,
-                    borderRadius: 6,
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                  }}
-                >
+                <div className="sc-verify__qr-tile">
                   <Schema.QRCode
                     content={{ kind: 'external-protocol', owner: 'identity.safety-number.v1', value: qrPayload }}
                     constraints={{ size: 288, style: 'classic', errorCorrection: 'Q' }}
@@ -254,79 +221,68 @@ export function SafetyVerificationPanel({ localActorPtid, localFingerprint, peer
                   />
                 </div>
               ) : null}
-              <Text type="secondary" style={{ fontSize: 10, textAlign: 'center' }}>
+              <span className="sc-verify__label sc-verify__qr-label">
                 {t('chat.social.verify.qrPeerLabel')}
-              </Text>
-            </Flexbox>
+              </span>
+            </div>
 
-            <Flexbox gap={6} style={{ minWidth: 0, width: '100%' }}>
-              <Flexbox gap={2}>
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {t('chat.social.verify.yourFingerprintLabel')}
-                </Text>
-                <Tooltip title={localFingerprint}>
-                  <Text
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: 11,
-                      wordBreak: 'break-all',
-                    }}
-                  >
-                    {localFingerprint}
-                  </Text>
-                </Tooltip>
-              </Flexbox>
-              <Flexbox gap={2}>
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {t('chat.social.verify.peerFingerprintLabel')}
-                </Text>
-                <Tooltip title={peerMat?.fingerprint || ''}>
-                  <Text
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: 11,
-                      wordBreak: 'break-all',
-                    }}
-                  >
-                    {peerMat?.fingerprint || '—'}
-                  </Text>
-                </Tooltip>
-              </Flexbox>
-            </Flexbox>
-          </Flexbox>
+            <div className="sc-verify__fingerprints">
+              <div className="sc-verify__fingerprint">
+                <span className="sc-verify__label">{t('chat.social.verify.yourFingerprintLabel')}</span>
+                <PtTooltip label={localFingerprint}>
+                  <code>{localFingerprint}</code>
+                </PtTooltip>
+              </div>
+              <div className="sc-verify__fingerprint">
+                <span className="sc-verify__label">{t('chat.social.verify.peerFingerprintLabel')}</span>
+                <PtTooltip label={peerMat?.fingerprint || ''}>
+                  <code>{peerMat?.fingerprint || '—'}</code>
+                </PtTooltip>
+              </div>
+            </div>
+          </div>
 
-          <Flexbox horizontal gap={6}>
+          <div className="sc-verify__actions">
             {trustState !== 'verified' ? (
-              <Button
-                type="primary"
-                icon={<Check size={14} />}
-                size="small"
-                onClick={handleMarkVerified}
-                disabled={!peerMat?.fingerprint}
-                block
+              <PtButton
+                actionId="safety-mark-verified"
+                emphasis="primary"
+                fullWidth
+                leading={<Check size={14} />}
+                onActivate={handleMarkVerified}
+                availability={!peerMat?.fingerprint
+                  ? { kind: 'disabled', reason: t('chat.social.verify.statusUnverified') }
+                  : undefined}
               >
                 {t('chat.social.verify.markVerified')}
-              </Button>
+              </PtButton>
             ) : (
               <>
-                <Button
-                  size="small"
-                  icon={<ShieldCheck size={14} />}
-                  disabled
-                  style={{ flex: 1 }}
+                <PtButton
+                  actionId="safety-already-verified"
+                  fullWidth
+                  emphasis="secondary"
+                  availability={{ kind: 'disabled', reason: t('chat.social.verify.statusVerified') }}
+                  leading={<ShieldCheck size={14} />}
                 >
                   {t('chat.social.verify.alreadyVerified', {
                     when: trustRecord ? new Date(trustRecord.verifiedAt).toLocaleString() : '',
                   })}
-                </Button>
-                <Tooltip title={t('chat.social.verify.resetVerification')}>
-                  <Button size="small" icon={<RefreshCw size={14} />} onClick={handleReset} />
-                </Tooltip>
+                </PtButton>
+                <PtTooltip label={t('chat.social.verify.resetVerification')}>
+                  <PtButton
+                    actionId="safety-reset"
+                    emphasis="quiet"
+                    leading={<RefreshCw size={14} />}
+                    aria-label={t('chat.social.verify.resetVerification')}
+                    onActivate={handleReset}
+                  />
+                </PtTooltip>
               </>
             )}
-          </Flexbox>
+          </div>
         </>
       )}
-    </Flexbox>
+    </div>
   );
 }

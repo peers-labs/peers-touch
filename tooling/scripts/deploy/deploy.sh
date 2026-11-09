@@ -380,6 +380,38 @@ case "$cmd" in
       python3 "$POSIX_RELAY_RUNTIME_SCRIPT" "$env_name"
     fi
 
+    # ── Class B (externally-shared) secret reconciliation ──────────────────
+    # Ship per-role external-shared secrets (e.g. PEERS_OAUTH_BRIDGE_SECRET)
+    # from the git-crypt env repo to the host runtime env BEFORE the build.
+    # New per-role profiles target <PT_DEPLOY_RUNTIME_PATH>/runtime.env; legacy
+    # flat profiles may point PT_DEPLOY_RUNTIME_ENV_FILE at their existing
+    # --env-file. No-op when neither is set, or when the role has no manifest
+    # (capability off). Host-generated Class A secrets are never touched.
+    # See runtime/runtime-secrets/.
+    if [[ -n "${PT_DEPLOY_RUNTIME_PATH:-}${PT_DEPLOY_RUNTIME_ENV_FILE:-}" ]]; then
+      echo "[2/5] Reconciling externally-shared secrets ..."
+      # Manifest always lives at peers-touch/<profile>/<role>/. The deploy file
+      # is either <profile>/<role>/deploy/* (per-role) or <profile>/deploy/*
+      # (legacy flat); derive the profile id for both layouts.
+      up2="$(dirname "$(dirname "$ENV_FILE")")"
+      if [[ "$(basename "$up2")" == "station" || "$(basename "$up2")" == "relay" ]]; then
+        SECRET_PROFILE="$(basename "$(dirname "$up2")")"
+      else
+        SECRET_PROFILE="$(basename "$up2")"
+      fi
+      if ! PT_ENV_REPO="${PT_ENV_REPO:-$(dirname "$PROJECT_ROOT")/env}" \
+           PROFILE="$SECRET_PROFILE" \
+           ROLE="$PT_DEPLOY_ROLE" \
+           PT_DEPLOY_USER="$PT_DEPLOY_USER" \
+           PT_DEPLOY_HOST="$PT_DEPLOY_HOST" \
+           PT_DEPLOY_RUNTIME_PATH="${PT_DEPLOY_RUNTIME_PATH:-}" \
+           PT_DEPLOY_RUNTIME_ENV_FILE="${PT_DEPLOY_RUNTIME_ENV_FILE:-}" \
+           /bin/bash "$SCRIPT_DIR/secret-reconcile.sh"; then
+        echo "[ERROR] Class B secret reconciliation failed (BLOCKED)." >&2
+        exit 1
+      fi
+    fi
+
     echo "[2/5] Preparing stable dependencies ..."
     if [[ -n "${PT_DEPLOY_DEPENDENCIES_CMD:-}" ]]; then
       ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_DEPENDENCIES_CMD"

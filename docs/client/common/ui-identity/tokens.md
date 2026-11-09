@@ -1,9 +1,9 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-10-27
+updated: 2026-11-07
 review-cadence: quarterly
-next-review: 2027-01-27
+next-review: 2027-02-07
 related:
   - docs/client/common/ui-identity/component-spec-map.md
   - docs/client/common/ui-identity/components.md
@@ -69,16 +69,26 @@ Rules:
 Rules:
 
 - A page should usually have one `action.primary` region.
-- `action.primary` is the neutral **ink** primitive, shared with `text.primary`
-  (light `#202431` on white; dark inverts to near-white `#f1f3f8` with ink text).
-  The dominant action wins by weight and hierarchy, never by brand hue; hue is
-  reserved for semantic and trust meaning (`success`/`warning`/`danger`/`info`,
-  `trust.*`). Focus rings, selection/checked state, form-control accent-color,
-  and the self-authored bubble all reference the same ink primitive.
+- `action.primary` is the near-ink **capsule** from the north-star frame
+  (`#1a1d20` on paper; dark inverts to near-white `#f1f3f2` with ink text).
+  The dominant action wins by weight and hierarchy. Focus rings,
+  selection/checked state, scope/data capsules, and the self-authored bubble
+  reference this ink primitive.
+- **Pine `#2f6a50` is the only brand accent** (`accent`/`--pt-accent`). It
+  marks identity and current-location (self tile, active rail target),
+  connection/online points, accept/answer, and favorite marks. It is a small
+  touch point: never a canvas/card fill, never a bulk CTA color, and never the
+  success color. Semantic meaning stays on `success`/`warning`/`danger`/`info`
+  and `trust.*`. The full boundary is in
+  [north-star-frame.md](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md).
+- These values are canonical in `@peers-touch/ui-tokens`; do not restate hex
+  values in app code.
 - Unread/count badges are neutral emphasis (ink), never `danger`; destructive or
   attention states use the tone-driven dot indicator.
 - Do not use red for routine secondary actions.
-- Do not use blue links, purple avatars, black CTAs, and red actions together without token ownership.
+- Do not combine multiple chromatic identities (blue links, purple avatars,
+  arbitrary green CTAs) — pine is the only non-semantic hue and needs token
+  ownership for every use.
 
 ## 4. Radius Roles
 

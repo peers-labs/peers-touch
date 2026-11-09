@@ -159,8 +159,9 @@ describe('chat visual layout contract', () => {
     const main = desktopChatLayoutForSurface('desktop-main');
     const thread = desktopChatLayoutForSurface('desktop-thread');
 
-    expect(main.avatarSize).toBe(36);
-    expect(main.avatarGap).toBe(8);
+    expect(main.avatarSize).toBe(32);
+    expect(main.avatarGap).toBe(9);
+    expect(main.avatarRadius).toBe(11);
     expect(main.peerBubbleRadius).toBe('16px 16px 16px 6px');
     expect(main.ownBubbleRadius).toBe('16px 16px 6px 16px');
     expect(main.hoverActionBridgeHeight).toBeGreaterThanOrEqual(18);

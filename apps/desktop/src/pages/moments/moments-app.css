@@ -1,0 +1,33 @@
+/* Social surface — single centered column. The feed is the product:
+   no explanatory side card, no second column (mobile-social-parity). */
+
+.pt-social {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  background: var(--pt-canvas);
+}
+
+.pt-social__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px 32px;
+}
+
+.pt-social__inner {
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  min-width: 0;
+}
+
+.pt-social__inner .pt-social-scope {
+  padding-inline: 2px;
+}
+
+@media (max-width: 720px) {
+  .pt-social__scroll {
+    padding: 12px 12px 28px;
+  }
+}

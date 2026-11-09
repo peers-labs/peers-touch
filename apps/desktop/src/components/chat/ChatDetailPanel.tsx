@@ -1,18 +1,28 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { Flexbox } from 'react-layout-kit';
-import { Button, toast } from '@lobehub/ui';
-import { Modal, Select, Spin, Tag, theme, Tooltip, Typography } from 'antd';
 import {
   type ChatAttachmentLike,
   chatMediaKindForAttachment,
   formatChatAttachmentSize,
 } from '@peers-touch/client-chat-core';
 import {
+  Button as PtButton,
+  Dialog,
+  IconButton,
+  Select as PtSelect,
+  Spin as PtSpin,
+  Switch as PtSwitch,
+  Tag as PtTag,
+  TextField as PtTextField,
+  TextArea as PtTextArea,
+  Toggle as PtToggle,
+  Tooltip as PtTooltip,
+  type Tone,
+} from '@peers-touch/ui';
+import {
   BellOff,
   Camera,
-  ChevronRight,
   ExternalLink,
   FileText,
   Film,
@@ -22,16 +32,12 @@ import {
   Paperclip,
   Pencil,
   Pin,
-  Search,
   ShieldCheck,
   Trash2,
-  UserPlus,
   Users,
-  X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
 import {
-  actorDisplayName,
   canonicalProfileAvatar,
 } from '../../store/socialProfileProjection';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
@@ -77,10 +83,10 @@ import {
   chatStorageReleasedBytes,
   isConversationClearProjectionCommitted,
 } from '../../runtimes/chatStorageRuntime';
+import { confirmRequest, notifyError, notifySuccess } from '../../ui/feedback';
 
-const { Text } = Typography;
-
-const DETAIL_HEADER_HEIGHT = 64;
+// Prototype .sk-side-head: 8px top inset + a 44px title row = one 52px band.
+const DETAIL_HEADER_HEIGHT = 52;
 
 type DetailAttachment = ChatAttachmentLike;
 type DetailAttachmentKind = 'media' | 'file';
@@ -113,6 +119,12 @@ function groupRoleLabel(role: number, t: (key: string) => string): string {
   if (role >= MemberRole.OWNER) return t('chat.social.detail.roleOwner');
   if (role >= MemberRole.ADMIN) return t('chat.social.detail.roleAdmin');
   return t('chat.social.detail.roleMember');
+}
+
+function groupRoleTone(role: number): Tone {
+  if (role >= MemberRole.OWNER) return 'warning';
+  if (role >= MemberRole.ADMIN) return 'info';
+  return 'neutral';
 }
 
 function formatReleasedBytes(value: bigint): string {
@@ -152,140 +164,102 @@ function getCurrentConversationAttachments(messages: DesktopIMMessageProjection[
   return items.sort((a, b) => b.timestampMs - a.timestampMs);
 }
 
-function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?: number }) {
-  const { token } = theme.useToken();
+function MemberAvatar({
+  member,
+  size = 32,
+  radius,
+}: {
+  member: GroupMemberDisplay;
+  size?: number;
+  radius?: number;
+}) {
+  const resolvedRadius = radius ?? Math.round(size * 0.32);
   return (
-    <Flexbox
+    <span
+      className="sc-detail-member__avatar"
       data-chat-avatar-ptid={member.ptid}
       data-chat-avatar-src={member.avatar || ''}
-      align="center"
-      justify="center"
       style={{
         width: size,
         height: size,
-        borderRadius: Math.round(size * 0.32),
-        background: token.colorFillSecondary,
-        color: token.colorTextSecondary,
+        borderRadius: resolvedRadius,
         fontSize: Math.max(12, Math.round(size * 0.36)),
-        fontWeight: 700,
-        flexShrink: 0,
-        overflow: 'hidden',
       }}
     >
       <SquareAvatar
         remoteUrl={member.avatar}
         name={member.displayName}
         size={size}
-        radius={Math.round(size * 0.32)}
+        radius={resolvedRadius}
         style={{ display: 'block' }}
       >
         {getInitial(member.displayName)}
       </SquareAvatar>
-    </Flexbox>
+    </span>
   );
 }
 
 function MemberPreviewCard({ member }: { member: GroupMemberDisplay }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const role = Number(member.role ?? MemberRole.MEMBER);
   return (
-    <Flexbox data-chat-group-member={member.ptid} align="center" gap={6} style={{ width: 66, minWidth: 0 }}>
-      <MemberAvatar member={member} size={42} />
-      <Text ellipsis style={{ width: '100%', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>
-        {member.displayName}
-      </Text>
-      {role >= MemberRole.ADMIN || member.muted ? (
-        <Text
-          ellipsis
-          style={{
-            width: '100%',
-            textAlign: 'center',
-            fontSize: 10,
-            color: role >= MemberRole.OWNER ? token.colorWarning : role >= MemberRole.ADMIN ? token.colorPrimary : token.colorTextTertiary,
-          }}
+    <div className="sc-detail-member__preview" data-chat-group-member={member.ptid}>
+      <MemberAvatar member={member} size={38} radius={11} />
+      <strong className="sc-detail-member__preview-name">{member.displayName}</strong>
+      {(role >= MemberRole.ADMIN || member.muted) ? (
+        <span
+          className="sc-detail-member__preview-role"
+          data-role={role >= MemberRole.OWNER ? 'owner' : role >= MemberRole.ADMIN ? 'admin' : 'muted'}
         >
           {member.muted ? t('chat.social.detail.memberMuted') : groupRoleLabel(role, t)}
-        </Text>
+        </span>
       ) : null}
-    </Flexbox>
+    </div>
   );
 }
 
 function MemberItem({ member, action, lockedReason }: { member: GroupMemberDisplay; action?: ReactNode; lockedReason?: string }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const role = Number(member.role ?? MemberRole.MEMBER);
   return (
-    <Flexbox horizontal align="center" gap={10} style={{ padding: '8px 0', minWidth: 0 }}>
-      <MemberAvatar member={member} />
-      <Flexbox gap={3} style={{ flex: 1, minWidth: 0 }}>
-        <Text ellipsis style={{ fontSize: 13, fontWeight: 600 }}>{member.displayName}</Text>
-        <Flexbox horizontal gap={4} align="center" style={{ minWidth: 0, flexWrap: 'wrap' }}>
+    <div className="sc-detail-member-item">
+      <MemberAvatar member={member} size={30} radius={9} />
+      <div className="sc-detail-member-item__body">
+        <strong>{member.displayName}</strong>
+        <span className="sc-detail-member-item__tags">
           {member.subtitle ? (
-            <Text type="secondary" ellipsis style={{ fontSize: 11, maxWidth: 120 }}>
-              {member.subtitle}
-            </Text>
+            <span className="sc-detail-member-item__subtitle">{member.subtitle}</span>
           ) : null}
-          <Tag
-            bordered={false}
-            color={role >= MemberRole.OWNER ? 'gold' : role >= MemberRole.ADMIN ? 'blue' : 'default'}
-            style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}
-          >
-            {groupRoleLabel(role, t)}
-          </Tag>
+          {role >= MemberRole.ADMIN ? (
+            <PtTag className="sc-detail-member-item__role">{groupRoleLabel(role, t)}</PtTag>
+          ) : null}
           {member.muted ? (
-            <Tag bordered={false} color="warning" style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}>
-              {t('chat.social.detail.memberMuted')}
-            </Tag>
+            <PtTag tone="warning">{t('chat.social.detail.memberMuted')}</PtTag>
           ) : null}
-        </Flexbox>
-      </Flexbox>
+        </span>
+      </div>
       {!action && lockedReason ? (
-        <Tooltip title={lockedReason}>
-          <Lock size={13} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
-        </Tooltip>
+        <PtTooltip label={lockedReason}>
+          <Lock size={13} className="sc-detail-member-item__lock" />
+        </PtTooltip>
       ) : null}
       {action ? (
-        <Flexbox horizontal gap={4} style={{ justifyContent: 'flex-end', flexWrap: 'wrap', maxWidth: 188 }}>
-          {action}
-        </Flexbox>
+        <span className="sc-detail-member-item__actions">{action}</span>
       ) : null}
-    </Flexbox>
+    </div>
   );
 }
 
-function deterministicBannerHue(seed: string): number {
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
-  }
-  return hash % 360;
-}
-
-function DetailSection({ title, children, gap = 8 }: { title?: string; children: ReactNode; gap?: number }) {
-  const { token } = theme.useToken();
+function DetailSection({ title, children, relaxed = false }: { title?: string; children: ReactNode; relaxed?: boolean }) {
   return (
-    <Flexbox gap={gap} style={{ padding: '0 16px', marginBottom: 12, minWidth: 0 }}>
+    <div className={relaxed ? 'sc-detail-section sc-detail-section--relaxed' : 'sc-detail-section'}>
       {title && (
-        <Text style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: token.colorTextTertiary }}>
-          {title}
-        </Text>
+        <div className="sc-detail-section__title">{title}</div>
       )}
-      <Flexbox
-        gap={gap}
-        style={{
-          padding: 12,
-          borderRadius: 12,
-          background: token.colorFillQuaternary,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          minWidth: 0,
-          overflow: 'hidden',
-        }}
-      >
+      <div className="sc-detail-section__card">
         {children}
-      </Flexbox>
-    </Flexbox>
+      </div>
+    </div>
   );
 }
 
@@ -300,49 +274,20 @@ function Toggle({
   disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
-  const { token } = theme.useToken();
   return (
-    <button
+    <PtSwitch
+      className="sc-detail-switch"
       data-chat-conversation-action={action}
       data-chat-conversation-action-state={checked ? 'on' : 'off'}
-      type="button"
+      checked={checked}
       disabled={disabled}
       aria-busy={disabled}
-      aria-checked={checked}
-      role="switch"
-      onClick={() => onChange(!checked)}
-      style={{
-        appearance: 'none',
-        width: 36,
-        height: 20,
-        borderRadius: 10,
-        border: 'none',
-        padding: 2,
-        cursor: disabled ? 'wait' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
-        background: checked ? token.colorPrimary : token.colorFillSecondary,
-        transition: 'background 0.2s',
-        flexShrink: 0,
-      }}
-    >
-      <span
-        style={{
-          display: 'block',
-          width: 16,
-          height: 16,
-          borderRadius: 8,
-          background: '#fff',
-          transform: checked ? 'translateX(16px)' : 'translateX(0)',
-          transition: 'transform 0.2s',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
-        }}
-      />
-    </button>
+      onCheckedChange={onChange}
+    />
   );
 }
 
 function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [previewFailed, setPreviewFailed] = useState(false);
   const { src: openUrl, openState, open: handleOpen } = useAttachmentAccess(
@@ -368,7 +313,7 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
       ? t('chat.social.detail.openAttachment')
       : t('chat.social.detail.attachmentUnavailable')
   );
-  const Icon = item.isImage ? ImageIcon : item.isVideo ? Film : FileText;
+  const Glyph = item.isImage ? ImageIcon : item.isVideo ? Film : FileText;
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -379,79 +324,9 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
 
   if (isMedia) {
     return (
-      <Tooltip title={tooltip}>
-        <span style={{ display: 'inline-flex' }}>
-          <button
-            data-chat-detail-attachment={item.id}
-            data-chat-detail-attachment-kind={item.kind}
-            data-chat-detail-attachment-open-state={openState}
-            aria-busy={openState === 'pending'}
-            type="button"
-            disabled={!canOpen}
-            onClick={handleOpen}
-            style={{
-              appearance: 'none',
-              width: 86,
-              minHeight: 106,
-              padding: 6,
-              border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: 14,
-              background: token.colorFillQuaternary,
-              color: token.colorText,
-              cursor: canOpen ? 'pointer' : 'default',
-              opacity: canOpen ? 1 : 0.58,
-              textAlign: 'left',
-            }}
-          >
-            <Flexbox gap={5}>
-              <Flexbox
-                align="center"
-                justify="center"
-                style={{
-                  width: '100%',
-                  height: 58,
-                  overflow: 'hidden',
-                  borderRadius: 10,
-                  background: token.colorFillSecondary,
-                  color: token.colorTextTertiary,
-                }}
-              >
-                {previewUrl && !previewFailed ? (
-                  <img
-                    src={previewUrl}
-                    alt={filename}
-                    onError={() => setPreviewFailed(true)}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
-                ) : (
-                  <Icon size={22} />
-                )}
-              </Flexbox>
-              <Text ellipsis style={{ fontSize: 11, fontWeight: 600, maxWidth: '100%' }}>
-                {filename}
-              </Text>
-              {openStateLabel ? (
-                <Text type={openState === 'error' ? 'danger' : 'secondary'} ellipsis style={{ fontSize: 10 }}>
-                  {openStateLabel}
-                </Text>
-              ) : null}
-              <Flexbox horizontal align="center" justify="space-between" gap={4}>
-                <Text type="secondary" ellipsis style={{ fontSize: 10, minWidth: 0 }}>
-                  {sizeLabel || t('chat.social.detail.mediaAttachment')}
-                </Text>
-                {canOpen ? <ExternalLink size={10} style={{ color: token.colorTextTertiary, flexShrink: 0 }} /> : null}
-              </Flexbox>
-            </Flexbox>
-          </button>
-        </span>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Tooltip title={tooltip}>
-      <span style={{ display: 'block', width: '100%' }}>
+      <PtTooltip label={tooltip}>
         <button
+          className="sc-detail-attachment sc-detail-attachment--media"
           data-chat-detail-attachment={item.id}
           data-chat-detail-attachment-kind={item.kind}
           data-chat-detail-attachment-open-state={openState}
@@ -459,47 +334,59 @@ function DetailAttachmentCard({ item }: { item: DetailAttachmentItem }) {
           type="button"
           disabled={!canOpen}
           onClick={handleOpen}
-          style={{
-            appearance: 'none',
-            width: '100%',
-            padding: '8px 10px',
-            border: `1px solid ${token.colorBorderSecondary}`,
-            borderRadius: 13,
-            background: token.colorFillQuaternary,
-            color: token.colorText,
-            cursor: canOpen ? 'pointer' : 'default',
-            opacity: canOpen ? 1 : 0.58,
-            textAlign: 'left',
-          }}
         >
-          <Flexbox horizontal align="center" gap={9} style={{ minWidth: 0 }}>
-            <Flexbox
-              align="center"
-              justify="center"
-              style={{
-                width: 32,
-                height: 32,
-                flex: '0 0 32px',
-                borderRadius: 10,
-                background: token.colorFillSecondary,
-                color: token.colorPrimary,
-              }}
-            >
-              <Paperclip size={16} />
-            </Flexbox>
-            <Flexbox gap={1} style={{ flex: 1, minWidth: 0 }}>
-              <Text ellipsis style={{ fontSize: 12, fontWeight: 600 }}>
-                {filename}
-              </Text>
-              <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-                {openStateLabel || sizeLabel || t('chat.social.detail.fileAttachment')}
-              </Text>
-            </Flexbox>
-            {canOpen ? <ExternalLink size={13} style={{ color: token.colorTextTertiary, flexShrink: 0 }} /> : null}
-          </Flexbox>
+          <span className="sc-detail-attachment__thumb">
+            {previewUrl && !previewFailed ? (
+              <img
+                src={previewUrl}
+                alt={filename}
+                onError={() => setPreviewFailed(true)}
+              />
+            ) : (
+              <Glyph size={22} />
+            )}
+          </span>
+          <strong className="sc-detail-attachment__name">{filename}</strong>
+          {openStateLabel ? (
+            <span className={`sc-detail-attachment__state${openState === 'error' ? ' is-error' : ''}`}>
+              {openStateLabel}
+            </span>
+          ) : null}
+          <span className="sc-detail-attachment__line">
+            <span className="sc-detail-attachment__meta">
+              {sizeLabel || t('chat.social.detail.mediaAttachment')}
+            </span>
+            {canOpen ? <ExternalLink size={10} /> : null}
+          </span>
         </button>
-      </span>
-    </Tooltip>
+      </PtTooltip>
+    );
+  }
+
+  return (
+    <PtTooltip label={tooltip}>
+      <button
+        className="sc-detail-attachment sc-detail-attachment--file"
+        data-chat-detail-attachment={item.id}
+        data-chat-detail-attachment-kind={item.kind}
+        data-chat-detail-attachment-open-state={openState}
+        aria-busy={openState === 'pending'}
+        type="button"
+        disabled={!canOpen}
+        onClick={handleOpen}
+      >
+        <span className="sc-detail-attachment__file-glyph">
+          <Paperclip size={16} />
+        </span>
+        <span className="sc-detail-attachment__file-body">
+          <strong className="sc-detail-attachment__name">{filename}</strong>
+          <span className="sc-detail-attachment__meta">
+            {openStateLabel || sizeLabel || t('chat.social.detail.fileAttachment')}
+          </span>
+        </span>
+        {canOpen ? <ExternalLink size={13} /> : null}
+      </button>
+    </PtTooltip>
   );
 }
 
@@ -516,56 +403,32 @@ function DetailAttachmentSection({
   items: DetailAttachmentItem[];
   limit: number;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const visibleItems = items.slice(0, limit);
   const hiddenCount = Math.max(items.length - visibleItems.length, 0);
   const isFileSection = visibleItems[0]?.kind === 'file';
 
   return (
-    <Flexbox
-      data-chat-detail-attachments={kind}
-      data-chat-detail-attachment-count={items.length}
-      gap={8}
-    >
-      <Flexbox horizontal align="center" justify="space-between">
-        <Text strong style={{ fontSize: 13 }}>{title}</Text>
+    <div className="sc-detail-attachments" data-chat-detail-attachments={kind} data-chat-detail-attachment-count={items.length}>
+      <div className="sc-detail-attachments__head">
+        <strong>{title}</strong>
         {hiddenCount > 0 ? (
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            {t('chat.social.detail.moreAttachments', { count: hiddenCount })}
-          </Text>
+          <span>{t('chat.social.detail.moreAttachments', { count: hiddenCount })}</span>
         ) : null}
-      </Flexbox>
+      </div>
       {visibleItems.length > 0 ? (
-        <Flexbox
-          horizontal={!isFileSection}
-          gap={7}
-          style={{
-            flexWrap: isFileSection ? undefined : 'wrap',
-          }}
-        >
+        <div className={`sc-detail-attachments__grid${isFileSection ? ' is-files' : ''}`}>
           {visibleItems.map((item) => (
             <DetailAttachmentCard key={item.id} item={item} />
           ))}
-        </Flexbox>
+        </div>
       ) : (
-        <Flexbox
-          horizontal
-          align="center"
-          gap={8}
-          style={{
-            padding: '10px 11px',
-            borderRadius: 13,
-            border: `1px dashed ${token.colorBorderSecondary}`,
-            background: token.colorFillQuaternary,
-            color: token.colorTextSecondary,
-          }}
-        >
+        <div className="sc-detail-attachments__empty">
           <Paperclip size={14} />
-          <Text type="secondary" style={{ fontSize: 12 }}>{emptyLabel}</Text>
-        </Flexbox>
+          <span>{emptyLabel}</span>
+        </div>
       )}
-    </Flexbox>
+    </div>
   );
 }
 
@@ -582,51 +445,34 @@ function getFriendPeerName(session: FriendChatSession | undefined, currentUserPt
   if (!session) return '';
   if (currentUserPtid) {
     if (session.participantAPtid === currentUserPtid)
-      return actorDisplayName(session.participantBDisplayName);
+      return session.participantBDisplayName || '';
     if (session.participantBPtid === currentUserPtid)
-      return actorDisplayName(session.participantADisplayName);
+      return session.participantADisplayName || '';
   }
-  return actorDisplayName(session.participantBDisplayName)
-    || actorDisplayName(session.participantADisplayName);
+  return session.participantBDisplayName || session.participantADisplayName || '';
 }
 
 function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUserPtid: string | null): string {
   if (!session) return '';
   if (currentUserPtid) {
-    if (session.participantAPtid === currentUserPtid) return session.participantBAvatar || '';
-    if (session.participantBPtid === currentUserPtid) return session.participantAAvatar || '';
+    if (session.participantAPtid === currentUserPtid)
+      return session.participantBAvatar || '';
+    if (session.participantBPtid === currentUserPtid)
+      return session.participantAAvatar || '';
   }
   return session.participantBAvatar || session.participantAAvatar || '';
 }
 
-function getFriendPeerDisplayProfile(
-  session: FriendChatSession,
-  currentUserPtid: string | null,
-): { did: string; name: string; avatar: string } | null {
-  if (currentUserPtid && session.participantAPtid === currentUserPtid) {
-    return {
-      did: session.participantBPtid || '',
-    name: actorDisplayName(session.participantBDisplayName),
-      avatar: session.participantBAvatar || '',
-    };
-  }
-  if (currentUserPtid && session.participantBPtid === currentUserPtid) {
-    return {
-      did: session.participantAPtid || '',
-      name: actorDisplayName(session.participantADisplayName),
-      avatar: session.participantAAvatar || '',
-    };
-  }
-  return {
-    did: session.participantBPtid || session.participantAPtid || '',
-    name: actorDisplayName(session.participantBDisplayName)
-      || actorDisplayName(session.participantADisplayName),
-    avatar: session.participantBAvatar || session.participantAAvatar || '',
-  };
+function getFriendPeerDisplayProfile(session: FriendChatSession | undefined, currentUserPtid: string | null) {
+  if (!session) return undefined;
+  const did = getFriendPeerDid(session, currentUserPtid);
+  const name = getFriendPeerName(session, currentUserPtid);
+  const avatar = getFriendPeerAvatar(session, currentUserPtid);
+  if (!did || !name) return undefined;
+  return { did, name, avatar };
 }
 
 export function ChatDetailPanel() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
@@ -724,6 +570,7 @@ export function ChatDetailPanel() {
   const [showAllMembers, setShowAllMembers] = useState(false);
   const [memberManagerOpen, setMemberManagerOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [backgroundModalOpen, setBackgroundModalOpen] = useState(false);
   const [inviteDids, setInviteDids] = useState<string[]>([]);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -918,7 +765,7 @@ export function ChatDetailPanel() {
       ) {
         throw new Error(result?.error?.message || 'chat conversation cleanup did not complete');
       }
-      toast.success(t('chat.social.detail.clearHistorySuccess', {
+      notifySuccess(t('chat.social.detail.clearHistorySuccess', {
         bytes: formatReleasedBytes(chatStorageReleasedBytes(result) ?? 0n),
       }));
     } catch (error) {
@@ -949,10 +796,10 @@ export function ChatDetailPanel() {
         name: next,
       });
       await loadSessions();
-      toast.success(t('chat.social.detail.groupNameUpdated'));
+      notifySuccess(t('chat.social.detail.groupNameUpdated'));
     } catch (error) {
       log.error('chat', 'update group name failed', { groupUlid: activeUlid, error });
-      toast.error(t('chat.social.detail.groupNameUpdateFailed'));
+      notifyError(t('chat.social.detail.groupNameUpdateFailed'));
     }
   };
 
@@ -970,10 +817,10 @@ export function ChatDetailPanel() {
         nickname: nextNickname,
       });
       await loadGroupMembers(activeUlid);
-      toast.success(t('chat.social.detail.myNicknameUpdated'));
+      notifySuccess(t('chat.social.detail.myNicknameUpdated'));
     } catch (error) {
       log.error('chat', 'update group nickname failed', { groupUlid: activeUlid, error });
-      toast.error(t('chat.social.detail.myNicknameUpdateFailed'));
+      notifyError(t('chat.social.detail.myNicknameUpdateFailed'));
     }
   };
 
@@ -991,10 +838,10 @@ export function ChatDetailPanel() {
     try {
       await messagingCommands.updateConversation(activeUlid, { description: next });
       await loadSessions();
-      toast.success(t('chat.social.detail.groupDescriptionUpdated'));
+      notifySuccess(t('chat.social.detail.groupDescriptionUpdated'));
     } catch (error) {
       log.error('chat', 'update group description failed', { groupUlid: activeUlid, error });
-      toast.error(t('chat.social.detail.groupDescriptionUpdateFailed'));
+      notifyError(t('chat.social.detail.groupDescriptionUpdateFailed'));
     } finally {
       setDescriptionSaving(false);
     }
@@ -1016,7 +863,7 @@ export function ChatDetailPanel() {
       });
     } catch (error) {
       log.error('chat', 'save group remark failed', { groupUlid: activeUlid, error });
-      toast.error(t('chat.social.detail.groupRemarkUpdateFailed'));
+      notifyError(t('chat.social.detail.groupRemarkUpdateFailed'));
     }
   };
 
@@ -1049,11 +896,11 @@ export function ChatDetailPanel() {
         image.src = avatarPath;
       });
       setConversationAvatarPreview('group', activeUlid, null);
-      toast.success(t('chat.social.detail.groupAvatarUpdated'));
+      notifySuccess(t('chat.social.detail.groupAvatarUpdated'));
     } catch (error) {
       setConversationAvatarPreview('group', activeUlid, null);
       log.error('chat', 'update group avatar failed', { groupUlid: activeUlid, error });
-      toast.error(t('chat.social.detail.groupAvatarUpdateFailed'));
+      notifyError(t('chat.social.detail.groupAvatarUpdateFailed'));
     } finally {
       setGroupAvatarUploading(false);
     }
@@ -1076,7 +923,8 @@ export function ChatDetailPanel() {
       await updateConversationLocalState(activeTab, activeUlid, { backgroundImage: uploaded.cid });
       setConversationBackgroundPreview(activeTab, activeUlid, null);
       setBackgroundRetryPath(null);
-      toast.success(t('chat.social.detail.backgroundImageUpdated'));
+      setBackgroundModalOpen(false);
+      notifySuccess(t('chat.social.detail.backgroundImageUpdated'));
     } catch (error) {
       setConversationBackgroundPreview(activeTab, activeUlid, null);
       log.error('chat', 'update chat background image failed', { kind: activeTab, ulid: activeUlid, error });
@@ -1098,19 +946,18 @@ export function ChatDetailPanel() {
       return;
     }
     const previewUrl = convertFileSrc(filePath);
-    Modal.destroyAll();
     void handleUploadBackgroundImage(filePath, previewUrl);
   };
 
-  const confirmClearHistory = () => {
-    Modal.confirm({
+  const confirmClearHistory = async () => {
+    const confirmed = await confirmRequest({
       title: t('chat.social.detail.clearHistoryConfirmTitle'),
-      content: t('chat.social.detail.clearHistoryConfirmBody'),
-      okText: t('chat.social.detail.clearHistory'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      okButtonProps: { danger: true },
-      onOk: clearConversationData,
+      description: t('chat.social.detail.clearHistoryConfirmBody'),
+      confirmLabel: t('chat.social.detail.clearHistory'),
+      cancelLabel: t('chat.social.messageArea.cancel'),
+      tone: 'danger',
     });
+    if (confirmed) await clearConversationData();
   };
 
   const submitGroupInvites = async () => {
@@ -1124,49 +971,48 @@ export function ChatDetailPanel() {
           conversationId: activeUlid,
           action: 'add_actor',
           targetPtid: did,
-        })
+        });
       }
       await loadSessions();
       setInviteDids([]);
       setInviteModalOpen(false);
-      toast.success(t('chat.social.detail.addMemberSuccess'));
+      notifySuccess(t('chat.social.detail.addMemberSuccess'));
     } catch (error) {
       setGroupSecurityState(activeUlid, 'error');
       log.error('chat', 'invite group members failed', { groupUlid: activeUlid, inviteeCount: inviteDids.length, error });
-      toast.error(t('chat.social.detail.addMemberFailed'));
+      notifyError(t('chat.social.detail.addMemberFailed'));
       throw error;
     } finally {
       setInviteSubmitting(false);
     }
   };
 
-  const confirmRemoveGroupMember = (member: GroupMember) => {
+  const confirmRemoveGroupMember = async (member: GroupMember) => {
     if (!activeUlid || !member.ptid) return;
     const memberName = getMemberDisplayName(member);
-    Modal.confirm({
+    const confirmed = await confirmRequest({
       title: t('chat.social.detail.removeMemberConfirmTitle'),
-      content: t('chat.social.detail.removeMemberConfirmBody', { name: memberName }),
-      okText: t('chat.social.detail.removeMember'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          setGroupSecurityState(activeUlid, 'establishing');
-          await messagingCommands.submitMembershipIntent({
-            conversationId: activeUlid,
-            action: 'remove_actor',
-            targetPtid: member.ptid,
-          })
-          await loadSessions();
-          toast.success(t('chat.social.detail.removeMemberSuccess'));
-        } catch (error) {
-          setGroupSecurityState(activeUlid, 'error');
-          log.error('chat', 'remove group member failed', { groupUlid: activeUlid, ptid: member.ptid, error });
-          toast.error(t('chat.social.detail.removeMemberFailed'));
-          throw error;
-        }
-      },
+      description: t('chat.social.detail.removeMemberConfirmBody', { name: memberName }),
+      confirmLabel: t('chat.social.detail.removeMember'),
+      cancelLabel: t('chat.social.messageArea.cancel'),
+      tone: 'danger',
     });
+    if (!confirmed) return;
+    try {
+      setGroupSecurityState(activeUlid, 'establishing');
+      await messagingCommands.submitMembershipIntent({
+        conversationId: activeUlid,
+        action: 'remove_actor',
+        targetPtid: member.ptid,
+      });
+      await loadSessions();
+      notifySuccess(t('chat.social.detail.removeMemberSuccess'));
+    } catch (error) {
+      setGroupSecurityState(activeUlid, 'error');
+      log.error('chat', 'remove group member failed', { groupUlid: activeUlid, ptid: member.ptid, error });
+      notifyError(t('chat.social.detail.removeMemberFailed'));
+      throw error;
+    }
   };
 
   const updateGroupMember = async (member: GroupMember, input: { role?: number; muted?: boolean }) => {
@@ -1174,173 +1020,95 @@ export function ChatDetailPanel() {
     try {
       await messagingCommands.updateMemberAuthority(activeUlid, member.ptid, input);
       await loadGroupMembers(activeUlid);
-      toast.success(t('chat.social.detail.updateMemberSuccess'));
+      notifySuccess(t('chat.social.detail.updateMemberSuccess'));
     } catch (error) {
       log.error('chat', 'update group member failed', { groupUlid: activeUlid, ptid: member.ptid, input, error });
-      toast.error(t('chat.social.detail.updateMemberFailed'));
+      notifyError(t('chat.social.detail.updateMemberFailed'));
       throw error;
     }
   };
 
-  const confirmUpdateGroupMemberRole = (member: GroupMember, role: number) => {
+  const confirmUpdateGroupMemberRole = async (member: GroupMember, role: number) => {
     const memberName = getMemberDisplayName(member);
-    Modal.confirm({
+    const confirmed = await confirmRequest({
       title: role === MemberRole.ADMIN ? t('chat.social.detail.promoteAdminConfirmTitle') : t('chat.social.detail.demoteAdminConfirmTitle'),
-      content: role === MemberRole.ADMIN
+      description: role === MemberRole.ADMIN
         ? t('chat.social.detail.promoteAdminConfirmBody', { name: memberName })
         : t('chat.social.detail.demoteAdminConfirmBody', { name: memberName }),
-      okText: role === MemberRole.ADMIN ? t('chat.social.detail.promoteAdmin') : t('chat.social.detail.demoteAdmin'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      onOk: () => updateGroupMember(member, { role }),
+      confirmLabel: role === MemberRole.ADMIN ? t('chat.social.detail.promoteAdmin') : t('chat.social.detail.demoteAdmin'),
+      cancelLabel: t('chat.social.messageArea.cancel'),
     });
+    if (confirmed) await updateGroupMember(member, { role });
   };
 
   const toggleGroupMemberMuted = (member: GroupMember) => {
     void updateGroupMember(member, { muted: !member.muted });
   };
 
-  const confirmTransferGroupOwnership = (member: GroupMember) => {
+  const confirmTransferGroupOwnership = async (member: GroupMember) => {
     if (!activeUlid || !member.ptid) return;
     const memberName = getMemberDisplayName(member);
-    Modal.confirm({
+    const confirmed = await confirmRequest({
       title: t('chat.social.detail.transferOwnerConfirmTitle'),
-      content: t('chat.social.detail.transferOwnerConfirmBody', { name: memberName }),
-      okText: t('chat.social.detail.transferOwner'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await messagingCommands.transferOwnership(activeUlid, member.ptid);
-          await Promise.allSettled([loadGroupMembers(activeUlid), loadSessions()]);
-          toast.success(t('chat.social.detail.transferOwnerSuccess'));
-        } catch (error) {
-          log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerPtid: member.ptid, error });
-          toast.error(t('chat.social.detail.transferOwnerFailed'));
-          throw error;
-        }
-      },
+      description: t('chat.social.detail.transferOwnerConfirmBody', { name: memberName }),
+      confirmLabel: t('chat.social.detail.transferOwner'),
+      cancelLabel: t('chat.social.messageArea.cancel'),
+      tone: 'danger',
     });
+    if (!confirmed) return;
+    try {
+      await messagingCommands.transferOwnership(activeUlid, member.ptid);
+      await Promise.allSettled([loadGroupMembers(activeUlid), loadSessions()]);
+      notifySuccess(t('chat.social.detail.transferOwnerSuccess'));
+    } catch (error) {
+      log.error('chat', 'transfer group ownership failed', { groupUlid: activeUlid, nextOwnerPtid: member.ptid, error });
+      notifyError(t('chat.social.detail.transferOwnerFailed'));
+      throw error;
+    }
   };
 
-  const confirmLeaveGroup = () => {
+  const confirmLeaveGroup = async () => {
     if (!activeUlid) return;
-    Modal.confirm({
+    const confirmed = await confirmRequest({
       title: t('chat.social.detail.leaveGroupConfirmTitle'),
-      content: t('chat.social.detail.leaveGroupConfirmBody'),
-      okText: t('chat.social.detail.leaveGroup'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await messagingCommands.leaveConversation(activeUlid);
-          setGroupSecurityState(activeUlid, 'establishing');
-          setShowDetail(false);
-        } catch (error) {
-          log.error('chat', 'leave group failed', { groupUlid: activeUlid, error });
-          toast.error(t('chat.social.detail.leaveGroupFailed'));
-          throw error;
-        }
-      },
+      description: t('chat.social.detail.leaveGroupConfirmBody'),
+      confirmLabel: t('chat.social.detail.leaveGroup'),
+      cancelLabel: t('chat.social.messageArea.cancel'),
+      tone: 'danger',
     });
+    if (!confirmed) return;
+    try {
+      await messagingCommands.leaveConversation(activeUlid);
+      setGroupSecurityState(activeUlid, 'establishing');
+      setShowDetail(false);
+    } catch (error) {
+      log.error('chat', 'leave group failed', { groupUlid: activeUlid, error });
+      notifyError(t('chat.social.detail.leaveGroupFailed'));
+      throw error;
+    }
   };
 
-  const confirmDissolveGroup = () => {
+  const confirmDissolveGroup = async () => {
     if (!activeUlid) return;
-    Modal.confirm({
+    const confirmed = await confirmRequest({
       title: t('chat.social.detail.dissolveGroupConfirmTitle'),
-      content: t('chat.social.detail.dissolveGroupConfirmBody'),
-      okText: t('chat.social.detail.dissolveGroup'),
-      cancelText: t('chat.social.messageArea.cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await messagingCommands.dissolveConversation(activeUlid);
-          await loadSessions();
-          selectGroup('');
-          setShowDetail(false);
-          toast.success(t('chat.social.detail.dissolveGroupSuccess'));
-        } catch (error) {
-          log.error('chat', 'dissolve group failed', { groupUlid: activeUlid, error });
-          toast.error(t('chat.social.detail.dissolveGroupFailed'));
-          throw error;
-        }
-      },
+      description: t('chat.social.detail.dissolveGroupConfirmBody'),
+      confirmLabel: t('chat.social.detail.dissolveGroup'),
+      cancelLabel: t('chat.social.messageArea.cancel'),
+      tone: 'danger',
     });
-  };
-
-  const openBackgroundModal = () => {
-    Modal.confirm({
-      title: t('chat.social.detail.chatBackground'),
-      icon: null,
-      width: 440,
-      content: (
-        <Flexbox gap={12}>
-          <Text type="secondary">{t('chat.social.detail.backgroundDesc')}</Text>
-          <Select
-            data-chat-background-select
-            value={activeLocalState?.background || 'default'}
-            options={CHAT_BACKGROUND_OPTIONS.map((value) => ({
-              value,
-              label: t(`chat.social.background.${value}`),
-            }))}
-            onChange={(value) => {
-              void runConversationAction('background', { background: value }).then((updated) => {
-                if (updated) Modal.destroyAll();
-              });
-            }}
-            disabled={Boolean(conversationActionPending)}
-            style={{ width: '100%' }}
-          />
-          <Button
-            data-chat-background-upload
-            block
-            icon={<ImageIcon size={14} />}
-            loading={conversationActionPending === 'background-image'}
-            onClick={() => {
-              void handleSelectBackgroundImage();
-            }}
-          >
-            {t('chat.social.detail.uploadBackgroundImage')}
-          </Button>
-          {backgroundRetryPath ? (
-            <Button
-              data-chat-background-retry
-              block
-              loading={conversationActionPending === 'background-image'}
-              onClick={() => {
-                Modal.destroyAll();
-                void handleUploadBackgroundImage(
-                  backgroundRetryPath,
-                  convertFileSrc(backgroundRetryPath),
-                );
-              }}
-            >
-              {t('chat.social.detail.retryBackgroundImage')}
-            </Button>
-          ) : null}
-          {activeLocalState?.backgroundImage ? (
-            <Button
-              data-chat-background-clear
-              block
-              type="text"
-              danger
-              loading={conversationActionPending === 'background-image-clear'}
-              onClick={() => {
-                void runConversationAction('background-image-clear', {
-                  backgroundImage: '',
-                }).then((updated) => {
-                  if (updated) Modal.destroyAll();
-                });
-              }}
-            >
-              {t('chat.social.detail.clearBackgroundImage')}
-            </Button>
-          ) : null}
-        </Flexbox>
-      ),
-      okButtonProps: { style: { display: 'none' } },
-      cancelText: t('chat.social.messageArea.cancel'),
-    });
+    if (!confirmed) return;
+    try {
+      await messagingCommands.dissolveConversation(activeUlid);
+      await loadSessions();
+      selectGroup('');
+      setShowDetail(false);
+      notifySuccess(t('chat.social.detail.dissolveGroupSuccess'));
+    } catch (error) {
+      log.error('chat', 'dissolve group failed', { groupUlid: activeUlid, error });
+      notifyError(t('chat.social.detail.dissolveGroupFailed'));
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -1353,6 +1121,7 @@ export function ChatDetailPanel() {
     setShowAllMembers(false);
     setMemberManagerOpen(false);
     setInviteModalOpen(false);
+    setBackgroundModalOpen(false);
     setInviteDids([]);
     setEditingName(false);
     setConversationActionPending(null);
@@ -1372,7 +1141,8 @@ export function ChatDetailPanel() {
   const cachedPeerProfile = !isGroup && peerPtid ? peerProfiles[peerPtid] : undefined;
 
   return (
-    <Flexbox
+    <div
+      className="sc-detail"
       data-chat-detail-panel="open"
       data-chat-detail-conversation={activeUlid}
       data-chat-detail-muted={activeLocalState?.muted ? 'true' : 'false'}
@@ -1381,115 +1151,79 @@ export function ChatDetailPanel() {
       data-chat-detail-background-image={activeLocalState?.backgroundImage || ''}
       data-chat-detail-action-pending={conversationActionPending || ''}
       data-chat-detail-background-retry={backgroundRetryPath ? 'true' : 'false'}
-      style={{
-        width: 320,
-        maxWidth: '100%',
-        minWidth: 0,
-        height: '100%',
-        background: token.colorBgContainer,
-        overflow: 'hidden',
-        overflowX: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        flexShrink: 0,
-      }}
     >
-      {/* Header */}
-      <Flexbox
-        horizontal
-        align="center"
-        justify="center"
-        style={{
-          height: DETAIL_HEADER_HEIGHT,
-          minHeight: DETAIL_HEADER_HEIGHT,
-          position: 'relative',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          flexShrink: 0,
-        }}
-      >
-        <Text strong style={{ fontSize: 15 }}>
-          {t('chat.social.detail.title')}
-        </Text>
-        <Button
-          type="text"
-          icon={<X size={16} />}
-          onClick={() => setShowDetail(false)}
-          style={{ position: 'absolute', right: 12, width: 28, height: 28 }}
-        />
-      </Flexbox>
+      {/* Header — prototype .sk-side-head: title left, quiet search/background/
+          close glyph actions right. Background and message search are header
+          actions, not full setting rows. */}
+      <header className="sc-detail__header" style={{ height: DETAIL_HEADER_HEIGHT }}>
+        <strong>{t('chat.social.detail.title')}</strong>
+        <span className="sc-detail__header-actions">
+          <IconButton
+            actionId="chat-detail-search"
+            className="sc-detail__header-action"
+            data-chat-detail-header-action="search"
+            iconId="search"
+            iconSize={16}
+            emphasis="quiet"
+            density="compact"
+            label={t('chat.social.detail.searchMessages')}
+            onActivate={() => window.dispatchEvent(new CustomEvent('peers-chat:open-search'))}
+          />
+          <IconButton
+            actionId="chat-detail-background"
+            className="sc-detail__header-action"
+            data-chat-conversation-action="background"
+            iconId="image"
+            iconSize={16}
+            emphasis="quiet"
+            density="compact"
+            availability={conversationActionPending
+              ? { kind: 'disabled', reason: t('chat.social.detail.chatBackground') }
+              : undefined}
+            label={t('chat.social.detail.chatBackground')}
+            onActivate={() => setBackgroundModalOpen(true)}
+          />
+          <IconButton
+            actionId="chat-detail-close"
+            className="sc-detail__close"
+            data-chat-detail-header-action="close"
+            iconId="close"
+            iconSize={16}
+            emphasis="quiet"
+            density="compact"
+            label={t('chat.social.detail.title')}
+            onActivate={() => setShowDetail(false)}
+          />
+        </span>
+      </header>
 
       {/* Scrollable content */}
-      <Flexbox style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
+      <div className="sc-detail__scroll">
         {/* Identity section */}
         {isGroup ? (
-          <Flexbox style={{ padding: 0, minWidth: 0 }}>
-            {/* Banner: blurred group avatar over a deterministic hue, so each
-                group profile has a recognizable, non-empty cover. */}
-            {(() => {
-              const hue = deterministicBannerHue(activeUlid || displayName);
-              return (
-                <div
-                  aria-hidden="true"
-                  data-chat-group-banner
-                  style={{
-                    position: 'relative',
-                    height: 88,
-                    margin: '0 0 30px',
-                    overflow: 'hidden',
-                    background: `linear-gradient(135deg, hsl(${hue} 62% 62%), hsl(${(hue + 42) % 360} 58% 48%))`,
-                  }}
-                >
-                  {groupAvatarUrl.startsWith('http') ? (
-                    <img
-                      src={groupAvatarUrl}
-                      alt=""
-                      style={{
-                        position: 'absolute',
-                        inset: -24,
-                        width: 'calc(100% + 48px)',
-                        height: 'calc(100% + 48px)',
-                        objectFit: 'cover',
-                        filter: 'blur(18px) saturate(1.2)',
-                        transform: 'scale(1.12)',
-                      }}
-                    />
-                  ) : null}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      background: `linear-gradient(180deg, hsl(${hue} 55% 45% / 0.28), hsl(${hue} 60% 30% / 0.55))`,
-                    }}
-                  />
-                </div>
-              );
-            })()}
-            <Flexbox align="center" gap={8} style={{ padding: '0 16px', marginTop: -66 }}>
+          <div className="sc-detail__group">
+            {/* Banner: blurred group avatar over the north-star neutral ink
+                wash (prototype .sk-banner grammar), not an off-palette hue. */}
+            <div
+              className="sc-detail__banner"
+              aria-hidden="true"
+              data-chat-group-banner
+            >
+              {groupAvatarUrl.startsWith('http') ? (
+                <img src={groupAvatarUrl} alt="" />
+              ) : null}
+              <div className="sc-detail__banner-veil" />
+            </div>
+            <div className="sc-detail__group-avatar-row">
               {/* Avatar with edit overlay */}
               <div
+                className="sc-detail__group-avatar"
                 data-chat-group-avatar={groupAvatarUploading ? 'uploading' : 'idle'}
-                style={{
-                  position: 'relative',
-                  cursor: groupAvatarUploading ? 'wait' : 'pointer',
-                  borderRadius: 18,
-                  boxShadow: `0 0 0 3px ${token.colorBgContainer}, 0 4px 12px rgba(0,0,0,0.18)`,
-                }}
                 onClick={() => {
                   if (!groupAvatarUploading) void handleGroupAvatarClick();
                 }}
               >
-                <Flexbox
-                  align="center"
-                  justify="center"
-                  style={{
-                    width: 72,
-                    height: 72,
-                    borderRadius: 18,
-                    background: token.colorFillSecondary,
-                    color: token.colorTextSecondary,
-                    overflow: 'hidden',
-                  }}
-                >
+                <div className="sc-detail__group-avatar-tile">
                   <GroupSquareAvatar
                     remoteUrl={groupAvatarUrl || undefined}
                     members={members.slice(0, 4).map((m) => {
@@ -1504,99 +1238,69 @@ export function ChatDetailPanel() {
                     size={72}
                     radius={18}
                   />
-                </Flexbox>
-                <Flexbox
-                  align="center"
-                  justify="center"
-                  style={{
-                    position: 'absolute',
-                    bottom: -2,
-                    right: -2,
-                    width: 24,
-                    height: 24,
-                    borderRadius: 12,
-                    background: token.colorPrimary,
-                    color: '#fff',
-                    border: `2px solid ${token.colorBgContainer}`,
-                  }}
-                >
-                  {groupAvatarUploading ? <Spin size="small" /> : <Camera size={12} />}
-                </Flexbox>
+                </div>
+                <span className="sc-detail__group-avatar-edit">
+                  {groupAvatarUploading ? <PtSpin size="small" /> : <Camera size={12} />}
+                </span>
               </div>
-            </Flexbox>
+            </div>
             {/* Editable group name */}
-            <Flexbox align="center" style={{ padding: '10px 16px 2px' }}>
+            <div className="sc-detail__group-name-row">
               {editingName ? (
-                <input
+                <PtTextField
+                  className="sc-inline-edit sc-detail__group-name-editor"
                   autoFocus
                   value={editNameValue}
-                  onChange={(e) => setEditNameValue(e.target.value)}
+                  onValueChange={setEditNameValue}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') void handleSaveGroupName();
                     if (e.key === 'Escape') setEditingName(false);
                   }}
+                  onEnter={() => void handleSaveGroupName()}
                   onBlur={() => void handleSaveGroupName()}
-                  style={{
-                    border: 'none',
-                    borderBottom: `1px solid ${token.colorPrimary}`,
-                    background: 'transparent',
-                    fontSize: 16,
-                    fontWeight: 600,
-                    textAlign: 'center',
-                    outline: 'none',
-                    width: 220,
-                    maxWidth: '100%',
-                    padding: '2px 4px',
-                    color: token.colorText,
-                  }}
+                  data-chat-group-name-editor
                 />
               ) : (
-                <Flexbox horizontal align="center" gap={4}>
-                  <Text strong style={{ fontSize: 16 }}>
-                    {displayName}
-                  </Text>
+                <div className="sc-detail__group-name">
+                  <strong>{displayName}</strong>
                   {canManageGroupMembers ? (
-                    <Tooltip title={t('chat.social.detail.editGroupName')}>
-                      <Button
+                    <PtTooltip label={t('chat.social.detail.editGroupName')}>
+                      <PtButton
+                        actionId="chat-detail-edit-group-name"
                         data-chat-group-name-edit
-                        type="text"
-                        size="small"
+                        className="sc-detail__inline-edit"
+                        emphasis="quiet"
+                        density="compact"
+                        leading={<Pencil size={13} />}
                         aria-label={t('chat.social.detail.editGroupName')}
-                        icon={<Pencil size={13} />}
-                        style={{ width: 24, height: 24 }}
-                        onClick={() => {
+                        onActivate={() => {
                           setEditNameValue(activeConversation?.canonicalName || currentName || '');
                           setEditingName(true);
                         }}
                       />
-                    </Tooltip>
+                    </PtTooltip>
                   ) : null}
-                </Flexbox>
+                </div>
               )}
-            </Flexbox>
+            </div>
             {/* When a local remark is set, keep the canonical name readable. */}
             {!editingName
               && (activeLocalState?.remark || '').trim()
               && (activeConversation?.canonicalName || '').trim()
               && (activeLocalState!.remark!.trim() !== activeConversation!.canonicalName!.trim()) ? (
-              <Text
-                type="secondary"
-                ellipsis
-                style={{ display: 'block', textAlign: 'center', fontSize: 11, padding: '0 16px' }}
-              >
+              <span className="sc-detail__canonical-name">
                 {t('chat.social.detail.canonicalGroupName', {
                   name: activeConversation!.canonicalName!,
                 })}
-              </Text>
+              </span>
             ) : null}
-            <Text type="secondary" style={{ fontSize: 12, textAlign: 'center', padding: '4px 16px 2px' }}>
+            <div className="sc-detail__member-count">
               {t('chat.social.detail.membersCount', { count: groupMemberCount })}
-            </Text>
-          </Flexbox>
+            </div>
+          </div>
         ) : (
-          <Flexbox style={{ padding: '16px 16px 8px' }}>
+          <div className="sc-detail__profile">
             <PublicProfileCard
-              compact
+              variant="sheet"
               profile={buildChatDetailProfile({
                 isGroup,
                 isSelfDirect,
@@ -1620,53 +1324,36 @@ export function ChatDetailPanel() {
                 <ProfilePrimaryAction actorPtid={peerPtid} />
               ) : undefined}
             />
-          </Flexbox>
+          </div>
         )}
 
         {stationChip && (
-        <Flexbox
-          data-chat-station={isGroup ? 'local' : 'authority'}
-          data-chat-station-id={stationChip.stationId}
-          data-chat-station-name={stationChip.label}
-          data-chat-station-state={stationChip.state}
-          horizontal
-          align="center"
-          justify="center"
-          gap={5}
-          style={{ padding: '0 16px 10px', minWidth: 0 }}
-        >
-          {stationChip.state !== 'neutral' && (
-            <span
-              aria-hidden="true"
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: 999,
-                flexShrink: 0,
-                background: stationChip.state === 'connected'
-                  ? token.colorSuccess
-                  : token.colorTextQuaternary,
-              }}
-            />
-          )}
-          <Text
-            type="secondary"
-            ellipsis={{ tooltip: stationChip.label }}
-            style={{ maxWidth: '100%', fontSize: 11 }}
+          <div
+            className="sc-detail__station"
+            data-chat-station={isGroup ? 'local' : 'authority'}
+            data-chat-station-id={stationChip.stationId}
+            data-chat-station-name={stationChip.label}
+            data-chat-station-state={stationChip.state}
           >
-            {isGroup
-              ? stationChip.label
-              : t('chat.social.detail.authorityStation', { station: stationChip.label })}
-          </Text>
-        </Flexbox>
+            {stationChip.state !== 'neutral' && (
+              <span className="sc-detail__station-dot" aria-hidden="true" />
+            )}
+            <span className="sc-detail__station-label" title={stationChip.label}>
+              {isGroup
+                ? stationChip.label
+                : t('chat.social.detail.authorityStation', { station: stationChip.label })}
+            </span>
+          </div>
         )}
 
         {isGroup ? (
-          <DetailSection gap={8}>
+          <DetailSection>
             {editingDescription ? (
-              <Flexbox gap={8}>
-                <textarea
+              <div className="sc-detail__description-edit">
+                <PtTextArea
                   autoFocus
+                  framing="embedded"
+                  className="sc-detail__description-input"
                   data-chat-group-description-editor
                   value={editDescriptionValue}
                   maxLength={300}
@@ -1680,239 +1367,211 @@ export function ChatDetailPanel() {
                     if (event.key === 'Escape') setEditingDescription(false);
                   }}
                   onBlur={() => void handleSaveDescription()}
-                  style={{
-                    width: '100%',
-                    resize: 'none',
-                    border: `1px solid ${token.colorBorder}`,
-                    borderRadius: 8,
-                    padding: '6px 8px',
-                    fontSize: 12,
-                    lineHeight: 1.5,
-                    outline: 'none',
-                    background: token.colorBgContainer,
-                    color: token.colorText,
-                  }}
                 />
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {t('chat.social.detail.groupDescriptionHint')}
-                </Text>
-              </Flexbox>
+                <span>{t('chat.social.detail.groupDescriptionHint')}</span>
+              </div>
             ) : (
-              <Flexbox horizontal align="flex-start" justify="space-between" gap={8}>
-                <Flexbox horizontal gap={8} style={{ minWidth: 0, flex: 1 }}>
-                  <FileText size={15} style={{ color: token.colorTextSecondary, marginTop: 2, flexShrink: 0 }} />
+              <div className="sc-detail__description-row">
+                <div className="sc-detail__description-text">
+                  <FileText size={15} />
                   {activeConversation?.description?.trim() ? (
-                    <Text
-                      style={{ fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                    >
+                    <span className="sc-detail__description-value">
                       {activeConversation.description.trim()}
-                    </Text>
+                    </span>
                   ) : canManageGroupMembers ? (
-                    <Text
-                      type="secondary"
-                      style={{ fontSize: 12 }}
+                    <span
+                      className="sc-detail__description-empty"
                       data-chat-group-description-empty
                     >
                       {descriptionSaving
                         ? t('chat.social.detail.groupDescriptionSaving')
                         : t('chat.social.detail.groupDescriptionAdd')}
-                    </Text>
+                    </span>
                   ) : null}
-                </Flexbox>
+                </div>
                 {canManageGroupMembers && !descriptionSaving ? (
-                  <Tooltip title={t('chat.social.detail.groupDescriptionEdit')}>
-                    <Button
-                      type="text"
-                      size="small"
+                  <PtTooltip label={t('chat.social.detail.groupDescriptionEdit')}>
+                    <PtButton
+                      actionId="chat-detail-edit-description"
+                      className="sc-detail__inline-edit"
+                      emphasis="quiet"
+                      density="compact"
+                      leading={<Pencil size={13} />}
                       aria-label={t('chat.social.detail.groupDescriptionEdit')}
-                      icon={<Pencil size={13} />}
-                      style={{ width: 24, height: 24, flexShrink: 0 }}
-                      onClick={startDescriptionEdit}
+                      onActivate={startDescriptionEdit}
                     />
-                  </Tooltip>
+                  </PtTooltip>
                 ) : null}
-              </Flexbox>
+              </div>
             )}
           </DetailSection>
         ) : null}
 
         {isGroup ? (
-          <DetailSection title={t('chat.social.detail.permissionLabel')} gap={10}>
-            <Flexbox horizontal align="center" justify="space-between" gap={10}>
-              <Flexbox gap={3} style={{ minWidth: 0 }}>
-                <Text strong style={{ fontSize: 13 }}>{groupPermissionTitle}</Text>
-                <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.45 }}>
-                  {groupPermissionBody}
-                </Text>
-              </Flexbox>
-              <Tag
-                bordered={false}
-                color={isGroupOwner ? 'gold' : myMemberRole >= MemberRole.ADMIN ? 'blue' : 'default'}
-                style={{ marginInlineEnd: 0, flexShrink: 0 }}
-              >
-                {myMemberRoleLabel}
-              </Tag>
-            </Flexbox>
+          <DetailSection title={t('chat.social.detail.permissionLabel')} relaxed>
+            <div className="sc-detail__permission">
+              <div className="sc-detail__permission-text">
+                <strong>{groupPermissionTitle}</strong>
+                <span>{groupPermissionBody}</span>
+              </div>
+              <PtTag tone={groupRoleTone(myMemberRole)}>{myMemberRoleLabel}</PtTag>
+            </div>
           </DetailSection>
         ) : null}
 
-        {/* Members section (group only) */}
+        {/* Members section (group only): avatar grid with avatar-sized add/
+            manage tiles inside the grid (north-star WeChat parity), never
+            full-width text rows below the members. */}
         {isGroup && (
           <DetailSection title={t('chat.social.detail.membersLabel')}>
-            {displayMembers.length > 0 ? (
-              <Flexbox horizontal gap={10} style={{ flexWrap: 'wrap', minWidth: 0 }}>
+            {displayMembers.length > 0 || canManageGroupMembers ? (
+              <div className="sc-detail__member-previews">
                 {(showAllMembers ? displayMembers : displayMembers.slice(0, 8)).map((member) => (
                   <MemberPreviewCard key={member.ptid} member={member} />
                 ))}
-              </Flexbox>
+                {canManageGroupMembers ? (
+                  <>
+                    <span className="sc-detail-member__tile">
+                      <IconButton
+                        actionId="chat-detail-add-member-open"
+                        className="sc-detail-member__tile-button sc-detail-member__tile-button--add"
+                        data-chat-group-add-member-open
+                        iconId="user-plus"
+                        iconSize={18}
+                        emphasis="quiet"
+                        label={t('chat.social.detail.addMember')}
+                        onActivate={() => setInviteModalOpen(true)}
+                        availability={inviteCandidates.length === 0
+                          ? { kind: 'disabled', reason: t('chat.social.detail.addMember') }
+                          : undefined}
+                      />
+                    </span>
+                    <span className="sc-detail-member__tile">
+                      <IconButton
+                        actionId="chat-detail-manage-members"
+                        className="sc-detail-member__tile-button sc-detail-member__tile-button--manage"
+                        data-chat-group-manage-members
+                        iconId="settings"
+                        iconSize={17}
+                        emphasis="quiet"
+                        label={t('chat.social.detail.manageMembers')}
+                        onActivate={() => setMemberManagerOpen(true)}
+                        availability={members.length === 0
+                          ? { kind: 'disabled', reason: t('chat.social.detail.manageMembers') }
+                          : undefined}
+                      />
+                    </span>
+                  </>
+                ) : null}
+              </div>
             ) : (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('chat.social.detail.membersLoading')}
-              </Text>
+              <span className="sc-detail__hint">{t('chat.social.detail.membersLoading')}</span>
             )}
-            <Flexbox horizontal align="center" justify="space-between" gap={8} style={{ marginTop: 4, minWidth: 0, flexWrap: 'wrap' }}>
-              <Button
-                data-chat-group-add-member-open
-                type="dashed"
-                icon={<UserPlus size={14} />}
-                size="small"
-                disabled={inviteCandidates.length === 0}
-                onClick={() => setInviteModalOpen(true)}
-              >
-                {t('chat.social.detail.addMember')}
-              </Button>
-              <Flexbox horizontal gap={8} style={{ marginLeft: 'auto', flexWrap: 'wrap' }}>
-                {displayMembers.length > 8 && (
-                  <Button
-                    type="link"
-                    size="small"
-                    style={{ fontSize: 12, padding: 0 }}
-                    onClick={() => setShowAllMembers((v) => !v)}
-                  >
-                    {showAllMembers ? t('chat.social.detail.showLess') : t('chat.social.detail.seeAll')}
-                  </Button>
-                )}
-                <Button
-                  data-chat-group-manage-members
-                  type="link"
-                  size="small"
-                  style={{ fontSize: 12, padding: 0 }}
-                  disabled={members.length === 0}
-                  onClick={() => setMemberManagerOpen(true)}
+            {displayMembers.length > 8 ? (
+              <div className="sc-detail-member__see-all">
+                <PtButton
+                  actionId="chat-detail-toggle-members"
+                  emphasis="quiet"
+                  density="compact"
+                  onActivate={() => setShowAllMembers((v) => !v)}
                 >
-                  {t('chat.social.detail.manageMembers')}
-                </Button>
-              </Flexbox>
-            </Flexbox>
+                  {showAllMembers ? t('chat.social.detail.showLess') : t('chat.social.detail.seeAll')}
+                </PtButton>
+              </div>
+            ) : null}
           </DetailSection>
         )}
 
         {/* Settings section */}
         <DetailSection title={t('chat.social.detail.settings')}>
           {isGroup ? (
-            <Flexbox horizontal align="center" justify="space-between" gap={10}>
-              <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
-                <Pencil size={15} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
-                <Flexbox gap={1} style={{ minWidth: 0, flex: 1 }}>
-                  <Text style={{ fontSize: 13 }}>{t('chat.social.detail.groupRemark')}</Text>
+            <div className="sc-detail__setting-row">
+              <div className="sc-detail__setting-text">
+                <Pencil size={15} />
+                <div>
+                  <strong>{t('chat.social.detail.groupRemark')}</strong>
                   {editingRemark ? (
-                    <input
+                    <PtTextField
                       autoFocus
+                      className="sc-inline-edit sc-detail__underline-editor"
                       data-chat-group-remark-editor
                       value={editRemarkValue}
                       maxLength={60}
                       placeholder={t('chat.social.detail.groupRemarkPlaceholder')}
-                      onChange={(event) => setEditRemarkValue(event.target.value)}
+                      onValueChange={setEditRemarkValue}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter') void handleSaveRemark();
                         if (event.key === 'Escape') setEditingRemark(false);
                       }}
+                      onEnter={() => void handleSaveRemark()}
                       onBlur={() => void handleSaveRemark()}
-                      style={{
-                        border: 'none',
-                        borderBottom: `1px solid ${token.colorPrimary}`,
-                        background: 'transparent',
-                        color: token.colorText,
-                        fontSize: 12,
-                        outline: 'none',
-                        padding: '2px 0',
-                      }}
                     />
                   ) : (
-                    <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                    <span className="sc-detail__setting-secondary">
                       {(activeLocalState?.remark || '').trim()
                         || t('chat.social.detail.groupRemarkUnset')}
-                    </Text>
+                    </span>
                   )}
-                  <Text type="secondary" style={{ fontSize: 10 }}>
-                    {t('chat.social.detail.groupRemarkHint')}
-                  </Text>
-                </Flexbox>
-              </Flexbox>
+                  <span className="sc-detail__setting-hint">{t('chat.social.detail.groupRemarkHint')}</span>
+                </div>
+              </div>
               {!editingRemark ? (
-                <Button
-                  size="small"
-                  type="text"
-                  onClick={startRemarkEdit}
+                <PtButton
+                  actionId="chat-detail-edit-remark"
+                  emphasis="quiet"
+                  density="compact"
+                  onActivate={startRemarkEdit}
                 >
                   {t('chat.social.detail.edit')}
-                </Button>
+                </PtButton>
               ) : null}
-            </Flexbox>
+            </div>
           ) : null}
           {isGroup ? (
-            <Flexbox horizontal align="center" justify="space-between" gap={10}>
-              <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
-                <Users size={15} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
-                <Flexbox gap={1} style={{ minWidth: 0, flex: 1 }}>
-                  <Text style={{ fontSize: 13 }}>{t('chat.social.detail.myGroupNickname')}</Text>
+            <div className="sc-detail__setting-row">
+              <div className="sc-detail__setting-text">
+                <Users size={15} />
+                <div>
+                  <strong>{t('chat.social.detail.myGroupNickname')}</strong>
                   {editingMyNickname ? (
-                    <input
+                    <PtTextField
                       autoFocus
+                      className="sc-inline-edit sc-detail__underline-editor"
                       value={editMyNicknameValue}
                       placeholder={t('chat.social.detail.myGroupNicknamePlaceholder')}
-                      onChange={(event) => setEditMyNicknameValue(event.target.value)}
+                      onValueChange={setEditMyNicknameValue}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter') void handleSaveMyNickname();
                         if (event.key === 'Escape') setEditingMyNickname(false);
                       }}
+                      onEnter={() => void handleSaveMyNickname()}
                       onBlur={() => void handleSaveMyNickname()}
-                      style={{
-                        border: 'none',
-                        borderBottom: `1px solid ${token.colorPrimary}`,
-                        background: 'transparent',
-                        color: token.colorText,
-                        fontSize: 12,
-                        outline: 'none',
-                        padding: '2px 0',
-                      }}
                     />
                   ) : (
-                    <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                    <span className="sc-detail__setting-secondary">
                       {myGroupNickname || t('chat.social.detail.myGroupNicknameUnset')}
-                    </Text>
+                    </span>
                   )}
-                </Flexbox>
-              </Flexbox>
+                </div>
+              </div>
               {!editingMyNickname ? (
-                <Button
-                  size="small"
-                  type="text"
-                  onClick={() => {
+                <PtButton
+                  actionId="chat-detail-edit-nickname"
+                  emphasis="quiet"
+                  density="compact"
+                  onActivate={() => {
                     setEditMyNicknameValue(myGroupNickname);
                     setEditingMyNickname(true);
                   }}
                 >
                   {t('chat.social.detail.edit')}
-                </Button>
+                </PtButton>
               ) : null}
-            </Flexbox>
+            </div>
           ) : null}
-          <Flexbox horizontal align="center" justify="space-between">
-            <Flexbox horizontal align="center" gap={8}>
-              <BellOff size={15} style={{ color: token.colorTextSecondary }} />
-              <Text style={{ fontSize: 13 }}>{t('chat.social.detail.muteNotifications')}</Text>
-            </Flexbox>
+          <div className="sc-detail__setting-row">
+            <div className="sc-detail__setting-inline">
+              <BellOff size={15} />
+              <strong>{t('chat.social.detail.muteNotifications')}</strong>
+            </div>
             <Toggle
               action="mute"
               checked={Boolean(activeLocalState?.muted)}
@@ -1921,12 +1580,12 @@ export function ChatDetailPanel() {
                 void runConversationAction('mute', { muted: v });
               }}
             />
-          </Flexbox>
-          <Flexbox horizontal align="center" justify="space-between">
-            <Flexbox horizontal align="center" gap={8}>
-              <Pin size={15} style={{ color: token.colorTextSecondary }} />
-              <Text style={{ fontSize: 13 }}>{t('chat.social.detail.pinConversation')}</Text>
-            </Flexbox>
+          </div>
+          <div className="sc-detail__setting-row">
+            <div className="sc-detail__setting-inline">
+              <Pin size={15} />
+              <strong>{t('chat.social.detail.pinConversation')}</strong>
+            </div>
             <Toggle
               action="pin"
               checked={Boolean(activeLocalState?.sticky)}
@@ -1935,34 +1594,7 @@ export function ChatDetailPanel() {
                 void runConversationAction('pin', { sticky: v });
               }}
             />
-          </Flexbox>
-          <Flexbox
-            data-chat-conversation-action="background"
-            horizontal
-            align="center"
-            justify="space-between"
-            style={{ cursor: conversationActionPending ? 'wait' : 'pointer' }}
-            onClick={openBackgroundModal}
-          >
-            <Flexbox horizontal align="center" gap={8}>
-              <ImageIcon size={15} style={{ color: token.colorTextSecondary }} />
-              <Text style={{ fontSize: 13 }}>{t('chat.social.detail.chatBackground')}</Text>
-            </Flexbox>
-            <ChevronRight size={15} style={{ color: token.colorTextQuaternary }} />
-          </Flexbox>
-          <Flexbox
-            horizontal
-            align="center"
-            justify="space-between"
-            style={{ cursor: 'pointer' }}
-            onClick={() => window.dispatchEvent(new CustomEvent('peers-chat:open-search'))}
-          >
-            <Flexbox horizontal align="center" gap={8}>
-              <Search size={15} style={{ color: token.colorTextSecondary }} />
-              <Text style={{ fontSize: 13 }}>{t('chat.social.detail.searchMessages')}</Text>
-            </Flexbox>
-            <ChevronRight size={15} style={{ color: token.colorTextQuaternary }} />
-          </Flexbox>
+          </div>
         </DetailSection>
 
         {/* Shared Content section */}
@@ -1987,27 +1619,24 @@ export function ChatDetailPanel() {
             carries no peer to verify. */}
         {encryptionEnabled && !isGroup && !isSelfDirect && (
           <DetailSection title={t('chat.social.encryption.title')}>
-            <Flexbox horizontal align="center" gap={6}>
-              <Lock size={14} style={{ color: token.colorSuccess }} />
-              <Text strong style={{ fontSize: 13 }}>{t('chat.social.encryption.title')}</Text>
-            </Flexbox>
-            <Text type="secondary" style={{ fontSize: 11 }}>{t('chat.social.encryption.fingerprint')}</Text>
-            <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all' }}>
-              {ownFingerprint || '—'}
-            </Text>
+            <div className="sc-detail__encrypt-title">
+              <Lock size={14} />
+              <strong>{t('chat.social.encryption.title')}</strong>
+            </div>
+            <span className="sc-detail__hint">{t('chat.social.encryption.fingerprint')}</span>
+            <code className="sc-detail__fingerprint">{ownFingerprint || '—'}</code>
             {!isGroup && peerPtid ? (
-              <Button
-                type={verifyOpen ? 'default' : 'primary'}
-                ghost={!verifyOpen}
-                icon={<ShieldCheck size={14} />}
-                size="small"
-                onClick={() => setVerifyOpen((v) => !v)}
-                style={{ marginTop: 4 }}
+              <PtButton
+                actionId="chat-detail-toggle-verify"
+                emphasis={verifyOpen ? 'secondary' : 'primary'}
+                density="compact"
+                leading={<ShieldCheck size={14} />}
+                onActivate={() => setVerifyOpen((v) => !v)}
               >
                 {verifyOpen
                   ? t('chat.social.verify.hide')
                   : t('chat.social.verify.show')}
-              </Button>
+              </PtButton>
             ) : null}
             {!isGroup && peerPtid && verifyOpen && currentUserPtid ? (
               <SafetyVerificationPanel
@@ -2017,60 +1646,146 @@ export function ChatDetailPanel() {
               />
             ) : null}
             {activeTab === 'friend' ? (
-              <Flexbox gap={4} style={{ marginTop: 4 }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('chat.social.encryption.upgradeBody.line3')}
-                </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('chat.social.encryption.upgradeBlocked')}
-                </Text>
-              </Flexbox>
+              <div className="sc-detail__encrypt-note">
+                <span>{t('chat.social.encryption.upgradeBody.line3')}</span>
+                <span>{t('chat.social.encryption.upgradeBlocked')}</span>
+              </div>
             ) : null}
           </DetailSection>
         )}
 
         {/* Danger zone */}
         <DetailSection title={t('chat.social.detail.dangerZone')}>
-          <Button
+          <PtButton
+            actionId="chat-detail-clear-history"
             data-chat-history-action="clear"
-            type="text"
-            danger
-            icon={<Trash2 size={14} />}
-            style={{ justifyContent: 'flex-start', height: 36 }}
-            block
-            loading={historyActionPending}
-            disabled={historyActionPending}
-            onClick={confirmClearHistory}
+            tone="danger"
+            emphasis="quiet"
+            fullWidth
+            execution={historyActionPending ? 'pending' : 'idle'}
+            leading={<Trash2 size={14} />}
+            onActivate={confirmClearHistory}
+            className="sc-detail__danger-btn"
           >
             {t('chat.social.detail.clearHistory')}
-          </Button>
+          </PtButton>
           {isGroup ? (
-            <Button
-              type="text"
-              danger
-              icon={isGroupOwner ? <Trash2 size={14} /> : <LogOut size={14} />}
-              style={{ justifyContent: 'flex-start', height: 36 }}
-              block
-              onClick={isGroupOwner ? confirmDissolveGroup : confirmLeaveGroup}
+            <PtButton
+              actionId="chat-detail-leave-or-dissolve"
+              tone="danger"
+              emphasis="quiet"
+              fullWidth
+              leading={isGroupOwner ? <Trash2 size={14} /> : <LogOut size={14} />}
+              onActivate={isGroupOwner ? confirmDissolveGroup : confirmLeaveGroup}
+              className="sc-detail__danger-btn"
             >
               {isGroupOwner ? t('chat.social.detail.dissolveGroup') : t('chat.social.detail.leaveGroup')}
-            </Button>
+            </PtButton>
           ) : null}
         </DetailSection>
 
         {/* Spacer for scroll padding */}
-        <div style={{ height: 16 }} />
-      </Flexbox>
+        <div className="sc-detail__scroll-spacer" />
+      </div>
 
-      {/* Member management modal */}
-      <Modal
-        title={t('chat.social.detail.manageMembers')}
-        open={memberManagerOpen}
-        footer={null}
-        width={520}
-        onCancel={() => setMemberManagerOpen(false)}
+      {/* Chat background dialog */}
+      <Dialog
+        open={backgroundModalOpen}
+        onDismiss={() => setBackgroundModalOpen(false)}
+        title={t('chat.social.detail.chatBackground')}
+        width={440}
+        closeLabel={t('chat.social.messageArea.cancel')}
+        footer={
+          <PtButton
+            actionId="chat-background-close"
+            emphasis="quiet"
+            onActivate={() => setBackgroundModalOpen(false)}
+          >
+            {t('chat.social.messageArea.cancel')}
+          </PtButton>
+        }
       >
-        <Flexbox gap={10} style={{ maxHeight: 'min(520px, 70vh)', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4 }}>
+        <div className="sc-detail__background-dialog">
+          <span className="sc-detail__hint">{t('chat.social.detail.backgroundDesc')}</span>
+          <div className="sc-bg-picker" data-bg-picker>
+            {CHAT_BACKGROUND_OPTIONS.map((value) => (
+              <PtToggle
+                key={value}
+                actionId={`chat-background-preset-${value}`}
+                className={`sc-bg-swatch${value === 'default' ? ' sc-bg-swatch--default' : ''}`}
+                selected={(activeLocalState?.background || 'default') === value}
+                onSelectedChange={() => {
+                  void runConversationAction('background', {
+                    background: String(value) as typeof CHAT_BACKGROUND_OPTIONS[number],
+                  });
+                }}
+                aria-label={t(`chat.social.background.${value}`)}
+                data-bg-preset={value}
+                label={t(`chat.social.background.${value}`)}
+                availability={conversationActionPending
+                  ? { kind: 'disabled', reason: t('chat.social.detail.backgroundDesc') }
+                  : undefined}
+              />
+            ))}
+          </div>
+          <PtButton
+            actionId="chat-background-upload"
+            className="sc-bg-upload"
+            data-chat-background-upload
+            fullWidth
+            emphasis="quiet"
+            leading={<ImageIcon size={14} />}
+            execution={conversationActionPending === 'background-image' ? 'pending' : 'idle'}
+            onActivate={() => void handleSelectBackgroundImage()}
+          >
+            {t('chat.social.detail.uploadBackgroundImage')}
+          </PtButton>
+          {backgroundRetryPath ? (
+            <PtButton
+              actionId="chat-background-retry"
+              data-chat-background-retry
+              fullWidth
+              execution={conversationActionPending === 'background-image' ? 'pending' : 'idle'}
+              onActivate={() => {
+                const retryPath = backgroundRetryPath;
+                void handleUploadBackgroundImage(
+                  retryPath,
+                  convertFileSrc(retryPath),
+                );
+              }}
+            >
+              {t('chat.social.detail.retryBackgroundImage')}
+            </PtButton>
+          ) : null}
+          {activeLocalState?.backgroundImage ? (
+            <PtButton
+              actionId="chat-background-clear"
+              data-chat-background-clear
+              fullWidth
+              tone="danger"
+              emphasis="quiet"
+              execution={conversationActionPending === 'background-image-clear' ? 'pending' : 'idle'}
+              onActivate={() => {
+                void runConversationAction('background-image-clear', {
+                  backgroundImage: '',
+                });
+              }}
+            >
+              {t('chat.social.detail.clearBackgroundImage')}
+            </PtButton>
+          ) : null}
+        </div>
+      </Dialog>
+
+      {/* Member management dialog */}
+      <Dialog
+        open={memberManagerOpen}
+        onDismiss={() => setMemberManagerOpen(false)}
+        title={t('chat.social.detail.manageMembers')}
+        width={520}
+        closeLabel={t('chat.social.messageArea.cancel')}
+      >
+        <div className="sc-detail__member-manager">
           {displayMembers.map((member) => {
             const memberRole = Number(member.role ?? MemberRole.MEMBER);
             const targetIsSelf = member.ptid === currentUserPtid;
@@ -2078,7 +1793,7 @@ export function ChatDetailPanel() {
               canManageGroupMembers,
               isSelf: targetIsSelf,
               membersLoaded: members.length > 0,
-              myMemberRole: myMemberRole,
+              myMemberRole,
               targetRole: memberRole,
             });
             const managedMember = members.find((groupMember) => groupMember.ptid === member.ptid);
@@ -2092,10 +1807,11 @@ export function ChatDetailPanel() {
                   <>
                     {myMemberRole === MemberRole.OWNER ? (
                       <>
-                        <Button
-                          type="text"
-                          size="small"
-                          onClick={() => confirmUpdateGroupMemberRole(
+                        <PtButton
+                          actionId={`member-role-${member.ptid}`}
+                          emphasis="quiet"
+                          density="compact"
+                          onActivate={() => confirmUpdateGroupMemberRole(
                             managedMember,
                             memberRole === MemberRole.ADMIN ? MemberRole.MEMBER : MemberRole.ADMIN,
                           )}
@@ -2103,66 +1819,98 @@ export function ChatDetailPanel() {
                           {memberRole === MemberRole.ADMIN
                             ? t('chat.social.detail.demoteAdmin')
                             : t('chat.social.detail.promoteAdmin')}
-                        </Button>
-                        <Button type="text" size="small" onClick={() => confirmTransferGroupOwnership(managedMember)}>
+                        </PtButton>
+                        <PtButton
+                          actionId={`member-transfer-${member.ptid}`}
+                          emphasis="quiet"
+                          density="compact"
+                          onActivate={() => confirmTransferGroupOwnership(managedMember)}
+                        >
                           {t('chat.social.detail.transferOwner')}
-                        </Button>
+                        </PtButton>
                       </>
                     ) : null}
-                    <Button type="text" size="small" onClick={() => toggleGroupMemberMuted(managedMember)}>
+                    <PtButton
+                      actionId={`member-mute-${member.ptid}`}
+                      emphasis="quiet"
+                      density="compact"
+                      onActivate={() => toggleGroupMemberMuted(managedMember)}
+                    >
                       {member.muted ? t('chat.social.detail.unmuteMember') : t('chat.social.detail.muteMember')}
-                    </Button>
-                    <Button
+                    </PtButton>
+                    <PtButton
+                      actionId={`member-remove-${member.ptid}`}
                       data-chat-group-remove-member={member.ptid}
-                      type="text"
-                      size="small"
-                      danger
-                      onClick={() => confirmRemoveGroupMember(managedMember)}
+                      tone="danger"
+                      emphasis="quiet"
+                      density="compact"
+                      onActivate={() => confirmRemoveGroupMember(managedMember)}
                     >
                       {t('chat.social.detail.removeMember')}
-                    </Button>
+                    </PtButton>
                   </>
                 ) : undefined}
               />
             );
           })}
-        </Flexbox>
-      </Modal>
+        </div>
+      </Dialog>
 
-      {/* Invite modal */}
-      <Modal
-        title={t('chat.social.detail.addMember')}
+      {/* Invite dialog */}
+      <Dialog
         open={inviteModalOpen}
-        okText={t('chat.social.detail.addMember')}
-        cancelText={t('chat.social.messageArea.cancel')}
-        confirmLoading={inviteSubmitting}
-        okButtonProps={{
-          'data-chat-group-add-member-submit': 'true',
-          disabled: inviteDids.length === 0,
-        }}
-        onOk={() => void submitGroupInvites()}
-        onCancel={() => {
+        onDismiss={() => {
           setInviteModalOpen(false);
           setInviteDids([]);
         }}
+        title={t('chat.social.detail.addMember')}
+        width={480}
+        closeLabel={t('chat.social.messageArea.cancel')}
+        footer={
+          <>
+            <PtButton
+              actionId="invite-members-cancel"
+              emphasis="quiet"
+              onActivate={() => {
+                setInviteModalOpen(false);
+                setInviteDids([]);
+              }}
+            >
+              {t('chat.social.messageArea.cancel')}
+            </PtButton>
+            <PtButton
+              actionId="invite-members-submit"
+              data-chat-group-add-member-submit
+              emphasis="primary"
+              execution={inviteSubmitting ? 'pending' : 'idle'}
+              onActivate={() => void submitGroupInvites()}
+              availability={inviteDids.length === 0
+                ? { kind: 'disabled', reason: t('chat.social.detail.addMemberPlaceholder') }
+                : undefined}
+            >
+              {t('chat.social.detail.addMember')}
+            </PtButton>
+          </>
+        }
       >
-        <Flexbox gap={8}>
-          <Text type="secondary">{t('chat.social.detail.addMemberDesc')}</Text>
-          <Select
+        <div className="sc-detail__invite">
+          <span className="sc-detail__hint">{t('chat.social.detail.addMemberDesc')}</span>
+          <PtSelect
             data-chat-group-add-member-select
-            mode="multiple"
+            multiple
+            searchable
             value={inviteDids}
             options={inviteCandidates.map((candidate) => ({
               label: candidate.name || candidate.did,
               value: candidate.did,
             }))}
             placeholder={t('chat.social.detail.addMemberPlaceholder')}
-            onChange={setInviteDids}
-            style={{ width: '100%' }}
+            onValueChange={(value) => setInviteDids(Array.isArray(value) ? value.map(String) : [])}
+            className="sc-detail__member-select"
           />
-        </Flexbox>
-      </Modal>
-    </Flexbox>
+        </div>
+      </Dialog>
+    </div>
   );
 }
 

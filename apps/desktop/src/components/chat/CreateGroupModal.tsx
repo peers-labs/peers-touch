@@ -1,9 +1,14 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Input, toast } from '@lobehub/ui';
-import { Alert, Spin, theme } from 'antd';
-import { Search, X } from 'lucide-react';
+import {
+  Alert as PtAlert,
+  Button as PtButton,
+  Checkbox as PtCheckbox,
+  Dialog,
+  Spin as PtSpin,
+  TextField as PtTextField,
+} from '@peers-touch/ui';
+import { Search } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
 import {
   chatActorIdentityMetadata,
@@ -17,6 +22,7 @@ import { ChatActorIdentityRow } from './ChatActorIdentityRow';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
+import { notifyInfo, notifySuccess } from '../../ui/feedback';
 import {
   useActiveChatFederationSlice,
   useActiveChatSessionSlice,
@@ -36,7 +42,6 @@ function getFirstLetter(name: string): string {
 }
 
 export function CreateGroupModal({ open, onClose }: Props) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     friendRequests,
@@ -242,10 +247,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
           conversation => conversation.conversationId === conversationId,
         );
         if (projectionReady) {
-          toast.success({
-            description: t('chat.social.createGroup.success'),
-            placement: 'top',
-          });
+          notifySuccess(t('chat.social.createGroup.success'));
         }
       }).catch((error) => {
         log.warn('chat', 'createGroup accepted; projection reconcile pending', {
@@ -254,10 +256,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
         });
       });
       if (created.state === 'pending') {
-        toast.info({
-          description: t('chat.social.createGroup.accepted'),
-          placement: 'top',
-        });
+        notifyInfo(t('chat.social.createGroup.accepted'));
       }
     } catch (err) {
       log.error('chat', 'createGroup failed', { conversationId, error: err });
@@ -282,106 +281,94 @@ export function CreateGroupModal({ open, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div
-      data-chat-create-group
-      data-chat-friendship-state={
-        friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
-      }
-      data-chat-create-group-state={
-        creating ? 'creating' : creationError ? 'failed' : 'editing'
-      }
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+    <Dialog
+      open={open}
+      onDismiss={() => {
+        if (!creating) handleClose();
       }}
+      title={t('chat.social.createGroup.title')}
+      width={640}
+      closeLabel={t('common.action.cancel', { ns: 'common' })}
+      dismissOutside
+      contentStyle={{ padding: 0, height: '72vh', maxHeight: 580 }}
+      footer={
+        <>
+          <PtButton
+            actionId="create-group-cancel"
+            data-chat-create-group-close
+            onActivate={handleClose}
+            availability={creating
+              ? { kind: 'disabled', reason: t('common.state.loading', { ns: 'common' }) }
+              : undefined}
+          >
+            {t('common.action.cancel', { ns: 'common' })}
+          </PtButton>
+          <PtButton
+            actionId="create-group-submit"
+            data-chat-create-group-submit
+            data-chat-create-group-retry={creationError ? 'true' : 'false'}
+            emphasis="primary"
+            execution={creating ? 'pending' : 'idle'}
+            onActivate={handleFinish}
+            availability={selectedDids.size === 0
+              ? { kind: 'disabled', reason: t('chat.social.createGroup.selectHint') }
+              : undefined}
+          >
+            {creationError
+              ? t('chat.social.createGroup.retry')
+              : t('chat.social.createGroup.finish')}
+          </PtButton>
+        </>
+      }
     >
       <div
-        data-chat-create-group-close
-        onClick={() => {
-          if (!creating) handleClose();
-        }}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.4)',
-        }}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-group-dialog-title"
-        style={{
-          position: 'relative',
-          width: 640,
-          height: '72vh',
-          maxHeight: 580,
-          background: token.colorBgContainer,
-          borderRadius: 8,
-          boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
-          display: 'flex',
-          overflow: 'hidden',
-        }}
+        className="sc-create-group"
+        data-chat-create-group
+        data-chat-friendship-state={
+          friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
+        }
+        data-chat-create-group-state={
+          creating ? 'creating' : creationError ? 'failed' : 'editing'
+        }
       >
         {/* Left panel — contacts */}
-        <div style={{ width: 300, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${token.colorBorderSecondary}` }}>
-          <div style={{ padding: '16px 16px 12px' }}>
-            <Input
+        <div className="sc-create-group__contacts">
+          <div className="sc-create-group__search">
+            <PtTextField
               data-chat-create-group-search
-              prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
+              leading={<Search size={14} />}
+              clearable
+              onClear={() => setSearchText('')}
               placeholder={t('chat.social.createGroup.searchContacts')}
               value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              allowClear={{ clearIcon: <X size={12} /> }}
-              style={{ borderRadius: 4, height: 32 }}
-              styles={{ input: { fontSize: 13 } }}
+              onValueChange={setSearchText}
+              aria-label={t('chat.social.createGroup.searchContacts')}
             />
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="sc-create-group__list">
             {friendRequestsError ? (
-              <Alert
-                type="error"
-                showIcon
-                message={t('chat.social.findPeople.friendshipUnavailable')}
-                style={{ margin: '8px 16px' }}
-              />
+              <div className="sc-create-group__alert">
+                <PtAlert tone="danger" title={t('chat.social.findPeople.friendshipUnavailable')} />
+              </div>
             ) : !friendshipReady || friendRequestsLoading ? (
-              <Flexbox align="center" justify="center" style={{ padding: '40px 20px', height: '100%' }}>
-                <Spin size="small" />
-              </Flexbox>
+              <div className="sc-create-group__center">
+                <PtSpin size="small" />
+              </div>
             ) : filteredContacts.length === 0 ? (
-              <Flexbox align="center" justify="center" style={{ padding: '40px 20px', height: '100%' }}>
-                <span style={{ color: token.colorTextTertiary, fontSize: 13 }}>
-                  {t('chat.social.createGroup.noContacts')}
-                </span>
-              </Flexbox>
+              <div className="sc-create-group__center">
+                <span className="sc-create-group__hint">{t('chat.social.createGroup.noContacts')}</span>
+              </div>
             ) : (
               groupedContacts.map(([letter, items]) => (
                 <div key={letter}>
-                  <div
-                    style={{
-                      padding: '4px 16px',
-                      fontSize: 11,
-                      color: token.colorTextQuaternary,
-                      fontWeight: 500,
-                      position: 'sticky',
-                      top: 0,
-                      zIndex: 1,
-                      background: token.colorBgContainer,
-                    }}
-                  >
-                    {letter}
-                  </div>
+                  <div className="sc-create-group__letter">{letter}</div>
                   {items.map((contact) => {
                     const selected = selectedDids.has(contact.actorPtid);
                     return (
-                      <button
-                        type="button"
+                      <label
                         key={contact.actorPtid}
+                        className={`sc-create-group__contact${selected ? ' is-selected' : ''}`}
                         data-chat-create-group-contact={contact.actorPtid}
                         data-chat-contact-ptid={contact.actorPtid}
                         data-chat-contact-federated-handle={contact.federatedHandle}
@@ -389,55 +376,18 @@ export function CreateGroupModal({ open, onClose }: Props) {
                         data-chat-contact-home-station-peer-id={contact.homeStationPeerId}
                         data-chat-contact-federation-id={contact.federationId}
                         data-chat-contact-avatar-src={contact.avatarUrl}
-                        aria-label={`${contact.displayName}, ${chatActorIdentityMetadata(contact)}`}
-                        aria-pressed={selected}
-                        onClick={() => toggleSelect(contact.actorPtid)}
-                        style={{
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '7px 16px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          background: selected ? token.colorFillQuaternary : 'transparent',
-                          color: 'inherit',
-                          font: 'inherit',
-                          textAlign: 'left',
-                          transition: 'background 0.1s',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!selected) e.currentTarget.style.background = token.colorFillTertiary;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = selected ? token.colorFillQuaternary : 'transparent';
-                        }}
                       >
-                        <div
-                          style={{
-                            width: 18,
-                            height: 18,
-                            borderRadius: 9,
-                            border: selected ? 'none' : `1.5px solid ${token.colorBorder}`,
-                            background: selected ? '#07C160' : 'transparent',
-                            flexShrink: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.12s ease',
-                          }}
-                        >
-                          {selected && (
-                            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                              <path d="M1 4L3.5 6.5L9 1" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          )}
-                        </div>
+                        <PtCheckbox
+                          className="sc-create-group__check"
+                          checked={selected}
+                          aria-label={`${contact.displayName}, ${chatActorIdentityMetadata(contact)}`}
+                          onCheckedChange={() => toggleSelect(contact.actorPtid)}
+                        />
                         <ChatActorIdentityRow
                           identity={contact}
                           avatarSize={34}
                         />
-                      </button>
+                      </label>
                     );
                   })}
                 </div>
@@ -446,18 +396,11 @@ export function CreateGroupModal({ open, onClose }: Props) {
           </div>
         </div>
 
-        {/* Right panel — selected + actions */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div
-            id="create-group-dialog-title"
-            style={{ padding: '20px 24px 0', fontSize: 15, fontWeight: 600, color: token.colorText }}
-          >
-            {t('chat.social.createGroup.title')}
-          </div>
-
-          <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+        {/* Right panel — selected participants */}
+        <div className="sc-create-group__panel">
+          <div className="sc-create-group__selected">
             {creationError ? (
-              <div data-chat-create-group-error style={{ marginBottom: 16 }}>
+              <div className="sc-create-group__error" data-chat-create-group-error>
                 <PresentedErrorAlert
                   error={creationError}
                   onClose={() => setCreationError(null)}
@@ -465,22 +408,20 @@ export function CreateGroupModal({ open, onClose }: Props) {
               </div>
             ) : null}
             {selectedContacts.length === 0 ? (
-              <Flexbox align="center" justify="center" style={{ height: '100%' }}>
-                <span style={{ color: token.colorTextQuaternary, fontSize: 13 }}>
-                  {t('chat.social.createGroup.selectHint')}
-                </span>
-              </Flexbox>
+              <div className="sc-create-group__center">
+                <span className="sc-create-group__hint">{t('chat.social.createGroup.selectHint')}</span>
+              </div>
             ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              <div className="sc-create-group__chips">
                 {selectedContacts.map((contact) => (
                   <div
                     key={contact.actorPtid}
+                    className="sc-create-group__chip"
                     title={chatActorIdentityMetadata(contact)}
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 52, position: 'relative' }}
                   >
                     <div
+                      className="sc-create-group__chip-remove"
                       onClick={() => removeSelected(contact.actorPtid)}
-                      style={{ cursor: 'pointer' }}
                     >
                       <UserSquareAvatar
                         remoteUrl={contact.avatarUrl}
@@ -489,76 +430,14 @@ export function CreateGroupModal({ open, onClose }: Props) {
                         radius={4}
                       />
                     </div>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: token.colorTextSecondary,
-                        marginTop: 4,
-                        maxWidth: 52,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        textAlign: 'center',
-                      }}
-                    >
-                      {contact.displayName}
-                    </span>
+                    <span className="sc-create-group__chip-name">{contact.displayName}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
-
-          <div
-            style={{
-              padding: '12px 24px 16px',
-              borderTop: `1px solid ${token.colorBorderSecondary}`,
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: 12,
-            }}
-          >
-            <button
-              onClick={handleClose}
-              disabled={creating}
-              style={{
-                padding: '6px 20px',
-                fontSize: 13,
-                border: `1px solid ${token.colorBorder}`,
-                borderRadius: 4,
-                background: token.colorBgContainer,
-                color: token.colorText,
-                cursor: 'pointer',
-              }}
-            >
-              {t('common.action.cancel', { ns: 'common' })}
-            </button>
-            <button
-              data-chat-create-group-submit
-              data-chat-create-group-retry={creationError ? 'true' : 'false'}
-              onClick={handleFinish}
-              disabled={selectedDids.size === 0 || creating}
-              style={{
-                padding: '6px 20px',
-                fontSize: 13,
-                border: 'none',
-                borderRadius: 4,
-                background: selectedDids.size > 0 ? '#07C160' : token.colorFillSecondary,
-                color: selectedDids.size > 0 ? '#fff' : token.colorTextQuaternary,
-                cursor: selectedDids.size > 0 ? 'pointer' : 'default',
-                fontWeight: 500,
-                opacity: creating ? 0.6 : 1,
-              }}
-            >
-              {creating
-                ? '...'
-                : creationError
-                  ? t('chat.social.createGroup.retry')
-                  : t('chat.social.createGroup.finish')}
-            </button>
-          </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

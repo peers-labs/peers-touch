@@ -1,34 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
 import {
   Badge,
+  Button,
   Card,
+  ConfirmAction,
+  DataTable,
+  Dialog,
   Empty,
-  Input as AntdInput,
-  message,
-  Modal,
+  Flex,
+  Icon,
+  IconButton,
   Pagination,
-  Popconfirm,
+  Segmented,
   Select,
   Spin,
-  Table,
-  Typography,
-  theme,
-} from 'antd';
-import { Button, Tabs, Tag } from '@lobehub/ui';
-import {
-  Brain,
-  Search,
-  User,
-  Activity,
-  Trash2,
-  Pencil,
-  Clock,
-  Database,
-  RefreshCw,
-  SlidersHorizontal,
-} from 'lucide-react';
+  Tag,
+  Text,
+  TextArea,
+  TextField,
+  type IconId,
+  type TableColumn,
+  type Tone,
+} from '@peers-touch/ui';
+import { useTranslation } from 'react-i18next';
 import {
   api,
   type Agent,
@@ -42,27 +36,38 @@ import { useAgentStore } from '../../store/agent';
 import { AgentIconTile } from '../agent/AgentIconTile';
 import { PageColumn } from '../../layout/PageColumn';
 import { MemorySettingsTab } from './MemorySettingsTab';
-
-const { Text } = Typography;
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
 const LAYERS = ['identity', 'context', 'experience', 'preference', 'activity'] as const;
-const LAYER_COLORS: Record<string, string> = {
-  identity: 'blue',
-  context: 'green',
-  experience: 'orange',
-  preference: 'purple',
-  activity: 'cyan',
+const LAYER_TONES: Record<string, Tone> = {
+  identity: 'info',
+  context: 'success',
+  experience: 'warning',
+  preference: 'neutral',
+  activity: 'info',
 };
-const TIME_WINDOWS = [
-  { value: '', label: 'All time' },
-  { value: '24h', label: 'Last 24h' },
-  { value: '7d', label: 'Last 7d' },
-  { value: '30d', label: 'Last 30d' },
-  { value: '90d', label: 'Last 90d' },
-] as const;
-type TimeWindowValue = (typeof TIME_WINDOWS)[number]['value'];
+const TIME_WINDOW_VALUES = ['', '24h', '7d', '30d', '90d'] as const;
+const TIME_WINDOW_LABEL_KEYS: Record<string, string> = {
+  '': 'memory.time.allTime',
+  '24h': 'memory.time.last24h',
+  '7d': 'memory.time.last7d',
+  '30d': 'memory.time.last30d',
+  '90d': 'memory.time.last90d',
+};
+type TimeWindowValue = (typeof TIME_WINDOW_VALUES)[number];
 type BrowseViewMode = 'list' | 'timeline';
 type TimelineGroupBy = 'day' | 'week' | 'month';
+type MemoryTabKey = 'browse' | 'search' | 'persona' | 'events' | 'configuration';
+
+const MEMORY_TABS: ReadonlyArray<{ key: MemoryTabKey; icon: IconId; labelKey: string }> = [
+  { key: 'browse', icon: 'brain', labelKey: 'memory.tab.browse' },
+  { key: 'search', icon: 'search', labelKey: 'memory.tab.search' },
+  { key: 'persona', icon: 'user', labelKey: 'memory.tab.persona' },
+  { key: 'events', icon: 'activity', labelKey: 'memory.tab.events' },
+  { key: 'configuration', icon: 'sliders-horizontal', labelKey: 'memory.tab.configuration' },
+];
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 function formatStorage(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -70,17 +75,17 @@ function formatStorage(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, t: Translate): string {
   const d = new Date(iso);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffMins < 1) return t('memory.time.justNow');
+  if (diffMins < 60) return t('memory.time.minutesAgo', { count: diffMins });
+  if (diffHours < 24) return t('memory.time.hoursAgo', { count: diffHours });
+  if (diffDays < 7) return t('memory.time.daysAgo', { count: diffDays });
   return d.toLocaleDateString();
 }
 
@@ -143,12 +148,31 @@ function groupMemoriesByPeriod(memories: Memory[], groupBy: TimelineGroupBy): Ar
     }));
 }
 
+function layerTone(layer: string): Tone {
+  return LAYER_TONES[layer] ?? 'neutral';
+}
+
+function timeWindowOptions(t: Translate) {
+  return TIME_WINDOW_VALUES.map((value) => ({
+    value,
+    label: t(TIME_WINDOW_LABEL_KEYS[value]),
+  }));
+}
+
+function agentOptions(agents: Agent[]) {
+  return agents.map((agent) => ({
+    value: agent.name,
+    label: agent.title || agent.name,
+    leading: <AgentIconTile agent={agent} size={18} subtle />,
+  }));
+}
+
 export function MemorySettingsSection() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('memory');
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [mutationVersion, setMutationVersion] = useState(0);
+  const [activeTab, setActiveTab] = useState<MemoryTabKey>('browse');
 
   const notifyMutation = useCallback(() => setMutationVersion((v) => v + 1), []);
 
@@ -169,112 +193,71 @@ export function MemorySettingsSection() {
   }, [loadStats, mutationVersion]);
 
   return (
-    <Flexbox
+    <div
       data-pt-memory-settings
-      gap={18}
-      style={{ height: '100%', minHeight: 0, overflow: 'hidden', padding: '18px 0' }}
+      className="sc-memory"
     >
-      <PageColumn tier="standard" style={{ display: 'flex', flexDirection: 'column', gap: 18, minHeight: 0, height: '100%' }}>
-      <Flexbox horizontal align="center" justify="space-between" gap={16}>
-        <Flexbox gap={3}>
-          <Text strong style={{ fontSize: 18 }}>{t('memory.header.title')}</Text>
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            {t('memory.header.subtitle')}
-          </Text>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={14}>
-          {statsLoading ? (
-            <Spin size="small" />
-          ) : stats ? (
-            <>
-              <Badge
-                count={stats.total}
-                showZero
-                style={{ backgroundColor: token.colorPrimary }}
-              >
-                <span style={{ marginRight: 8, fontSize: 13 }}>{t('memory.header.memoriesLabel')}</span>
-              </Badge>
-              <Flexbox horizontal align="center" gap={4}>
-                <Database size={14} style={{ color: token.colorTextSecondary }} />
-                <Text type="secondary" style={{ fontSize: 13 }}>
-                  {formatStorage(stats.storage_bytes)}
-                </Text>
-              </Flexbox>
-            </>
-          ) : null}
-        </Flexbox>
-      </Flexbox>
+      <PageColumn
+        tier="standard"
+        style={{ display: 'flex', flexDirection: 'column', gap: 18, minHeight: 0, height: '100%' }}
+      >
+        <header className="sc-memory__header">
+          <div className="sc-memory__heading">
+            <Text strong style={{ fontSize: 18 }}>{t('memory.header.title')}</Text>
+            <Text tone="secondary" style={{ fontSize: 13 }}>
+              {t('memory.header.subtitle')}
+            </Text>
+          </div>
+          <div className="sc-memory__stats">
+            {statsLoading ? (
+              <Spin active size="small" />
+            ) : stats ? (
+              <>
+                <Badge count={stats.total} showZero tone="info">
+                  <span className="sc-memory__badge-label">{t('memory.header.memoriesLabel')}</span>
+                </Badge>
+                <span className="sc-memory__storage">
+                  <Icon iconId="database" size={14} />
+                  <Text tone="secondary" style={{ fontSize: 13 }}>
+                    {formatStorage(stats.storage_bytes)}
+                  </Text>
+                </span>
+              </>
+            ) : null}
+          </div>
+        </header>
 
-      <Flexbox flex={1} style={{ minHeight: 0, overflow: 'hidden' }}>
-        <Tabs
-          defaultActiveKey="browse"
-          style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-          items={[
-            {
-              key: 'browse',
-              label: (
-                <Flexbox horizontal align="center" gap={6}>
-                  <Brain size={14} />
-                  {t('memory.tab.browse')}
-                </Flexbox>
-              ),
-              children: <BrowseTab onDelete={loadStats} onMutate={notifyMutation} />,
-            },
-            {
-              key: 'search',
-              label: (
-                <Flexbox horizontal align="center" gap={6}>
-                  <Search size={14} />
-                  {t('memory.tab.search')}
-                </Flexbox>
-              ),
-              children: <SearchTab mutationVersion={mutationVersion} onMutate={notifyMutation} />,
-            },
-            {
-              key: 'persona',
-              label: (
-                <Flexbox horizontal align="center" gap={6}>
-                  <User size={14} />
-                  {t('memory.tab.persona')}
-                </Flexbox>
-              ),
-              children: <PersonaTab />,
-            },
-            {
-              key: 'events',
-              label: (
-                <Flexbox horizontal align="center" gap={6}>
-                  <Activity size={14} />
-                  {t('memory.tab.events')}
-                </Flexbox>
-              ),
-              children: <EventsTab mutationVersion={mutationVersion} />,
-            },
-            {
-              key: 'configuration',
-              label: (
-                <Flexbox horizontal align="center" gap={6}>
-                  <SlidersHorizontal size={14} />
-                  {t('memory.tab.configuration')}
-                </Flexbox>
-              ),
-              children: <MemorySettingsTab />,
-            },
-          ]}
+        <Segmented<MemoryTabKey>
+          className="sc-memory__tabs"
+          value={activeTab}
+          onValueChange={(value) => {
+            if (value) setActiveTab(value);
+          }}
+          options={MEMORY_TABS.map((tab) => ({
+            value: tab.key,
+            label: t(tab.labelKey),
+            leading: <Icon iconId={tab.icon} size={14} />,
+          }))}
         />
-      </Flexbox>
+
+        <div className="sc-memory__panel">
+          {activeTab === 'browse' && <BrowseTab onDelete={loadStats} onMutate={notifyMutation} />}
+          {activeTab === 'search' && <SearchTab mutationVersion={mutationVersion} onMutate={notifyMutation} />}
+          {activeTab === 'persona' && <PersonaTab />}
+          {activeTab === 'events' && <EventsTab mutationVersion={mutationVersion} />}
+          {activeTab === 'configuration' && <MemorySettingsTab />}
+        </div>
       </PageColumn>
-    </Flexbox>
+    </div>
   );
 }
 
 /* ─── Browse Tab ─── */
 
 function BrowseTab({ onDelete, onMutate }: { onDelete: () => void; onMutate: () => void }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('memory');
-  const agents = useAgentStore(s => s.agents);
-  const loadAgents = useAgentStore(s => s.loadAgents);
+  const agents = useAgentStore((s) => s.agents);
+  const loadAgents = useAgentStore((s) => s.loadAgents);
   const [layer, setLayer] = useState<string | undefined>();
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -321,14 +304,12 @@ function BrowseTab({ onDelete, onMutate }: { onDelete: () => void; onMutate: () 
   const handleDelete = async (id: string) => {
     try {
       await api.deleteMemory(id);
-      message.success(t('memory.browse.deleteSuccess'));
+      notifySuccess(t('memory.browse.deleteSuccess'));
       load();
       onDelete();
       onMutate();
     } catch (err: unknown) {
-      message.error(
-        err instanceof Error ? err.message : t('memory.browse.deleteFailed'),
-      );
+      notifyError(err instanceof Error ? err.message : t('memory.browse.deleteFailed'));
     }
   };
 
@@ -346,12 +327,12 @@ function BrowseTab({ onDelete, onMutate }: { onDelete: () => void; onMutate: () 
     setSaving(true);
     try {
       await api.updateMemory(editing.id, editContent);
-      message.success(t('memory.browse.editSuccess'));
+      notifySuccess(t('memory.browse.editSuccess'));
       setEditing(null);
       load();
       onMutate();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('memory.browse.editFailed'));
+      notifyError(err instanceof Error ? err.message : t('memory.browse.editFailed'));
     } finally {
       setSaving(false);
     }
@@ -360,246 +341,230 @@ function BrowseTab({ onDelete, onMutate }: { onDelete: () => void; onMutate: () 
   const renderMemoryCard = (m: Memory) => (
     <Card
       key={m.id}
-      size="small"
-      hoverable
-      style={{ cursor: 'pointer' }}
+      flat
+      className="sc-memory-card"
       onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
     >
-      <Flexbox horizontal align="flex-start" justify="space-between">
-        <Flexbox flex={1} gap={4}>
-          <Flexbox horizontal align="center" gap={8}>
-            <Tag color={LAYER_COLORS[m.layer] || 'default'}>
-              {m.layer}
+      <div className="sc-memory-card__main">
+        <div className="sc-memory-card__body">
+          <div className="sc-memory-card__meta">
+            <Tag tone={layerTone(m.layer)}>
+              {t(`memory.layer.${m.layer}`, { defaultValue: m.layer })}
             </Tag>
-            <Tag color="default">{m.source}</Tag>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {formatDate(m.created_at)}
+            <Tag>{m.source}</Tag>
+            <Text tone="secondary" style={{ fontSize: 12 }}>
+              {formatDate(m.created_at, t)}
             </Text>
-            <Flexbox horizontal align="center" gap={4}>
-              <Clock size={12} style={{ color: token.colorTextTertiary }} />
-              <Text type="secondary" style={{ fontSize: 12 }}>
+            <span className="sc-memory-card__access">
+              <Icon iconId="clock" size={12} />
+              <Text tone="secondary" style={{ fontSize: 12 }}>
                 {t('memory.browse.accessCount', { count: m.access_count })}
               </Text>
-            </Flexbox>
-          </Flexbox>
+            </span>
+          </div>
           <Text style={{ fontSize: 13 }}>{m.summary || t('memory.browse.noSummary')}</Text>
           {expandedId === m.id && (
-            <pre
-              style={{
-                marginTop: 8,
-                padding: 12,
-                background: token.colorFillQuaternary,
-                borderRadius: 8,
-                fontSize: 12,
-                overflow: 'auto',
-                maxHeight: 200,
-              }}
-            >
+            <pre className="sc-memory-card__content">
               {JSON.stringify(m.content, null, 2)}
             </pre>
           )}
-        </Flexbox>
-        <Flexbox horizontal gap={4}>
-          <Button
-            size="small"
-            icon={<Pencil size={14} />}
-            onClick={(e) => {
-              e.stopPropagation();
-              openEdit(m);
-            }}
+        </div>
+        <div className="sc-memory-card__actions" onClick={(e) => e.stopPropagation()}>
+          <IconButton
+            actionId={`memory-edit-${m.id}`}
+            iconId="pencil-line"
+            iconSize={14}
+            density="compact"
+            emphasis="quiet"
+            label={t('memory.browse.editTitle')}
+            onActivate={() => openEdit(m)}
           />
-          <Popconfirm
+          <ConfirmAction
+            actionId={`memory-delete-${m.id}`}
             title={t('memory.browse.deleteConfirm')}
-            onConfirm={(e) => {
-              e?.stopPropagation();
-              handleDelete(m.id);
-            }}
-            onCancel={(e) => e?.stopPropagation()}
+            confirmLabel={t('memory.browse.delete')}
+            cancelLabel={t('memory.browse.editCancel')}
+            onConfirm={() => handleDelete(m.id)}
           >
-            <Button
-              size="small"
-              danger
-              icon={<Trash2 size={14} />}
-              onClick={(e) => e.stopPropagation()}
+            <IconButton
+              actionId={`memory-delete-trigger-${m.id}`}
+              iconId="delete"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              tone="danger"
+              label={t('memory.browse.delete')}
             />
-          </Popconfirm>
-        </Flexbox>
-      </Flexbox>
+          </ConfirmAction>
+        </div>
+      </div>
     </Card>
   );
 
   const timelineGroups = groupMemoriesByPeriod(memories, groupBy);
-  const primaryTint = `${token.colorPrimary}1A`;
-  const primaryBorder = `${token.colorPrimary}66`;
-  const layerChipStyle = (selected: boolean) => ({
-    height: 28,
-    padding: '0 12px',
-    borderRadius: 999,
-    border: `1px solid ${selected ? primaryBorder : token.colorBorderSecondary}`,
-    background: selected ? primaryTint : token.colorBgContainer,
-    color: selected ? token.colorPrimary : token.colorText,
-    fontSize: 13,
-    lineHeight: '26px',
-    fontWeight: 500,
-    letterSpacing: 0.1,
-    cursor: 'pointer',
-    boxShadow: selected ? `0 0 0 1px ${token.colorPrimaryBorder}` : 'none',
-    transition: 'background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
-  });
-  const handleLayerKeyDown = (e: React.KeyboardEvent<HTMLElement>, value?: string) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    setLayer(value);
-    setPage(1);
-  };
 
   return (
-    <Flexbox gap={16} style={{ height: '100%', overflow: 'auto' }}>
-      {/* Agent + Layer filters */}
-      <Flexbox horizontal gap={12} align="center" style={{ flexWrap: 'wrap' }}>
+    <div className="sc-memory-browse">
+      <div className="sc-memory-filters">
         <Select
+          clearable
+          appearance="ghost"
+          className="sc-memory-filters__control"
           placeholder={t('memory.browse.allAgents')}
           value={agentFilter}
-          onChange={(v) => { setAgentFilter(v); setPage(1); }}
-          allowClear
-          onClear={() => { setAgentFilter(undefined); setPage(1); }}
-          style={{ minWidth: 160 }}
-          size="small"
-          options={agents.map((a: Agent) => ({
-            value: a.name,
-            label: (
-              <Flexbox horizontal align="center" gap={6}>
-                <AgentIconTile agent={a} size={18} subtle />
-                <span>{a.title || a.name}</span>
-              </Flexbox>
-            ),
-          }))}
+          options={agentOptions(agents)}
+          onValueChange={(value) => {
+            setAgentFilter(typeof value === 'string' ? value : undefined);
+            setPage(1);
+          }}
         />
         <Select
+          appearance="ghost"
+          className="sc-memory-filters__control"
           value={timeWindow}
-          onChange={(v) => { setTimeWindow(v as TimeWindowValue); setPage(1); }}
-          style={{ minWidth: 140 }}
-          size="small"
-          options={TIME_WINDOWS.map((item) => ({ value: item.value, label: item.label }))}
+          options={timeWindowOptions(t)}
+          onValueChange={(value) => {
+            if (typeof value === 'string') {
+              setTimeWindow(value as TimeWindowValue);
+              setPage(1);
+            }
+          }}
         />
         <Select
+          appearance="ghost"
+          className="sc-memory-filters__control"
           value={viewMode}
-          onChange={(v) => setViewMode(v as BrowseViewMode)}
-          style={{ minWidth: 120 }}
-          size="small"
           options={[
             { value: 'list', label: t('memory.browse.viewList') },
             { value: 'timeline', label: t('memory.browse.viewTimeline') },
           ]}
+          onValueChange={(value) => {
+            if (value === 'list' || value === 'timeline') setViewMode(value);
+          }}
         />
         {viewMode === 'timeline' && (
           <Select
+            appearance="ghost"
+            className="sc-memory-filters__control"
             value={groupBy}
-            onChange={(v) => setGroupBy(v as TimelineGroupBy)}
-            style={{ minWidth: 120 }}
-            size="small"
             options={[
               { value: 'day', label: t('memory.browse.groupByDay') },
               { value: 'week', label: t('memory.browse.groupByWeek') },
               { value: 'month', label: t('memory.browse.groupByMonth') },
             ]}
+            onValueChange={(value) => {
+              if (value === 'day' || value === 'week' || value === 'month') setGroupBy(value);
+            }}
           />
         )}
-      </Flexbox>
-      <Flexbox horizontal gap={10} wrap="wrap">
-        <span
-          role="button"
-          tabIndex={0}
-          style={layerChipStyle(layer === undefined)}
-          onClick={() => setLayer(undefined)}
-          onKeyDown={(e) => handleLayerKeyDown(e, undefined)}
-        >
-          {t('memory.layer.all')}
-        </span>
-        {LAYERS.map((l) => (
-          <span
-            key={l}
-            role="button"
-            tabIndex={0}
-            style={layerChipStyle(layer === l)}
-            onClick={() => {
-              setLayer(l);
-              setPage(1);
-            }}
-            onKeyDown={(e) => handleLayerKeyDown(e, l)}
-          >
-            {l}
-          </span>
-        ))}
-      </Flexbox>
+      </div>
 
-      {/* Memory list */}
-      {loading ? (
-        <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-          <Spin size="large" />
-        </Flexbox>
-      ) : memories.length === 0 ? (
-        <Empty
-          description={t('memory.browse.noMemories')}
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
+      <div className="sc-memory-layers">
+        <Button
+          actionId="memory-layer-all"
+          emphasis="quiet"
+          density="compact"
+          aria-pressed={layer === undefined}
+          data-selected={layer === undefined ? true : undefined}
+          className="sc-memory-layer-chip"
+          label={t('memory.layer.all')}
+          onActivate={() => { setLayer(undefined); setPage(1); }}
         />
+        {LAYERS.map((l) => (
+          <Button
+            key={l}
+            actionId={`memory-layer-${l}`}
+            emphasis="quiet"
+            density="compact"
+            aria-pressed={layer === l}
+            data-selected={layer === l ? true : undefined}
+            className="sc-memory-layer-chip"
+            label={t(`memory.layer.${l}`)}
+            onActivate={() => { setLayer(l); setPage(1); }}
+          />
+        ))}
+      </div>
+
+      {loading ? (
+        <Flex align="center" justify="center" className="sc-memory__loading">
+          <Spin active size="large" />
+        </Flex>
+      ) : memories.length === 0 ? (
+        <Empty description={t('memory.browse.noMemories')} />
       ) : (
-        <Flexbox gap={8}>
+        <div className="sc-memory-list">
           {viewMode === 'list' ? memories.map(renderMemoryCard) : timelineGroups.map((group) => (
-            <Flexbox key={group.key} gap={8}>
+            <div key={group.key} className="sc-memory-timeline-group">
               <Text strong style={{ fontSize: 13 }}>
                 {group.label} ({group.items.length})
               </Text>
               {group.items.map(renderMemoryCard)}
-            </Flexbox>
+            </div>
           ))}
           {total > pageSize && (
             <Pagination
-              current={page}
+              page={page}
               total={total}
               pageSize={pageSize}
-              showSizeChanger={false}
-              onChange={setPage}
+              previousLabel="‹"
+              nextLabel="›"
+              onPageChange={setPage}
             />
           )}
-        </Flexbox>
+        </div>
       )}
 
-      <Modal
+      <Dialog
         open={!!editing}
+        onDismiss={() => setEditing(null)}
         title={t('memory.browse.editTitle')}
-        onCancel={() => setEditing(null)}
-        onOk={handleSaveEdit}
-        confirmLoading={saving}
-        okText={t('memory.browse.editSave')}
-        cancelText={t('memory.browse.editCancel')}
-        destroyOnClose
+        width={620}
+        closeLabel={t('memory.browse.editCancel')}
+        footer={
+          <>
+            <Button
+              actionId="memory-edit-cancel"
+              emphasis="quiet"
+              label={t('memory.browse.editCancel')}
+              onActivate={() => setEditing(null)}
+            />
+            <Button
+              actionId="memory-edit-save"
+              emphasis="primary"
+              execution={saving ? 'pending' : 'idle'}
+              label={t('memory.browse.editSave')}
+              onActivate={() => void handleSaveEdit()}
+            />
+          </>
+        }
       >
         {editing && (
-          <Flexbox gap={10}>
-            <Flexbox horizontal gap={8}>
-              <Tag color={LAYER_COLORS[editing.layer] || 'default'}>{editing.layer}</Tag>
+          <div className="sc-memory-edit">
+            <div className="sc-memory-edit__meta">
+              <Tag tone={layerTone(editing.layer)}>{editing.layer}</Tag>
               <Tag>{editing.source}</Tag>
-              {editing.summary && <Text type="secondary" style={{ fontSize: 12 }}>{editing.summary}</Text>}
-            </Flexbox>
-            <AntdInput.TextArea
+              {editing.summary && (
+                <Text tone="secondary" style={{ fontSize: 12 }}>{editing.summary}</Text>
+              )}
+            </div>
+            <TextArea
+              className="sc-memory-edit__area"
               rows={8}
               value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              style={{ fontFamily: 'monospace', fontSize: 12 }}
+              onValueChange={setEditContent}
             />
-          </Flexbox>
+          </div>
         )}
-      </Modal>
-    </Flexbox>
+      </Dialog>
+    </div>
   );
 }
 
 /* ─── Search Tab ─── */
 
 function SearchTab({ mutationVersion, onMutate }: { mutationVersion: number; onMutate: () => void }) {
-  const agents = useAgentStore(s => s.agents);
-  const loadAgents = useAgentStore(s => s.loadAgents);
+  const agents = useAgentStore((s) => s.agents);
+  const loadAgents = useAgentStore((s) => s.loadAgents);
   const { t } = useTranslation('memory');
   const [query, setQuery] = useState('');
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
@@ -630,78 +595,83 @@ function SearchTab({ mutationVersion, onMutate }: { mutationVersion: number; onM
 
   // Re-run the latest search after an edit/delete so results stay truthful.
   useEffect(() => {
-    if (mutationVersion > 0 && query.trim()) handleSearch();
+    if (mutationVersion > 0 && query.trim()) void handleSearch();
   }, [mutationVersion]);
 
   const handleCardDelete = async (id: string) => {
     try {
       await api.deleteMemory(id);
-      message.success(t('memory.browse.deleteSuccess'));
+      notifySuccess(t('memory.browse.deleteSuccess'));
       onMutate();
-      handleSearch();
+      void handleSearch();
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : t('memory.browse.deleteFailed'));
+      notifyError(err instanceof Error ? err.message : t('memory.browse.deleteFailed'));
     }
   };
 
   return (
-    <Flexbox gap={16}>
-      <Flexbox horizontal gap={8}>
-        <AntdInput.Search
+    <div className="sc-memory-search">
+      <div className="sc-memory-search__bar">
+        <TextField
+          className="sc-memory-search__input"
+          clearable
+          leading={<Icon iconId="search" size={14} />}
           placeholder={t('memory.search.placeholder')}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onSearch={handleSearch}
-          enterButton={t('memory.search.button')}
-          style={{ maxWidth: 400 }}
+          onValueChange={setQuery}
+          onEnter={() => void handleSearch()}
+        />
+        <Button
+          actionId="memory-search-run"
+          emphasis="primary"
+          execution={loading ? 'pending' : 'idle'}
+          label={t('memory.search.button')}
+          onActivate={() => void handleSearch()}
         />
         <Select
-            placeholder={t('memory.search.allAgents')}
-            value={agentFilter}
-            onChange={setAgentFilter}
-            allowClear
-            onClear={() => setAgentFilter(undefined)}
-            style={{ minWidth: 150 }}
-            options={agents.map((a: Agent) => ({
-            value: a.name,
-            label: (
-              <Flexbox horizontal align="center" gap={6}>
-                <AgentIconTile agent={a} size={18} subtle />
-                <span>{a.title || a.name}</span>
-              </Flexbox>
-            ),
-          }))}
+          clearable
+          appearance="ghost"
+          className="sc-memory-filters__control"
+          placeholder={t('memory.search.allAgents')}
+          value={agentFilter}
+          options={agentOptions(agents)}
+          onValueChange={(value) => setAgentFilter(typeof value === 'string' ? value : undefined)}
         />
         <Select
+          appearance="ghost"
+          className="sc-memory-filters__control"
           value={timeWindow}
-          onChange={(v) => setTimeWindow(v as TimeWindowValue)}
-          style={{ minWidth: 140 }}
-          options={TIME_WINDOWS.map((item) => ({ value: item.value, label: item.label }))}
+          options={timeWindowOptions(t)}
+          onValueChange={(value) => {
+            if (typeof value === 'string') setTimeWindow(value as TimeWindowValue);
+          }}
         />
-      </Flexbox>
+      </div>
       {loading ? (
-        <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-          <Spin size="large" />
-        </Flexbox>
+        <Flex align="center" justify="center" className="sc-memory__loading">
+          <Spin active size="large" />
+        </Flex>
       ) : results.length === 0 && query ? (
-        <Empty description={t('memory.search.noResults')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty description={t('memory.search.noResults')} />
       ) : (
-        <Flexbox gap={8}>
+        <div className="sc-memory-list">
           {results.map(({ memory, score, explain }) => (
-            <Card key={memory.id} size="small">
-              <Flexbox gap={4}>
-                <Flexbox horizontal align="center" gap={8}>
-                  <Tag color={LAYER_COLORS[memory.layer] || 'default'}>
-                    {memory.layer}
+            <Card key={memory.id} flat className="sc-memory-card">
+              <div className="sc-memory-card__body">
+                <div className="sc-memory-card__meta">
+                  <Tag tone={layerTone(memory.layer)}>
+                    {t(`memory.layer.${memory.layer}`, { defaultValue: memory.layer })}
                   </Tag>
-                  <Tag color="blue">score: {(score * 100).toFixed(0)}%</Tag>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {formatDate(memory.created_at)}
+                  <Tag tone="info">
+                    {t('memory.search.scoreLabel')} {(score * 100).toFixed(0)}%
+                  </Tag>
+                  <Text tone="secondary" style={{ fontSize: 12 }}>
+                    {formatDate(memory.created_at, t)}
                   </Text>
-                </Flexbox>
+                </div>
                 <Text>{memory.summary || t('memory.browse.noSummary')}</Text>
                 {explain && (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
+                  <Text tone="secondary" style={{ fontSize: 12 }}>
                     {`V:${(explain.vector_score * 100).toFixed(0)}% `}
                     {`K:${(explain.keyword_score * 100).toFixed(0)}% `}
                     {`W:${(explain.weighted_score * 100).toFixed(0)}% `}
@@ -710,18 +680,31 @@ function SearchTab({ mutationVersion, onMutate }: { mutationVersion: number; onM
                     {`F:${(explain.final_score * 100).toFixed(0)}%`}
                   </Text>
                 )}
-                <Popconfirm
-                  title={t('memory.browse.deleteConfirm')}
-                  onConfirm={() => handleCardDelete(memory.id)}
-                >
-                  <Button size="small" danger icon={<Trash2 size={14} />} />
-                </Popconfirm>
-              </Flexbox>
+                <div className="sc-memory-card__actions">
+                  <ConfirmAction
+                    actionId={`memory-search-delete-${memory.id}`}
+                    title={t('memory.browse.deleteConfirm')}
+                    confirmLabel={t('memory.browse.delete')}
+                    cancelLabel={t('memory.browse.editCancel')}
+                    onConfirm={() => handleCardDelete(memory.id)}
+                  >
+                    <IconButton
+                      actionId={`memory-search-delete-trigger-${memory.id}`}
+                      iconId="delete"
+                      iconSize={14}
+                      density="compact"
+                      emphasis="quiet"
+                      tone="danger"
+                      label={t('memory.browse.delete')}
+                    />
+                  </ConfirmAction>
+                </div>
+              </div>
             </Card>
           ))}
-        </Flexbox>
+        </div>
       )}
-    </Flexbox>
+    </div>
   );
 }
 
@@ -750,9 +733,9 @@ function PersonaTab() {
 
   if (loading) {
     return (
-      <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-        <Spin size="large" />
-      </Flexbox>
+      <Flex align="center" justify="center" className="sc-memory__loading">
+        <Spin active size="large" />
+      </Flex>
     );
   }
 
@@ -760,50 +743,56 @@ function PersonaTab() {
     return (
       <Empty
         description={t('memory.persona.noData')}
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        action={
+          <Button
+            actionId="memory-persona-refresh-empty"
+            leading={<Icon iconId="refresh-cw" size={14} />}
+            label={t('memory.persona.refresh')}
+            onActivate={() => void load()}
+          />
+        }
       >
-        <Text type="secondary" style={{ fontSize: 13 }}>
+        <Text tone="secondary" style={{ fontSize: 13 }}>
           {t('memory.persona.noDataHint')}
         </Text>
-        <Flexbox horizontal align="center" gap={8} style={{ marginTop: 12 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {t('memory.persona.autoUpdateHint')}
-          </Text>
-          <Button size="small" icon={<RefreshCw size={14} />} onClick={load}>
-            {t('memory.persona.refresh')}
-          </Button>
-        </Flexbox>
+        <Text tone="secondary" style={{ fontSize: 12 }}>
+          {t('memory.persona.autoUpdateHint')}
+        </Text>
       </Empty>
     );
   }
 
   return (
-    <Flexbox gap={16}>
-      <Card title={t('memory.persona.tagline')} size="small">
+    <div className="sc-memory-persona">
+      <Card flat heading={t('memory.persona.tagline')}>
         <Text>{persona.tagline || t('memory.persona.empty')}</Text>
       </Card>
-      <Card title={t('memory.persona.narrative')} size="small">
+      <Card flat heading={t('memory.persona.narrative')}>
         <Text style={{ whiteSpace: 'pre-wrap' }}>
           {persona.narrative || t('memory.persona.empty')}
         </Text>
       </Card>
-      <Flexbox horizontal align="center" gap={8}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {t('memory.persona.updated', { time: formatDate(persona.updated_at) })}
+      <div className="sc-memory-persona__footer">
+        <Text tone="secondary" style={{ fontSize: 12 }}>
+          {t('memory.persona.updated', { time: formatDate(persona.updated_at, t) })}
         </Text>
-        <Button size="small" icon={<RefreshCw size={14} />} onClick={load}>
-          {t('memory.persona.refresh')}
-        </Button>
-      </Flexbox>
-    </Flexbox>
+        <Button
+          actionId="memory-persona-refresh"
+          density="compact"
+          leading={<Icon iconId="refresh-cw" size={14} />}
+          label={t('memory.persona.refresh')}
+          onActivate={() => void load()}
+        />
+      </div>
+    </div>
   );
 }
 
 /* ─── Events Tab ─── */
 
 function EventsTab({ mutationVersion }: { mutationVersion: number }) {
-  const agents = useAgentStore(s => s.agents);
-  const loadAgents = useAgentStore(s => s.loadAgents);
+  const agents = useAgentStore((s) => s.agents);
+  const loadAgents = useAgentStore((s) => s.loadAgents);
   const { t } = useTranslation('memory');
   const [agentFilter, setAgentFilter] = useState<string | undefined>();
   const [timeWindow, setTimeWindow] = useState<TimeWindowValue>('24h');
@@ -835,113 +824,106 @@ function EventsTab({ mutationVersion }: { mutationVersion: number }) {
   }, [load]);
 
   useEffect(() => {
-    if (mutationVersion > 0) load();
+    if (mutationVersion > 0) void load();
   }, [mutationVersion]);
 
+  const columns: Array<TableColumn<MemoryEvent>> = [
+    {
+      id: 'type',
+      label: t('memory.events.column.type'),
+      width: 120,
+      renderCell: (event) => <Tag>{event.type}</Tag>,
+    },
+    {
+      id: 'layer',
+      label: t('memory.events.column.layer'),
+      width: 100,
+      renderCell: (event) => (
+        <Tag tone={layerTone(event.layer)}>
+          {t(`memory.layer.${event.layer}`, { defaultValue: event.layer })}
+        </Tag>
+      ),
+    },
+    {
+      id: 'latency_ms',
+      label: t('memory.events.column.latency'),
+      width: 90,
+      renderCell: (event) =>
+        event.latency_ms < 1000
+          ? `${event.latency_ms}ms`
+          : `${(event.latency_ms / 1000).toFixed(1)}s`,
+    },
+    {
+      id: 'detail',
+      label: t('memory.events.column.detail'),
+      renderCell: (event) => {
+        const detail = event.detail || {};
+        if (event.type === 'retrieval') {
+          const query = typeof detail.query === 'string' ? detail.query : '';
+          const hitCount = typeof detail.result_count === 'number' ? detail.result_count : undefined;
+          const topHits = Array.isArray(detail.top_hits) ? detail.top_hits.length : 0;
+          const q = query.length > 30 ? `${query.slice(0, 30)}...` : query;
+          return (
+            <Text tone="secondary" style={{ fontSize: 12 }}>
+              {`q:${q || '-'} · hits:${hitCount ?? 0}${topHits > 0 ? ` · top:${topHits}` : ''}`}
+            </Text>
+          );
+        }
+        return (
+          <Text tone="secondary" style={{ fontSize: 12 }}>
+            {Object.keys(detail).length > 0 ? t('memory.browse.hasDetail') : '-'}
+          </Text>
+        );
+      },
+    },
+    {
+      id: 'timestamp',
+      label: t('memory.events.column.timestamp'),
+      renderCell: (event) => formatDate(event.timestamp, t),
+    },
+  ];
+
   return (
-    <Flexbox gap={16}>
-      <Flexbox horizontal align="center" justify="space-between">
-        <Flexbox horizontal align="center" gap={8}>
-          <Text type="secondary">{t('memory.events.title')}</Text>
+    <div className="sc-memory-events">
+      <div className="sc-memory-events__bar">
+        <div className="sc-memory-filters">
+          <Text tone="secondary">{t('memory.events.title')}</Text>
           <Select
+            clearable
+            appearance="ghost"
+            className="sc-memory-filters__control"
             placeholder={t('memory.events.allAgents')}
             value={agentFilter}
-            onChange={setAgentFilter}
-            allowClear
-            onClear={() => setAgentFilter(undefined)}
-            style={{ minWidth: 150 }}
-            size="small"
-            options={agents.map((a: Agent) => ({
-              value: a.name,
-              label: (
-              <Flexbox horizontal align="center" gap={6}>
-                <AgentIconTile agent={a} size={18} subtle />
-                <span>{a.title || a.name}</span>
-              </Flexbox>
-            ),
-            }))}
+            options={agentOptions(agents)}
+            onValueChange={(value) => setAgentFilter(typeof value === 'string' ? value : undefined)}
           />
           <Select
+            appearance="ghost"
+            className="sc-memory-filters__control"
             value={timeWindow}
-            onChange={(v) => setTimeWindow(v as TimeWindowValue)}
-            style={{ minWidth: 140 }}
-            size="small"
-            options={TIME_WINDOWS.map((item) => ({ value: item.value, label: item.label }))}
+            options={timeWindowOptions(t)}
+            onValueChange={(value) => {
+              if (typeof value === 'string') setTimeWindow(value as TimeWindowValue);
+            }}
           />
-        </Flexbox>
-        <Button size="small" icon={<RefreshCw size={14} />} onClick={load} loading={loading}>
-          {t('memory.events.refresh')}
-        </Button>
-      </Flexbox>
-      {loading && events.length === 0 ? (
-        <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-          <Spin size="large" />
-        </Flexbox>
-      ) : events.length === 0 ? (
-        <Empty description={t('memory.events.noEvents')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-      ) : (
-        <Table
-          size="small"
-          dataSource={events}
-          rowKey="id"
-          pagination={{ pageSize: 20 }}
-          columns={[
-            {
-              title: t('memory.events.column.type'),
-              dataIndex: 'type',
-              key: 'type',
-              width: 120,
-              render: (val: string) => <Tag>{val}</Tag>,
-            },
-            {
-              title: t('memory.events.column.layer'),
-              dataIndex: 'layer',
-              key: 'layer',
-              width: 100,
-              render: (l: string) => (
-                <Tag color={LAYER_COLORS[l] || 'default'}>{l}</Tag>
-              ),
-            },
-            {
-              title: t('memory.events.column.latency'),
-              dataIndex: 'latency_ms',
-              key: 'latency_ms',
-              width: 90,
-              render: (ms: number) =>
-                ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`,
-            },
-            {
-              title: t('memory.events.column.detail'),
-              key: 'detail',
-              render: (_, event: MemoryEvent) => {
-                const detail = event.detail || {};
-                if (event.type === 'retrieval') {
-                  const query = typeof detail.query === 'string' ? detail.query : '';
-                  const hitCount = typeof detail.result_count === 'number' ? detail.result_count : undefined;
-                  const topHits = Array.isArray(detail.top_hits) ? detail.top_hits.length : 0;
-                  const q = query.length > 30 ? `${query.slice(0, 30)}...` : query;
-                  return (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {`q:${q || '-'} · hits:${hitCount ?? 0}${topHits > 0 ? ` · top:${topHits}` : ''}`}
-                    </Text>
-                  );
-                }
-                return (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {Object.keys(detail).length > 0 ? t('memory.browse.hasDetail') : '-'}
-                  </Text>
-                );
-              },
-            },
-            {
-              title: t('memory.events.column.timestamp'),
-              dataIndex: 'timestamp',
-              key: 'timestamp',
-              render: (ts: string) => formatDate(ts),
-            },
-          ]}
+        </div>
+        <Button
+          actionId="memory-events-refresh"
+          density="compact"
+          execution={loading ? 'pending' : 'idle'}
+          leading={<Icon iconId="refresh-cw" size={14} />}
+          label={t('memory.events.refresh')}
+          onActivate={() => void load()}
         />
-      )}
-    </Flexbox>
+      </div>
+      <DataTable<MemoryEvent>
+        rows={events}
+        columns={columns}
+        rowKey="id"
+        pageSize={20}
+        loading={loading && events.length === 0}
+        emptyLabel={t('memory.events.noEvents')}
+      />
+    </div>
   );
 }

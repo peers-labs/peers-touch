@@ -47,6 +47,6 @@ describe('TurnArtifactBar ordinary-user artifact entry', () => {
     expect(barSource).toContain('agent.portal.artifact.onDevice');
     expect(barSource).toContain('agent.portal.artifact.stationCopy');
     expect(barSource).toContain('agent.portal.artifact.originalDevice');
-    expect(barSource).toContain("title={t('agent.portal.artifact.open')}");
+    expect(barSource).toContain("label={t('agent.portal.artifact.open')}");
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import type { Tone } from '@peers-touch/ui-contracts';
 import { Icon } from './icon';
 import { IconButton } from './actions';
@@ -30,13 +30,19 @@ export function Tag({ children, tone = 'neutral', leading, onDismiss, dismissLab
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   count?: number; limit?: number; label?: string; showZero?: boolean; indicator?:boolean; tone?:Tone; caption?:ReactNode;
 }
-export function Badge({ count, limit = 99, label, showZero, indicator, tone='info', caption, children, className = '', ...props }: BadgeProps) {
-  return <span {...props} className={`pt-badge ${className}`}>{children}
+// Forward the overlay-trigger ref: Popover/Menu inject an anchor ref onto
+// their single trigger child, so a Badge trigger must expose its span for the
+// popup to position against (see Tooltip's identical contract).
+export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
+  { count, limit = 99, label, showZero, indicator, tone='info', caption, children, className = '', ...props },
+  ref,
+) {
+  return <span {...props} ref={ref} className={`pt-badge ${className}`}>{children}
     {indicator&&<span className="pt-badge-indicator" data-tone={tone} role="img" aria-label={label??(typeof caption==='string'?caption:tone)}/>}
     {caption}
     {count !== undefined && (count > 0 || showZero) && <span className="pt-badge-count" aria-label={label}>
       {count > limit ? `${limit}+` : count}</span>}</span>;
-}
+});
 export interface EmptyProps extends HTMLAttributes<HTMLDivElement> { description?: ReactNode; icon?: ReactNode; action?: ReactNode }
 export function Empty({ description = 'No items', icon, action, children, className = '', ...props }: EmptyProps) {
   return <div {...props} className={`pt-empty ${className}`}>{icon}<div>{description}</div>{children}{action}</div>;
