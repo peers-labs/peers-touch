@@ -20,6 +20,63 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class PublicFeedNativeEntryTest(unittest.TestCase):
+    def test_comment_like_timeout_preserves_original_failure_and_actual_state(self):
+        for present, observation_error, capture_error in (
+            (True, None, None), (False, None, None),
+            (True, RuntimeError("DOM unavailable"), RuntimeError("capture unavailable")),
+        ):
+            with self.subTest(present=present, observation_error=observation_error is not None):
+                gate = object.__new__(Gate)
+                gate.active_social_scenario = "comment-reactions"
+                gate.report = SimpleNamespace(runtime={})
+                client = Mock()
+                actual = {"present": True, "count": "1", "pressed": "true",
+                          "execution": "idle", "disabled": False}
+                client.execute_script.return_value = actual
+                client.execute_script.side_effect = observation_error
+                gate.clients = {"bob": client}
+                gate.comment_selector = Mock(return_value="original-comment")
+                gate.visible_element = Mock(return_value=Mock() if present else None)
+                gate.action = Mock(return_value={"pendingCount": 0, "verifiedSequence": "9"})
+                gate.capture = Mock(side_effect=capture_error)
+                failure = GateError("original LIKE timeout")
+                with patch(
+                    "tooling.acceptance.gates.social.public_feed_native.wait_until",
+                    side_effect=failure,
+                ) as wait:
+                    with self.assertRaises(GateError) as caught:
+                        gate.assert_comment_like("bob", "original-post", "original-comment", 2, True)
+                self.assertIs(caught.exception, failure)
+                self.assertEqual(wait.call_count, 1)
+                self.assertEqual(wait.call_args.kwargs["timeout"], 120)
+                if observation_error is None:
+                    self.assertEqual(gate.report.runtime["commentLikeFailureObservations"], [{
+                        "actor": "bob", "expected": {"count": 2, "liked": True},
+                        "actual": actual if present else {"present": False},
+                    }])
+                else:
+                    self.assertNotIn("commentLikeFailureObservations", gate.report.runtime)
+                gate.action.assert_called_once_with("bob", "publicFeedStatus")
+                self.assertEqual(gate.report.runtime["commentLikeNativeStatus"]["bob"]["pendingCount"], 0)
+                gate.capture.assert_called_once_with("bob", "comment-reactions-bob-verification-failure")
+
+    def test_settled_comment_like_does_not_add_failure_reads_or_captures(self):
+        gate = object.__new__(Gate)
+        gate.report = SimpleNamespace(runtime={})
+        gate.comment_selector = Mock(return_value="original-comment")
+        gate.action = Mock()
+        gate.capture = Mock()
+        with patch(
+            "tooling.acceptance.gates.social.public_feed_native.wait_until",
+            return_value=True,
+        ) as wait:
+            selector = gate.assert_comment_like("bob", "original-post", "original-comment", 2, True)
+        self.assertIn("original-comment", selector)
+        self.assertEqual(wait.call_args.kwargs["timeout"], 120)
+        self.assertEqual(gate.report.runtime, {})
+        gate.action.assert_not_called()
+        gate.capture.assert_not_called()
+
     def test_poll_timeout_retains_actual_predicate_and_rendering_before_cleanup(self):
         for present, capture_error in (
             (True, None), (False, None), (True, RuntimeError("capture failed")),

@@ -756,7 +756,38 @@ class Gate(DeviceSearchGate):
                 and control.get_attribute("aria-pressed") == str(liked).lower()
                 and control.get_attribute("aria-disabled") != "true"
                 and control.get_attribute("disabled") is None)
-        wait_until(settled, f"{actor} confirmed comment LIKE {count}/{liked}", timeout=120)
+        try:
+            wait_until(settled, f"{actor} confirmed comment LIKE {count}/{liked}", timeout=120)
+        except Exception:
+            def observe() -> None:
+                control = self.visible_element(actor, selector)
+                actual = {"present": False} if control is None else self.clients[actor].execute_script("""
+                    const el = arguments[0], r = el.getBoundingClientRect();
+                    const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+                    return {
+                      present: true, count: el.dataset.commentLikeCount,
+                      pressed: el.getAttribute('aria-pressed'), execution: el.dataset.execution,
+                      disabled: el.hasAttribute('disabled'), ariaDisabled: el.getAttribute('aria-disabled'),
+                      errorPresent: Boolean(el.parentElement?.querySelector('[role="alert"]')),
+                      top: r.top, bottom: r.bottom, height: r.height, viewportHeight: innerHeight,
+                      hitInside: Boolean(hit && (hit === el || el.contains(hit))),
+                    };
+                """, control)
+                self.report.runtime.setdefault("commentLikeFailureObservations", []).append({
+                    "actor": actor, "expected": {"count": count, "liked": liked},
+                    "actual": actual,
+                })
+            cleanup_preserving_primary_failure(
+                observe, self.report, "Comment LIKE verification state diagnostic")
+            def observe_submission() -> None:
+                self.report.runtime.setdefault("commentLikeNativeStatus", {})[actor] = self.action(
+                    actor, "publicFeedStatus")
+            cleanup_preserving_primary_failure(
+                observe_submission, self.report, "Comment LIKE native submission diagnostic")
+            cleanup_preserving_primary_failure(
+                lambda: self.capture(actor, f"{self.active_social_scenario or 'comment'}-{actor}-verification-failure"),
+                self.report, "Comment LIKE verification Native rendering diagnostic")
+            raise
         return selector
 
     def set_input(self, actor: str, selector: str, value: str) -> None:

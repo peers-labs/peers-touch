@@ -5,6 +5,8 @@ status: active
 owns:
   - apps/station/app/subserver/social/application/feed_federation.go
   - apps/station/app/subserver/social/application/feed_federation_test.go
+  - tooling/acceptance/gates/social/public_feed_native.py
+  - tooling/acceptance/gates/social/test_public_feed_native.py
 related:
   - ../../architecture/domains/social/federation/interaction-completion.md
 referenced-by: []
@@ -32,3 +34,18 @@ Run `go test ./subserver/social/application -run
 TestFeedAuthorHomeFanoutIsNotMistakenForDirectVoterForwarding -count=1` from
 `apps/station/app`. The actual receiver must retain the authentic receipt.
 Native receiver rendering is a separate required Journey assertion.
+
+A Native comment LIKE timeout must preserve the actual receiver control before
+Suite cleanup: count, pressed state, execution state, availability, error
+presence and paint geometry. Read the original passive native submission status
+separately, and attempt screenshot/DOM capture even if either observation fails.
+The first timeout remains the primary exception. Do not refresh a thread,
+change the expected count, replay a command or extend its original 120-second
+wait to manufacture convergence. A timeout without rejected state does not
+identify a delivery, projection or presentation failure.
+
+Run `python3 -m unittest
+tooling.acceptance.gates.social.test_public_feed_native`; failure observation,
+submission observation and rendering capture must fail independently without
+replacing the original error. Successful LIKE verification adds no failure read
+or capture. The same source-bound Native Journey remains required.
