@@ -516,7 +516,8 @@ function MomentCommentRow({
       </Button>
     </MomentAuthorTrigger>}
     author={<MomentAuthorTrigger actorPtid={comment.authorPtid} onOpenProfile={onAuthorClick}>
-      <button type="button" className="sk-comment-author" aria-label={t('moments.identity.cardLabel', { name })}>{name}</button>
+      <Button actionId={`comment.author.${comment.id}`} emphasis="quiet" density="compact"
+        className="sk-comment-author" aria-label={t('moments.identity.cardLabel', { name })}>{name}</Button>
     </MomentAuthorTrigger>}
     actions={<>
       <Button actionId={`comment.reply.${comment.id}`} emphasis="quiet" density="compact"

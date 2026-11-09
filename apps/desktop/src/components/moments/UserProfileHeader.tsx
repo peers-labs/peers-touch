@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Spin, UserProfileHeader as PeerProfileHeader } from '@peers-touch/ui';
+import { Button, Spin, UserProfileHeader as PeerProfileHeader } from '@peers-touch/ui';
 import type { Follower, Following } from '../../gen/proto/domain/social/relationship_pb';
 import type { PostAuthor } from '../../gen/proto/domain/social/post_pb';
 import { MomentRelationshipAction } from './MomentRelationshipAction';
@@ -25,8 +25,10 @@ export function UserProfileHeader({ actor, viewerActorPtid, followerCount, follo
   return <PeerProfileHeader name={name} station={identity.homeStationName} bio={bio}
     isSelf={identity.isSelf} inline={inline} loading={loading} loadingLabel={t('moments.follow.loading')}
     refreshing={refreshing ? <Spin label={t('moments.profile.refreshing')} /> : undefined}
-    avatar={onAvatarClick ? <button type="button" data-moments-avatar-link onClick={onAvatarClick}
-      aria-label={avatarActionLabel} className="sk-post-author">{avatar}</button> : avatar}
+    avatar={onAvatarClick ? <Button actionId={`moments.profile.avatar.${id}`} emphasis="quiet"
+      data-moments-avatar-link onActivate={onAvatarClick}
+      aria-label={avatarActionLabel || t('moments.identity.cardLabel', { name })}
+      className="sk-post-author">{avatar}</Button> : avatar}
     statistics={[
       { id: 'posts', label: t('moments.stats.posts'), value: postCount },
       { id: 'followers', label: t('moments.stats.followers'), value: followerCount },

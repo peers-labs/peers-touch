@@ -49,6 +49,16 @@ export function MomentDetailView({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <Button
+          actionId="moments.detail.back"
+          emphasis="quiet"
+          leading={<ChevronLeft size={16} />}
+          onActivate={onBack}
+        >
+          {t('moments.action.back')}
+        </Button>
+      </div>
       {!post && (
         <SocialEmptyState
           kind="empty"
@@ -57,31 +67,18 @@ export function MomentDetailView({
         />
       )}
       {post && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <Button
-              actionId="moments.detail.back"
-              emphasis="quiet"
-              leading={<ChevronLeft size={16} />}
-              onActivate={onBack}
-            >
-              {t('moments.action.back')}
-            </Button>
-          </div>
-
-          <MomentCard
-            post={post}
-            reactions={reactions}
-            explanation={explanation}
-            viewerActorPtid={viewerActorPtid}
-            defaultCommentsOpen
-            targetCommentId={commentId}
-            onAuthorClick={onAuthorClick}
-            onReact={reactToPost}
-            onUnreact={unreactToPost}
-            onDelete={handleDeletePost}
-          />
-        </>
+        <MomentCard
+          post={post}
+          reactions={reactions}
+          explanation={explanation}
+          viewerActorPtid={viewerActorPtid}
+          defaultCommentsOpen
+          targetCommentId={commentId}
+          onAuthorClick={onAuthorClick}
+          onReact={reactToPost}
+          onUnreact={unreactToPost}
+          onDelete={handleDeletePost}
+        />
       )}
     </div>
   );
