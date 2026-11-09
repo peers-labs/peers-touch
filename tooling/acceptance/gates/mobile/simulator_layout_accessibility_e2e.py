@@ -314,10 +314,16 @@ class SimulatorLayoutAccessibilityGate(AcceptanceGate):
             },
             role="mobile-ios-layout-source-identity",
         )
+        events = {event.get("event") for event in self.lifecycle}
+        assertions = self._assertions_from_cells(cells, events)
+        failed = [item["name"] for item in assertions if not item["passed"]]
+        if failed:
+            raise GateError(f"Mobile layout assertions failed: {', '.join(failed)}")
         return {
             **self._result("PASS"),
             "scope": PROVEN_SCOPE,
             "cells": cells,
+            "assertions": assertions,
             "doesNotProve": [
                 "authenticated Shell surfaces",
                 "Android",
@@ -326,6 +332,70 @@ class SimulatorLayoutAccessibilityGate(AcceptanceGate):
                 "physical-device performance",
             ],
         }
+
+    def _assertions_from_cells(
+        self,
+        cells: Mapping[str, Any],
+        events: set[str],
+    ) -> list[dict[str, Any]]:
+        """Build explicit, evidence-derived assertions for the proof contract."""
+        assertions: list[dict[str, Any]] = []
+
+        def dom_clean(capture: dict[str, Any]) -> bool:
+            audit = capture.get("domAudit", {})
+            return not audit.get("unlabeled") \
+                and not audit.get("clippedText") \
+                and not audit.get("outsideViewport")
+
+        def ax_clean(capture: dict[str, Any]) -> bool:
+            audit = capture.get("accessibilityAudit", {})
+            return not audit.get("unlabeled") and not audit.get("outsideScreen")
+
+        for cell, data in sorted(cells.items()):
+            captures = data.get("captures", {})
+            portrait = captures.get("portraitEnglish", {})
+            localized = captures.get("portraitAlternateLocale", {})
+            landscape = captures.get("landscapeAlternateLocale", {})
+            keyboard = captures.get("keyboard", {}).get("audit", {})
+            keyboard_top = keyboard.get("keyboardTop", 0)
+            field_bottom = keyboard.get("textFieldBottom", 0)
+            assertions.extend([
+                {
+                    "name": f"MS-AG08:{cell}:native-launch-ready",
+                    "passed": f"{cell}:native-ready" in events,
+                },
+                {
+                    "name": f"MS-AG11:{cell}:keyboard-does-not-occlude-field",
+                    "passed": keyboard_top > 0 and field_bottom < keyboard_top,
+                },
+                {
+                    "name": f"MS-AG08:{cell}:language-switches-to-alternate-locale",
+                    "passed": bool(portrait.get("domAudit", {}).get("lang"))
+                    and localized.get("domAudit", {}).get("lang")
+                    != portrait.get("domAudit", {}).get("lang"),
+                },
+                {
+                    "name": f"MS-AG11:{cell}:portrait-alternate-locale-dom-clean",
+                    "passed": dom_clean(localized),
+                },
+                {
+                    "name": f"MS-AG11:{cell}:landscape-alternate-locale-dom-clean",
+                    "passed": dom_clean(landscape),
+                },
+                {
+                    "name": f"MS-AG11:{cell}:accessibility-tree-clean",
+                    "passed": ax_clean(portrait) and ax_clean(localized)
+                    and ax_clean(landscape),
+                },
+                {
+                    "name": f"MS-AG08:{cell}:landscape-orientation-applied",
+                    "passed": (landscape.get("accessibilityAudit", {})
+                               .get("screen", {}).get("width", 0))
+                    > (landscape.get("accessibilityAudit", {})
+                       .get("screen", {}).get("height", 0)),
+                },
+            ])
+        return assertions
 
     def _run_cell(
         self,

@@ -176,6 +176,10 @@ const usePageControls = arguments[3] === true;
 const visible = (element) => {
   const style = getComputedStyle(element);
   const rect = element.getBoundingClientRect();
+  // Screen-reader-only nodes (W3C clip/clip-path technique, e.g. .pt-sr-only)
+  // are intentionally visually clipped and not rendered-text candidates.
+  const screenReaderOnly = (style.clip && style.clip !== 'auto')
+    || (typeof style.clipPath === 'string' && style.clipPath.includes('inset(50%'));
   return style.display !== 'none'
     && style.visibility !== 'hidden'
     && Number(style.opacity) > 0
@@ -184,7 +188,8 @@ const visible = (element) => {
     && rect.right > 0
     && rect.bottom > 0
     && rect.left < window.innerWidth
-    && rect.top < window.innerHeight;
+    && rect.top < window.innerHeight
+    && !screenReaderOnly;
 };
 const label = (element) => String(
   element.getAttribute('aria-label')
@@ -232,10 +237,9 @@ const controls = interactive.map((element) => {
   const boundary = element.closest(
     [
       '.station-url-control',
-      '.ant-input-affix-wrapper',
-      '.ant-input-number',
-      '.ant-select-selector',
-      '.ant-checkbox-wrapper',
+      '.pt-field-frame',
+      '.pt-check-label',
+      '.pt-switch',
     ].join(','),
   ) || element;
   const rect = boundary.getBoundingClientRect();
