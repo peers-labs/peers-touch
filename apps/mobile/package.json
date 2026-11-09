@@ -35,17 +35,14 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.10.2",
-    "@lobehub/ui": "^5.15.6",
     "@peers-touch/client-chat-core": "workspace:*",
     "@peers-touch/client-media-security": "workspace:*",
     "@peers-touch/client-storage": "workspace:*",
     "@peers-touch/ui": "workspace:*",
     "@tauri-apps/api": "2.12.4",
-    "antd": "^6.4.3",
     "lucide-react": "^1.17.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-layout-kit": "^2.0.1",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
