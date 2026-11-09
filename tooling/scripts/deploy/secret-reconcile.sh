@@ -43,7 +43,6 @@ case "$ROLE" in station|relay) ;; *) blocked SECRET_BAD_ROLE "ROLE must be stati
 role_dir="$PT_ENV_REPO/peers-touch/$PROFILE/$ROLE"
 manifest="$role_dir/secret-manifest.env"
 values_file="$role_dir/runtime.env"
-remote_path="${PT_DEPLOY_RUNTIME_PATH:-}"
 
 # No manifest => the role declares no Class B secrets; reconcile is a no-op
 # (capability off, not a missing secret).
