@@ -2529,44 +2529,27 @@ select,
   gap: 6px;
 }
 
-.notification-drawer .ant-drawer-content {
-  border-radius: 24px 24px 0 0;
-  overflow: hidden;
-}
-
-.notification-drawer .ant-drawer-header {
-  padding: 14px 18px;
-}
-
-.notification-drawer .ant-drawer-body {
-  padding: 0 14px calc(var(--safe-area-bottom) + 14px);
-}
-
-.notification-list .ant-list-item {
-  border-block-end: none !important;
-}
-
 .notification-item {
-  display: grid !important;
+  display: grid;
   grid-template-columns: 38px minmax(0, 1fr) auto;
-  align-items: center !important;
+  align-items: center;
   gap: 10px;
   margin: 8px 0;
-  padding: 10px !important;
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  padding: 10px;
+  border: 1px solid var(--pt-border);
   border-radius: 16px;
-  background: rgba(248, 250, 252, 0.8);
+  background: var(--pt-subtle);
   cursor: pointer;
 }
 
 .notification-item.unread {
-  border-color: rgba(102, 126, 234, 0.24);
-  background: rgba(102, 126, 234, 0.08);
+  border-color: color-mix(in srgb, var(--pt-accent) 24%, transparent);
+  background: color-mix(in srgb, var(--pt-accent) 8%, transparent);
 }
 
 .notification-icon {
-  background: rgba(102, 126, 234, 0.12) !important;
-  color: var(--brand-primary) !important;
+  background: color-mix(in srgb, var(--pt-accent) 12%, transparent);
+  color: var(--pt-accent);
 }
 
 .notification-copy {
@@ -2583,14 +2566,14 @@ select,
   min-width: 0;
 }
 
-.notification-title-row .ant-typography:first-child {
+.notification-title-row > span:first-child {
   flex: 1;
   min-width: 0;
 }
 
 .notification-time {
   flex: 0 0 auto;
-  font-size: 11px !important;
+  font-size: 11px;
 }
 
 .notification-actions {
@@ -2607,8 +2590,8 @@ select,
   height: 30px;
   border: none;
   border-radius: 10px;
-  color: rgba(0, 0, 0, 0.52);
-  background: rgba(255, 255, 255, 0.76);
+  color: var(--pt-secondary);
+  background: var(--pt-glass-tile);
   cursor: pointer;
 }
 

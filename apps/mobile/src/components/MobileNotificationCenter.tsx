@@ -1,6 +1,13 @@
 import { useEffect, useMemo } from 'react';
-import { Button, Drawer, Empty, List, Spin, Typography } from 'antd';
-import { Bell, Check, CheckCheck, MessageCircle, Trash2, UserCheck, UserPlus } from 'lucide-react';
+import {
+  Button,
+  Drawer,
+  Empty,
+  Icon,
+  Spin,
+  Text,
+  type IconId,
+} from '@peers-touch/ui';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { MobileAvatar } from './MobileAvatar';
@@ -12,7 +19,6 @@ import { timestampMillis } from '../features/social/socialNormalizers';
 import { projectUnreadNotifications } from '../features/social/socialProjection';
 import type { SocialNotification } from '../features/social/socialTypes';
 
-const { Text } = Typography;
 const NOTIFICATION_TYPE_FRIEND_REQUEST = 200;
 const NOTIFICATION_TYPE_FRIEND_ACCEPTED = 201;
 const NOTIFICATION_TYPE_FRIEND_MESSAGE = 202;
@@ -75,33 +81,36 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
 
   return (
     <Drawer
+      side="bottom"
       className="notification-drawer"
       title={t('mobile.notifications.title')}
-      placement="bottom"
-      height="78dvh"
+      style={{ height: '78dvh' }}
+      contentStyle={{ padding: '0 14px calc(var(--pt-m-safe-area-bottom, 0px) + 14px)' }}
       open={open}
-      onClose={onClose}
+      onDismiss={onClose}
+      closeLabel={t('common.action.close')}
       extra={
         unreadCount > 0 ? (
           <Button
-            type="text"
-            icon={<CheckCheck size={16} />}
-            onClick={() => markAllNotificationsRead()}
+            actionId="mobile-notifications-mark-all-read"
+            emphasis="quiet"
+            density="compact"
+            leading={<Icon iconId="check-check" size={16} />}
+            onActivate={() => markAllNotificationsRead()}
           >
             {t('mobile.notifications.markAllRead')}
           </Button>
         ) : null
       }
     >
-      <Spin spinning={loading && notifications.length === 0}>
+      <Spin active={loading && notifications.length === 0}>
         {visibleNotifications.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.notifications.empty')} />
+          <Empty description={t('mobile.notifications.empty')} />
         ) : (
-          <List
-            className="notification-list"
-            dataSource={visibleNotifications}
-            renderItem={(notification) => (
+          <div className="notification-list">
+            {visibleNotifications.map((notification) => (
               <NotificationItem
+                key={notification.id}
                 notification={notification}
                 onDelete={deleteNotification}
                 onMarkRead={markNotificationRead}
@@ -111,11 +120,17 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
                 friendRequestNames={friendRequestNames}
                 t={t}
               />
-            )}
-          />
+            ))}
+          </div>
         )}
         {notificationHasMore ? (
-          <Button className="notification-load-more" block onClick={() => loadMoreNotifications()} loading={loading}>
+          <Button
+            actionId="mobile-notifications-load-more"
+            fullWidth
+            className="notification-load-more"
+            execution={loading ? 'pending' : 'idle'}
+            onActivate={() => loadMoreNotifications()}
+          >
             {t('mobile.notifications.loadMore')}
           </Button>
         ) : null}
@@ -144,29 +159,44 @@ function NotificationItem({
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const unread = notification.status === 1;
-  const Icon = notificationIcon(notification.type);
+  const typeIcon = notificationIcon(notification.type);
   const title = notification.title || notificationTitle(notification, t);
   const actorKey = notificationActorKey(notification);
   const actorProfile = actorKey ? peerProfiles[actorKey] : null;
   const requestDisplay = notificationRequestDisplay(notification, friendRequestNames);
-  const actorDisplayName = requestDisplay?.name || actorProfile?.displayName || actorProfile?.username || notificationBody(notification, t);
-  const body = shouldPreferActorDisplay(notification) ? actorDisplayName : (notification.body || actorDisplayName);
+  const actorName = requestDisplay?.name || actorProfile?.displayName || actorProfile?.username || notificationBody(notification, t);
+  const body = shouldPreferActorDisplay(notification) ? actorName : (notification.body || actorName);
 
   useEffect(() => {
     if (actorKey && !(actorKey in peerProfiles)) void onResolveActor(actorKey);
   }, [actorKey, onResolveActor, peerProfiles]);
 
   return (
-    <List.Item className={`notification-item ${unread ? 'unread' : ''}`} onClick={() => onOpen(notification)}>
-      <MobileAvatar className="notification-icon" src={requestDisplay?.avatar || actorProfile?.avatar} fallback={<Icon size={16} />} />
+    <div
+      role="button"
+      tabIndex={0}
+      className={`notification-item ${unread ? 'unread' : ''}`}
+      onClick={() => void onOpen(notification)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          void onOpen(notification);
+        }
+      }}
+    >
+      <MobileAvatar
+        className="notification-icon"
+        src={requestDisplay?.avatar || actorProfile?.avatar}
+        fallback={<Icon iconId={typeIcon} size={16} />}
+      />
       <div className="notification-copy">
         <div className="notification-title-row">
-          <Text strong={unread} ellipsis>{title}</Text>
-          <Text type="secondary" className="notification-time">
+          <Text strong={unread} truncate>{title}</Text>
+          <Text tone="secondary" className="notification-time">
             {formatRelativeTime(timestampMillis(notification.createdAt), t)}
           </Text>
         </div>
-        <Text type="secondary" ellipsis>{body}</Text>
+        <Text tone="secondary" truncate>{body}</Text>
       </div>
       <div className="notification-actions">
         {unread ? (
@@ -179,7 +209,7 @@ function NotificationItem({
               void onMarkRead(notification.id);
             }}
           >
-            <Check size={15} />
+            <Icon iconId="check" size={15} />
           </button>
         ) : null}
         <button
@@ -191,10 +221,10 @@ function NotificationItem({
             void onDelete(notification.id);
           }}
         >
-          <Trash2 size={15} />
+          <Icon iconId="delete" size={15} />
         </button>
       </div>
-    </List.Item>
+    </div>
   );
 }
 
@@ -225,11 +255,11 @@ function shouldPreferActorDisplay(notification: SocialNotification): boolean {
   return isFriendRequestNotification(notification) || notification.type === NOTIFICATION_TYPE_FRIEND_ACCEPTED;
 }
 
-function notificationIcon(type: number) {
-  if (type === NOTIFICATION_TYPE_FRIEND_REQUEST) return UserPlus;
-  if (type === NOTIFICATION_TYPE_FRIEND_ACCEPTED) return UserCheck;
-  if (type === NOTIFICATION_TYPE_FRIEND_MESSAGE) return MessageCircle;
-  return Bell;
+function notificationIcon(type: number): IconId {
+  if (type === NOTIFICATION_TYPE_FRIEND_REQUEST) return 'user-plus';
+  if (type === NOTIFICATION_TYPE_FRIEND_ACCEPTED) return 'user-check';
+  if (type === NOTIFICATION_TYPE_FRIEND_MESSAGE) return 'message-circle';
+  return 'bell';
 }
 
 function notificationTitle(notification: SocialNotification, t: (key: string) => string): string {
