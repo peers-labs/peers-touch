@@ -863,7 +863,8 @@ select,
   box-shadow: 0 16px 48px rgba(27, 31, 59, 0.1);
 }
 
-.auth-gate-card > .ant-card-body {
+.auth-gate-card > .ant-card-body,
+.auth-gate-card > .auth-gate-card-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -871,7 +872,8 @@ select,
   padding: 0 !important;
 }
 
-.auth-gate-screen[data-session-expired='true'] .auth-gate-card > .ant-card-body {
+.auth-gate-screen[data-session-expired='true'] .auth-gate-card > .ant-card-body,
+.auth-gate-screen[data-session-expired='true'] .auth-gate-card > .auth-gate-card-body {
   gap: 12px;
 }
 
@@ -1137,7 +1139,8 @@ select,
     justify-content: flex-start;
   }
 
-  .auth-gate-card > .ant-card-body {
+  .auth-gate-card > .ant-card-body,
+  .auth-gate-card > .auth-gate-card-body {
     padding: 18px !important;
   }
 
@@ -1698,6 +1701,7 @@ select,
   }
 
   .auth-gate-card > .ant-card-body,
+  .auth-gate-card > .auth-gate-card-body,
   .entry-progress-panel {
     padding: 16px 18px !important;
   }
@@ -1707,7 +1711,8 @@ select,
     min-height: 0;
   }
 
-  .auth-gate-card > .ant-card-body {
+  .auth-gate-card > .ant-card-body,
+  .auth-gate-card > .auth-gate-card-body {
     display: grid;
     grid-template-columns: minmax(180px, 0.8fr) minmax(300px, 1.2fr);
     grid-auto-flow: row;

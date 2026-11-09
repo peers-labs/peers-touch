@@ -1,6 +1,5 @@
 import { useRef } from 'react';
-import { Button, Card, Typography } from 'antd';
-import { LoaderCircle, ScanLine, ShieldCheck } from 'lucide-react';
+import { Button, Icon, Spin, Text } from '@peers-touch/ui';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { DeviceLinkState } from '../../gen/proto/domain/auth/device_link_pb';
@@ -18,8 +17,6 @@ import { currentAccessGate, gateTypeNumber, isAccessGranted, schemaGateInput } f
 import { useDeviceLinkStore } from './deviceLinkStore';
 import './deviceLink.css';
 
-const { Text, Title } = Typography;
-
 export function DeviceLinkScreen() {
   const { t } = useMobileI18n();
   const { phase, projection, busy, errorKey } = useDeviceLinkStore();
@@ -31,11 +28,11 @@ export function DeviceLinkScreen() {
   const gate = currentAccessGate(decision);
   const context = projection ? (
     <section className="mobile-device-link-identity">
-      <ShieldCheck size={24} aria-hidden="true" />
+      <Icon iconId="shield-check" size={24} />
       <Text strong className="mobile-device-link-account">{projection.actorLabel}</Text>
       {projection.comparisonCode ? (
         <>
-          <Text type="secondary">{t('mobile.deviceLink.compare')}</Text>
+          <Text tone="secondary">{t('mobile.deviceLink.compare')}</Text>
           <output className="mobile-device-link-code" aria-label={t('mobile.deviceLink.code')}>
             {projection.comparisonCode}
           </output>
@@ -94,33 +91,47 @@ export function DeviceLinkScreen() {
       data-product-surface="entry.device-link"
     >
       <div className="auth-gate-toolbar"><LanguageSwitcher /></div>
-      <Card className="auth-gate-card" variant="borderless">
-        <section className="auth-gate-brand">
-          <ScanLine size={32} className="mobile-device-link-symbol" aria-hidden="true" />
-          <div className="auth-gate-brand-copy">
-            <Title level={1} className="auth-gate-title">{t('mobile.deviceLink.title')}</Title>
-            <Text type="secondary">{t('mobile.deviceLink.subtitle')}</Text>
-          </div>
-        </section>
-        {context}
-        {phase !== 'failed' && !needsNewComparison ? (
-          <div className="mobile-device-link-progress" role="status">
-            <LoaderCircle size={18} aria-hidden="true" />
-            <Text>{t(progressKey)}</Text>
-          </div>
-        ) : null}
-        {errorKey ? <Text type="danger" role="alert">{t(errorKey)}</Text> : null}
-        <div className="auth-actions">
-          <Button disabled={phase === 'cancelling' && busy} onClick={() => void cancelMobileDeviceLink()}>
-            {t('common.action.cancel')}
-          </Button>
-          {errorKey && !needsNewComparison ? (
-            <Button type="primary" loading={busy} onClick={() => void retryMobileDeviceLink()}>
-              {t('common.action.retry')}
-            </Button>
+      <div className="auth-gate-card">
+        <div className="auth-gate-card-body">
+          <section className="auth-gate-brand">
+            <Icon iconId="scan-line" size={32} className="mobile-device-link-symbol" />
+            <div className="auth-gate-brand-copy">
+              <h1 className="auth-gate-title">{t('mobile.deviceLink.title')}</h1>
+              <Text tone="secondary">{t('mobile.deviceLink.subtitle')}</Text>
+            </div>
+          </section>
+          {context}
+          {phase !== 'failed' && !needsNewComparison ? (
+            <div className="mobile-device-link-progress" role="status">
+              <Spin size="small" />
+              <Text>{t(progressKey)}</Text>
+            </div>
           ) : null}
+          {errorKey ? <Text tone="danger" role="alert">{t(errorKey)}</Text> : null}
+          <div className="auth-actions">
+            <Button
+              actionId="device-link-cancel"
+              emphasis="secondary"
+              availability={phase === 'cancelling' && busy
+                ? { kind: 'disabled', reason: t('common.action.cancel') }
+                : undefined}
+              onActivate={() => void cancelMobileDeviceLink()}
+            >
+              {t('common.action.cancel')}
+            </Button>
+            {errorKey && !needsNewComparison ? (
+              <Button
+                actionId="device-link-retry"
+                emphasis="primary"
+                execution={busy ? 'pending' : 'idle'}
+                onActivate={() => void retryMobileDeviceLink()}
+              >
+                {t('common.action.retry')}
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </Card>
+      </div>
     </main>
   );
 }
