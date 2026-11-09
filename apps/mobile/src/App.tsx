@@ -1,5 +1,7 @@
 import { Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { Modal, Typography } from 'antd';
+import { Dialog, Text } from '@peers-touch/ui';
+
+import { confirm } from './app/feedback/mobileFeedback';
 
 import { AppProviders } from './app/AppProviders';
 import {
@@ -105,8 +107,6 @@ import {
   type ReliabilityRuntimeStatusProjection,
 } from './runtimes/commandRuntime';
 import type { DraftDisposition } from './app/lifecycle/types';
-
-const { Text, Title } = Typography;
 
 interface PendingScopeExitRequest {
   readonly reason: ScopeExitDecisionReason;
@@ -562,23 +562,16 @@ function MobileAppRoot() {
     });
   }
 
-  function confirmRouteSwitch(
+  async function confirmRouteSwitch(
     previous: MobileStationRouteCandidate,
     next: MobileStationRouteCandidate,
   ): Promise<boolean> {
-    if (previous.routeType === next.routeType) return Promise.resolve(true);
-    return new Promise((resolve) => {
-      Modal.confirm({
-        title: t('mobile.launch.routeSwitchConfirmTitle'),
-        content: t('mobile.launch.routeSwitchConfirmBody'),
-        okText: t('mobile.launch.switchRoute'),
-        cancelText: t('common.action.cancel'),
-        okButtonProps: {
-          'data-station-route-confirm': 'true',
-        },
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      });
+    if (previous.routeType === next.routeType) return true;
+    return confirm({
+      title: t('mobile.launch.routeSwitchConfirmTitle'),
+      description: t('mobile.launch.routeSwitchConfirmBody'),
+      confirmLabel: t('mobile.launch.switchRoute'),
+      cancelLabel: t('common.action.cancel'),
     });
   }
 
@@ -938,21 +931,17 @@ function MobileAppRoot() {
               canCancel
             />
           )}
-        <Modal
+        <Dialog
           open={replacementStation !== null}
-          footer={null}
-          closable={false}
-          onCancel={() => resolveStationIdentityReplacement(false)}
-          destroyOnClose
+          title={t('mobile.launch.stationReplaceConfirmTitle')}
+          closeLabel={t('common.action.cancel')}
+          onDismiss={() => resolveStationIdentityReplacement(false)}
         >
           <section
             className="entry-confirmation entry-trust-confirmation"
             data-product-surface="entry.station-identity-mismatch"
           >
-            <Title level={1}>
-              {t('mobile.launch.stationReplaceConfirmTitle')}
-            </Title>
-            <Text type="secondary">
+            <Text tone="secondary">
               {t('mobile.launch.stationReplaceConfirmBody', {
                 station: replacementStationLabel,
               })}
@@ -974,13 +963,12 @@ function MobileAppRoot() {
               </button>
             </div>
           </section>
-        </Modal>
-        <Modal
+        </Dialog>
+        <Dialog
           title={t('mobile.launch.chooseRelayStation')}
           open={pendingRouteChoice !== null}
-          footer={null}
-          onCancel={() => setPendingRouteChoice(null)}
-          destroyOnClose
+          closeLabel={t('common.action.cancel')}
+          onDismiss={() => setPendingRouteChoice(null)}
         >
           <div className="station-route-candidate-list">
             {pendingRouteChoice?.routes.map((route) => (
@@ -1003,7 +991,7 @@ function MobileAppRoot() {
               </button>
             ))}
           </div>
-        </Modal>
+        </Dialog>
       </>
     );
   }
