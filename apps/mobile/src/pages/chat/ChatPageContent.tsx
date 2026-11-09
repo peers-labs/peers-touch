@@ -1,6 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { Badge, Button, Empty, Input, List, Spin, Typography } from 'antd';
-import { BellOff, Pencil, Pin, Search, Users } from 'lucide-react';
+import { Badge, Button, Empty, Icon, Spin, TextField } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList } from '../../components/BoundedList';
@@ -16,7 +15,6 @@ import {
 } from '../../features/chat/chatSelectors';
 import type { ChatInputPanelState } from './chatBottomOcclusion';
 
-const { Text } = Typography;
 const CONVERSATION_WINDOW_SIZE = 100;
 
 export function ChatThreadPageContent({
@@ -106,17 +104,20 @@ export function ChatConversationListPageContent({
           aria-label={t('mobile.chat.startConversation')}
           onClick={onStartConversation}
         >
-          <Pencil size={20} />
+          <Icon iconId="pen-line" size={20} />
         </button>
       </header>
 
       <div className="chat-search-bar">
-        <Input
+        <TextField
+          className="chat-search-field"
           value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          prefix={<Search size={16} color="#9ca0ab" />}
+          onValueChange={onQueryChange}
+          leading={<Icon iconId="search" size={16} className="chat-search-leading" />}
           placeholder={t('mobile.chat.searchPlaceholder')}
-          allowClear
+          clearable
+          onClear={() => onQueryChange('')}
+          aria-label={t('mobile.chat.searchPlaceholder')}
         />
       </div>
 
@@ -125,18 +126,19 @@ export function ChatConversationListPageContent({
       {groupError ? <MobileNotice onClose={onDismissGroupError}>{groupError}</MobileNotice> : null}
 
       <section className="social-list-panel">
-        <Spin spinning={loading && items.length === 0}>
+        <Spin active={loading && items.length === 0}>
           {items.length === 0 ? (
             <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              className="chat-list-empty"
               description={conversationCount > 0 ? t('mobile.chat.noSearchResults') : (
                 <div className="empty-copy">
-                  <Text strong>{t('mobile.chat.emptyTitle')}</Text>
-                  <Text type="secondary">{t('mobile.chat.emptySubtitle')}</Text>
+                  <strong>{t('mobile.chat.emptyTitle')}</strong>
+                  <span>{t('mobile.chat.emptySubtitle')}</span>
                   <Button
-                    type="primary"
-                    icon={<Pencil size={16} />}
-                    onClick={onStartConversation}
+                    actionId="chat.start-conversation"
+                    emphasis="primary"
+                    leading={<Icon iconId="pen-line" size={16} />}
+                    onActivate={onStartConversation}
                   >
                     {t('mobile.chat.startConversation')}
                   </Button>
@@ -151,10 +153,8 @@ export function ChatConversationListPageContent({
               size={CONVERSATION_WINDOW_SIZE}
             >
               {(rows) => (
-                <List
-                  dataSource={rows}
-                  rowKey={(item) => (item.conversation as MobileConversation).key}
-                  renderItem={(item) => {
+                <div className="conversation-list">
+                  {rows.map((item) => {
                     const conversation = item.conversation as MobileConversation;
                     const {
                       preference: preferenceState,
@@ -162,7 +162,8 @@ export function ChatConversationListPageContent({
                       visibleUnread,
                     } = item;
                     return (
-                      <List.Item
+                      <div
+                        key={conversation.key}
                         className="conversation-item"
                         data-scroll-anchor-id={conversation.key}
                         data-focus-id={conversation.key}
@@ -180,35 +181,33 @@ export function ChatConversationListPageContent({
                         data-conversation-kind={conversation.kind}
                         onClick={() => onOpenConversation(conversation)}
                       >
-                        <List.Item.Meta
-                          avatar={(
-                            <span className="conversation-avatar-frame">
-                              <MobileAvatar src={conversationAvatar(conversation)}>
-                                {conversationTitle(conversation).slice(0, 1)}
-                              </MobileAvatar>
-                              {conversation.kind === 'friend' && conversation.conversation.peerOnline
-                                ? <span className="conversation-online-dot" aria-hidden="true" />
-                                : null}
-                            </span>
-                          )}
-                          title={(
+                        <span className="conversation-row">
+                          <span className="conversation-avatar-frame">
+                            <MobileAvatar src={conversationAvatar(conversation)}>
+                              {conversationTitle(conversation).slice(0, 1)}
+                            </MobileAvatar>
+                            {conversation.kind === 'friend' && conversation.conversation.peerOnline
+                              ? <span className="conversation-online-dot" aria-hidden="true" />
+                              : null}
+                          </span>
+                          <span className="conversation-body">
                             <span className="conversation-title-row">
-                              {preferenceState?.sticky ? <Pin size={12} className="conversation-state-icon" /> : null}
-                              <Text strong>{conversationTitle(conversation)}</Text>
-                              {conversation.kind === 'group' ? <Users size={12} className="conversation-state-icon" /> : null}
-                              {preferenceState?.muted ? <BellOff size={12} className="conversation-state-icon" /> : null}
+                              {preferenceState?.sticky ? <Icon iconId="pin" size={12} className="conversation-state-icon" /> : null}
+                              <strong>{conversationTitle(conversation)}</strong>
+                              {conversation.kind === 'group' ? <Icon iconId="users" size={12} className="conversation-state-icon" /> : null}
+                              {preferenceState?.muted ? <Icon iconId="bell-off" size={12} className="conversation-state-icon" /> : null}
                             </span>
-                          )}
-                          description={<span className="conversation-preview">{conversationPreview(conversation, t)}</span>}
-                        />
-                        <div className="conversation-meta">
-                          <Text type="secondary" className="conversation-time">{formatRelativeTime(updatedAt, t)}</Text>
-                          {visibleUnread > 0 ? <Badge count={visibleUnread} className="conversation-badge" /> : null}
-                        </div>
-                      </List.Item>
+                            <span className="conversation-preview">{conversationPreview(conversation, t)}</span>
+                          </span>
+                          <span className="conversation-meta">
+                            <span className="conversation-time">{formatRelativeTime(updatedAt, t)}</span>
+                            {visibleUnread > 0 ? <Badge count={visibleUnread} className="conversation-badge" /> : null}
+                          </span>
+                        </span>
+                      </div>
                     );
-                  }}
-                />
+                  })}
+                </div>
               )}
             </BoundedList>
           )}

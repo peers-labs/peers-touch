@@ -1,206 +1,139 @@
 #!/usr/bin/env python3
+"""Call overlay evidence on the ONE product surface (ma-call).
 
+Drives the real product call lifecycle from a thread header. An outgoing call
+has NO caller accept tile — "接听" is incoming-only — so the single pre-answer
+control is a red cancel, and the call auto-connects outgoing → connecting →
+active on the same timers as the desktop CallOverlay. Then mute / camera →
+end, asserting containment in the device, ≥44px controls and no overflow.
+
+PROTOTYPE_URL=http://localhost:3108 python3 scripts/check-call-states.py
+"""
 import json
 import os
-import re
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-
-BASE_URL = os.environ.get("PROTOTYPE_URL", "http://localhost:3109").rstrip("/")
+BASE_URL = os.environ.get("PROTOTYPE_URL", "http://localhost:3108").rstrip("/")
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = PACKAGE_ROOT.parents[3]
-EVIDENCE_ROOT = Path(
-    os.environ.get(
-        "PROTOTYPE_EVIDENCE_DIR",
-        REPO_ROOT / "apps" / "mobile" / "src-tauri" / "target"
-        / "prototype-call-states",
-    )
-)
-
-SCENARIOS = (
-    "call-outgoing-audio",
-    "call-incoming-video",
-    "call-active-audio",
-    "call-active-video",
-    "call-reconnecting",
-    "call-handled-elsewhere",
-    "call-ended",
-)
+EVIDENCE_ROOT = Path(os.environ.get(
+    "PROTOTYPE_EVIDENCE_DIR",
+    REPO_ROOT / "apps/mobile/src-tauri/target/prototype-call-states",
+))
 
 
-def state(page: Page) -> str | None:
-    return page.locator("[data-prototype-call-state]").get_attribute(
-        "data-prototype-call-state"
-    )
-
-
-def assert_layout(page: Page, expected: str) -> dict:
+def assert_surface(page: Page, expected: str) -> dict:
     evidence = page.evaluate(
         """() => {
-          const surface = document.querySelector('[data-prototype-call-state]');
-          const shell = document.querySelector('.mp-app-shell');
-          if (!surface || !shell) return null;
-          const surfaceRect = surface.getBoundingClientRect();
-          const shellRect = shell.getBoundingClientRect();
-          const controls = [...surface.querySelectorAll('.mp-call-control')]
-            .map((control) => {
-              const rect = control.getBoundingClientRect();
-              return {
-                label: control.getAttribute('aria-label'),
-                width: rect.width,
-                height: rect.height,
-              };
-            });
+          const surface = document.querySelector('[data-call-state]');
+          const device = document.querySelector('.mp-device-screen');
+          if (!surface || !device) return null;
+          const a = surface.getBoundingClientRect(), d = device.getBoundingClientRect();
+          const controls = [...surface.querySelectorAll('.ma-call-btn')].map(tile => {
+            const icon = tile.querySelector('.ma-call-btn-icon').getBoundingClientRect();
+            const label = tile.querySelector('.ma-call-btn-label').getBoundingClientRect();
+            return {
+              label: tile.querySelector('.ma-call-btn-icon').getAttribute('aria-label'),
+              width: icon.width, height: icon.height,
+              // Every dial tile, including its caption, must clear the device
+              // screen bottom edge — a clipped 挂断/静音 tile is the regression
+              // this guard exists to catch.
+              iconBottomGap: d.bottom - icon.bottom,
+              labelBottomGap: d.bottom - label.bottom,
+            };
+          });
           return {
-            state: surface.getAttribute('data-prototype-call-state'),
-            label: surface.getAttribute('aria-label'),
-            text: surface.textContent.trim().replace(/\\s+/g, ' '),
-            overflowX: document.documentElement.scrollWidth >
-              document.documentElement.clientWidth,
-            contained:
-              surfaceRect.left >= shellRect.left &&
-              surfaceRect.top >= shellRect.top &&
-              surfaceRect.right <= shellRect.right &&
-              surfaceRect.bottom <= shellRect.bottom,
+            state: surface.getAttribute('data-call-state'),
+            contained: a.left >= d.left - 1 && a.top >= d.top - 1 &&
+                       a.right <= d.right + 1 && a.bottom <= d.bottom + 1,
+            overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             controls,
           };
         }"""
     )
     assert evidence is not None, f"{expected}: call surface missing"
     assert evidence["state"] == expected, evidence
-    assert not evidence["overflowX"], evidence
     assert evidence["contained"], evidence
-    assert all(
-        control["width"] >= 44 and control["height"] >= 44
-        for control in evidence["controls"]
-    ), evidence
+    assert not evidence["overflowX"], evidence
+    assert all(c["width"] >= 44 and c["height"] >= 44 for c in evidence["controls"]), evidence
+    assert all(c["iconBottomGap"] >= 24 and c["labelBottomGap"] >= 8
+               for c in evidence["controls"]), evidence
     return evidence
 
 
-def open_scenario(page: Page, scenario: str) -> dict:
-    page.goto(f"{BASE_URL}/?scenario={scenario}", wait_until="networkidle")
-    page.locator("[data-prototype-call-state]").wait_for(state="visible")
-    expected = {
-        "call-outgoing-audio": "outgoing",
-        "call-incoming-video": "incoming",
-        "call-active-audio": "active_here",
-        "call-active-video": "active_here",
-        "call-reconnecting": "reconnecting",
-        "call-handled-elsewhere": "handled_elsewhere",
-        "call-ended": "ended",
-    }[scenario]
-    return assert_layout(page, expected)
+def enter_thread_start_call(page: Page, media: str) -> None:
+    page.goto(f"{BASE_URL}/?scenario=default", wait_until="networkidle")
+    page.locator("[aria-label='Mobile device preview']").wait_for()
+    page.locator(".ma-conv-item").first.click()
+    page.wait_for_timeout(400)
+    page.get_by_role("button", name="视频通话" if media == "video" else "语音通话").click()
+    page.wait_for_timeout(400)
 
 
 def main() -> None:
     EVIDENCE_ROOT.mkdir(parents=True, exist_ok=True)
-    report = {
-        "baseUrl": BASE_URL,
-        "screenshots": [],
-        "states": {},
-        "interactions": [],
-        "consoleErrors": [],
-        "consoleWarnings": [],
-        "pageErrors": [],
-    }
-
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+    report = {"states": {}, "interactions": [], "consoleErrors": [], "pageErrors": []}
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 430, "height": 932})
+        page.on("console", lambda m: report["consoleErrors"].append(m.text) if m.type == "error" else None)
+        page.on("pageerror", lambda e: report["pageErrors"].append(str(e)))
 
-        def record_console(message) -> None:
-            if message.type != "error":
-                return
-            if "[antd: List] The `List` component is deprecated" in message.text:
-                report["consoleWarnings"].append(message.text)
-                return
-            report["consoleErrors"].append(message.text)
+        # Audio: the caller surface never shows an accept tile — the only
+        # pre-answer control is a red cancel — and the call then auto-connects
+        # outgoing -> connecting -> active without any caller tap.
+        enter_thread_start_call(page, "audio")
+        outgoing = assert_surface(page, "outgoing")
+        assert page.get_by_role("button", name="接听").count() == 0, \
+            "outgoing caller surface must not expose an accept tile"
+        assert [c["label"] for c in outgoing["controls"]] == ["取消"], outgoing
+        page.wait_for_selector('[data-call-state="connecting"]', timeout=3000)
+        report["states"]["connecting-audio"] = assert_surface(page, "connecting")
+        page.wait_for_selector('[data-call-state="active"]', timeout=3000)
+        report["states"]["active-audio"] = assert_surface(page, "active")
+        page.get_by_role("button", name="静音").click()
+        page.wait_for_timeout(150)
+        assert page.get_by_role("button", name="取消静音").get_attribute("aria-pressed") == "true"
+        page.screenshot(path=str(EVIDENCE_ROOT / "430-active-audio.png"))
+        page.get_by_role("button", name="挂断").click()
+        page.wait_for_timeout(300)
+        assert page.locator("[data-call-state]").count() == 0
+        report["interactions"].append("audio outgoing(no accept) -> auto connect -> mute -> end")
 
-        page.on("console", record_console)
-        page.on("pageerror", lambda error: report["pageErrors"].append(str(error)))
+        # Video: same auto-answer path; the camera toggle flips pressed state.
+        enter_thread_start_call(page, "video")
+        assert page.get_by_role("button", name="接听").count() == 0, \
+            "outgoing caller surface must not expose an accept tile"
+        assert_surface(page, "outgoing")
+        page.wait_for_selector('[data-call-state="connecting"]', timeout=3000)
+        assert_surface(page, "connecting")
+        page.wait_for_selector('[data-call-state="active"]', timeout=3000)
+        assert_surface(page, "active")
+        page.get_by_role("button", name="关闭摄像头").click()
+        page.wait_for_timeout(150)
+        assert page.get_by_role("button", name="开启摄像头").get_attribute("aria-pressed") == "true"
+        page.screenshot(path=str(EVIDENCE_ROOT / "430-active-video.png"))
+        page.get_by_role("button", name="挂断").click()
+        page.wait_for_timeout(300)
+        report["interactions"].append("video outgoing(no accept) -> auto connect -> camera off -> end")
 
-        for scenario in SCENARIOS:
-            report["states"][scenario] = open_scenario(page, scenario)
-            screenshot = EVIDENCE_ROOT / f"430-{scenario}.png"
-            page.screenshot(path=screenshot, full_page=True)
-            report["screenshots"].append(str(screenshot))
-
-        open_scenario(page, "call-outgoing-audio")
-        page.get_by_role("button", name="Cancel").click()
-        assert state(page) == "ended"
-        report["interactions"].append("outgoing -> cancel -> ended")
-
-        open_scenario(page, "call-incoming-video")
-        assert page.evaluate(
-            "() => document.activeElement?.getAttribute('aria-label')"
-        ) == "Accept"
-        page.get_by_role("button", name="Accept").click()
-        assert state(page) == "active_here"
-        assert page.evaluate(
-            "() => document.activeElement?.getAttribute('aria-label')"
-        ) == "Mute"
-        page.get_by_role("button", name="Mute").click()
-        page.get_by_role("button", name="Turn camera off").click()
-        assert page.get_by_role("button", name="Unmute").get_attribute(
-            "aria-pressed"
-        ) == "true"
-        assert page.get_by_role("button", name="Turn camera on").get_attribute(
-            "aria-pressed"
-        ) == "true"
-        accepted = EVIDENCE_ROOT / "430-incoming-accepted-controls.png"
-        page.screenshot(path=accepted, full_page=True)
-        report["screenshots"].append(str(accepted))
-        page.get_by_role("button", name="End call").click()
-        assert state(page) == "ended"
-        report["interactions"].append(
-            "incoming video -> accept -> mute/camera off -> end"
-        )
-
-        open_scenario(page, "call-handled-elsewhere")
-        page.get_by_role("button", name="Close").click()
-        assert page.locator("[data-prototype-call-state]").count() == 0
-        report["interactions"].append("handled_elsewhere -> close")
-
-        page.goto(f"{BASE_URL}/?scenario=journey", wait_until="networkidle")
-        page.get_by_role("button", name=re.compile(r"Open .*Station")).click()
-        page.get_by_role("button", name="Email Login", exact=True).click()
-        page.locator(".mp-auth-account-chip").first.click()
-        page.get_by_role("button", name="Sign In", exact=True).click()
-        page.get_by_role("heading", name="Chats").wait_for(state="visible")
-        page.locator(".mp-conversation-item").filter(has_text="Alice Chen").first.click()
-        page.get_by_role("button", name="Voice call").click()
-        assert_layout(page, "outgoing")
-        header_action = EVIDENCE_ROOT / "430-direct-header-start-audio.png"
-        page.screenshot(path=header_action, full_page=True)
-        report["screenshots"].append(str(header_action))
-        report["interactions"].append(
-            "journey -> Direct conversation -> header audio action -> outgoing"
-        )
-
-        page.set_viewport_size({"width": 1440, "height": 1100})
-        open_scenario(page, "call-active-video")
-        wide = EVIDENCE_ROOT / "1440-call-active-video.png"
-        page.screenshot(path=wide, full_page=True)
-        report["screenshots"].append(str(wide))
+        # Outgoing cancel (pre-answer) returns to the thread without an overlay.
+        enter_thread_start_call(page, "audio")
+        assert_surface(page, "outgoing")
+        page.get_by_role("button", name="取消").click()
+        page.wait_for_timeout(300)
+        assert page.locator("[data-call-state]").count() == 0
+        report["interactions"].append("outgoing cancel -> idle")
 
         browser.close()
 
     assert report["consoleErrors"] == [], report["consoleErrors"]
     assert report["pageErrors"] == [], report["pageErrors"]
-    report_path = EVIDENCE_ROOT / "report.json"
-    report_path.write_text(
-        json.dumps(report, ensure_ascii=True, indent=2),
-        encoding="utf-8",
-    )
-    print(json.dumps({
-        "status": "passed",
-        "report": str(report_path),
-        "screenshots": len(report["screenshots"]),
-        "states": len(report["states"]),
-        "interactions": report["interactions"],
-    }, indent=2))
+    (EVIDENCE_ROOT / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps({"status": "passed", "states": list(report["states"]),
+                      "interactions": report["interactions"]}, indent=2))
 
 
 if __name__ == "__main__":

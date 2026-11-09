@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Spin } from 'antd';
-import { Image, MessageCircle, User, Users } from 'lucide-react';
+import { Badge, Icon, Spin } from '@peers-touch/ui';
+import type { IconId } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import {
@@ -47,11 +47,11 @@ const SearchPage = lazy(() => import('../pages/SearchPage').then(module => ({ de
 
 type TabId = 'chat' | 'moments' | 'contacts' | 'settings';
 
-const TAB_ICON_MAP: Record<TabId, typeof MessageCircle> = {
-  chat: MessageCircle,
-  moments: Image,
-  contacts: Users,
-  settings: User,
+const TAB_ICON_MAP: Record<TabId, IconId> = {
+  chat: 'message-circle',
+  moments: 'sparkles',
+  contacts: 'users',
+  settings: 'circle-user',
 };
 
 /** Map navigation descriptor route IDs to local tab IDs. */
@@ -99,7 +99,7 @@ function renderPage(
   onOpenSearch: (conversationId?: string) => void,
 ) {
   if (activeDetail?.routeId === 'detail:search') {
-    return <Suspense fallback={<div className="mobile-route-state" role="status"><Spin /></div>}>
+    return <Suspense fallback={<div className="mobile-route-state" role="status"><Spin active /></div>}>
       <SearchPage onBack={onBack} onOpenDetail={onOpenDetail} />
     </Suspense>;
   }
@@ -431,7 +431,7 @@ export function MobileShell(props: MobileShellProps) {
         {primaryTabDescriptors.map((descriptor) => {
           const tabId = routeIdToTabId(descriptor.routeId);
           if (!tabId) return null;
-          const Icon = TAB_ICON_MAP[tabId];
+          const tabIconId = TAB_ICON_MAP[tabId];
           const isActive = activeTab === tabId;
           const badgeCount = tabId === 'chat' ? chatBadge : tabId === 'contacts' ? contactBadge : 0;
           return (
@@ -441,9 +441,10 @@ export function MobileShell(props: MobileShellProps) {
               data-route-id={descriptor.routeId}
               onClick={() => switchTab(tabId)}
               type="button"
+              aria-pressed={isActive}
             >
-              <Badge count={badgeCount} size="small" offset={[4, -2]}>
-                <Icon size={24} strokeWidth={isActive ? 2.2 : 1.7} />
+              <Badge count={badgeCount}>
+                <Icon iconId={tabIconId} size={24} strokeWidth={isActive ? 2.2 : 1.7} />
               </Badge>
               <span className="tabbar-label">{t(descriptor.labelKey)}</span>
             </button>

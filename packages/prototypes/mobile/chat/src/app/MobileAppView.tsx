@@ -2,31 +2,33 @@
  * MobileAppView — host for the clean mobile product surface.
  *
  * Owns the single useReducer, resolves the current route to a screen, mounts
- * global overlays (new-chat sheet, call) and the tab bar. Screens are pure
- * functions of state; this file only routes and composes.
+ * the call overlay and the tab bar. Screens are pure functions of state; this
+ * file only routes and composes. All device chrome and overlay shapes are
+ * @peers-touch/ui product primitives.
  */
 import { useMemo, useReducer } from 'react';
-import { Button, IconButton } from '@peers-touch/ui';
+import { MobileStatusBar, MobileTabBar } from '@peers-touch/ui';
 import type { IconId } from '@peers-touch/ui';
 import { createInitialState, resolveConversation } from './model';
-import type { AppState, TabId } from './model';
+import type { AppState, ProductScenario, TabId } from './model';
 import { reducer, tabBarVisible, type Action } from './state';
-import { ActionSheet, StatusBar } from './primitives';
 import { CallScreen } from './CallScreen';
 import {
-  AboutScreen, AgentReservedScreen, ChatsScreen, ContactDetailScreen, GroupDetailScreen,
-  MeScreen, MomentsScreen, SearchScreen, SignedOutScreen, StationScreen, ThreadScreen,
+  AboutScreen, ChatsScreen, ContactDetailScreen, CredentialsScreen, GroupDetailScreen,
+  MeScreen, MomentsScreen, SignedOutScreen, StationScreen, ThreadScreen,
 } from './screens';
 
+// Mirrors the desktop outer rail (DesignDirections RAIL_NAV): the two social
+// destinations then identity. The moments glyph is Sparkles on both surfaces.
+// Search is never a tab or page — each surface's header icon expands in place
+// into a local filter, exactly like the desktop rail.
 const TABS: { id: TabId; label: string; icon: IconId }[] = [
   { id: 'chats', label: '消息', icon: 'message-circle' },
-  { id: 'agent', label: 'Agent', icon: 'bot' },
-  { id: 'moments', label: '动态', icon: 'image' },
+  { id: 'moments', label: '动态', icon: 'sparkles' },
   { id: 'me', label: '我的', icon: 'circle-user' },
 ];
 
 function resolveScreen(state: AppState, dispatch: (a: Action) => void) {
-  if (state.searchOpen) return <SearchScreen state={state} dispatch={dispatch} />;
   const { route } = state;
 
   if (route.tab === 'chats') {
@@ -46,8 +48,8 @@ function resolveScreen(state: AppState, dispatch: (a: Action) => void) {
     return <ChatsScreen state={state} dispatch={dispatch} />;
   }
   if (route.tab === 'moments') return <MomentsScreen state={state} dispatch={dispatch} />;
-  if (route.tab === 'agent') return <AgentReservedScreen />;
   if (route.tab === 'me') {
+    if (route.setting === 'credentials') return <CredentialsScreen state={state} dispatch={dispatch} />;
     if (route.setting === 'station') return <StationScreen state={state} dispatch={dispatch} />;
     if (route.setting === 'about') return <AboutScreen state={state} dispatch={dispatch} />;
     return <MeScreen state={state} dispatch={dispatch} />;
@@ -55,54 +57,39 @@ function resolveScreen(state: AppState, dispatch: (a: Action) => void) {
   return null;
 }
 
-export function MobileAppView() {
-  const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
+export function MobileAppView({ scenario = 'default' }: { scenario?: ProductScenario } = {}) {
+  const [state, dispatch] = useReducer(reducer, scenario, createInitialState);
   const unread = useMemo(() => state.conversations.reduce((sum, c) => sum + c.unread, 0), [state.conversations]);
   const activeTab: TabId = state.route.tab;
-  const showTabBar = tabBarVisible(state) && !state.searchOpen && !state.newChatOpen;
+  // Immersive cover belongs ONLY to the Me landing surface; pushed detail
+  // pages (credentials/station/about) keep their own nav bar + in-flow bar.
+  const immersive = state.route.tab === 'me' && !state.route.setting;
+  // A bottom sheet physically covers the tab-bar strip; suppress the bar
+  // while either messages or moments sheet is open (no chrome ghosting
+  // through the frosted material).
+  const sheetCoveringTabBar = state.chatsSheet !== 'none' || state.composerOpen;
+  const showTabBar = tabBarVisible(state) && !sheetCoveringTabBar;
 
   // Signed-out gate replaces the whole product (no tabs, sheets, or calls).
   if (state.signedOut) {
     return (
       <div className="ma-root">
-        <StatusBar />
+        <MobileStatusBar island time="9:41" carrier="5G" signalLevel={4} wifi battery={100} />
         <div className="ma-body"><SignedOutScreen state={state} dispatch={dispatch} /></div>
       </div>
     );
   }
 
   return (
-    <div className="ma-root">
-      <StatusBar />
+    <div className="ma-root" data-tab={activeTab} data-immersive={immersive ? '' : undefined}>
+      <MobileStatusBar island time="9:41" carrier="5G" signalLevel={4} wifi battery={100} />
       <div className="ma-body">{resolveScreen(state, dispatch)}</div>
 
       {showTabBar && (
-        <nav className="ma-tabbar" aria-label="主导航">
-          {TABS.map(item => (
-            <span key={item.id} className={`ma-tab${activeTab === item.id ? ' active' : ''}`}>
-              <span className="ma-tab-icon">
-                <IconButton actionId={`ma.tab.${item.id}`} iconId={item.icon} iconSize={23}
-                  label={item.label} aria-current={activeTab === item.id ? 'page' : undefined}
-                  emphasis="quiet"
-                  onActivate={() => dispatch({ type: 'tab', tab: item.id })} />
-                {item.id === 'chats' && unread > 0 && <span className="ma-badge" aria-hidden="true">{unread}</span>}
-              </span>
-              <span className="ma-tab-label" aria-hidden="true">{item.label}</span>
-            </span>
-          ))}
-        </nav>
+        <MobileTabBar ariaLabel="主导航" value={activeTab}
+          items={TABS.map(item => ({ ...item, badgeCount: item.id === 'chats' ? unread : undefined }))}
+          onValueChange={id => dispatch({ type: 'tab', tab: id as TabId })} />
       )}
-
-      <ActionSheet title="发起" open={state.newChatOpen} onClose={() => dispatch({ type: 'newChat/close' })}
-        actions={[
-          { id: 'ma.sheet.new-group', label: '创建群聊', onActivate: () => { dispatch({ type: 'newChat/close' }); dispatch({ type: 'tab', tab: 'chats' }); } },
-          { id: 'ma.sheet.add-contact', label: '添加联系人', onActivate: () => { dispatch({ type: 'newChat/close' }); dispatch({ type: 'tab', tab: 'chats' }); } },
-        ]}>
-        <Button actionId="ma.sheet.search" fullWidth emphasis="quiet" className="ma-sheet-action"
-          onActivate={() => { dispatch({ type: 'newChat/close' }); dispatch({ type: 'search/open' }); }}>
-          搜索并发起会话
-        </Button>
-      </ActionSheet>
 
       <CallScreen state={state} dispatch={dispatch} />
     </div>

@@ -1613,6 +1613,69 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "mobile-northstar-realignment",
+      "root": "docs/architecture/platform/client/mobile/northstar-realignment",
+      "status": "draft",
+      "owner": "Mobile / Client Architecture",
+      "characteristics": {
+        "ownership": true,
+        "moduleLayout": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "module-layout.md",
+        "integration.md",
+        "functional-coverage.md"
+      ],
+      "decisionIds": [
+        "MNR-ADR-1",
+        "MNR-ADR-2",
+        "MNR-ADR-3",
+        "MNR-ADR-4",
+        "MNR-ADR-5",
+        "MNR-ADR-6",
+        "MNR-ADR-7"
+      ],
+      "governedPaths": [
+        "apps/mobile/src/components",
+        "apps/mobile/src/pages",
+        "apps/mobile/src/app/AppProviders.tsx",
+        "apps/mobile/src/app/MobileThemeProvider.tsx",
+        "apps/mobile/src/styles.css",
+        "packages/prototypes/mobile/chat",
+        "docs/architecture/platform/client/mobile/northstar-realignment"
+      ],
+      "capabilities": [
+        {
+          "id": "mobile.presentation.northstar",
+          "owner": "mobile.presentation",
+          "contractRoots": [
+            "docs/architecture/platform/client/mobile/northstar-realignment"
+          ],
+          "consumers": [
+            "apps/mobile/src/components",
+            "apps/mobile/src/pages",
+            "apps/mobile/src/features",
+            "packages/prototypes/mobile/chat"
+          ],
+          "allowedDependencies": [
+            "@peers-touch/ui",
+            "mobile.lifecycle",
+            "mobile.navigation"
+          ],
+          "evidenceGates": [
+            "mobile-native-build",
+            "mobile-ios-simulator-layout-accessibility-e2e",
+            "mobile-simulator-whole-product-usability-e2e"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "secure-content",
       "root": "docs/architecture/shared/security/secure-content",
       "status": "active",
@@ -1664,7 +1727,10 @@
         "SC-D27",
         "SC-D28",
         "SC-D29",
-        "SC-D30"
+        "SC-D30",
+        "SC-D31",
+        "SC-D32",
+        "SC-D33"
       ],
       "governedPaths": [
         "docs/architecture/shared/security/secure-content"

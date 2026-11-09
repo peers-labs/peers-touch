@@ -507,6 +507,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'debug.snapshot.read',
+    mobileAcceptanceActions['debug.snapshot.read'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'cleanup',
     mobileAcceptanceActions.cleanup,
     registry,

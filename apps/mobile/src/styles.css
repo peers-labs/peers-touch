@@ -1842,22 +1842,24 @@ select,
   line-height: 1.55;
 }
 
-.mobile-route-state .ant-btn {
-  min-height: 44px;
+.mobile-route-state__error {
+  color: var(--pt-danger);
+  font-size: 13px;
+}
+
+.mobile-route-state__action {
+  display: flex;
   margin-top: 4px;
-  border-radius: 12px;
 }
 
 .mobile-tabbar {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  height: calc(var(--tabbar-height) + var(--safe-area-bottom));
-  padding-bottom: var(--safe-area-bottom);
-  border-top: 0.5px solid var(--brand-border);
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  height: calc(var(--pt-m-tabbar-height) + var(--pt-m-safe-area-bottom));
+  padding-bottom: var(--pt-m-safe-area-bottom);
+  border-top: 0.5px solid var(--pt-border);
+  background: var(--pt-surface);
   flex: 0 0 auto;
   z-index: 100;
 }
@@ -1869,10 +1871,10 @@ select,
   justify-content: center;
   gap: 2px;
   flex: 1;
-  height: var(--tabbar-height);
+  height: var(--pt-m-tabbar-height);
   border: none;
   background: none;
-  color: rgba(0, 0, 0, 0.4);
+  color: var(--pt-muted);
   cursor: pointer;
   transition: color 0.15s, transform 0.1s;
   padding: 0;
@@ -1880,7 +1882,7 @@ select,
 }
 
 .tabbar-item.active {
-  color: var(--brand-primary);
+  color: var(--pt-accent);
 }
 
 .tabbar-item:active {
@@ -1895,10 +1897,6 @@ select,
 
 .tabbar-item.active .tabbar-label {
   font-weight: 600;
-}
-
-.tabbar-item .ant-badge {
-  line-height: 0;
 }
 
 .page-header {
@@ -2243,6 +2241,77 @@ select,
 .conversation-title-row svg {
   flex: 0 0 auto;
   color: rgba(0, 0, 0, 0.42);
+}
+
+/* North-star chat rail (peers-ui migration; app-owned row structure). */
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--pt-radius-xl, 18px);
+  background: var(--pt-surface);
+  box-shadow: var(--pt-shadow-soft);
+}
+
+.conversation-list .conversation-item {
+  border-bottom: 0.5px solid var(--pt-border);
+}
+
+.conversation-list .conversation-item:last-child {
+  border-bottom: 0;
+}
+
+.conversation-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.conversation-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+}
+
+.conversation-body .conversation-title-row strong {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-body .conversation-preview {
+  color: var(--pt-secondary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.chat-search-bar .chat-search-field {
+  width: 100%;
+}
+
+.chat-search-leading {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pt-muted);
+}
+
+.chat-list-empty {
+  padding: 40px 16px;
+}
+
+.chat-list-empty .empty-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--pt-secondary);
 }
 
 .social-section-title {
@@ -2933,8 +3002,7 @@ select,
   background: #5d82f7;
 }
 
-.message-bubble-row.mine .message-bubble,
-.message-bubble-row.mine .message-bubble .ant-typography {
+.message-bubble-row.mine .message-bubble {
   color: #fff;
 }
 

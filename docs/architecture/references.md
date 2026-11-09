@@ -156,4 +156,3 @@ image embeds targeting that exact asset are counted as diagram references.
 - SVG asset: [docs/architecture/platform/client/ui-system/architecture.svg](./platform/client/ui-system/architecture.svg)
 - Referenced by:
   - [docs/architecture/platform/client/ui-system/design.md](./platform/client/ui-system/design.md)
-

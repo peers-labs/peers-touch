@@ -48,3 +48,21 @@ acquisition. The controlled application build must match that team and carry
 development APNs entitlements in both its signature and provisioning profile,
 plus the declared background modes. Provider delivery is a separate runtime
 obligation.
+
+## North-star realignment — webview CSS compatibility (2026-11-09)
+
+The real app adopting `@peers-touch/ui` (see
+[`northstar-realignment/`](./northstar-realignment/), ADR-6) introduces CSS that
+is newer than the nominal iOS deployment target of 15.0: dynamic viewport units
+(`dvh`, Safari 15.4), `:has()` and `color-mix(in srgb, …)` (Safari 16.2), with
+glass blur defaulted off.
+
+Verified fact: the acceptance runtime is pinned to **iOS 26.5** (iPhone 17 /
+17 Pro Max), where all of these are supported; the iOS Simulator harness gates
+therefore exercise a compatible OS. The unresolved decision is the *supported
+minimum*, not the acceptance runtime: either raise the deployment target to the
+OS covering the used feature set, or add scoped fallbacks for dvh/`:has`/
+`color-mix` on 15.0–16.1. `color-mix` use in peers-ui is limited (code diff and
+the icon-only file button), and blur is disabled by default, keeping the
+fallback surface small. This is resolved before any whole-Mobile delivery
+claim; the iOS Simulator cell is unaffected.

@@ -1,6 +1,5 @@
 import type { ReactNode, Ref } from 'react';
-import { Empty, Typography } from 'antd';
-import { CornerUpLeft, Pin } from 'lucide-react';
+import { Empty, Icon } from '@peers-touch/ui';
 import { isRecalledChatMessage } from '@peers-touch/client-chat-core';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -28,8 +27,6 @@ import type {
 } from '../../features/social/socialTypes';
 import { actorDisplayName } from '../../features/social/socialProjection';
 import { MessageAvatar } from './ChatMessagePresentation';
-
-const { Text } = Typography;
 
 export interface MessageMetaRenderInput {
   readonly message: SocialMessage;
@@ -96,7 +93,7 @@ export function ChatMessageSectionBoundary({
       data-product-surface={messages.length === 0 ? 'chat.thread-empty' : undefined}
     >
       {messages.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.chat.emptyThread')} />
+        <Empty description={t('mobile.chat.emptyThread')} />
       ) : (
         <BoundedList
           surfaceKey={surfaceKey}
@@ -155,11 +152,11 @@ export function ChatMessageSectionBoundary({
                 ) : null}
                 <div className="message-bubble">
                   {!mine && !peerName ? (
-                    <Text className="message-sender-name">{senderName}</Text>
+                    <span className="message-sender-name">{senderName}</span>
                   ) : null}
                   {metadata.pinnedByPtid ? (
                     <span className="message-pin-indicator">
-                      <Pin size={11} />
+                      <Icon iconId="pin" size={11} />
                       <span>{t('mobile.chat.messagePinned')}</span>
                     </span>
                   ) : null}
@@ -171,7 +168,7 @@ export function ChatMessageSectionBoundary({
                         if (replyMessage) onScrollToMessage(replyMessage.ulid);
                       }}
                     >
-                      <CornerUpLeft size={12} />
+                      <Icon iconId="corner-up-left" size={12} />
                       <span>
                         {replyMessage
                           ? messageContentForSearch(replyMessage, t)
@@ -180,7 +177,7 @@ export function ChatMessageSectionBoundary({
                     </button>
                   ) : null}
                   {!hasAttachmentOnlyPreview ? (
-                    <Text className="message-text">{content}</Text>
+                    <span className="message-text">{content}</span>
                   ) : null}
                   {!recalled && !moderated && attachments.length > 0
                     ? renderAttachments(attachments, mine)

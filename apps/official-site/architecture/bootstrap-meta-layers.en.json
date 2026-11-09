@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Bootstrap Meta Layers: Burn vs Runtime Fetch",
+    "subtitle": "Addressing meta is burned into the binary at package time; assertion material and live behavior are always fetched and re-verified at runtime. L3/L4 bootstrap a partner device with no configuration; the live signed catalog remains the only runtime authority.",
+    "locale": "en",
+    "output": "bootstrap-meta-layers.en.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "build",
+      "type": "backend",
+      "label": "make package",
+      "sublabel": "package-time burn",
+      "tag": "build",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        190,
+        84
+      ]
+    },
+    {
+      "id": "l0",
+      "type": "backend",
+      "label": "L0 Distribution identity",
+      "sublabel": "flavor · channel · commit (D05)",
+      "tag": "baked",
+      "pos": [
+        300,
+        56
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l1",
+      "type": "security",
+      "label": "L1 Publisher keyring",
+      "sublabel": "signature trust root · rotates only via release",
+      "tag": "baked",
+      "pos": [
+        300,
+        140
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l2",
+      "type": "cloud",
+      "label": "L2 Bootstrap origins",
+      "sublabel": "x-config base URLs, tail anchors (D06)",
+      "tag": "baked",
+      "pos": [
+        300,
+        224
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l3",
+      "type": "database",
+      "label": "L3 Embedded signed snapshot",
+      "sublabel": "verified envelope fetched at package time · stale after expiry",
+      "tag": "bootstrap",
+      "pos": [
+        300,
+        308
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l4",
+      "type": "external",
+      "label": "L4 Station bootstrap pointer",
+      "sublabel": "origin + name only · trust re-established live",
+      "tag": "bootstrap",
+      "pos": [
+        300,
+        392
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "l5",
+      "type": "frontend",
+      "label": "L5 Device runtime state",
+      "sublabel": "registry · sessions · snapshot cache · never burned",
+      "tag": "device",
+      "pos": [
+        300,
+        476
+      ],
+      "size": [
+        560,
+        62
+      ]
+    },
+    {
+      "id": "xcfg",
+      "type": "cloud",
+      "label": "Signed x-config catalog",
+      "sublabel": "operator-published · sequence monotonic",
+      "tag": "remote",
+      "pos": [
+        930,
+        222
+      ],
+      "size": [
+        210,
+        84
+      ]
+    },
+    {
+      "id": "station",
+      "type": "security",
+      "label": "Home Station",
+      "sublabel": "live discovery · challenge + attestation",
+      "tag": "remote",
+      "pos": [
+        930,
+        382
+      ],
+      "size": [
+        210,
+        84
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Burned at compile time — immutable within a release",
+      "wraps": [
+        "l0",
+        "l1",
+        "l2"
+      ],
+      "pad": 10
+    },
+    {
+      "kind": "region",
+      "label": "Factory bootstrap — yields after first accepted refresh",
+      "wraps": [
+        "l3",
+        "l4"
+      ],
+      "pad": 10
+    },
+    {
+      "kind": "region",
+      "label": "Device-local — never embedded, never mutated by catalog refresh",
+      "wraps": [
+        "l5"
+      ],
+      "pad": 10
+    }
+  ],
+  "connections": [
+    {
+      "from": "build",
+      "to": "l3",
+      "label": "fetch + verify at package time"
+    },
+    {
+      "from": "build",
+      "to": "l4",
+      "label": "derive addressing pointer"
+    },
+    {
+      "from": "xcfg",
+      "to": "l3",
+      "label": "runtime refresh: current replaces embedded",
+      "variant": "dashed"
+    },
+    {
+      "from": "xcfg",
+      "to": "l2",
+      "label": "origins located via L2",
+      "variant": "dashed"
+    },
+    {
+      "from": "l4",
+      "to": "station",
+      "label": "first-run live discovery"
+    },
+    {
+      "from": "station",
+      "to": "l5",
+      "label": "verified route committed to registry"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Boot-time use (offline bootstrap)",
+      "items": [
+        "L0/L1/L2 are compiled in: identity, trust root and catalog origins work with no network.",
+        "L3 is first visible with embedded freshness before any fetch; it never evaluates directives after a current snapshot exists.",
+        "L4 triggers exactly one live discovery when the Station registry is empty; identity trust is established at the Station, never from the burn."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Remote distribution use (runtime authority)",
+      "items": [
+        "Background refresh fetches signed envelopes through the L2 origin merge (override, advertised, baked).",
+        "An accepted current snapshot supersedes L3; an expired embedded envelope becomes stale and non-actionable.",
+        "Catalog refresh never mutates L5: registry, sessions, active Station and actor scope stay device-owned."
+      ]
+    }
+  ]
+}

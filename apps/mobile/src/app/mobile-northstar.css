@@ -1,0 +1,38 @@
+/*
+ * Mobile north-star skin.
+ *
+ * Scope rules (docs/knowledge invariant: app layer must not restyle primitives):
+ *  - Only the provider container (.pt-ui.m-northstar) is themed here.
+ *  - Values are exposed as CSS custom properties the primitives already consume;
+ *    there are NO selectors targeting .pt-button/.pt-field-frame/... controls.
+ *  - Mobile-only geometry (which north-star does not publish) lives under the
+ *    mobile-owned --pt-m-* namespace; there is no mobile color palette.
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.pt-ui.m-northstar {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+
+  /* Mobile-only geometry tokens (north-star publishes color/radius/space/motion,
+     not device chrome heights). Consumed by migrated mobile layouts. */
+  --pt-m-header-height: 58px;
+  --pt-m-header-height-compact: 52px;
+  --pt-m-tabbar-height: 56px;
+  --pt-m-safe-area-top: env(safe-area-inset-top, 0px);
+  --pt-m-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --pt-m-composer-min-height: 56px;
+  --pt-m-scroll-bottom-clearance: 12px;
+}
+
+@media (display-mode: standalone) {
+  .pt-ui.m-northstar {
+    --pt-m-header-height-compact: 50px;
+  }
+}

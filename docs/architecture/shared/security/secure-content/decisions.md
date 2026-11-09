@@ -41,6 +41,9 @@
 | SC-D28 | Runtime services separate canonical schema identity from live connection routing | accepted |
 | SC-D29 | Audience targets are typed and v1 private expansion remains locally enumerable | accepted |
 | SC-D30 | Portable Native client operations share one host-neutral mechanism owner | accepted |
+| SC-D31 | The recovery phrase roots both Actor Identity and content recovery | accepted |
+| SC-D32 | Device delivery uses authoritative revocation and enumerability-scoped typed blocking | accepted |
+| SC-D33 | Recovery evidence uses production-delegating barriers with deterministic phrase injection | accepted |
 
 ---
 
@@ -3285,3 +3288,211 @@ rotation. W5 must prove that a newly recovered device can validate a proof
 signed before rotation. Existing JWT/Federation token grace behavior and
 Conversation wire remain unchanged.
 The Owner accepted this decision on 2026-09-14.
+
+---
+
+## SC-D31: The Recovery Phrase Roots Both Actor Identity And Content Recovery
+
+**Status**: accepted by Owner 2026-11-05 (independent review `DESIGN_REVIEW_PASS`) — see
+[`recovery-identity-resilience-amendment.md`](./recovery-identity-resilience-amendment.md)
+**Date**: 2026-11-05
+
+### Context
+
+SC-D16 content recovery master creation is a side effect of a chat archive
+revision on Desktop (F3) and impossible in Mobile production (F5, F6), so a
+Mobile device cannot publish private content or ever recover it. Independent
+review further established that the content phrase alone does not survive
+reinstall: enrollment byte-compares the established Actor Identity key (F11),
+whose only carriers today are the chat archive seed or a second trusted
+device (F12). A single-device user is therefore unrecoverable even with the
+content phrase. Owner decision D-OWN-1 selects the phrase as the identity
+root.
+
+### Decision
+
+Define one Recovery Identity from a 24-word phrase with three domain-separated
+derivations: the SC-D16 content master `(ptid, epoch)`, a vault AEAD key, and
+a master-wrap key whose entries bind `(actor, epoch)` AAD. These seal a
+Station-hosted, client-opaque Identity Recovery Vault record whose plaintext
+contains the actor identity seed — immutable for the actor's lifetime;
+rotation never replaces it because Actor Identity has no key-rotation
+contract — the current content master, and previous masters wrapped under the
+current root. New Actor Identity endpoints get/put the opaque record: GET is
+actor-JWT-only for pre-enrollment reachability; PUT requires an enrolled
+device with possession proof; Station enforces record-version CAS AND
+non-decreasing recovery epoch in one transaction, comparing scalars without
+decrypting. Reinstall recovery is: login, fetch vault, decrypt with phrase,
+restore seed, self cross-sign enrollment (verified feasible against current
+enrollment continuity), restore keyring, resume pools — no archive or second
+device required. A portable-core lifecycle `ABSENT/CREATING/READY/ROTATING/
+RECOVERED/RESET` creates only after local confirmation and master
+persistence, reports READY only after vault commit and verified pool
+publication, rotates with re-sealed vault and `N -> N+1` pool publication,
+and exposes outdated-identity state on other devices pending new phrase
+entry. Chat archive revision becomes a READY consumer; the seeding branches
+in both create and restore commands are deleted in the same change, archive
+seed copies become inert legacy, along with every implicit phrase generator.
+Existing local keyrings need no migration; vault bootstrap for existing
+users requires one bounded phrase entry because a master cannot be inverted
+to entropy.
+
+Rotation preserves owner history through the wrapped-master chain but is not
+post-compromise forward secrecy; phrase compromise is account-class.
+
+### Rationale
+
+The cryptographic boundary of recovery is the actor, not the chat feature.
+Binding the phrase to the Actor Identity seed through an opaque, Station-hosted
+vault is the only construction that makes single-device reinstall recovery
+reachable without a second online device, and the enrollment continuity code
+already accepts a self cross-signature made with the restored identity key.
+Separating the vault AEAD, master-wrap, and content domains keeps each key to
+one context; server-enforced monotonic epochs prevent blob rollback without
+giving Station any plaintext oracle.
+
+### Alternatives Considered
+
+- Content-only recovery identity: rejected; reinstall still fails identity
+  continuity on single-device users (review finding B2).
+- Keep identity seed only inside the chat archive: rejected; archive is an
+  unrelated feature gate and Mobile archive parity is not built.
+- Silently generate an undisclosed master: rejected; no user-reachable
+  secret means no recovery.
+- Keep both bootstrap paths: rejected as split ownership.
+
+### Consequences
+
+New Actor Identity vault capability and proto, portable lifecycle/ports on
+both clients, Settings surfaces, deterministic harness phrase injection,
+and deletion of both Desktop and Mobile acceptance random generators. The
+Mobile first-run onboarding Journey remains a separate product contract.
+
+### Review And Reversal
+
+Re-review if identity enrollment authority or actor seed custody leaves
+Actor Identity, or if a second recovery factor is introduced. The deleted
+bootstrap branches must not be restored without a superseding decision.
+
+---
+
+## SC-D32: Device Delivery Uses Authoritative Revocation And Enumerability-Scoped Typed Blocking
+
+**Status**: accepted by Owner 2026-11-05 (independent review `DESIGN_REVIEW_PASS`) — see
+[`recovery-identity-resilience-amendment.md`](./recovery-identity-resilience-amendment.md)
+**Date**: 2026-11-05
+
+### Context
+
+Devices leave `ActiveEndpoints` only by explicit revocation (F7); claim is
+all-or-nothing (F8) with a wait-for-replenishment policy (F9), so one dead
+device blocks all private publishing addressed to that actor. Station
+already supports same-actor cross-device revocation (F10), Desktop forbids
+it for other devices (F13), Mobile lacks the transport entirely (F14), and
+clients collapse the failure to an opaque unavailable state (F15).
+Independent review established that the failing principal is discarded at
+the first error layer, and that naively returning remote actor identity
+would leak server-resolved audience membership and per-actor inventory in
+violation of SC-D12/SC-D29 (review finding B1, F16-F18).
+
+### Decision
+
+Productize list and cross-device revoke commands on both clients using
+generated Actor proto payloads; cross-device revoke never tears down local
+Secure Content and stays distinct from self-revoke. A non-mutating
+claimability prescan aggregates ALL depleted principals inside the claim
+transaction (federation peers report only a code, yielding an affected-target
+upper bound, never a fabricated count); the Key Exchange domain error retains
+the failing principals `(pool_kind, actor, device?)`. Social maps the
+aggregate to a typed protobuf prepare error, classifying each principal only
+against the signed prepare plan's persisted targets and failing closed on
+unrecognized principals. Sender entitlement scopes the projection: exact
+pool kind and device for self; actor plus pool kind only for client-supplied
+enumerable targets; pool kind plus numeric count/upper bound only for
+server-expanded and federated recipients. Federation mapping remains
+code/aggregate-only. Recovery-pool depletion remains a hard fail; clients
+render typed `RECOVERY_IDENTITY_MISSING`, `OWN_DEVICE_DELIVERY_STALLED`, or
+`RECIPIENT_DELIVERY_UNAVAILABLE` states. Content sealed without a recovery
+slot is documented cryptographically unrecoverable.
+
+Liveness auto-demotion, silent endpoint skipping, sender-driven revocation,
+and any remote actor attribution for server-expanded audiences are rejected.
+
+### Rationale
+
+Authority for device state already exists in Actor Identity; the defect is
+reachability and failure opacity, not missing server policy. Reusing the
+existing revoke RPC and SC-D15 claim fence unblocks publishing immediately
+with no schema change, while enumerability-scoped projection gives self
+senders the exact remediation target without violating SC-D12 opaque slots or
+SC-D29 server-expanded audience secrecy. The claim-time prescan is the only
+point that knows every principal's claimability, so aggregation belongs
+there under the same row locks; inventing a liveness contract would relocate
+trust without evidence.
+
+### Alternatives Considered
+
+- Skip depleted active endpoints: rejected; hides delivery loss.
+- Auto-demote on liveness heuristics: rejected; no evidence contract exists.
+- Return per-actor depletion for all recipients: rejected; membership and
+  inventory side channel (B1).
+- Leave the failure opaque: rejected; authoritative remedy already exists.
+
+### Consequences
+
+Four-layer change surface: Key Exchange domain error, Social classification,
+new typed social protobuf error, federation aggregate mapping. No Station
+schema change; device unblock is immediate through the SC-D15 fence.
+
+### Review And Reversal
+
+Re-review if recipient anonymity assumptions change or an accepted device
+liveness contract enables future demotion. Any federated error enrichment
+needs its own cross-Station decision.
+
+---
+
+## SC-D33: Recovery Evidence Uses Production-Delegating Barriers With Deterministic Phrase Injection
+
+**Status**: accepted by Owner 2026-11-05 (independent review `DESIGN_REVIEW_PASS`) — see
+[`recovery-identity-resilience-amendment.md`](./recovery-identity-resilience-amendment.md)
+**Date**: 2026-11-05
+
+### Context
+
+Both clients ship parallel harness random-phrase generators whose entropy is
+never surfaced (F5, F22), certifying paths users cannot use and unable to
+prove reinstall recovery, contrary to SC-D21.
+
+### Decision
+
+Replace both parallel generators with one harness-gated deterministic
+phrase-injection port into the production create/recover contracts, with
+owner-provided phrases and canonical claim-exhaustion for depletion.
+Add source-bound Gates RG-1 (fresh device), RG-2 (reinstall identity +
+content survival headline), RG-3 (zombie blocking and revoke), RG-4
+(rotation, wrapped history, multi-device outdated state), RG-5 (Desktop
+convergence and existing-user phrase bootstrap), RG-6 (opaque remote
+blocking with negative membership assertions), RG-7 (clean-device archive
+restore rewired after vault recovery), and RG-8 (structural no-implicit-
+generator gate across both production builds).
+
+### Rationale
+
+Recovery evidence must certify the production lifecycle users actually
+traverse. Owner-provided phrases through the same create/recover contracts
+make deterministic, repeatable Journeys possible without weakening secrecy,
+and a structural no-implicit-generator gate closes the class where tooling
+silently certifies an unreachable path. The bootstrap follows SC-D21's
+production-delegating layering rather than a second acceptance-only stack.
+
+### Alternatives Considered
+
+- Keep either random seeder: rejected; certifies unusable paths.
+- Mock recovery pools: rejected by SC-D21 and the no-mock rule.
+
+### Consequences
+
+The acceptance prepare-keys command and Desktop acceptance create-revision
+command are removed or reduced to the deterministic injection port.
+Unproven Gates remain `UNPROVEN` with no automatic backfill.

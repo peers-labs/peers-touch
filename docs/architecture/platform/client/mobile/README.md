@@ -80,6 +80,7 @@ availability, packaging, provider setup, and runtime proof remain independent.
 | [module-layout.md](./module-layout.md) | Source ownership |
 | [mobile-acceptance-environment.md](./mobile-acceptance-environment.md) | Android/iOS environment and evidence contract |
 | [prototype/README.md](./prototype/README.md) | Confirmed Mobile prototype |
+| [northstar-realignment/README.md](./northstar-realignment/README.md) | Real app adopts peers-ui north-star; feature-point coverage and reconciliation (draft) |
 | [social-parity/README.md](./social-parity/README.md) | Social parity and interoperability contract |
 
 ## 5. Upstream Sources

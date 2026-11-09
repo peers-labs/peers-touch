@@ -164,6 +164,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('moments.private.acceptance.prepareKeys');
     expect(actionNames).toContain('moments.private.reconcile');
     expect(actionNames).toContain('moments.private.snapshot');
+    expect(actionNames).toContain('debug.snapshot.read');
     expect(actionNames).toContain('storage.conversation-clear.seed');
   });
 

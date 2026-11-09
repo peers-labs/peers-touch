@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Typography } from 'antd';
 import {
   Check,
   CheckCheck,
@@ -17,8 +16,6 @@ import { MobileAvatar } from '../../components/MobileAvatar';
 import type { MobileChatAttachmentDraft } from '../../features/chat/chatAttachmentDraftState';
 import type { ChatMessageCommandOutcome } from '../../features/chat/messageCommandState';
 import type { MessageDeliveryDisplayState } from '../../features/chat/messageProjection';
-
-const { Text } = Typography;
 
 export function MessageDeliveryStatus({
   state,

@@ -2,9 +2,80 @@
 
 > **Status**: pending-review（当前消息布局修正；既有确认范围保留）
 > **Version**: v1.2
-> **Created**: 2026-07-08 | **Updated**: 2026-10-25
+> **Created**: 2026-07-08 | **Updated**: 2026-11-08
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
+
+## 2026-11-08 Station Access Gate Contract Alignment
+
+Owner 指出首启后的登录环节缺少真机访问门禁（Access Gate）：原型曾用一个自造的
+「本机身份 + 通行密钥」表单，点「登录并继续」即无条件翻牌，与真机业务完全不符。
+本次把原型门禁替换为与真机同构的 AccessDecision 状态机。
+
+真机来源（逐行核对）：
+
+- 合同：`model/domain/access_gate/access_gate.proto`（gate type 1–100、decision
+  state 1–5、Station-owned `input_schema_json`）。
+- 判定与提交：`apps/mobile/src/features/auth/authSession.ts`
+  （`currentAccessGate` / `isLoginGate` / `isInviteCodeGate` /
+  `isSchemaDrivenGate` / `advertisedCredentialChoices` / `parseGateFields` /
+  `hasSchemaValue` / invite、login、schema 三类 submit）。
+- 渲染分支顺序：`apps/mobile/src/features/auth/AccessGateHost.tsx`
+  （recovery-only → invite → schema → login（广告驱动 quick/email tab）→
+  unavailable）。
+- 编排：`apps/mobile/src/runtimes/accessRuntime.ts`、`authRuntime.ts`
+  （handshake、attempt、OAuth phase、recovery）。
+- 真机 entry fixture 场景目录：`apps/mobile/src/App.tsx`。
+
+原型实现（无 RPC，decision 用确定性 fixture 模拟，合同不模拟）：
+
+- 新增 `src/app/accessGate.ts`：proto 同构常量与类型、全部判定纯函数、
+  Station 绑定的 gate profile fixture、提交状态迁移、OAuth phase 序列、
+  Station 隔离的 remembered email（localStorage，上限 12）。
+- 新增 `src/app/AccessGateView.tsx`：分支顺序与真机一致，控件全部使用
+  peers-ui（Button/Field/TextField/PasswordField/Checkbox/Select/NumberField/
+  Segmented/BrandMark/Alert/Icon）。
+- `Station.gateProfile` 按 Station 绑定门禁策略；松绿书屋=邮箱+OAuth，
+  江边中继=邀请码→登录链，新增 Station 默认 full 凭据。
+- 准入围栏：只有 GRANTED decision 能进入 shell；扫码关联走独立
+  device-link 授权（`device-link/grant`），不经门禁链。无条件翻牌动作
+  `auth/signIn` 已删除。
+- 邀请码错误保留 decision 并内联报错（不切 recovery 面）；演示码
+  `PEERS-2026` 推进到链上登录 gate，本身不授权。
+- OAuth 本地相位机（starting → awaiting_provider → callback_received →
+  exchanging → credential_delivery → active_session）与 cancel/restart/
+  check-status 恢复；用户未启动时证据场景相位冻结。
+
+14 个门禁场景可经 `?scenario=` 深链（与真机 entry fixture 词汇对齐）：
+gate-login / gate-login-email / gate-login-oauth / gate-invite / gate-terms /
+gate-custom / gate-unavailable / gate-blocked / gate-failed / gate-pending /
+gate-session-expired / gate-login-failed / gate-oauth-progress /
+gate-oauth-failed。新增 handshake（模拟 800ms decision 往返）。
+
+证据：
+
+- `check-layout.mjs` 新增门禁记录（handshake 后挂载、tabbar 不穿透、
+  canLogin 空禁用/填齐启用、GRANTED 才进 shell、凭据广告差异、邀请码错误
+  停留与推进、schema required 围栏、unavailable 零输入、recovery 三态零
+  提交控件、session-expired 通知、login-failed 内联错误、OAuth 相位与取消、
+  冻结相位跨定时器窗口不漂移）。
+- 9 项变异验证（gate 根标记、canLogin 围栏、GRANTED 围栏、凭据广告、
+  邀请码拒绝、schema required、unavailable 输入、recovery 提交控件、
+  OAuth 冻结）均证明探针能拦，恢复后三视图口零缺陷。
+- L2 截图 17 张（15 个门禁面 @390 + login @554/@1440），零横向溢出：
+  `apps/mobile/src-tauri/target/prototype-layout/gates/`。
+- boards `mobile-signout-signin` finalizer 改为完整门禁链（continue →
+  handshake → 邮箱 tab → 填邮箱密码 → 授权），场景 OBSERVED。
+- i18n：新增 60+ `mobile.auth.*` / `mobile.launch.continue` 词条，
+  zh/en 对等，沿用真机词典原文；删除自造的 launch.identity/passkey 等 7 个
+  孤儿键。
+
+已知差异 / UNPROVEN：无真实浏览器跳转（OAuth 相位本地定时模拟）；无
+secure storage（remembered email 用 localStorage）；无真实 Station RPC 与
+schema 下发（字段由 fixture 提供）；不做 federation mesh 背景（移动 launch
+面无此元素）；device-trust(6)/maintenance(7) 按真机事实走 unavailable，无
+交互入口；PIN 不属移动门禁 gate，未造。原型只表达合同与交互，不构成 Native
+准入验收。
 
 ## 当前消息布局与文件卡片
 

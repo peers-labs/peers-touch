@@ -36,6 +36,8 @@ const SLUGS = [
   'applet-runtime',
   'contracts',
   'deployment',
+  'release-burn-flow',
+  'bootstrap-meta-layers',
   'journey-access-route',
   'journey-same-station',
   'journey-device-messaging',

@@ -58,6 +58,7 @@ import type {
 } from './settingsSurfaceFixture';
 import type { MobileSearchAcceptanceContracts } from './searchActions';
 import type { MobileSocialSearchAcceptanceContracts } from './socialSearchActions';
+import type { MobileDebugSnapshot } from './debug/collectMobileDebugSnapshot';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
@@ -164,6 +165,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'callResolutionState',
   'acceptCall',
   'rejectCall',
+  'debug.snapshot.read',
   'cleanup',
 ] as const;
 
@@ -1700,6 +1702,10 @@ export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceCo
       winningDeviceId?: string;
       conflict?: boolean;
     };
+  };
+  'debug.snapshot.read': {
+    input: undefined;
+    output: MobileDebugSnapshot;
   };
   cleanup: {
     input: undefined;

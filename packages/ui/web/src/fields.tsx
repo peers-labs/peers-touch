@@ -59,13 +59,18 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
 export interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   minimumRows?: number; maximumRows?: number; onEnter?: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   characterCount?: boolean; framing?: 'field' | 'embedded';
+  /** Inline affordance pinned to the field's own bottom-left chrome (e.g. an
+      attach-image icon). It shares the counter's inside-frame rail, so a
+      single action never becomes a standalone control floating in empty
+      space below the field. */
+  leadingAccessory?: ReactNode;
   // Semantic value channel; destructured so FormField's binding never leaks
   // onto the native textarea.
   onValueChange?: (value: string) => void;
 }
 export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function TextArea({
   className = '', style, minimumRows, maximumRows, onEnter, onKeyDown, characterCount, framing = 'field',
-  onChange, onValueChange, ...props
+  leadingAccessory, onChange, onValueChange, ...props
 }, ref) {
   return <FieldFrame invalid={!!props['aria-invalid']} disabled={props.disabled} style={style} data-framing={framing} data-multiline="true">
     <textarea {...props} ref={ref} className={`pt-textarea ${className}`} rows={props.rows ?? minimumRows ?? 3}
@@ -75,7 +80,12 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
         onKeyDown?.(event);
         if (!event.defaultPrevented && event.key === 'Enter' && !event.nativeEvent.isComposing) onEnter?.(event);
       }} />
-    {characterCount && <span className="pt-character-count">{String(props.value ?? props.defaultValue ?? '').length}{props.maxLength ? ` / ${props.maxLength}` : ''}</span>}
+    {(characterCount || leadingAccessory) && (
+      <span className="pt-textarea-foot">
+        {leadingAccessory && <span className="pt-textarea-accessory">{leadingAccessory}</span>}
+        {characterCount && <span className="pt-character-count">{String(props.value ?? props.defaultValue ?? '').length}{props.maxLength ? ` / ${props.maxLength}` : ''}</span>}
+      </span>
+    )}
   </FieldFrame>;
 });
 export const PasswordField = forwardRef<HTMLInputElement, TextFieldProps>(function PasswordField(props, ref) {

@@ -92,6 +92,7 @@ import {
   reconcilePrivateMoments,
   submitPrivateComment,
 } from '../runtimes/privateMomentsRuntime';
+import { collectMobileDebugSnapshot } from './debug/collectMobileDebugSnapshot';
 import {
   acceptSocialFriendRequest,
   applySocialFriendRequestProjectionCheckpoints,
@@ -1718,6 +1719,8 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       return { ...publicCallSnapshot(snapshot), conflict: true };
     }
   },
+
+  'debug.snapshot.read': async () => collectMobileDebugSnapshot(),
 
   cleanup: async () => {
     setEntrySurfaceFixture(null);

@@ -179,6 +179,89 @@ pine 是这种关系的情绪符号，取的是「**迎客松**」意象，不�
 - 铃与设置恒在竖轨底部组，任何宽度不转顶栏（微信桌面端语法）；窄窗口只回收
   舞台外边距，`.sk-rail` 始终是全高 60px 竖面，通知/设置锚点不随宽度跳位。
 
+## Mobile parity（移动产品面 chrome 归属）
+
+北极星语法不是桌面专有：手机产品面（`packages/prototypes/mobile/chat`
+的产品面 `MobileApp`，以及未来的 native Mobile runtime）消费**同一套
+peers-ui 原语与令牌**，禁止在产品面内手造任何 chrome 组件（历史上的
+`app/primitives.tsx` 已删除）。
+
+- **材质令牌入库**：glass 皮肤的卡片材质沉淀为 `@peers-touch/ui-tokens`
+  的 `--pt-glass-blur / -surface / -surface-alt / -tile / -border /
+  -top-light / -shadow`（`northStarVariables(mode, { material })`，
+  默认 `glass`）。数值与本文件 Source 的 `.sk-skin-glass` 卡片语法逐项一致：
+  纸地板 `#f4f5f4`、卡面 `rgba(255,255,255,.68)`、blur 22px、发丝
+  `rgba(22,26,24,.09)`、内高光 + 柔影、卡 r20 / sheet r22 / 控件 12 /
+  头像 11、Manrope。`material: 'flat'` 是不需要半透画布的显式退化档。
+- **库原语**（`@peers-touch/ui/web`，均 portal 进 UIProvider host，
+  天然裁在圆角手机屏内）：
+  - `MobileStatusBar`：真机状态栏解剖，不再接受 `right` 文本槽位——
+    `carrier`（如 5G）+ `signalLevel 0–4`（四格信号，弱格半透）+
+    `wifi`（iOS 式填充 Wi‑Fi 弧）+ `battery 0–100`/`charging`（电池轮廓、
+    电量填充与凸点，≤20% 走 danger，充电闪电压纸色）全部为库内内聚 SVG
+    （设备状态字形族，与语义 Icon 集区分），以 currentColor 着色，亮暗自适应；
+    54px 行高、SF 设备字形，时间/指示簇与 `island`（122×37 灵动岛药丸，
+    仅原型框开启，native 由 OS 自绘）光学居中。
+  - `MobileNavBar`：返回 + 居中标题 + 尾部动作，遵循语法 2，**不画底发丝线**；
+  - `MobileTabBar` / `MobileTabItem`：毛玻璃 dock、**仅图标无文字**（此尺度字形即含义，
+    `label` 只作无障碍名），当前面 = pine 实心块 + on-accent 字形，与桌面轨「你在哪」
+    语义完全同构；未读为 danger 红数胶囊（圆形状态点语法），非 pine；
+  - `BottomSheet`：触摸面的 Dialog 对位件，玻璃材质、grip、全宽 quiet/danger
+    动作，kind=`sheet` 走 modal overlay 合同；
+  - `Avatar` 的 `presence` 点：pine 连接标点，纸带色环，圆形状态点例外。
+- **组合纪律**：页面只用 ma-* 布局类摆放库原语；形状、颜色、材质、动效一律
+  来自 `--pt-*` 令牌与 `.pt-*` 组件。需要新 chrome 时补进 peers-ui 本体，
+  不允许过程性组件存在。
+- **双边同一交互语法（不得无故分叉）**：
+  - 消息面头部是桌面 `ChatRail` 的同位行——52px 行高、compact 图标
+    Segmented（消息/联系人）、无边框 quiet 搜索/＋ 图标砖；**主次分区固定为
+    「主菜单 tab 贴合内容、永不收缩换行居左 + 弹性余量 + 工具砖贴右缘」**
+    （主 `flex:0 0 auto`、`margin-right:auto` 吸收余量；不用 Segmented fullWidth
+    平分，不允许主组可收缩把标签压成两行）；点搜索是**本行
+    morph 成 36px 过滤框、列表在原页实时局部过滤**（Esc/关闭还原），
+    永远不是跳转页、无返回键与「搜索」标题；＋ 是锚定图标的 Menu，
+    菜单项必须名实相符并跑完整闭环（添加联系人→入通讯录、发起群聊→建群会话
+    并打开），禁止只关弹层/切 tab 的假动作，不可提交态给 availability 原因；
+    BottomSheet 打开期宿主隐藏 MobileTabBar（半透玻璃不得透出底栏 chrome），
+    sheet 开合因此属于 AppState（`chatsSheet`），路由变化联动关闭。
+  - 动态面是 `MomentsFeature` 同位语法：动态/圈友 compact island、搜索与＋
+    **与消息面完全同款的 36px 无边框 quiet 灰色图标砖**（不使用白描边砖、
+    不使用墨色实心 primary 钮），搜索 focus 才原地展开成白底描边字段；
+    ＋（feed=发动态，circles=新建圈子）为锚定图标的动作；最新/热门浮动 chip；
+    圈友=受众分组数据面（新建/成员管理），
+    composer 受众 8 类（公开/关注者/朋友/圈子/群聊/白名单/黑名单/仅自己），
+    卡片含信任元信息、多选 emoji reaction、评论列表默认展开内联；
+    composer 图片附件内联在 TextArea 自身底栏（`leadingAccessory`：左下 quiet
+    ghost 图标 + 右下字数同轨），不允许 field 外独立「添加图片」行；
+    手机窄屏空评论输入行不点不渲染（点评论动作后出现并聚焦），桌面宽画布可直接回复。
+  - **数据同源**：移动面直接消费 shared 的 `identity-tone`（每人确定性色相、
+    唯自己 pine）、`chat-data`（会话含 pinned/muted/members）、`moments-data`
+    （动态/圈子/受众），不得在 mobile 自造分叉种子与全员墨色。
+  - 群头像统一走库 `GroupAvatar`：成员各自色调，2–4 人 2×2、5–9 人 3×3，
+    与桌面 `GroupAvatarComposite` 布局等价；`imageUrl` 覆盖为上传群像。
+  - **消息动作同一词汇表（增量 56）**：桌面 hover 动作条与手机长按 BottomSheet
+    是同一动作体系的两种介质容器，不是两套功能。动作目录/分组/归属与可用性裁决、
+    反应目录与 reaction 状态合同唯一存在于 `shared/chat-domain/`
+    （`MESSAGE_ACTION_CATALOG`、`messageActionGroups`、`applyViewerReaction`），
+    两面禁止各写清单。差异只允许在容器与唤起手势：桌面 hover 浮现工具条，手机
+    按住 420ms（移动 >10px 取消、触觉反馈、抑制合成 click）弹 BottomSheet——
+    8 快捷反应可展开 16、回复/转发 quick row、分组长动作。归属规则不随介质变：
+    他人消息无编辑/撤回、自己消息无举报、变更窗 4 分 30 秒外禁用并给原因。
+    反应落气泡下胶囊（再点取消）、回复落引用块、转发真实进入目标会话。
+  - **我的页身份权重三层（增量 57）**：手机触摸消费端的「我的」按信息权重分三层，
+    技术标识让位于身份事实。① 身份 Hero：植物意象 cover（与动态图片同源 shared
+    `artwork()`/`VIEWER_COVER`，禁造第二张插画）**沉浸式全宽出血**——cover 向上延伸到
+    状态栏后、图压灵动岛（188 = 134 可视带 + 54 状态栏区），宿主仅在 Me 落地页挂
+    `data-immersive` 让状态栏 absolute 浮起（凭证/站点/关于二级页不挂，状态栏保持常规流，
+    否则浮层遮挡二级页导航返回钮），头像以 3px surface 切割环交叠可视带下沿；
+    **封面与头像都可换，与 desktop 设置›身份同一语法**：同一个 iconOnly FilePicker
+    深 scrim 铅笔（库默认 30px/radius-md/#000 34%）钉在各自右下角——封面 right:12/bottom:12、
+    头像内角 right:6/bottom:6，触摸面常驻；禁止整图居中相机覆盖与两钮风格分叉；② 凭证降级：首屏只有「账号与凭证」入口行，长 PTID/用户名只在推送的
+    二级页承载与复制，低频技术标识不裸露首屏；③ 偏好/网络/通用为 inset 白卡
+    （`--pt-list-well=surface`、发丝边、16 圆角），组间留白分层而非整页通栏发丝线，
+    退出登录在独立白卡危险区做安静红字行。AI providers/MCP/渠道/机器人/日志/统计等
+    生产运维项不进入触摸消费端。
+
 ## Surface lifecycle 与全局快捷键（增量 37）
 
 - **三面常驻挂载**：聊天 / 动态 / 设置三个面同时挂载为 `.sk-feed-pane`，

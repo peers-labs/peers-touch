@@ -1,439 +1,768 @@
 /* MobileApp — 干净手机产品面。
    仅页面布局（ma-*）：所有形状/颜色/控件外观由 @peers-touch/ui 原语与
-   north-star 令牌承担。这里不出现任何 .pt-* 选择器。 */
+   north-star 令牌承担。这里不出现任何 .pt-* 选择器。
+   重建说明：2026-11-07 从 02:28 构建产物 dist/assets/index-B7v7_9cs.css 按文档序
+   提取恢复（工作区文件曾被误 git checkout 回退），规则集与误删前构建等价。 */
 
-/* Product provider root: fill the phone body and establish the containing
-   block (transform) so fixed-position dialog scrims clip to the phone screen,
-   not the whole browser viewport. */
-.ma-scope {
-  height: 100%; min-height: 0;
-  display: flex; flex-direction: column;
-  transform: translateZ(0);
-  overflow: hidden;
-}
+.ma-scope{height:100%;min-height:0;display:flex;flex-direction:column;transform:translateZ(0);overflow:hidden}
 
-.ma-root {
-  position: relative;
-  flex: 1; min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--pt-canvas);
-  color: var(--pt-text);
-  font-family: var(--pt-font);
-}
+.ma-root{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--pt-canvas);color:var(--pt-text);font-family:var(--pt-font);--pt-list-well:var(--pt-surface);--pt-list-well-border:var(--pt-border);--pt-list-well-radius:var(--pt-radius-lg)}
 
-/* status bar */
-.ma-statusbar {
-  flex-shrink: 0;
-  height: 38px;
-  padding: 0 22px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  padding-bottom: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--pt-text);
-}
-.ma-status-icons { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 500; color: var(--pt-secondary); }
+.ma-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 
-.ma-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.ma-page { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.ma-page{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto}
 
-/* top bar */
-.ma-topbar {
-  flex-shrink: 0;
-  min-height: 52px;
-  padding: 6px 16px 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.ma-topbar h1 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -.01em; }
-/* Messages topbar: the messages/contacts segment owns the left, + the right
-   (desktop ChatRail parity — no big title, contacts live in this segment). */
-.ma-chats-topbar { justify-content: flex-start; }
-.ma-chats-segmented { flex: 0 0 auto; }
-.ma-chats-add { margin-left: auto; flex-shrink: 0; }
+.ma-rail-header{flex-shrink:0;display:flex;align-items:center;gap:8px;height:52px;box-sizing:border-box;padding:10px 14px 6px}
 
-/* search */
-.ma-search { flex-shrink: 0; padding: 0 16px 6px; }
-/* Read-only library TextField opens the search screen; the app only sets rhythm. */
-.ma-search-trigger { width: 100%; cursor: pointer; }
+/* Rail header primary/secondary split: the nav segmented is the PRIMARY
+   group — it keeps its natural content width and NEVER shrinks/wraps; the
+   auto right margin is the elastic gap that pushes the fixed-width tool
+   tiles (search/＋) to the right edge. Same model as moments' scope-wrap
+   margin-left:auto (主在前，次靠右). */
+.ma-rail-tabs{flex:0 0 auto;min-width:0;margin-right:auto}
+.ma-chat-subnav.pt-segmented{width:auto;max-width:100%;white-space:nowrap}
+.ma-chat-subnav .pt-button{flex:0 0 auto}
 
-/* search overlay */
-.ma-search-input { flex-shrink: 0; padding: 4px 16px 10px; }
-.ma-search-scope { flex-shrink: 0; padding: 0 16px 6px; }
-.ma-search-results { flex: 1; min-height: 0; overflow-y: auto; }
-.ma-search-sub { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
-.ma-search-empty {
-  padding: 56px 32px; text-align: center;
-  font-size: 13px; color: var(--pt-muted); line-height: 1.6;
-}
+.ma-subnav-label{display:inline-flex;align-items:center;gap:5px}
 
-/* flat hairline lists (shared with settings grammar) */
-.ma-flat-list { list-style: none; margin: 0; padding: 0 16px; }
-.ma-flat-list li { border-bottom: 1px solid var(--pt-border); }
-.ma-flat-list li:last-child { border-bottom: 0; }
-/* ma-row is the peers-ui ListRow primitive used as a press target. */
-.ma-row { width: 100%; text-align: left; cursor: pointer; }
-.ma-row:active { background: var(--pt-subtle); }
-.ma-avatar-wrap { position: relative; flex-shrink: 0; display: inline-flex; }
-.ma-online-dot {
-  position: absolute; right: -1px; bottom: -1px;
-  width: 11px; height: 11px; border-radius: 999px;
-  /* presence = a live connection: pine punctuation, not a success state. */
-  background: var(--pt-accent);
-  border: 2px solid var(--pt-canvas);
-}
-.ma-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.ma-row-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
-.ma-row-title { font-size: 15px; font-weight: 600; color: var(--pt-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ma-row-time { flex-shrink: 0; font-size: 11.5px; color: var(--pt-muted); }
-.ma-row-sub { font-size: 13px; color: var(--pt-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ma-rail-icon-tile,.ma-rail-icon-tile:hover,.ma-rail-icon-tile:active{border-color:transparent;background:transparent}
 
-/* group index */
-.ma-group-block { padding-top: 6px; }
-.ma-index {
-  margin: 6px 18px 2px;
-  font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
-  color: var(--pt-muted);
-}
+.ma-rail-icon-tile{flex:0 0 auto;color:var(--pt-secondary)}
 
-/* ── thread ── */
-.ma-thread { background: var(--pt-canvas); }
-.ma-thread-topbar {
-  flex-shrink: 0;
-  min-height: 50px;
-  padding: 4px 8px 4px 4px;
-  display: flex; align-items: center; gap: 4px;
-  border-bottom: 1px solid var(--pt-border);
-  background: var(--pt-canvas);
-}
-.ma-thread-name {
-  flex: 1; min-width: 0; text-align: center;
-  font-size: 15.5px; font-weight: 650;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.ma-thread-actions { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; min-width: 40px; justify-content: flex-end; }
-.ma-thread-topbar-spacer { width: 40px; flex-shrink: 0; }
-.ma-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 12px; }
-.ma-msg { display: flex; align-items: flex-end; gap: 8px; max-width: 100%; }
-.ma-msg.peer { justify-content: flex-start; }
-.ma-msg.mine { flex-direction: row-reverse; }
-.ma-bubble {
-  max-width: 76%;
-  padding: 9px 13px;
-  border-radius: var(--pt-radius-lg);
-  font-size: 14.5px; line-height: 1.5;
-  background: var(--pt-peerBubble);
-  border: 1px solid var(--pt-border);
-  color: var(--pt-text);
-  word-break: break-word;
-}
-.ma-msg.mine .ma-bubble {
-  background: var(--pt-ownBubble);
-  border-color: var(--pt-ownBubble);
-  color: var(--pt-onPrimary);
-  border-bottom-right-radius: var(--pt-radius-sm);
-}
-.ma-msg.peer .ma-bubble { border-bottom-left-radius: var(--pt-radius-sm); }
-.ma-bubble.is-file { padding: 10px 13px; }
-.ma-file { display: inline-flex; align-items: center; gap: 10px; }
-.ma-file span { display: flex; flex-direction: column; gap: 2px; }
-.ma-file strong { font-size: 14px; font-weight: 600; }
-.ma-file em { font-style: normal; font-size: 11.5px; opacity: .72; }
-.ma-typing { display: inline-flex; gap: 4px; align-items: center; padding: 12px 14px; }
-.ma-typing i { width: 6px; height: 6px; border-radius: 999px; background: var(--pt-muted); display: inline-block; }
+.ma-rail-icon-tile:hover{color:var(--pt-text);background:var(--pt-subtle)}
 
-.ma-composer {
-  flex-shrink: 0;
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--pt-border);
-  background: var(--pt-canvas);
-}
+.ma-rail-search{flex:1 1 auto;min-width:0;display:flex;animation:ma-rail-search-in .16s cubic-bezier(.22,1,.36,1)}
 
-/* ── moments ── */
-.ma-moments { list-style: none; margin: 0; padding: 4px 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-.ma-moment {
-  background: var(--pt-surface);
-  border: 1px solid var(--pt-border);
-  border-radius: var(--pt-radius-lg);
-  box-shadow: var(--pt-shadow-rest);
-  padding: 13px 14px;
-  display: flex; flex-direction: column; gap: 9px;
-}
-.ma-moment-head { display: flex; align-items: center; gap: 10px; }
-.ma-moment-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.ma-moment-who strong { font-size: 14px; font-weight: 650; }
-.ma-moment-who em { font-style: normal; font-size: 11.5px; color: var(--pt-muted); }
-.ma-moment-text { margin: 0; font-size: 14.5px; line-height: 1.62; color: var(--pt-text); }
-.ma-moment-foot { display: flex; gap: 4px; border-top: 1px solid var(--pt-border); padding-top: 8px; }
+@keyframes ma-rail-search-in{0%{opacity:0;transform:translate(6px)}to{opacity:1;transform:none}}
 
-/* in-frame bottom action sheet (stays inside the phone screen) */
-.ma-sheet-scrim {
-  position: absolute; inset: 0; z-index: 40;
-  background: var(--pt-scrim, rgba(13, 16, 13, .42));
-  display: flex; align-items: flex-end;
-}
-.ma-sheet {
-  width: 100%;
-  background: var(--pt-surface);
-  border-radius: var(--pt-radius-xl) var(--pt-radius-xl) 0 0;
-  padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
-  box-shadow: var(--pt-shadow-float);
-  animation: ma-sheet-up var(--pt-motion-surface, 140ms) ease-out;
-}
-@keyframes ma-sheet-up { from { transform: translateY(24px); opacity: .4; } to { transform: none; opacity: 1; } }
-.ma-sheet-grip {
-  display: block; width: 38px; height: 4px; margin: 2px auto 10px;
-  border-radius: 999px; background: var(--pt-border-strong);
-}
-.ma-sheet-title { margin: 0 0 12px; font-size: 16px; font-weight: 650; text-align: center; }
+.ma-rail-search .pt-field-frame{flex:1;min-width:0;height:34px;min-height:34px;border-radius:var(--pt-radius-md)}
 
-/* moment composer sheet */
-.ma-composer-sheet { display: flex; flex-direction: column; gap: 14px; }
-.ma-composer-audience { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.ma-composer-audience-label { font-size: 13px; color: var(--pt-secondary); flex-shrink: 0; }
-.ma-composer-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.ma-rail-search .pt-input{min-height:0;height:24px;padding:0;font-size:13px}
 
-/* sheet actions are peers-ui Buttons; the app only separates the group. */
-.ma-sheet-actions { margin: 4px 0 0; display: flex; flex-direction: column; }
-.ma-sheet-actions > * + * { border-top: 1px solid var(--pt-border); }
+/* One cancel affordance per active search: a borderless text button (iOS
+   grammar). The in-field clearable ✕ is removed so two identical crosses never
+   sit side by side; cancel clears the query and exits the search row. */
+.ma-search-cancel{flex:0 0 auto;min-height:34px;padding:0 6px;border-color:transparent;background:transparent;color:var(--pt-secondary);font-size:14px;box-shadow:none}
+.ma-search-cancel:hover,.ma-search-cancel:active{border-color:transparent;background:var(--pt-subtle);color:var(--pt-text)}
 
-/* inline more-menu on a moment */
-.ma-inline-menu {
-  align-self: flex-end; margin-top: -4px;
-  min-width: 156px; background: var(--pt-surface);
-  border: 1px solid var(--pt-border); border-radius: var(--pt-radius-md);
-  box-shadow: var(--pt-shadow-float); overflow: hidden; z-index: 5;
-}
-/* inline menu items are peers-ui quiet Buttons. */
-.ma-inline-menu-item { width: 100%; justify-content: flex-start; }
-.ma-inline-menu-item.is-danger { color: var(--pt-danger); }
+@media(prefers-reduced-motion:reduce){.ma-rail-search{animation:none}}
 
-/* inline comments (expand in place, never a pushed page) */
-.ma-comments { border-top: 1px solid var(--pt-border); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
-.ma-comments-empty { margin: 0; font-size: 12.5px; color: var(--pt-muted); }
-.ma-comments-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
-.ma-comment { display: flex; gap: 9px; align-items: flex-start; }
-.ma-comment-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ma-comment-body strong { font-size: 13px; font-weight: 650; }
-.ma-comment-body span { font-size: 13.5px; line-height: 1.5; color: var(--pt-text); }
-.ma-comment-body em { font-style: normal; font-size: 11px; color: var(--pt-muted); }
-.ma-comment-input { display: flex; align-items: center; gap: 8px; }
+.ma-rail-search{animation:none}
 
-/* call surface */
-.ma-call {
-  position: absolute; inset: 0; z-index: 60;
-  /* always-dark media stage, in both light and dark mode. */
-  background: var(--pt-mediaStage); color: var(--pt-white);
-  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-  padding: calc(46px + env(safe-area-inset-top)) 24px calc(30px + env(safe-area-inset-bottom));
-}
-.ma-call-trust { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--pt-mediaStageText); }
-.ma-call-trust-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--pt-accent); }
-.ma-call-avatar { position: relative; }
-.ma-call-ring {
-  position: absolute; inset: -10px; border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, .18);
-}
-.ma-call-copy { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.ma-call-copy strong { font-size: 24px; font-weight: 650; }
-.ma-call-copy span { font-size: 14px; color: var(--pt-mediaStageText); }
-.ma-call-controls { display: flex; align-items: center; gap: 26px; }
-/* Dial control: a peers-ui IconButton composed as a circular tile, with a
-   decorative caption below; the column is layout-only, never a second control. */
-.ma-call-btn { color: inherit; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.ma-call-btn-icon {
-  width: 62px; height: 62px; min-height: 62px; border-radius: 999px;
-  display: grid; place-items: center;
-  background: rgba(255, 255, 255, .14);
-}
-.ma-call-btn-label { font-size: 12px; color: var(--pt-mediaStageText); }
-/* accept = establish a connection: pine, with its on-accent glyph. */
-.ma-call-btn.is-accept .ma-call-btn-icon { background: var(--pt-accent); color: var(--pt-onAccent); }
-.ma-call-btn.is-danger .ma-call-btn-icon { background: var(--pt-danger); }
-.ma-call-btn.is-selected .ma-call-btn-icon { background: var(--pt-white); color: var(--pt-mediaStage); }
+.ma-contacts{flex:1;min-height:0;overflow-y:auto}
 
-/* ── detail (contact / group) ── */
-.ma-detail-body { flex: 1; min-height: 0; overflow-y: auto; }
-.ma-detail-hero {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 22px 16px 16px;
-}
-.ma-detail-hero strong { font-size: 19px; font-weight: 650; margin-top: 4px; }
-.ma-detail-hero em { font-style: normal; font-size: 12.5px; color: var(--pt-muted); }
-.ma-detail-actions {
-  display: flex; align-items: center; gap: 10px;
-  padding: 0 16px 6px;
-}
-.ma-detail-primary { flex: 1; min-width: 0; }
-.ma-detail-list { padding-top: 10px; }
-.ma-add-row .ma-add-icon {
-  width: 40px; height: 40px; flex-shrink: 0;
-  border-radius: var(--pt-radius-md);
-  display: grid; place-items: center;
-  color: var(--pt-secondary);
-  background: var(--pt-subtle);
-}
-.ma-danger-zone { margin-top: 6px; }
-.ma-signout { margin-top: 4px; }
-.ma-station-form { display: flex; flex-direction: column; gap: 10px; }
-/* Signed-out gate */
-.ma-signedout {
-  flex: 1; min-height: 0; overflow-y: auto;
-  padding: 40px 28px 32px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; gap: 8px;
-}
-.ma-signedout-glyph {
-  width: 72px; height: 72px; border-radius: 22px;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--pt-surface); background: var(--pt-accent);
-  box-shadow: 0 8px 20px rgba(47, 106, 80, .22);
-  margin-bottom: 10px;
-}
-.ma-signedout h1 { margin: 0; font-size: 22px; font-weight: 700; }
-.ma-signedout p { margin: 0; font-size: 13.5px; color: var(--pt-secondary); }
-.ma-signedout-note { margin-bottom: 18px !important; font-size: 12px !important; color: var(--pt-muted) !important; }
-.ma-signedout [data-action-id='auth.signin'] { max-width: 280px; }
-.ma-station-name { display: inline-flex; align-items: center; gap: 8px; }
-.ma-station-dot {
-  width: 9px; height: 9px; border-radius: 999px;
-  /* reachable station = a live federation link: pine punctuation. */
-  background: var(--pt-accent);
-}
-.ma-station-dot:not([data-online]) { background: var(--pt-border-strong); }
+.ma-conv-list{list-style:none;margin:0;padding:0 8px 8px;flex:1;min-height:0;overflow-y:auto}
 
-/* ── me ── */
-.ma-me { padding-bottom: 16px; }
-/* Identity card: banner + avatar on its lower edge with a card ring
-   (desktop Settings › Identity parity). */
-.ma-profile {
-  flex-shrink: 0;
-  margin: 4px 16px 16px;
-  border: 1px solid var(--pt-border);
-  border-radius: 14px;
-  background: var(--pt-surface);
-  overflow: hidden;
-}
-.ma-profile-banner {
-  position: relative; height: 112px;
-  background: linear-gradient(120deg,
-    color-mix(in srgb, var(--pt-accent) 26%, transparent),
-    color-mix(in srgb, var(--pt-accent) 7%, transparent));
-}
-.ma-profile-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-/* Edit affordance is a hover invitation, not permanent chrome (desktop
-   parity): hidden at rest together with its hit area; warmed in on banner
-   hover / keyboard focus. */
-.ma-profile-banner-action {
-  position: absolute; right: 12px; bottom: 12px;
-  opacity: 0; pointer-events: none;
-  transform: translateY(4px);
-  transition: opacity .24s cubic-bezier(.22, 1, .36, 1),
-    transform .24s cubic-bezier(.22, 1, .36, 1);
-}
-.ma-profile-banner:hover .ma-profile-banner-action,
-.ma-profile-banner:focus-within .ma-profile-banner-action {
-  opacity: 1; pointer-events: auto; transform: none;
-}
-.ma-profile-body { padding: 0 14px 12px; }
-.ma-profile-id { display: flex; align-items: flex-start; gap: 13px; }
-/* 72px avatar on a 112px banner: ~34px overlap with a 3px card ring. */
-.ma-profile-avatar {
-  position: relative; z-index: 1; margin-top: -34px; flex-shrink: 0;
-  display: flex; flex-direction: column; align-items: center;
-}
-/* Edit affordance sits INSIDE the avatar owner (inset, never negative) —
-   its painted box must not cross the identity tile's edge. Hidden at rest,
-   revealed by hovering/focusing the avatar owner. */
-.ma-profile-avatar-action {
-  position: absolute; right: 6px; bottom: 6px; z-index: 2; display: inline-flex;
-  opacity: 0; pointer-events: none;
-  transform: translateY(3px);
-  transition: opacity .24s cubic-bezier(.22, 1, .36, 1),
-    transform .24s cubic-bezier(.22, 1, .36, 1);
-}
-.ma-profile-avatar:hover .ma-profile-avatar-action,
-.ma-profile-avatar:focus-within .ma-profile-avatar-action {
-  opacity: 1; pointer-events: auto; transform: none;
-}
-/* Touch devices have no hover: keep the affordance quietly reachable. */
-@media (hover: none) {
-  .ma-profile-banner-action,
-  .ma-profile-avatar-action {
-    opacity: 1; pointer-events: auto; transform: none;
-  }
-}
-.ma-profile-meta { flex: 1; min-width: 0; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-.ma-profile-names { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.ma-profile-names strong { font-size: 17px; font-weight: 650; }
-.ma-profile-stats { display: flex; align-items: baseline; gap: 13px; flex-wrap: wrap; font-size: 12px; color: var(--pt-muted); }
-.ma-profile-stats strong { font-size: 14px; font-weight: 650; color: var(--pt-text); margin-right: 2px; }
-.ma-profile-joined { margin-left: auto; font-style: normal; font-size: 11.5px; }
-.ma-profile-fields {
-  margin-top: 12px; padding-top: 9px;
-  border-top: 1px solid var(--pt-border);
-  display: flex; flex-direction: column;
-}
-.ma-profile-field { display: flex; align-items: center; gap: 8px; padding: 3px 0; min-width: 0; }
-.ma-profile-field span { font-size: 11.5px; color: var(--pt-muted); flex-shrink: 0; }
-.ma-profile-field code {
-  flex: 1; min-width: 0; font-size: 12px; color: var(--pt-text);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.ma-profile-copy { margin-left: auto; flex-shrink: 0; display: inline-flex; }
-/* trust/security state (encryption on): pine, not the success color. */
-.ma-ok { font-size: 13px; color: var(--pt-accent); }
-.ma-version { font-size: 13px; color: var(--pt-secondary); }
+.ma-conv-item{position:relative;display:flex;align-items:center}
 
-/* settings sections on mobile: inset the library section via a page class */
-.ma-settings { margin: 0 16px 18px; }
+.ma-conv-row,.ma-contact-row{flex:1;min-width:0;display:flex;align-items:center;gap:11px;margin:0;padding:9px 8px;border:0;background:transparent;font-family:inherit;text-align:left;cursor:pointer;border-radius:var(--pt-radius-md);color:var(--pt-text)}
 
-/* ── tab bar ── */
-.ma-tabbar {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  border-top: 1px solid var(--pt-border);
-  background: var(--pt-canvas);
-  padding-bottom: env(safe-area-inset-bottom);
+.ma-conv-row:active,.ma-contact-row:active,.ma-conv-item[data-pinned=true] .ma-conv-row{background:var(--pt-subtle)}
+
+.ma-conv-avatar{position:relative;flex-shrink:0;line-height:0}
+
+.ma-unread-badge{position:absolute;top:-4px;right:-4px;z-index:2;min-width:17px;height:17px;padding:0 4.5px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:var(--pt-danger);color:var(--pt-white);border:1.5px solid var(--pt-canvas);font-size:10.5px;font-weight:650;font-variant-numeric:tabular-nums}
+
+.ma-unread-badge.is-muted{background:var(--pt-muted)}
+
+.ma-conv-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+
+.ma-conv-name-line{display:flex;align-items:center;justify-content:space-between;gap:8px}
+
+.ma-conv-name-line strong{font-size:15.5px;font-weight:600;color:var(--pt-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.ma-conv-flags{display:inline-flex;align-items:center;gap:4px;color:var(--pt-muted);flex-shrink:0}
+
+.ma-conv-preview{display:flex;align-items:center;gap:6px;min-width:0}
+
+.ma-conv-last{flex:1;min-width:0;font-size:13px;color:var(--pt-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.ma-conv-preview time{flex-shrink:0;font-size:11.5px;color:var(--pt-muted)}
+
+.ma-conv-actions{flex:0 0 auto;display:inline-flex;align-items:center;opacity:.82}
+
+.ma-list-empty{padding:24px 16px}
+
+.ma-flat-list{list-style:none;margin:0;padding:0 16px}
+
+.ma-flat-list li{border-bottom:1px solid var(--pt-border)}
+
+.ma-flat-list li:last-child{border-bottom:0}
+
+.ma-row{width:100%;text-align:left;cursor:pointer}
+
+.ma-row:active{background:var(--pt-subtle)}
+
+.ma-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+
+.ma-row-line{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+
+.ma-row-title{font-size:15px;font-weight:600;color:var(--pt-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.ma-row-time{flex-shrink:0;font-size:11.5px;color:var(--pt-muted)}
+
+.ma-row-sub{font-size:13px;color:var(--pt-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+.ma-group-block{padding-top:6px}
+
+.ma-index{margin:6px 18px 2px;font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--pt-muted)}
+
+.ma-thread{background:var(--pt-canvas)}
+
+.ma-messages{flex:1;min-height:0;overflow-y:auto;padding:14px 12px 8px;display:flex;flex-direction:column;gap:14px}
+
+.ma-msg{display:flex;align-items:flex-start;gap:9px;max-width:88%;min-width:0}
+
+.ma-msg.peer{align-self:flex-start}
+
+.ma-msg.mine{align-self:flex-end;flex-direction:row-reverse}
+
+.ma-msg-col{display:flex;flex-direction:column;gap:3px;max-width:100%;min-width:0;flex:0 1 auto}
+
+.ma-msg.mine .ma-msg-col{align-items:flex-end}
+
+.ma-msg-sender{font-size:11px;color:var(--pt-muted);padding-left:4px}
+
+.ma-msg-service{align-self:center;font-size:11px;color:var(--pt-muted);background:var(--pt-subtle);border-radius:999px;padding:3px 12px}
+
+.ma-bubble{padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.6;background:var(--pt-subtle);color:var(--pt-text);word-break:break-word;overflow-wrap:anywhere}
+
+.ma-msg.peer .ma-bubble{border-bottom-left-radius:6px}
+
+.ma-msg.mine .ma-bubble{background:var(--pt-primary);color:var(--pt-onPrimary);border-bottom-right-radius:6px}
+
+.ma-bubble.is-file{padding:10px 13px}
+
+.ma-file{display:inline-flex;align-items:center;gap:10px}
+
+.ma-file span{display:flex;flex-direction:column;gap:2px}
+
+.ma-file strong{font-size:14px;font-weight:600}
+
+.ma-file em{font-style:normal;font-size:11.5px;opacity:.72}
+
+.ma-typing{display:inline-flex;gap:4px;align-items:center;padding:11px 14px;border-bottom-left-radius:6px}
+
+.ma-typing i{width:6px;height:6px;border-radius:999px;background:var(--pt-muted);display:inline-block}
+
+.ma-composer-zone{flex-shrink:0;border-top:1px solid var(--pt-border);background:var(--pt-canvas)}
+
+.ma-compose-thumbs.ma-chat-thumbs{padding:8px 10px 0;gap:6px;grid-template-columns:repeat(auto-fill,56px)}
+
+.ma-compose-thumbs.ma-chat-thumbs .ma-compose-thumb{border-radius:8px}
+
+/* One framed composer, same anatomy as desktop .sk-composer: a single rounded
+   tile owns the only border surface; tools, the auto-growing field and send
+   all live inside it (no separately outlined input — that read as a clipped
+   second box). The zone keeps the stream's top rule and the bottom safe area. */
+.ma-composer{
+  flex-shrink:0;min-width:0;display:flex;align-items:flex-end;gap:6px;
+  margin:8px 10px calc(8px + env(safe-area-inset-bottom));
+  padding:7px 6px;border-radius:16px;background:var(--pt-subtle);
 }
-/* Tab bar items are peers-ui IconButtons (the control) plus a decorative
-   caption, composed vertically by the app shell — no native control. */
-.ma-tab {
-  position: relative;
-  min-height: 54px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  color: var(--pt-muted);
+.ma-composer:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--pt-primary) 30%,transparent)}
+
+.ma-composer-tools{flex:0 0 auto;display:inline-flex;align-items:center;gap:1px;align-self:flex-end}
+
+/* The embedded FieldFrame drops its own chrome; the rounded host owns it.
+   The wrap is a <span>, so it must become a flex item/container itself or its
+   flex:1 is ignored (inline boxes don't flex). */
+.ma-composer-input-wrap{flex:1 1 auto;min-width:0;display:flex;align-items:flex-end}
+.ma-composer .pt-field-frame{flex:1 1 auto;min-width:0;background:transparent;border:0;box-shadow:none;padding:0}
+.ma-composer .pt-field-frame:focus-within{box-shadow:none}
+.ma-composer .pt-textarea{
+  display:block;width:100%;
+  background:transparent;border:0;outline:0;resize:none;
+  font-family:inherit;font-size:14px;line-height:1.5;color:var(--pt-text);text-align:start;
+  min-height:0;max-height:none;height:auto;padding:4px 2px;
 }
-.ma-tab-label { font-size: 11px; font-weight: 500; }
-.ma-tab.active { color: var(--pt-text); }
-.ma-tab-icon { position: relative; display: inline-flex; }
-.ma-badge {
-  position: absolute; top: 5px; left: calc(50% + 7px);
-  min-width: 17px; height: 17px; padding: 0 4.5px;
-  border-radius: 999px;
-  background: var(--pt-primary); color: var(--pt-onPrimary);
-  font-size: 10px; font-weight: 650; line-height: 17px; text-align: center;
+.ma-composer textarea:focus-visible{outline:none}
+/* Send is a squircle, never a circle — circles are the small tool glyphs. */
+.ma-composer [data-action-id='ma.send'].pt-icon-button{
+  flex-shrink:0;align-self:flex-end;width:36px;height:36px;border-radius:12px;
 }
 
-/* ── reserved Agent slot: honest placeholder, no mocked assistant ── */
-.ma-agent-reserved {
-  flex: 1;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; padding: 24px 32px; text-align: center;
+.ma-sr-file{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* Composer emoji palette (shared with desktop content; touch container).
+   Width is DERIVED from the grid below, never a hand-tuned pixel: one row is
+   8 cells × 32px + 7 gaps × 2px, plus this panel's 10px padding on each side
+   (256 + 14 + 20 = 290px). The viewport cap only guards very narrow screens;
+   height fits both groups and is capped at 52vh so the popover never covers
+   more than roughly half the phone, scrolling past that. */
+.ma-chat-emoji-panel{
+  display:flex;flex-direction:column;gap:10px;padding:10px;box-sizing:border-box;
+  width:calc(8*32px + 7*2px + 2*10px);max-width:calc(100vw - 24px);
+  max-height:52vh;overflow-y:auto;
 }
-.ma-agent-glyph {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 72px; height: 72px; border-radius: 22px;
-  background: var(--pt-subtle); color: var(--pt-muted);
-  margin-bottom: 6px;
+.ma-emoji-group{display:flex;flex-direction:column;gap:6px}
+.ma-emoji-group-label{font-size:11px;color:var(--pt-muted)}
+.ma-emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px}
+.ma-chat-emoji-cell.pt-button{width:32px;min-width:0;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:inherit;font-size:19px;line-height:1;box-shadow:none;display:grid;place-items:center}
+.ma-chat-emoji-cell.pt-button:hover{background:var(--pt-subtle)}
+
+/* ── Voice notes ──
+   VoicePlayer is the shared desktop component and renders .sk-voice* markup;
+   mobile loads only this stylesheet, so restyle every hook here (scoped to the
+   composer rows and the voice bubble) instead of importing desktop chat.css. */
+.ma-voice-recording{
+  display:flex;align-items:center;gap:8px;margin:8px 10px 0;
+  padding:8px 12px;border-radius:12px;background:var(--pt-subtle);
+  color:#b0413a;font-size:13px;
 }
-.ma-agent-reserved strong { font-size: 16px; font-weight: 650; }
-.ma-agent-reserved p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--pt-muted); }
+.ma-voice-dot{width:8px;height:8px;border-radius:50%;background:#b0413a;animation:ma-voice-pulse 1.1s ease-in-out infinite}
+@keyframes ma-voice-pulse{50%{opacity:.25}}
+.ma-voice-rec-actions{margin-left:auto;display:flex;gap:6px}
+.ma-voice-draft{display:flex;align-items:center;gap:10px;margin:8px 10px 0;padding:8px 12px;border-radius:12px;background:var(--pt-subtle)}
+.ma-voice-error{margin:8px 10px 0}
+
+.ma-voice-draft .sk-voice{flex:1;min-width:0;display:flex;align-items:center;gap:8px}
+.ma-voice-bubble .sk-voice{display:flex;align-items:center;gap:8px;min-width:0;width:212px;max-width:62vw}
+.ma-voice-draft .sk-voice audio,.ma-voice-bubble .sk-voice audio{display:none}
+.ma-voice-draft .sk-voice-toggle,.ma-voice-bubble .sk-voice-toggle{
+  flex-shrink:0;width:30px;height:30px;border:0;border-radius:50%;
+  display:grid;place-items:center;cursor:pointer;
+  background:color-mix(in srgb,currentColor 12%,transparent);color:inherit;padding:0;
+}
+.ma-voice-draft .sk-voice-toggle:disabled,.ma-voice-bubble .sk-voice-toggle:disabled{opacity:.45;cursor:default}
+.ma-voice-draft .sk-voice-seek,.ma-voice-bubble .sk-voice-seek{
+  flex:1;min-width:64px;accent-color:currentColor;height:3px;cursor:pointer;
+}
+.ma-voice-draft .sk-voice-seek:disabled,.ma-voice-bubble .sk-voice-seek:disabled{cursor:default}
+.ma-voice-draft .sk-voice-time,.ma-voice-bubble .sk-voice-time{
+  font-size:11px;opacity:.78;white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+
+/* ── Message long-press action system (desktop hover bar → touch sheet) ── */
+.ma-msg-col[data-long-press-target]{touch-action:manipulation}
+
+/* Quote block inside a bubble (reply payload) */
+.ma-msg-quote{display:flex;flex-direction:column;gap:1px;margin:0 0 6px;padding:5px 9px;border-left:3px solid var(--pt-border-strong,#94a3b8);border-radius:6px;background:color-mix(in srgb,var(--pt-canvas) 72%,transparent);font-size:12px;line-height:1.5;max-width:100%;min-width:0}
+.ma-msg-quote strong{font-weight:650}
+.ma-msg-quote span{opacity:.72;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ma-msg.mine .ma-msg-quote{border-left-color:color-mix(in srgb,#fff 55%,transparent);background:color-mix(in srgb,#fff 18%,transparent)}
+.ma-msg-edited{font-style:normal;font-size:10.5px;opacity:.6;margin-left:6px;white-space:nowrap}
+
+.ma-msg-flags{display:flex;flex-wrap:wrap;gap:6px;padding-left:2px}
+.ma-msg-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:var(--pt-muted)}
+
+/* Reaction pills settled under the bubble (same data contract as desktop) */
+.ma-msg-reactions{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.ma-msg-reaction.pt-button{min-height:24px;height:24px;padding:0 8px;border-radius:999px;border:1px solid var(--pt-border);background:var(--pt-surface);font-size:11.5px;gap:3px}
+.ma-msg-reaction[data-mine='1']{background:var(--pt-primarySubtle);border-color:color-mix(in srgb,var(--pt-primary) 35%,var(--pt-border));color:var(--pt-primary)}
+
+/* Pinned banner above the message list */
+.ma-pin-banner{flex-shrink:0;display:flex;align-items:center;gap:8px;margin:8px 12px 0;padding:7px 10px;border:0;border-radius:10px;background:var(--pt-subtle);color:var(--pt-secondary);text-align:left;cursor:pointer;max-width:calc(100% - 24px)}
+.ma-pin-banner-text{flex:1;min-width:0;display:flex;flex-direction:column;font-size:11.5px;line-height:1.4}
+.ma-pin-banner-text strong{font-size:11px;color:var(--pt-muted);font-weight:600}
+.ma-pin-banner-text span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Multiselect bulk bar */
+.ma-bulk-bar{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--pt-border);background:var(--pt-surface)}
+.ma-bulk-count{font-size:13px;font-weight:600;color:var(--pt-text);font-variant-numeric:tabular-nums}
+.ma-bulk-spacer{flex:1}
+
+/* Select-mode message rows */
+.ma-msg-avatar-slot{position:relative;display:inline-flex;flex:0 0 auto}
+.ma-select-dot{position:absolute;left:-6px;top:-4px;z-index:2;width:19px;height:19px;border-radius:999px;border:1.5px solid var(--pt-border-strong,#94a3b8);background:var(--pt-surface);display:grid;place-items:center;color:#fff}
+.ma-select-dot.is-on{background:var(--pt-primary);border-color:var(--pt-primary)}
+
+/* Composer quote/edit strip */
+.ma-composer-reply{display:flex;align-items:center;gap:8px;margin:8px 10px 0;padding:7px 10px;border-radius:10px;background:var(--pt-subtle)}
+.ma-composer-reply-text{flex:1;min-width:0;display:flex;flex-direction:column;font-size:11.5px;line-height:1.45;color:var(--pt-secondary)}
+.ma-composer-reply-text strong{font-size:11px;color:var(--pt-primary);font-weight:600}
+.ma-composer-reply-text span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Long-press action sheet */
+.ma-msg-sheet{display:flex;flex-direction:column;gap:10px}
+/* Reaction head: collapsed = horizontally scrollable quick row + fixed
+   expand tile; expanded = a strict 8-column grid (16 kinds = 2 aligned rows,
+   same column grammar as the composer palette) with the toggle underneath so
+   it never steals a reaction cell. */
+.ma-react-head{display:flex;align-items:center;gap:6px}
+.ma-react-strip{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;padding:2px 0}
+.ma-react-strip::-webkit-scrollbar{display:none}
+.ma-react-head.is-expanded{flex-direction:column;align-items:stretch;gap:6px}
+.ma-react-head.is-expanded .ma-react-strip{display:grid;grid-template-columns:repeat(8,1fr);gap:4px 2px;overflow:visible;padding:0}
+.ma-react-emoji.pt-button{width:38px;min-width:38px;height:38px;padding:0;font-size:20px;border-radius:10px}
+.ma-react-head.is-expanded .ma-react-emoji.pt-button{width:100%;min-width:0;justify-self:stretch}
+.ma-react-all.pt-button{flex:0 0 auto;width:38px;min-width:38px;height:38px;padding:0;border-radius:10px;color:var(--pt-secondary)}
+.ma-react-head.is-expanded .ma-react-all.pt-button{align-self:flex-end;background:transparent}
+.ma-msg-sheet-quick{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ma-msg-sheet-menu{display:flex;flex-direction:column}
+.ma-sheet-divider{display:block;height:1px;background:var(--pt-border);margin:4px 0}
+.ma-sheet-row.pt-button{justify-content:flex-start;text-align:left;font-weight:500}
+.ma-sheet-row .pt-button-content{justify-content:flex-start;width:100%}
+.ma-sheet-row.is-danger{color:var(--pt-danger)}
+
+/* Forward sheet */
+.ma-forward-list{display:flex;flex-direction:column;gap:2px;max-height:52vh;overflow-y:auto}
+.ma-forward-row.pt-button{justify-content:flex-start;text-align:left}
+.ma-forward-row .pt-button-content{justify-content:flex-start;width:100%}
+.ma-forward-row .pt-button-content>:last-child{margin-left:auto}
+
+/* Thread (topic) sheet */
+.ma-thread-sheet{display:flex;flex-direction:column;gap:12px}
+.ma-thread-root{display:flex;align-items:flex-start;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--pt-border)}
+.ma-thread-replies{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:40vh;overflow-y:auto}
+.ma-thread-replies .ma-msg{max-width:100%}
+.ma-thread-empty{list-style:none;font-size:12.5px;color:var(--pt-muted);text-align:center;padding:8px 0}
+.ma-thread-composer{display:flex;align-items:center;gap:6px}
+.ma-thread-composer .pt-field-frame{flex:1;min-width:0}
+
+/* Report sheet */
+.ma-report-sheet{display:flex;flex-direction:column;gap:12px}
+.ma-report-body{margin:0;font-size:12.5px;color:var(--pt-secondary);line-height:1.6}
+.ma-report-reasons{display:flex;flex-direction:column;gap:2px}
+.ma-report-reason.pt-button{justify-content:flex-start;text-align:left}
+.ma-report-reason[data-selected='true']{color:var(--pt-primary)}
+.ma-report-reason .pt-button-content{justify-content:flex-start;width:100%}
+
+/* Transient toast */
+.ma-toast{position:absolute;left:50%;bottom:84px;transform:translateX(-50%);z-index:70;max-width:80%;padding:8px 16px;border-radius:999px;background:rgba(15,23,42,.86);color:#fff;font-size:12.5px;line-height:1.4;pointer-events:none;text-align:center}
+
+.ma-chat-images{margin-top:4px;width:204px;max-width:100%;display:grid;gap:4px;grid-template-columns:repeat(3,minmax(0,1fr))}
+
+.ma-chat-images.is-single{width:168px;grid-template-columns:minmax(0,1fr)}
+
+.ma-chat-img{display:block;border-radius:10px;overflow:hidden;aspect-ratio:1;background:var(--pt-subtle)}
+
+.ma-chat-images.is-single .ma-chat-img{aspect-ratio:16 / 10}
+
+.ma-chat-img img{width:100%;height:100%;object-fit:cover;display:block}
+
+.ma-moments-page{overflow:hidden}
+
+.ma-moments-subbar{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:8px 10px 10px;flex-wrap:nowrap}
+
+/* Primary nav never shrinks/wraps (主在前). */
+.ma-scope-island{flex:0 0 auto}
+.ma-scope-island .pt-button{flex:0 0 auto}
+
+/* Resting row: the search tile springs right, carrying the ＋ to the subbar's
+   content right edge (same margin-auto grammar as the old scope wrap). */
+.ma-moments-subbar [data-action-id='ma.subbar-search']{margin-left:auto}
+
+/* Active search REPLACES the whole row — same grammar as the chat rail morph:
+   the field fills every pixel except the fixed close tile, so it never sits
+   in a narrow slot beside the segmented and ＋. */
+.ma-subbar-search{flex:1 1 auto;min-width:0;display:flex;animation:ma-rail-search-in .16s cubic-bezier(.22,1,.36,1)}
+.ma-subbar-search .pt-field-frame{flex:1;min-width:0;height:34px;min-height:34px}
+.ma-subbar-search .pt-input{min-height:0;height:24px;padding:0;font-size:13px}
+@media(prefers-reduced-motion:reduce){.ma-subbar-search{animation:none}}
+
+.ma-subbar-add{flex-shrink:0;width:36px;height:36px;border-color:transparent;background:transparent;color:var(--pt-secondary)}
+
+.ma-subbar-add:hover,.ma-subbar-add:active{border-color:transparent;background:var(--pt-subtle);color:var(--pt-text)}
+
+.ma-moments-scroll{position:relative;flex:1;min-width:0;min-height:0;overflow-x:hidden;overflow-y:auto;padding:2px 10px 24px;display:flex;flex-direction:column;gap:12px}
+
+.ma-feed-sort-float{position:sticky;top:4px;z-index:6;align-self:stretch;min-width:0;padding-right:15px;display:flex;justify-content:flex-end;align-items:flex-start;height:0;overflow:visible;margin-bottom:-12px;pointer-events:none}
+
+.ma-feed-sort-pill{pointer-events:auto;background:var(--pt-surface);border:1px solid var(--pt-border);box-shadow:var(--pt-shadow-rest)}
+
+/* Back-to-top is a flat icon tile, not a framed SaaS FAB: opaque surface
+   marks its hit area over scrolling cards, with NO border and NO rest shadow
+   (flat-content grammar — hairlines divide content, quiet icon tiles carry
+   actions). Same quiet language as the header search/＋ tiles. */
+.pt-button.ma-feed-top{pointer-events:auto;width:36px;min-width:36px;height:36px;padding:0;border:0;box-shadow:none;border-radius:var(--pt-radius-md);background:var(--pt-surface);color:var(--pt-secondary)}
+.pt-button.ma-feed-top:hover:not([aria-disabled='true']){background:var(--pt-subtle);color:var(--pt-text)}
+
+.ma-moment{border-radius:var(--pt-radius-xl);padding:14px 15px;display:flex;flex-direction:column;background:var(--pt-surface);border:1px solid var(--pt-border)}
+
+.ma-moment-head{display:flex;align-items:flex-start;gap:11px}
+
+.ma-moment-who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding-top:1px}
+
+.ma-moment-who strong{font-size:14.5px;font-weight:650}
+
+.ma-moment-who em{font-style:normal;font-size:11.5px;color:var(--pt-muted)}
+
+.ma-trust{display:flex;flex-wrap:wrap;align-items:center;margin-top:6px}
+
+.ma-trust-seg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--pt-muted)}
+
+.ma-trust-dot{margin-right:8px}
+
+.ma-moment-text{margin:8px 0 0;font-size:15px;line-height:1.7;color:var(--pt-text);white-space:pre-wrap;word-break:break-word}
+
+.ma-post-images{display:grid;gap:6px;margin-top:10px;grid-template-columns:repeat(3,minmax(0,1fr))}
+
+.ma-post-images.ma-grid-1{grid-template-columns:minmax(0,1fr)}
+
+.ma-post-images.ma-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+.ma-img-tile{display:block;border-radius:10px;overflow:hidden;aspect-ratio:1;background:var(--pt-subtle)}
+
+.ma-post-images.ma-grid-1 .ma-img-tile{aspect-ratio:16 / 10}
+
+.ma-img-tile img{width:100%;height:100%;object-fit:cover;display:block}
+
+.ma-moment-foot{display:flex;flex-direction:row;align-items:center;gap:8px;margin-top:10px}
+
+.ma-react-summary{flex:1 1 auto;min-width:0;display:flex;flex-wrap:nowrap;align-items:center;gap:4px;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+
+.ma-react-summary::-webkit-scrollbar{display:none}
+
+.ma-react-summary:empty{display:none}
+
+.ma-react-summary[data-mask=end]{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 16px),transparent 100%);mask-image:linear-gradient(to right,#000 calc(100% - 16px),transparent 100%)}
+
+.ma-react-summary[data-mask=start]{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 16px),transparent 100%);mask-image:linear-gradient(to left,#000 calc(100% - 16px),transparent 100%)}
+
+.ma-react-summary[data-mask=both]{-webkit-mask-image:linear-gradient(to right,transparent,#000 16px,#000 calc(100% - 16px),transparent 100%);mask-image:linear-gradient(to right,transparent,#000 16px,#000 calc(100% - 16px),transparent 100%)}
+
+.ma-react-chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:0 9px;border-radius:999px;font-variant-numeric:tabular-nums}
+
+.ma-moment-foot .pt-button.is-liked{color:var(--pt-accent);background:var(--pt-accentSubtle);border-color:transparent}
+
+.ma-react-emoji{display:inline-flex;font-size:15px;line-height:1}
+
+.ma-post-action-buttons{flex:0 0 auto;display:inline-flex;align-items:center;gap:2px;margin-left:auto}
+
+.ma-react-picker{display:grid;grid-template-columns:repeat(4,32px);gap:4px;padding:6px}
+
+.ma-react-picker .pt-button{width:32px;min-width:32px;height:32px;padding:0;font-size:17px;border-radius:8px}
+
+.ma-comments{margin-top:10px;padding:10px 0 0;border-radius:12px;display:flex;flex-direction:column;gap:12px}
+
+.ma-comments-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px}
+
+.ma-comment{display:flex;gap:9px;align-items:flex-start}
+
+.ma-comment-body{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+
+.ma-comment-line{display:flex;align-items:baseline;gap:6px;min-width:0}
+
+.ma-comment-line strong{font-size:13px;font-weight:650;flex-shrink:0}
+
+.ma-comment-line span{font-size:13.5px;line-height:1.55;color:var(--pt-text);min-width:0}
+
+.ma-comment-body em{font-style:normal;font-size:11px;color:var(--pt-muted)}
+
+.ma-comment-input{display:flex;align-items:center;gap:6px}
+
+.ma-comment-input .pt-field-frame{flex:1;min-width:0;min-height:36px;border-radius:10px;padding:0 12px;background:var(--pt-surface)}
+
+.ma-comment-input .pt-input{min-height:36px;font-size:13px}
+
+.ma-comment-input .pt-icon-button{flex-shrink:0}
+
+.ma-circle-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+
+.ma-circle-card{width:100%;justify-content:flex-start;text-align:left;font-weight:400;padding:14px 15px;color:var(--pt-text)}
+
+.ma-circle-card>.pt-button-content{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%}
+
+.ma-circle-id{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left}
+
+.ma-circle-id strong{font-size:14.5px;font-weight:650}
+
+.ma-circle-desc{font-size:12.5px;color:var(--pt-secondary)}
+
+.ma-circle-time{font-size:11.5px;color:var(--pt-muted)}
+
+.ma-circle-tail{display:inline-flex;align-items:center;gap:8px;flex-shrink:0;color:var(--pt-muted)}
+
+.ma-circle-avatars{flex-shrink:0}
+
+.ma-circle-avatars .pt-avatar{box-shadow:0 0 0 2px var(--pt-surface, var(--pt-canvas))}
+
+.ma-circle-avatars .pt-avatar+.pt-avatar{margin-left:-8px}
+
+.ma-circle-missing{font-size:12.5px;color:var(--pt-secondary)}
+
+.ma-circle-manage{display:flex;flex-direction:column;gap:10px}
+
+.ma-circle-manage-label{font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--pt-muted)}
+
+.ma-circle-member-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+
+.ma-circle-member-row{display:flex;align-items:center;gap:10px}
+
+.ma-circle-member-name{font-size:13.5px;font-weight:600}
+
+.ma-circle-member-meta{display:flex;flex-direction:column;min-width:0}
+
+.ma-circle-member-row .pt-icon-button{margin-left:auto;flex-shrink:0}
+
+.ma-circle-member-self{margin-left:auto;font-size:10.5px;font-weight:600;color:var(--pt-muted);border:1px solid var(--pt-border);border-radius:999px;padding:1px 8px}
+
+.ma-circle-candidates-empty{font-size:12.5px;color:var(--pt-muted)}
+
+.ma-circle-manage-footer{display:flex;align-items:center;gap:8px;width:100%}
+
+.ma-circle-footer-spacer{flex:1}
+
+.ma-scope .pt-mobile-tabbar{background:var(--pt-canvas);border-top-color:var(--pt-border);-webkit-backdrop-filter:none;backdrop-filter:none}
+
+.ma-composer-sheet{display:flex;flex-direction:column;gap:14px}
+
+.ma-compose-thumbs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+
+.ma-compose-thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--pt-subtle)}
+
+.ma-compose-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+
+.ma-compose-thumb-remove{position:absolute;top:4px;right:4px;width:24px;min-width:24px;height:24px;border-radius:999px;background:#1418169e;color:#fff}
+
+.ma-compose-audience{display:flex;flex-direction:column;gap:10px}
+
+.ma-audience-actors{margin:0;padding:10px;border:1px solid var(--pt-border);border-radius:12px;display:flex;flex-wrap:wrap;gap:6px}
+
+.ma-audience-actors legend{padding:0 4px;font-size:12px;color:var(--pt-secondary)}
+
+.ma-audience-actor{border-radius:999px}
+
+.ma-composer-foot{display:flex;justify-content:flex-end;gap:8px}
+
+.ma-form-stack{display:flex;flex-direction:column;gap:14px}
+
+.ma-picker-label{font-size:12px;color:var(--pt-secondary);padding:0 4px}
+
+.ma-person-picker{max-height:216px;overflow-y:auto;padding:10px;border:1px solid var(--pt-border);border-radius:12px;display:flex;flex-wrap:wrap;gap:6px}
+
+.ma-person-pick{border-radius:999px}
+
+.ma-form-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+.ma-form-foot>:first-child{margin-right:auto}
+
+/* Call overlay: three fixed bands, never space-between (which pushed the
+   controls past the screen edge). Trust sits under the status bar, the
+   avatar + copy own the flexible middle, controls sit above the home
+   indicator with a full safe-area margin. */
+.ma-call{position:absolute;inset:0;z-index:60;box-sizing:border-box;background:var(--pt-mediaStage);color:var(--pt-white);display:flex;flex-direction:column;align-items:center;padding:calc(58px + env(safe-area-inset-top)) 24px calc(56px + env(safe-area-inset-bottom))}
+
+.ma-call-trust{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--pt-mediaStageText)}
+
+.ma-call-trust-dot{width:6px;height:6px;border-radius:999px;background:var(--pt-accent)}
+
+.ma-call-avatar{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;width:100%}
+
+.ma-call-avatar-frame{position:relative;display:grid;place-items:center}
+
+.ma-call-ring{position:absolute;width:116px;height:116px;border-radius:999px;border:2px solid rgba(255,255,255,.18)}
+
+.ma-call-copy{display:flex;flex-direction:column;align-items:center;gap:8px}
+
+.ma-call-copy strong{font-size:24px;font-weight:650}
+
+.ma-call-copy span{font-size:14px;color:var(--pt-mediaStageText)}
+
+.ma-call-controls{flex:0 0 auto;display:flex;align-items:flex-start;justify-content:center;gap:32px;width:100%}
+
+.ma-call-btn{color:inherit;display:flex;flex-direction:column;align-items:center;gap:10px}
+
+.ma-call-btn-icon{width:64px;height:64px;min-height:64px;border-radius:999px;display:grid;place-items:center;background:#ffffff24}
+
+.ma-call-btn-label{font-size:12.5px;color:var(--pt-mediaStageText)}
+
+.ma-call-btn.is-danger .ma-call-btn-icon{background:var(--pt-danger)}
+
+.ma-call-btn.is-selected .ma-call-btn-icon{background:var(--pt-white);color:var(--pt-mediaStage)}
+
+.ma-detail-body{flex:1;min-height:0;overflow-y:auto}
+
+.ma-detail-hero{display:flex;flex-direction:column;align-items:center;gap:6px;padding:22px 16px 16px}
+
+.ma-detail-hero strong{font-size:19px;font-weight:650;margin-top:4px}
+
+.ma-detail-hero em{font-style:normal;font-size:12.5px;color:var(--pt-muted)}
+
+.ma-detail-actions{display:flex;align-items:center;gap:10px;padding:0 16px 6px}
+
+.ma-detail-primary{flex:1;min-width:0}
+
+.ma-detail-list{padding-top:10px}
+
+.ma-add-icon{width:40px;height:40px;flex-shrink:0;border-radius:var(--pt-radius-md);display:grid;place-items:center;color:var(--pt-secondary);background:var(--pt-subtle)}
+
+.ma-danger-zone{margin-top:6px}
+
+.ma-signout{margin-top:4px}
+
+.ma-station-form{display:flex;flex-direction:column;gap:10px}
+.ma-station-http-warn{margin:0;font-size:12px;line-height:1.5;color:var(--pt-warning,#b7791f)}
+.ma-station-http-warn::before{content:'⚠ '}
+
+.ma-launch{padding:6px 20px calc(24px + env(safe-area-inset-bottom));overflow-y:auto}
+
+.ma-launch-topbar{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:6px 0 4px}
+
+.ma-launch-brand{text-align:center;padding:26px 8px 20px;display:flex;flex-direction:column;align-items:center;gap:8px}
+
+.ma-launch-logo{width:64px;height:64px;border-radius:16px;display:grid;place-items:center;background:var(--pt-surface);border:1px solid var(--pt-border);box-shadow:var(--pt-shadow-rest);font-size:19px;font-weight:700;letter-spacing:-.01em;color:var(--pt-text)}
+
+.ma-launch-brand h1{margin:6px 0 0;font-size:24px;font-weight:700;letter-spacing:-.01em}
+
+.ma-launch-brand p{margin:0;font-size:13.5px;color:var(--pt-secondary);line-height:1.6}
+
+.ma-launch-body{display:flex;flex-direction:column;gap:12px}
+
+.ma-launch-body .pt-button{min-height:48px}
+
+.ma-launch-section-head{display:flex;align-items:center;justify-content:space-between}
+
+.ma-launch-section-head strong{font-size:15px;font-weight:650}
+
+.ma-station-pick-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+
+.ma-station-pick{width:100%;display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 14px;border:1px solid var(--pt-border);border-radius:var(--pt-radius-lg);background:var(--pt-surface);color:var(--pt-text);font-family:inherit;text-align:left;cursor:pointer;transition:border-color .16s ease,background .16s ease}
+
+.ma-station-pick.is-selected{border-color:var(--pt-accent);background:var(--pt-accentSubtle)}
+
+.ma-station-pick-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+
+.ma-station-pick-main strong{font-size:15px;font-weight:650}
+
+.ma-station-pick-main em{font-style:normal;font-size:11.5px;color:var(--pt-muted)}
+
+.ma-station-state{flex-shrink:0;font-size:12.5px;color:var(--pt-muted)}
+
+.ma-station-state.is-online{color:var(--pt-accent)}
+
+/* ── Access gate (Station-advertised decision surface) ───────────────────
+   One calm card over the launch canvas; token roles only, no raw values.
+   Tab panels share one min-height so quick/email switching never shifts
+   the surrounding layout (prototype layout-stability contract). */
+.ma-launch-handshake{flex:1;align-items:center;justify-content:center;gap:14px;padding:48px 0;color:var(--pt-secondary)}
+.ma-launch-handshake p{margin:0;font-size:13.5px;color:var(--pt-muted)}
+
+.ma-gate{display:flex;flex-direction:column;gap:14px}
+.ma-gate .pt-button{min-height:48px}
+.ma-gate-brand{display:flex;flex-direction:column;gap:6px;text-align:left}
+.ma-gate-title{margin:0;font-size:21px;font-weight:700;letter-spacing:-.01em;color:var(--pt-text)}
+.ma-gate-subtitle{margin:0;font-size:13.5px;line-height:1.6;color:var(--pt-secondary)}
+.ma-gate-station{display:inline-flex;align-items:center;gap:6px;margin:2px 0 0;font-size:12.5px;color:var(--pt-muted)}
+
+.ma-gate-session-notice,.ma-gate-error{margin:0}
+.ma-gate-recovery-copy{display:flex;align-items:flex-start;gap:10px;padding:14px;border:1px solid var(--pt-border);border-radius:var(--pt-radius-lg);background:var(--pt-subtle);color:var(--pt-secondary);font-size:13.5px;line-height:1.6}
+.ma-gate-recovery-copy svg{flex-shrink:0;margin-top:1px;color:var(--pt-warning,#b7791f)}
+
+.ma-gate-fields{display:flex;flex-direction:column;gap:12px}
+.ma-gate-schema-field{display:flex;flex-direction:column;gap:6px}
+.ma-gate-hint{margin:0;font-size:12px;color:var(--pt-muted);line-height:1.5}
+
+.ma-gate-login{display:flex;flex-direction:column;gap:12px}
+.ma-gate-tabs{width:100%}
+.ma-gate-tab-panel{display:flex;flex-direction:column;gap:12px;min-height:168px}
+.ma-gate-tab-panel:not(.is-active){display:none}
+
+.ma-gate-oauth-panel{display:flex;flex-direction:column;gap:10px}
+.ma-gate-oauth-button{justify-content:center;gap:8px;font-weight:600}
+.ma-gate-oauth-state{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--pt-border);border-radius:var(--pt-radius-lg);background:var(--pt-subtle);font-size:12.5px;color:var(--pt-secondary)}
+.ma-gate-oauth-recovery{display:flex;flex-wrap:wrap;gap:8px}
+.ma-gate-oauth-recovery .pt-button{min-height:36px}
+
+.ma-gate-accounts{display:flex;flex-direction:column;gap:8px}
+.ma-gate-accounts-label{font-size:12px;color:var(--pt-muted)}
+.ma-gate-account-list{display:flex;flex-wrap:wrap;gap:8px}
+.ma-gate-account-chip{padding:7px 12px;border:1px solid var(--pt-border);border-radius:999px;background:var(--pt-surface);color:var(--pt-text);font-family:inherit;font-size:12.5px;cursor:pointer;transition:border-color .16s ease,background .16s ease}
+.ma-gate-account-chip.is-active{border-color:var(--pt-accent);background:var(--pt-accentSubtle)}
+
+.ma-gate-email-panel{display:flex;flex-direction:column;gap:12px}
+.ma-gate-actions{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+
+/* Full-screen QR scanner: anchored to .ma-root (the nearest positioned
+   ancestor) so it covers the status bar like a real camera/scan surface.
+   The reticle is geometrically centred on the screen, never docked to the
+   bottom — scanning belongs at optical centre (WeChat / system camera). */
+.ma-scan-overlay{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;color:#fff;background:#111614;overflow:hidden}
+
+.ma-scan-topbar{flex:0 0 auto;display:grid;grid-template-columns:40px 1fr 40px;align-items:center;padding:calc(8px + env(safe-area-inset-top)) 12px 6px}
+.ma-scan-topbar .pt-icon-button{color:#fff}
+.ma-scan-topbar .pt-icon-button svg{color:#fff}
+.ma-scan-title{text-align:center;font-size:16px;font-weight:650;letter-spacing:-.01em}
+.ma-scan-topbar-spacer{width:40px;height:40px}
+
+.ma-scan-stage{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.ma-scan-frame{position:relative;width:min(60vw,250px);aspect-ratio:1/1;border-radius:24px;overflow:hidden}
+
+.ma-scan-corner{position:absolute;width:26px;height:26px;border:0 solid var(--pt-accent);pointer-events:none}
+.ma-scan-corner.is-tl{top:0;left:0;border-top-width:3px;border-left-width:3px;border-top-left-radius:14px}
+.ma-scan-corner.is-tr{top:0;right:0;border-top-width:3px;border-right-width:3px;border-top-right-radius:14px}
+.ma-scan-corner.is-bl{bottom:0;left:0;border-bottom-width:3px;border-left-width:3px;border-bottom-left-radius:14px}
+.ma-scan-corner.is-br{bottom:0;right:0;border-bottom-width:3px;border-right-width:3px;border-bottom-right-radius:14px}
+
+.ma-scan-line{position:absolute;left:14%;right:14%;top:50%;height:2px;background:var(--pt-accent);border-radius:2px;box-shadow:0 0 12px rgba(47,106,80,.9);animation:ma-scan-sweep 1.7s ease-in-out infinite alternate}
+
+@keyframes ma-scan-sweep{0%{top:14%}to{top:84%}}
+
+.ma-scan-footer{position:relative;z-index:1;flex:0 0 auto;margin-top:auto;display:flex;flex-direction:column;gap:16px;padding:10px 24px calc(26px + env(safe-area-inset-bottom))}
+.ma-scan-footer p{margin:0;text-align:center;font-size:13px;color:rgba(255,255,255,.74);line-height:1.6}
+.ma-scan-confirm.pt-button{min-height:50px;background:#fff;color:#14191a;border-color:#fff}
+.ma-scan-confirm.pt-button:hover{background:#f1f3f2}
+
+.ma-station-name{display:inline-flex;align-items:center;gap:8px}
+
+.ma-station-dot{width:9px;height:9px;border-radius:999px;background:var(--pt-accent)}
+
+.ma-station-dot:not([data-online]){background:var(--pt-border-strong)}
+
+.ma-me{padding-bottom:20px;background:var(--pt-canvas)}
+
+/* ── Identity hero: edge-to-edge plant cover + overlapping avatar ──
+   On the Me surface the cover is immersive: the status bar floats over it
+   (absolute, out of flow) so the artwork runs under the Dynamic Island to
+   the very top instead of leaving a paper strip. Other tabs keep the status
+   bar in normal flow. */
+.ma-root[data-immersive] .pt-mobile-statusbar{position:absolute;top:0;left:0;right:0;z-index:12}
+
+.ma-hero{flex-shrink:0}
+
+.ma-hero-cover{position:relative;height:188px;width:100%;overflow:hidden;background-color:var(--pt-subtle);background-size:cover;background-position:center;border-bottom:1px solid var(--pt-border)}
+
+/* Edit chip mirrors desktop Settings identity: the library iconOnly FilePicker
+   paints a 30px radius-md dark-scrim pencil; this only pins it to the banner's
+   bottom-right corner (right:12/bottom:12). */
+.ma-hero-cover-action{position:absolute;right:12px;bottom:12px;z-index:2}
+
+.ma-hero-body{padding:0 16px}
+
+.ma-hero-avatar{position:relative;width:68px;height:68px;margin:-34px 0 10px}
+
+.ma-hero-avatar .pt-avatar{box-shadow:0 0 0 3px var(--pt-surface),var(--pt-shadow-rest)}
+
+/* Avatar edit chip: same iconOnly FilePicker as the cover, pinned inside the
+   avatar's bottom-right corner (desktop grammar right:6/bottom:6). */
+.ma-hero-avatar-action{position:absolute;right:6px;bottom:6px;z-index:2}
+
+.ma-hero-name-row{display:flex;align-items:center;gap:8px}
+
+.ma-hero-name-row strong{font-size:20px;font-weight:650;letter-spacing:-.01em}
+
+.ma-hero-handle{margin-top:3px;font-size:12.5px;color:var(--pt-muted)}
+
+.ma-hero-stats{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--pt-muted)}
+
+.ma-hero-stats strong{font-size:13.5px;font-weight:650;color:var(--pt-text);margin-right:2px}
+
+.ma-hero-stats em{margin-left:auto;font-style:normal;font-size:11.5px}
+
+/* ── Credentials (pushed page only) ── */
+.ma-cred-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+
+.ma-cred-label{font-size:12px;color:var(--pt-muted)}
+
+.ma-cred-text code{font-size:13.5px;color:var(--pt-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.ma-cred-station{font-size:13.5px;color:var(--pt-text)}
+
+/* Settings groups are inset white wells separated by whitespace, never
+   full-bleed hairlines. One vertical rhythm for every group on the page. */
+.ma-me .pt-list-section{margin:0 16px 14px}
+
+.ma-me .pt-list-section+.pt-list-section{margin-top:0}
+
+.ma-me .ma-credentials-entry{margin-top:16px}
+
+.ma-me .ma-danger-zone{margin:2px 16px 0;padding:2px var(--pt-space-sm);background:var(--pt-surface);border:1px solid var(--pt-border);border-radius:var(--pt-radius-lg)}
+
+.ma-danger-zone .pt-button{justify-content:flex-start}
+
+.ma-ok{font-size:13px;color:var(--pt-accent)}
+
+.ma-version{font-size:13px;color:var(--pt-secondary)}
+
+.ma-settings{margin:0 16px 18px}

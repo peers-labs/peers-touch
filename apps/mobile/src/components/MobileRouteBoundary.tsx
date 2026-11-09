@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Spin, Typography } from 'antd';
-import { AlertCircle, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Button, Icon, Spin } from '@peers-touch/ui';
 
 import {
   getMobileLifecycleKernel,
@@ -127,7 +126,7 @@ export function MobileRouteBoundary({
             aria-label={t('common.action.back')}
             onClick={onBack}
           >
-            <ArrowLeft size={20} />
+            <Icon iconId="arrow-left" size={20} />
           </button>
         )}
         <h1 className={`header-title${descriptor?.layout === 'detail' ? ' compact' : ''}`}>
@@ -142,10 +141,10 @@ export function MobileRouteBoundary({
       >
         <span className="mobile-route-state__icon" aria-hidden="true">
           {preparing
-            ? <Spin size="small" />
-            : <AlertCircle size={22} />}
+            ? <Spin active size="small" />
+            : <Icon iconId="warning" size={22} />}
         </span>
-        <Typography.Text strong className="mobile-route-state__title">
+        <strong className="mobile-route-state__title">
           {descriptor
             ? t(
                 preparing
@@ -154,30 +153,33 @@ export function MobileRouteBoundary({
                 { feature: featureName },
               )
             : t('mobile.launch.unavailable')}
-        </Typography.Text>
-        <Typography.Text type="secondary" className="mobile-route-state__description">
+        </strong>
+        <span className="mobile-route-state__description">
           {t(
             preparing
               ? 'mobile.route.preparingBody'
               : 'mobile.route.unavailableBody',
           )}
-        </Typography.Text>
+        </span>
         {retryable || retrying ? (
-          <Button
-            type="primary"
-            icon={<RefreshCw size={16} />}
-            loading={retrying}
-            disabled={retrying}
-            data-acceptance-id="mobile-route-retry"
-            onClick={() => { void retry(); }}
-          >
-            {t('common.action.retry')}
-          </Button>
+          <span className="mobile-route-state__action">
+            <Button
+              actionId="mobile-route-retry"
+              emphasis="primary"
+              leading={<Icon iconId="refresh-cw" size={16} />}
+              execution={retrying ? 'pending' : 'idle'}
+              availability={retrying ? { kind: 'disabled', reason: t('common.action.retry') } : undefined}
+              data-acceptance-id="mobile-route-retry"
+              onActivate={() => { void retry(); }}
+            >
+              {t('common.action.retry')}
+            </Button>
+          </span>
         ) : null}
         {retryFailed ? (
-          <Typography.Text type="danger" role="alert">
+          <span className="mobile-route-state__error" role="alert" data-tone="danger">
             {t('mobile.recovery.actionFailed')}
-          </Typography.Text>
+          </span>
         ) : null}
       </section>
     </div>

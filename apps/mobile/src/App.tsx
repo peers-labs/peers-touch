@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { Modal, Typography } from 'antd';
 
 import { AppProviders } from './app/AppProviders';
@@ -1435,10 +1435,34 @@ function fixtureOAuthProjection(
   return null;
 }
 
+// Acceptance-only runtime diagnostics. The dynamic import lives behind the
+// build flag so production bundles tree-shake both the gate and its chunk.
+function MobileDebugPanelGate() {
+  const [Drawer, setDrawer] = useState<ComponentType | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void import('./acceptance/debug/MobileDebugPanelDrawer').then((module) => {
+      if (!cancelled) setDrawer(() => module.MobileDebugPanelDrawer);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!Drawer) return null;
+  return (
+    <Suspense fallback={null}>
+      <Drawer />
+    </Suspense>
+  );
+}
+
 export function App() {
   return (
     <AppProviders>
       <MobileAppRoot />
+      {import.meta.env.VITE_ACCEPTANCE_HARNESS === '1' && <MobileDebugPanelGate />}
     </AppProviders>
   );
 }

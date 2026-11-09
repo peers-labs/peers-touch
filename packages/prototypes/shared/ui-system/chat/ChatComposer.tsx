@@ -14,24 +14,9 @@ import type { MessageAttachment } from './chat-data';
 import { AttachmentDraftStrip, useAttachmentDrafts } from './ComposerAttachments';
 import { formatVoiceDuration, useVoiceRecorder, VoicePlayer, type RecordedVoice } from './VoiceNote';
 import { useT } from '../prefs';
-
-const EMOJI_RECENT_KEY = 'peers-touch:prototype:recent-emojis';
-const EMOJI_GROUPS = [
-  ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '😭', '😡'],
-  ['👍', '👎', '👏', '🙏', '💪', '🤝', '👌', '✌️', '🤟', '👋'],
-  ['❤️', '💔', '💕', '💯', '✨', '🔥', '🎉', '🌹', '⭐', '💤'],
-  ['😅', '😇', '🙂', '🙃', '😉', '😌', '😋', '🤔', '🤫', '😴'],
-];
-
-function loadRecentEmojis(): string[] {
-  try {
-    const raw = window.localStorage.getItem(EMOJI_RECENT_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
-  } catch {
-    return [];
-  }
-}
+import {
+  COMPOSER_EMOJIS, loadRecentEmojis, nextRecentEmojis, persistRecentEmojis,
+} from './emoji-palette';
 
 export type ComposerPayload = {
   text: string;
@@ -105,13 +90,9 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
     const start = el?.selectionStart ?? draft.length;
     const end = el?.selectionEnd ?? draft.length;
     setDraft(`${draft.slice(0, start)}${emoji}${draft.slice(end)}`);
-    const nextRecent = [emoji, ...recentEmojis.filter(item => item !== emoji)].slice(0, 24);
+    const nextRecent = nextRecentEmojis(recentEmojis, emoji);
     setRecentEmojis(nextRecent);
-    try {
-      window.localStorage.setItem(EMOJI_RECENT_KEY, JSON.stringify(nextRecent));
-    } catch {
-      // best-effort UI preference
-    }
+    persistRecentEmojis(nextRecent);
     window.requestAnimationFrame(() => {
       el?.focus();
       el?.setSelectionRange(start + emoji.length, start + emoji.length);
@@ -209,7 +190,7 @@ export function ChatComposer({ groupMembers, replyTarget, editTarget, placeholde
       <div className="sk-emoji-group">
         <span>{t('composer.emojiAll')}</span>
         <div className="sk-emoji-grid">
-          {EMOJI_GROUPS.flat().map(emoji => (
+          {COMPOSER_EMOJIS.map(emoji => (
             <button key={emoji} type="button" className="sk-emoji-cell"
               aria-label={t('composer.emojiInsert', { emoji })} onClick={() => insertEmoji(emoji)}>{emoji}</button>
           ))}
