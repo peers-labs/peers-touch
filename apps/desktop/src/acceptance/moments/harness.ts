@@ -604,7 +604,8 @@ async function stagePrivateDraft(input: StagePrivateDraftInput) {
     revision: input.revision,
     text: input.text,
     audience: privateAudience(input),
-    mentions: [],
+    mentions: (input.mentions ?? []).map(mention => create(MentionSchema, mention)),
+    poll: input.poll,
     files: (input.files ?? []).map((file) => ({
       intentId: file.intentId,
       filePath: file.filePath,
@@ -621,25 +622,34 @@ async function publishPrivateDraft() {
     throw new Error('moments.acceptance.draftMissing');
   }
   let transientPostId: string | undefined;
+  let errorMessage: string | undefined;
   try {
-    transientPostId = await moments.createPost({
-      kind: draft.files.length > 0 ? 'image' : 'text',
+    const result = await publishTypedPrivateMoment({
+      momentKind: draft.poll ? 'POLL' : draft.files.length > 0 ? 'IMAGE' : 'TEXT',
       text: draft.text,
-      imageIds: [],
-      localFiles: draft.files,
-      audience: draft.audience,
+      files: draft.files,
+      audienceKind: audienceName(draft.audience.kind) as StagePrivateDraftInput['audienceKind'],
+      circleId: draft.audience.target.case === 'circleId' ? String(draft.audience.target.value) : undefined,
+      groupConversationId: draft.audience.target.case === 'groupConversationId' ? draft.audience.target.value : undefined,
+      actorPtids: draft.audience.actorPtids,
+      baseKind: draft.audience.baseKind === Audience_Kind.FOLLOWERS ? 'FOLLOWERS'
+        : draft.audience.baseKind === Audience_Kind.PUBLIC ? 'PUBLIC' : undefined,
       draftId: draft.draftId,
-      draftRevision: draft.revision,
+      revision: draft.revision,
       mentions: draft.mentions,
+      poll: draft.poll,
     });
-  } catch {
+    transientPostId = result.transientPostId;
+  } catch (error) {
     // The production store owns the typed failure projection.
+    errorMessage = error instanceof Error ? error.message : String(error);
   }
   const publish = usePrivateMomentsStore.getState().publish;
   return {
     platform: usePrivateMomentsStore.getState().platform,
     state: publish.state,
     errorCode: publish.errorCode,
+    ...(errorMessage ? { errorMessage } : {}),
     ...(publish.rejectionEvidence
       ? { rejectionEvidence: publish.rejectionEvidence }
       : {}),

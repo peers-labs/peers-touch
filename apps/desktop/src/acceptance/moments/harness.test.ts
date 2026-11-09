@@ -756,6 +756,50 @@ describe('Moments acceptance harness', () => {
     expect(result).not.toHaveProperty('transientPostId');
   });
 
+  it('retains the staged private poll and exact intent through publication retries', async () => {
+    const poll = {
+      question: 'private question', options: ['A', 'B'], minChoices: 1,
+      maxChoices: 1, expiresAtSeconds: 2_000_000_000,
+    };
+    await harness().stagePrivateDraft({
+      draftId: 'css09-as18-poll-0', revision: 1, text: 'private poll',
+      audienceKind: 'CUSTOM_ALLOW', actorPtids: ['ptid:test:remote'],
+      momentKind: 'POLL', poll,
+    });
+    momentsState.createPost.mockImplementation(async () => {
+      privateState.publish = { state: 'PUBLISHED' };
+      return 'private-poll-post';
+    });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      expect(await harness().publishPrivateDraft()).toMatchObject({
+        state: 'PUBLISHED', transientPostId: 'private-poll-post',
+      });
+    }
+    const calls = momentsState.createPost.mock.calls.map(([draft]) => draft);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual(calls[1]);
+    expect(calls[0]).toMatchObject({
+      draftId: 'css09-as18-poll-0', draftRevision: 1, kind: 'poll', poll,
+      audience: { kind: Audience_Kind.CUSTOM_ALLOW, actorPtids: ['ptid:test:remote'] },
+    });
+  });
+
+  it('retains the original Native failure detail without changing its failed state', async () => {
+    await harness().stagePrivateDraft({
+      draftId: 'failure-evidence', revision: 1, text: 'private media',
+      momentKind: 'IMAGE', files: [{ intentId: 'image', filePath: '/fixture/image.png' }],
+    });
+    momentsState.createPost.mockImplementation(async () => {
+      privateState.publish = { state: 'PUBLISH_FAILED', errorCode: 'PRIVATE_NATIVE_COMMAND_FAILED' };
+      throw new Error('private object upload failed at the transport owner');
+    });
+    expect(await harness().publishPrivateDraft()).toMatchObject({
+      state: 'PUBLISH_FAILED', errorCode: 'PRIVATE_NATIVE_COMMAND_FAILED',
+      errorMessage: 'private object upload failed at the transport owner',
+    });
+    expect(momentsState.composerDraft).not.toBeNull();
+  });
+
   it('returns Native pre-prepare rejection and local cleanup counters', async () => {
     await harness().stagePrivateDraft({
       draftId: 'draft-remote',

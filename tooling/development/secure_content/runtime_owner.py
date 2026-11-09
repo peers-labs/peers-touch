@@ -7408,7 +7408,8 @@ class W7RuntimeOwner:
                         (
                             f"{label} did not reach PUBLISHED "
                             f"(state={result.get('state')!r}, "
-                            f"errorCode={result.get('errorCode')!r})"
+                            f"errorCode={result.get('errorCode')!r}, "
+                            f"nativeError={redact_text(str(result.get('errorMessage') or ''))!r})"
                         ),
                         resource="client:cross-station-social-alice",
                     )
