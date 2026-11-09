@@ -212,24 +212,141 @@ pub async fn browser_screenshot(input: BrowserTabRefInput) -> AppResult<BrowserS
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserScreencastInput {
+    session_id: String,
+    tab_id: String,
+    width: i64,
+    height: i64,
+}
+
 #[tauri::command]
-pub async fn browser_takeover(
+pub async fn browser_screencast_start(
     app: AppHandle,
-    input: BrowserSessionInput,
-) -> AppResult<BrowserMeta> {
-    match browser::takeover(app, &input.session_id).await {
-        Ok(meta) => AppResult::success(meta),
+    input: BrowserScreencastInput,
+) -> AppResult<bool> {
+    match browser::start_screencast(app, &input.session_id, input.tab_id, input.width, input.height).await {
+        Ok(()) => AppResult::success(true),
         Err(error) => browser_fail(error),
     }
 }
 
 #[tauri::command]
-pub async fn browser_release(
-    app: AppHandle,
-    input: BrowserSessionInput,
-) -> AppResult<BrowserMeta> {
-    match browser::release(app, &input.session_id).await {
-        Ok(meta) => AppResult::success(meta),
+pub async fn browser_screencast_stop(input: BrowserTabRefInput) -> AppResult<bool> {
+    match browser::stop_screencast(&input.session_id, input.tab_id).await {
+        Ok(()) => AppResult::success(true),
+        Err(error) => browser_fail(error),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserMouseInput {
+    session_id: String,
+    tab_id: String,
+    /// "moved" | "pressed" | "released"
+    kind: String,
+    x: f64,
+    y: f64,
+    #[serde(default = "default_mouse_button")]
+    button: String,
+    buttons: i64,
+    click_count: i64,
+}
+
+fn default_mouse_button() -> String {
+    "left".to_string()
+}
+
+#[tauri::command]
+pub async fn browser_send_mouse(input: BrowserMouseInput) -> AppResult<bool> {
+    match browser::send_mouse(
+        &input.session_id,
+        input.tab_id,
+        input.kind,
+        input.x,
+        input.y,
+        input.button,
+        input.buttons,
+        input.click_count,
+    )
+    .await
+    {
+        Ok(()) => AppResult::success(true),
+        Err(error) => browser_fail(error),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserWheelInput {
+    session_id: String,
+    tab_id: String,
+    x: f64,
+    y: f64,
+    delta_x: f64,
+    delta_y: f64,
+}
+
+#[tauri::command]
+pub async fn browser_send_wheel(input: BrowserWheelInput) -> AppResult<bool> {
+    match browser::send_wheel(
+        &input.session_id,
+        input.tab_id,
+        input.x,
+        input.y,
+        input.delta_x,
+        input.delta_y,
+    )
+    .await
+    {
+        Ok(()) => AppResult::success(true),
+        Err(error) => browser_fail(error),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserKeyInput {
+    session_id: String,
+    tab_id: String,
+    /// "down" | "up"
+    kind: String,
+    key: String,
+    code: String,
+    modifiers: i64,
+}
+
+#[tauri::command]
+pub async fn browser_send_key(input: BrowserKeyInput) -> AppResult<bool> {
+    match browser::send_key(
+        &input.session_id,
+        input.tab_id,
+        input.kind,
+        input.key,
+        input.code,
+        input.modifiers,
+    )
+    .await
+    {
+        Ok(()) => AppResult::success(true),
+        Err(error) => browser_fail(error),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserTextInput {
+    session_id: String,
+    tab_id: String,
+    text: String,
+}
+
+#[tauri::command]
+pub async fn browser_insert_text(input: BrowserTextInput) -> AppResult<bool> {
+    match browser::insert_text(&input.session_id, input.tab_id, input.text).await {
+        Ok(()) => AppResult::success(true),
         Err(error) => browser_fail(error),
     }
 }
@@ -410,7 +527,7 @@ fn browser_fail<T: Serialize>(error: browser::BrowserError) -> AppResult<T> {
     let code = match error.code {
         "BROWSER_INVALID_ARGUMENT" => ErrorCode::InvalidArgument,
         "BROWSER_HOST_UNAVAILABLE" => ErrorCode::Unavailable,
-        "BROWSER_HUMAN_TAKEOVER_HELD" | "BROWSER_SNAPSHOT_REF_STALE" => ErrorCode::Conflict,
+        "BROWSER_SNAPSHOT_REF_STALE" => ErrorCode::Conflict,
         _ => ErrorCode::InternalError,
     };
     AppResult::fail(code, error.message, None)

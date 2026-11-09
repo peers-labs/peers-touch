@@ -1,16 +1,17 @@
 /**
  * TW-D5 exact-source Native Journey (tw-j05): device-held persistent
- * terminal sessions.
+ * terminal sessions behind the Trae-style shell tab strip.
  *
  *  0. Activate a local project directory; opening the tab auto-starts an
  *     interactive shell pinned inside that root (zero-form entry).
- *  1. Start a long-running service inside the same root via the custom form.
+ *  1. Start a long-running service inside the same root via the "+" custom
+ *     command entry.
  *  2. Reach it over HTTP from the cell.
- *  3. Close the viewer; the process stays alive.
- *  4. Reopen and reattach: same session/pid, replayed output, URL action.
- *  5. Kill and read back exit status; remove metadata, including the auto shell.
+ *  3. Close the workbench viewer; the process stays alive.
+ *  4. Reopen and reattach: the same session tab is still running.
+ *  5. Closing the session tab kills the process and removes the Station row.
  *
- * The process is owned by the Rust worker; the Page is only a subscriber.
+ * The process is owned by the Rust worker; the tab strip is only a view.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -25,7 +26,6 @@ const { test, expect } = createTauriTest({
   devUrl: '',
 });
 
-const SOCKET = process.env.PT_PLAYWRIGHT_SOCKET || '/tmp/tw-d1.sock';
 const STATION_URL = process.env.PT_STATION_URL || 'http://127.0.0.1:18092';
 const EMAIL = process.env.AGENT_TEST_EMAIL || 'agent-test-a@p.t';
 const PASSWORD = process.env.AGENT_TEST_PASSWORD || 'Test-1234';
@@ -77,9 +77,6 @@ const poll = async <T>(page: TauriPage, fn: string, timeoutMs = 120_000, tickMs 
   const deadline = Date.now() + timeoutMs;
   let last = '';
   while (Date.now() < deadline) {
-    // The bridge evaluates synchronously: an async wrapper would make
-    // JSON.stringify see a pending Promise and always return "{}", which
-    // passes the truthy gate as a false positive. Keep fns synchronous.
     const raw = await page.evaluate(`JSON.stringify((()=>{try{return (${fn})}catch(e){return {__error:String(e)}}})())`);
     const value = JSON.parse(raw) as T;
     if (value && typeof value === 'object' && '__error' in value) {
@@ -94,16 +91,14 @@ const poll = async <T>(page: TauriPage, fn: string, timeoutMs = 120_000, tickMs 
 };
 
 async function setValue(page: TauriPage, selector: string, value: string) {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await page.evaluate(`(() => {
           const el = document.querySelector(${JSON.stringify(selector)});
           if (!el) throw new Error('missing ' + ${JSON.stringify(selector)});
-          const proto = el.tagName === 'TEXTAREA'
-            ? window.HTMLTextAreaElement.prototype
-            : window.HTMLInputElement.prototype;
-          const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-          descriptor.set.call(el, ${JSON.stringify(value)});
+          const proto = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value');
+          if (proto && proto.set) proto.set.call(el, ${JSON.stringify(value)});
+          else el.value = ${JSON.stringify(value)};
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
         })()`);
@@ -115,8 +110,8 @@ async function setValue(page: TauriPage, selector: string, value: string) {
   }
 }
 
-test('files and commands stay alive when the viewer closes', async ({ tauriPage: page }) => {
-  for (let i = 0; i < 30; i++) {
+test('shell tabs stay alive when the viewer closes; closing a tab tears the process down', async ({ tauriPage: page }) => {
+  for (let i = 0; i < 30; i += 1) {
     if ((await page.evaluate(`document.querySelectorAll('[data-pt-primary-nav]').length`)) as number > 0) break;
     await sleep(1_000);
   }
@@ -127,23 +122,19 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
       await page.fill('[data-login-password]', PASSWORD);
       await page.click('[data-login-submit]');
     }
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 30; i += 1) {
       if ((await page.evaluate(`document.querySelectorAll('[data-pt-primary-nav]').length`)) as number > 0) break;
       await sleep(1_000);
     }
   }
   await page.click('[data-pt-primary-nav="agent"] [role="button"]');
   await poll(page, `!!document.querySelector('[data-pt-agent-composer-input]')`, 60_000);
-  // Bind to an existing Station conversation (draft topics have no Station
-  // row until their first turn).
   await poll(
     page,
     `Array.from(document.querySelectorAll('[data-pt-agent-topic-row]')).some((el) => {
       const id = el.getAttribute('data-pt-agent-topic-row') || '';
       return id && !id.startsWith('draft:');
     })`,
-    // The sidebar hydrates persisted topics on its own Station poll after a
-    // cold identity restore; wait for the real list instead of a fixed guess.
     120_000,
   );
   const conversationId = await page.evaluate(`(() => {
@@ -159,51 +150,51 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
   await poll(page, `!!document.querySelector('[data-pt-agent-composer-input]')`, 15_000);
 
   // ── Bind the task to a LOCAL project directory ────────────────────────
-  // Terminal placement is derived from the task workspace: an activated
-  // local root drives the device worker; without one the auto shell would
-  // open in the remote Station sandbox. This gate proves the device path.
   const localRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-d5-ws-'));
   await page.evaluate(`(() => window.__TAURI_INTERNALS__.invoke('agent_workspace_add_directory', { input: { path: ${JSON.stringify(localRoot)} } }))()`);
   await page.evaluate(`(() => window.__TAURI_INTERNALS__.invoke('agent_workspace_activate', { input: { locator: ${JSON.stringify(localRoot)} } }))()`);
 
-  // ── Start a persistent service ────────────────────────────────────────
-  // Tools open from the workbench "+" menu. Reset any terminal tab left by an
-  // earlier failed run, then open a fresh one bound to this conversation.
-  if (await page.evaluate(`!!document.querySelector('[data-pt-terminal-panel-title]')`)) {
-    await page.click('[data-pt-workbench-close="terminal"]');
-    await poll(page, `!document.querySelector('[data-pt-terminal-panel-title]')`, 10_000);
+  // ── Open a fresh terminal work surface ────────────────────────────────
+  // A closed work area shows only the floating right-edge rail; its terminal
+  // icon opens the panel with the terminal surface active.
+  if (!(await page.evaluate(`!!document.querySelector('[data-pt-workbench-panel]')`))) {
+    await page.click('[data-pt-workbench-rail-item="terminal"]');
+    await poll(page, `!!document.querySelector('[data-pt-workbench-panel]')`, 5_000);
   }
-  await page.click('[data-pt-workbench-add-toggle]');
-  await poll(page, `!!document.querySelector('[data-pt-workbench-add="terminal"]')`, 5_000);
-  await page.click('[data-pt-workbench-add="terminal"]');
-  await poll(page, `!!document.querySelector('[data-pt-terminal-panel-title]')`, 10_000);
+  if (await page.evaluate(`!!document.querySelector('[data-pt-terminal-panel]')`)) {
+    await page.click('[data-pt-workbench-close="terminal"]');
+    await poll(page, `!document.querySelector('[data-pt-terminal-panel]')`, 10_000);
+  }
+  const launcherEntry = await page.evaluate(
+    `!!document.querySelector('[data-pt-workbench-launcher] [data-pt-workbench-add="terminal"]')`,
+  );
+  if (launcherEntry) {
+    await page.click('[data-pt-workbench-launcher] [data-pt-workbench-add="terminal"]');
+  } else {
+    await page.click('[data-pt-workbench-add-toggle]');
+    await poll(page, `!!document.querySelector('[data-pt-workbench-add="terminal"]')`, 5_000);
+    await page.click('[data-pt-workbench-add="terminal"]');
+  }
+  await poll(page, `!!document.querySelector('[data-pt-terminal-panel]')`, 10_000);
 
   // ── Zero-form entry: opening the tab auto-starts an interactive shell ──
-  // With a local project active the auto shell lands inside that exact root.
   const autoShellId = await poll(
     page,
     `(() => {
-      const row = document.querySelector('[data-pt-terminal-session][data-pt-terminal-status="running"]');
-      return row ? row.getAttribute('data-pt-terminal-session') : null;
+      const tab = document.querySelector('[data-pt-terminal-session][data-pt-terminal-status="running"]');
+      return tab ? tab.getAttribute('data-pt-terminal-session') : null;
     })()`,
     30_000,
   ) as string;
-  await poll(
-    page,
-    `(() => {
-      const root = document.querySelector('[data-pt-terminal-placement-root]')?.textContent || '';
-      const cwd = document.querySelector('[data-pt-terminal-cwd]')?.textContent || '';
-      return root.includes(${JSON.stringify(localRoot)}) && cwd.includes(${JSON.stringify(localRoot)}) ? cwd : null;
-    })()`,
-    15_000,
-  );
-  await sleep(500);
   const port = 18_000 + (Date.now() % 900);
   const marker = `d5${Date.now().toString(36).slice(-6)}`;
   const url = `http://127.0.0.1:${port}/`;
-  // Custom commands live behind the collapsed advanced entry.
+
+  // Custom commands live behind the tab-strip "+" menu.
+  await page.click('[data-pt-terminal-add]');
+  await poll(page, `!!document.querySelector('[data-pt-terminal-custom-toggle]')`, 5_000);
   await page.click('[data-pt-terminal-custom-toggle]');
-  await poll(page, `!!document.querySelector('[data-pt-terminal-command]')`, 10_000);
+  await poll(page, `!!document.querySelector('[data-pt-terminal-command]')`, 5_000);
   await setValue(page, '[data-pt-terminal-command]', 'sh');
   await setValue(
     page,
@@ -212,40 +203,18 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
   );
   await page.click('[data-pt-terminal-start]');
 
-  // ── Running session with a live pid ───────────────────────────────────
-  // The auto shell already occupies one row; select the newly started sh
-  // service row explicitly instead of whichever row happens to be first.
+  // ── The service gets its own shell tab, distinct from the auto shell ──
   const sessionId = await poll(
     page,
     `(() => {
-      const rows = Array.from(document.querySelectorAll('[data-pt-terminal-session][data-pt-terminal-status="running"]'));
-      const next = rows.find((row) => row.getAttribute('data-pt-terminal-session') !== ${JSON.stringify(autoShellId)});
+      const tabs = Array.from(document.querySelectorAll('[data-pt-terminal-session][data-pt-terminal-status="running"]'));
+      const next = tabs.find((tab) => tab.getAttribute('data-pt-terminal-session') !== ${JSON.stringify(autoShellId)});
       return next ? next.getAttribute('data-pt-terminal-session') : null;
     })()`,
     30_000,
   ) as string;
-  const pidBefore = await poll(
-    page,
-    `(() => {
-      const pid = document.querySelector('[data-pt-terminal-pid]')?.textContent || '';
-      const match = pid.match(/(\\d+)/);
-      return match && match[1] !== '0' ? match[1] : null;
-    })()`,
-    10_000,
-  ) as string;
-  expect(pidBefore).toMatch(/^\d+$/);
 
-  // Output subscription + URL detection (echo happens before exec).
-  await poll(page, `!!document.querySelector('[data-pt-terminal-open-url="${url}"]')`, 15_000);
-
-  // Exercise the open action; headless cell has no browser, the handler is
-  // fail-safe and the button is the product surface for Preview/Browser.
-  await page.evaluate(`(() => {
-      const btn = document.querySelector('[data-pt-terminal-open-url="${url}"]');
-      if (btn) btn.click();
-    })()`);
-
-  // ── The service really serves from the device ─────────────────────────
+  // ── The service really serves from the device, pinned to the project ──
   const httpStatus = await nodePoll(
     () => {
       try {
@@ -260,55 +229,73 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
   );
   expect(httpStatus).toBe('200');
 
+  // Station facts while the process is alive.
+  const liveRow = await nodePoll(() => {
+    const row = execSync(
+      'docker exec -i pt-tw-d1-postgres-1 psql -U peers -d peers_touch_tw_d1 -t -A',
+      {
+        encoding: 'utf8',
+        input: `SELECT status || '|' || pid::text || '|' || output_bytes::text || '|' || cwd
+                 FROM agent_terminal_sessions WHERE id='${sessionId}'`,
+      },
+    ).trim();
+    const [status, pid] = row.split('|');
+    return status === 'running' && Number(pid) > 0 ? row : null;
+  }, 20_000);
+  const [liveStatus, livePid, liveOutputBytes, liveCwd] = liveRow.split('|');
+  expect(liveStatus).toBe('running');
+  expect(Number(livePid)).toBeGreaterThan(0);
+  expect(Number(liveOutputBytes)).toBeGreaterThan(0);
+  expect(liveCwd.startsWith(localRoot)).toBe(true);
+
   // ── Closing the viewer does not kill the process ──────────────────────
-  await page.evaluate(`(() => {
-      const close = document.querySelector('[data-pt-terminal-close]')?.closest('button');
-      if (close) close.click();
-    })()`);
-  await poll(page, `!document.querySelector('[data-pt-terminal-panel-title]')`, 10_000);
+  await page.click('[data-pt-workbench-close="terminal"]');
+  await poll(page, `!document.querySelector('[data-pt-terminal-panel]')`, 10_000);
   await sleep(1_500);
   expect(dockerExec(`curl -s -o /dev/null -w '%{http_code}' --max-time 3 ${url}`)).toBe('200');
 
-  // ── Reattach: same session, same pid, replayed history ────────────────
-  await page.click('[data-pt-workbench-add-toggle]');
-  await poll(page, `!!document.querySelector('[data-pt-workbench-add="terminal"]')`, 5_000);
-  await page.click('[data-pt-workbench-add="terminal"]');
-  await poll(page, `!!document.querySelector('[data-pt-terminal-panel-title]')`, 10_000);
+  // ── Reattach: the same shell tab is still running ─────────────────────
+  const launcherEntry = await page.evaluate(
+    `!!document.querySelector('[data-pt-workbench-launcher] [data-pt-workbench-add="terminal"]')`,
+  );
+  if (launcherEntry) {
+    await page.click('[data-pt-workbench-launcher] [data-pt-workbench-add="terminal"]');
+  } else {
+    await page.click('[data-pt-workbench-add-toggle]');
+    await poll(page, `!!document.querySelector('[data-pt-workbench-add="terminal"]')`, 5_000);
+    await page.click('[data-pt-workbench-add="terminal"]');
+  }
+  await poll(page, `!!document.querySelector('[data-pt-terminal-panel]')`, 10_000);
   const rowStatus = await poll(
     page,
     `(() => {
-      const row = document.querySelector('[data-pt-terminal-session="${sessionId}"]');
-      return row ? row.getAttribute('data-pt-terminal-status') : null;
+      const tab = document.querySelector('[data-pt-terminal-session="${sessionId}"]');
+      return tab ? tab.getAttribute('data-pt-terminal-status') : null;
     })()`,
     15_000,
   ) as string;
   expect(rowStatus).toBe('running');
-  const pidAfter = await poll(
-    page,
-    `(() => {
-      const pid = document.querySelector('[data-pt-terminal-pid]')?.textContent || '';
-      const match = pid.match(/(\\d+)/);
-      return match ? match[1] : null;
-    })()`,
-    10_000,
-  ) as string;
-  expect(pidAfter).toBe(pidBefore);
-  // Replayed output re-derives the URL action after reattachment.
-  await poll(page, `!!document.querySelector('[data-pt-terminal-open-url="${url}"]')`, 15_000);
+  // The service is still reachable through the reattached session.
+  expect(dockerExec(`curl -s -o /dev/null -w '%{http_code}' --max-time 3 ${url}`)).toBe('200');
 
-  // ── Kill and read terminal status back ────────────────────────────────
-  await page.click(`[data-pt-terminal-kill="${sessionId}"]`);
+  // ── Station binding facts ─────────────────────────────────────────────
+  const conversationBound = await psql(
+    `SELECT count(*) FROM agent_terminal_sessions s
+       JOIN agent_conversations c ON c.id = s.conversation_id
+      WHERE s.id='${sessionId}' AND s.command='sh'`,
+  );
+  expect(conversationBound).toBe('1');
+
+  // ── Closing the service tab kills the process and removes its row ─────
+  await page.evaluate(`(() => {
+      const close = document.querySelector('[data-pt-terminal-close="${sessionId}"]');
+      if (close) (close.closest('button') || close).click();
+    })()`);
   await poll(
     page,
-    `(() => {
-      const row = document.querySelector('[data-pt-terminal-session="${sessionId}"]');
-      return row && row.getAttribute('data-pt-terminal-status') === 'killed' ? true : null;
-    })()`,
-    20_000,
+    `!document.querySelector('[data-pt-terminal-session="${sessionId}"]')`,
+    15_000,
   );
-  await poll(page, `!!document.querySelector('[data-pt-terminal-exit-code]')`, 10_000);
-  await sleep(2_000);
-  // The service is gone after kill.
   let serviceDown = false;
   for (let i = 0; i < 10; i += 1) {
     try {
@@ -320,50 +307,18 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
     await sleep(1_000);
   }
   expect(serviceDown).toBe(true);
-
-  // ── Station facts: metadata, binding and honest status ────────────────
-  const dbRow = await psql(
-    `SELECT status || '|' || pid::text || '|' || output_bytes::text || '|' || cwd
-       FROM agent_terminal_sessions WHERE id='${sessionId}'`,
-  );
-  const [dbStatus, dbPid, dbOutputBytes, dbCwd] = dbRow.split('|');
-  expect(dbStatus).toBe('killed');
-  expect(Number(dbPid)).toBeGreaterThan(0);
-  expect(Number(dbOutputBytes)).toBeGreaterThan(0);
-  // Device PTY is pinned inside the activated local project root.
-  expect(dbCwd.startsWith(localRoot)).toBe(true);
-  const conversationBound = await psql(
-    `SELECT count(*) FROM agent_terminal_sessions s
-       JOIN agent_conversations c ON c.id = s.conversation_id
-      WHERE s.id='${sessionId}' AND s.command='sh'`,
-  );
-  expect(conversationBound).toBe('1');
-
-  // ── Remove metadata ───────────────────────────────────────────────────
-  await page.click(`[data-pt-terminal-remove="${sessionId}"]`);
-  await poll(
-    page,
-    `!document.querySelector('[data-pt-terminal-session="${sessionId}"]')`,
-    10_000,
-  );
   const removed = await psql(`SELECT count(*) FROM agent_terminal_sessions WHERE id='${sessionId}'`);
   expect(removed).toBe('0');
 
-  // ── Clean up the auto-started shell so the cell keeps no stray PTY ─────
-  await page.click(`[data-pt-terminal-kill="${autoShellId}"]`);
-  await poll(
-    page,
-    `(() => {
-      const row = document.querySelector('[data-pt-terminal-session="${autoShellId}"]');
-      return row && row.getAttribute('data-pt-terminal-status') === 'killed' ? true : null;
-    })()`,
-    20_000,
-  );
-  await page.click(`[data-pt-terminal-remove="${autoShellId}"]`);
+  // ── Close the auto-started shell tab so the cell keeps no stray PTY ───
+  await page.evaluate(`(() => {
+      const close = document.querySelector('[data-pt-terminal-close="${autoShellId}"]');
+      if (close) (close.closest('button') || close).click();
+    })()`);
   await poll(
     page,
     `!document.querySelector('[data-pt-terminal-session="${autoShellId}"]')`,
-    10_000,
+    15_000,
   );
   const autoRemoved = await psql(
     `SELECT count(*) FROM agent_terminal_sessions WHERE id='${autoShellId}'`,
@@ -381,8 +336,8 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
     sessionId,
     autoShellId,
     localRoot,
-    pid: pidBefore,
+    pid: livePid,
     httpStatus,
-    dbRow,
+    dbRow: liveRow,
   });
 });

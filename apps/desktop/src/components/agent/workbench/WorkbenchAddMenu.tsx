@@ -1,46 +1,18 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { Brain, Globe, PanelRightClose, PanelRightOpen, Plus, TerminalSquare } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Plus, Search } from 'lucide-react';
 import { Dropdown, Input, theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 
-import { useWorkbenchTabsStore, type WorkbenchToolId } from '../../../store/workbenchTabs';
+import { useWorkbenchTabsStore } from '../../../store/workbenchTabs';
+import { WORKBENCH_TOOLS } from './workbenchTools';
 
-interface ToolMeta {
-  id: WorkbenchToolId;
-  icon: ReactNode;
-  labelKey: string;
-  descKey: string;
-}
-
-export const WORKBENCH_TOOLS: ToolMeta[] = [
-  {
-    id: 'terminal',
-    icon: <TerminalSquare size={14} />,
-    labelKey: 'chat.workbench.tab.terminal',
-    descKey: 'chat.workbench.desc.terminal',
-  },
-  {
-    id: 'browser',
-    icon: <Globe size={14} />,
-    labelKey: 'chat.workbench.tab.browser',
-    descKey: 'chat.workbench.desc.browser',
-  },
-  {
-    id: 'memory',
-    icon: <Brain size={14} />,
-    labelKey: 'chat.workbench.tab.memory',
-    descKey: 'chat.workbench.desc.memory',
-  },
-];
-
-// Shared searchable "+" entry used by the conversation header and the open
-// panel header. Opening a tool is the only action; placement/tabs live in the
-// workbench store.
-export function WorkbenchAddMenu({ blockSize = 32 }: { blockSize?: number }) {
+// Compact "+" menu shown inside an open work area (tab strip / launcher
+// header): search box + icon/name rows, no descriptions. Mirrors Trae's
+// add menu once a tab already exists.
+export function WorkbenchAddMenu({ blockSize = 30 }: { blockSize?: number }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const openTool = useWorkbenchTabsStore((state) => state.openTool);
-  const tabs = useWorkbenchTabsStore((state) => state.tabs);
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -58,7 +30,7 @@ export function WorkbenchAddMenu({ blockSize = 32 }: { blockSize?: number }) {
     <div
       data-pt-workbench-add-menu
       style={{
-        width: 300,
+        width: 264,
         background: token.colorBgElevated,
         borderRadius: 12,
         boxShadow: token.boxShadowSecondary,
@@ -69,11 +41,12 @@ export function WorkbenchAddMenu({ blockSize = 32 }: { blockSize?: number }) {
       <Input
         autoFocus
         allowClear
-        prefix={<Plus size={13} color={token.colorTextTertiary} />}
+        prefix={<Search size={13} color={token.colorTextTertiary} />}
         placeholder={t('chat.workbench.searchPlaceholder')}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        style={{ marginBottom: 8 }}
+        variant="borderless"
+        style={{ marginBottom: 4 }}
       />
       <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {filteredTools.map((tool) => (
@@ -99,6 +72,7 @@ export function WorkbenchAddMenu({ blockSize = 32 }: { blockSize?: number }) {
               padding: '8px 10px',
               cursor: 'pointer',
               color: token.colorText,
+              fontSize: 13,
             }}
             onMouseEnter={(event) => {
               event.currentTarget.style.background = token.colorFillQuaternary;
@@ -107,43 +81,15 @@ export function WorkbenchAddMenu({ blockSize = 32 }: { blockSize?: number }) {
               event.currentTarget.style.background = 'transparent';
             }}
           >
-            <span
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                background: token.colorFillQuaternary,
-                color: token.colorTextSecondary,
-              }}
-            >
+            <span style={{ color: token.colorTextSecondary, display: 'inline-flex' }}>
               {tool.icon}
             </span>
-            <span style={{ minWidth: 0 }}>
-              <span style={{ display: 'block', fontSize: 13, fontWeight: 500 }}>
-                {t(tool.labelKey)}
-              </span>
-              <span
-                style={{
-                  display: 'block',
-                  fontSize: 11,
-                  color: token.colorTextTertiary,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {t(tool.descKey)}
-              </span>
-            </span>
+            {t(tool.labelKey)}
           </button>
         ))}
         {filteredTools.length === 0 && (
           <div style={{ padding: 12, fontSize: 12, color: token.colorTextTertiary }}>
-            {t('chat.workbench.searchPlaceholder')}
+            {t('chat.workbench.searchEmpty')}
           </div>
         )}
       </div>
@@ -156,12 +102,11 @@ export function WorkbenchAddMenu({ blockSize = 32 }: { blockSize?: number }) {
       open={menuOpen}
       onOpenChange={setMenuOpen}
       dropdownRender={() => menu}
-      placement="bottomRight"
+      placement="bottomLeft"
     >
       <button
         type="button"
         data-pt-workbench-add-toggle
-        data-pt-workbench-has-open-tab={tabs.length > 0 ? 'true' : 'false'}
         aria-label={t('chat.workbench.add')}
         title={t('chat.workbench.add')}
         style={{
@@ -179,9 +124,7 @@ export function WorkbenchAddMenu({ blockSize = 32 }: { blockSize?: number }) {
           padding: 0,
         }}
       >
-        {tabs.length > 0
-          ? <PanelRightClose size={16} strokeWidth={1.85} />
-          : <PanelRightOpen size={16} strokeWidth={1.85} />}
+        <Plus size={17} strokeWidth={1.85} />
       </button>
     </Dropdown>
   );

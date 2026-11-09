@@ -110,7 +110,11 @@ test('memory candidates are gated until a human confirms them', async ({ tauriPa
   expect(preConfirm).toBe('0');
 
   // Open the human review queue from the workbench "+" menu; both candidates
-  // are listed.
+  // are listed. A closed work area is entered through the right-edge rail.
+  if (!(await page.evaluate(`!!document.querySelector('[data-pt-workbench-panel]')`))) {
+    await page.click('[data-pt-workbench-rail-item="memory"]');
+    await poll(page, `!!document.querySelector('[data-pt-workbench-panel]')`, 5_000);
+  }
   if (!(await page.evaluate(`!!document.querySelector('[data-pt-memory-panel]')`))) {
     await page.click('[data-pt-workbench-add-toggle]');
     await poll(page, `!!document.querySelector('[data-pt-workbench-add="memory"]')`, 5_000);

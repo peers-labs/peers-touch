@@ -467,6 +467,11 @@ tauriTest('TW-O12 research/doc: material deliverable, feedback revision, recall 
   expect(retrievalsBefore).toBe('0');
 
   // Human confirms through the workbench review dock (real proxy -> Station).
+  // A closed work area is entered through the right-edge rail.
+  if (!(await page.evaluate(`!!document.querySelector('[data-pt-workbench-panel]')`))) {
+    await page.click('[data-pt-workbench-rail-item="memory"]');
+    await poll(page, `!!document.querySelector('[data-pt-workbench-panel]')`, 5_000);
+  }
   if (!(await page.evaluate(`!!document.querySelector('[data-pt-memory-panel]')`))) {
     await page.click('[data-pt-workbench-add-toggle]');
     await poll(page, `!!document.querySelector('[data-pt-workbench-add="memory"]')`, 5_000);

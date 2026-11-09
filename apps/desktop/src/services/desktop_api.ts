@@ -4032,6 +4032,46 @@ export interface AgentWorkspaceState {
   choices: AgentWorkspaceChoice[];
 }
 
+export interface AgentWorkspaceEntry {
+  name: string;
+  relativePath: string;
+  isDir: boolean;
+  isSymlink: boolean;
+  size: number;
+  modifiedMs: number;
+}
+
+export interface AgentWorkspaceFsList {
+  root: string;
+  rootName: string;
+  isGit: boolean;
+  path: string;
+  entries: AgentWorkspaceEntry[];
+}
+
+export interface AgentWorkspaceFile {
+  path: string;
+  content: string;
+  truncated: boolean;
+  size: number;
+}
+
+export interface AgentWorkspaceChange {
+  status: string;
+  path: string;
+}
+
+export interface AgentWorkspaceChanges {
+  isGit: boolean;
+  changes: AgentWorkspaceChange[];
+}
+
+export interface AgentWorkspaceDiff {
+  path: string;
+  untracked: boolean;
+  diff: string;
+}
+
 export interface AgentConversation {
   conversation_id: string;
   agent_id: string;
@@ -7156,6 +7196,29 @@ export const api = {
     invokeRustData<{ fullAccess: boolean }, AgentWorkspaceState>(
       'agent_workspace_set_shell_access',
       { fullAccess },
+    ),
+
+  // Read-only browsing of the active local workspace. Unsupported for the
+  // remote Station sandbox (code agent.workspaceRemoteSandbox).
+  agentWorkspaceFsList: (path: string) =>
+    invokeRustData<{ path: string }, AgentWorkspaceFsList>(
+      'agent_workspace_fs_list',
+      { path },
+    ),
+  agentWorkspaceFsRead: (path: string) =>
+    invokeRustData<{ path: string }, AgentWorkspaceFile>(
+      'agent_workspace_fs_read',
+      { path },
+    ),
+  agentWorkspaceGitChanges: () =>
+    invokeRustData<Record<string, never>, AgentWorkspaceChanges>(
+      'agent_workspace_git_changes',
+      {},
+    ),
+  agentWorkspaceGitDiff: (path: string) =>
+    invokeRustData<{ path: string }, AgentWorkspaceDiff>(
+      'agent_workspace_git_diff',
+      { path },
     ),
 
   listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
@@ -10615,12 +10678,70 @@ export async function browserWorkerScreenshot(
   return invokeRustData<Record<string, unknown>, BrowserScreenshotResult>('browser_screenshot', { sessionId, tabId });
 }
 
-export async function browserWorkerTakeover(sessionId: string): Promise<BrowserSessionMeta> {
-  return invokeRustData<Record<string, unknown>, BrowserSessionMeta>('browser_takeover', { sessionId });
+export async function browserWorkerScreencastStart(
+  sessionId: string,
+  tabId: string,
+  width: number,
+  height: number,
+): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_screencast_start', {
+    sessionId,
+    tabId,
+    width,
+    height,
+  });
 }
 
-export async function browserWorkerRelease(sessionId: string): Promise<BrowserSessionMeta> {
-  return invokeRustData<Record<string, unknown>, BrowserSessionMeta>('browser_release', { sessionId });
+export async function browserWorkerScreencastStop(sessionId: string, tabId: string): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_screencast_stop', { sessionId, tabId });
+}
+
+export type BrowserMouseKind = 'moved' | 'pressed' | 'released';
+
+export async function browserWorkerSendMouse(input: {
+  sessionId: string;
+  tabId: string;
+  kind: BrowserMouseKind;
+  x: number;
+  y: number;
+  button?: 'left' | 'right' | 'middle';
+  buttons: number;
+  clickCount: number;
+}): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_send_mouse', {
+    button: 'left',
+    ...input,
+  });
+}
+
+export async function browserWorkerSendWheel(input: {
+  sessionId: string;
+  tabId: string;
+  x: number;
+  y: number;
+  deltaX: number;
+  deltaY: number;
+}): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_send_wheel', input);
+}
+
+export async function browserWorkerSendKey(input: {
+  sessionId: string;
+  tabId: string;
+  kind: 'down' | 'up';
+  key: string;
+  code: string;
+  modifiers: number;
+}): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_send_key', input);
+}
+
+export async function browserWorkerInsertText(
+  sessionId: string,
+  tabId: string,
+  text: string,
+): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_insert_text', { sessionId, tabId, text });
 }
 
 export async function browserWorkerInspect(sessionId: string): Promise<BrowserSessionMeta> {

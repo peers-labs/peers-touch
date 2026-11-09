@@ -1,12 +1,13 @@
 // TW-D6: device-held real browser sessions.
 //
-// The browser process is launched and controlled by the worker through a
-// verified CDP host (managed Chromium/Chrome with an isolated per-session
-// user data dir). The Page is a renderer of untrusted data: page text and
-// DOM never become commands, credentials or permissions, and every agent
-// action is gated by an observation generation + control lease. A human
-// takeover acquires the lease and pauses all agent actions; after release
-// the agent must observe a fresh generation before acting again.
+// The browser process is a single headless CDP host (managed
+// Chromium/Chrome with an isolated per-session user data dir) shared by two
+// control planes: the agent's structured tools (snapshot/click/fill) and the
+// human operator, whose panel renders a live CDP screencast and forwards
+// mouse/keyboard input through the CDP Input domain. There is no second
+// browser window and no headless/headful switching: both planes drive the
+// same Page. Page text and DOM stay untrusted data; agent element actions
+// remain gated by an observation generation.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,8 +16,15 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chromiumoxide::browser::{Browser, BrowserConfig};
+use chromiumoxide::cdp::browser_protocol::input::{
+    DispatchKeyEventParams, DispatchKeyEventType, DispatchMouseEventParams, DispatchMouseEventType,
+    InsertTextParams, MouseButton,
+};
+use chromiumoxide::cdp::browser_protocol::page::{
+    CaptureScreenshotFormat, EventScreencastFrame, ScreencastFrameAckParams, StartScreencastFormat,
+    StartScreencastParams, StopScreencastParams,
+};
 use chromiumoxide::page::ScreenshotParams;
-use chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat;
 use chromiumoxide::Page;
 use futures_lite::StreamExt;
 use serde::Serialize;
@@ -38,6 +46,7 @@ pub(crate) fn host_engine() -> String {
 }
 
 pub(crate) const BROWSER_EVENT: &str = "peers-touch://browser-session-event";
+pub(crate) const BROWSER_FRAME_EVENT: &str = "peers-touch://browser-frame-event";
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,21 +117,6 @@ pub(crate) struct SnapshotResult {
     elements: Vec<ElementInfo>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Lease {
-    Agent,
-    Human,
-}
-
-impl Lease {
-    fn name(self) -> &'static str {
-        match self {
-            Lease::Agent => "agent",
-            Lease::Human => "human",
-        }
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct BrowserError {
     pub(crate) code: &'static str,
@@ -138,12 +132,6 @@ impl BrowserError {
     }
     fn failed(message: impl Into<String>) -> Self {
         Self { code: "BROWSER_EXECUTION_FAILED", message: message.into() }
-    }
-    fn takeover() -> Self {
-        Self {
-            code: "BROWSER_HUMAN_TAKEOVER_HELD",
-            message: "human control lease is active; agent actions are paused".to_string(),
-        }
     }
     fn stale() -> Self {
         Self {
@@ -211,18 +199,14 @@ impl TabHandle {
 pub(crate) struct SessionHandle {
     id: String,
     engine: String,
-    // Tokio mutex: CDP calls (new_page, close, relaunch) hold the browser across awaits.
+    // Tokio mutex: CDP calls (new_page, close) hold the browser across awaits.
     browser: tokio::sync::Mutex<Option<Browser>>,
     tabs: Mutex<Vec<Arc<TabHandle>>>,
-    lease: Mutex<Lease>,
     started_at_ms: u64,
     data_dir: PathBuf,
-    // Whether the current browser process runs headless (agent control) or as
-    // a visible OS window (human takeover). Relaunch flips the mode in place.
-    headless: Mutex<bool>,
-    // Strictly increasing epoch; every relaunch rebuilds tabs on a higher
-    // epoch so stale observation refs can never match a new incarnation.
-    generation_epoch: AtomicU64,
+    // Active screencast supervisors keyed by tab id; firing the sender stops
+    // the frame stream for that tab.
+    casts: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
 }
 
 fn registry() -> &'static Mutex<HashMap<String, Arc<SessionHandle>>> {
@@ -305,23 +289,12 @@ pub(crate) fn host_info() -> HostInfo {
     }
 }
 
-/// Native E2E cells keep the browser headful from creation: physical-input
-/// takeover gates (tw-d6) drive the real on-screen window with xdotool.
-fn e2e_native_cell() -> bool {
-    std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("1")
-}
-
-/// Explicit CI/headless override.
-fn force_headless() -> bool {
-    std::env::var("PT_BROWSER_HEADLESS").as_deref() == Ok("1")
-}
-
-/// The agent-controlled browser must not exist as an OS window in production:
-/// headless by default so there is no taskbar entry, no infobar and no
-/// window-manager race. Human takeover relaunches a headful instance on the
-/// same profile. Native E2E cells and explicit headful CI setups opt out.
+/// The managed browser never needs an OS window: the human watches the
+/// screencast stream inside the workbench panel. Headless is therefore the
+/// only mode; PT_BROWSER_HEADLESS=0 opts into a headful process for local
+/// debugging of a session.
 fn default_headless() -> bool {
-    force_headless() || !e2e_native_cell()
+    std::env::var("PT_BROWSER_HEADLESS").as_deref() != Ok("0")
 }
 
 async fn launch_browser(data_dir: &Path, headless: bool) -> Result<Browser, BrowserError> {
@@ -331,15 +304,15 @@ async fn launch_browser(data_dir: &Path, headless: bool) -> Result<Browser, Brow
     // with_head keeps the standard CDP attachment; headless=new is added as a
     // host arg below and remains the same Chrome engine (screenshots/input
     // behave identically). Arg keys are passed WITHOUT leading dashes.
+    // Headless Chrome ignores runtime window resizing, so launch at the fixed
+    // screencast surface size; the panel fits the frame with object-contain.
     let mut builder = BrowserConfig::builder()
         .chrome_executable(host)
         .user_data_dir(data_dir)
         .no_sandbox()
         .with_head()
-        // No device-metrics emulation: the 1280x860 window is the observed
-        // viewport so coordinates match physical input in headful takeover.
         .viewport(None)
-        .window_size(1280, 860)
+        .window_size(SURFACE_WIDTH, SURFACE_HEIGHT)
         .args([
             "no-first-run",
             "no-default-browser-check",
@@ -398,22 +371,15 @@ pub(crate) async fn create_session(
             "about:blank".to_string(),
             String::new(),
         ))]),
-        lease: Mutex::new(Lease::Agent),
         started_at_ms: now_ms(),
         data_dir,
-        headless: Mutex::new(headless),
-        generation_epoch: AtomicU64::new(1),
+        casts: Mutex::new(HashMap::new()),
     });
     registry()
         .lock()
         .expect("browser registry")
         .insert(session_id.clone(), Arc::clone(&handle));
     emit_meta(&app, &handle);
-    // A headless process owns no OS window; only headful cells need parking
-    // while the agent drives (takeover restores it later).
-    if !headless {
-        place_session_window(handle.data_dir.as_path(), true).await;
-    }
     Ok(handle.meta())
 }
 
@@ -432,7 +398,7 @@ impl SessionHandle {
             session_id: self.id.clone(),
             engine: self.engine.clone(),
             status: "active".to_string(),
-            lease: self.lease.lock().expect("browser lease").name().to_string(),
+            lease: "agent".to_string(),
             tabs: self
                 .tabs
                 .lock()
@@ -454,126 +420,23 @@ impl SessionHandle {
             .ok_or_else(|| BrowserError::invalid("browser tab not found"))
     }
 
-    fn require_agent_lease(&self) -> Result<(), BrowserError> {
-        if *self.lease.lock().expect("browser lease") == Lease::Human {
-            return Err(BrowserError::takeover());
-        }
-        Ok(())
-    }
-
     async fn close(&self) {
+        // Stop every screencast supervisor before closing the browser.
+        let senders: Vec<_> = self
+            .casts
+            .lock()
+            .expect("browser casts")
+            .drain()
+            .map(|(_, sender)| sender)
+            .collect();
+        for sender in senders {
+            let _ = sender.send(());
+        }
         if let Some(mut browser) = self.browser.lock().await.take() {
             let _ = browser.close().await;
         }
         let _ = std::fs::remove_dir_all(&self.data_dir);
     }
-
-    /// Switches the running browser between headless (agent control) and
-    /// headful (human takeover) without changing the session identity or its
-    /// on-disk profile: cookies, logins and open URLs survive. Tab target ids
-    /// are rebuilt and every rebuilt tab starts on a fresh generation epoch.
-    async fn relaunch(&self, headless: bool) -> Result<(), BrowserError> {
-        let urls: Vec<String> = self
-            .tabs
-            .lock()
-            .expect("browser tabs")
-            .iter()
-            .map(|tab| tab.url.lock().expect("tab url").clone())
-            .filter(|url| !url.is_empty())
-            .collect();
-        if let Some(mut previous) = self.browser.lock().await.take() {
-            let _ = previous.close().await;
-        }
-        // chromiumoxide reaps the child asynchronously after close(); wait for
-        // the actual profile process to exit rather than the lock files.
-        wait_profile_process_exit(&self.data_dir).await?;
-        let browser = launch_browser(&self.data_dir, headless).await?;
-        let epoch = self.generation_epoch.fetch_add(1, Ordering::AcqRel) + 1;
-
-        let targets = if urls.is_empty() {
-            vec!["about:blank".to_string()]
-        } else {
-            urls
-        };
-        let mut rebuilt: Vec<Arc<TabHandle>> = Vec::with_capacity(targets.len());
-        for url in targets {
-            let page = browser
-                .new_page(&url)
-                .await
-                .map_err(|error| BrowserError::failed(format!("reopen tab during relaunch: {error}")))?;
-            let tab_id = page.target_id().inner().to_string();
-            rebuilt.push(Arc::new(TabHandle::with_generation(
-                tab_id,
-                page,
-                url,
-                String::new(),
-                epoch,
-            )));
-        }
-        *self.tabs.lock().expect("browser tabs") = rebuilt;
-        *self.browser.lock().await = Some(browser);
-        *self.headless.lock().expect("headless flag") = headless;
-        Ok(())
-    }
-
-    fn is_headless(&self) -> bool {
-        *self.headless.lock().expect("headless flag")
-    }
-}
-
-/// Polls until no Chrome process references this profile. Lock files can
-/// outlive a killed process briefly, while a second Chrome attached to a live
-/// profile always fails — process exit is the reliable reuse signal. If the
-/// graceful close lingers, the profile processes are killed explicitly.
-async fn wait_profile_process_exit(data_dir: &Path) -> Result<(), BrowserError> {
-    let pattern = format!("user-data-dir={}", data_dir.display());
-    let grace_deadline = Instant::now() + Duration::from_secs(8);
-    loop {
-        if !profile_processes_running(&pattern) {
-            return Ok(());
-        }
-        if Instant::now() >= grace_deadline {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    // chromiumoxide reaps the child in the background; force the issue so a
-    // slow shutdown cannot block the profile reuse.
-    let kill_pattern = pattern.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let _ = std::process::Command::new("pkill")
-            .arg("-f")
-            .arg(kill_pattern)
-            .status();
-    })
-    .await
-    .map_err(|error| BrowserError::failed(format!("relaunch kill join failed: {error}")))?;
-    let kill_deadline = Instant::now() + Duration::from_secs(7);
-    loop {
-        if !profile_processes_running(&pattern) {
-            return Ok(());
-        }
-        if Instant::now() >= kill_deadline {
-            return Err(BrowserError::failed(
-                "managed browser process did not exit for relaunch",
-            ));
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-}
-
-fn profile_processes_running(pattern: &str) -> bool {
-    std::process::Command::new("pgrep")
-        .arg("-f")
-        .arg(pattern)
-        .output()
-        .map(|output| {
-            !String::from_utf8_lossy(&output.stdout)
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .is_empty()
-        })
-        .unwrap_or(false)
 }
 
 async fn with_session<T, Fut>(
@@ -665,7 +528,6 @@ async fn eval_json(page: &Page, script: String) -> Result<String, BrowserError> 
 
 pub(crate) async fn open_tab(session_id: &str, url: String) -> Result<TabMeta, BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
         let page = {
             let browser = session.browser.lock().await;
             let browser = browser
@@ -677,14 +539,7 @@ pub(crate) async fn open_tab(session_id: &str, url: String) -> Result<TabMeta, B
                 .map_err(|error| BrowserError::failed(format!("open tab: {error}")))?
         };
         let tab_id = page.target_id().inner().to_string();
-        let epoch = session.generation_epoch.load(Ordering::Acquire);
-        let tab = Arc::new(TabHandle::with_generation(
-            tab_id,
-            page,
-            url.clone(),
-            String::new(),
-            epoch,
-        ));
+        let tab = Arc::new(TabHandle::new(tab_id, page, url.clone(), String::new()));
         session
             .tabs
             .lock()
@@ -697,7 +552,7 @@ pub(crate) async fn open_tab(session_id: &str, url: String) -> Result<TabMeta, B
 
 pub(crate) async fn close_tab(session_id: &str, tab_id: String) -> Result<(), BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
+        stop_cast(&session, &tab_id);
         let tab = session.tab(&tab_id)?;
         if let Some(page) = tab.page.lock().await.take() {
             page.close()
@@ -756,7 +611,6 @@ pub(crate) async fn navigate(
     url: String,
 ) -> Result<TabMeta, BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
         let tab = session.tab(&tab_id)?;
         {
             let guard = tab.page.lock().await;
@@ -793,7 +647,6 @@ pub(crate) async fn history(
     direction: HistoryDirection,
 ) -> Result<TabMeta, BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
         let tab = session.tab(&tab_id)?;
         {
             let guard = tab.page.lock().await;
@@ -831,7 +684,6 @@ pub(crate) async fn snapshot(
     tab_id: String,
 ) -> Result<SnapshotResult, BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
         let tab = session.tab(&tab_id)?;
         // Each observation starts a new generation even within the same
         // document: refs from an earlier snapshot must not survive an
@@ -913,7 +765,7 @@ pub(crate) async fn snapshot(
         }
         Ok(SnapshotResult {
             tab: tab.meta(),
-            lease: session.lease.lock().expect("browser lease").name().to_string(),
+            lease: "agent".to_string(),
             text,
             viewport,
             elements,
@@ -947,7 +799,6 @@ pub(crate) async fn click(
     exposed_ref: String,
 ) -> Result<TabMeta, BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
         let tab = session.tab(&tab_id)?;
         let el_ref = verify_ref(&tab, &exposed_ref)?;
         let result = {
@@ -982,7 +833,6 @@ pub(crate) async fn fill(
     value: String,
 ) -> Result<TabMeta, BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
         let tab = session.tab(&tab_id)?;
         let el_ref = verify_ref(&tab, &exposed_ref)?;
         let encoded = serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".to_string());
@@ -1020,7 +870,6 @@ pub(crate) async fn submit(
     exposed_ref: String,
 ) -> Result<TabMeta, BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
         let tab = session.tab(&tab_id)?;
         let el_ref = verify_ref(&tab, &exposed_ref)?;
         let result = {
@@ -1073,7 +922,6 @@ pub(crate) async fn screenshot(
     tab_id: String,
 ) -> Result<Vec<u8>, BrowserError> {
     with_session(session_id, |session| async move {
-        session.require_agent_lease()?;
         let tab = session.tab(&tab_id)?;
         let guard = tab.page.lock().await;
         let page = guard
@@ -1089,148 +937,326 @@ pub(crate) async fn screenshot(
     .await
 }
 
-pub(crate) async fn takeover(
+// ── Live screencast + human input bridge ────────────────────────────────
+//
+// The workbench panel renders the real page through Page.startScreencast and
+// forwards pointer/keyboard events through the CDP Input domain. Human input
+// always works: it shares the Page with the agent instead of opening a
+// separate window.
+
+/// Minimum interval between location polls. Screencast frames do not carry
+/// the URL; throttled eval keeps the address bar/tab title live without
+/// issuing a CDP round-trip per frame.
+const LOCATION_POLL_MS: u64 = 500;
+
+/// Fixed remote window/screencast surface. Headless Chrome ignores runtime
+/// bounds changes, so the browser launches at this size and the panel fits
+/// the frame using object-contain.
+const SURFACE_WIDTH: u32 = 480;
+const SURFACE_HEIGHT: u32 = 760;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FramePayload {
+    session_id: String,
+    tab_id: String,
+    data_b64: String,
+    width: i64,
+    height: i64,
+}
+
+fn stop_cast(session: &SessionHandle, tab_id: &str) {
+    if let Some(sender) = session.casts.lock().expect("browser casts").remove(tab_id) {
+        let _ = sender.send(());
+    }
+}
+
+pub(crate) async fn start_screencast(
     app: AppHandle,
     session_id: &str,
-) -> Result<BrowserMeta, BrowserError> {
+    tab_id: String,
+    width: i64,
+    height: i64,
+) -> Result<(), BrowserError> {
     with_session(session_id, |session| async move {
-        // Production sessions run headless while the agent is in control;
-        // an explicit takeover relaunches the same profile as a visible
-        // window. On failure rebuild the previous headless mode so the
-        // session never loses its browser process, and keep the agent lease.
-        if session.is_headless() {
-            if let Err(error) = session.relaunch(false).await {
-                let _ = session.relaunch(true).await;
-                return Err(error);
-            }
-        }
-        *session.lease.lock().expect("browser lease") = Lease::Human;
-        // The visible browser window belongs to the device user from here on;
-        // the lease is the gate — agent clicks/fills are now refused.
-        let focused_tab = session.tabs.lock().expect("browser tabs").first().cloned();
-        if let Some(tab) = focused_tab {
+        let tab = session.tab(&tab_id)?;
+        // Restarting a stream (e.g. after a panel resize) first stops the old
+        // supervisor so two frame streams never share one tab.
+        stop_cast(&session, &tab_id);
+
+        let page = {
             let guard = tab.page.lock().await;
-            if let Some(page) = guard.as_ref() {
-                let _ = page.evaluate("window.focus(); 'ok'").await;
-            }
-        }
-        // Raise and position the OS window (no-op for headless/E2E cells).
-        place_session_window(&session.data_dir, false).await;
-        emit_meta(&app, &session);
-        Ok(session.meta())
+            guard
+                .as_ref()
+                .ok_or_else(|| BrowserError::invalid("browser tab is closed"))?
+                .clone()
+        };
+
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+        session
+            .casts
+            .lock()
+            .expect("browser casts")
+            .insert(tab_id.clone(), stop_tx);
+
+        let app = app.clone();
+        let session = Arc::clone(&session);
+        tauri::async_runtime::spawn(run_screencast(
+            app, session, tab, page, width.max(1), height.max(1), stop_rx,
+        ));
+        Ok(())
     })
     .await
 }
 
-pub(crate) async fn release(
-    app: AppHandle,
-    session_id: &str,
-) -> Result<BrowserMeta, BrowserError> {
+pub(crate) async fn stop_screencast(session_id: &str, tab_id: String) -> Result<(), BrowserError> {
     with_session(session_id, |session| async move {
-        let was_headless = session.is_headless();
-        *session.lease.lock().expect("browser lease") = Lease::Agent;
-        // Production returns to a headless process so the OS window vanishes
-        // the moment control is handed back. Native E2E cells stay headful.
-        if !was_headless && !e2e_native_cell() {
-            // A failed headless relaunch would strand the visible window;
-            // rebuild it headful so the session stays drivable, then surface.
-            if let Err(error) = session.relaunch(true).await {
-                let _ = session.relaunch(false).await;
-                return Err(error);
-            }
-        }
-        // Control changed hands: every earlier observation is invalid. Relaunch
-        // already moved tabs onto a higher generation epoch; the explicit bump
-        // also covers the headful E2E path and any surviving tab.
-        let tabs = session.tabs.lock().expect("browser tabs").clone();
-        for tab in &tabs {
-            bump_generation(Some(&app), &session, tab).await?;
-        }
-        // Agent is back in control — park any headful window (E2E).
-        place_session_window(&session.data_dir, true).await;
-        emit_meta(&app, &session);
-        Ok(session.meta())
+        stop_cast(&session, &tab_id);
+        Ok(())
     })
     .await
 }
 
-/// Best-effort X11 window placement for headful browser instances. Production
-/// agent control is headless (no window to place); this only serves human
-/// takeover (restore/raise/position) and headful native E2E cells. Silently
-/// no-ops without xdotool (Wayland, headless, PT_DESKTOP_E2E physical geometry).
-async fn place_session_window(data_dir: &Path, minimize_window: bool) {
-    if std::env::var("PT_DESKTOP_E2E").as_deref() == Ok("1") {
+async fn run_screencast(
+    app: AppHandle,
+    session: Arc<SessionHandle>,
+    tab: Arc<TabHandle>,
+    page: Page,
+    _width: i64,
+    _height: i64,
+    mut stopped: tokio::sync::oneshot::Receiver<()>,
+) {
+    // Register the frame listener before starting the stream so the first
+    // frames cannot be missed.
+    let mut frames = match page.event_listener::<EventScreencastFrame>().await {
+        Ok(frames) => frames,
+        Err(error) => {
+            tracing::warn!(error = %error, "browser: screencast listener failed");
+            return;
+        }
+    };
+
+    // Headless targets need explicit activation to receive input focus for
+    // forwarded pointer/keyboard events (text entry, checkboxes, buttons).
+    let _ = page.bring_to_front().await;
+
+    let start = StartScreencastParams::builder()
+        .format(StartScreencastFormat::Jpeg)
+        .quality(60)
+        .every_nth_frame(1)
+        .build();
+    if let Err(error) = page.execute(start).await {
+        tracing::warn!(error = %error, "browser: start screencast failed");
         return;
     }
-    let data_dir = data_dir.to_path_buf();
-    tauri::async_runtime::spawn(async move {
-        fn run(program: &str, args: &[&str]) -> bool {
-            std::process::Command::new(program)
-                .args(args)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|status| status.success())
-                .unwrap_or(false)
-        }
-        if !run("which", &["xdotool"]) {
-            return;
-        }
-        // Find the chrome process using this session's profile dir.
-        let pgrep = std::process::Command::new("pgrep")
-            .arg("-f")
-            .arg(format!("user-data-dir={}", data_dir.display()))
-            .output();
-        let Ok(output) = pgrep else { return };
-        let pid = match String::from_utf8_lossy(&output.stdout)
-            .split_whitespace()
-            .next()
-            .map(str::to_owned)
-        {
-            Some(pid) => pid,
-            None => return,
-        };
-        let search = std::process::Command::new("xdotool")
-            .args(["search", "--pid"])
-            .arg(&pid)
-            .output();
-        let Ok(output) = search else { return };
-        // A Chrome process may own a tiny helper window in addition to the
-        // browser window; drive the largest one rather than the first match.
-        let mut candidates: Vec<(u64, u64, String)> = Vec::new();
-        for window in String::from_utf8_lossy(&output.stdout).split_whitespace() {
-            let geometry = std::process::Command::new("xdotool")
-                .args(["getwindowgeometry", "--shell", window])
-                .output();
-            let Ok(geometry) = geometry else { continue };
-            let mut width = 0u64;
-            let mut height = 0u64;
-            for line in String::from_utf8_lossy(&geometry.stdout).lines() {
-                if let Some(value) = line.strip_prefix("WIDTH=") {
-                    width = value.trim().parse().unwrap_or(0);
-                }
-                if let Some(value) = line.strip_prefix("HEIGHT=") {
-                    height = value.trim().parse().unwrap_or(0);
+
+    let mut last_location_poll = Instant::now();
+    loop {
+        tokio::select! {
+            _ = &mut stopped => break,
+            frame = frames.next() => {
+                let Some(frame) = frame else { break };
+                let ack = ScreencastFrameAckParams::new(frame.session_id);
+                let _ = page.execute(ack).await;
+                // CDP delivers screencast bytes already base64-encoded.
+                let data_b64: &str = frame.data.as_ref();
+                let payload = FramePayload {
+                    session_id: session.id.clone(),
+                    tab_id: tab.id.clone(),
+                    data_b64: data_b64.to_string(),
+                    width: frame.metadata.device_width as i64,
+                    height: frame.metadata.device_height as i64,
+                };
+                let _ = app.emit(BROWSER_FRAME_EVENT, payload);
+
+                if last_location_poll.elapsed() >= Duration::from_millis(LOCATION_POLL_MS) {
+                    last_location_poll = Instant::now();
+                    sync_tab_location(&app, &session, &tab, &page).await;
                 }
             }
-            candidates.push((width * height, width, window.to_owned()));
         }
-        let Some((_, _, window)) = candidates.into_iter().max_by_key(|(area, _, _)| *area) else {
-            return;
-        };
-        if minimize_window {
-            // Creation path: give the WM time to map the new window first.
-            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-            run("xdotool", &["windowminimize", &window]);
-        } else {
-            // Restore + move first, then activate/raise last: some WMs drop
-            // the activation when geometry commands arrive right after it.
-            run("xdotool", &["windowsize", &window, "1280", "860"]);
-            run("xdotool", &["windowmove", &window, "120", "80"]);
-            run("xdotool", &["windowactivate", "--sync", &window]);
-            run("xdotool", &["windowraise", &window]);
+    }
+
+    let _ = page.execute(StopScreencastParams::default()).await;
+    // Drop a stale stop handle only if it still points at this supervisor.
+    if let Some(sender) = session.casts.lock().expect("browser casts").get(&tab.id) {
+        if sender.is_closed() {
+            session.casts.lock().expect("browser casts").remove(&tab.id);
         }
-    });
+    }
+}
+
+async fn sync_tab_location(app: &AppHandle, session: &Arc<SessionHandle>, tab: &Arc<TabHandle>, page: &Page) {
+    let location = eval_json(page, "location.href".to_string()).await.unwrap_or_default();
+    let title = eval_json(page, "document.title".to_string()).await.unwrap_or_default();
+    let previous = tab.meta().url;
+    if location != previous {
+        tab.set_location(location, title);
+        emit_meta(app, session);
+    }
+}
+
+fn map_mouse_button(button: &str) -> Option<MouseButton> {
+    match button {
+        "left" => Some(MouseButton::Left),
+        "right" => Some(MouseButton::Right),
+        "middle" => Some(MouseButton::Middle),
+        _ => None,
+    }
+}
+
+/// Forwarded human pointer event. `kind` is moved | pressed | released.
+pub(crate) async fn send_mouse(
+    session_id: &str,
+    tab_id: String,
+    kind: String,
+    x: f64,
+    y: f64,
+    button: String,
+    buttons: i64,
+    click_count: i64,
+) -> Result<(), BrowserError> {
+    let event_type = match kind.as_str() {
+        "moved" => DispatchMouseEventType::MouseMoved,
+        "pressed" => DispatchMouseEventType::MousePressed,
+        "released" => DispatchMouseEventType::MouseReleased,
+        _ => return Err(BrowserError::invalid("mouse kind must be moved, pressed or released")),
+    };
+    let params = DispatchMouseEventParams {
+        r#type: event_type,
+        x,
+        y,
+        modifiers: None,
+        timestamp: None,
+        button: map_mouse_button(&button),
+        buttons: Some(buttons),
+        click_count: Some(click_count),
+        force: None,
+        tangential_pressure: None,
+        tilt_x: None,
+        tilt_y: None,
+        twist: None,
+        delta_x: None,
+        delta_y: None,
+        pointer_type: None,
+    };
+    with_page(session_id, &tab_id, |page| async move {
+        page.execute(params)
+            .await
+            .map(|_| ())
+            .map_err(|error| BrowserError::failed(format!("dispatch mouse: {error}")))
+    })
+    .await
+}
+
+pub(crate) async fn send_wheel(
+    session_id: &str,
+    tab_id: String,
+    x: f64,
+    y: f64,
+    delta_x: f64,
+    delta_y: f64,
+) -> Result<(), BrowserError> {
+    let params = DispatchMouseEventParams {
+        r#type: DispatchMouseEventType::MouseWheel,
+        x,
+        y,
+        modifiers: None,
+        timestamp: None,
+        button: None,
+        buttons: Some(0),
+        click_count: Some(0),
+        force: None,
+        tangential_pressure: None,
+        tilt_x: None,
+        tilt_y: None,
+        twist: None,
+        delta_x: Some(delta_x),
+        delta_y: Some(delta_y),
+        pointer_type: None,
+    };
+    with_page(session_id, &tab_id, |page| async move {
+        page.execute(params)
+            .await
+            .map(|_| ())
+            .map_err(|error| BrowserError::failed(format!("dispatch wheel: {error}")))
+    })
+    .await
+}
+
+/// Forwarded human keyboard event. `kind` is down | up | char.
+pub(crate) async fn send_key(
+    session_id: &str,
+    tab_id: String,
+    kind: String,
+    key: String,
+    code: String,
+    modifiers: i64,
+) -> Result<(), BrowserError> {
+    let event_type = match kind.as_str() {
+        "down" => DispatchKeyEventType::RawKeyDown,
+        "up" => DispatchKeyEventType::KeyUp,
+        "char" => DispatchKeyEventType::Char,
+        _ => return Err(BrowserError::invalid("key kind must be down, up or char")),
+    };
+    let params = DispatchKeyEventParams {
+        r#type: event_type,
+        modifiers: Some(modifiers),
+        timestamp: None,
+        text: None,
+        unmodified_text: None,
+        key_identifier: None,
+        code: Some(code),
+        key: Some(key),
+        windows_virtual_key_code: None,
+        native_virtual_key_code: None,
+        auto_repeat: None,
+        is_keypad: None,
+        is_system_key: None,
+        location: None,
+        commands: None,
+    };
+    with_page(session_id, &tab_id, |page| async move {
+        page.execute(params)
+            .await
+            .map(|_| ())
+            .map_err(|error| BrowserError::failed(format!("dispatch key: {error}")))
+    })
+    .await
+}
+
+/// Commits composed text (printable input typed in the host webview,
+/// including IME compositions on compositionend) directly into the focused
+/// page element.
+pub(crate) async fn insert_text(session_id: &str, tab_id: String, text: String) -> Result<(), BrowserError> {
+    with_page(session_id, &tab_id, |page| async move {
+        page.execute(InsertTextParams { text })
+            .await
+            .map(|_| ())
+            .map_err(|error| BrowserError::failed(format!("insert text: {error}")))
+    })
+    .await
+}
+
+async fn with_page<T, Fut>(
+    session_id: &str,
+    tab_id: &str,
+    action: impl FnOnce(Page) -> Fut,
+) -> Result<T, BrowserError>
+where
+    Fut: std::future::Future<Output = Result<T, BrowserError>>,
+{
+    with_session(session_id, |session| async move {
+        let tab = session.tab(tab_id)?;
+        let guard = tab.page.lock().await;
+        let page = guard
+            .as_ref()
+            .ok_or_else(|| BrowserError::invalid("browser tab is closed"))?
+            .clone();
+        drop(guard);
+        action(page).await
+    })
+    .await
 }
 
 pub(crate) async fn inspect(session_id: &str) -> Result<BrowserMeta, BrowserError> {

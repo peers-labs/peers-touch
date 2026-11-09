@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { TerminalSquare, Play, Trash2, ExternalLink, Plus, SlidersHorizontal } from 'lucide-react';
-import { Button, Input, Space, Tag, theme } from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, X } from 'lucide-react';
+import { Dropdown, Input, theme } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { useTranslation } from 'react-i18next';
 import '@xterm/xterm/css/xterm.css';
 
@@ -15,7 +16,6 @@ import {
   type TerminalSessionView,
 } from '../../../../store/terminalSessions';
 
-const URL_PATTERN = /https?:\/\/(?:127\.0\.0\.1|localhost|0\.0\.0\.0)(?::\d+)?(?:\/[^\s"']*)?/g;
 const EMPTY_SESSIONS: TerminalSessionView[] = [];
 
 // Minimal shell-style tokenizer: honors single/double quoted segments so
@@ -46,21 +46,21 @@ function tokenizeArgs(input: string): string[] {
   return tokens;
 }
 
+function shellLabel(command: string): string {
+  const base = command.split('/').filter(Boolean).pop() ?? command;
+  return base || 'shell';
+}
+
 function TerminalViewer({ session }: { session: TerminalSessionView }) {
-  const { t } = useTranslation('chat');
   const { token } = theme.useToken();
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
   const attachOutput = useTerminalSessionsStore((state) => state.attachOutput);
   const attachStatus = useTerminalSessionsStore((state) => state.attachStatus);
   const initialRead = useTerminalSessionsStore((state) => state.initialRead);
   const resizeSession = useTerminalSessionsStore((state) => state.resize);
   const hydrateFromCursor = useTerminalSessionsStore((state) => state.hydrateFromCursor);
   const writeInput = useTerminalSessionsStore((state) => state.writeInput);
-  const [resync, setResync] = useState(false);
-  const [urls, setUrls] = useState<string[]>([]);
-  const textRef = useRef('');
 
   useEffect(() => {
     const container = containerRef.current;
@@ -73,10 +73,12 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
     });
     const fit = new FitAddon();
     xterm.loadAddon(fit);
+    xterm.loadAddon(new WebLinksAddon((_event, url) => {
+      void api.openExternalUrl(url).catch(() => undefined);
+    }));
     xterm.open(container);
     requestAnimationFrame(() => fit.fit());
     terminalRef.current = xterm;
-    fitRef.current = fit;
 
     const dataDisposable = xterm.onData((data) => {
       void writeInput(session.sessionId, data);
@@ -85,22 +87,13 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
     let cancelled = false;
     let unsub: () => void = () => undefined;
     void (async () => {
-      // Replay retained history first, then subscribe. Placement-aware:
-      // sandbox sessions replay store text fed by the poll pump.
       const read = await initialRead(session);
       if (cancelled) return;
-      if (read.resync) setResync(true);
-      const text = read.text;
-      textRef.current = text;
-      xterm.write(text);
-      setUrls(Array.from(new Set(text.match(URL_PATTERN) ?? [])));
+      xterm.write(read.text);
       await hydrateFromCursor(session.sessionId, 0).catch(() => undefined);
 
       const unsubscribeOutput = attachOutput(session.sessionId, (chunk) => {
-        textRef.current += chunk;
         xterm.write(chunk);
-        const matches = textRef.current.match(URL_PATTERN) ?? [];
-        setUrls((previous) => Array.from(new Set([...previous, ...matches])));
       });
       const unsubscribeStatus = attachStatus(session.sessionId, () => undefined);
       unsub = () => {
@@ -130,200 +123,15 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
 
-  return (
-    <div>
-      {urls.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-          {urls.map((url) => (
-            <Button
-              key={url}
-              size="small"
-              icon={<ExternalLink size={12} />}
-              data-pt-terminal-open-url={url}
-              onClick={() => void api.openExternalUrl(url).catch(() => undefined)}
-            >
-              {url}
-            </Button>
-          ))}
-        </div>
-      )}
-      {resync && (
-        <div data-pt-terminal-resync style={{ fontSize: 11, color: token.colorTextTertiary, marginBottom: 4 }}>
-          {t('chat.terminal.resync')}
-        </div>
-      )}
-      <div ref={containerRef} data-pt-terminal-xterm style={{ height: 280, borderRadius: 6, overflow: 'hidden' }} />
-    </div>
-  );
+  return <div ref={containerRef} data-pt-terminal-xterm style={{ flex: 1, minHeight: 0, borderRadius: 6, overflow: 'hidden' }} />;
 }
 
-// Read-only description of the task's single execution surface. The task
-// workspace choice already decided local vs remote; the terminal never
-// re-chooses placement, it only displays it.
-function PlacementIndicator({ refreshKey }: { refreshKey: string }) {
-  const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
-  const [info, setInfo] = useState<TerminalPlacementInfo | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    setInfo(null);
-    setFailed(false);
-    const resolve = () => {
-      void describeTerminalPlacement()
-        .then((resolved) => {
-          if (active) setInfo(resolved);
-        })
-        .catch(() => {
-          if (active) setFailed(true);
-        });
-    };
-    resolve();
-    // The workspace pill lives outside this panel; refetch when the user
-    // returns focus after changing the task's directory selection.
-    window.addEventListener('focus', resolve);
-    return () => {
-      active = false;
-      window.removeEventListener('focus', resolve);
-    };
-  }, [refreshKey]);
-
-  if (failed) {
-    return (
-      <div
-        data-pt-terminal-unavailable
-        role="alert"
-        style={{ fontSize: 12, color: token.colorErrorText, marginBottom: 8 }}
-      >
-        {t('chat.terminal.sandboxUnavailable')}
-      </div>
-    );
-  }
-  if (!info) return null;
-
-  const isLocal = info.placement === 'desktop';
-  return (
-    <div
-      data-pt-terminal-placement-indicator
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        flexWrap: 'wrap',
-        fontSize: 12,
-        color: token.colorTextSecondary,
-        marginBottom: 8,
-      }}
-    >
-      <Tag color={isLocal ? 'default' : 'geekblue'}>
-        {isLocal ? t('chat.terminal.placement.desktop') : t('chat.terminal.placement.remote')}
-      </Tag>
-      <span
-        data-pt-terminal-placement-root
-        title={info.root}
-        style={{
-          fontFamily: 'monospace',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          maxWidth: 240,
-        }}
-      >
-        {info.root}
-      </span>
-      {isLocal && (
-        <Tag>{t(`chat.input.workspace.${info.shellAccess === 'full' ? 'fullShort' : 'standardShort'}`)}</Tag>
-      )}
-      {!isLocal && info.sandboxRef && (
-        <span style={{ color: token.colorTextTertiary, fontFamily: 'monospace' }}>
-          {info.sandboxRef}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// Collapsed custom-command entry. Default interaction is the zero-form shell;
-// this stays available for long-running services and the E2E service gate.
-function CustomCommandForm({
-  conversationId,
-  onStarted,
-}: {
-  conversationId: string;
-  onStarted: () => void;
-}) {
-  const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
-  const openShell = useTerminalSessionsStore((state) => state.openShell);
-  const [deviceId, setDeviceId] = useState('');
-  const [command, setCommand] = useState('');
-  const [args, setArgs] = useState('');
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    void api.accountGetDeviceId().then(({ device_id }) => setDeviceId(device_id));
-  }, []);
-
-  const start = useCallback(async () => {
-    setError('');
-    try {
-      await openShell(
-        conversationId,
-        deviceId,
-        command.trim() ? { command: command.trim(), args: tokenizeArgs(args) } : undefined,
-      );
-      setCommand('');
-      setArgs('');
-      onStarted();
-    } catch (startError) {
-      setError(startError instanceof Error ? startError.message : String(startError));
-    }
-  }, [args, command, conversationId, deviceId, openShell, onStarted]);
-
-  return (
-    <div style={{ marginBottom: 10 }}>
-      <Space.Compact style={{ width: '100%' }} data-pt-terminal-start-form>
-        <Input
-          aria-label={t('chat.terminal.command')}
-          data-pt-terminal-command
-          value={command}
-          onChange={(event) => setCommand(event.target.value)}
-          style={{ width: 140 }}
-          placeholder={t('chat.terminal.command')}
-        />
-        <Input
-          aria-label={t('chat.terminal.args')}
-          data-pt-terminal-args
-          value={args}
-          onChange={(event) => setArgs(event.target.value)}
-          style={{ width: 240 }}
-          placeholder={t('chat.terminal.args')}
-        />
-        <Button
-          type="primary"
-          icon={<Play size={13} />}
-          data-pt-terminal-start
-          disabled={!command.trim() || !deviceId}
-          onClick={() => void start()}
-        >
-          {t('chat.terminal.start')}
-        </Button>
-      </Space.Compact>
-      {error && (
-        <div role="alert" style={{ color: token.colorErrorText, fontSize: 12, marginTop: 4 }}>
-          {t('chat.terminal.startFailed')}: {error}
-        </div>
-      )}
-    </div>
-  );
-}
-
+// Trae-style work surface: a shell tab strip plus the live shell. Placement
+// (local project vs remote sandbox) is decided by the task workspace and is
+// only surfaced as a tooltip, never as a management console.
 export function TerminalPanel() {
   const { t } = useTranslation('chat');
   const { token } = theme.useToken();
-  // The panel always follows the active task conversation; it never keeps a
-  // stale conversation snapshot after the user switches topics.
   const conversationId = useChatStore((state) => state.currentSessionKey);
   const sessions = useTerminalSessionsStore((state) =>
     conversationId ? state.sessionsByConversation[conversationId] ?? EMPTY_SESSIONS : EMPTY_SESSIONS,
@@ -337,21 +145,45 @@ export function TerminalPanel() {
   const openShell = useTerminalSessionsStore((state) => state.openShell);
   const creating = useTerminalSessionsStore((state) => state.creating);
   const [deviceId, setDeviceId] = useState('');
+  const [placement, setPlacement] = useState<TerminalPlacementInfo | null>(null);
   const [showCustom, setShowCustom] = useState(false);
+  const [command, setCommand] = useState('');
+  const [args, setArgs] = useState('');
   const [openError, setOpenError] = useState('');
 
   useEffect(() => {
     void api.accountGetDeviceId().then(({ device_id }) => setDeviceId(device_id));
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    void describeTerminalPlacement()
+      .then((info) => {
+        if (active) setPlacement(info);
+      })
+      .catch(() => {
+        if (active) setPlacement(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [conversationId, sessions.length, creating]);
+
   const activeSession = useMemo(
     () => sessions.find((session) => session.sessionId === activeSessionId) ?? null,
     [sessions, activeSessionId],
   );
 
+  // Dead shells leave the strip; the active shell stays until the user closes
+  // the tab so its exit output remains visible.
+  const tabs = useMemo(
+    () => sessions.filter((session) => session.status === 'running' || session.sessionId === activeSessionId),
+    [sessions, activeSessionId],
+  );
+
   if (!conversationId) return null;
 
-  const handleNewShell = async () => {
+  const startShell = async () => {
     setOpenError('');
     try {
       await openShell(conversationId, deviceId);
@@ -359,6 +191,53 @@ export function TerminalPanel() {
       setOpenError(error instanceof Error ? error.message : String(error));
     }
   };
+
+  const startCustom = async () => {
+    if (!command.trim()) return;
+    setOpenError('');
+    try {
+      await openShell(conversationId, deviceId, {
+        command: command.trim(),
+        args: tokenizeArgs(args),
+      });
+      setCommand('');
+      setArgs('');
+      setShowCustom(false);
+    } catch (error) {
+      setOpenError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const closeTab = async (session: TerminalSessionView, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (session.status === 'running') {
+      await killSession(conversationId, session.sessionId).catch(() => undefined);
+    }
+    await removeSession(conversationId, session.sessionId).catch(() => undefined);
+  };
+
+  const placementTitle = placement
+    ? `${placement.placement === 'desktop' ? t('chat.terminal.placement.desktop') : t('chat.terminal.placement.remote')} · ${placement.root || '—'}`
+    : '';
+
+  const addMenuItems = [
+    {
+      key: 'new-shell',
+      label: (
+        <span data-pt-terminal-new-shell onClick={() => void startShell()}>
+          {t('chat.terminal.newShell')}
+        </span>
+      ),
+    },
+    {
+      key: 'custom',
+      label: (
+        <span data-pt-terminal-custom-toggle onClick={() => setShowCustom((value) => !value)}>
+          {t('chat.terminal.customCommand')}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <div
@@ -368,152 +247,147 @@ export function TerminalPanel() {
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
-        padding: 12,
-        overflowY: 'auto',
+        background: token.colorBgSpotlight,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <TerminalSquare size={15} />
-        <strong data-pt-terminal-panel-title style={{ fontSize: 13 }}>
-          {t('chat.terminal.panel.title')}
-        </strong>
-        <div style={{ flex: 1 }} />
-        <Button
-          size="small"
-          icon={<Plus size={13} />}
-          data-pt-terminal-new-shell
-          disabled={!deviceId || creating}
-          onClick={() => void handleNewShell()}
-        >
-          {t('chat.terminal.newShell')}
-        </Button>
-        <Button
-          size="small"
-          type={showCustom ? 'default' : 'text'}
-          icon={<SlidersHorizontal size={13} />}
-          data-pt-terminal-custom-toggle
-          onClick={() => setShowCustom((value) => !value)}
-        >
-          {t('chat.terminal.customCommand')}
-        </Button>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          padding: '4px 6px',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          flexShrink: 0,
+        }}
+      >
+        {tabs.map((session) => {
+          const selected = session.sessionId === activeSessionId;
+          const dead = session.status !== 'running';
+          return (
+            <div
+              key={session.sessionId}
+              data-pt-terminal-session={session.sessionId}
+              data-pt-terminal-status={session.status}
+              title={placementTitle}
+              onClick={() => selectSession(conversationId, session.sessionId)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '3px 8px',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: 12,
+                color: selected ? token.colorText : token.colorTextSecondary,
+                background: selected ? token.colorFillTertiary : 'transparent',
+              }}
+            >
+              <span data-pt-terminal-tab-name>{shellLabel(session.command)}</span>
+              {dead ? <span data-pt-terminal-exit-mark>×</span> : null}
+              <X
+                size={12}
+                data-pt-terminal-close={session.sessionId}
+                onClick={(event) => void closeTab(session, event)}
+                style={{ opacity: 0.55 }}
+              />
+            </div>
+          );
+        })}
+        <Dropdown menu={{ items: addMenuItems }} trigger={['click']} placement="bottomLeft">
+          <button
+            type="button"
+            aria-label={t('chat.terminal.newShell')}
+            data-pt-terminal-add
+            disabled={!deviceId || creating}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 24,
+              height: 24,
+              border: 'none',
+              borderRadius: 6,
+              background: 'transparent',
+              color: token.colorTextSecondary,
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={14} />
+          </button>
+        </Dropdown>
       </div>
 
-      <PlacementIndicator refreshKey={`${conversationId}:${sessions.length}:${creating ? 1 : 0}`} />
+      {showCustom && (
+        <div
+          data-pt-terminal-start-form
+          style={{
+            display: 'flex',
+            gap: 6,
+            padding: '6px 8px',
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            flexShrink: 0,
+          }}
+        >
+          <Input
+            size="small"
+            aria-label={t('chat.terminal.command')}
+            data-pt-terminal-command
+            value={command}
+            onChange={(event) => setCommand(event.target.value)}
+            style={{ width: 120 }}
+            placeholder={t('chat.terminal.command')}
+          />
+          <Input
+            size="small"
+            aria-label={t('chat.terminal.args')}
+            data-pt-terminal-args
+            value={args}
+            onChange={(event) => setArgs(event.target.value)}
+            style={{ flex: 1, minWidth: 0 }}
+            placeholder={t('chat.terminal.args')}
+          />
+          <button
+            type="button"
+            data-pt-terminal-start
+            disabled={!command.trim() || !deviceId}
+            onClick={() => void startCustom()}
+            style={{
+              border: 'none',
+              borderRadius: 6,
+              padding: '0 12px',
+              background: token.colorPrimary,
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: 12,
+            }}
+          >
+            {t('chat.terminal.start')}
+          </button>
+        </div>
+      )}
+
       {openError && (
-        <div role="alert" style={{ color: token.colorErrorText, fontSize: 12 }}>
+        <div role="alert" data-pt-terminal-error style={{ color: token.colorErrorText, fontSize: 12, padding: '6px 10px' }}>
           {t('chat.terminal.startFailed')}: {openError}
         </div>
       )}
-      {showCustom && (
-        <div data-pt-terminal-custom-form>
-          <CustomCommandForm conversationId={conversationId} onStarted={() => setShowCustom(false)} />
-        </div>
-      )}
 
-      {sessions.length === 0 ? (
-        <div data-pt-terminal-empty style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-          {creating
-            ? <span data-pt-terminal-starting>{t('chat.terminal.starting')}</span>
-            : t('chat.terminal.empty')}
-        </div>
+      {activeSession ? (
+        <TerminalViewer key={activeSession.sessionId} session={activeSession} />
       ) : (
-        <>
-          <div data-pt-terminal-list style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {sessions.map((session) => (
-              <div
-                key={session.sessionId}
-                data-pt-terminal-session={session.sessionId}
-                data-pt-terminal-status={session.status}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  flexWrap: 'wrap',
-                  background: session.sessionId === activeSessionId
-                    ? token.colorPrimaryBg
-                    : token.colorFillQuaternary,
-                }}
-                onClick={() => selectSession(conversationId, session.sessionId)}
-              >
-                <TerminalSquare size={13} />
-                <span style={{ fontSize: 12, fontFamily: 'monospace' }}>
-                  {session.command} {session.args.join(' ')}
-                </span>
-                <Tag
-                  data-pt-terminal-list-placement={session.placement}
-                  color={session.placement === 'sandbox' ? 'geekblue' : 'default'}
-                  style={{ marginInlineEnd: 0 }}
-                >
-                  {session.placement === 'sandbox'
-                    ? t('chat.terminal.placement.remote')
-                    : t('chat.terminal.placement.desktop')}
-                </Tag>
-                <Tag>{t(`chat.terminal.status.${session.status}`)}</Tag>
-                {session.cwd && (
-                  <span
-                    data-pt-terminal-cwd
-                    title={session.cwd}
-                    style={{
-                      color: token.colorTextSecondary,
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      maxWidth: 220,
-                    }}
-                  >
-                    {t('chat.terminal.cwd')}: {session.cwd}
-                  </span>
-                )}
-                {session.pid > 0 && (
-                  <span data-pt-terminal-pid style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-                    {t('chat.terminal.pid')}: {session.pid}
-                  </span>
-                )}
-                {(session.status === 'exited' || session.status === 'killed') && session.exitCode !== null && (
-                  <span data-pt-terminal-exit-code style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-                    {t('chat.terminal.exitCode')}: {session.exitCode}
-                  </span>
-                )}
-                <div style={{ flex: 1 }} />
-                {session.status === 'running' && (
-                  <Button
-                    size="small"
-                    danger
-                    data-pt-terminal-kill={session.sessionId}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void killSession(conversationId, session.sessionId);
-                    }}
-                  >
-                    {t('chat.terminal.kill')}
-                  </Button>
-                )}
-                <Button
-                  size="small"
-                  icon={<Trash2 size={12} />}
-                  data-pt-terminal-remove={session.sessionId}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void removeSession(conversationId, session.sessionId);
-                  }}
-                >
-                  {t('chat.terminal.remove')}
-                </Button>
-              </div>
-            ))}
-          </div>
-          {activeSession && (
-            <div data-pt-terminal-viewer style={{ minHeight: 0 }}>
-              <TerminalViewer session={activeSession} />
-            </div>
-          )}
-        </>
+        <div
+          data-pt-terminal-empty
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: token.colorTextTertiary,
+            fontSize: 12,
+          }}
+        >
+          {creating ? <span data-pt-terminal-starting>{t('chat.terminal.starting')}</span> : null}
+        </div>
       )}
     </div>
   );

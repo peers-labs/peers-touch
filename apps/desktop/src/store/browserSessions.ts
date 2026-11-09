@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { listen } from '@tauri-apps/api/event';
 import {
   browserHostInfo,
   browserStationCreate,
@@ -6,37 +7,38 @@ import {
   browserStationReconcile,
   browserStationRemove,
   browserStationUpdate,
-  browserWorkerClick,
   browserWorkerCloseTab,
   browserWorkerCreate,
-  browserWorkerFill,
   browserWorkerHistory,
+  browserWorkerInsertText,
   browserWorkerInspect,
   browserWorkerList,
   browserWorkerNavigate,
-  browserWorkerRelease,
+  browserWorkerOpenTab,
   browserWorkerRemove,
-  browserWorkerScreenshot,
-  browserWorkerSnapshot,
-  browserWorkerSubmit,
-  browserWorkerTakeover,
+  browserWorkerScreencastStart,
+  browserWorkerScreencastStop,
+  browserWorkerSendKey,
+  browserWorkerSendMouse,
+  browserWorkerSendWheel,
   type BrowserHostInfo,
+  type BrowserMouseKind,
   type BrowserSessionMeta,
-  type BrowserSnapshot,
   type BrowserStationSession,
   type BrowserTabMeta,
 } from '../services/desktop_api';
 import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
 
-// TW-D6: device-held real browser sessions. The browser process/tabs live in
-// the Rust worker (CDP host). This store is a subscriber/orchestrator and
-// Station metadata is merged with live worker proof: a Station ACTIVE row
-// without a live handle is never shown as controllable.
+// TW-D6: device-held real browser sessions. One headless Chromium per
+// session is driven by two planes over CDP: the agent's structured tools
+// (Rust side) and the human panel (screencast frames + forwarded input).
+// This store only tracks inventory, frames and human navigation.
 
 const STATION_RUNNING = 'BROWSER_SESSION_STATUS_ACTIVE';
 const STATION_CLOSED = 'BROWSER_SESSION_STATUS_CLOSED';
 const STATION_LEASE_HUMAN = 'BROWSER_CONTROL_LEASE_HUMAN';
+const FRAME_EVENT = 'peers-touch://browser-frame-event';
 
 // Crockford Base32 ULID — matches the Station id contract brows-<26 chars>.
 const ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -64,49 +66,85 @@ export interface BrowserSessionView {
   live: boolean;
 }
 
-export interface BrowserScreenshotView {
+export interface BrowserFrameView {
   dataUrl: string;
-  innerWidth: number;
-  innerHeight: number;
-  capturedAt: number;
+  width: number;
+  height: number;
+  at: number;
+}
+
+interface FramePayload {
+  sessionId: string;
+  tabId: string;
+  dataB64: string;
+  width: number;
+  height: number;
+}
+
+interface SessionEventPayload {
+  sessionId: string;
+  kind: 'meta' | 'closed';
+  meta?: BrowserSessionMeta;
+  status?: string;
+}
+
+export interface MouseInput {
+  kind: BrowserMouseKind;
+  x: number;
+  y: number;
+  button?: 'left' | 'right' | 'middle';
+  buttons: number;
+  clickCount: number;
 }
 
 interface BrowserSessionState {
   host: BrowserHostInfo | null;
   sessionsByConversation: Record<string, BrowserSessionView[]>;
   activeSessionByConversation: Record<string, string>;
-  snapshotByTab: Record<string, BrowserSnapshot>;
-  screenshotByTab: Record<string, BrowserScreenshotView>;
+  activeTabByConversation: Record<string, string>;
+  frameByTab: Record<string, BrowserFrameView>;
   hostChecked: boolean;
-  busy: boolean;
   deviceId: string;
-  setOpen: (open: boolean) => void;
-  open: boolean;
   setDeviceId: (deviceId: string) => void;
   probeHost: () => Promise<void>;
   initConversation: (conversationId: string, deviceId: string) => Promise<void>;
   selectSession: (conversationId: string, sessionId: string) => void;
+  selectTab: (conversationId: string, tabId: string) => void;
   createSession: (input: {
     conversationId: string;
     turnId?: string;
     initialUrl?: string;
     deviceId: string;
   }) => Promise<BrowserSessionView>;
+  openTab: (conversationId: string, url?: string) => Promise<void>;
+  closeTab: (conversationId: string, tabId: string) => Promise<void>;
   navigate: (conversationId: string, tabId: string, url: string) => Promise<void>;
   history: (
     conversationId: string,
     tabId: string,
     direction: 'back' | 'forward' | 'reload',
   ) => Promise<void>;
-  observe: (conversationId: string, tabId: string) => Promise<BrowserSnapshot | null>;
-  click: (conversationId: string, tabId: string, ref: string) => Promise<void>;
-  fill: (conversationId: string, tabId: string, ref: string, value: string) => Promise<void>;
-  submit: (conversationId: string, tabId: string, ref: string) => Promise<void>;
-  closeTab: (conversationId: string, tabId: string) => Promise<void>;
-  screenshot: (conversationId: string, tabId: string) => Promise<string>;
-  takeover: (conversationId: string) => Promise<void>;
-  release: (conversationId: string) => Promise<void>;
   removeSession: (conversationId: string) => Promise<void>;
+  startStream: (sessionId: string, tabId: string, width: number, height: number) => Promise<void>;
+  stopStream: (sessionId: string, tabId: string) => Promise<void>;
+  sendMouse: (sessionId: string, tabId: string, input: MouseInput) => Promise<void>;
+  sendWheel: (
+    sessionId: string,
+    tabId: string,
+    x: number,
+    y: number,
+    deltaX: number,
+    deltaY: number,
+  ) => Promise<void>;
+  sendKey: (
+    sessionId: string,
+    tabId: string,
+    kind: 'down' | 'up',
+    key: string,
+    code: string,
+    modifiers: number,
+  ) => Promise<void>;
+  insertText: (sessionId: string, tabId: string, text: string) => Promise<void>;
 }
 
 function stationStatusToView(status: string): BrowserSessionView['status'] {
@@ -125,8 +163,6 @@ function stationLeaseToView(lease: string): BrowserSessionView['lease'] {
 }
 
 function viewStatusToStation(status: BrowserSessionView['status']): number {
-  // Enum order mirrors browser_session.proto (unspecified=0, active=1,
-  // closed=2, unknown=3).
   if (status === 'active') return 1;
   if (status === 'closed') return 2;
   return 3;
@@ -178,22 +214,75 @@ async function reportSession(meta: BrowserSessionMeta): Promise<void> {
   }
 }
 
+let frameEventBound = false;
+function bindFrameEvents(): void {
+  if (frameEventBound) return;
+  frameEventBound = true;
+  void listen<FramePayload>(FRAME_EVENT, (event) => {
+    const payload = event.payload;
+    if (!payload?.tabId) return;
+    useBrowserSessionsStore.setState((state) => ({
+      frameByTab: {
+        ...state.frameByTab,
+        [payload.tabId]: {
+          dataUrl: `data:image/jpeg;base64,${payload.dataB64}`,
+          width: payload.width,
+          height: payload.height,
+          at: Date.now(),
+        },
+      },
+    }));
+  });
+  // Rust emits fresh tab inventory on in-page navigation (screencast location
+  // poll) so the tab strip and address bar stay live without a refetch.
+  void listen<SessionEventPayload>('peers-touch://browser-session-event', (event) => {
+    const payload = event.payload;
+    if (!payload?.sessionId) return;
+    if (payload.kind === 'meta' && payload.meta) {
+      const meta = payload.meta;
+      useBrowserSessionsStore.setState((state) => {
+        const next: typeof state.sessionsByConversation = {};
+        for (const [conversationId, sessions] of Object.entries(state.sessionsByConversation)) {
+          let changed = false;
+          const views = sessions.map((view) => {
+            if (view.sessionId !== meta.sessionId) return view;
+            changed = true;
+            return {
+              ...view,
+              status: (meta.status === 'closed'
+                ? 'closed'
+                : meta.status === 'unknown'
+                  ? 'unknown'
+                  : 'active') as BrowserSessionView['status'],
+              tabs: meta.tabs,
+            };
+          });
+          if (changed) next[conversationId] = views;
+          else next[conversationId] = sessions;
+        }
+        return { sessionsByConversation: next };
+      });
+    }
+  });
+}
+
+// Active streams keyed by tab: restarting a stream (resize/tab switch) stops
+// the previous supervisor. The viewport is reported in CSS pixels.
+const streamSizes = new Map<string, { width: number; height: number }>();
+
 export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) => ({
   host: null,
   sessionsByConversation: {},
   activeSessionByConversation: {},
-  snapshotByTab: {},
-  screenshotByTab: {},
+  activeTabByConversation: {},
+  frameByTab: {},
   hostChecked: false,
-  busy: false,
   deviceId: '',
-  open: false,
-
-  setOpen: (open) => set({ open }),
 
   setDeviceId: (deviceId) => set({ deviceId }),
 
   probeHost: async () => {
+    bindFrameEvents();
     try {
       const host = await browserHostInfo();
       set({ host, hostChecked: true });
@@ -212,8 +301,6 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     ]);
     const liveMap = new Map(liveList.map((meta) => [meta.sessionId, meta]));
     const views = mergeSessions(conversationId, stationRows, liveMap);
-    // Honesty gate: every ACTIVE Station row this device cannot prove alive
-    // is downgraded UNKNOWN on the Station as well.
     if (deviceId) {
       const liveIds = liveList.map((meta) => meta.sessionId);
       const reconciled = await browserStationReconcile(deviceId, liveIds).catch(
@@ -224,17 +311,29 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
         views.splice(0, views.length, ...mergeSessions(conversationId, reconciled, reMap));
       }
     }
-    set((state) => ({
-      deviceId,
-      sessionsByConversation: { ...state.sessionsByConversation, [conversationId]: views },
-      activeSessionByConversation: {
-        ...state.activeSessionByConversation,
-        [conversationId]:
-          state.activeSessionByConversation[conversationId]
-          ?? views.find((session) => session.status === 'active')?.sessionId
-          ?? '',
-      },
-    }));
+    set((state) => {
+      const activeSession =
+        state.activeSessionByConversation[conversationId]
+        ?? views.find((session) => session.status === 'active')?.sessionId
+        ?? '';
+      const sessionView = views.find((session) => session.sessionId === activeSession) ?? null;
+      const activeTab =
+        state.activeTabByConversation[conversationId]
+        ?? sessionView?.tabs[0]?.tabId
+        ?? '';
+      return {
+        deviceId,
+        sessionsByConversation: { ...state.sessionsByConversation, [conversationId]: views },
+        activeSessionByConversation: {
+          ...state.activeSessionByConversation,
+          [conversationId]: activeSession,
+        },
+        activeTabByConversation: {
+          ...state.activeTabByConversation,
+          [conversationId]: activeTab,
+        },
+      };
+    });
   },
 
   selectSession: (conversationId, sessionId) => {
@@ -242,6 +341,15 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
       activeSessionByConversation: {
         ...state.activeSessionByConversation,
         [conversationId]: sessionId,
+      },
+    }));
+  },
+
+  selectTab: (conversationId, tabId) => {
+    set((state) => ({
+      activeTabByConversation: {
+        ...state.activeTabByConversation,
+        [conversationId]: tabId,
       },
     }));
   },
@@ -263,31 +371,41 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     }
     let meta = workerMeta;
     if (initialUrl && meta.tabs[0]?.tabId) {
-      // Navigate the session's initial tab instead of opening a second one;
-      // the panel always drives tabs[0].
       await browserWorkerNavigate(sessionId, meta.tabs[0].tabId, initialUrl);
       meta = await browserWorkerInspect(sessionId);
     }
     await get().initConversation(conversationId, deviceId);
-    set((state) => ({
-      activeSessionByConversation: {
-        ...state.activeSessionByConversation,
-        [conversationId]: sessionId,
-      },
-    }));
+    // Station list can lag right after create; the worker inventory is the
+    // authority for existence, so make sure the new live session is present.
+    set((state) => {
+      const views = state.sessionsByConversation[conversationId] ?? [];
+      const merged = views.some((view) => view.sessionId === sessionId)
+        ? views
+        : [
+            ...views,
+            {
+              sessionId,
+              conversationId,
+              engine: meta.engine,
+              status: 'active' as const,
+              lease: (meta.lease as BrowserSessionView['lease']) ?? 'agent',
+              tabs: meta.tabs,
+              live: true,
+            },
+          ];
+      return {
+        sessionsByConversation: { ...state.sessionsByConversation, [conversationId]: merged },
+        activeSessionByConversation: {
+          ...state.activeSessionByConversation,
+          [conversationId]: sessionId,
+        },
+        activeTabByConversation: {
+          ...state.activeTabByConversation,
+          [conversationId]: meta.tabs[0]?.tabId ?? '',
+        },
+      };
+    });
     void reportSession(meta);
-    // Pull the first live frame so the panel renders the page immediately
-    // instead of showing a control-only shell. Failure here is non-fatal.
-    if (meta.tabs[0]?.tabId) {
-      try {
-        await get().observe(conversationId, meta.tabs[0].tabId);
-      } catch (error) {
-        log.warn('browser', 'initial observe failed', {
-          sessionId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
     return (
       get().sessionsByConversation[conversationId]?.find((s) => s.sessionId === sessionId)
       ?? {
@@ -302,11 +420,44 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     );
   },
 
+  openTab: async (conversationId, url = 'about:blank') => {
+    const sessionId = get().activeSessionByConversation[conversationId];
+    if (!sessionId) throw new Error('no active browser session');
+    const tab = await browserWorkerOpenTab(sessionId, url);
+    const meta = await browserWorkerInspect(sessionId);
+    await get().initConversation(conversationId, get().deviceId);
+    get().selectTab(conversationId, tab.tabId);
+    void reportSession(meta);
+  },
+
+  closeTab: async (conversationId, tabId) => {
+    const sessionId = get().activeSessionByConversation[conversationId];
+    if (!sessionId) return;
+    await get().stopStream(sessionId, tabId).catch(() => undefined);
+    await browserWorkerCloseTab(sessionId, tabId);
+    const meta = await browserWorkerInspect(sessionId);
+    set((state) => {
+      const nextFrames = { ...state.frameByTab };
+      delete nextFrames[tabId];
+      const remaining = meta.tabs.map((tab) => tab.tabId);
+      const nextActive =
+        state.activeTabByConversation[conversationId] === tabId
+          ? remaining[0] ?? ''
+          : state.activeTabByConversation[conversationId];
+      return { frameByTab: nextFrames,
+        activeTabByConversation: {
+          ...state.activeTabByConversation,
+          [conversationId]: nextActive,
+        } };
+    });
+    await get().initConversation(conversationId, get().deviceId);
+    void reportSession(meta);
+  },
+
   navigate: async (conversationId, tabId, url) => {
     const sessionId = get().activeSessionByConversation[conversationId];
     if (!sessionId) throw new Error('no active browser session');
     await browserWorkerNavigate(sessionId, tabId, url);
-    await get().observe(conversationId, tabId);
     const meta = await browserWorkerInspect(sessionId);
     await get().initConversation(conversationId, get().deviceId);
     void reportSession(meta);
@@ -316,113 +467,7 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     const sessionId = get().activeSessionByConversation[conversationId];
     if (!sessionId) throw new Error('no active browser session');
     await browserWorkerHistory(sessionId, tabId, direction);
-    await get().observe(conversationId, tabId);
     const meta = await browserWorkerInspect(sessionId);
-    await get().initConversation(conversationId, get().deviceId);
-    void reportSession(meta);
-  },
-
-  observe: async (conversationId, tabId) => {
-    const sessionId = get().activeSessionByConversation[conversationId];
-    if (!sessionId) return null;
-    const snapshot = await browserWorkerSnapshot(sessionId, tabId);
-    // Pair the accessibility snapshot with a fresh frame so the in-panel
-    // viewport mirrors the real device page after every observation.
-    let screenshotView: BrowserScreenshotView | null = null;
-    try {
-      const shot = await browserWorkerScreenshot(sessionId, tabId);
-      screenshotView = {
-        dataUrl: `data:${shot.mime};base64,${shot.dataB64}`,
-        innerWidth: snapshot.viewport?.innerWidth || 0,
-        innerHeight: snapshot.viewport?.innerHeight || 0,
-        capturedAt: Date.now(),
-      };
-    } catch (error) {
-      log.warn('browser', 'viewport screenshot failed', {
-        sessionId,
-        tabId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    set((state) => ({
-      snapshotByTab: { ...state.snapshotByTab, [tabId]: snapshot },
-      ...(screenshotView
-        ? { screenshotByTab: { ...state.screenshotByTab, [tabId]: screenshotView } }
-        : {}),
-    }));
-    return snapshot;
-  },
-
-  click: async (conversationId, tabId, ref) => {
-    const sessionId = get().activeSessionByConversation[conversationId];
-    if (!sessionId) return;
-    await browserWorkerClick(sessionId, tabId, ref);
-    await get().observe(conversationId, tabId);
-    const meta = await browserWorkerInspect(sessionId);
-    await get().initConversation(conversationId, get().deviceId);
-    void reportSession(meta);
-  },
-
-  fill: async (conversationId, tabId, ref, value) => {
-    const sessionId = get().activeSessionByConversation[conversationId];
-    if (!sessionId) return;
-    await browserWorkerFill(sessionId, tabId, ref, value);
-  },
-
-  submit: async (conversationId, tabId, ref) => {
-    const sessionId = get().activeSessionByConversation[conversationId];
-    if (!sessionId) return;
-    await browserWorkerSubmit(sessionId, tabId, ref);
-    await get().observe(conversationId, tabId);
-    const meta = await browserWorkerInspect(sessionId);
-    await get().initConversation(conversationId, get().deviceId);
-    void reportSession(meta);
-  },
-
-  closeTab: async (conversationId, tabId) => {
-    const sessionId = get().activeSessionByConversation[conversationId];
-    if (!sessionId) return;
-    await browserWorkerCloseTab(sessionId, tabId);
-    const meta = await browserWorkerInspect(sessionId);
-    set((state) => {
-      const nextSnapshots = { ...state.snapshotByTab };
-      delete nextSnapshots[tabId];
-      const nextScreenshots = { ...state.screenshotByTab };
-      delete nextScreenshots[tabId];
-      return {
-        snapshotByTab: nextSnapshots,
-        screenshotByTab: nextScreenshots,
-      };
-    });
-    await get().initConversation(conversationId, get().deviceId);
-    void reportSession(meta);
-  },
-
-  screenshot: async (conversationId, tabId) => {
-    const sessionId = get().activeSessionByConversation[conversationId];
-    if (!sessionId) throw new Error('no active browser session');
-    const shot = await browserWorkerScreenshot(sessionId, tabId);
-    return `data:${shot.mime};base64,${shot.dataB64}`;
-  },
-
-  takeover: async (conversationId) => {
-    const sessionId = get().activeSessionByConversation[conversationId];
-    if (!sessionId) return;
-    const meta = await browserWorkerTakeover(sessionId);
-    // Takeover relaunches the browser on the same profile; rebuilt tab target
-    // ids invalidate every cached frame and observation.
-    set({ snapshotByTab: {}, screenshotByTab: {} });
-    await get().initConversation(conversationId, get().deviceId);
-    void reportSession(meta);
-  },
-
-  release: async (conversationId) => {
-    const sessionId = get().activeSessionByConversation[conversationId];
-    if (!sessionId) return;
-    const meta = await browserWorkerRelease(sessionId);
-    // Release invalidates every observation; drop cached snapshots so the
-    // agent/operator must observe the new generation first.
-    set({ snapshotByTab: {}, screenshotByTab: {} });
     await get().initConversation(conversationId, get().deviceId);
     void reportSession(meta);
   },
@@ -430,6 +475,13 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
   removeSession: async (conversationId) => {
     const sessionId = get().activeSessionByConversation[conversationId];
     if (!sessionId) return;
+    for (const key of streamSizes.keys()) {
+      if (key.startsWith(`${sessionId}:`)) {
+        const [, tabId] = key.split(':');
+        streamSizes.delete(key);
+        await browserWorkerScreencastStop(sessionId, tabId).catch(() => undefined);
+      }
+    }
     await browserWorkerRemove(sessionId).catch(() => undefined);
     try {
       await browserStationRemove(sessionId);
@@ -441,6 +493,7 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     }
     set(() => ({
       activeSessionByConversation: { ...get().activeSessionByConversation, [conversationId]: '' },
+      activeTabByConversation: { ...get().activeTabByConversation, [conversationId]: '' },
       sessionsByConversation: {
         ...get().sessionsByConversation,
         [conversationId]: (get().sessionsByConversation[conversationId] ?? []).filter(
@@ -449,9 +502,39 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
       },
     }));
   },
+
+  startStream: async (sessionId, tabId, width, height) => {
+    const size = { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) };
+    const key = `${sessionId}:${tabId}`;
+    const previous = streamSizes.get(key);
+    if (previous && previous.width === size.width && previous.height === size.height) return;
+    streamSizes.set(key, size);
+    await browserWorkerScreencastStart(sessionId, tabId, size.width, size.height);
+  },
+
+  stopStream: async (sessionId, tabId) => {
+    streamSizes.delete(`${sessionId}:${tabId}`);
+    await browserWorkerScreencastStop(sessionId, tabId);
+  },
+
+  sendMouse: async (sessionId, tabId, input) => {
+    await browserWorkerSendMouse({ sessionId, tabId, ...input });
+  },
+
+  sendWheel: async (sessionId, tabId, x, y, deltaX, deltaY) => {
+    await browserWorkerSendWheel({ sessionId, tabId, x, y, deltaX, deltaY });
+  },
+
+  sendKey: async (sessionId, tabId, kind, key, code, modifiers) => {
+    await browserWorkerSendKey({ sessionId, tabId, kind, key, code, modifiers });
+  },
+
+  insertText: async (sessionId, tabId, text) => {
+    await browserWorkerInsertText(sessionId, tabId, text);
+  },
 }));
 
-// Keep device id resolution close to the terminal dock: same account command.
+// Keep device id resolution close to the browser dock: same account command.
 export async function resolveBrowserDeviceId(): Promise<string> {
   const result = (await api.accountGetDeviceId()) as unknown as {
     deviceId?: string;
@@ -459,4 +542,3 @@ export async function resolveBrowserDeviceId(): Promise<string> {
   };
   return result.deviceId ?? result.device_id ?? '';
 }
-

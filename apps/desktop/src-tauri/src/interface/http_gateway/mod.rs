@@ -8739,38 +8739,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(error) => browser_app_failure(&error),
             }
         }
-        "browser_takeover" => {
-            let input = match parse_args::<GwBrowserSessionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("browser_takeover") {
-                Ok(app) => app,
-                Err(e) => return e,
-            };
-            match tauri::async_runtime::block_on(
-                crate::application::browser::takeover(app, &input.session_id),
-            ) {
-                Ok(meta) => to_json(AppResult::success(meta)),
-                Err(error) => browser_app_failure(&error),
-            }
-        }
-        "browser_release" => {
-            let input = match parse_args::<GwBrowserSessionInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let app = match runtime.app_handle("browser_release") {
-                Ok(app) => app,
-                Err(e) => return e,
-            };
-            match tauri::async_runtime::block_on(
-                crate::application::browser::release(app, &input.session_id),
-            ) {
-                Ok(meta) => to_json(AppResult::success(meta)),
-                Err(error) => browser_app_failure(&error),
-            }
-        }
         "browser_remove" => {
             let input = match parse_args::<GwBrowserSessionInput>(args) {
                 Ok(v) => v,
