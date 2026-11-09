@@ -417,7 +417,10 @@ return {
             self.report.runtime["search"].setdefault("returnContext", {})[name] = {
                 "before": before_return,
             }
-            row = self.receiver.find_element(f'[data-resource-id="{resource_id}"]', 20)
+            # Semantic clicks activate the selected node's actual Open control.
+            row = self.receiver.find_element(
+                f'.pt-search-row[data-resource-id="{resource_id}"] .pt-search-row-target', 20,
+            )
             row.click()
             self.wait_js("!document.querySelector('.pt-search-field')", "original Social route")
             if "comment" in name:
