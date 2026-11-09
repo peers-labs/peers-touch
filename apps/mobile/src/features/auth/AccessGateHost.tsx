@@ -361,7 +361,7 @@ export function AccessGateHost({
           className="auth-gate-scan"
           leading={<Icon iconId="scan-line" size={18} />}
           availability={loading
-            ? { kind: 'disabled', reason: t('mobile.deviceLink.scan') }
+            ? { kind: 'disabled', reason: t('mobile.auth.actionInProgress') }
             : undefined}
           onActivate={onScan}
         >
@@ -540,7 +540,7 @@ export function AccessGateHost({
                       leading={provider.icon}
                       execution={oauthBusy && oauth.provider === provider.id ? 'pending' : 'idle'}
                       availability={loading || oauthBusy
-                        ? { kind: 'disabled', reason: t(provider.labelKey) }
+                        ? { kind: 'disabled', reason: t('mobile.auth.actionInProgress') }
                         : undefined}
                       onActivate={() => void submitOAuth(provider.id)}
                     >
@@ -649,7 +649,7 @@ export function AccessGateHost({
                 actionId="access-gate-back"
                 tone="danger"
                 availability={loading
-                  ? { kind: 'disabled', reason: t('mobile.auth.changeStation') }
+                  ? { kind: 'disabled', reason: t('mobile.auth.actionInProgress') }
                   : undefined}
                 onActivate={() => void onBack()}
               >
@@ -672,7 +672,7 @@ export function AccessGateHost({
                 emphasis="secondary"
                 leading={<Icon iconId="arrow-left" size={16} />}
                 availability={loading
-                  ? { kind: 'disabled', reason: t('mobile.auth.changeStation') }
+                  ? { kind: 'disabled', reason: t('mobile.auth.actionInProgress') }
                   : undefined}
                 onActivate={() => void onBack()}
               >
@@ -684,7 +684,7 @@ export function AccessGateHost({
                 actionId="access-gate-invite-submit"
                 emphasis="primary"
                 availability={!canSubmitInvite || loading
-                  ? { kind: 'disabled', reason: t('mobile.auth.inviteCodeSubmit') }
+                  ? { kind: 'disabled', reason: t('mobile.auth.inviteCodeRequired') }
                   : undefined}
                 execution={loading ? 'pending' : 'idle'}
                 onActivate={submitInvite}
@@ -697,7 +697,7 @@ export function AccessGateHost({
                 actionId="access-gate-sign-in"
                 emphasis="primary"
                 availability={!canLogin || loading
-                  ? { kind: 'disabled', reason: t('mobile.auth.signIn') }
+                  ? { kind: 'disabled', reason: t('mobile.auth.signInRequired') }
                   : undefined}
                 execution={loading ? 'pending' : 'idle'}
                 onActivate={submitLogin}
@@ -710,7 +710,7 @@ export function AccessGateHost({
                 actionId="access-gate-schema-submit"
                 emphasis="primary"
                 availability={!canSubmitSchema || loading
-                  ? { kind: 'disabled', reason: t('mobile.launch.continue') }
+                  ? { kind: 'disabled', reason: t('mobile.launch.fieldsRequired') }
                   : undefined}
                 execution={loading ? 'pending' : 'idle'}
                 onActivate={submitSchema}

@@ -51,11 +51,16 @@ DOM_AUDIT_SCRIPT = """
 const visible = (element) => {
   const style = getComputedStyle(element);
   const rect = element.getBoundingClientRect();
+  // Screen-reader-only nodes (W3C clip/clip-path technique, e.g. .pt-sr-only)
+  // are intentionally visually clipped and are not rendered-text candidates.
+  const screenReaderOnly = (style.clip && style.clip !== 'auto')
+    || (typeof style.clipPath === 'string' && style.clipPath.includes('inset(50%'));
   return style.display !== 'none'
     && style.visibility !== 'hidden'
     && Number(style.opacity) > 0
     && rect.width > 0
-    && rect.height > 0;
+    && rect.height > 0
+    && !screenReaderOnly;
 };
 const selector = 'button,input,select,textarea,a[href],[role="button"],[tabindex]';
 const unlabeled = Array.from(document.querySelectorAll(selector))
