@@ -1655,18 +1655,26 @@ select,
   place-items: center;
   width: 44px;
   height: 44px;
-  color: var(--brand-primary);
+  color: var(--pt-accent);
 }
 
 .entry-progress-panel.failed .entry-progress-state-icon {
-  color: #b42318;
+  color: var(--pt-danger);
 }
 
-.entry-progress-panel h1.ant-typography {
+.entry-progress-title {
   margin: 0;
   font-size: 24px;
+  font-weight: 600;
   line-height: 1.25;
   letter-spacing: 0;
+  color: var(--pt-text);
+}
+
+.entry-progress-subtitle {
+  color: var(--pt-secondary);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .entry-progress-station {
@@ -1676,8 +1684,8 @@ select,
   gap: 8px;
   padding: 8px 12px;
   border-radius: 10px;
-  background: rgba(102, 126, 234, 0.08);
-  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--pt-accent) 8%, var(--pt-surface));
+  color: var(--pt-text);
 }
 
 .entry-progress-actions {
@@ -1688,12 +1696,8 @@ select,
   margin-top: 4px;
 }
 
-.entry-progress-actions:has(.ant-btn:only-child) {
+.entry-progress-actions[data-action-count='1'] {
   grid-template-columns: 1fr;
-}
-
-.entry-progress-actions .ant-btn {
-  min-height: 44px;
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
