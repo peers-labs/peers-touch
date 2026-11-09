@@ -76,7 +76,7 @@
 | Federated / remote moments ("来自 xx 站") | social federation projection | REAL-RESTYLE | social-convergence |
 | Private (E2EE) moments | `privateMomentsRuntime`, Rust `secure_content`, `social_private_*` | REAL-RESTYLE (prototype public-only; real private is additive) | moments-e2e |
 | Sort latest/hot; back-to-top; inline search | feed projection + search | REAL-RESTYLE | moments surfaces |
-| Author profile page | `SocialProfilePage` routed at `detail:social-profile` (navigationDescriptors.ts:117); feed rows only use `authorPtid` for own-post styling and do not navigate yet (verified in MomentsPage) | REAL-GAP-PRESENT: wire the Moments feed author entry to `detail:social-profile` | moments/contacts |
+| Author profile page | `SocialProfilePage` routed at `detail:social-profile` (navigationDescriptors.ts:117); feed author entry is wired end-to-end: `MomentFeedItem` author button (`data-acceptance-id="social-moment-author"`) → `MomentsPage.onOpenProfile` → `MobileShell.tsx:177` opens the detail route | REAL-RESTYLE (shipped) | moments/contacts |
 | Delete own moment | crud command | REAL-RESTYLE | moments-e2e |
 | **Me/profile**: cover/avatar change | `profileGateway` + avatar asset runtime | REAL-RESTYLE (real upload wins over prototype dataURL) | settings/social |
 | Credentials / PTID detail | PTID display is real in `ProfileSection` (`mobile.settings.profile.userId`, `actorIdentity`); no credential/key-detail owner exists (verified: `identityKey` only feeds avatar color and key-exchange transport, no inventory UI) | PTID REAL-RESTYLE (shipped); credential/key detail REAL-GAP-PRESENT scheduled separately, no fabricated detail | settings-e2e |
