@@ -5234,11 +5234,19 @@ class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
         deployment_environment: str,
         expected_commit: str,
     ) -> None:
-        self._require_restart_authority(deployment_environment, expected_commit)
-        self._config = PosixServiceRuntimeConfig.load(
-            deployment_environment,
-            expected_role="station",
+        station_url = self._require_restart_authority(
+            deployment_environment, expected_commit,
         )
+        self._config = _station_runtime_config(
+            deployment_environment,
+            station_url=station_url,
+            allow_profile_managed=True,
+        )
+        if self._config.public_base_url.rstrip("/") != station_url.rstrip("/"):
+            raise BlockedError(
+                reason="Station outage runtime origin differs from the reviewed Profile",
+                resource="mobile.station-outage:authorization",
+            )
         self._transport = self._config.transport()
         self._expected_commit = expected_commit
         self._before: dict[str, Any] | None = None
@@ -5249,7 +5257,7 @@ class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
     @staticmethod
     def _require_restart_authority(
         deployment_environment: str, expected_commit: str,
-    ) -> None:
+    ) -> str:
         # The parent retains the Profile and remote-source leases throughout
         # this capability. Resolve its operation target without rebinding them.
         target_file = resolve_deployment_environment_path(deployment_environment)
@@ -5284,6 +5292,7 @@ class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
                 and profile["resetPolicy"] == "agent-resettable"
                 and profile["sourceState"] == "tracked-clean"
                 and profile["stationMode"] == "remote"
+                and isinstance(profile["stationUrl"], str) and bool(profile["stationUrl"])
                 and profile["stationDeployEnvironment"] == deployment_environment
                 and Path(profile["stationDeployFile"]).resolve() == target_file.resolve()
                 and GIT_COMMIT_PATTERN.fullmatch(source["head"]) is not None
@@ -5299,6 +5308,7 @@ class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
                 reason="Station outage requires the current source and an exact reviewed non-stable deployment capability",
                 resource=resource,
             )
+        return profile["stationUrl"]
 
     @property
     def allowed_operations(self) -> tuple[str, ...]:

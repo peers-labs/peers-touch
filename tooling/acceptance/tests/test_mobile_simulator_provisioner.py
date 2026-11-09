@@ -1056,6 +1056,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         config = SimpleNamespace(
             environment_name="profile-three",
+            public_base_url="http://station.example:18080",
             transport=lambda: transport,
         )
         authority, target_file = self._station_outage_authority()
@@ -1125,6 +1126,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "profile": {
                 "profile": "three", "resetPolicy": "agent-resettable",
                 "sourceState": "tracked-clean", "stationMode": "remote",
+                "stationUrl": "http://station.example:18080",
                 "stationDeployEnvironment": "profile-three",
                 "stationDeployFile": str(target_file),
             },
@@ -1141,6 +1143,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             ("profile", "resetPolicy", "stable-protected"),
             ("profile", "sourceState", "tracked-dirty"),
             ("profile", "stationMode", "local"),
+            ("profile", "stationUrl", ""),
             ("profile", "stationDeployEnvironment", "other-station"),
             ("profile", "stationDeployFile", "/other-target.env.example"),
             ("source", "head", "b" * 40),
@@ -1178,6 +1181,36 @@ class MobileSimulatorContractTests(unittest.TestCase):
                         deployment_environment="profile-three", expected_commit="a" * 40,
                     )
                 config.assert_not_called()
+
+    def test_station_outage_rejects_runtime_origin_override(self) -> None:
+        authority, target_file = self._station_outage_authority()
+        transport = Mock()
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_deployment_environment_path",
+                return_value=target_file,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator.subprocess.run",
+                return_value=SimpleNamespace(
+                    returncode=0, stdout=json.dumps(authority), stderr="",
+                ),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "_station_runtime_config",
+                return_value=SimpleNamespace(
+                    public_base_url="http://other-station.example:18080",
+                    transport=transport,
+                ),
+            ),
+            self.assertRaisesRegex(BlockedError, "runtime origin"),
+        ):
+            MobileStationOutageCapabilityHandler(
+                deployment_environment="profile-three", expected_commit="a" * 40,
+            )
+        transport.assert_not_called()
 
     def test_station_outage_rejects_missing_or_failed_machine_check(self) -> None:
         _, target_file = self._station_outage_authority()

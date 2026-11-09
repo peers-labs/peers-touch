@@ -37,6 +37,10 @@ before constructing the remote transport. A legacy environment boolean cannot
 grant or block this authority. The original Suite keeps its Profile and source
 leases; stop/start still verify the same container and source, and parent
 cleanup restores a fresh process in that container.
+Profile-managed Compose targets reuse the original `_station_runtime_config`
+adapter and its tracked restart definition. Its resolved origin must equal
+Machine Dev's reviewed Station URL. Explicit POSIX-only fields cannot be
+required from a Profile whose canonical deployment uses that adapter.
 
 Equipment must complete before the Suite retains its remote source lease.
 Canonical source-sync takes that lease itself. Holding it in the parent first
