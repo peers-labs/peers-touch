@@ -4059,22 +4059,10 @@ select,
   padding: 8px 16px 10px;
 }
 
-.social-circle-editor-modal .ant-modal-wrap {
+.circle-form-footer {
   display: flex;
-  align-items: flex-end;
-}
-
-.social-circle-editor-modal .ant-modal {
-  top: auto;
-  width: 100% !important;
-  max-width: 100%;
-  margin: 0;
-  padding-bottom: 0;
-}
-
-.social-circle-editor-modal .ant-modal-content {
-  padding-bottom: max(16px, var(--safe-area-bottom));
-  border-radius: 18px 18px 0 0;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* ============================================================
@@ -5159,4 +5147,26 @@ select,
 .circle-picker-row:disabled {
   cursor: default;
   opacity: 0.58;
+}
+
+.circle-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.circle-picker-search-input {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+}
+
+.circle-picker-search-input > * {
+  width: 100%;
+}
+
+.circle-picker-search-leading {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pt-muted);
 }

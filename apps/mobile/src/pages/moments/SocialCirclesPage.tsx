@@ -1,13 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Button, Empty, Input, Modal, Spin, Typography } from 'antd';
-import { ArrowLeft, ChevronRight, Plus, Users } from 'lucide-react';
+import {
+  Button,
+  Dialog,
+  Empty,
+  Icon,
+  Spin,
+  Text,
+  TextArea,
+  TextField,
+} from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileDetailRoute } from '../../app/navigation';
 import { MobileNotice } from '../../components/MobileNotice';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
-
-const { Text } = Typography;
 
 interface SocialCirclesPageProps {
   readonly onBack: () => void;
@@ -73,7 +79,7 @@ export function SocialCirclesPage({
           aria-label={t('common.action.back')}
           onClick={onBack}
         >
-          <ArrowLeft size={20} />
+          <Icon iconId="arrow-left" size={20} />
         </button>
         <h1 className="header-title compact">{t('mobile.social.circles.title')}</h1>
         <button
@@ -83,14 +89,14 @@ export function SocialCirclesPage({
           aria-label={t('mobile.social.circles.create')}
           onClick={openCreate}
         >
-          <Plus size={20} />
+          <Icon iconId="plus" size={20} />
         </button>
       </header>
 
       <div className="mobile-detail-body circle-page-body">
-        <Text type="secondary">{t('mobile.social.circles.privateHint')}</Text>
+        <Text tone="secondary">{t('mobile.social.circles.privateHint')}</Text>
         {error ? <MobileNotice tone="error">{t(error)}</MobileNotice> : null}
-        <Spin spinning={loading && circles.length === 0}>
+        <Spin active={loading && circles.length === 0}>
           <div className="circle-list">
             {circles.map((circle) => (
               <button
@@ -104,71 +110,93 @@ export function SocialCirclesPage({
                   circleId: circle.id.toString(),
                 })}
               >
-                <span className="circle-row-icon"><Users size={18} /></span>
+                <span className="circle-row-icon"><Icon iconId="users" size={18} /></span>
                 <span className="circle-row-copy">
-                  <Text strong ellipsis>{circle.name}</Text>
-                  <Text type="secondary" ellipsis>
+                  <Text strong truncate>{circle.name}</Text>
+                  <Text tone="secondary" truncate>
                     {circle.description || t('mobile.social.circles.noDescription')}
                   </Text>
-                  <Text type="secondary">
+                  <Text tone="secondary">
                     {t('mobile.social.circles.memberCount', {
                       count: circle.memberCount.toString(),
                     })}
                   </Text>
                 </span>
-                <ChevronRight size={18} />
+                <Icon iconId="chevron-right" size={18} />
               </button>
             ))}
           </div>
           {!loading && circles.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('mobile.social.circles.empty')}
-            />
+            <Empty description={t('mobile.social.circles.empty')} />
           ) : null}
         </Spin>
         {hasMore ? (
-          <Button block loading={loading} onClick={() => void loadMoreCircles()}>
+          <Button
+            actionId="social-circles-load-more"
+            fullWidth
+            execution={loading ? 'pending' : 'idle'}
+            onActivate={() => void loadMoreCircles()}
+          >
             {t('common.action.loadMore')}
           </Button>
         ) : null}
       </div>
-      <Modal
+      <Dialog
         open={createOpen}
-        rootClassName="social-circle-editor-modal"
+        className="social-circle-editor"
         title={t('mobile.social.circles.create')}
-        okText={t('common.action.create')}
-        cancelText={t('common.action.cancel')}
-        okButtonProps={{
-          loading: creating,
-          disabled: !name.trim(),
-          'data-acceptance-id': 'social-circle-create-submit',
-        }}
-        onOk={() => void submitCreate()}
-        onCancel={() => {
+        closeLabel={t('common.action.cancel')}
+        onDismiss={() => {
           if (!creating) setCreateOpen(false);
         }}
+        footer={
+          <div className="circle-form-footer">
+            <Button
+              actionId="social-circle-create-cancel"
+              emphasis="quiet"
+              availability={creating
+                ? { kind: 'disabled', reason: t('common.action.cancel') }
+                : undefined}
+              onActivate={() => setCreateOpen(false)}
+            >
+              {t('common.action.cancel')}
+            </Button>
+            <Button
+              actionId="social-circle-create-submit"
+              emphasis="primary"
+              data-acceptance-id="social-circle-create-submit"
+              availability={!name.trim() || creating
+                ? { kind: 'disabled', reason: t('mobile.social.circles.name') }
+                : undefined}
+              execution={creating ? 'pending' : 'idle'}
+              onActivate={() => void submitCreate()}
+            >
+              {t('common.action.create')}
+            </Button>
+          </div>
+        }
       >
         <div className="circle-form">
-          <Input
+          <TextField
             autoFocus
             value={name}
             data-acceptance-id="social-circle-create-name"
             maxLength={120}
             placeholder={t('mobile.social.circles.name')}
-            onChange={(event) => setName(event.target.value)}
+            onValueChange={setName}
           />
-          <Input.TextArea
+          <TextArea
             value={description}
             data-acceptance-id="social-circle-create-description"
             maxLength={500}
-            autoSize={{ minRows: 3, maxRows: 6 }}
+            minimumRows={3}
+            maximumRows={6}
             placeholder={t('mobile.social.circles.description')}
-            onChange={(event) => setDescription(event.target.value)}
+            onValueChange={setDescription}
           />
           {createError ? <MobileNotice tone="error">{t(createError)}</MobileNotice> : null}
         </div>
-      </Modal>
+      </Dialog>
     </div>
   );
 }

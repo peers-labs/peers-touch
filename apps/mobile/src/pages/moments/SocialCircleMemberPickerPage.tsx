@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Checkbox, Empty, Input, Select, Spin, Typography } from 'antd';
-import { ArrowLeft, Check, Search } from 'lucide-react';
+import {
+  Button,
+  Checkbox,
+  Empty,
+  Icon,
+  IconButton,
+  Select,
+  Spin,
+  Text,
+  TextField,
+} from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileNotice } from '../../components/MobileNotice';
@@ -10,7 +19,6 @@ import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
 import type { CircleMember } from '../../gen/proto/domain/social/circle_pb';
 
-const { Text } = Typography;
 const EMPTY_CIRCLE_MEMBERS: readonly CircleMember[] = [];
 
 interface SocialCircleMemberPickerPageProps {
@@ -85,7 +93,7 @@ export function SocialCircleMemberPickerPage({
           aria-label={t('common.action.back')}
           onClick={onBack}
         >
-          <ArrowLeft size={20} />
+          <Icon iconId="arrow-left" size={20} />
         </button>
         <h1 className="header-title compact">
           {t('mobile.social.circles.addMembers')}
@@ -98,41 +106,55 @@ export function SocialCircleMemberPickerPage({
           disabled={selected.size === 0 || pending}
           onClick={() => void submit()}
         >
-          <Check size={20} />
+          <Icon iconId="check" size={20} />
         </button>
       </header>
 
       <div className="mobile-detail-body circle-page-body">
-        <Text type="secondary">{t('mobile.social.circles.pickerHint')}</Text>
-        <Select
-          allowClear
+        <Text tone="secondary">{t('mobile.social.circles.pickerHint')}</Text>
+        <Select<string>
+          clearable
           value={federationId || undefined}
           placeholder={t('mobile.social.circles.localAndRemote')}
           options={federations.map((federation) => ({
             label: federation.name || federation.federationId,
             value: federation.federationId,
           }))}
-          onChange={(value) => setFederationId(value ?? '')}
+          onValueChange={(value) => setFederationId(value ? String(value) : '')}
         />
-        <Input.Search
-          value={query}
-          data-acceptance-id="social-circle-member-search"
-          enterButton={<Search size={16} />}
-          loading={loading}
-          placeholder={t('mobile.social.circles.search')}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            if (!event.target.value) clearSearch();
-          }}
-          onSearch={(value) => void searchPeople(value, federationId)}
-        />
+        <div className="circle-picker-search">
+          <span className="circle-picker-search-input">
+            <TextField
+              value={query}
+              data-acceptance-id="social-circle-member-search"
+              leading={<Icon iconId="search" size={16} className="circle-picker-search-leading" />}
+              placeholder={t('mobile.social.circles.search')}
+              onEnter={() => void searchPeople(query, federationId)}
+              onValueChange={(value) => {
+                setQuery(value);
+                if (!value) clearSearch();
+              }}
+            />
+          </span>
+          <IconButton
+            actionId="social-circle-member-search-run"
+            iconId="search"
+            iconSize={16}
+            label={t('mobile.social.circles.search')}
+            execution={loading ? 'pending' : 'idle'}
+            availability={!query.trim()
+              ? { kind: 'disabled', reason: t('mobile.social.circles.search') }
+              : undefined}
+            onActivate={() => void searchPeople(query, federationId)}
+          />
+        </div>
         {error || mutationError || actionError ? (
           <MobileNotice tone="error">
             {t(actionError || mutationError || error || '')}
           </MobileNotice>
         ) : null}
 
-        <Spin spinning={loading && results.length === 0}>
+        <Spin active={loading && results.length === 0}>
           <div className="circle-picker-results">
             {results.map((actor) => {
               const disabled = existing.has(actor.ptid);
@@ -162,33 +184,33 @@ export function SocialCircleMemberPickerPage({
                     username={actor.username}
                   />
                   <span className="circle-row-copy">
-                    <Text strong ellipsis>
+                    <Text strong truncate>
                       {actorDisplayName(actor.displayName || actor.username, actor.ptid)
                         || t('mobile.contacts.unknownUser')}
                     </Text>
-                    <Text type="secondary" ellipsis>
+                    <Text tone="secondary" truncate>
                       {actor.federation?.handle || actor.ptid}
                     </Text>
                   </span>
-                  <Checkbox checked={checked} disabled={disabled} />
+                  <Checkbox checked={checked} disabled={disabled} readOnly />
                 </button>
               );
             })}
           </div>
           {!loading && query && results.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('mobile.social.circles.noResults')}
-            />
+            <Empty description={t('mobile.social.circles.noResults')} />
           ) : null}
         </Spin>
         <Button
-          block
-          type="primary"
+          actionId="social-circle-members-add"
+          emphasis="primary"
+          fullWidth
           data-acceptance-id="social-circle-members-add"
-          loading={pending}
-          disabled={selected.size === 0}
-          onClick={() => void submit()}
+          availability={selected.size === 0
+            ? { kind: 'disabled', reason: t('mobile.social.circles.addMembers') }
+            : undefined}
+          execution={pending ? 'pending' : 'idle'}
+          onActivate={() => void submit()}
         >
           {t('mobile.social.circles.addSelected', { count: selected.size })}
         </Button>
