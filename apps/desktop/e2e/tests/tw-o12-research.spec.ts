@@ -467,11 +467,11 @@ tauriTest('TW-O12 research/doc: material deliverable, feedback revision, recall 
   expect(retrievalsBefore).toBe('0');
 
   // Human confirms through the workbench review dock (real proxy -> Station).
-  await page.evaluate(`(() => {
-    if (!document.querySelector('[data-pt-memory-panel]')) {
-      document.querySelector('[data-pt-memory-toggle]')?.click();
-    }
-  })()`);
+  if (!(await page.evaluate(`!!document.querySelector('[data-pt-memory-panel]')`))) {
+    await page.click('[data-pt-workbench-add-toggle]');
+    await poll(page, `!!document.querySelector('[data-pt-workbench-add="memory"]')`, 5_000);
+    await page.click('[data-pt-workbench-add="memory"]');
+  }
   await poll(page, `!!document.querySelector('[data-pt-memory-candidate="${candidateId}"]')`, 20_000);
   // The dock's poll-driven refresh briefly unmounts controls, and the
   // acceptance WebKit trusted click rejects the antd button. Repeatedly

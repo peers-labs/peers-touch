@@ -406,21 +406,77 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         self._click(session, '[data-pt-primary-nav="agent"]')
         self._wait(
             session,
-            "document.querySelector('[data-pt-agent-module-nav]')",
-            "Agent module navigation",
+            "document.querySelector('[data-pt-agent-workbench]')",
+            "Agent workbench",
         )
-        agent_module_items = session.execute_script(
-            """
-            return [...document.querySelectorAll('[data-pt-agent-module-item]')]
-              .map((element) => element.getAttribute('data-pt-agent-module-item'));
-            """
+        # Atelier is no longer a top-level module: the Chat | Atelier
+        # segmented switch must be gone from the Agent shell.
+        self.assert_condition(
+            "agent_module_nav_removed",
+            len(
+                session.find_elements(
+                    "[data-pt-agent-module-nav]"
+                )
+            )
+            == 0
+            and len(
+                session.find_elements(
+                    "[data-pt-agent-module-item]"
+                )
+            )
+            == 0,
+        )
+        assertions["agent_module_nav_removed"] = True
+
+        # Atelier survives as a placeholder sub-surface reached from Agent
+        # Profile -> Extensions; it must not instantiate the applet kernel.
+        self._click(session, "[data-pt-agent-menu]")
+        self._click(
+            session,
+            '[data-pt-agent-menu-action="edit"]',
+        )
+        self._wait(
+            session,
+            "document.querySelector('[data-pt-agent-profile]')",
+            "Agent profile",
+        )
+        self._click(
+            session,
+            '[data-pt-agent-profile-section="extensions"]',
+        )
+        self._wait(
+            session,
+            "document.querySelector('[data-pt-agent-atelier-entry]')",
+            "Atelier entry under Profile Extensions",
+        )
+        self._click(
+            session,
+            "[data-pt-agent-atelier-entry]",
+        )
+        self._wait(
+            session,
+            "document.querySelector('[data-pt-atelier-placeholder]')",
+            "Atelier placeholder sub-surface",
         )
         self.assert_condition(
-            "agent_module_has_exact_work_surfaces",
-            agent_module_items == ["chat", "atelier"],
-            json.dumps(agent_module_items),
+            "atelier_placeholder_stays_in_agent_surface",
+            str(session.get_current_url()).endswith("#/agent")
+            and len(
+                session.find_elements(
+                    '[data-applet-container-shell="peers.atelier"]'
+                )
+            )
+            == 0,
+            str(session.get_current_url()),
         )
-        assertions["agent_module_has_exact_work_surfaces"] = True
+        assertions["atelier_placeholder_subsurface"] = True
+        self._click(session, "[data-pt-atelier-back]")
+        self._wait(
+            session,
+            "document.querySelector('[data-pt-agent-chat-frame]')",
+            "Chat frame after leaving Atelier placeholder",
+        )
+        assertions["atelier_placeholder_back_to_chat"] = True
 
         self._click(session, '[data-pt-primary-nav="moments"]')
         self._wait(

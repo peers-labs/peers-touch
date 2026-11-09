@@ -171,7 +171,6 @@ export function AppSideNav({ page, navigation }: AppSideNavProps) {
                   page === 'agent'
                   || page === 'agent-profile'
                   || page === 'agent-orchestration'
-                  || page === 'applet:peers.atelier'
                 }
                 onClick={navigateAgentChat}
                 title={t('layout.nav.agent')}

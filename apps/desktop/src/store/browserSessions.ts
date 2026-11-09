@@ -64,11 +64,19 @@ export interface BrowserSessionView {
   live: boolean;
 }
 
+export interface BrowserScreenshotView {
+  dataUrl: string;
+  innerWidth: number;
+  innerHeight: number;
+  capturedAt: number;
+}
+
 interface BrowserSessionState {
   host: BrowserHostInfo | null;
   sessionsByConversation: Record<string, BrowserSessionView[]>;
   activeSessionByConversation: Record<string, string>;
   snapshotByTab: Record<string, BrowserSnapshot>;
+  screenshotByTab: Record<string, BrowserScreenshotView>;
   hostChecked: boolean;
   busy: boolean;
   deviceId: string;
@@ -175,6 +183,7 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
   sessionsByConversation: {},
   activeSessionByConversation: {},
   snapshotByTab: {},
+  screenshotByTab: {},
   hostChecked: false,
   busy: false,
   deviceId: '',
@@ -267,6 +276,18 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
       },
     }));
     void reportSession(meta);
+    // Pull the first live frame so the panel renders the page immediately
+    // instead of showing a control-only shell. Failure here is non-fatal.
+    if (meta.tabs[0]?.tabId) {
+      try {
+        await get().observe(conversationId, meta.tabs[0].tabId);
+      } catch (error) {
+        log.warn('browser', 'initial observe failed', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     return (
       get().sessionsByConversation[conversationId]?.find((s) => s.sessionId === sessionId)
       ?? {
@@ -285,6 +306,7 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     const sessionId = get().activeSessionByConversation[conversationId];
     if (!sessionId) throw new Error('no active browser session');
     await browserWorkerNavigate(sessionId, tabId, url);
+    await get().observe(conversationId, tabId);
     const meta = await browserWorkerInspect(sessionId);
     await get().initConversation(conversationId, get().deviceId);
     void reportSession(meta);
@@ -294,6 +316,7 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     const sessionId = get().activeSessionByConversation[conversationId];
     if (!sessionId) throw new Error('no active browser session');
     await browserWorkerHistory(sessionId, tabId, direction);
+    await get().observe(conversationId, tabId);
     const meta = await browserWorkerInspect(sessionId);
     await get().initConversation(conversationId, get().deviceId);
     void reportSession(meta);
@@ -303,8 +326,29 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     const sessionId = get().activeSessionByConversation[conversationId];
     if (!sessionId) return null;
     const snapshot = await browserWorkerSnapshot(sessionId, tabId);
+    // Pair the accessibility snapshot with a fresh frame so the in-panel
+    // viewport mirrors the real device page after every observation.
+    let screenshotView: BrowserScreenshotView | null = null;
+    try {
+      const shot = await browserWorkerScreenshot(sessionId, tabId);
+      screenshotView = {
+        dataUrl: `data:${shot.mime};base64,${shot.dataB64}`,
+        innerWidth: snapshot.viewport?.innerWidth || 0,
+        innerHeight: snapshot.viewport?.innerHeight || 0,
+        capturedAt: Date.now(),
+      };
+    } catch (error) {
+      log.warn('browser', 'viewport screenshot failed', {
+        sessionId,
+        tabId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     set((state) => ({
       snapshotByTab: { ...state.snapshotByTab, [tabId]: snapshot },
+      ...(screenshotView
+        ? { screenshotByTab: { ...state.screenshotByTab, [tabId]: screenshotView } }
+        : {}),
     }));
     return snapshot;
   },
@@ -341,9 +385,14 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     await browserWorkerCloseTab(sessionId, tabId);
     const meta = await browserWorkerInspect(sessionId);
     set((state) => {
-      const next = { ...state.snapshotByTab };
-      delete next[tabId];
-      return { snapshotByTab: next };
+      const nextSnapshots = { ...state.snapshotByTab };
+      delete nextSnapshots[tabId];
+      const nextScreenshots = { ...state.screenshotByTab };
+      delete nextScreenshots[tabId];
+      return {
+        snapshotByTab: nextSnapshots,
+        screenshotByTab: nextScreenshots,
+      };
     });
     await get().initConversation(conversationId, get().deviceId);
     void reportSession(meta);
@@ -360,6 +409,9 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     const sessionId = get().activeSessionByConversation[conversationId];
     if (!sessionId) return;
     const meta = await browserWorkerTakeover(sessionId);
+    // Takeover relaunches the browser on the same profile; rebuilt tab target
+    // ids invalidate every cached frame and observation.
+    set({ snapshotByTab: {}, screenshotByTab: {} });
     await get().initConversation(conversationId, get().deviceId);
     void reportSession(meta);
   },
@@ -370,7 +422,7 @@ export const useBrowserSessionsStore = create<BrowserSessionState>((set, get) =>
     const meta = await browserWorkerRelease(sessionId);
     // Release invalidates every observation; drop cached snapshots so the
     // agent/operator must observe the new generation first.
-    set({ snapshotByTab: {} });
+    set({ snapshotByTab: {}, screenshotByTab: {} });
     await get().initConversation(conversationId, get().deviceId);
     void reportSession(meta);
   },

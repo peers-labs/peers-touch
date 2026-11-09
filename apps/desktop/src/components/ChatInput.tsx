@@ -718,6 +718,11 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     >
       <AttachmentStage drafts={drafts} onRemove={removeDraft} onRetry={retryDraft} />
 
+      {/* Ready is the expected steady state — Trae-style composers stay
+          quiet instead of showing a permanent provider banner. The row only
+          exists for checking/degraded/unavailable states; hard blockers have
+          their own error strip below. */
+          readinessDisplayState !== 'ready' && (
       <Flexbox
         data-pt-agent-runtime-snapshot={
           composerReadiness.runtimeSnapshotId || 'unknown'
@@ -775,6 +780,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
           {t(`chat.input.runtimeSnapshot.state.${readinessDisplayState}`)}
         </Tag>
       </Flexbox>
+      )}
 
       {!readinessCanSend && (
         <Flexbox
@@ -888,20 +894,21 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
               title={t('chat.input.commands.title')}
               onClick={toggleCommandPalette}
               style={{
-                width: 28,
-                height: 28,
+                width: 30,
+                height: 30,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: 8,
-                border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
-                background: '#ffffff',
-                color: token.colorText,
-                boxShadow: COMPOSER_COLORS.toolButtonShadow,
+                border: 'none',
+                background: 'transparent',
+                color: token.colorTextSecondary,
                 cursor: 'pointer',
               }}
+              onMouseEnter={(event) => { event.currentTarget.style.background = token.colorFillTertiary; }}
+              onMouseLeave={(event) => { event.currentTarget.style.background = 'transparent'; }}
             >
-              <Slash size={13} />
+              <Slash size={15} />
             </button>
             <AgentCommandPalette
               agentName={
@@ -926,13 +933,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
             icon={ImageIcon}
             onClick={handlePickImages}
             title={t('chat.input.uploadFile')}
-            size={{ blockSize: 28, size: 13 }}
+            size={{ blockSize: 30, size: 15 }}
             style={{
               borderRadius: 8,
-              border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
-              background: '#ffffff',
-              color: token.colorText,
-              boxShadow: COMPOSER_COLORS.toolButtonShadow,
+              border: 'none',
+              background: 'transparent',
+              color: token.colorTextSecondary,
             }}
           />
           <WorkspaceSelector

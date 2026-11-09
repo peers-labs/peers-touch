@@ -1,21 +1,18 @@
 import { useEffect, useState } from 'react';
-import { TerminalSquare } from 'lucide-react';
-import { theme } from 'antd';
-import { useTranslation } from 'react-i18next';
 
 import { api } from '../../../../services/desktop_api';
 import { useChatStore } from '../../../../store/chat';
 import { useTerminalSessionsStore } from '../../../../store/terminalSessions';
+import { useWorkbenchTabsStore } from '../../../../store/workbenchTabs';
 import { TerminalPanel } from './TerminalPanel';
 
-// TW-D5: viewer entry for device-held terminal sessions. Closing the panel
-// only unsubscribes; the worker keeps the process alive.
+// TW-D5: viewer panel for device-held terminal sessions, rendered as a tab
+// inside the unified WorkbenchPanel. Closing the tab only unsubscribes; the
+// worker keeps the process alive.
 export function TerminalDock() {
-  const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
-  const open = useTerminalSessionsStore((state) => state.open);
-  const setOpen = useTerminalSessionsStore((state) => state.setOpen);
+  const active = useWorkbenchTabsStore((state) => state.active === 'terminal');
   const initConversation = useTerminalSessionsStore((state) => state.initConversation);
+  const ensureAutoShell = useTerminalSessionsStore((state) => state.ensureAutoShell);
   const conversationId = useChatStore((state) => state.currentSessionKey);
   const [deviceId, setDeviceId] = useState('');
 
@@ -24,41 +21,21 @@ export function TerminalDock() {
   }, []);
 
   useEffect(() => {
-    if (!open || !conversationId || !deviceId) return;
-    void initConversation(conversationId, deviceId).catch(() => undefined);
-  }, [open, conversationId, deviceId, initConversation]);
+    if (!active || !conversationId || !deviceId) return undefined;
+    let cancelled = false;
+    // Reconcile persisted sessions first; only when the conversation still
+    // has no terminal do we auto-open an interactive shell in its resolved
+    // workspace (project grant or private sandbox).
+    void (async () => {
+      await initConversation(conversationId, deviceId).catch(() => undefined);
+      if (cancelled) return;
+      await ensureAutoShell(conversationId, deviceId).catch(() => undefined);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [active, conversationId, deviceId, ensureAutoShell, initConversation]);
 
-  if (!conversationId) return null;
-
-  return (
-    <>
-      <div
-        data-pt-terminal-dock
-        style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 2 }}
-      >
-        <button
-          type="button"
-          aria-label={t('chat.terminal.dock.title')}
-          title={t('chat.terminal.dock.title')}
-          data-pt-terminal-toggle
-          onClick={() => setOpen(!open)}
-          style={{
-            width: 30,
-            height: 30,
-            border: 0,
-            borderRadius: 8,
-            background: open ? token.colorPrimary : 'transparent',
-            color: open ? token.colorPrimaryText : token.colorTextSecondary,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <TerminalSquare size={16} strokeWidth={1.85} />
-        </button>
-      </div>
-      {open ? <TerminalPanel /> : null}
-    </>
-  );
+  if (!conversationId || !active) return null;
+  return <TerminalPanel />;
 }

@@ -8,6 +8,8 @@ use serde::Deserialize;
 use tauri::{AppHandle, State, Window};
 
 use crate::application::agent_terminal_session as session_rpc;
+use crate::application::desktop_executor_worker::workspace_grants;
+use crate::application::desktop_executor_worker::CapabilityWorkerSupervisor;
 use crate::application::session_resolver;
 use crate::application::terminal::{
     self, CreateTerminal, TerminalMeta, TerminalRead,
@@ -172,6 +174,7 @@ pub struct TerminalWorkspaceInput {
 pub fn terminal_default_workspace(
     input: TerminalWorkspaceInput,
     state: State<'_, Arc<AppState>>,
+    supervisor: State<'_, Arc<CapabilityWorkerSupervisor>>,
     window: Window,
 ) -> AppResult<serde_json::Value> {
     let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
@@ -182,12 +185,18 @@ pub fn terminal_default_workspace(
             None,
         );
     }
-    match crate::application::desktop_executor_worker::workspace_grants::provision_actor_workspace(
-        &actor_ptid,
-        input.device_id.trim(),
-    ) {
-        Ok(root) => AppResult::success(serde_json::json!({
-            "workspaceRoot": root.to_string_lossy(),
+    let device_id = input.device_id.trim();
+    // A user-activated project directory takes precedence so an interactive
+    // shell opens inside the authorized workspace; otherwise the private
+    // sandbox is provisioned. Lookup errors degrade to the sandbox fallback.
+    let active_root = supervisor
+        .active_workspace(&actor_ptid, device_id)
+        .unwrap_or(None);
+    match workspace_grants::resolve_terminal_workspace(active_root, &actor_ptid, device_id) {
+        Ok(resolved) => AppResult::success(serde_json::json!({
+            "workspaceRoot": resolved.root.to_string_lossy(),
+            "kind": resolved.kind.as_str(),
+            "shell": workspace_grants::default_shell(),
         })),
         Err(error) => AppResult::fail(
             ErrorCode::InternalError,

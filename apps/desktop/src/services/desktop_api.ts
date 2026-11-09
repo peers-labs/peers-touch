@@ -10226,8 +10226,21 @@ export interface TerminalStationSession {
   sandboxRef?: string;
 }
 
-export async function terminalDefaultWorkspace(deviceId: string): Promise<{ workspaceRoot: string }> {
-  return invokeRustData<{ device_id: string }, { workspaceRoot: string }>(
+export interface TerminalDefaultWorkspace {
+  // Root the terminal cwd is pinned inside: either the user-authorized
+  // project directory or the actor's private sandbox.
+  workspaceRoot: string;
+  // 'project' when workspaceRoot is a user-activated directory,
+  // 'sandbox' for the opaque actor workspace.
+  kind: 'project' | 'sandbox';
+  // Platform interactive shell ($SHELL, bash fallback) for auto-start.
+  shell: string;
+}
+
+export async function terminalDefaultWorkspace(
+  deviceId: string,
+): Promise<TerminalDefaultWorkspace> {
+  return invokeRustData<{ device_id: string }, TerminalDefaultWorkspace>(
     'terminal_default_workspace',
     { device_id: deviceId },
   );
@@ -10414,7 +10427,7 @@ export async function terminalSandboxPtyWrite(sessionId: string, data: Uint8Arra
   const response = await invokeRustProto(
     'agent_sandbox_pty_write',
     SandboxPtyWriteResponseSchema,
-    { session_id: sessionId, data_b64: btoa(binary) },
+    { sessionId, dataB64: btoa(binary) },
   );
   return Number(response.bytesWritten ?? 0);
 }
@@ -10427,7 +10440,7 @@ export async function terminalSandboxPtyRead(
   const response = await invokeRustProto(
     'agent_sandbox_pty_read',
     SandboxPtyReadResponseSchema,
-    { session_id: sessionId, cursor, max_bytes: maxBytes },
+    { sessionId, cursor, maxBytes },
   );
   return {
     data: response.data ?? new Uint8Array(),
@@ -10447,7 +10460,7 @@ export async function terminalSandboxPtyResize(
   await invokeRustProto(
     'agent_sandbox_pty_resize',
     SandboxPtyResizeResponseSchema,
-    { session_id: sessionId, cols, rows },
+    { sessionId, cols, rows },
   );
 }
 
@@ -10455,7 +10468,7 @@ export async function terminalSandboxPtySignal(sessionId: string, signal: number
   await invokeRustProto(
     'agent_sandbox_pty_signal',
     SandboxPtySignalResponseSchema,
-    { session_id: sessionId, signal },
+    { sessionId, signal },
   );
 }
 

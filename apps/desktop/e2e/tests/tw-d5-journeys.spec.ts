@@ -2,15 +2,18 @@
  * TW-D5 exact-source Native Journey (tw-j05): device-held persistent
  * terminal sessions.
  *
- *  1. Start a long-running service inside the granted workspace.
+ *  0. Activate a local project directory; opening the tab auto-starts an
+ *     interactive shell pinned inside that root (zero-form entry).
+ *  1. Start a long-running service inside the same root via the custom form.
  *  2. Reach it over HTTP from the cell.
  *  3. Close the viewer; the process stays alive.
  *  4. Reopen and reattach: same session/pid, replayed output, URL action.
- *  5. Kill and read back exit status; remove metadata.
+ *  5. Kill and read back exit status; remove metadata, including the auto shell.
  *
  * The process is owned by the Rust worker; the Page is only a subscriber.
  */
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -155,20 +158,52 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
     })()`) as string;
   await poll(page, `!!document.querySelector('[data-pt-agent-composer-input]')`, 15_000);
 
+  // ── Bind the task to a LOCAL project directory ────────────────────────
+  // Terminal placement is derived from the task workspace: an activated
+  // local root drives the device worker; without one the auto shell would
+  // open in the remote Station sandbox. This gate proves the device path.
+  const localRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-d5-ws-'));
+  await page.evaluate(`(() => window.__TAURI_INTERNALS__.invoke('agent_workspace_add_directory', { input: { path: ${JSON.stringify(localRoot)} } }))()`);
+  await page.evaluate(`(() => window.__TAURI_INTERNALS__.invoke('agent_workspace_activate', { input: { locator: ${JSON.stringify(localRoot)} } }))()`);
+
   // ── Start a persistent service ────────────────────────────────────────
-  // Reopen the panel deliberately so it binds to the now-current persisted
-  // conversation rather than any panel state left by an earlier failed run.
+  // Tools open from the workbench "+" menu. Reset any terminal tab left by an
+  // earlier failed run, then open a fresh one bound to this conversation.
   if (await page.evaluate(`!!document.querySelector('[data-pt-terminal-panel-title]')`)) {
-    await page.click('[data-pt-terminal-toggle]');
+    await page.click('[data-pt-workbench-close="terminal"]');
     await poll(page, `!document.querySelector('[data-pt-terminal-panel-title]')`, 10_000);
   }
-  await page.click('[data-pt-terminal-toggle]');
+  await page.click('[data-pt-workbench-add-toggle]');
+  await poll(page, `!!document.querySelector('[data-pt-workbench-add="terminal"]')`, 5_000);
+  await page.click('[data-pt-workbench-add="terminal"]');
   await poll(page, `!!document.querySelector('[data-pt-terminal-panel-title]')`, 10_000);
-  await poll(page, `!!document.querySelector('[data-pt-terminal-command]')`, 15_000);
+
+  // ── Zero-form entry: opening the tab auto-starts an interactive shell ──
+  // With a local project active the auto shell lands inside that exact root.
+  const autoShellId = await poll(
+    page,
+    `(() => {
+      const row = document.querySelector('[data-pt-terminal-session][data-pt-terminal-status="running"]');
+      return row ? row.getAttribute('data-pt-terminal-session') : null;
+    })()`,
+    30_000,
+  ) as string;
+  await poll(
+    page,
+    `(() => {
+      const root = document.querySelector('[data-pt-terminal-placement-root]')?.textContent || '';
+      const cwd = document.querySelector('[data-pt-terminal-cwd]')?.textContent || '';
+      return root.includes(${JSON.stringify(localRoot)}) && cwd.includes(${JSON.stringify(localRoot)}) ? cwd : null;
+    })()`,
+    15_000,
+  );
   await sleep(500);
   const port = 18_000 + (Date.now() % 900);
   const marker = `d5${Date.now().toString(36).slice(-6)}`;
   const url = `http://127.0.0.1:${port}/`;
+  // Custom commands live behind the collapsed advanced entry.
+  await page.click('[data-pt-terminal-custom-toggle]');
+  await poll(page, `!!document.querySelector('[data-pt-terminal-command]')`, 10_000);
   await setValue(page, '[data-pt-terminal-command]', 'sh');
   await setValue(
     page,
@@ -178,11 +213,14 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
   await page.click('[data-pt-terminal-start]');
 
   // ── Running session with a live pid ───────────────────────────────────
+  // The auto shell already occupies one row; select the newly started sh
+  // service row explicitly instead of whichever row happens to be first.
   const sessionId = await poll(
     page,
     `(() => {
-      const row = document.querySelector('[data-pt-terminal-session][data-pt-terminal-status="running"]');
-      return row ? row.getAttribute('data-pt-terminal-session') : null;
+      const rows = Array.from(document.querySelectorAll('[data-pt-terminal-session][data-pt-terminal-status="running"]'));
+      const next = rows.find((row) => row.getAttribute('data-pt-terminal-session') !== ${JSON.stringify(autoShellId)});
+      return next ? next.getAttribute('data-pt-terminal-session') : null;
     })()`,
     30_000,
   ) as string;
@@ -232,7 +270,9 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
   expect(dockerExec(`curl -s -o /dev/null -w '%{http_code}' --max-time 3 ${url}`)).toBe('200');
 
   // ── Reattach: same session, same pid, replayed history ────────────────
-  await page.click('[data-pt-terminal-toggle]');
+  await page.click('[data-pt-workbench-add-toggle]');
+  await poll(page, `!!document.querySelector('[data-pt-workbench-add="terminal"]')`, 5_000);
+  await page.click('[data-pt-workbench-add="terminal"]');
   await poll(page, `!!document.querySelector('[data-pt-terminal-panel-title]')`, 10_000);
   const rowStatus = await poll(
     page,
@@ -290,7 +330,8 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
   expect(dbStatus).toBe('killed');
   expect(Number(dbPid)).toBeGreaterThan(0);
   expect(Number(dbOutputBytes)).toBeGreaterThan(0);
-  expect(dbCwd).toContain('/agent-workspaces/');
+  // Device PTY is pinned inside the activated local project root.
+  expect(dbCwd.startsWith(localRoot)).toBe(true);
   const conversationBound = await psql(
     `SELECT count(*) FROM agent_terminal_sessions s
        JOIN agent_conversations c ON c.id = s.conversation_id
@@ -308,10 +349,38 @@ test('files and commands stay alive when the viewer closes', async ({ tauriPage:
   const removed = await psql(`SELECT count(*) FROM agent_terminal_sessions WHERE id='${sessionId}'`);
   expect(removed).toBe('0');
 
+  // ── Clean up the auto-started shell so the cell keeps no stray PTY ─────
+  await page.click(`[data-pt-terminal-kill="${autoShellId}"]`);
+  await poll(
+    page,
+    `(() => {
+      const row = document.querySelector('[data-pt-terminal-session="${autoShellId}"]');
+      return row && row.getAttribute('data-pt-terminal-status') === 'killed' ? true : null;
+    })()`,
+    20_000,
+  );
+  await page.click(`[data-pt-terminal-remove="${autoShellId}"]`);
+  await poll(
+    page,
+    `!document.querySelector('[data-pt-terminal-session="${autoShellId}"]')`,
+    10_000,
+  );
+  const autoRemoved = await psql(
+    `SELECT count(*) FROM agent_terminal_sessions WHERE id='${autoShellId}'`,
+  );
+  expect(autoRemoved).toBe('0');
+
+  // ── Restore the task workspace to the remote-sandbox default ──────────
+  await page.evaluate(`(() => window.__TAURI_INTERNALS__.invoke('agent_workspace_activate', { input: { locator: null } }))()`);
+  await page.evaluate(`(() => window.__TAURI_INTERNALS__.invoke('agent_workspace_remove', { input: { locator: ${JSON.stringify(localRoot)} } }))()`);
+  fs.rmSync(localRoot, { recursive: true, force: true });
+
   writeEvidence('tw-d5-journey', {
     marker,
     port,
     sessionId,
+    autoShellId,
+    localRoot,
     pid: pidBefore,
     httpStatus,
     dbRow,

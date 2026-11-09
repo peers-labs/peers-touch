@@ -20,11 +20,13 @@ import {
   ArrowLeft,
   BookOpen,
   BotOff,
+  ChevronRight,
   Image as ImageIcon,
   Plug,
   Plus,
   Trash2,
   Upload,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -659,6 +661,7 @@ function ProfileEditor({ agent, onBack }: { agent: Agent; onBack?: () => void })
               key={key}
               type="button"
               role="tab"
+              data-pt-agent-profile-section={key}
               aria-selected={activeSection === key}
               tabIndex={activeSection === key ? 0 : -1}
               onClick={() => setSection(key)}
@@ -744,6 +747,7 @@ function ProfileEditor({ agent, onBack }: { agent: Agent; onBack?: () => void })
             onBind={bindExtension}
             onRemove={removeExtension}
             onToggle={mutateExtension}
+            onOpenAtelier={() => useAgentStore.getState().setAgentSurface(agent.name, 'atelier')}
           />
         )}
       </div>
@@ -841,6 +845,7 @@ function ExtensionsPanel({
   onBind,
   onRemove,
   onToggle,
+  onOpenAtelier,
 }: {
   agentId: string;
   bindings: AgentCapabilityBinding[];
@@ -849,6 +854,7 @@ function ExtensionsPanel({
   onBind: (manifest: CapabilityManifest) => Promise<void>;
   onRemove: (extension: BoundExtension) => Promise<void>;
   onToggle: (extension: BoundExtension, enabled: boolean) => Promise<void>;
+  onOpenAtelier: () => void;
 }) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
@@ -878,6 +884,75 @@ function ExtensionsPanel({
 
   return (
     <div style={{ marginTop: 12 }}>
+      <section
+        aria-label={t('agent.atelier.title')}
+        style={{
+          padding: '12px 0 16px',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        <button
+          type="button"
+          data-pt-agent-atelier-entry
+          onClick={onOpenAtelier}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            minHeight: 52,
+            padding: '8px 10px',
+            border: 0,
+            borderRadius: 7,
+            background: token.colorFillQuaternary,
+            color: token.colorText,
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          <span
+            style={{
+              width: 30,
+              height: 30,
+              flexShrink: 0,
+              borderRadius: 8,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: token.colorPrimaryBg,
+              color: token.colorPrimary,
+            }}
+          >
+            <Zap size={15} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span
+              style={{
+                display: 'block',
+                fontSize: 13,
+                fontWeight: 600,
+                color: token.colorText,
+              }}
+            >
+              {t('agent.atelier.title')}
+            </span>
+            <span
+              style={{
+                display: 'block',
+                marginTop: 2,
+                fontSize: 11,
+                color: token.colorTextTertiary,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('agent.atelier.entryHint')}
+            </span>
+          </span>
+          <ChevronRight size={15} color={token.colorTextTertiary} />
+        </button>
+      </section>
       {groups.map((group) => {
         const extensions = boundExtensions(manifests, bindings, group.kind);
         const Icon = group.icon;

@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react';
-import type React from 'react';
-import { Globe } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Input, theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 
@@ -9,20 +7,20 @@ import {
   resolveBrowserDeviceId,
   useBrowserSessionsStore,
 } from '../../../../store/browserSessions';
+import { useWorkbenchTabsStore } from '../../../../store/workbenchTabs';
+import { BrowserViewport } from './BrowserViewport';
 
 // TW-D6: entry for device-held browser sessions. The browser is a separate
 // real CDP host, never the HTML artifact reader. When no host binary is
 // verified on the device, the capability stays closed (fail-closed).
+// Rendered as a tab inside the unified WorkbenchPanel.
 export function BrowserDock() {
-  const { token } = theme.useToken();
-  const { t } = useTranslation('chat');
   const conversationId = useChatStore((state) => state.currentSessionKey);
-  const open = useBrowserSessionsStore((state) => state.open);
-  const setOpen = useBrowserSessionsStore((state) => state.setOpen);
+  const active = useWorkbenchTabsStore((state) => state.active);
   const initConversation = useBrowserSessionsStore((state) => state.initConversation);
   const probeHost = useBrowserSessionsStore((state) => state.probeHost);
   const hostChecked = useBrowserSessionsStore((state) => state.hostChecked);
-  const host = useBrowserSessionsStore((state) => state.host);
+  const hostAvailable = useBrowserSessionsStore((state) => state.host?.available === true);
   const [deviceId, setDeviceId] = useState('');
 
   useEffect(() => {
@@ -30,45 +28,21 @@ export function BrowserDock() {
   }, [probeHost]);
 
   useEffect(() => {
-    if (!hostChecked || !host?.available) return;
+    if (!hostChecked || !hostAvailable) return;
     void resolveBrowserDeviceId().then(setDeviceId).catch(() => setDeviceId(''));
-  }, [hostChecked, host]);
+  }, [hostChecked, hostAvailable]);
 
   useEffect(() => {
-    if (!open || !conversationId || !deviceId || conversationId.startsWith('draft:')) return;
+    if (active !== 'browser' || !conversationId || !deviceId || conversationId.startsWith('draft:')) return;
     void initConversation(conversationId, deviceId).catch(() => undefined);
-  }, [open, conversationId, deviceId, initConversation]);
+  }, [active, conversationId, deviceId, initConversation]);
 
   if (!hostChecked) return null;
-
-  return (
-    <>
-      <div
-        data-pt-browser-dock
-        style={{ position: 'absolute', right: 14, bottom: 58, zIndex: 2 }}
-      >
-        <Button
-          data-pt-browser-toggle
-          type={open ? 'primary' : 'default'}
-          shape="circle"
-          size="large"
-          icon={<Globe size={16} />}
-          onClick={() => setOpen(!open)}
-          title={t('chat.browser.dock.title')}
-          aria-label={t('chat.browser.dock.title')}
-          style={{
-            border: 0,
-            background: open ? token.colorPrimary : token.colorFillQuaternary,
-            color: open ? token.colorPrimaryText : token.colorTextSecondary,
-          }}
-        />
-      </div>
-      {open ? <BrowserPanel conversationId={conversationId ?? ''} deviceId={deviceId} /> : null}
-    </>
-  );
+  if (active !== 'browser') return null;
+  return <BrowserPanel conversationId={conversationId ?? ''} deviceId={deviceId} />;
 }
 
-function BrowserPanel({
+export function BrowserPanel({
   conversationId,
   deviceId,
 }: {
@@ -90,24 +64,44 @@ function BrowserPanel({
   const fill = useBrowserSessionsStore((state) => state.fill);
   const submit = useBrowserSessionsStore((state) => state.submit);
   const closeTab = useBrowserSessionsStore((state) => state.closeTab);
-  const screenshot = useBrowserSessionsStore((state) => state.screenshot);
   const takeover = useBrowserSessionsStore((state) => state.takeover);
   const release = useBrowserSessionsStore((state) => state.release);
   const snapshotByTab = useBrowserSessionsStore((state) => state.snapshotByTab);
+  const screenshotByTab = useBrowserSessionsStore((state) => state.screenshotByTab);
 
   const [startUrl, setStartUrl] = useState('https://example.com/');
   const [urlInput, setUrlInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [shot, setShot] = useState('');
+  const [busyAction, setBusyAction] = useState('');
   const [error, setError] = useState('');
   const [fillDraft, setFillDraft] = useState<Record<string, string>>({});
 
   const session = sessions.find((candidate) => candidate.sessionId === activeSessionId) ?? null;
   const tab = session?.tabs?.[0] ?? null;
   const snapshot = tab ? snapshotByTab[tab.tabId] : undefined;
+  const viewportShot = tab ? screenshotByTab[tab.tabId] ?? null : null;
+  const isDraft = conversationId.startsWith('draft:');
+
+  // Fallback frame pull: the create-time observe can finish before the page
+  // paints (or its state gets replaced by a later release/init), so whenever
+  // the panel holds an active tab without a frame, observe once on mount.
+  // The lease is part of the key: release invalidates frames, so regaining
+  // agent control pulls a fresh generation instead of leaving an empty view.
+  const attemptedFrameRef = useRef<string>('');
+  useEffect(() => {
+    if (!tab || session?.lease !== 'agent' || viewportShot) return;
+    const key = `${session?.sessionId}:${tab.tabId}:${session.lease}`;
+    if (attemptedFrameRef.current === key) return;
+    attemptedFrameRef.current = key;
+    const timer = setTimeout(() => {
+      void observe(conversationId, tab.tabId).catch(() => undefined);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [tab, session, viewportShot, observe, conversationId]);
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(true);
+    setBusyAction(label);
     setError('');
     try {
       await fn();
@@ -115,43 +109,60 @@ function BrowserPanel({
       logBrowserError(label, actionError, setError);
     } finally {
       setBusy(false);
+      setBusyAction('');
     }
   };
 
   return (
-    <Drawer
-      title={t('chat.browser.panel.title')}
-      onClose={() => useBrowserSessionsStore.getState().setOpen(false)}
-      token={token}
+    <div
+      data-pt-browser-panel
+      style={{
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        // Match the WorkbenchPanel tab header rhythm so the URL row aligns
+        // with the tab label instead of sitting flush on the panel edge.
+        padding: '8px 10px 10px',
+      }}
     >
       {!host?.available ? (
         <div data-pt-browser-unavailable style={{ color: token.colorTextSecondary, fontSize: 12 }}>
           {t('chat.browser.unavailable')}
         </div>
       ) : !session ? (
-        <div style={{ display: 'flex', gap: 4, width: '100%' }} data-pt-browser-start-form>
-          <Input
-            data-pt-browser-start-url
-            value={startUrl}
-            onChange={(event) => setStartUrl(event.target.value)}
-            placeholder="https://"
-          />
-          <Button
-            data-pt-browser-start
-            type="primary"
-            disabled={busy || conversationId.startsWith('draft:')}
-            onClick={() =>
-              run('start', async () => {
-                await createSession({ conversationId, deviceId, initialUrl: startUrl || undefined });
-              })
-            }
-          >
-            {t('chat.browser.start')}
-          </Button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} data-pt-browser-start-form>
+          <div style={{ display: 'flex', gap: 4, width: '100%' }}>
+            <Input
+              data-pt-browser-start-url
+              value={startUrl}
+              onChange={(event) => setStartUrl(event.target.value)}
+              placeholder="https://"
+              disabled={isDraft}
+            />
+            <Button
+              data-pt-browser-start
+              type="primary"
+              disabled={busy || isDraft}
+              onClick={() =>
+                run('start', async () => {
+                  await createSession({ conversationId, deviceId, initialUrl: startUrl || undefined });
+                })
+              }
+            >
+              {t('chat.browser.start')}
+            </Button>
+          </div>
+          {isDraft ? (
+            <div data-pt-browser-start-hint style={{ fontSize: 11, color: token.colorTextTertiary }}>
+              {t('chat.browser.start.draftHint')}
+            </div>
+          ) : null}
         </div>
       ) : (
         <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
             <div data-pt-browser-meta style={{ fontSize: 12, color: token.colorTextSecondary }}>
               <span data-pt-browser-status>{t(`chat.browser.status.${session.status}`)}</span>
               {' · '}
@@ -159,6 +170,16 @@ function BrowserPanel({
               {' · '}
               <span>{session.engine}</span>
             </div>
+            {(busyAction === 'takeover' || busyAction === 'release') && (
+              <div
+                data-pt-browser-lease-switching
+                style={{ fontSize: 12, color: token.colorPrimary }}
+              >
+                {busyAction === 'takeover'
+                  ? t('chat.browser.takeover.preparing')
+                  : t('chat.browser.release.preparing')}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 4, width: '100%' }}>
               <Button
                 onClick={() => run('back', () => history(conversationId, tab!.tabId, 'back'))}
@@ -214,7 +235,7 @@ function BrowserPanel({
                 disabled={busy || !tab || session.lease !== 'agent'}
                 onClick={() =>
                   run('screenshot', async () => {
-                    setShot(await screenshot(conversationId, tab!.tabId));
+                    await observe(conversationId, tab!.tabId);
                   })
                 }
               >
@@ -258,33 +279,64 @@ function BrowserPanel({
                 {t('chat.browser.remove')}
               </Button>
             </div>
-            {error ? (
-              <div data-pt-browser-error style={{ fontSize: 12, color: token.colorError }}>
-                {error}
+          </div>
+
+          {error ? (
+            <div
+              data-pt-browser-error
+              style={{ fontSize: 12, color: token.colorError, flexShrink: 0 }}
+            >
+              {error}
+            </div>
+          ) : null}
+
+          <BrowserViewport
+            snapshot={snapshot}
+            screenshot={viewportShot}
+            busy={busy}
+            agentLease={session.lease === 'agent'}
+            onHotspotClick={(ref) =>
+              run('click', () => click(conversationId, tab!.tabId, ref))
+            }
+          />
+
+          {snapshot ? (
+            <div
+              data-pt-browser-snapshot
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                flexShrink: 0,
+              }}
+            >
+              <div
+                data-pt-browser-snapshot-url
+                data-viewport={JSON.stringify(snapshot.viewport)}
+                style={{
+                  fontSize: 11,
+                  color: token.colorTextQuaternary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                g{snapshot.tab.generation} · {snapshot.tab.url}
               </div>
-            ) : null}
-            {snapshot ? (
-              <div data-pt-browser-snapshot style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div
-                  data-pt-browser-snapshot-url
-                  data-viewport={JSON.stringify(snapshot.viewport)}
-                  style={{ fontSize: 11, color: token.colorTextQuaternary }}
-                >
-                  g{snapshot.tab.generation} · {snapshot.tab.url}
-                </div>
-                <div
-                  data-pt-browser-elements
-                  style={{
-                    maxHeight: 200,
-                    overflowY: 'auto',
-                    border: `1px solid ${token.colorBorderSecondary}`,
-                    borderRadius: 6,
-                    padding: 6,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4,
-                  }}
-                >
+              <div
+                data-pt-browser-elements
+                style={{
+                  maxHeight: 140,
+                  overflowY: 'auto',
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  borderRadius: 6,
+                  padding: 6,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  background: token.colorBgContainer,
+                }}
+              >
                   {snapshot.elements.map((element) => (
                     <div
                       key={element.ref}
@@ -361,7 +413,7 @@ function BrowserPanel({
                   data-pt-browser-text
                   style={{
                     margin: 0,
-                    maxHeight: 160,
+                    maxHeight: 120,
                     overflow: 'auto',
                     fontSize: 11,
                     background: token.colorFillQuaternary,
@@ -373,20 +425,9 @@ function BrowserPanel({
                   {snapshot.text.slice(0, 4000)}
                 </pre>
               </div>
-            ) : (
-              <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                {t('chat.browser.observeHint')}
-              </div>
-            )}
-            {shot ? (
-              <img
-                data-pt-browser-screenshot-img
-                src={shot}
-                alt="browser screenshot"
-                style={{ maxWidth: '100%', borderRadius: 6, border: `1px solid ${token.colorBorderSecondary}` }}
-              />
             ) : null}
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flexShrink: 0 }}>
               {sessions.map((candidate) => (
                 <Button
                   key={candidate.sessionId}
@@ -400,10 +441,9 @@ function BrowserPanel({
                 </Button>
               ))}
             </div>
-          </div>
-        </>
-      )}
-    </Drawer>
+          </>
+        )}
+    </div>
   );
 }
 
@@ -430,51 +470,4 @@ function logBrowserError(
 ): void {
   const message = error instanceof Error ? error.message : String(error);
   setError(`${label}: ${message}`);
-}
-
-// Local layout primitives keep the dock dependency-light.
-function Drawer({
-  title,
-  onClose: _onClose,
-  token,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  token: { colorBgContainer: string; colorBorderSecondary: string; colorText: string };
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      data-pt-browser-panel
-      style={{
-        position: 'absolute',
-        right: 14,
-        bottom: 100,
-        zIndex: 3,
-        width: 520,
-        maxHeight: '70vh',
-        display: 'flex',
-        flexDirection: 'column',
-        background: token.colorBgContainer,
-        borderRadius: 10,
-        boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
-        border: `1px solid ${token.colorBorderSecondary}`,
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          padding: '10px 14px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          fontWeight: 600,
-          fontSize: 14,
-          color: token.colorText,
-        }}
-      >
-        {title}
-      </div>
-      <div style={{ padding: 12, overflowY: 'auto' }}>{children}</div>
-    </div>
-  );
 }

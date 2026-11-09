@@ -8582,12 +8582,28 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(context) => context,
                 Err(error) => return error,
             };
-            match crate::application::desktop_executor_worker::workspace_grants::provision_actor_workspace(
+            let app = match runtime.app_handle("terminal_default_workspace") {
+                Ok(app) => app,
+                Err(error) => return error,
+            };
+            let supervisor = app.state::<
+                Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>,
+            >();
+            let device_id = input.device_id.trim();
+            // Same precedence as the Tauri surface: an activated project wins,
+            // otherwise the actor's private sandbox is provisioned.
+            let active_root = supervisor
+                .active_workspace(&actor_ptid, device_id)
+                .unwrap_or(None);
+            match crate::application::desktop_executor_worker::workspace_grants::resolve_terminal_workspace(
+                active_root,
                 &actor_ptid,
-                input.device_id.trim(),
+                device_id,
             ) {
-                Ok(root) => to_json(AppResult::success(json!({
-                    "workspaceRoot": root.to_string_lossy(),
+                Ok(resolved) => to_json(AppResult::success(json!({
+                    "workspaceRoot": resolved.root.to_string_lossy(),
+                    "kind": resolved.kind.as_str(),
+                    "shell": crate::application::desktop_executor_worker::workspace_grants::default_shell(),
                 }))),
                 Err(error) => to_json(AppResult::<serde_json::Value>::fail(
                     ErrorCode::InternalError,

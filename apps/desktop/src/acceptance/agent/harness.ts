@@ -2054,7 +2054,7 @@ const foundationInvalidResourceReferenceScenarios =
 interface FoundationPermissionDeniedScenario {
   agentName: string;
   conversationId: string;
-  priorSurface: 'chat' | 'profile';
+  priorSurface: 'chat' | 'profile' | 'atelier';
   turnId: string;
 }
 
@@ -2098,7 +2098,7 @@ interface McpLifecycleDevelopmentState {
   assistantContentHash: string;
   expectedAssistantResponse: string;
   priorSelection: string;
-  priorSurface: 'chat' | 'profile';
+  priorSurface: 'chat' | 'profile' | 'atelier';
   operationIds: Record<string, string>;
 }
 
@@ -2174,7 +2174,7 @@ interface EvaluationDevelopmentState {
   cancelledRunId: string;
   childRunId: string;
   priorSelection: string;
-  priorSurface: 'chat' | 'profile';
+  priorSurface: 'chat' | 'profile' | 'atelier';
 }
 
 interface EvaluationDevelopmentInput {
@@ -2203,7 +2203,7 @@ interface EvaluationScenarioState {
   readinessSnapshotId: string;
   scenarioHandle: string;
   priorSelection: string;
-  priorSurface: 'chat' | 'profile';
+  priorSurface: 'chat' | 'profile' | 'atelier';
 }
 
 interface EvaluationScenarioInput {
@@ -30763,7 +30763,7 @@ interface CapabilityBindingCandidateFixture {
   providerId: string;
   modelId: string;
   priorSelection: string;
-  priorSurface: 'chat' | 'profile';
+  priorSurface: 'chat' | 'profile' | 'atelier';
 }
 
 async function prepareCapabilityBindingCandidate(
@@ -32410,7 +32410,7 @@ async function cleanupCliProviderPrimaryJourney(input: {
   agentId: string;
   conversationId: string;
   priorSelection: string;
-  priorSurface: 'chat' | 'profile';
+  priorSurface: 'chat' | 'profile' | 'atelier';
 }): Promise<Record<string, unknown>> {
   const failures: string[] = [];
   clearFoundationLocalConversationProjection(input.conversationId);
@@ -32541,7 +32541,7 @@ interface ExternalRuntimeLifecycleFixture {
   agentId: string;
   agentName: string;
   priorSelection: string;
-  priorSurface: 'chat' | 'profile';
+  priorSurface: 'chat' | 'profile' | 'atelier';
   primaryConversationId: string;
   secondaryConversationId: string;
   primarySessionId: string;
@@ -33258,7 +33258,7 @@ export function installAcceptanceHarness(): void {
       agentId: string;
       conversationId: string;
       priorSelection: string;
-      priorSurface: 'chat' | 'profile';
+      priorSurface: 'chat' | 'profile' | 'atelier';
     }) {
       return cleanupCliProviderPrimaryJourney(input);
     },

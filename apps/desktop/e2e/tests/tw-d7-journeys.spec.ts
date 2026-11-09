@@ -109,12 +109,13 @@ test('memory candidates are gated until a human confirms them', async ({ tauriPa
   );
   expect(preConfirm).toBe('0');
 
-  // Open the human review queue; both candidates are listed.
-  await page.evaluate(`(() => {
-    if (!document.querySelector('[data-pt-memory-panel]')) {
-      document.querySelector('[data-pt-memory-toggle]').click();
-    }
-  })()`);
+  // Open the human review queue from the workbench "+" menu; both candidates
+  // are listed.
+  if (!(await page.evaluate(`!!document.querySelector('[data-pt-memory-panel]')`))) {
+    await page.click('[data-pt-workbench-add-toggle]');
+    await poll(page, `!!document.querySelector('[data-pt-workbench-add="memory"]')`, 5_000);
+    await page.click('[data-pt-workbench-add="memory"]');
+  }
   await poll(page, `!!document.querySelector('[data-pt-memory-candidate="${confirmId}"]')`, 20_000);
   await poll(page, `!!document.querySelector('[data-pt-memory-candidate="${rejectId}"]')`, 20_000);
 

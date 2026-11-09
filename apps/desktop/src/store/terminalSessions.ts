@@ -2,7 +2,9 @@ import { create } from 'zustand';
 import { listen } from '@tauri-apps/api/event';
 
 import {
+  api,
   terminalDefaultWorkspace,
+  terminalResolveActiveSandboxes,
   terminalSandboxPtyRead,
   terminalSandboxPtyResize,
   terminalSandboxPtySignal,
@@ -23,6 +25,63 @@ import {
   type TerminalStationSession,
 } from '../services/desktop_api';
 import { log } from '../utils/logger';
+
+// One task resolves to exactly one execution surface:
+// - a user-activated local project directory drives the device worker, or
+// - the actor's Station-exclusive workspace sandbox (always allocated in a
+//   supported environment) drives the Station-proxied PTY.
+export type TerminalPlacementTarget =
+  | { placement: 'desktop' }
+  | { placement: 'sandbox'; sandboxRef: string };
+
+// Display + execution description of the task's single terminal surface.
+export interface TerminalPlacementInfo {
+  placement: 'desktop' | 'sandbox';
+  // Local project root or the sandbox mount target (e.g. /workspace).
+  root: string;
+  shellAccess: 'standard' | 'full';
+  sandboxRef: string;
+  sandboxState: string;
+  available: boolean;
+}
+
+// Sandbox containers run an interactive login bash; device shells use the
+// platform $SHELL resolved by the worker.
+const SANDBOX_SHELL_COMMAND = '/bin/bash';
+const SANDBOX_SHELL_ARGS = ['-i'];
+
+export async function describeTerminalPlacement(): Promise<TerminalPlacementInfo> {
+  const workspace = await api.agentWorkspaceList();
+  if (workspace.currentRoot) {
+    return {
+      placement: 'desktop',
+      root: workspace.currentRoot,
+      shellAccess: workspace.shellAccess,
+      sandboxRef: '',
+      sandboxState: '',
+      available: true,
+    };
+  }
+  const sandboxes = await terminalResolveActiveSandboxes();
+  const usable = sandboxes.find((item) => item.usable);
+  return {
+    placement: 'sandbox',
+    root: usable?.workspaceRoot ?? '',
+    shellAccess: 'standard',
+    sandboxRef: usable?.sandboxRef ?? '',
+    sandboxState: usable?.state ?? '',
+    available: Boolean(usable),
+  };
+}
+
+export async function resolveTerminalPlacement(): Promise<TerminalPlacementTarget> {
+  const info = await describeTerminalPlacement();
+  if (info.placement === 'desktop') return { placement: 'desktop' };
+  if (!info.available || !info.sandboxRef) {
+    throw new Error('no usable workspace sandbox is allocated for this actor');
+  }
+  return { placement: 'sandbox', sandboxRef: info.sandboxRef };
+}
 
 // TW-D5: terminal sessions are device-held worker resources. The store only
 // keeps subscription state (cursor + text) and merges Station metadata with
@@ -71,6 +130,25 @@ type StatusSubscriber = (meta: TerminalSessionMeta) => void;
 
 const STATION_RUNNING = 'TERMINAL_SESSION_STATUS_RUNNING';
 
+// Proto enum fields decode to numbers (0..4); normalize every Station row
+// to the enum-name strings the view logic compares against.
+const STATUS_ENUM_NAMES = [
+  'TERMINAL_SESSION_STATUS_UNSPECIFIED',
+  STATION_RUNNING,
+  'TERMINAL_SESSION_STATUS_EXITED',
+  'TERMINAL_SESSION_STATUS_KILLED',
+  'TERMINAL_SESSION_STATUS_UNKNOWN',
+] as const;
+
+function normalizeStationRows(rows: TerminalStationSession[]): TerminalStationSession[] {
+  return rows.map((row) => {
+    if (typeof row.status === 'number') {
+      return { ...row, status: STATUS_ENUM_NAMES[row.status] ?? STATUS_ENUM_NAMES[0] };
+    }
+    return row;
+  });
+}
+
 function stationStatusToView(status: string): TerminalStatus {
   switch (status) {
     case 'TERMINAL_SESSION_STATUS_EXITED':
@@ -112,7 +190,7 @@ export function mergeTerminalSessions(
   stationRows: TerminalStationSession[],
   liveMetas: Map<string, TerminalSessionMeta>,
 ): TerminalSessionView[] {
-  return stationRows.map((row) => {
+  return normalizeStationRows(stationRows).map((row) => {
     const live = liveMetas.get(row.sessionId);
     const placement = rowPlacement(row);
     // Sandbox sessions are live as long as the Station row says RUNNING (the
@@ -159,14 +237,14 @@ function decodeBase64Utf8(b64: string): string {
 // client generates the same ULID-shaped id.
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 function mintSessionId(): string {
-  let suffix = '';
-  const values = new Uint32Array(7);
+  // Station contract: terms- + exactly 26 Crockford Base32 chars.
+  const values = new Uint32Array(26);
   crypto.getRandomValues(values);
+  let suffix = '';
   for (const value of values) {
     suffix += CROCKFORD[value % 32];
-    if (suffix.length === 26) break;
   }
-  return `terms-${suffix.slice(0, 26)}`;
+  return `terms-${suffix}`;
 }
 
 // Start polling a sandbox PTY and fan new bytes out through the same output
@@ -279,6 +357,16 @@ interface TerminalSessionState {
   selectSession: (conversationId: string, sessionId: string) => void;
   initConversation: (conversationId: string, deviceId: string) => Promise<void>;
   createSession: (input: CreateTerminalInput, deviceId: string) => Promise<TerminalSessionView>;
+  // Opens the platform interactive shell inside the conversation's resolved
+  // workspace when no terminal exists yet (Trae-style zero-form entry).
+  ensureAutoShell: (conversationId: string, deviceId: string) => Promise<void>;
+  // Explicitly opens another shell (or a custom command) on the task's single
+  // resolved execution surface: local device or Station sandbox.
+  openShell: (
+    conversationId: string,
+    deviceId: string,
+    custom?: Pick<CreateTerminalInput, 'command' | 'args'>,
+  ) => Promise<void>;
   // WE-S6: create a Station-proxied terminal inside an allocated sandbox.
   createSandboxSession: (input: CreateTerminalInput, sandboxRef: string) => Promise<TerminalSessionView>;
   killSession: (conversationId: string, sessionId: string) => Promise<void>;
@@ -294,6 +382,10 @@ interface TerminalSessionState {
 
 const outputSubscribers = new Map<string, Set<OutputSubscriber>>();
 const statusSubscribers = new Map<string, Set<StatusSubscriber>>();
+
+// Conversations whose auto shell is currently being provisioned. Deduplicates
+// StrictMode remounts and rapid tab toggles so only one shell is created.
+const autoShellInFlight = new Set<string>();
 
 // WE-S6 poll handles for sandbox PTYs (no Rust worker/Tauri events).
 const sandboxPollers = new Map<string, ReturnType<typeof setInterval>>();
@@ -579,6 +671,61 @@ export const useTerminalSessionsStore = create<TerminalSessionState>()((set, get
     } finally {
       set({ creating: false });
     }
+  },
+
+  ensureAutoShell: async (conversationId, deviceId) => {
+    // StrictMode double-mounts fire two init chains; the global create flag
+    // closes the race window between in-flight completion and list refresh.
+    if (get().creating || autoShellInFlight.has(conversationId)) return;
+    // Only a genuinely live shell blocks auto-start. Stale Station rows left
+    // by a previous worker process downgrade to unknown on reconcile and must
+    // not prevent the new worker from provisioning a usable shell.
+    const hasLiveShell = (sessions: TerminalSessionView[] | undefined): boolean =>
+      (sessions ?? []).some(
+        (session) =>
+          session.status === 'running'
+          && (session.placement === 'sandbox' || session.live),
+      );
+    if (hasLiveShell(get().sessionsByConversation[conversationId])) return;
+    autoShellInFlight.add(conversationId);
+    try {
+      // Re-check after the await: initConversation or another mount may have
+      // proven a live session concurrently.
+      if (hasLiveShell(get().sessionsByConversation[conversationId])) return;
+      await get().openShell(conversationId, deviceId);
+    } catch (error) {
+      // The panel surfaces the placement failure explicitly.
+      log.warn('terminal', 'auto shell provision failed', {
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      autoShellInFlight.delete(conversationId);
+    }
+  },
+
+  openShell: async (conversationId, deviceId, custom) => {
+    const target = await resolveTerminalPlacement();
+    if (target.placement === 'sandbox') {
+      await get().createSandboxSession(
+        {
+          conversationId,
+          command: custom?.command?.trim() || SANDBOX_SHELL_COMMAND,
+          args: custom?.args ?? SANDBOX_SHELL_ARGS,
+        },
+        target.sandboxRef,
+      );
+      return;
+    }
+    const defaults = await terminalDefaultWorkspace(deviceId);
+    await get().createSession(
+      {
+        conversationId,
+        command: custom?.command?.trim() || defaults.shell,
+        args: custom?.args ?? [],
+      },
+      deviceId,
+    );
   },
 
   createSandboxSession: async (input, sandboxRef) => {

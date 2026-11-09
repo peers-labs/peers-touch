@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ActionIcon, Tag, toast } from '@lobehub/ui';
 import { Dropdown, Input, Modal, theme } from 'antd';
 import type { MenuProps } from 'antd';
 import {
+  ChevronDown,
   FolderGit2,
   FolderOpen,
   FolderSymlink,
   Loader2,
   RotateCcw,
   ShieldAlert,
+  ShieldCheck,
   X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +26,22 @@ import {
 } from '../../gen/proto/domain/agent/capability_pb';
 import { useAgentCapabilityStore } from '../../store/agentCapabilities';
 import { log } from '../../utils/logger';
+
+// Stable empty reference: zustand selectors must never return a fresh
+// literal array or useSyncExternalStore sees a changed snapshot every render
+// and React 19 loops with "Maximum update depth exceeded" (#185).
+const EMPTY_BINDINGS: AgentCapabilityBinding[] = [];
+
+// Trae-aligned full-access accent: a calm warning orange that reads as a
+// deliberate risk mode without the harsh error red.
+const FULL_ACCESS_COLOR = '#d46b08';
+const FULL_ACCESS_BG = '#fff4e6';
+const FULL_ACCESS_BORDER = '#ffd591';
+
+function basenameOf(locator: string): string {
+  const segments = locator.split('/');
+  return segments[segments.length - 1] || locator;
+}
 
 // Local capabilities that run inside the granted workspace and whose
 // approval policy Full Access relaxes (Station AUTO = no per-call prompt).
@@ -56,7 +74,7 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
   const manifests = useAgentCapabilityStore((s) => s.manifests);
   const upsertBinding = useAgentCapabilityStore((s) => s.upsertBinding);
   const bindings = useAgentCapabilityStore((s) =>
-    agentId ? s.bindingsByAgentId[agentId] ?? [] : [],
+    agentId ? (s.bindingsByAgentId[agentId] ?? EMPTY_BINDINGS) : EMPTY_BINDINGS,
   );
 
   const refresh = useCallback(async () => {
@@ -145,7 +163,7 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
       content: t('chat.input.workspace.fullAccessConfirmBody'),
       okText: t('chat.input.workspace.fullAccessConfirmOk'),
       okButtonProps: { danger: true },
-      cancelText: t('common.action.cancel'),
+      cancelText: t('common:common.action.cancel'),
       onOk: () => setFullAccess(true),
     });
   }, [setFullAccess, t]);
@@ -167,65 +185,133 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
   }, [run]);
 
   const fullAccess = state?.shellAccess === 'full';
+  const currentRoot = state?.currentRoot ?? null;
 
-  const currentLabel = useMemo(() => {
-    if (!state?.currentRoot) return t('chat.input.workspace.sandbox');
-    const segments = state.currentRoot.split('/');
-    return segments[segments.length - 1] || state.currentRoot;
-  }, [state, t]);
+  // Mode-first pill label, Trae style: permission mode dominates; a project
+  // folder (when granted) replaces the generic "Sandbox" text.
+  const pill = useMemo(() => {
+    if (fullAccess) {
+      return {
+        icon: <ShieldAlert size={14} />,
+        label: t('chat.input.workspace.fullShort'),
+        tone: 'full' as const,
+        title: currentRoot
+          ? `${t('chat.input.workspace.fullShort')} · ${currentRoot}`
+          : t('chat.input.workspace.fullShort'),
+      };
+    }
+    if (currentRoot) {
+      return {
+        icon: <FolderGit2 size={14} />,
+        label: basenameOf(currentRoot),
+        tone: 'project' as const,
+        title: currentRoot,
+      };
+    }
+    return {
+      icon: <FolderOpen size={14} />,
+      label: t('chat.input.workspace.sandboxShort'),
+      tone: 'sandbox' as const,
+      title: t('chat.input.workspace.title'),
+    };
+  }, [currentRoot, fullAccess, t]);
+
+  // Two-line menu row: bold title + quiet description, active tag on the right.
+  const menuRow = (
+    icon: ReactNode,
+    title: string,
+    description: string,
+    active: boolean,
+    accent?: boolean,
+  ) => (
+    <Flexbox horizontal align="center" justify="space-between" gap={8} style={{ padding: '2px 0' }}>
+      <Flexbox horizontal align="center" gap={10} style={{ minWidth: 0 }}>
+        <span
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 7,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            color: accent ? FULL_ACCESS_COLOR : token.colorTextSecondary,
+            background: accent ? FULL_ACCESS_BG : token.colorFillQuaternary,
+          }}
+        >
+          {icon}
+        </span>
+        <Flexbox style={{ minWidth: 0 }}>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              lineHeight: 1.35,
+              color: accent ? FULL_ACCESS_COLOR : token.colorText,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {title}
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              lineHeight: 1.35,
+              color: token.colorTextTertiary,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: 230,
+            }}
+          >
+            {description}
+          </span>
+        </Flexbox>
+      </Flexbox>
+      {active && <Tag color={accent ? 'orange' : 'success'} style={{ margin: 0, flexShrink: 0 }}>{t('chat.input.workspace.active')}</Tag>}
+    </Flexbox>
+  );
 
   const menuItems: MenuProps['items'] = useMemo(() => {
     const items: NonNullable<MenuProps['items']> = [
       {
-        key: 'sandbox',
-        icon: <FolderOpen size={14} />,
-        label: (
-          <Flexbox horizontal align="center" justify="space-between" gap={8}>
-            <span>{t('chat.input.workspace.sandbox')}</span>
-            {!state?.currentRoot && <Tag color="success">{t('chat.input.workspace.active')}</Tag>}
-          </Flexbox>
-        ),
-        onClick: () => activate(null),
-      },
-      { type: 'divider' },
-      {
-        key: 'access-header',
+        key: 'directory-header',
         type: 'group' as const,
-        label: t('chat.input.workspace.accessGroup'),
+        label: t('chat.input.workspace.directoryGroup'),
         children: [
           {
-            key: 'access-standard',
-            icon: <FolderOpen size={14} />,
-            label: (
-              <Flexbox horizontal align="center" justify="space-between" gap={8}>
-                <span>{t('chat.input.workspace.accessStandard')}</span>
-                {!fullAccess && <Tag color="success">{t('chat.input.workspace.active')}</Tag>}
-              </Flexbox>
+            key: 'sandbox',
+            label: menuRow(
+              <FolderOpen size={14} />,
+              t('chat.input.workspace.sandboxShort'),
+              t('chat.input.workspace.sandboxDesc'),
+              !currentRoot,
             ),
-            onClick: () => { if (fullAccess) void setFullAccess(false); },
+            onClick: () => activate(null),
           },
+          ...(currentRoot
+            ? [{
+                key: 'current-project',
+                label: menuRow(
+                  <FolderGit2 size={14} />,
+                  basenameOf(currentRoot),
+                  currentRoot,
+                  true,
+                ),
+                onClick: () => undefined,
+              }]
+            : []),
           {
-            key: 'access-full',
-            icon: <ShieldAlert size={14} />,
-            danger: true,
-            label: (
-              <Flexbox horizontal align="center" justify="space-between" gap={8}>
-                <span>{t('chat.input.workspace.accessFull')}</span>
-                {fullAccess && <Tag color="error">{t('chat.input.workspace.active')}</Tag>}
-              </Flexbox>
-            ),
-            onClick: () => { if (!fullAccess) requestFullAccess(); },
+            key: 'choose',
+            icon: <FolderSymlink size={14} />,
+            label: t('chat.input.workspace.chooseFolder'),
+            onClick: () => void pickFolder(),
           },
         ],
       },
-      {
-        key: 'choose',
-        icon: <FolderSymlink size={14} />,
-        label: t('chat.input.workspace.chooseFolder'),
-        onClick: () => void pickFolder(),
-      },
     ];
-    const choices = state?.choices ?? [];
+
+    const choices = (state?.choices ?? []).filter((c) => c.locator !== currentRoot);
     if (choices.length > 0) {
       items.push({
         key: 'recent-header',
@@ -233,14 +319,12 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
         label: t('chat.input.workspace.recentProjects'),
         children: choices.map((choice) => ({
           key: `choice-${choice.locator}`,
-          icon: choice.worktreeBase
-            ? <FolderGit2 size={14} />
-            : <FolderOpen size={14} />,
           label: (
             <Flexbox horizontal align="center" justify="space-between" gap={8}>
               <Flexbox style={{ minWidth: 0 }} gap={0}>
                 <span
                   style={{
+                    fontSize: 13,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
@@ -291,19 +375,47 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
         })),
       });
     }
-    if (state?.currentRoot) {
-      items.push(
-        { type: 'divider' },
-        {
-          key: 'restore',
-          icon: <RotateCcw size={14} />,
-          label: t('chat.input.workspace.restore'),
-          onClick: () => activate(null),
-        },
-      );
+
+    if (currentRoot) {
+      items.push({ type: 'divider' });
+      items.push({
+        key: 'restore',
+        icon: <RotateCcw size={14} />,
+        label: t('chat.input.workspace.restore'),
+        onClick: () => activate(null),
+      });
     }
+
+    items.push({
+      key: 'permissions-header',
+      type: 'group' as const,
+      label: t('chat.input.workspace.permissionsGroup'),
+      children: [
+        {
+          key: 'access-standard',
+          label: menuRow(
+            <ShieldCheck size={14} />,
+            t('chat.input.workspace.standardShort'),
+            t('chat.input.workspace.standardDesc'),
+            !fullAccess,
+          ),
+          onClick: () => { if (fullAccess) void setFullAccess(false); },
+        },
+        {
+          key: 'access-full',
+          label: menuRow(
+            <ShieldAlert size={14} />,
+            t('chat.input.workspace.fullShort'),
+            t('chat.input.workspace.fullDesc'),
+            fullAccess,
+            true,
+          ),
+          onClick: () => { if (!fullAccess) requestFullAccess(); },
+        },
+      ],
+    });
     return items;
-  }, [activate, fullAccess, pickFolder, removeChoice, requestFullAccess, setFullAccess, state, t, token]);
+  }, [activate, currentRoot, fullAccess, menuRow, pickFolder, removeChoice, requestFullAccess, setFullAccess, state, t, token]);
 
   return (
     <>
@@ -317,7 +429,7 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
           setOpen(next);
           if (next) void refresh();
         }}
-        overlayStyle={{ borderRadius: 12, maxWidth: 360 }}
+        overlayStyle={{ borderRadius: 12, width: 320, maxWidth: 'calc(100vw - 32px)' }}
       >
         <button
           data-pt-agent-workspace-selector
@@ -325,25 +437,49 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label={t('chat.input.workspace.title')}
-          title={state?.currentRoot ?? t('chat.input.workspace.title')}
+          title={pill.title}
           style={{
-            height: 28,
-            border: `1px solid ${state?.currentRoot || fullAccess ? token.colorPrimary : '#ececec'}`,
-            background: state?.currentRoot || fullAccess ? token.colorPrimaryBg : '#ffffff',
-            color: state?.currentRoot || fullAccess ? token.colorPrimary : token.colorTextSecondary,
+            height: 30,
+            border: '1px solid transparent',
+            borderRadius: 8,
+            background: 'transparent',
+            color: token.colorTextSecondary,
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 4,
-            fontSize: 12,
-            borderRadius: 8,
-            padding: '0 8px',
+            gap: 5,
+            fontSize: 13,
+            fontWeight: 500,
+            padding: '0 6px 0 8px',
             cursor: 'pointer',
-            maxWidth: 200,
+            maxWidth: 220,
+            ...(pill.tone === 'full'
+              ? {
+                  color: FULL_ACCESS_COLOR,
+                  background: FULL_ACCESS_BG,
+                  borderColor: FULL_ACCESS_BORDER,
+                }
+              : pill.tone === 'project'
+                ? {
+                    color: token.colorPrimary,
+                    background: token.colorPrimaryBg,
+                    borderColor: token.colorPrimaryBorder,
+                  }
+                : {}),
+          }}
+          onMouseEnter={(event) => {
+            if (pill.tone === 'sandbox') {
+              event.currentTarget.style.background = token.colorFillTertiary;
+            }
+          }}
+          onMouseLeave={(event) => {
+            if (pill.tone === 'sandbox') {
+              event.currentTarget.style.background = 'transparent';
+            }
           }}
         >
           {loading
-            ? <Loader2 size={13} style={{ flexShrink: 0 }} />
-            : <FolderGit2 size={13} style={{ flexShrink: 0 }} />}
+            ? <Loader2 size={14} style={{ flexShrink: 0, animation: 'spin 1s linear infinite' }} />
+            : <span style={{ display: 'inline-flex', flexShrink: 0 }}>{pill.icon}</span>}
           <span
             style={{
               overflow: 'hidden',
@@ -351,23 +487,17 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
               whiteSpace: 'nowrap',
             }}
           >
-            {currentLabel}
+            {pill.label}
           </span>
-          {fullAccess && (
-            <ShieldAlert
-              size={12}
-              color={token.colorError}
-              style={{ flexShrink: 0 }}
-              aria-label={t('chat.input.workspace.accessFull')}
-            />
-          )}
+          <ChevronDown size={12} style={{ flexShrink: 0, opacity: 0.65 }} />
         </button>
       </Dropdown>
+      {worktreeBase !== null && (
       <Modal
-        open={worktreeBase !== null}
+        open
         title={t('chat.input.workspace.createWorktree')}
         okText={t('chat.input.workspace.createWorktreeConfirm')}
-        cancelText={t('common.action.cancel')}
+        cancelText={t('common:common.action.cancel')}
         onOk={() => {
           const base = worktreeBase;
           const name = worktreeName.trim();
@@ -412,6 +542,7 @@ export function WorkspaceSelector({ agentId, agentVersion }: WorkspaceSelectorPr
           </span>
         </Flexbox>
       </Modal>
+      )}
     </>
   );
 }

@@ -160,13 +160,13 @@ test('agent observes, hands control over and re-observes a real browser', async 
   expect(dockerExec(`curl -s -o /dev/null -w '%{http_code}' --max-time 3 ${url}`)).toBe('200');
 
   // ── Start the browser session from the dock ──────────────────────────
-  // Dock open-state is global and persists across reruns in one app process;
-  // open the panel deterministically instead of blindly toggling it shut.
-  await page.evaluate(`(() => {
-    if (!document.querySelector('[data-pt-browser-panel]')) {
-      document.querySelector('[data-pt-browser-toggle]').click();
-    }
-  })()`);
+  // Tools open from the workbench "+" menu (no composer shortcuts); open the
+  // browser tab deterministically unless its panel is already mounted.
+  if (!(await page.evaluate(`!!document.querySelector('[data-pt-browser-panel]')`))) {
+    await page.click('[data-pt-workbench-add-toggle]');
+    await poll(page, `!!document.querySelector('[data-pt-workbench-add="browser"]')`, 5_000);
+    await page.click('[data-pt-workbench-add="browser"]');
+  }
   await poll(page, `!!document.querySelector('[data-pt-browser-start-form]')`, 10_000);
   // Host availability is verified on the real device binary.
   expect(await page.evaluate(`!!document.querySelector('[data-pt-browser-unavailable]')`)).toBe(false);
