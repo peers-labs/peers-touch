@@ -102,12 +102,12 @@ describe('Settings functional surface contract', () => {
     expect(pageSource).not.toContain("t('mobile.auth.comingSoon')");
     expect(pageSource).toContain('updateCurrentUserProfile');
     expect(pageSource).toContain('profile={controller.draftProfile}');
-    expect(sectionsSource).toContain("onPatch({ displayName: event.target.value })");
-    expect(sectionsSource).toContain("onPatch({ note: event.target.value })");
-    expect(sectionsSource).toContain("onPatch({ avatar: event.target.value })");
-    expect(sectionsSource).toContain("onPatch({ header: event.target.value })");
-    expect(sectionsSource).toContain("onPatch({ region: event.target.value })");
-    expect(sectionsSource).toContain("onPatch({ timezone: event.target.value })");
+    expect(sectionsSource).toContain("onPatch({ displayName: value })");
+    expect(sectionsSource).toContain("onPatch({ note: value })");
+    expect(sectionsSource).toContain("onPatch({ avatar: value })");
+    expect(sectionsSource).toContain("onPatch({ header: value })");
+    expect(sectionsSource).toContain("onPatch({ region: value })");
+    expect(sectionsSource).toContain("onPatch({ timezone: value })");
     expect(controllerSource).toContain(
       'defaultVisibility: profile.defaultVisibility',
     );

@@ -8,38 +8,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationClearBatchResult } from '@peers-touch/client-chat-core';
 import {
-  Avatar,
-  Button,
-  Card,
+  Button as PButton,
   Checkbox,
-  Empty,
-  Input,
-  InputNumber,
+  Empty as PEmpty,
+  Icon,
+  IconButton,
+  NumberField,
   Select,
   Switch,
   Tag,
-  Typography,
-} from 'antd';
-import {
-  Ban,
-  Bell,
-  CheckSquare2,
-  Globe,
-  HardDrive,
-  Lock,
-  Palette,
-  RefreshCw,
-  RotateCcw,
-  Server,
-  Shield,
-  Trash2,
-  User,
-  X,
-} from 'lucide-react';
+  Text,
+  TextArea,
+  TextField,
+} from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
+import type { MobileLanguage } from '../../runtimes/languageRuntime';
 import { ChatRetentionPreset } from '../../gen/proto/domain/chat/storage_pb';
 import { MobileNotice } from '../../components/MobileNotice';
+import { MobileAvatar } from '../../components/MobileAvatar';
 import type { MobileStationRouteCandidate } from '../../features/station/stationRegistry';
 import type {
   DevicePermission,
@@ -61,7 +48,13 @@ import {
   useMobileChatStorageProjection,
 } from '../../runtimes/chatStorageRuntime';
 
-const { Text } = Typography;
+const PERMISSION_STATUS_TONES: Record<DevicePermission['status'], 'info' | 'success' | 'danger' | 'warning' | undefined> = {
+  not_determined: 'info',
+  granted: 'success',
+  denied: 'danger',
+  restricted: 'warning',
+  unsupported: undefined,
+};
 
 // ---------------------------------------------------------------------------
 // Profile section
@@ -80,67 +73,70 @@ export function ProfileSection({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Card className="settings-section" variant="borderless">
+    <section className="settings-section">
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <User size={16} />
+        <Icon iconId="user" size={16} />
         <Text strong>{t('mobile.settings.section.profile')}</Text>
       </div>
       <div className="settings-row">
-        <Text type="secondary">{t('mobile.settings.profile.userId')}</Text>
+        <Text tone="secondary">{t('mobile.settings.profile.userId')}</Text>
         <Text>{actorIdentity || t('mobile.settings.notLoggedIn')}</Text>
       </div>
       <label className="settings-profile-field">
-        <Text type="secondary">{t('mobile.settings.profile.displayName')}</Text>
-        <Input
+        <Text tone="secondary">{t('mobile.settings.profile.displayName')}</Text>
+        <TextField
           value={profile?.displayName ?? ''}
           disabled={disabled || !profile}
-          onChange={(event) => onPatch({ displayName: event.target.value })}
+          onValueChange={(value) => onPatch({ displayName: value })}
         />
       </label>
       <label className="settings-profile-field">
-        <Text type="secondary">{t('mobile.settings.profile.bio')}</Text>
-        <Input.TextArea
+        <Text tone="secondary">{t('mobile.settings.profile.bio')}</Text>
+        <TextArea
           value={profile?.note ?? ''}
           disabled={disabled || !profile}
-          autoSize={{ minRows: 2, maxRows: 5 }}
-          onChange={(event) => onPatch({ note: event.target.value })}
+          minimumRows={2}
+          maximumRows={5}
+          onValueChange={(value) => onPatch({ note: value })}
         />
       </label>
       <label className="settings-profile-field">
-        <Text type="secondary">{t('mobile.settings.profile.avatarUrl')}</Text>
-        <Input
+        <Text tone="secondary">{t('mobile.settings.profile.avatarUrl')}</Text>
+        <TextField
           value={profile?.avatar ?? ''}
           disabled={disabled || !profile}
           inputMode="url"
-          onChange={(event) => onPatch({ avatar: event.target.value })}
+          onValueChange={(value) => onPatch({ avatar: value })}
         />
       </label>
       <label className="settings-profile-field">
-        <Text type="secondary">{t('mobile.settings.profile.headerUrl')}</Text>
-        <Input
+        <Text tone="secondary">{t('mobile.settings.profile.headerUrl')}</Text>
+        <TextField
           value={profile?.header ?? ''}
           disabled={disabled || !profile}
           inputMode="url"
-          onChange={(event) => onPatch({ header: event.target.value })}
+          onValueChange={(value) => onPatch({ header: value })}
         />
       </label>
       <label className="settings-profile-field">
-        <Text type="secondary">{t('mobile.settings.profile.region')}</Text>
-        <Input
+        <Text tone="secondary">{t('mobile.settings.profile.region')}</Text>
+        <TextField
           value={profile?.region ?? ''}
           disabled={disabled || !profile}
-          onChange={(event) => onPatch({ region: event.target.value })}
+          onValueChange={(value) => onPatch({ region: value })}
         />
       </label>
       <label className="settings-profile-field">
-        <Text type="secondary">{t('mobile.settings.profile.timezone')}</Text>
-        <Input
+        <Text tone="secondary">{t('mobile.settings.profile.timezone')}</Text>
+        <TextField
           value={profile?.timezone ?? ''}
           disabled={disabled || !profile}
-          onChange={(event) => onPatch({ timezone: event.target.value })}
+          onValueChange={(value) => onPatch({ timezone: value })}
         />
       </label>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -205,9 +201,10 @@ export function NotificationPreferenceControls({
   ];
 
   return (
-    <Card className="settings-section" variant="borderless">
+    <section className="settings-section">
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <Bell size={16} />
+        <Icon iconId="bell" size={16} />
         <Text strong>{t('mobile.settings.section.notifications')}</Text>
       </div>
       {!permissionLoading
@@ -220,24 +217,33 @@ export function NotificationPreferenceControls({
           role="status"
         >
           <Text>{t('mobile.settings.permissions.hint')}</Text>
-          <Tag color={PERMISSION_STATUS_COLORS[permission.status]}>
+          <Tag tone={PERMISSION_STATUS_TONES[permission.status]}>
             {t(PERMISSION_STATUS_KEYS[permission.status])}
           </Tag>
           {permission.canRequest && onRequestPermission ? (
-            <Button size="small" onClick={() => void onRequestPermission()}>
+            <PButton
+              actionId="notification-enable"
+              emphasis="secondary"
+              density="compact"
+              onActivate={() => void onRequestPermission()}
+            >
               {t('common.action.enable')}
-            </Button>
+            </PButton>
           ) : null}
         </div>
       ) : null}
       {controller.loading ? (
-        <Text type="secondary">{t('mobile.settings.storage.calculating')}</Text>
+        <Text tone="secondary">{t('mobile.settings.storage.calculating')}</Text>
       ) : controller.unavailable ? (
         <>
-          <Text type="secondary">{t('mobile.launch.unavailable')}</Text>
-          <Button block onClick={() => void controller.reload()}>
+          <Text tone="secondary">{t('mobile.launch.unavailable')}</Text>
+          <PButton
+            actionId="notification-retry"
+            fullWidth
+            onActivate={() => void controller.reload()}
+          >
             {t('common.action.retry')}
-          </Button>
+          </PButton>
         </>
       ) : (
         <>
@@ -256,14 +262,15 @@ export function NotificationPreferenceControls({
                   disabled={controller.saveStatus === 'saving'}
                   data-notification-setting={field}
                   data-notification-value={value}
-                  onChange={(event) => controller.patch(field, event.target.checked)}
+                  onCheckedChange={(checked) => controller.patch(field, checked)}
                 />
               </div>
             );
           })}
         </>
       )}
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -315,19 +322,20 @@ export function PrivacySection({
   const { t } = useMobileI18n();
   const controlsDisabled = disabled || !profile;
   return (
-    <Card className="settings-section" variant="borderless">
+    <section className="settings-section">
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <Lock size={16} />
+        <Icon iconId="lock" size={16} />
         <Text strong>{t('mobile.settings.section.privacy')}</Text>
       </div>
       <div className="settings-row">
         <Text>{t('mobile.settings.privacy.discoverability')}</Text>
-        <Select
+        <Select<string>
           aria-label={t('mobile.settings.privacy.discoverability')}
           value={profile?.discoverability || undefined}
           disabled={controlsDisabled}
           data-privacy-setting="discoverability"
-          onChange={(value) => onPatch({ discoverability: value })}
+          onValueChange={(value) => onPatch({ discoverability: value as EditableProfileDraft['discoverability'] })}
           options={DISCOVERABILITY_OPTIONS.map(({ value, labelKey }) => ({
             value,
             label: t(labelKey),
@@ -337,12 +345,12 @@ export function PrivacySection({
       </div>
       <div className="settings-row">
         <Text>{t('mobile.settings.privacy.defaultVisibility')}</Text>
-        <Select
+        <Select<string>
           aria-label={t('mobile.settings.privacy.defaultVisibility')}
           value={profile?.defaultVisibility || undefined}
           disabled={controlsDisabled}
           data-privacy-setting="defaultVisibility"
-          onChange={(value) => onPatch({ defaultVisibility: value })}
+          onValueChange={(value) => onPatch({ defaultVisibility: value as string })}
           options={VISIBILITY_OPTIONS.map(({ value, labelKey }) => ({
             value,
             label: t(labelKey),
@@ -357,17 +365,17 @@ export function PrivacySection({
           checked={profile?.manuallyApprovesFollowers ?? false}
           disabled={controlsDisabled}
           data-privacy-setting="manuallyApprovesFollowers"
-          onChange={(checked) => onPatch({ manuallyApprovesFollowers: checked })}
+          onCheckedChange={(checked) => onPatch({ manuallyApprovesFollowers: checked })}
         />
       </div>
       <div className="settings-row">
         <Text>{t('mobile.settings.privacy.messagePermission')}</Text>
-        <Select
+        <Select<string>
           aria-label={t('mobile.settings.privacy.messagePermission')}
           value={profile?.messagePermission || undefined}
           disabled={controlsDisabled}
           data-privacy-setting="messagePermission"
-          onChange={(value) => onPatch({ messagePermission: value })}
+          onValueChange={(value) => onPatch({ messagePermission: value as string })}
           options={MESSAGE_PERMISSION_OPTIONS.map(({ value, labelKey }) => ({
             value,
             label: t(labelKey),
@@ -377,21 +385,20 @@ export function PrivacySection({
       </div>
       <div className="settings-row">
         <Text>{t('mobile.settings.privacy.autoExpire')}</Text>
-        <InputNumber
+        <NumberField
           aria-label={t('mobile.settings.privacy.autoExpire')}
           value={profile?.autoExpireDays ?? null}
-          min={0}
-          max={2_147_483_647}
           precision={0}
           disabled={controlsDisabled}
           data-privacy-setting="autoExpireDays"
-          onChange={(value) => {
+          onValueChange={(value) => {
             if (typeof value === 'number') onPatch({ autoExpireDays: value });
           }}
           style={{ width: 112 }}
         />
       </div>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -428,28 +435,33 @@ export function DevicePrefsSection({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Card className="settings-section" variant="borderless">
+    <section className="settings-section">
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <Palette size={16} />
+        <Icon iconId="palette" size={16} />
         <Text strong>{t('mobile.settings.section.devicePrefs')}</Text>
       </div>
       {loading ? (
-        <Text type="secondary">{t('mobile.settings.storage.calculating')}</Text>
+        <Text tone="secondary">{t('mobile.settings.storage.calculating')}</Text>
       ) : unavailable || !prefs ? (
         <>
-          <Text type="secondary">{t('mobile.settings.device.unavailable')}</Text>
-          <Button block onClick={() => void onRetry()}>
+          <Text tone="secondary">{t('mobile.settings.device.unavailable')}</Text>
+          <PButton
+            actionId="device-prefs-retry"
+            fullWidth
+            onActivate={() => void onRetry()}
+          >
             {t('common.action.retry')}
-          </Button>
+          </PButton>
         </>
       ) : (
         <>
           <div className="settings-row">
             <Text>{t('mobile.settings.device.theme')}</Text>
-            <Select
-              size="small"
+            <Select<Exclude<ThemeMode, 'dark'>>
+              density="compact"
               value={prefs.theme === 'dark' ? 'system' : prefs.theme}
-              onChange={(value) => onPatch({ theme: value })}
+              onValueChange={(value) => onPatch({ theme: value as Exclude<ThemeMode, 'dark'> })}
               options={THEME_OPTIONS.map(({ value, labelKey }) => ({
                 value,
                 label: t(labelKey),
@@ -459,10 +471,10 @@ export function DevicePrefsSection({
           </div>
           <div className="settings-row">
             <Text>{t('mobile.settings.device.fontSize')}</Text>
-            <Select
-              size="small"
+            <Select<FontSizePreset>
+              density="compact"
               value={prefs.fontSize}
-              onChange={(value) => onPatch({ fontSize: value })}
+              onValueChange={(value) => onPatch({ fontSize: value as FontSizePreset })}
               options={FONT_SIZE_OPTIONS.map(({ value, labelKey }) => ({
                 value,
                 label: t(labelKey),
@@ -473,18 +485,18 @@ export function DevicePrefsSection({
           <div className="settings-row">
             <Text>{t('mobile.settings.device.compactMode')}</Text>
             <Switch
-              size="small"
               checked={prefs.compactMode}
-              onChange={(checked) => onPatch({ compactMode: checked })}
+              onCheckedChange={(checked) => onPatch({ compactMode: checked })}
             />
           </div>
           <div className="settings-row">
             <Text>{t('mobile.settings.device.mediaAutoDownload')}</Text>
-            <Text type="secondary">{t('mobile.launch.unavailable')}</Text>
+            <Text tone="secondary">{t('mobile.launch.unavailable')}</Text>
           </div>
         </>
       )}
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -503,19 +515,19 @@ export function LanguageSection() {
     retryLanguage,
   } = useMobileI18n();
   return (
-    <Card className="settings-section" variant="borderless">
+    <section className="settings-section">
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <Globe size={16} />
+        <Icon iconId="globe" size={16} />
         <Text strong>{t('mobile.settings.section.language')}</Text>
       </div>
       <div className="settings-row">
         <Text>{t('mobile.settings.section.language')}</Text>
-        <Select
-          size="small"
+        <Select<string>
+          density="compact"
           value={language}
-          loading={languageStatus === 'saving'}
           disabled={languageStatus === 'saving'}
-          onChange={(value) => void setLanguage(value)}
+          onValueChange={(value) => void setLanguage(value as MobileLanguage)}
           options={languages.map((option) => ({
             value: option.code,
             label: option.nativeName,
@@ -525,15 +537,21 @@ export function LanguageSection() {
       </div>
       {languageStatus === 'failed' ? (
         <div className="settings-row" role="alert">
-          <Text type="danger">
+          <Text tone="danger">
             {t(languageError ?? 'mobile.settings.language.saveFailed')}
           </Text>
-          <Button size="small" onClick={() => void retryLanguage()}>
+          <PButton
+            actionId="language-retry"
+            emphasis="secondary"
+            density="compact"
+            onActivate={() => void retryLanguage()}
+          >
             {t('common.action.retry')}
-          </Button>
+          </PButton>
         </div>
       ) : null}
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -697,28 +715,31 @@ export function StorageSection({
   };
 
   return (
-    <Card
+    <section
       className="settings-section"
-      variant="borderless"
       data-chat-storage-surface
       data-product-surface={storageProductSurface}
     >
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <HardDrive size={16} />
+        <Icon iconId="hard-drive" size={16} />
         <Text strong>{t('mobile.settings.section.storage')}</Text>
-        <Button
-          size="small"
-          type="text"
+        <PButton
+          emphasis="quiet"
+          density="compact"
+          actionId="chat-storage-batch-manage"
           data-chat-storage-batch-manage
-          icon={batchMode ? <X size={14} /> : <CheckSquare2 size={14} />}
-          disabled={batchRunning || !snapshot || snapshot.conversations.length === 0}
-          onClick={toggleBatchMode}
-          style={{ marginLeft: 'auto' }}
+          className="settings-header-action"
+          leading={<Icon iconId={batchMode ? 'close' : 'square-check'} size={14} />}
+          availability={batchRunning || !snapshot || snapshot.conversations.length === 0
+            ? { kind: 'disabled', reason: t('mobile.settings.storage.batchManage') }
+            : undefined}
+          onActivate={toggleBatchMode}
         >
           {batchMode
             ? t('mobile.settings.storage.batchDone')
             : t('mobile.settings.storage.batchManage')}
-        </Button>
+        </PButton>
       </div>
       {snapshot ? (
         <>
@@ -743,34 +764,36 @@ export function StorageSection({
               data-chat-storage-category={String(key)}
               data-chat-storage-category-bytes={String(value)}
             >
-              <Text type="secondary">
+              <Text tone="secondary">
                 {t(`mobile.settings.storage.${String(key)}`)}
               </Text>
               <Text>{formatBytes(value as bigint)}</Text>
             </div>
           ))}
           <div className="settings-row">
-            <Text type="secondary">
+            <Text tone="secondary">
               {new Date(Number(snapshot.measuredAtUnixMs)).toLocaleString()}
             </Text>
             {projection.stale || snapshot.issues.length > 0 ? (
-              <Tag color="warning">{t('mobile.settings.storage.stale')}</Tag>
+              <Tag tone="warning">{t('mobile.settings.storage.stale')}</Tag>
             ) : null}
-            <Button
-              aria-label={t('mobile.settings.storage.retry')}
+            <IconButton
+              actionId="chat-storage-refresh"
+              iconId="rotate-ccw"
+              iconSize={14}
+              label={t('mobile.settings.storage.retry')}
               data-chat-storage-refresh
-              icon={<RefreshCw size={14} />}
-              loading={projection.status === 'measuring'}
-              onClick={() => void mobileChatStorageProjectionRuntime.refresh()}
+              execution={projection.status === 'measuring' ? 'pending' : 'idle'}
+              onActivate={() => void mobileChatStorageProjectionRuntime.refresh()}
             />
           </div>
-          <Input.Search
-            allowClear
+          <TextField
+            clearable
             aria-label={t('mobile.settings.storage.search')}
             data-chat-storage-search
             placeholder={t('mobile.settings.storage.search')}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onValueChange={setQuery}
           />
           {batchMode ? (
             <div className="settings-dirty-actions" data-chat-storage-batch-actions>
@@ -780,11 +803,11 @@ export function StorageSection({
                   disabled={batchRunning || conversations.length === 0}
                   indeterminate={!allVisibleSelected && someVisibleSelected}
                   data-chat-storage-batch-select-all
-                  onChange={(event) => toggleVisibleConversations(event.target.checked)}
+                  onCheckedChange={(checked) => toggleVisibleConversations(checked)}
                 >
                   {t('mobile.settings.storage.batchSelectAll')}
                 </Checkbox>
-                <Text type="secondary" data-chat-storage-batch-selection>
+                <Text tone="secondary" data-chat-storage-batch-selection>
                   {t('mobile.settings.storage.batchSelection', {
                     bytes: formatBytes(selectedReclaimableBytes),
                     count: selectedConversations.length,
@@ -806,43 +829,51 @@ export function StorageSection({
                     data-chat-storage-batch-selected-count={String(selectedConversations.length)}
                     data-chat-storage-batch-scope="current-device"
                   >
-                    <Button
-                      block
-                      disabled={batchRunning}
-                      onClick={() => setBatchConfirmationRevision(null)}
+                    <PButton
+                      fullWidth
+                      emphasis="secondary"
+                      actionId="chat-storage-batch-cancel"
+                      availability={batchRunning
+                        ? { kind: 'disabled', reason: t('mobile.settings.storage.batchCancel') }
+                        : undefined}
+                      onActivate={() => setBatchConfirmationRevision(null)}
                     >
                       {t('mobile.settings.storage.batchCancel')}
-                    </Button>
-                    <Button
-                      block
-                      danger
-                      type="primary"
+                    </PButton>
+                    <PButton
+                      fullWidth
+                      tone="danger"
+                      emphasis="primary"
+                      actionId="chat-storage-batch-confirm-apply"
                       data-chat-storage-batch-confirm-apply
-                      icon={<Trash2 size={14} />}
-                      loading={batchRunning}
-                      onClick={() => void clearSelectedConversations()}
+                      leading={<Icon iconId="delete" size={14} />}
+                      execution={batchRunning ? 'pending' : 'idle'}
+                      onActivate={() => void clearSelectedConversations()}
                     >
                       {t('mobile.settings.storage.batchConfirmAction')}
-                    </Button>
+                    </PButton>
                   </div>
                 </>
               ) : (
-                <Button
-                  block
-                  danger
+                <PButton
+                  fullWidth
+                  tone="danger"
+                  actionId="chat-storage-batch-clear"
                   data-chat-storage-batch-clear
-                  icon={<Trash2 size={14} />}
-                  disabled={batchRunning || selectedConversations.length === 0}
-                  onClick={() => setBatchConfirmationRevision(snapshot.revision)}
+                  leading={<Icon iconId="delete" size={14} />}
+                  availability={batchRunning || selectedConversations.length === 0
+                    ? { kind: 'disabled', reason: t('mobile.settings.storage.batchClearSelected') }
+                    : undefined}
+                  onActivate={() => setBatchConfirmationRevision(snapshot.revision)}
                 >
                   {t('mobile.settings.storage.batchClearSelected')}
-                </Button>
+                </PButton>
               )}
             </div>
           ) : null}
           {batchRunning ? (
             <Text
-              type="secondary"
+              tone="secondary"
               role="status"
               data-chat-storage-batch-progress
               data-chat-storage-batch-completed={String(batchProgress.completedCount)}
@@ -881,14 +912,18 @@ export function StorageSection({
                   total: batchResult.requestedIds.length,
                 })}
               </MobileNotice>
-              <Button
-                block
+              <PButton
+                fullWidth
+                emphasis="secondary"
+                actionId="chat-storage-batch-retry"
                 data-chat-storage-batch-retry
-                disabled={batchRunning}
-                onClick={() => setBatchConfirmationRevision(snapshot.revision)}
+                availability={batchRunning
+                  ? { kind: 'disabled', reason: t('mobile.settings.storage.batchRetry') }
+                  : undefined}
+                onActivate={() => setBatchConfirmationRevision(snapshot.revision)}
               >
                 {t('mobile.settings.storage.batchRetry')}
-              </Button>
+              </PButton>
             </div>
           ) : null}
           <div className="settings-storage-conversations">
@@ -912,16 +947,16 @@ export function StorageSection({
                     checked={selectedConversationIds.has(usage.conversationId)}
                     disabled={batchRunning}
                     data-chat-storage-conversation-select={usage.conversationId}
-                    onChange={(event) => {
-                      toggleConversation(usage.conversationId, event.target.checked);
+                    onCheckedChange={(checked) => {
+                      toggleConversation(usage.conversationId, checked);
                     }}
                   />
                 ) : null}
                 <div className="settings-storage-conversation-label">
-                  <Text strong ellipsis>
+                  <Text strong truncate>
                     {usage.conversationName || usage.conversationId}
                   </Text>
-                  <Text type="secondary">
+                  <Text tone="secondary">
                     {usage.conversationKind === 2
                       ? t('mobile.settings.storage.group')
                       : t('mobile.settings.storage.direct')}
@@ -931,23 +966,25 @@ export function StorageSection({
               </div>
             ))}
             {conversations.length === 0 ? (
-              <Text type="secondary">{t('mobile.settings.storage.empty')}</Text>
+              <Text tone="secondary">{t('mobile.settings.storage.empty')}</Text>
             ) : null}
           </div>
         </>
       ) : (
         <div className="settings-row" role={projection.status === 'unavailable' ? 'alert' : 'status'}>
-          <Text type="secondary">
+          <Text tone="secondary">
             {projection.status === 'unavailable'
               ? t('mobile.settings.storage.unavailable')
               : t('mobile.settings.storage.calculating')}
           </Text>
-          <Button
-            aria-label={t('mobile.settings.storage.retry')}
+          <IconButton
+            actionId="chat-storage-refresh-unavailable"
+            iconId="rotate-ccw"
+            iconSize={14}
+            label={t('mobile.settings.storage.retry')}
             data-chat-storage-refresh
-            icon={<RefreshCw size={14} />}
-            loading={projection.status === 'measuring'}
-            onClick={() => void mobileChatStorageProjectionRuntime.refresh()}
+            execution={projection.status === 'measuring' ? 'pending' : 'idle'}
+            onActivate={() => void mobileChatStorageProjectionRuntime.refresh()}
           />
         </div>
       )}
@@ -955,7 +992,7 @@ export function StorageSection({
         <div className="settings-row">
           <div className="setting-copy">
             <Text strong>{t('mobile.settings.storage.retentionTitle')}</Text>
-            <Text type="secondary">
+            <Text tone="secondary">
               {t('mobile.settings.storage.retentionDescription')}
             </Text>
           </div>
@@ -963,7 +1000,7 @@ export function StorageSection({
             aria-label={t('mobile.settings.storage.retentionTitle')}
             data-chat-storage-retention-select
             disabled={!snapshot || retentionSaving || chatCleanupRunning}
-            loading={retentionSaving}
+            pending={retentionSaving}
             value={retentionPreset}
             options={[
               {
@@ -999,8 +1036,8 @@ export function StorageSection({
                 value: ChatRetentionPreset.CHAT_RETENTION_PRESET_30_DAYS,
               },
             ]}
-            onChange={(value) => {
-              void mobileChatStorageProjectionRuntime.setRetention(value);
+            onValueChange={(value) => {
+              void mobileChatStorageProjectionRuntime.setRetention(value as ChatRetentionPreset);
             }}
           />
         </div>
@@ -1031,19 +1068,22 @@ export function StorageSection({
         <div className="settings-row">
           <div className="setting-copy">
             <Text strong>{t('mobile.settings.storage.clearChatCacheTitle')}</Text>
-            <Text type="secondary">
+            <Text tone="secondary">
               {t('mobile.settings.storage.clearChatCacheDescription')}
             </Text>
           </div>
           {!confirmingChatCacheClear ? (
-            <Button
+            <PButton
+              actionId="chat-storage-clear-cache"
               data-chat-storage-clear-cache
-              icon={<Trash2 size={14} />}
-              disabled={chatCleanupRunning || !snapshot}
-              onClick={() => setChatCacheConfirmationRevision(snapshot?.revision ?? null)}
+              leading={<Icon iconId="delete" size={14} />}
+              availability={chatCleanupRunning || !snapshot
+                ? { kind: 'disabled', reason: t('mobile.settings.storage.clearChatCacheAction') }
+                : undefined}
+              onActivate={() => setChatCacheConfirmationRevision(snapshot?.revision ?? null)}
             >
               {t('mobile.settings.storage.clearChatCacheAction')}
-            </Button>
+            </PButton>
           ) : null}
         </div>
         {confirmingChatCacheClear ? (
@@ -1052,28 +1092,33 @@ export function StorageSection({
               {t('mobile.settings.storage.clearChatCacheConfirm')}
             </MobileNotice>
             <div className="settings-station-actions" data-chat-storage-clear-confirm>
-              <Button
-                block
-                disabled={chatCleanupRunning}
-                onClick={() => setChatCacheConfirmationRevision(null)}
+              <PButton
+                fullWidth
+                emphasis="secondary"
+                actionId="chat-storage-clear-cancel"
+                availability={chatCleanupRunning
+                  ? { kind: 'disabled', reason: t('mobile.settings.storage.clearChatCacheCancel') }
+                  : undefined}
+                onActivate={() => setChatCacheConfirmationRevision(null)}
               >
                 {t('mobile.settings.storage.clearChatCacheCancel')}
-              </Button>
-              <Button
-                block
-                danger
-                type="primary"
+              </PButton>
+              <PButton
+                fullWidth
+                tone="danger"
+                emphasis="primary"
+                actionId="chat-storage-clear-confirm-apply"
                 data-chat-storage-clear-confirm-apply
-                icon={<Trash2 size={14} />}
-                loading={chatCleanupRunning}
-                onClick={() => {
+                leading={<Icon iconId="delete" size={14} />}
+                execution={chatCleanupRunning ? 'pending' : 'idle'}
+                onActivate={() => {
                   void mobileChatStorageProjectionRuntime.clearCache().then(() => {
                     setChatCacheConfirmationRevision(null);
                   });
                 }}
               >
                 {t('mobile.settings.storage.clearChatCacheConfirmAction')}
-              </Button>
+              </PButton>
             </div>
           </>
         ) : null}
@@ -1101,22 +1146,26 @@ export function StorageSection({
           </div>
         ) : null}
       </div>
-      <Button
-        block
+      <PButton
+        fullWidth
+        actionId="mobile-device-cache-clear"
         data-mobile-device-cache-clear
-        loading={status === 'clearing'}
-        disabled={status === 'clearing'}
-        onClick={() => void onClearCache()}
+        execution={status === 'clearing' ? 'pending' : 'idle'}
+        availability={status === 'clearing'
+          ? { kind: 'disabled', reason: t('mobile.settings.storage.clearDeviceCache') }
+          : undefined}
+        onActivate={() => void onClearCache()}
       >
         {t('mobile.settings.storage.clearDeviceCache')}
-      </Button>
+      </PButton>
       {status === 'cleared' ? (
-        <Text type="success">{t('mobile.settings.storage.deviceCacheCleared')}</Text>
+        <Text tone="success">{t('mobile.settings.storage.deviceCacheCleared')}</Text>
       ) : null}
       {status === 'error' ? (
-        <Text type="danger">{t('mobile.settings.storage.deviceCacheClearFailed')}</Text>
+        <Text tone="danger">{t('mobile.settings.storage.deviceCacheClearFailed')}</Text>
       ) : null}
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -1141,14 +1190,6 @@ const PERMISSION_LABEL_KEYS: Record<DevicePermission['kind'], string> = {
   microphone: 'mobile.settings.permissions.microphone',
   notifications: 'mobile.settings.section.notifications',
   storage: 'mobile.settings.section.storage',
-};
-
-const PERMISSION_STATUS_COLORS: Record<DevicePermission['status'], string> = {
-  not_determined: 'blue',
-  granted: 'green',
-  denied: 'red',
-  restricted: 'orange',
-  unsupported: 'default',
 };
 
 const PERMISSION_STATUS_KEYS: Record<DevicePermission['status'], string> = {
@@ -1179,50 +1220,57 @@ export function PermissionsSection({
       ? 'settings.permission-denied'
       : undefined;
   return (
-    <Card
+    <section
       className="settings-section"
-      variant="borderless"
       data-product-surface={productSurface}
     >
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <Shield size={16} />
+        <Icon iconId="shield" size={16} />
         <Text strong>{t('mobile.settings.section.permissions')}</Text>
       </div>
       {loading ? (
-        <Text type="secondary">{t('mobile.settings.storage.calculating')}</Text>
+        <Text tone="secondary">{t('mobile.settings.storage.calculating')}</Text>
       ) : unavailable ? (
         <>
-          <Text type="secondary">{t('mobile.launch.unavailable')}</Text>
-          <Button block onClick={() => void onRefresh()}>
+          <Text tone="secondary">{t('mobile.launch.unavailable')}</Text>
+          <PButton
+            fullWidth
+            actionId="permissions-retry"
+            onActivate={() => void onRefresh()}
+          >
             {t('common.action.retry')}
-          </Button>
+          </PButton>
         </>
       ) : (
         <>
           {permissions.length === 0 ? (
-            <Text type="secondary">{t('mobile.launch.unavailable')}</Text>
+            <Text tone="secondary">{t('mobile.launch.unavailable')}</Text>
           ) : permissions.map((permission) => (
             <div className="settings-row" key={permission.kind}>
               <Text>{t(PERMISSION_LABEL_KEYS[permission.kind])}</Text>
               <Tag
-                color={PERMISSION_STATUS_COLORS[permission.status]}
+                tone={PERMISSION_STATUS_TONES[permission.status]}
                 data-permission-status={permission.status}
               >
                 {t(PERMISSION_STATUS_KEYS[permission.status])}
               </Tag>
               {permission.canRequest && permission.status !== 'granted' ? (
-                <Button
-                  size="small"
-                  onClick={() => void onRequest(permission.kind)}
+                <PButton
+                  actionId={`permission-enable-${permission.kind}`}
+                  emphasis="secondary"
+                  density="compact"
+                  onActivate={() => void onRequest(permission.kind)}
                 >
                   {t('common.action.enable')}
-                </Button>
+                </PButton>
               ) : null}
             </div>
           ))}
         </>
       )}
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -1247,27 +1295,29 @@ export function BlockedUsersSection({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Card className="settings-section" variant="borderless">
+    <section className="settings-section">
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <Ban size={16} />
+        <Icon iconId="ban" size={16} />
         <Text strong>{t('mobile.settings.section.blocked')}</Text>
       </div>
       {status === 'loading' ? (
-        <Text type="secondary">{t('mobile.settings.storage.calculating')}</Text>
+        <Text tone="secondary">{t('mobile.settings.storage.calculating')}</Text>
       ) : status === 'unavailable' ? (
         <>
-          <Text type="secondary" role="alert">
+          <Text tone="secondary" role="alert">
             {t('mobile.launch.unavailable')}
           </Text>
-          <Button block onClick={() => void onRetry()}>
+          <PButton
+            fullWidth
+            actionId="blocked-users-retry"
+            onActivate={() => void onRetry()}
+          >
             {t('common.action.retry')}
-          </Button>
+          </PButton>
         </>
       ) : users.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t('mobile.settings.noBlockedUsers')}
-        />
+        <PEmpty description={t('mobile.settings.noBlockedUsers')} />
       ) : (
         users.map((item) => (
           <div
@@ -1275,33 +1325,42 @@ export function BlockedUsersSection({
             data-blocked-user={item.targetPtid}
             key={item.targetPtid}
           >
-            <Avatar src={item.avatar || undefined}>
+            <MobileAvatar
+              src={item.avatar}
+              identityKey={item.targetPtid}
+              name={item.displayName || t('mobile.contacts.unknownUser')}
+            >
               {(item.displayName || t('mobile.contacts.unknownUser')).slice(0, 1).toUpperCase()}
-            </Avatar>
+            </MobileAvatar>
             <div className="settings-station-copy settings-blocked-user-copy">
               <Text>{item.displayName || t('mobile.contacts.unknownUser')}</Text>
-              <Text copyable>{item.targetPtid}</Text>
+              <Text className="settings-blocked-user-ptid" copyValue={item.targetPtid}>{item.targetPtid}</Text>
               {item.homeStationPeerId ? (
-                <Text type="secondary">{item.homeStationPeerId}</Text>
+                <Text tone="secondary">{item.homeStationPeerId}</Text>
               ) : null}
             </div>
-            <Button
+            <PButton
+              actionId={`blocked-user-unblock-${item.targetPtid}`}
               className="settings-blocked-user-action"
-              size="small"
-              icon={<RotateCcw size={13} />}
-              loading={unblockingPtid === item.targetPtid}
-              disabled={unblockingPtid !== null}
-              onClick={() => void onUnblock(item.targetPtid)}
+              emphasis="secondary"
+              density="compact"
+              leading={<Icon iconId="rotate-ccw" size={13} />}
+              execution={unblockingPtid === item.targetPtid ? 'pending' : 'idle'}
+              availability={unblockingPtid !== null
+                ? { kind: 'disabled', reason: t('mobile.contacts.unblock') }
+                : undefined}
+              onActivate={() => void onUnblock(item.targetPtid)}
             >
               {t('mobile.contacts.unblock')}
-            </Button>
+            </PButton>
           </div>
         ))
       )}
       {errorKey ? (
-        <Text type="danger" role="alert">{t(errorKey)}</Text>
+        <Text tone="danger" role="alert">{t(errorKey)}</Text>
       ) : null}
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -1332,18 +1391,19 @@ export function StationSection({
 }) {
   const { t } = useMobileI18n();
   return (
-    <Card className="settings-section" variant="borderless">
+    <section className="settings-section">
+      <div className="settings-section-body">
       <div className="settings-section-header">
-        <Server size={16} />
+        <Icon iconId="server" size={16} />
         <Text strong>{t('mobile.settings.section.station')}</Text>
       </div>
       <div className="settings-station-header">
         <div className="settings-station-copy">
           <Text strong>{stationLabel}</Text>
-          <Text type="secondary" ellipsis>{stationUrl}</Text>
+          <Text tone="secondary" truncate>{stationUrl}</Text>
         </div>
         <Tag
-          color={identityVerified ? 'green' : 'default'}
+          tone={identityVerified ? 'success' : undefined}
           data-station-trust={identityVerified ? 'verified' : 'unverified'}
         >
           {identityVerified
@@ -1353,30 +1413,43 @@ export function StationSection({
       </div>
       <div className="settings-station-routes" role="group" aria-label={t('mobile.launch.route')}>
         {routes.map((route) => (
-          <Button
+          <PButton
             key={route.routeId}
-            size="small"
-            type={route.routeId === activeRouteId ? 'primary' : 'default'}
+            actionId={`station-route-${route.routeId}`}
+            emphasis={route.routeId === activeRouteId ? 'primary' : 'secondary'}
+            density="compact"
             aria-pressed={route.routeId === activeRouteId}
             data-station-route-id={route.routeId}
             data-station-route-type={route.routeType}
-            onClick={() => void onChangeRoute(route)}
+            onActivate={() => void onChangeRoute(route)}
           >
             {route.routeType === 'relay'
               ? t('mobile.launch.viaRelay')
               : t('mobile.launch.direct')}
-          </Button>
+          </PButton>
         ))}
       </div>
       <div className="settings-station-actions">
-        <Button block onClick={() => void onChangeStation()}>
+        <PButton
+          fullWidth
+          actionId="station-change"
+          emphasis="secondary"
+          onActivate={() => void onChangeStation()}
+        >
           {t('mobile.settings.station.changeStation')}
-        </Button>
-        <Button block danger loading={loggingOut} onClick={onLogout}>
+        </PButton>
+        <PButton
+          fullWidth
+          actionId="station-logout"
+          tone="danger"
+          execution={loggingOut ? 'pending' : 'idle'}
+          onActivate={onLogout}
+        >
           {loggingOut ? t('mobile.settings.station.loggingOut') : t('mobile.settings.logout')}
-        </Button>
+        </PButton>
       </div>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -1423,26 +1496,42 @@ export function DirtyBar({
     >
       {conflict && (
         <div className="settings-dirty-conflict">
-          <Text type="warning">{t('mobile.settings.dirty.conflict')}</Text>
-          <Button size="small" onClick={onReload}>{t('mobile.settings.dirty.reload')}</Button>
+          <Text tone="warning">{t('mobile.settings.dirty.conflict')}</Text>
+          <PButton
+            actionId="settings-dirty-reload"
+            emphasis="secondary"
+            density="compact"
+            onActivate={onReload}
+          >{t('mobile.settings.dirty.reload')}</PButton>
         </div>
       )}
       {saveStatus === 'saved' && !dirty && (
-        <Text type="success">{t('mobile.settings.dirty.saved')}</Text>
+        <Text tone="success">{t('mobile.settings.dirty.saved')}</Text>
       )}
       {saveError && saveStatus === 'error' && !conflict && (
-        <Text type="danger">{t(saveError)}</Text>
+        <Text tone="danger">{t(saveError)}</Text>
       )}
       {dirty && !conflict && (
         <div className="settings-dirty-actions">
-          <Text type="secondary">{t('mobile.settings.dirty.unsavedChanges')}</Text>
+          <Text tone="secondary">{t('mobile.settings.dirty.unsavedChanges')}</Text>
           <div className="settings-dirty-buttons">
-            <Button size="small" onClick={onDiscard}>
+            <PButton
+              actionId="settings-dirty-discard"
+              emphasis="secondary"
+              density="compact"
+              onActivate={onDiscard}
+            >
               {t('mobile.settings.dirty.discardChanges')}
-            </Button>
-            <Button size="small" type="primary" loading={saveStatus === 'saving'} onClick={onSave}>
+            </PButton>
+            <PButton
+              actionId="settings-dirty-save"
+              emphasis="primary"
+              density="compact"
+              execution={saveStatus === 'saving' ? 'pending' : 'idle'}
+              onActivate={onSave}
+            >
               {saveStatus === 'saving' ? t('mobile.settings.dirty.saving') : t('mobile.settings.dirty.saveChanges')}
-            </Button>
+            </PButton>
           </div>
         </div>
       )}
