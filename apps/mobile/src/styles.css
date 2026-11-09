@@ -389,7 +389,7 @@ select,
   margin-top: 2px;
 }
 
-.auth-gate-embedded .auth-actions .ant-btn {
+.auth-gate-embedded .auth-actions button {
   margin-left: 0 !important;
   width: 100%;
 }
@@ -901,7 +901,7 @@ select,
   min-width: 0;
 }
 
-.auth-session-notice-copy > .ant-typography {
+.auth-session-notice-copy > span {
   overflow: hidden;
   font-size: 13px;
   line-height: 1.35;
@@ -950,7 +950,7 @@ select,
   gap: 10px;
 }
 
-.auth-gate-recovery .ant-btn {
+.auth-gate-recovery button {
   height: 44px;
   border-radius: 12px;
 }
@@ -1031,7 +1031,7 @@ select,
   gap: 8px;
 }
 
-.auth-account-history > .ant-typography {
+.auth-account-history > span {
   font-size: 12px;
 }
 
@@ -1082,23 +1082,22 @@ select,
   font-size: 11px;
 }
 
-.auth-fields .ant-input,
-.auth-fields .ant-input-affix-wrapper {
+.auth-fields input {
   min-height: 44px;
   border-radius: 12px;
 }
 
-.auth-fields .ant-input-prefix {
-  color: rgba(15, 23, 42, 0.3);
+.auth-field-leading {
+  color: var(--pt-muted);
 }
 
-.auth-schema-field .ant-checkbox-wrapper {
+.auth-schema-field label {
   display: flex;
   align-items: center;
   min-height: 44px;
 }
 
-.auth-oauth-recovery .ant-btn {
+.auth-oauth-recovery button {
   min-height: 44px;
 }
 
@@ -1120,12 +1119,12 @@ select,
   justify-content: center;
 }
 
-.auth-actions .ant-btn {
+.auth-actions button {
   height: 44px;
   border-radius: 8px;
 }
 
-.auth-actions.single .ant-btn {
+.auth-actions.single button {
   width: auto;
   height: 44px;
   padding-inline: 10px;

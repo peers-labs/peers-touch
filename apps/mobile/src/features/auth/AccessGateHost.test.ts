@@ -60,7 +60,7 @@ describe('AccessGateHost schema gate surface', () => {
     expect(source).toContain('onSchemaSubmit(schemaValues)');
     expect(source).toContain('<Checkbox');
     expect(source).toContain('<Select');
-    expect(source).toContain('<InputNumber');
+    expect(source).toContain('<NumberField');
   });
 
   it('keeps the Station-authored Continue action primary', () => {
@@ -69,7 +69,8 @@ describe('AccessGateHost schema gate surface', () => {
     });
 
     expect(markup).toContain('mobile.launch.continue');
-    expect(markup).toContain('ant-btn-primary');
+    expect(markup).toContain('data-emphasis="primary"');
+    expect(markup).toContain('access-gate-schema-submit');
     expect(markup).not.toContain('auth-actions single');
   });
 });
@@ -174,13 +175,13 @@ describe('AccessGateHost attempt recovery', () => {
   it('delegates retry and Station change to async recovery owners', () => {
     expect(source).toContain('onRefresh: () => Promise<void>');
     expect(source).toContain('onBack: () => Promise<void>');
-    expect(source).toContain('onClick={() => void onRefresh()}');
-    expect(source).toContain('onClick={() => void onBack()}');
+    expect(source).toContain('onActivate={() => void onRefresh()}');
+    expect(source).toContain('onActivate={() => void onBack()}');
   });
 
   it('keeps the single Station-change action at the mobile touch minimum', () => {
     expect(styles).toMatch(
-      /\.auth-actions\.single \.ant-btn\s*\{[^}]*height:\s*44px;/s,
+      /\.auth-actions\.single button\s*\{[^}]*height:\s*44px;/s,
     );
   });
 });
@@ -252,7 +253,7 @@ describe('AccessGateHost shared Auth identity', () => {
     // Brand lives in the composed gate body; the standalone card wraps it.
     expect(source).toContain('const gateBody = (');
     expect(source).toContain('<section className="auth-gate-brand"');
-    expect(source).toContain('<Card className="auth-gate-card" variant="borderless">');
+    expect(source).toContain('<div className="auth-gate-card">');
     expect(source).toContain('{gateBody}');
     expect(source).toContain('className="auth-gate-brand-copy"');
   });
