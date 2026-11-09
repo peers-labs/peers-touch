@@ -544,10 +544,6 @@ select,
   .station-entry {
     min-height: 44px;
   }
-
-  .launch-actions .ant-btn {
-    height: 44px;
-  }
 }
 
 .mobile-language-switcher {
@@ -1181,18 +1177,6 @@ select,
   flex: 0 0 auto;
   flex-direction: column;
   gap: 10px;
-}
-
-.launch-actions .ant-btn {
-  min-height: 48px;
-  height: auto;
-  padding-block: 10px;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.35;
-  letter-spacing: 0;
-  white-space: normal;
 }
 
 .mobile-truncate {

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Spin } from 'antd';
-import { PencilLine, ScanLine } from 'lucide-react';
+import { Button, Icon, Spin } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
@@ -119,7 +118,7 @@ export function EntryScreen({
             title={t('mobile.deviceLink.scan')}
             onClick={onScan}
           >
-            <ScanLine size={19} aria-hidden="true" />
+            <Icon iconId="scan-line" size={19} aria-hidden="true" />
           </button>
         ) : null}
         <LanguageSwitcher />
@@ -169,7 +168,7 @@ export function EntryScreen({
               disabled={checking}
               onClick={() => setChanging(true)}
             >
-              <PencilLine size={14} aria-hidden="true" />
+              <Icon iconId="pen-line" size={14} aria-hidden="true" />
               {t('mobile.launch.changeStation')}
             </button>
           </div>
@@ -177,7 +176,7 @@ export function EntryScreen({
 
         {handshake && !gate?.decision ? (
           <div className="entry-handshake" role="status">
-            <Spin size="small" />
+            <Spin active size="small" />
             <span>{t('mobile.launch.validating')}</span>
           </div>
         ) : null}
@@ -202,13 +201,15 @@ export function EntryScreen({
             {!gate?.decision ? (
               <div className="launch-actions">
                 <Button
-                  block
-                  size="large"
-                  type="primary"
-                  loading={checking}
-                  disabled={!activeStation || !checkedUrls.includes(activeStation?.url ?? '')
-                    || verifyingUrls.includes(activeStation?.url ?? '')}
-                  onClick={onContinue}
+                  actionId="entry.continue"
+                  emphasis="primary"
+                  fullWidth
+                  execution={checking ? 'pending' : 'idle'}
+                  availability={!activeStation || !checkedUrls.includes(activeStation?.url ?? '')
+                    || verifyingUrls.includes(activeStation?.url ?? '')
+                    ? { kind: 'disabled', reason: t('mobile.launch.continue') }
+                    : undefined}
+                  onActivate={() => void onContinue()}
                 >
                   {t('mobile.launch.continue')}
                 </Button>

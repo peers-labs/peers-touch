@@ -158,7 +158,7 @@ function NotificationItem({
 
   return (
     <List.Item className={`notification-item ${unread ? 'unread' : ''}`} onClick={() => onOpen(notification)}>
-      <MobileAvatar className="notification-icon" src={requestDisplay?.avatar || actorProfile?.avatar} icon={<Icon size={16} />} />
+      <MobileAvatar className="notification-icon" src={requestDisplay?.avatar || actorProfile?.avatar} fallback={<Icon size={16} />} />
       <div className="notification-copy">
         <div className="notification-title-row">
           <Text strong={unread} ellipsis>{title}</Text>
