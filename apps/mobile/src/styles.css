@@ -2421,7 +2421,7 @@ select,
   background: rgba(248, 250, 252, 0.8);
 }
 
-.people-result-card > .ant-avatar {
+.people-result-card > .mobile-user-avatar {
   grid-area: avatar;
 }
 
@@ -2440,7 +2440,7 @@ select,
   min-width: 0;
 }
 
-.people-result-title .ant-tag {
+.people-result-title .people-result-verified {
   margin: 0;
   font-size: 10px;
   line-height: 16px;
@@ -2454,6 +2454,28 @@ select,
 .people-result-action {
   grid-area: action;
   justify-self: end;
+}
+
+.social-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.social-search-input {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+}
+
+.social-search-input > * {
+  width: 100%;
+}
+
+.social-search-leading {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pt-muted);
 }
 
 .contact-profile-card {

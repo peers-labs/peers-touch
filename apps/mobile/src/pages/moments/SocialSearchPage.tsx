@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Empty, Input, Radio, Spin, Tag, Typography } from 'antd';
-import { ArrowLeft, ChevronRight, ShieldCheck } from 'lucide-react';
+import {
+  Button,
+  Empty,
+  Icon,
+  RadioGroup,
+  Spin,
+  Tag,
+  Text,
+  TextField,
+} from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import type { MobileDetailRoute } from '../../app/navigation';
@@ -16,7 +24,6 @@ import { actorDisplayName } from '../../features/social/socialProjection';
 import { classifyPeopleSearchFeedback } from '../../features/social/contactInteractionState';
 import { useSocialStore } from '../../features/social/socialStore';
 
-const { Text } = Typography;
 const SEARCH_ROUTE_KEY = 'detail:social-search';
 const FEDERATED_HANDLE_RE = /^@?[a-zA-Z0-9._-]+(?:@[a-zA-Z0-9.-]+(?::\d+)?)?$/;
 
@@ -92,6 +99,14 @@ export function SocialSearchPage({
     await searchPeople(nextQuery, federationId);
   };
 
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    setSubmittedQuery('');
+    setMalformedHandle(false);
+    saveRouteQuery(SEARCH_ROUTE_KEY, value);
+    clearPeopleSearch();
+  };
+
   return (
     <div
       className="page-container mobile-detail-page social-detail-page"
@@ -104,7 +119,7 @@ export function SocialSearchPage({
           aria-label={t('common.action.back')}
           onClick={onBack}
         >
-          <ArrowLeft size={20} />
+          <Icon iconId="arrow-left" size={20} />
         </button>
         <h1 className="header-title compact">
           {t('mobile.social.search.title')}
@@ -112,25 +127,33 @@ export function SocialSearchPage({
       </header>
 
       <div className="mobile-detail-body">
-        <Input.Search
-          value={query}
-          data-acceptance-id="social-search-input"
-          data-focus-id="social-search-input"
-          placeholder={t('mobile.contacts.findPeoplePlaceholder')}
-          enterButton={t('common.action.search')}
-          loading={loading}
-          disabled={!federationId}
-          allowClear
-          onChange={(event) => {
-            const value = event.target.value;
-            setQuery(value);
-            setSubmittedQuery('');
-            setMalformedHandle(false);
-            saveRouteQuery(SEARCH_ROUTE_KEY, value);
-            clearPeopleSearch();
-          }}
-          onSearch={(value) => void runSearch(value)}
-        />
+        <div className="social-search-bar">
+          <span className="social-search-input">
+            <TextField
+              value={query}
+              data-acceptance-id="social-search-input"
+              data-focus-id="social-search-input"
+              leading={<Icon iconId="search" size={16} className="social-search-leading" />}
+              clearable
+              onClear={() => handleQueryChange('')}
+              placeholder={t('mobile.contacts.findPeoplePlaceholder')}
+              disabled={!federationId}
+              onEnter={() => void runSearch(query)}
+              onValueChange={handleQueryChange}
+            />
+          </span>
+          <Button
+            actionId="social-search-run"
+            emphasis="primary"
+            execution={loading ? 'pending' : 'idle'}
+            availability={!federationId
+              ? { kind: 'disabled', reason: t('mobile.contacts.noFederation') }
+              : undefined}
+            onActivate={() => void runSearch(query)}
+          >
+            {t('common.action.search')}
+          </Button>
+        </div>
 
         {federationsError ? (
           <MobileNotice tone="error">
@@ -141,26 +164,22 @@ export function SocialSearchPage({
         ) : (
           <fieldset>
             <legend>{t('mobile.contacts.federation')}</legend>
-            <Radio.Group
+            <RadioGroup<string>
+              label={t('mobile.contacts.federation')}
               value={federationId}
-              onChange={(event) => {
-                setSelectedFederationId(String(event.target.value));
+              options={federations.map((federation) => ({
+                label: federation.name || federation.federationId,
+                value: federation.federationId,
+              }))}
+              onValueChange={(value) => {
+                setSelectedFederationId(String(value));
                 clearPeopleSearch();
               }}
-            >
-              {federations.map((federation) => (
-                <Radio
-                  key={federation.federationId}
-                  value={federation.federationId}
-                >
-                  {federation.name || federation.federationId}
-                </Radio>
-              ))}
-            </Radio.Group>
+            />
           </fieldset>
         )}
 
-        <Spin spinning={loading && results.length === 0}>
+        <Spin active={loading && results.length === 0}>
           <div className="people-result-list" data-search-state={feedback}>
             {results.map((result) => (
               <button
@@ -190,29 +209,27 @@ export function SocialSearchPage({
                 />
                 <span className="people-result-copy">
                   <span className="people-result-title">
-                    <Text strong ellipsis>
+                    <Text strong truncate>
                       {actorDisplayName(result.displayName || result.username, result.ptid)
                         || t('mobile.contacts.unknownUser')}
                     </Text>
                     {result.federation ? (
-                      <Tag color="success" icon={<ShieldCheck size={11} />}>
+                      <Tag tone="success" className="people-result-verified"
+                        leading={<Icon iconId="shield-check" size={11} />}>
                         {t('mobile.contacts.verified')}
                       </Tag>
                     ) : null}
                   </span>
-                  <Text type="secondary" ellipsis>
+                  <Text tone="secondary" truncate>
                     {result.federation?.handle || result.ptid}
                   </Text>
                 </span>
-                <ChevronRight size={18} />
+                <Icon iconId="chevron-right" size={18} />
               </button>
             ))}
 
             {results.length === 0 && feedback !== 'loading' ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t(searchFeedbackKey(feedback))}
-              />
+              <Empty description={t(searchFeedbackKey(feedback))} />
             ) : null}
           </div>
         </Spin>
