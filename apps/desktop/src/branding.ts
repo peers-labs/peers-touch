@@ -1,18 +1,12 @@
-import desktopLogo from '../src-tauri/icons/icon.png';
-
 /**
  * 品牌资源统一配置
- * 所有品牌相关的静态资源、名称、主题色等都在这里统一管理
+ * 品牌名称、主题色等非矢量品牌配置在这里统一管理。品牌图形标识的唯一真源是
+ * components/common/BrandMark.tsx 的矢量 P-mark（与 macOS tray 资产同源）。
  */
 export const BRANDING = {
   /** 应用名称 */
   appName: 'Peers',
-  
-  /** 应用logo */
-  logos: {
-    desktop: desktopLogo,
-  },
-  
+
   /** 主题色配置（north-star：近墨动作色 + 松绿品牌强调，仅作单一真源） */
   colors: {
     primary: '#1a1d20',
