@@ -8,8 +8,6 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { theme, Typography } from 'antd';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { buildChatMessageSurfaceItems } from '@peers-touch/client-chat-core';
 
@@ -44,8 +42,6 @@ import {
   shouldAdjustChatMessageScrollPosition,
   shouldVirtualizeChatMessageTimeline,
 } from './chatMessageTimelinePolicy';
-
-const { Text } = Typography;
 
 interface ChatMessageTimelineProps {
   actionOverlayHostRef: React.RefObject<HTMLDivElement | null>;
@@ -96,37 +92,12 @@ function formatDateSeparator(date: Date, locale: string): string {
 }
 
 function DateSeparator({ date }: { date: Date }) {
-  const { token } = theme.useToken();
   const { i18n } = useTranslation();
 
   return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={10}
-      style={{
-        alignSelf: 'stretch',
-        margin: '8px 0 6px',
-        padding: '0 4px',
-      }}
-    >
-      <span style={{ flex: 1, height: 1, background: token.colorBorderSecondary }} />
-      <Text
-        type="secondary"
-        style={{
-          padding: '3px 10px',
-          borderRadius: 999,
-          background: token.colorFillQuaternary,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          color: token.colorTextTertiary,
-          fontSize: 11,
-          fontWeight: 500,
-        }}
-      >
-        {formatDateSeparator(date, i18n.language)}
-      </Text>
-      <span style={{ flex: 1, height: 1, background: token.colorBorderSecondary }} />
-    </Flexbox>
+    <div className="sc-msg-date" data-date-separator>
+      <span>{formatDateSeparator(date, i18n.language)}</span>
+    </div>
   );
 }
 

@@ -1,6 +1,5 @@
 import { type CSSProperties, useMemo } from 'react';
-import { MoreHorizontal } from 'lucide-react';
-import { Dropdown } from '@lobehub/ui';
+import { Button, IconButton, Menu } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 import { buildMessageActions, type MessageActionContext } from './actions';
 
@@ -17,57 +16,45 @@ export function MessageActionBar({ context, style }: MessageActionBarProps) {
   if (primary.length === 0 && visibleMenu.length === 0) return null;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 2, ...style }}>
+    <div className="sc-msg-actions-bar" data-message-actions style={style}>
       {primary.map((action) => (
-        <button
-          data-pt-message-action={action.key}
+        <Button
           key={action.key}
-          onClick={action.onClick}
-          disabled={action.disabled}
-          title={t(action.label)}
-          style={buttonStyle}
-        >
-          <action.icon size={14} />
-        </button>
+          actionId={`msg-action-${action.key}`}
+          data-pt-message-action={action.key}
+          emphasis="quiet"
+          density="compact"
+          leading={<action.icon size={14} />}
+          label={t(action.label)}
+          availability={action.disabled ? { kind: 'disabled', reason: t(action.label) } : undefined}
+          onActivate={action.onClick}
+        />
       ))}
       {visibleMenu.length > 0 && (
-        <Dropdown
-          menu={{
-            items: visibleMenu.map((action) => ({
-              key: action.key,
-              label: <span data-pt-message-action={action.key}>{t(action.label)}</span>,
-              icon: <action.icon size={14} />,
-              danger: action.danger,
-              disabled: action.disabled,
-              onClick: action.onClick,
-            })),
-          }}
-          trigger={['click']}
+        <Menu
+          placement="top"
+          onAction={(id) => visibleMenu.find((a) => a.key === id)?.onClick()}
+          actions={visibleMenu.map((action) => ({
+            id: action.key,
+            label: t(action.label),
+            leading: <action.icon size={14} />,
+            tone: action.danger ? 'danger' : undefined,
+            availability: action.disabled
+              ? { kind: 'disabled' as const, reason: '' }
+              : undefined,
+          }))}
         >
-          <button
+          <IconButton
+            actionId="msg-action-more"
             data-pt-message-actions-more
-            style={buttonStyle}
-            title={t('chat.message.action.more')}
-          >
-            <MoreHorizontal size={14} />
-          </button>
-        </Dropdown>
+            iconId="more-horizontal"
+            iconSize={14}
+            density="compact"
+            emphasis="quiet"
+            label={t('chat.message.action.more')}
+          />
+        </Menu>
       )}
     </div>
   );
 }
-
-const buttonStyle: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 28,
-  height: 28,
-  border: 'none',
-  borderRadius: 6,
-  background: 'transparent',
-  cursor: 'pointer',
-  color: 'inherit',
-  opacity: 0.6,
-  transition: 'opacity 0.15s, background 0.15s',
-};

@@ -14,7 +14,7 @@
  */
 import { useState } from 'react';
 import { Bell, Eye, KeyRound, Lock, Upload } from 'lucide-react';
-import { Button, CopyButton, Dialog, ListRow, ListSection, Select, Segmented, Switch, TextArea } from '@peers-touch/ui';
+import { Button, CopyButton, Dialog, ListRow, ListSection, Select, Segmented, Switch, Tag, TextArea, TextField } from '@peers-touch/ui';
 import {
   makeTranslate, setPrefs, usePrefs,
   type DensityMode, type NotificationPrefs, type Prefs, type ThemeMode, type Translate,
@@ -294,5 +294,114 @@ export function AppearanceSection() {
           value={prefs.locale}
           onValueChange={value => setPrefs({ locale: (Array.isArray(value) ? value[0] : value) ?? 'zh-CN' })} />} />
     </ListSection>
+  );
+}
+
+/* ── Agent management (desktop GeneralTab Agents parity) ─────────────── */
+
+type AgentVisibility = 'private' | 'workspace';
+type AgentEffort = 'low' | 'medium' | 'high';
+type VisibilityFilter = 'all' | AgentVisibility;
+
+type AgentFixture = {
+  id: string; name: string; description: string;
+  effort: AgentEffort; visibility: AgentVisibility;
+};
+
+const INITIAL_AGENTS: AgentFixture[] = [
+  { id: 'assistant', name: 'Assistant', description: '默认通用助手，处理日常对话与检索。',
+    effort: 'medium', visibility: 'private' },
+  { id: 'bookshelf-bot', name: '书架值班助手', description: '管理共享书架排期与交换提醒。',
+    effort: 'low', visibility: 'workspace' },
+];
+
+export function AgentsSection() {
+  const { t } = useGeneralPrefs();
+  const [filter, setFilter] = useState<VisibilityFilter>('all');
+  const [agents, setAgents] = useState<AgentFixture[]>(INITIAL_AGENTS);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<AgentFixture | null>(null);
+
+  const visible = agents.filter(agent => filter === 'all' || agent.visibility === filter);
+
+  const startEdit = (agent: AgentFixture) => {
+    setEditingId(agent.id);
+    setDraft({ ...agent });
+  };
+  const saveEdit = () => {
+    if (!draft) return;
+    setAgents(list => list.map(agent => (agent.id === draft.id ? draft : agent)));
+    setEditingId(null);
+    setDraft(null);
+  };
+
+  return (
+    <SettingsSection title={t('agents.title')} subtitle={t('agents.desc')}
+      extra={<Segmented<VisibilityFilter> density="compact" aria-label={t('agents.filter')}
+        data-agent-visibility-filter
+        options={[
+          { value: 'all', label: t('agents.visibility.all') },
+          { value: 'private', label: t('agents.visibility.private') },
+          { value: 'workspace', label: t('agents.visibility.workspace') },
+        ]}
+        value={filter} onValueChange={value => setFilter(value ?? 'all')} />}>
+      <div className="sk-agent-list" data-agent-list>
+        {visible.length === 0 && <p className="sk-settings-note">{t('agents.empty')}</p>}
+        {visible.map(agent => {
+          const editing = editingId === agent.id && draft;
+          return (
+            <div key={agent.id} className="sk-agent-card" data-agent-id={agent.id}
+              data-agent-visibility={agent.visibility}>
+              {editing ? (
+                <div className="sk-agent-edit">
+                  <TextField density="compact" aria-label={t('agents.description')}
+                    value={draft.description} onValueChange={value => setDraft({ ...draft, description: value })} />
+                  <div className="sk-agent-edit-controls">
+                    <Select<AgentEffort> appearance="ghost" aria-label={t('agents.effort')}
+                      data-agent-effort
+                      options={[
+                        { value: 'low', label: t('agents.effort.low') },
+                        { value: 'medium', label: t('agents.effort.medium') },
+                        { value: 'high', label: t('agents.effort.high') },
+                      ]}
+                      value={draft.effort}
+                      onValueChange={value => setDraft({ ...draft, effort: (Array.isArray(value) ? value[0] : value) ?? 'medium' })} />
+                    <Select<AgentVisibility> appearance="ghost" aria-label={t('agents.visibility.label')}
+                      data-agent-visibility-select
+                      options={[
+                        { value: 'private', label: t('agents.visibility.private') },
+                        { value: 'workspace', label: t('agents.visibility.workspace') },
+                      ]}
+                      value={draft.visibility}
+                      onValueChange={value => setDraft({ ...draft, visibility: (Array.isArray(value) ? value[0] : value) ?? 'private' })} />
+                  </div>
+                  <div className="sk-agent-edit-actions">
+                    <Button emphasis="quiet" density="compact" label={t('common.cancel')}
+                      actionId={`agents.${agent.id}.cancel`}
+                      onActivate={() => { setEditingId(null); setDraft(null); }} />
+                    <Button emphasis="primary" density="compact" label={t('agents.save')}
+                      actionId={`agents.${agent.id}.save`} onActivate={saveEdit} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="sk-agent-head">
+                    <strong>{agent.name}</strong>
+                    <span className="sk-agent-tags">
+                      <Tag tone="neutral">{t(`agents.effort.${agent.effort}` as Parameters<Translate>[0])}</Tag>
+                      <Tag tone="info">{t(`agents.visibility.${agent.visibility}` as Parameters<Translate>[0])}</Tag>
+                    </span>
+                    <Button emphasis="quiet" density="compact" label={t('agents.edit')}
+                      actionId={`agents.${agent.id}.edit`} onActivate={() => startEdit(agent)} />
+                  </div>
+                  <p className="sk-agent-desc">{agent.description}</p>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="sk-settings-note">{t('agents.note')}</p>
+    </SettingsSection>
   );
 }

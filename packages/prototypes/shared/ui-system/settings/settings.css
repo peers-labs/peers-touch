@@ -986,3 +986,79 @@
   .sk-wiz-qr { grid-template-columns: 1fr; }
   .sk-wiz-qr-side { border-left: 0; border-top: 1px solid var(--sk-row-hairline); padding: 16px 4px 0; }
 }
+
+/* ── Five-group remap additions: agents, tool registry, my files ─────── */
+
+.sk-settings-note {
+  margin: 8px 2px 0;
+  font-size: 11px; line-height: 1.5; color: var(--sk-text-3);
+}
+
+/* Agent management */
+.sk-agent-list { display: flex; flex-direction: column; gap: 8px; }
+.sk-agent-card {
+  border: 1px solid var(--sk-card-border);
+  border-radius: var(--sk-radius-card, 12px);
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--sk-text) 3%, transparent);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.sk-agent-head { display: flex; align-items: center; gap: 8px; }
+.sk-agent-head strong { font-size: 13px; color: var(--sk-text); min-width: 0; }
+.sk-agent-tags { display: inline-flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+.sk-agent-desc { margin: 0; font-size: 12px; color: var(--sk-text-2); line-height: 1.5; }
+.sk-agent-edit { display: flex; flex-direction: column; gap: 8px; }
+.sk-agent-edit-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.sk-agent-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Read-only tool registry */
+.sk-tool-registry { display: flex; flex-direction: column; }
+.sk-tool-row {
+  display: grid; grid-template-columns: 1fr 96px 104px;
+  gap: 8px; align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--sk-row-hairline);
+  font-size: 12.5px; color: var(--sk-text-2);
+}
+.sk-tool-row:last-child { border-bottom: 0; }
+.sk-tool-head {
+  font-size: 11px; font-weight: 600; color: var(--sk-text-3);
+  text-transform: none; letter-spacing: 0;
+}
+.sk-tool-name code {
+  font-family: var(--sk-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px; color: var(--sk-text);
+}
+
+/* My Files (object storage inventory) */
+.sk-files-filters {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-bottom: 10px;
+}
+.sk-files-filters .sk-files-filter { min-width: 140px; flex: 1 1 140px; }
+.sk-files-include { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sk-text-2); }
+.sk-files-list { display: flex; flex-direction: column; }
+.sk-file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 72px 64px auto;
+  gap: 8px; align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--sk-row-hairline);
+  font-size: 12px; color: var(--sk-text-2);
+}
+.sk-file-row:last-child { border-bottom: 0; }
+.sk-file-row[data-file-state='deleted'] { opacity: .55; }
+.sk-file-id { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.sk-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sk-text); }
+.sk-file-size, .sk-file-state { font-variant-numeric: tabular-nums; }
+.sk-file-actions { display: inline-flex; justify-content: flex-end; }
+.sk-files-footer { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+
+@media (max-width: 760px) {
+  .sk-tool-row { grid-template-columns: 1fr 84px; }
+  .sk-tool-row > span:nth-child(3) { display: none; }
+  .sk-file-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .sk-file-row > span:nth-child(2),
+  .sk-file-row > .sk-file-size,
+  .sk-file-row > .sk-file-state { display: none; }
+}

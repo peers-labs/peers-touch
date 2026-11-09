@@ -13,11 +13,11 @@ export const BRANDING = {
     desktop: desktopLogo,
   },
   
-  /** 主题色配置 */
+  /** 主题色配置（north-star：近墨动作色 + 松绿品牌强调，仅作单一真源） */
   colors: {
-    primary: '#667eea',
-    secondary: '#764ba2',
-    gradient: 'linear-gradient(135deg, #667eea, #764ba2)',
+    primary: '#1a1d20',
+    secondary: '#2f6a50',
+    gradient: 'linear-gradient(135deg, #1a1d20, #2f6a50)',
   },
 } as const;
 

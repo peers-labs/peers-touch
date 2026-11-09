@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@lobehub/ui';
 import type { ConversationClearBatchResult } from '@peers-touch/client-chat-core';
-import { Flexbox } from 'react-layout-kit';
-import { Checkbox, Input, Segmented, Tag, Typography, theme } from 'antd';
 import {
-  CheckSquare2,
-  Clock3,
-  Database,
-  FileImage,
-  HardDrive,
-  MessageSquare,
-  RefreshCw,
-  Trash2,
-  X,
-} from 'lucide-react';
+  Button,
+  Checkbox,
+  Icon,
+  Segmented,
+  Tag,
+  Text,
+  TextField,
+} from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 
 import { ChatRetentionPreset } from '../../gen/proto/domain/chat/storage_pb';
@@ -23,14 +18,11 @@ import {
   chatStorageReleasedBytes,
   useChatStorageProjection,
 } from '../../runtimes/chatStorageRuntime';
-import { SettingsContainer, SettingsSection } from './SettingsLayout';
-
-const { Text, Title } = Typography;
+import { SettingsContainer, SettingsSection, SettingsRow } from './SettingsLayout';
 
 type SortMode = 'size' | 'recent';
 
 export function ChatStorageSettings() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('settings');
   const projection = useChatStorageProjection();
   const [query, setQuery] = useState('');
@@ -174,22 +166,22 @@ export function ChatStorageSettings() {
   if (!snapshot) {
     return (
       <SettingsContainer fullHeight tier="standard">
-        <Flexbox align="center" justify="center" gap={12} style={{ padding: 64 }}>
-          <HardDrive size={28} style={{ color: token.colorTextTertiary }} />
-          <Text type="secondary">
+        <div className="sc-storage-status">
+          <Icon iconId="hard-drive" size={28} className="sc-storage-status__icon" />
+          <Text tone="secondary">
             {projection.status === 'unavailable'
               ? t('settings.storage.unavailable')
               : t('settings.storage.measuring')}
           </Text>
           {projection.status === 'unavailable' ? (
             <Button
-              icon={<RefreshCw size={14} />}
-              onClick={() => void chatStorageProjectionRuntime.refresh()}
-            >
-              {t('settings.storage.retry')}
-            </Button>
+              actionId="storage-status-retry"
+              leading={<Icon iconId="refresh-cw" size={14} />}
+              label={t('settings.storage.retry')}
+              onActivate={() => void chatStorageProjectionRuntime.refresh()}
+            />
           ) : null}
-        </Flexbox>
+        </div>
       </SettingsContainer>
     );
   }
@@ -199,94 +191,85 @@ export function ChatStorageSettings() {
       key: 'message',
       label: t('settings.storage.message'),
       value: snapshot.messageBytes,
-      icon: <MessageSquare size={18} style={{ color: token.colorPrimary }} />,
+      icon: 'message-square' as const,
+      tone: 'accent',
     },
     {
       key: 'media',
       label: t('settings.storage.media'),
       value: snapshot.mediaBytes,
-      icon: <FileImage size={18} style={{ color: token.colorSuccess }} />,
+      icon: 'file-image' as const,
+      tone: 'success',
     },
     {
       key: 'cache',
       label: t('settings.storage.cache'),
       value: snapshot.cacheBytes,
-      icon: <HardDrive size={18} style={{ color: token.colorWarning }} />,
+      icon: 'hard-drive' as const,
+      tone: 'warning',
     },
     {
       key: 'system',
       label: t('settings.storage.system'),
       value: snapshot.systemBytes,
-      icon: <Database size={18} style={{ color: token.colorTextSecondary }} />,
+      icon: 'database' as const,
+      tone: 'secondary',
     },
   ];
 
   return (
     <SettingsContainer fullHeight tier="standard">
-      <Flexbox
-        horizontal
-        align="center"
-        justify="space-between"
-        gap={12}
+      <div
+        className="sc-storage-summary"
         data-chat-storage-summary
         data-chat-storage-physical-bytes={String(snapshot.physicalTotalBytes)}
         data-chat-storage-measured-at={String(snapshot.measuredAtUnixMs)}
       >
-        <Flexbox gap={2}>
-          <Title level={4} style={{ margin: 0 }}>
+        <div className="sc-storage-summary__head">
+          <h4 className="sc-storage-summary__total">
             {formatBytes(snapshot.physicalTotalBytes)}
-          </Title>
-          <Text type="secondary">
+          </h4>
+          <Text tone="secondary">
             {t('settings.storage.total')}
             {' · '}
             {new Date(Number(snapshot.measuredAtUnixMs)).toLocaleString()}
           </Text>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={8}>
+        </div>
+        <div className="sc-storage-summary__actions">
           {projection.status === 'measuring' ? (
             <Tag>{t('settings.storage.measuring')}</Tag>
           ) : null}
           {projection.stale || snapshot.issues.length > 0 ? (
-            <Tag color="warning">{t('settings.storage.stale')}</Tag>
+            <Tag tone="warning">{t('settings.storage.stale')}</Tag>
           ) : null}
           <Button
             aria-label={t('settings.storage.retry')}
+            actionId="storage-refresh"
             data-chat-storage-refresh
-            icon={<RefreshCw size={14} />}
-            loading={projection.status === 'measuring'}
-            onClick={() => void chatStorageProjectionRuntime.refresh()}
+            leading={<Icon iconId="refresh-cw" size={14} />}
+            execution={projection.status === 'measuring' ? 'pending' : 'idle'}
+            label={t('settings.storage.retry')}
+            onActivate={() => void chatStorageProjectionRuntime.refresh()}
           />
-        </Flexbox>
-      </Flexbox>
+        </div>
+      </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-          gap: 12,
-        }}
-      >
+      <div className="sc-storage-categories">
         {categories.map((category) => (
-          <Flexbox
+          <div
             key={category.key}
-            gap={8}
+            className="sc-storage-category"
             data-chat-storage-category={category.key}
             data-chat-storage-category-bytes={String(category.value)}
-            style={{
-              border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: 8,
-              padding: 16,
-              background: token.colorBgContainer,
-            }}
           >
-            <Flexbox horizontal align="center" gap={8}>
-              {category.icon}
-              <Text type="secondary">{category.label}</Text>
-            </Flexbox>
-            <Text strong style={{ fontSize: 20 }}>
+            <div className={`sc-storage-category__head sc-storage-category__head--${category.tone}`}>
+              <Icon iconId={category.icon} size={18} />
+              <Text tone="secondary">{category.label}</Text>
+            </div>
+            <Text strong className="sc-storage-category__value">
               {formatBytes(category.value)}
             </Text>
-          </Flexbox>
+          </div>
         ))}
       </div>
 
@@ -294,60 +277,63 @@ export function ChatStorageSettings() {
         title={t('settings.storage.retentionTitle')}
         subtitle={t('settings.storage.retentionDescription')}
       >
-        <Flexbox horizontal align="center" gap={10} data-chat-storage-retention>
-          <Clock3 size={18} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
-          <Segmented<ChatRetentionPreset>
-            block
-            disabled={retentionSaving || cleanupRunning}
-            options={[
-              {
-                label: (
-                  <span data-chat-storage-retention-option="forever">
-                    {t('settings.storage.retentionForever')}
-                  </span>
-                ),
-                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_FOREVER,
-              },
-              {
-                label: (
-                  <span data-chat-storage-retention-option="365">
-                    {t('settings.storage.retentionYear')}
-                  </span>
-                ),
-                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_365_DAYS,
-              },
-              {
-                label: (
-                  <span data-chat-storage-retention-option="90">
-                    {t('settings.storage.retention90Days')}
-                  </span>
-                ),
-                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_90_DAYS,
-              },
-              {
-                label: (
-                  <span data-chat-storage-retention-option="30">
-                    {t('settings.storage.retention30Days')}
-                  </span>
-                ),
-                value: ChatRetentionPreset.CHAT_RETENTION_PRESET_30_DAYS,
-              },
-            ]}
-            value={retentionPreset}
-            onChange={(value) => {
-              void chatStorageProjectionRuntime.setRetention(value);
-            }}
-          />
-        </Flexbox>
-        <div data-chat-storage-retention-preset={String(retentionPreset)}>
+        <SettingsRow label={<Icon iconId="clock-3" size={18} />}>
+          <div className="sc-storage-retention" data-chat-storage-retention>
+            <Segmented<ChatRetentionPreset>
+              className="sc-storage-segmented"
+              disabled={retentionSaving || cleanupRunning}
+              options={[
+                {
+                  label: (
+                    <span data-chat-storage-retention-option="forever">
+                      {t('settings.storage.retentionForever')}
+                    </span>
+                  ),
+                  value: ChatRetentionPreset.CHAT_RETENTION_PRESET_FOREVER,
+                },
+                {
+                  label: (
+                    <span data-chat-storage-retention-option="365">
+                      {t('settings.storage.retentionYear')}
+                    </span>
+                  ),
+                  value: ChatRetentionPreset.CHAT_RETENTION_PRESET_365_DAYS,
+                },
+                {
+                  label: (
+                    <span data-chat-storage-retention-option="90">
+                      {t('settings.storage.retention90Days')}
+                    </span>
+                  ),
+                  value: ChatRetentionPreset.CHAT_RETENTION_PRESET_90_DAYS,
+                },
+                {
+                  label: (
+                    <span data-chat-storage-retention-option="30">
+                      {t('settings.storage.retention30Days')}
+                    </span>
+                  ),
+                  value: ChatRetentionPreset.CHAT_RETENTION_PRESET_30_DAYS,
+                },
+              ]}
+              value={retentionPreset}
+              onValueChange={(value) => {
+                if (typeof value === 'number') {
+                  void chatStorageProjectionRuntime.setRetention(value);
+                }
+              }}
+            />
+          </div>
+        </SettingsRow>
+        <div className="sc-storage-inline-status" data-chat-storage-retention-preset={String(retentionPreset)}>
           {retentionSaving ? (
-            <Text type="secondary" role="status">
+            <Text tone="secondary" role="status">
               {t('settings.storage.retentionSaving')}
             </Text>
           ) : null}
           {projection.retention.status === 'succeeded' ? (
             <Text
-              type="success"
+              tone="success"
               role="status"
               data-chat-storage-retention-result="succeeded"
               data-chat-storage-retention-released-bytes={String(retentionReleasedBytes ?? 0n)}
@@ -357,7 +343,7 @@ export function ChatStorageSettings() {
           ) : null}
           {projection.retention.status === 'failed' ? (
             <Text
-              type="danger"
+              tone="danger"
               role="alert"
               data-chat-storage-retention-result="failed"
             >
@@ -371,53 +357,51 @@ export function ChatStorageSettings() {
         title={t('settings.storage.clearCacheTitle')}
         subtitle={t('settings.storage.clearCacheDescription')}
       >
-        {confirmingClearCache ? (
-          <Flexbox
-            gap={12}
-            data-chat-storage-clear-confirm
-            style={{
-              padding: 16,
-              borderRadius: 8,
-              background: token.colorFillQuaternary,
-            }}
-          >
-            <Text>{t('settings.storage.clearCacheConfirm')}</Text>
-            <Flexbox horizontal justify="end" gap={8}>
-              <Button
-                disabled={cleanupRunning}
-                onClick={() => setClearConfirmationRevision(null)}
-              >
-                {t('settings.storage.clearCacheCancel')}
-              </Button>
-              <Button
-                danger
-                type="primary"
-                data-chat-storage-clear-confirm-apply
-                icon={<Trash2 size={14} />}
-                loading={cleanupRunning}
-                onClick={() => {
-                  void chatStorageProjectionRuntime.clearCache().then(() => {
-                    setClearConfirmationRevision(null);
-                  });
-                }}
-              >
-                {t('settings.storage.clearCacheConfirmAction')}
-              </Button>
-            </Flexbox>
-          </Flexbox>
-        ) : (
-          <Button
-            data-chat-storage-clear-cache
-            icon={<Trash2 size={14} />}
-            disabled={cleanupRunning}
-            onClick={() => setClearConfirmationRevision(snapshot.revision)}
-          >
-            {t('settings.storage.clearCacheAction')}
-          </Button>
-        )}
+        <SettingsRow label={<Icon iconId="delete" size={18} />}>
+          {confirmingClearCache ? (
+            <div className="sc-storage-confirm" data-chat-storage-clear-confirm>
+              <Text>{t('settings.storage.clearCacheConfirm')}</Text>
+              <div className="sc-storage-confirm__actions">
+                <Button
+                  actionId="storage-clear-cancel"
+                  label={t('settings.storage.clearCacheCancel')}
+                  availability={cleanupRunning
+                    ? { kind: 'disabled', reason: t('settings.storage.clearCacheCancel') }
+                    : undefined}
+                  onActivate={() => setClearConfirmationRevision(null)}
+                />
+                <Button
+                  actionId="storage-clear-apply"
+                  data-chat-storage-clear-confirm-apply
+                  tone="danger"
+                  emphasis="primary"
+                  leading={<Icon iconId="delete" size={14} />}
+                  execution={cleanupRunning ? 'pending' : 'idle'}
+                  label={t('settings.storage.clearCacheConfirmAction')}
+                  onActivate={() => {
+                    void chatStorageProjectionRuntime.clearCache().then(() => {
+                      setClearConfirmationRevision(null);
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <Button
+              actionId="storage-clear-open"
+              data-chat-storage-clear-cache
+              leading={<Icon iconId="delete" size={14} />}
+              label={t('settings.storage.clearCacheAction')}
+              availability={cleanupRunning
+                ? { kind: 'disabled', reason: t('settings.storage.clearCacheAction') }
+                : undefined}
+              onActivate={() => setClearConfirmationRevision(snapshot.revision)}
+            />
+          )}
+        </SettingsRow>
         {projection.cleanup.status === 'succeeded' && releasedBytes !== null ? (
           <Text
-            type="success"
+            tone="success"
             role="status"
             data-chat-storage-clear-result="succeeded"
             data-chat-storage-released-bytes={String(releasedBytes)}
@@ -429,7 +413,7 @@ export function ChatStorageSettings() {
         ) : null}
         {projection.cleanup.status === 'failed' ? (
           <Text
-            type="danger"
+            tone="danger"
             role="alert"
             data-chat-storage-clear-result="failed"
           >
@@ -449,28 +433,33 @@ export function ChatStorageSettings() {
         })}
         extra={(
           <Button
+            actionId="storage-batch-manage"
             data-chat-storage-batch-manage
-            icon={batchMode ? <X size={14} /> : <CheckSquare2 size={14} />}
-            disabled={batchRunning || snapshot.conversations.length === 0}
-            onClick={toggleBatchMode}
-          >
-            {batchMode
+            leading={<Icon iconId={batchMode ? 'close' : 'square-check'} size={14} />}
+            label={batchMode
               ? t('settings.storage.batchDone')
               : t('settings.storage.batchManage')}
-          </Button>
+            availability={(batchRunning || snapshot.conversations.length === 0)
+              ? { kind: 'disabled', reason: t('settings.storage.batchManage') }
+              : undefined}
+            onActivate={toggleBatchMode}
+          />
         )}
       >
-        <Flexbox horizontal gap={8}>
-          <Input.Search
-            allowClear
+        <div className="sc-storage-toolbar">
+          <TextField
+            className="sc-storage-search"
+            clearable
             aria-label={t('settings.storage.search')}
             data-chat-storage-search
+            leading={<Icon iconId="search" size={14} className="sc-storage-search__icon" />}
             placeholder={t('settings.storage.search')}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onValueChange={setQuery}
           />
           <div data-chat-storage-sort={sortMode}>
             <Segmented<SortMode>
+              density="compact"
               value={sortMode}
               options={[
                 {
@@ -490,41 +479,38 @@ export function ChatStorageSettings() {
                   value: 'recent',
                 },
               ]}
-              onChange={setSortMode}
+              onValueChange={(value) => {
+                if (value === 'size' || value === 'recent') setSortMode(value);
+              }}
             />
           </div>
-        </Flexbox>
+        </div>
         {batchMode ? (
-          <Flexbox gap={10} data-chat-storage-batch-actions>
-            <Flexbox horizontal align="center" justify="space-between" gap={12}>
+          <div className="sc-storage-batch" data-chat-storage-batch-actions>
+            <div className="sc-storage-batch__head">
               <Checkbox
                 checked={allVisibleSelected}
-                disabled={batchRunning || conversations.length === 0}
                 indeterminate={!allVisibleSelected && someVisibleSelected}
+                disabled={batchRunning || conversations.length === 0}
                 data-chat-storage-batch-select-all
-                onChange={(event) => toggleVisibleConversations(event.target.checked)}
+                onCheckedChange={toggleVisibleConversations}
               >
                 {t('settings.storage.batchSelectAll')}
               </Checkbox>
-              <Text type="secondary" data-chat-storage-batch-selection>
+              <Text tone="secondary" data-chat-storage-batch-selection>
                 {t('settings.storage.batchSelection', {
                   bytes: formatBytes(selectedReclaimableBytes),
                   count: selectedConversations.length,
                 })}
               </Text>
-            </Flexbox>
+            </div>
             {confirmingBatchClear ? (
-              <Flexbox
-                gap={10}
+              <div
+                className="sc-storage-confirm"
                 data-chat-storage-batch-confirm
                 data-chat-storage-batch-estimated-bytes={String(selectedReclaimableBytes)}
                 data-chat-storage-batch-selected-count={String(selectedConversations.length)}
                 data-chat-storage-batch-scope="current-device"
-                style={{
-                  padding: 12,
-                  borderRadius: 8,
-                  background: token.colorFillQuaternary,
-                }}
               >
                 <Text>
                   {t('settings.storage.batchConfirm', {
@@ -532,41 +518,45 @@ export function ChatStorageSettings() {
                     count: selectedConversations.length,
                   })}
                 </Text>
-                <Flexbox horizontal justify="end" gap={8}>
+                <div className="sc-storage-confirm__actions">
                   <Button
-                    disabled={batchRunning}
-                    onClick={() => setBatchConfirmationRevision(null)}
-                  >
-                    {t('settings.storage.batchCancel')}
-                  </Button>
+                    actionId="storage-batch-cancel"
+                    label={t('settings.storage.batchCancel')}
+                    availability={batchRunning
+                      ? { kind: 'disabled', reason: t('settings.storage.batchCancel') }
+                      : undefined}
+                    onActivate={() => setBatchConfirmationRevision(null)}
+                  />
                   <Button
-                    danger
-                    type="primary"
+                    actionId="storage-batch-apply"
                     data-chat-storage-batch-confirm-apply
-                    icon={<Trash2 size={14} />}
-                    loading={batchRunning}
-                    onClick={() => void clearSelectedConversations()}
-                  >
-                    {t('settings.storage.batchConfirmAction')}
-                  </Button>
-                </Flexbox>
-              </Flexbox>
+                    tone="danger"
+                    emphasis="primary"
+                    leading={<Icon iconId="delete" size={14} />}
+                    execution={batchRunning ? 'pending' : 'idle'}
+                    label={t('settings.storage.batchConfirmAction')}
+                    onActivate={() => void clearSelectedConversations()}
+                  />
+                </div>
+              </div>
             ) : (
               <Button
-                danger
+                actionId="storage-batch-clear"
                 data-chat-storage-batch-clear
-                icon={<Trash2 size={14} />}
-                disabled={batchRunning || selectedConversations.length === 0}
-                onClick={() => setBatchConfirmationRevision(snapshot.revision)}
-              >
-                {t('settings.storage.batchClearSelected')}
-              </Button>
+                tone="danger"
+                leading={<Icon iconId="delete" size={14} />}
+                label={t('settings.storage.batchClearSelected')}
+                availability={(batchRunning || selectedConversations.length === 0)
+                  ? { kind: 'disabled', reason: t('settings.storage.batchClearSelected') }
+                  : undefined}
+                onActivate={() => setBatchConfirmationRevision(snapshot.revision)}
+              />
             )}
-          </Flexbox>
+          </div>
         ) : null}
         {batchRunning ? (
           <Text
-            type="secondary"
+            tone="secondary"
             role="status"
             data-chat-storage-batch-progress
             data-chat-storage-batch-completed={String(batchProgress.completedCount)}
@@ -577,7 +567,7 @@ export function ChatStorageSettings() {
         ) : null}
         {batchResult?.status === 'succeeded' ? (
           <Text
-            type="success"
+            tone="success"
             role="status"
             data-chat-storage-batch-result="succeeded"
             data-chat-storage-batch-succeeded={String(batchResult.succeededIds.length)}
@@ -591,9 +581,9 @@ export function ChatStorageSettings() {
           </Text>
         ) : null}
         {batchResult?.status === 'partial_failure' ? (
-          <Flexbox horizontal align="center" justify="space-between" gap={12}>
+          <div className="sc-storage-batch__partial">
             <Text
-              type="danger"
+              tone="danger"
               role="alert"
               data-chat-storage-batch-result="partial_failure"
               data-chat-storage-batch-succeeded={String(batchResult.succeededIds.length)}
@@ -608,22 +598,21 @@ export function ChatStorageSettings() {
               })}
             </Text>
             <Button
+              actionId="storage-batch-retry"
               data-chat-storage-batch-retry
-              disabled={batchRunning}
-              onClick={() => setBatchConfirmationRevision(snapshot.revision)}
-            >
-              {t('settings.storage.batchRetry')}
-            </Button>
-          </Flexbox>
+              label={t('settings.storage.batchRetry')}
+              availability={batchRunning
+                ? { kind: 'disabled', reason: t('settings.storage.batchRetry') }
+                : undefined}
+              onActivate={() => setBatchConfirmationRevision(snapshot.revision)}
+            />
+          </div>
         ) : null}
-        <Flexbox gap={0} data-chat-storage-conversations>
+        <div className="sc-storage-conversations" data-chat-storage-conversations>
           {conversations.map((usage) => (
-            <Flexbox
+            <div
               key={usage.conversationId}
-              horizontal
-              align="center"
-              justify="space-between"
-              gap={16}
+              className="sc-storage-conversation"
               data-chat-storage-conversation={usage.conversationId}
               data-chat-storage-message-bytes={String(usage.messageBytes)}
               data-chat-storage-media-bytes={String(usage.mediaBytes)}
@@ -631,11 +620,6 @@ export function ChatStorageSettings() {
               data-chat-storage-selected={String(
                 selectedConversationIds.has(usage.conversationId),
               )}
-              style={{
-                minHeight: 56,
-                padding: '10px 0',
-                borderBottom: `1px solid ${token.colorBorderSecondary}`,
-              }}
             >
               {batchMode ? (
                 <Checkbox
@@ -645,40 +629,40 @@ export function ChatStorageSettings() {
                   checked={selectedConversationIds.has(usage.conversationId)}
                   disabled={batchRunning}
                   data-chat-storage-conversation-select={usage.conversationId}
-                  onChange={(event) => {
-                    toggleConversation(usage.conversationId, event.target.checked);
+                  onCheckedChange={(checked) => {
+                    toggleConversation(usage.conversationId, checked);
                   }}
                 />
               ) : null}
-              <Flexbox gap={2} style={{ minWidth: 0 }}>
-                <Text strong ellipsis>
+              <div className="sc-storage-conversation__meta">
+                <Text strong truncate>
                   {usage.conversationName || usage.conversationId}
                 </Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text tone="secondary" className="sc-storage-conversation__detail">
                   {usage.conversationKind === 2
                     ? t('settings.storage.group')
                     : t('settings.storage.direct')}
                   {' · '}
                   {new Date(Number(usage.lastActivityUnixMs)).toLocaleString()}
                 </Text>
-              </Flexbox>
-              <Flexbox align="end" gap={2} style={{ flexShrink: 0 }}>
+              </div>
+              <div className="sc-storage-conversation__size">
                 <Text strong>{formatBytes(usage.messageBytes + usage.mediaBytes)}</Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text tone="secondary" className="sc-storage-conversation__detail">
                   {t('settings.storage.breakdown', {
                     message: formatBytes(usage.messageBytes),
                     media: formatBytes(usage.mediaBytes),
                   })}
                 </Text>
-              </Flexbox>
-            </Flexbox>
+              </div>
+            </div>
           ))}
           {conversations.length === 0 ? (
-            <Text type="secondary" style={{ padding: '24px 0', textAlign: 'center' }}>
+            <Text tone="secondary" className="sc-storage-conversations__empty">
               {t('settings.storage.empty')}
             </Text>
           ) : null}
-        </Flexbox>
+        </div>
       </SettingsSection>
     </SettingsContainer>
   );

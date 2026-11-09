@@ -80,10 +80,11 @@ describe('Desktop navigation ownership', () => {
   it('groups all migrated utilities under their Settings owners', () => {
     const source = desktopSource('pages/SettingsPage.tsx');
 
-    expect(source).toContain("sectionKeys: ['cron', 'command-menu', 'tools']");
+    // North-star five-group IA: cron folds into AI; tools/command-menu join
+    // the advanced group with storage/logs/applets/help.
+    expect(source).toContain("sectionKeys: ['providers', 'models', 'discover', 'memory', 'skills', 'mcp', 'voice', 'cron']");
     expect(source).toContain("sectionKeys: ['channels', 'connections', 'bots']");
-    expect(source).toContain("sectionKeys: ['storage', 'oss', 'logs']");
-    expect(source).toContain("'providers', 'models', 'discover', 'memory'");
+    expect(source).toContain("sectionKeys: ['storage', 'oss', 'logs', 'tools', 'command-menu', 'applets', 'help']");
   });
 
   it('routes owned resources into Settings and rejects removed module routes', () => {

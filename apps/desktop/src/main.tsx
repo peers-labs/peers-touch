@@ -2,7 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider, ToastHost } from '@lobehub/ui';
 import { I18nextProvider } from 'react-i18next';
-import { UIProvider } from '@peers-touch/ui';
+import { FeedbackHost, UIProvider } from '@peers-touch/ui';
+import { feedbackChannel } from './ui/feedback';
 import './ui/northstar.css';
 import './ui/chat.css';
 import { log } from './utils/logger';
@@ -151,13 +152,16 @@ async function bootstrap() {
           <ThemeProvider
             theme={{
               token: {
-                colorPrimaryBorder: '#6f87f5',
+                // North-star neutral ink border for any residual antd chrome;
+                // peers-ui primitives own the canonical --pt-* tokens.
+                colorPrimaryBorder: 'rgba(26,29,32,0.15)',
                 lineWidthFocus: 0,
               },
             }}
           >
             <UIProvider theme="light" className="ds-theme">
               {shareMatch ? <SharePage token={shareMatch[1]} /> : <App />}
+              <FeedbackHost channel={feedbackChannel} />
             </UIProvider>
             <ToastHost />
           </ThemeProvider>

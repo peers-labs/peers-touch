@@ -1,12 +1,20 @@
 ---
-status: active
+status: superseded-by:../../../architecture/platform/client/ui-system/design.md
 owner: Client Platform Team
-updated: 2026-06-18
+updated: 2026-11-07
 review-cadence: quarterly
 next-review: 2027-01-27
 ---
 
 # UI Identity Foundations
+
+> **Superseded (2026-11-07).** The product-level identity, making cycle, and
+> composition kernel now live in
+> [Peers UI System / design.md](../../../architecture/platform/client/ui-system/design.md).
+> The active visual grammar is the
+> [north-star desktop frame](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md)
+> (neutral paper, ink action capsule `#1a1d20`, pine connection accent
+> `#2f6a50`). This file is retained for history only; do not implement from it.
 
 ## 1. North Star
 

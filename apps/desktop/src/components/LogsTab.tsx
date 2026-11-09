@@ -1,23 +1,19 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Flexbox } from "react-layout-kit";
-import { Button, Tag } from "@lobehub/ui";
-import { Input, Switch, theme, Typography, Empty, Checkbox } from "antd";
 import {
-  RefreshCw,
-  Download,
-  Pause,
-  Play,
-  Search,
-  FileText,
-  Trash2,
-} from "lucide-react";
+  Button,
+  Empty,
+  Icon,
+  IconButton,
+  Switch,
+  Tag,
+  TextField,
+  type Tone,
+} from "@peers-touch/ui";
 import { useTranslation } from "react-i18next";
 import { api } from "../services/desktop_api";
 import { log } from "../utils/logger";
 import { ClientMetaPanel } from "./debug/ClientMetaPanel";
-import { SettingsContainer } from "./settings/SettingsLayout";
-
-const { Text, Title } = Typography;
+import { SettingsContainer, SettingsPanelHeader } from "./settings/SettingsLayout";
 
 type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 const LEVELS: LogLevel[] = ["trace", "debug", "info", "warn", "error", "fatal"];
@@ -32,6 +28,15 @@ const LEVEL_ALIASES: Record<string, LogLevel> = {
   error: "error",
   fatal: "fatal",
   panic: "fatal",
+};
+
+const LEVEL_TONES: Record<LogLevel, Tone> = {
+  trace: "neutral",
+  debug: "info",
+  info: "success",
+  warn: "warning",
+  error: "danger",
+  fatal: "danger",
 };
 
 interface LogEntry {
@@ -147,7 +152,6 @@ function parseLogLine(line: string): LogEntry {
 
 export function LogsTab() {
   const { t } = useTranslation("provider");
-  const { token } = theme.useToken();
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [cursor, setCursor] = useState<number>(-1);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -302,114 +306,94 @@ export function LogsTab() {
     }
   };
 
-  const getLevelColor = (level?: LogLevel) => {
-    switch (level) {
-      case "trace":
-        return "gray";
-      case "debug":
-        return "blue";
-      case "info":
-        return "green";
-      case "warn":
-        return "orange";
-      case "error":
-        return "red";
-      case "fatal":
-        return "magenta";
-      default:
-        return "default";
-    }
-  };
-
   return (
     <SettingsContainer fullHeight tier="standard" style={{ overflow: "hidden" }}>
-      <Flexbox horizontal justify="space-between" align="center">
-        <Flexbox gap={4}>
-          <Flexbox horizontal align="center" gap={8}>
-            <FileText size={18} style={{ color: token.colorPrimary }} />
-            <Title level={5} style={{ margin: 0 }}>
-              {t("provider.logs.title")}
-            </Title>
-          </Flexbox>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {t("provider.logs.subtitle")}
-          </Text>
-        </Flexbox>
-        <Flexbox gap={8} horizontal align="center" style={{ height: 32 }}>
-          <Input
-            size="small"
-            placeholder={t("provider.logs.filterPlaceholder")}
-            prefix={<Search size={12} />}
-            value={filterText}
-            onChange={(e) => setFilterText(e.target.value)}
-            style={{ width: 200, fontSize: 12 }}
-            allowClear
-          />
-          <Button
-            size="small"
-            icon={paused ? <Play size={14} /> : <Pause size={14} />}
-            onClick={() => setPaused(!paused)}
-            style={{ height: 28 }}
-          >
-            {paused ? t("provider.logs.resume") : t("provider.logs.pause")}
-          </Button>
-          <Button
-            size="small"
-            icon={<RefreshCw size={14} />}
-            onClick={() => fetchLogs(true)}
-            style={{ height: 28 }}
-          >
-            {t("provider.logs.refresh")}
-          </Button>
-          <Button
-            size="small"
-            icon={<Download size={14} />}
-            onClick={handleExport}
-            style={{ height: 28 }}
-          >
-            {t("provider.logs.exportVisible")}
-          </Button>
-          <Button
-            size="small"
-            icon={<Trash2 size={14} />}
-            danger
-            onClick={() => setEntries([])}
-            style={{ height: 28 }}
-          />
-        </Flexbox>
-      </Flexbox>
+      <SettingsPanelHeader
+        icon={<Icon iconId="file-text" size={20} className="sc-logs-title-icon" />}
+        title={t("provider.logs.title")}
+        subtitle={t("provider.logs.subtitle")}
+        actions={(
+          <>
+            <IconButton
+              actionId="logs-toggle-pause"
+              iconId={paused ? "play" : "pause"}
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              label={paused ? t("provider.logs.resume") : t("provider.logs.pause")}
+              onActivate={() => setPaused(!paused)}
+            />
+            <IconButton
+              actionId="logs-refresh"
+              iconId="refresh-cw"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              label={t("provider.logs.refresh")}
+              onActivate={() => fetchLogs(true)}
+            />
+            <IconButton
+              actionId="logs-export"
+              iconId="download"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              label={t("provider.logs.exportVisible")}
+              onActivate={handleExport}
+            />
+            <IconButton
+              actionId="logs-clear"
+              iconId="delete"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              tone="danger"
+              label={t("provider.logs.clear")}
+              onActivate={() => setEntries([])}
+            />
+          </>
+        )}
+      />
 
       <ClientMetaPanel />
 
-      <Flexbox horizontal gap={12} align="center">
-        <Text style={{ fontSize: 12, marginRight: 8 }}>
-          {t("provider.logs.levels")}:
-        </Text>
-        <Flexbox gap={8} horizontal style={{ flexWrap: "wrap" }}>
-          {LEVELS.map((lvl) => (
-            <Checkbox
-              key={lvl}
-              checked={levelFilters[lvl]}
-              onChange={(e) =>
-                setLevelFilters((prev) => ({
-                  ...prev,
-                  [lvl]: e.target.checked,
-                }))
-              }
-            >
-              <Tag
-                color={getLevelColor(lvl)}
-                style={{ fontSize: 10, margin: 0 }}
-              >
-                {lvl.toUpperCase()}
-              </Tag>
-            </Checkbox>
-          ))}
-        </Flexbox>
-        <Button size="small" onClick={onlyWarningsAndAbove}>
-          {t("provider.logs.onlyWarnings")}
-        </Button>
-      </Flexbox>
+      {/* Prototype .sk-log-toolbar grammar: pill level filters, a quiet preset,
+          and the search field pinned to the right. The desktop surface keeps
+          six multi-toggle levels instead of the prototype's four. */}
+      <div className="sc-log-toolbar" data-log-filters>
+        {LEVELS.map((lvl) => (
+          <button
+            key={lvl}
+            type="button"
+            className={`sc-log-filter is-${lvl}${levelFilters[lvl] ? " is-on" : ""}`}
+            aria-pressed={levelFilters[lvl]}
+            data-log-level={lvl}
+            onClick={() => setLevelFilters((prev) => ({
+              ...prev,
+              [lvl]: !prev[lvl],
+            }))}
+          >
+            {lvl.toUpperCase()}
+          </button>
+        ))}
+        <Button
+          actionId="logs-only-warnings"
+          className="sc-log-preset"
+          emphasis="quiet"
+          density="compact"
+          label={t("provider.logs.onlyWarnings")}
+          onActivate={onlyWarningsAndAbove}
+        />
+        <TextField
+          className="sc-log-filter-input"
+          density="compact"
+          clearable
+          leading={<Icon iconId="search" size={12} />}
+          placeholder={t("provider.logs.filterPlaceholder")}
+          value={filterText}
+          onValueChange={setFilterText}
+        />
+      </div>
 
       <div
         ref={(el) => {
@@ -419,90 +403,58 @@ export function LogsTab() {
             containerRef as React.MutableRefObject<HTMLDivElement | null>
           ).current = el;
         }}
-        className="selectable"
-        style={{
-          flex: 1,
-          background: "#1a1a1a",
-          color: "#ececec",
-          borderRadius: 8,
-          padding: "8px 0",
-          overflow: "auto",
-          fontFamily:
-            'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
-          fontSize: 12,
-          border: "1px solid #333",
-        }}
+        className="selectable sc-logs-console"
       >
+        <div className="sc-log-head">
+          <span>{t("provider.logs.colTime")}</span>
+          <span>{t("provider.logs.colSource")}</span>
+          <span>{t("provider.logs.colLevel")}</span>
+          <span>{t("provider.logs.colMessage")}</span>
+        </div>
         {filteredEntries.length === 0 ? (
           <Empty
-            description={
-              <span style={{ color: "#666" }}>{t("provider.logs.noLogs")}</span>
-            }
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            style={{ marginTop: 40 }}
+            className="sc-logs-empty"
+            description={t("provider.logs.noLogs")}
           />
         ) : (
-          filteredEntries.map((e, i) => (
-            <div
-              key={i}
-              style={{
-                padding: "2px 12px",
-                display: "flex",
-                gap: 12,
-                borderBottom: "1px solid #252525",
-                alignItems: "flex-start",
-              }}
-            >
-              <Text style={{ color: "#666", minWidth: 70, flexShrink: 0 }}>
-                {formatTime(e.time)}
-              </Text>
-              <Tag
-                color={getLevelColor(e.level)}
-                style={{
-                  fontSize: 9,
-                  minWidth: 45,
-                  textAlign: "center",
-                  padding: "0 4px",
-                  height: 16,
-                  lineHeight: "14px",
-                  flexShrink: 0,
-                  marginTop: 1,
-                }}
-              >
-                {(e.level || "info").toUpperCase()}
-              </Tag>
-              {e.subsystem && (
-                <Text style={{ color: "#aaa", minWidth: 80, flexShrink: 0 }}>
-                  [{e.subsystem}]
-                </Text>
-              )}
-              <div style={{ flex: 1, wordBreak: "break-all" }}>{e.message}</div>
-            </div>
-          ))
+          filteredEntries.map((e, i) => {
+            const level = e.level ?? "info";
+            const lineTone = level === "warn"
+              ? "is-warn"
+              : level === "error" || level === "fatal"
+                ? "is-error"
+                : "";
+            return (
+              <div key={i} className={`sc-log-line ${lineTone}`.trim()}>
+                <span className="sc-log-line__time">{formatTime(e.time)}</span>
+                <code className="sc-log-line__source">{e.subsystem ?? "—"}</code>
+                <span className="sc-log-line__level">
+                  <Tag tone={LEVEL_TONES[level]}>{level.toUpperCase()}</Tag>
+                </span>
+                <span className="sc-log-line__message">{e.message}</span>
+              </div>
+            );
+          })
         )}
         <div ref={logsEndRef} />
       </div>
 
-      <Flexbox horizontal justify="space-between" align="center">
-        <Text type="secondary" style={{ fontSize: 11 }}>
+      <div className="sc-logs-footer">
+        <span className="sc-logs-footer__count">
           {t("provider.logs.showing", {
             filtered: filteredEntries.length,
             total: entries.length,
           })}
-        </Text>
-        <Flexbox gap={16} horizontal>
-          <Flexbox horizontal align="center" gap={8}>
-            <Text style={{ fontSize: 12 }}>
-              {t("provider.logs.autoFollow")}
-            </Text>
-            <Switch
-              size="small"
-              checked={autoFollow}
-              onChange={setAutoFollow}
-            />
-          </Flexbox>
-        </Flexbox>
-      </Flexbox>
+        </span>
+        <label className="sc-logs-footer__follow">
+          <span>{t("provider.logs.autoFollow")}</span>
+          <Switch
+            checked={autoFollow}
+            aria-label={t("provider.logs.autoFollow")}
+            onCheckedChange={setAutoFollow}
+          />
+        </label>
+      </div>
     </SettingsContainer>
   );
 }

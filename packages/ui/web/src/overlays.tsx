@@ -1,5 +1,5 @@
 import {
-  Children, cloneElement, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState,
+  Children, cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState,
   type CSSProperties, type HTMLAttributes, type ReactElement, type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -259,16 +259,37 @@ export function ContextMenu({children,actions,label,onOpenChange}: {children:Rea
         aria-hidden tabIndex={-1} onPointerDown={()=>setPoint(undefined)}/>
     </Menu></div>;
 }
-export interface TooltipProps { children: ReactNode; label: ReactNode; placement?: OverlayPlacement }
-export function Tooltip({ children, label, placement }: TooltipProps) {
+export interface TooltipProps extends HTMLAttributes<HTMLSpanElement> {
+  label: ReactNode; placement?: OverlayPlacement;
+}
+// Popover/Menu inject an anchor ref and activation props onto their single
+// trigger child. Tooltip must forward that contract to its anchor span —
+// otherwise Popover > Tooltip > control compositions render a control whose
+// only open path is silently dropped (the trigger child never receives the
+// injected onClick and the panel has no anchor). Mirrors Badge's spread.
+export const Tooltip = forwardRef<HTMLSpanElement, TooltipProps>(function Tooltip(
+  { children, label, placement, className, onFocus, onBlur, onClick, onKeyDown, ...props },
+  forwardedRef,
+) {
   const [open, setOpen] = useState(false), [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  return <span className="pt-tooltip-trigger" ref={setAnchor} onPointerEnter={() => setOpen(true)}
-    onPointerLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}>
+  return <span {...props}
+    ref={(node) => {
+      setAnchor(node);
+      if (typeof forwardedRef === 'function') forwardedRef(node);
+      else if (forwardedRef) forwardedRef.current = node;
+    }}
+    className={`pt-tooltip-trigger${className ? ` ${className}` : ''}`}
+    onPointerEnter={() => setOpen(true)}
+    onPointerLeave={() => setOpen(false)}
+    onFocus={(event) => { onFocus?.(event); setOpen(true); }}
+    onBlur={(event) => { onBlur?.(event); setOpen(false); }}
+    onClick={onClick}
+    onKeyDown={onKeyDown}>
     {children}<OverlayLayer open={open} kind="tooltip" anchor={anchor} placement={placement} onDismiss={() => setOpen(false)}>
       {label}
     </OverlayLayer>
   </span>;
-}
+});
 export interface DialogProps {
   open: boolean; title: ReactNode; children?: ReactNode; description?: ReactNode;
   footer?: ReactNode; onDismiss: (reason: DismissReason) => void;

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
-import { Modal, Popover, theme } from 'antd';
+import { Popover as PeersPopover } from '@peers-touch/ui';
 import {
   ArrowUpRight, CircleSlash, Copy, Hash, HelpCircle, Loader2, Lock, MessageCircle,
   Newspaper, Search, Wrench, X,
@@ -29,7 +29,6 @@ const CLICK_DRAG_PX = 4;
 
 export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const { t } = useTranslation('search');
-  const { token } = theme.useToken();
   const view = useSearchStore(useShallow(state => ({
     query: state.query, mode: state.mode, status: state.status, response: state.response,
     displayedQuery: state.displayedQuery, displayedMode: state.displayedMode, stalled: state.stalled,
@@ -283,6 +282,7 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
   const hasStation = (observation?.sources ?? []).some(source => source.sourceId === 'station.social.public');
   const coveragePopover = (
     <div className="pt-search-popover">
+      <h5 className="pt-search-popover-title">{t('search.popover.title')}</h5>
       <section>
         <h6>{t('search.popover.scopeTitle')}</h6>
         <p>{t('search.scope')}</p>
@@ -308,18 +308,16 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
     </div>
   );
 
+  // Bespoke command-palette shell: the prototype builds its own scrim + panel
+  // (no generic dialog/modal primitive — roving-focus listbox semantics are
+  // specialized), so Peers keeps the same structure over @peers-touch/ui
+  // tokens instead of an antd Modal. It renders inline (position:fixed), NOT
+  // via a body portal, so the @peers-touch/ui CSS variables on .pt-ui apply.
+  // All interior ARIA/data hooks are intact.
   return (
-    <Modal open getContainer={false} width={720} footer={null} closable={false} title={t('search.label')}
-      onCancel={searchActions.close} focusTriggerAfterClose={false}
-      rootClassName="pt-search-modal" rootStyle={{ position: 'absolute', inset: 0 }}
-      style={{ top: 72, maxWidth: 'calc(100% - 48px)' }}
-      styles={{ header: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }, body: { padding: 0 }, container: { padding: 0, overflow: 'hidden' }, mask: { position: 'absolute' }, wrapper: { position: 'absolute' } }}
-      modalRender={node => <div aria-label={t('search.label')} style={{
-        '--pt-search-surface': token.colorBgElevated, '--pt-search-subtle': token.colorFillQuaternary,
-        '--pt-search-border': token.colorBorderSecondary, '--pt-search-text': token.colorText,
-        '--pt-search-secondary': token.colorTextSecondary, '--pt-search-muted': token.colorTextTertiary,
-        '--pt-search-primary': token.colorPrimary, '--pt-search-wash': token.colorPrimaryBg,
-      } as React.CSSProperties}>{node}</div>}>
+    <div className="pt-search-overlay" role="dialog" aria-modal="true" aria-label={t('search.label')}>
+      <div className="pt-search-scrim" onClick={searchActions.close} />
+      <div className="pt-search-panel">
       <div className="pt-search-field-area">
         <div className="pt-search-field" data-focus-boundary>
           <Search size={17} aria-hidden="true" />
@@ -405,15 +403,15 @@ export function SearchOverlay({ navigation }: { navigation: Navigation }) {
           {view.mode === 'submit' && <button type="button" disabled={view.status === 'loading' || view.opening}
             onClick={() => searchActions.submit(true)}>{t('search.refresh')}</button>}
           {view.opening && <span className="pt-search-opening"><Loader2 size={12} className="pt-search-spin" /> {t('search.opening')}</span>}
-          <Popover trigger={['hover', 'click', 'focus']} placement="bottomRight"
-            title={t('search.popover.title')} content={coveragePopover}>
+          <PeersPopover placement="bottom" label={t('search.moreInfo')} content={coveragePopover}>
             <button type="button" className="pt-search-info" aria-label={t('search.moreInfo')}>
               <HelpCircle size={14} aria-hidden="true" />
             </button>
-          </Popover>
+          </PeersPopover>
         </div>
       </div>
-    </Modal>
+      </div>
+    </div>
   );
 }
 

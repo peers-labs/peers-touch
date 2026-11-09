@@ -1,16 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Empty as LobeEmpty, Input } from '@lobehub/ui';
-import { Button, Empty, Modal, Spin, Tag, Typography, theme } from 'antd';
-import { ArrowRight, FileText, Image as ImageIcon, MessageSquare, MessagesSquare, Music, Search, SearchX, Users, Video, X } from 'lucide-react';
+import {
+  Dialog,
+  Empty as PtEmpty,
+  IconButton,
+  Segmented as PtSegmented,
+  Spin as PtSpin,
+  Tag as PtTag,
+  TextField as PtTextField,
+  type Tone,
+} from '@peers-touch/ui';
+import {
+  ArrowRight, FileText, Image as ImageIcon, MessageSquare, MessagesSquare, Music, Search, SearchX, Users, Video,
+} from 'lucide-react';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
 import type { SearchResult } from '../../store/socialChat';
 import { actorDisplayName, resolveActorIdentity } from '../../store/socialProfileProjection';
 import { log } from '../../utils/logger';
-
-const { Text } = Typography;
 
 type SearchFilter = 'all' | 'messages' | 'threads' | 'files';
 type ResultKind = 'message' | 'thread' | 'file' | 'image' | 'audio' | 'video';
@@ -45,7 +52,7 @@ function formatSentAt(epochMsOrSec: number, t: (key: string, opts?: { count?: nu
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-function highlightMatch(content: string, query: string, warningBg: string): ReactNode {
+function highlightMatch(content: string, query: string): ReactNode {
   if (!query.trim()) return content;
   const lower = content.toLowerCase();
   const q = query.toLowerCase();
@@ -63,7 +70,7 @@ function highlightMatch(content: string, query: string, warningBg: string): Reac
     <>
       {prefix}
       {before}
-      <span style={{ backgroundColor: warningBg, fontWeight: 600 }}>{match}</span>
+      <mark className="sc-search__highlight">{match}</mark>
       {after}
     </>
   );
@@ -131,8 +138,8 @@ function fileKindForResult(result: SearchResult): Exclude<ResultKind, 'message' 
 function isThreadResult(result: SearchResult): boolean {
   return Boolean(
     result.threadRootUlid
-      || (result.threadReplyCount ?? 0) > 0
-      || result.hasLoadedThreadReplies,
+    || (result.threadReplyCount ?? 0) > 0
+    || result.hasLoadedThreadReplies,
   );
 }
 
@@ -159,19 +166,17 @@ function resultKindIcon(kind: ResultKind): ReactNode {
   }
 }
 
-function resultKindColor(kind: ResultKind): string | undefined {
+function resultKindTone(kind: ResultKind): Tone {
   switch (kind) {
     case 'thread':
-      return 'blue';
+      return 'info';
     case 'image':
-      return 'green';
+      return 'success';
     case 'audio':
     case 'video':
-      return 'magenta';
-    case 'file':
-      return 'purple';
+      return 'danger';
     default:
-      return undefined;
+      return 'neutral';
   }
 }
 
@@ -190,7 +195,6 @@ export function SearchMessagesModal({
   initialScope,
   conversationId,
 }: SearchMessagesModalProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [localQuery, setLocalQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<SearchFilter>('all');
@@ -244,23 +248,6 @@ export function SearchMessagesModal({
     }, 300);
     return () => window.clearTimeout(handle);
   }, [localQuery, open, initialScope, conversationId, searchMessages]);
-
-  useEffect(() => {
-    if (!open || !localQuery) return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      const input = document.querySelector<HTMLElement>('[data-chat-message-search-input]');
-      const field = input?.closest<HTMLElement>('.ant-input-affix-wrapper') ?? input?.parentElement ?? null;
-      const clear = field?.querySelector<HTMLElement>('[data-chat-message-search-clear]') ?? null;
-      const suffix = field?.querySelector<HTMLElement>('.ant-input-suffix') ?? null;
-      const fieldRect = field?.getBoundingClientRect();
-      const clearRect = clear?.getBoundingClientRect();
-      const suffixRect = suffix?.getBoundingClientRect();
-      // #region debug-point D:search-clear-geometry
-      void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'D', location: 'SearchMessagesModal.tsx:search-clear-geometry', msg: '[DEBUG] Search field clear-control geometry', data: { field: fieldRect ? { left: fieldRect.left, right: fieldRect.right, width: fieldRect.width } : null, clear: clearRect ? { left: clearRect.left, right: clearRect.right, width: clearRect.width } : null, suffix: suffixRect ? { left: suffixRect.left, right: suffixRect.right, width: suffixRect.width } : null, rightInset: fieldRect && clearRect ? Math.round(fieldRect.right - clearRect.right) : null, loading: searchLoading }, ts: Date.now() }) }).catch(() => {});
-      // #endregion
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [localQuery, open, searchLoading]);
 
   const handleClose = useCallback(() => {
     clearSearch();
@@ -343,13 +330,13 @@ export function SearchMessagesModal({
     [activeFilter, decoratedResults],
   );
 
-  const filterOptions = useMemo<Array<{ key: SearchFilter; label: string }>>(
-    () => [
-      { key: 'all', label: t('chat.social.search.filter.all') },
-      { key: 'messages', label: t('chat.social.search.filter.messages') },
-      { key: 'threads', label: t('chat.social.search.filter.threads') },
-      { key: 'files', label: t('chat.social.search.filter.files') },
-    ],
+  const filterOptions = useMemo(
+    () => ([
+      { label: t('chat.social.search.filter.all'), value: 'all' as SearchFilter },
+      { label: t('chat.social.search.filter.messages'), value: 'messages' as SearchFilter },
+      { label: t('chat.social.search.filter.threads'), value: 'threads' as SearchFilter },
+      { label: t('chat.social.search.filter.files'), value: 'files' as SearchFilter },
+    ]),
     [t],
   );
 
@@ -359,200 +346,124 @@ export function SearchMessagesModal({
   const hasSearched = searchQuery.trim().length > 0;
 
   return (
-    <Modal
+    <Dialog
+      open={open}
+      onDismiss={handleClose}
       title={
-        <Flexbox horizontal align="center" gap={8}>
+        <span className="sc-search__title">
           <Search size={18} />
           {t('chat.social.search.title')}
-        </Flexbox>
+        </span>
       }
-      open={open}
-      onCancel={handleClose}
-      footer={null}
       width={640}
-      destroyOnHidden
+      closeLabel={t('chat.social.messageArea.cancel')}
     >
-      <Flexbox gap={12} style={{ minHeight: 492 }}>
-        <Input
+      <div className="sc-search">
+        <PtTextField
           data-chat-message-search-input
-          prefix={<Search size={16} style={{ color: token.colorTextQuaternary }} />}
-          suffix={searchLoading || localQuery ? (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                height: 24,
-              }}
-            >
-              {searchLoading ? <Spin size="small" /> : null}
-              {localQuery ? (
-                <button
-                  data-chat-message-search-clear
-                  type="button"
+          leading={<Search size={16} />}
+          trailing={(searchLoading || localQuery) ? (
+            <span className="sc-search__trailing">
+              {searchLoading && <PtSpin size="small" />}
+              {localQuery && (
+                <IconButton
+                  actionId="chat-message-search-clear"
+                  iconId="close"
+                  iconSize={14}
+                  density="compact"
+                  emphasis="quiet"
+                  className="sc-search__clear"
+                  label={t('chat.social.search.clear')}
                   aria-label={t('chat.social.search.clear')}
-                  onClick={() => setLocalQuery('')}
-                  style={{
-                    width: 20,
-                    height: 20,
-                    padding: 0,
-                    border: 0,
-                    background: 'transparent',
-                    color: token.colorTextTertiary,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              ) : null}
+                  data-chat-message-search-clear
+                  onActivate={() => setLocalQuery('')}
+                />
+              )}
             </span>
           ) : undefined}
           placeholder={t('chat.social.search.placeholder')}
           value={localQuery}
-          onChange={(e) => setLocalQuery(e.target.value)}
+          onValueChange={setLocalQuery}
+          aria-label={t('chat.social.search.title')}
         />
-        <Flexbox gap={12} style={{ minHeight: 420 }}>
-          <>
-            {searchResults.length > 0 && (
-              <>
-                <Flexbox horizontal align="center" justify="space-between" gap={8}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {t('chat.social.search.resultCount', { count: filteredResults.length })}
-                  </Text>
-                </Flexbox>
-                <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                  {filterOptions.map((option) => (
-                    <Button
-                      key={option.key}
-                      size="small"
-                      type={activeFilter === option.key ? 'primary' : 'default'}
-                      onClick={() => setActiveFilter(option.key)}
-                    >
-                      {option.label} {filterCounts[option.key]}
-                    </Button>
-                  ))}
-                </Flexbox>
-              </>
-            )}
-            {searchResults.length > 0 && filteredResults.length === 0 ? (
-              <LobeEmpty icon={SearchX} title={t('chat.social.search.noFilterResults')} />
-            ) : searchResults.length > 0 ? (
-              <Flexbox
-                gap={0}
-                style={{
-                  maxHeight: 390,
-                  overflow: 'auto',
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  borderRadius: token.borderRadius,
-                }}
-              >
-                {filteredResults.map((item) => {
-                  const r = item.result;
-                  const kind = primaryKindForResult(item);
-                  return (
-                    <Flexbox
-                      key={`${r.scope}-${r.conversationId}-${r.messageId}`}
-                      data-messaging-search-result
-                      data-messaging-search-conversation-id={r.conversationId}
-                      data-messaging-search-message-id={r.messageId}
-                      data-messaging-search-scope={r.scope}
-                      data-messaging-search-kind={kind}
-                      horizontal
-                      align="flex-start"
-                      gap={10}
-                      style={{
-                        padding: '12px',
-                        cursor: 'pointer',
-                        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-                      }}
-                      onClick={() => handleResultClick(r)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handleResultClick(r);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                    >
-                      <Flexbox
-                        align="center"
-                        justify="center"
-                        style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 9,
-                          background: token.colorFillTertiary,
-                          flexShrink: 0,
-                          color: token.colorTextSecondary,
-                        }}
-                      >
-                        {r.scope === 'friend' ? <MessageSquare size={16} /> : <Users size={16} />}
-                      </Flexbox>
-                      <Flexbox style={{ minWidth: 0, flex: 1 }} gap={5}>
-                        <Flexbox horizontal align="center" justify="space-between" gap={8}>
-                          <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
-                            <Text strong ellipsis style={{ fontSize: 13, minWidth: 0 }}>
-                              {r.conversationName}
-                            </Text>
-                            <Tag style={{ marginInlineEnd: 0 }}>{scopeLabel(r)}</Tag>
-                            <Tag
-                              color={resultKindColor(kind)}
-                              icon={resultKindIcon(kind)}
-                              style={{ marginInlineEnd: 0 }}
-                            >
-                              {kindLabel(kind)}
-                            </Tag>
-                          </Flexbox>
-                          <Button
-                            size="small"
-                            type="link"
-                            icon={<ArrowRight size={13} />}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleResultClick(r);
-                            }}
-                          >
-                            {t('chat.social.search.jump')}
-                          </Button>
-                        </Flexbox>
-                        <Text type="secondary" style={{ fontSize: 11 }}>
-                          {item.senderLabel} - {formatSentAt(r.sentAt, t)}
-                        </Text>
-                        <Text style={{ fontSize: 13, lineHeight: 1.45, wordBreak: 'break-word' }}>
-                          {highlightMatch(r.content, searchQuery, token.colorWarningBg)}
-                        </Text>
-                      </Flexbox>
-                    </Flexbox>
-                  );
-                })}
-              </Flexbox>
-            ) : (
-              <Flexbox
-                align="center"
-                justify="center"
-                style={{
-                  minHeight: 180,
-                  color: token.colorTextQuaternary,
-                  border: `1px dashed ${token.colorBorderSecondary}`,
-                  borderRadius: token.borderRadius,
-                }}
-              >
-                {hasSearched && !searchLoading ? (
-                  <Empty description={t('chat.social.search.noResults')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                ) : (
-                  <Text type="secondary" style={{ fontSize: 13 }}>
-                    {t('chat.social.search.startTyping')}
-                  </Text>
-                )}
-              </Flexbox>
-            )}
-          </>
-        </Flexbox>
-      </Flexbox>
-    </Modal>
+        <div className="sc-search__body">
+          {searchResults.length > 0 && (
+            <>
+              <div className="sc-search__count">
+                {t('chat.social.search.resultCount', { count: filteredResults.length })}
+              </div>
+              <PtSegmented
+                options={filterOptions.map((option) => ({
+                  ...option,
+                  label: `${option.label} ${filterCounts[option.value]}`,
+                }))}
+                value={activeFilter}
+                onValueChange={(value) => setActiveFilter(value as SearchFilter)}
+              />
+            </>
+          )}
+          {searchResults.length > 0 && filteredResults.length === 0 ? (
+            <PtEmpty
+              className="sc-search__empty"
+              icon={<SearchX size={28} />}
+              description={t('chat.social.search.noFilterResults')}
+            />
+          ) : searchResults.length > 0 ? (
+            <div className="sc-search__list">
+              {filteredResults.map((item) => {
+                const r = item.result;
+                const kind = primaryKindForResult(item);
+                return (
+                  <button
+                    type="button"
+                    key={`${r.scope}-${r.conversationId}-${r.messageId}`}
+                    className="sc-search__result"
+                    data-messaging-search-result
+                    data-messaging-search-conversation-id={r.conversationId}
+                    data-messaging-search-message-id={r.messageId}
+                    data-messaging-search-scope={r.scope}
+                    data-messaging-search-kind={kind}
+                    onClick={() => handleResultClick(r)}
+                  >
+                    <span className="sc-search__result-glyph">
+                      {r.scope === 'friend' ? <MessageSquare size={16} /> : <Users size={16} />}
+                    </span>
+                    <span className="sc-search__result-body">
+                      <span className="sc-search__result-line">
+                        <span className="sc-search__result-head">
+                          <strong className="sc-search__conversation">{r.conversationName}</strong>
+                          <PtTag>{scopeLabel(r)}</PtTag>
+                          <PtTag tone={resultKindTone(kind)} leading={resultKindIcon(kind)}>
+                            {kindLabel(kind)}
+                          </PtTag>
+                        </span>
+                        <span className="sc-search__result-jump">
+                          <ArrowRight size={13} />
+                          {t('chat.social.search.jump')}
+                        </span>
+                      </span>
+                      <span className="sc-search__result-meta">
+                        {item.senderLabel} - {formatSentAt(r.sentAt, t)}
+                      </span>
+                      <span className="sc-search__result-text">
+                        {highlightMatch(r.content, searchQuery)}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="sc-search__placeholder">
+              {hasSearched && !searchLoading ? (
+                <PtEmpty description={t('chat.social.search.noResults')} />
+              ) : (
+                <span>{t('chat.social.search.startTyping')}</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </Dialog>
   );
 }

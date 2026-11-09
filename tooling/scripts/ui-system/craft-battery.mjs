@@ -60,6 +60,17 @@ export function craftBatterySource(rootSelector) {
       if (visible(el) && !screenReaderOnly(el)) flag('native-control-chrome', describe(el));
     });
 
+    // C1b — The visually-hidden utility must collapse even when applied on top
+    // of a real control (e.g. a .pt-button context-menu anchor). Component
+    // chrome rules (min-height, border, relative positioning) must never win
+    // the cascade; a leaking sr-only button paints a 36px phantom row.
+    root.querySelectorAll('.pt-sr-only').forEach(el => {
+      if (!screenReaderOnly(el)) {
+        const r = box(el);
+        flag('sr-only-leak', describe(el), { width: Math.round(r.width), height: Math.round(r.height) });
+      }
+    });
+
     // C2 — The switch is an intrinsic dense 36x20 control (promoted from the
     // old 44x26 iOS pill). Even inside a stretchy parent it must keep its
     // geometry; the old tall/wide bounds are now defects.

@@ -938,7 +938,7 @@ class FederationTwoStationLifecycleGate(AcceptanceGate):
                 "visible Settings navigation",
             ),
             (
-                '[data-pt-secondary-tab="federation"]',
+                '[data-pt-secondary-tab="network"]',
                 "visible Federation settings group",
             ),
         ):

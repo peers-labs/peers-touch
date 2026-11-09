@@ -1,39 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Empty as LobeEmpty } from '@lobehub/ui';
-import { Flexbox } from 'react-layout-kit';
 import {
-  Badge,
   Button,
   Card,
+  DataTable,
   Empty,
+  Icon,
+  IconButton,
   Progress,
   Select,
-  Space,
   Spin,
   Statistic,
   Switch,
-  Table,
   Tag,
+  Text,
   Tooltip,
-  Typography,
-  message,
-} from 'antd';
-import {
-  Activity,
-  BookOpen,
-  Brain,
-  Clock,
-  Eye,
-  Minus,
-  Play,
-  RefreshCw,
-  ThumbsDown,
-  ThumbsUp,
-  TrendingDown,
-  TrendingUp,
-  Zap,
-} from 'lucide-react';
+  type IconId,
+  type TableColumn,
+  type Tone,
+} from '@peers-touch/ui';
 
 import {
   api,
@@ -46,22 +31,21 @@ import {
   getAgentMemories,
   getAgentSkills,
 } from '../../services/desktop_api';
-
-const { Title, Text } = Typography;
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
 interface AgentGrowthTabProps {
   agentId?: string;
 }
 
 function VerdictBadge({ verdict }: { verdict: string }) {
-  const config: Record<string, { color: string; icon: React.ReactNode }> = {
-    improving: { color: 'green', icon: <TrendingUp size={12} /> },
-    stable: { color: 'blue', icon: <Minus size={12} /> },
-    declining: { color: 'red', icon: <TrendingDown size={12} /> },
+  const config: Record<string, { tone: Tone; icon: IconId }> = {
+    improving: { tone: 'success', icon: 'trending-up' },
+    stable: { tone: 'info', icon: 'minus' },
+    declining: { tone: 'danger', icon: 'trending-down' },
   };
   const resolved = config[verdict] ?? config.stable;
   return (
-    <Tag color={resolved.color} icon={resolved.icon}>
+    <Tag tone={resolved.tone} leading={<Icon iconId={resolved.icon} size={12} />}>
       {verdict.toUpperCase()}
     </Tag>
   );
@@ -69,8 +53,8 @@ function VerdictBadge({ verdict }: { verdict: string }) {
 
 function TrustBar({ score }: { score: number }) {
   const percent = Math.round(score * 100);
-  const color = percent >= 70 ? '#52c41a' : percent >= 40 ? '#faad14' : '#ff4d4f';
-  return <Progress percent={percent} size="small" strokeColor={color} showInfo={false} />;
+  const tone: Tone = percent >= 70 ? 'success' : percent >= 40 ? 'warning' : 'danger';
+  return <Progress value={percent} tone={tone} showValue={false} className="sc-growth-trust" />;
 }
 
 function scheduleSummary(job: CronJob): string {
@@ -137,175 +121,180 @@ export function AgentGrowthTab({ agentId: initialAgentId }: AgentGrowthTabProps)
       setJobs((current) => current.map((item) =>
         item.id === job.id ? { ...item, enabled } : item,
       ));
-      message.success(t('settings.agentGrowth.jobUpdated'));
+      notifySuccess(t('settings.agentGrowth.jobUpdated'));
     } catch (error) {
-      message.error((error as Error)?.message || 'toggle scheduled job failed');
+      notifyError((error as Error)?.message || 'toggle scheduled job failed');
     }
   };
 
   const runJob = async (job: CronJob) => {
     try {
       await api.runCronJob(job.id);
-      message.success(t('settings.agentGrowth.jobTriggered'));
+      notifySuccess(t('settings.agentGrowth.jobTriggered'));
       await loadData(agentId);
     } catch (error) {
-      message.error((error as Error)?.message || 'run scheduled job failed');
+      notifyError((error as Error)?.message || 'run scheduled job failed');
     }
   };
 
-  const memoryColumns = useMemo(() => [
+  const memoryColumns = useMemo<TableColumn<MemoryItem>[]>(() => [
     {
-      title: t('settings.agentGrowth.colContent'),
-      dataIndex: 'content',
-      key: 'content',
-      ellipsis: true,
+      id: 'content',
+      label: t('settings.agentGrowth.colContent'),
       width: '40%',
-    },
-    {
-      title: t('settings.agentGrowth.colTarget'),
-      dataIndex: 'target',
-      key: 'target',
-      width: 80,
-      render: (target: string) => <Tag>{target}</Tag>,
-    },
-    {
-      title: t('settings.agentGrowth.colTrust'),
-      dataIndex: 'trust_score',
-      key: 'trust_score',
-      width: 120,
-      sorter: (a: MemoryItem, b: MemoryItem) => a.trust_score - b.trust_score,
-      render: (score: number) => <TrustBar score={score} />,
-    },
-    {
-      title: t('settings.agentGrowth.colSource'),
-      dataIndex: 'source',
-      key: 'source',
-      width: 90,
-      render: (source: string) => (
-        <Tag color={source === 'review' ? 'purple' : 'default'}>{source}</Tag>
+      renderCell: (item) => (
+        <span className="sc-growth-ellipsis">{item.content}</span>
       ),
     },
     {
-      title: <ThumbsUp size={12} />,
-      dataIndex: 'helpful_count',
-      key: 'helpful_count',
-      width: 50,
-      align: 'center' as const,
+      id: 'target',
+      label: t('settings.agentGrowth.colTarget'),
+      width: 80,
+      renderCell: (item) => <Tag>{item.target}</Tag>,
     },
     {
-      title: <ThumbsDown size={12} />,
-      dataIndex: 'harmful_count',
-      key: 'harmful_count',
+      id: 'trust_score',
+      label: t('settings.agentGrowth.colTrust'),
+      width: 120,
+      compare: (a, b) => a.trust_score - b.trust_score,
+      renderCell: (item) => <TrustBar score={item.trust_score} />,
+    },
+    {
+      id: 'source',
+      label: t('settings.agentGrowth.colSource'),
+      width: 90,
+      renderCell: (item) => (
+        <Tag tone={item.source === 'review' ? 'info' : 'neutral'}>{item.source}</Tag>
+      ),
+    },
+    {
+      id: 'helpful_count',
+      label: <Icon iconId="thumbs-up" size={12} />,
       width: 50,
-      align: 'center' as const,
+      align: 'center',
+      renderCell: (item) => item.helpful_count,
+    },
+    {
+      id: 'harmful_count',
+      label: <Icon iconId="thumbs-down" size={12} />,
+      width: 50,
+      align: 'center',
+      renderCell: (item) => item.harmful_count,
     },
   ], [t]);
 
-  const skillColumns = useMemo(() => [
+  const skillColumns = useMemo<TableColumn<SkillItem>[]>(() => [
     {
-      title: t('settings.agentGrowth.colName'),
-      dataIndex: 'name',
-      key: 'name',
+      id: 'name',
+      label: t('settings.agentGrowth.colName'),
       width: '25%',
-      render: (name: string) => <Text strong>{name}</Text>,
+      renderCell: (item) => <Text strong>{item.name}</Text>,
     },
     {
-      title: t('settings.agentGrowth.colDescription'),
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true,
+      id: 'description',
+      label: t('settings.agentGrowth.colDescription'),
       width: '35%',
+      renderCell: (item) => (
+        <span className="sc-growth-ellipsis">{item.description}</span>
+      ),
     },
     {
-      title: t('settings.agentGrowth.colSkillTrust'),
-      dataIndex: 'trust_level',
-      key: 'trust_level',
+      id: 'trust_level',
+      label: t('settings.agentGrowth.colSkillTrust'),
       width: 100,
-      render: (level: string) => {
-        const color = level === 'builtin' ? 'green' : level === 'trusted' ? 'blue' : 'default';
-        return <Tag color={color}>{level}</Tag>;
-      },
+      renderCell: (item) => (
+        <Tag tone={item.trust_level === 'builtin' ? 'success' : item.trust_level === 'trusted' ? 'info' : 'neutral'}>
+          {item.trust_level}
+        </Tag>
+      ),
     },
     {
-      title: <Eye size={12} />,
-      dataIndex: 'view_count',
-      key: 'view_count',
+      id: 'view_count',
+      label: <Icon iconId="eye" size={12} />,
       width: 50,
-      align: 'center' as const,
+      align: 'center',
+      renderCell: (item) => item.view_count,
     },
     {
-      title: <Zap size={12} />,
-      dataIndex: 'apply_count',
-      key: 'apply_count',
+      id: 'apply_count',
+      label: <Icon iconId="zap" size={12} />,
       width: 50,
-      align: 'center' as const,
+      align: 'center',
+      renderCell: (item) => item.apply_count,
     },
     {
-      title: t('settings.agentGrowth.colEnabled'),
-      dataIndex: 'enabled',
-      key: 'enabled',
+      id: 'enabled',
+      label: t('settings.agentGrowth.colEnabled'),
       width: 70,
-      render: (enabled: boolean) => <Switch size="small" checked={enabled} disabled />,
+      renderCell: (item) => <Switch checked={item.enabled} disabled />,
     },
   ], [t]);
 
-  const jobColumns = useMemo(() => [
+  const jobColumns = useMemo<TableColumn<CronJob>[]>(() => [
     {
-      title: t('settings.agentGrowth.colJob'),
-      dataIndex: 'name',
-      key: 'name',
-      render: (name: string, job: CronJob) => (
-        <Space direction="vertical" size={0}>
-          <Text strong>{name}</Text>
-          <Text type="secondary" style={{ fontSize: 11 }}>
+      id: 'name',
+      label: t('settings.agentGrowth.colJob'),
+      renderCell: (job) => (
+        <span className="sc-growth-stack">
+          <Text strong>{job.name}</Text>
+          <Text tone="muted" className="sc-growth-sub">
             {scheduleSummary(job)}
           </Text>
-        </Space>
+        </span>
       ),
     },
     {
-      title: t('settings.agentGrowth.colLastRun'),
-      key: 'lastRun',
+      id: 'lastRun',
+      label: t('settings.agentGrowth.colLastRun'),
       width: 200,
-      render: (_: unknown, job: CronJob) => (
-        <Space direction="vertical" size={0}>
+      renderCell: (job) => (
+        <span className="sc-growth-stack">
           <span>{job.lastRunAt ? new Date(job.lastRunAt).toLocaleString() : '—'}</span>
           {job.lastError ? (
-            <Text type="danger" style={{ fontSize: 11 }} ellipsis>
+            <Text tone="danger" truncate className="sc-growth-sub">
               {job.lastError}
             </Text>
           ) : null}
-        </Space>
+        </span>
       ),
     },
     {
-      title: t('settings.agentGrowth.colLastStatus'),
-      dataIndex: 'lastStatus',
-      key: 'lastStatus',
+      id: 'lastStatus',
+      label: t('settings.agentGrowth.colLastStatus'),
       width: 100,
-      render: (status: string) =>
-        status ? <Tag color={status === 'ok' ? 'green' : status === 'error' ? 'red' : 'default'}>{status}</Tag> : null,
+      renderCell: (job) =>
+        job.lastStatus ? (
+          <Tag tone={job.lastStatus === 'ok' ? 'success' : job.lastStatus === 'error' ? 'danger' : 'neutral'}>
+            {job.lastStatus}
+          </Tag>
+        ) : null,
     },
     {
-      title: t('settings.agentGrowth.colEnabled'),
-      dataIndex: 'enabled',
-      key: 'enabled',
+      id: 'enabled',
+      label: t('settings.agentGrowth.colEnabled'),
       width: 80,
-      render: (enabled: boolean, job: CronJob) => (
+      renderCell: (job) => (
         <Switch
-          size="small"
-          checked={enabled}
-          onChange={(value) => void toggleJob(job, value)}
+          checked={job.enabled}
+          onCheckedChange={(value) => void toggleJob(job, value)}
         />
       ),
     },
     {
-      title: '',
-      key: 'actions',
+      id: 'actions',
+      label: '',
       width: 56,
-      render: (_: unknown, job: CronJob) => (
-        <Tooltip title={t('settings.agentGrowth.runNow')}>
-          <Button size="small" type="text" icon={<Play size={14} />} onClick={() => void runJob(job)} />
+      renderCell: (job) => (
+        <Tooltip label={t('settings.agentGrowth.runNow')}>
+          <IconButton
+            actionId={`agent-growth-run-${job.id}`}
+            iconId="play"
+            iconSize={14}
+            density="compact"
+            emphasis="quiet"
+            label={t('settings.agentGrowth.runNow')}
+            onActivate={() => void runJob(job)}
+          />
         </Tooltip>
       ),
     },
@@ -313,129 +302,151 @@ export function AgentGrowthTab({ agentId: initialAgentId }: AgentGrowthTabProps)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [t, agentId]);
 
+  const schedulerRunning = jobs.some((job) => job.enabled);
+
   return (
-    <Flexbox gap={16} style={{ padding: '0 4px', overflow: 'auto', maxHeight: '100%' }}>
-      <Flexbox horizontal justify="space-between" align="center">
-        <Title level={5} style={{ margin: 0 }}>
-          <Activity size={16} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+    <div className="sc-growth">
+      <div className="sc-growth__header">
+        <h5 className="sc-growth__title">
+          <Icon iconId="activity" size={16} />
           {t('settings.agentGrowth.title')}
-        </Title>
-        <Space>
+        </h5>
+        <div className="sc-growth__controls">
           <Select
-            showSearch
+            searchable
             style={{ width: 240 }}
             value={agentId || undefined}
             placeholder={t('settings.agentGrowth.selectAgent')}
-            optionFilterProp="label"
             options={agents.map((agent) => ({
               label: agent.title || agent.name || agent.id,
               value: agent.id,
             }))}
-            onChange={setAgentId}
+            onValueChange={(value) => {
+              if (typeof value === 'string') setAgentId(value);
+            }}
           />
-          <Button icon={<RefreshCw size={14} />} onClick={() => void loadData(agentId)} loading={loading}>
-            {t('settings.agentGrowth.refresh')}
-          </Button>
-        </Space>
-      </Flexbox>
+          <Button
+            actionId="agent-growth-refresh"
+            leading={<Icon iconId="refresh-cw" size={14} />}
+            execution={loading ? 'pending' : 'idle'}
+            label={t('settings.agentGrowth.refresh')}
+            onActivate={() => void loadData(agentId)}
+          />
+        </div>
+      </div>
 
       {!agentId ? (
-        <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-          <LobeEmpty icon={TrendingUp} title={t('settings.agentGrowth.empty')} />
-        </Flexbox>
+        <div className="sc-growth__empty">
+          <Empty
+            icon={<Icon iconId="trending-up" size={40} />}
+            description={t('settings.agentGrowth.empty')}
+          />
+        </div>
       ) : (
         <>
           {snapshot ? (
-            <Flexbox horizontal gap={12} wrap="wrap">
-              <Card size="small" style={{ flex: 1, minWidth: 180 }}>
+            <div className="sc-growth__stats">
+              <Card className="sc-growth__stat">
                 <Statistic
-                  title={t('settings.agentGrowth.growthScore')}
+                  label={t('settings.agentGrowth.growthScore')}
                   value={snapshot.growth_score}
                   precision={3}
                   prefix={<VerdictBadge verdict={snapshot.growth_verdict} />}
                 />
               </Card>
-              <Card size="small" style={{ flex: 1, minWidth: 140 }}>
+              <Card className="sc-growth__stat">
                 <Statistic
-                  title={t('settings.agentGrowth.totalTurns')}
+                  label={t('settings.agentGrowth.totalTurns')}
                   value={snapshot.total_turns}
-                  prefix={<Zap size={14} />}
+                  prefix={<Icon iconId="zap" size={14} />}
                 />
               </Card>
-              <Card size="small" style={{ flex: 1, minWidth: 140 }}>
+              <Card className="sc-growth__stat">
                 <Statistic
-                  title={t('settings.agentGrowth.feedbackRatio')}
+                  label={t('settings.agentGrowth.feedbackRatio')}
                   value={snapshot.feedback_ratio}
                   precision={2}
                   suffix={
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text tone="secondary" style={{ fontSize: 12 }}>
                       ({snapshot.positive_feedback}+ / {snapshot.negative_feedback}-)
                     </Text>
                   }
                 />
               </Card>
-              <Card size="small" style={{ flex: 1, minWidth: 140 }}>
-                <Statistic title={t('settings.agentGrowth.errorRate')} value={snapshot.error_rate} precision={3} />
+              <Card className="sc-growth__stat">
+                <Statistic label={t('settings.agentGrowth.errorRate')} value={snapshot.error_rate} precision={3} />
               </Card>
-            </Flexbox>
+            </div>
           ) : null}
 
           <Card
-            size="small"
-            title={
-              <Space>
-                <Clock size={14} />
+            className="sc-growth__card"
+            data-growth-card="jobs"
+            heading={
+              <span className="sc-growth__card-title">
+                <Icon iconId="clock-3" size={14} />
                 <span>{t('settings.agentGrowth.scheduledJobs')}</span>
-                <Badge
-                  status={jobs.some((job) => job.enabled) ? 'processing' : 'default'}
-                  text={jobs.some((job) => job.enabled)
+                <Tag tone={schedulerRunning ? 'info' : 'neutral'}>
+                  {schedulerRunning
                     ? t('settings.agentGrowth.schedulerRunning')
                     : t('settings.agentGrowth.schedulerStopped')}
-                />
-              </Space>
+                </Tag>
+              </span>
             }
           >
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {t('settings.agentGrowth.schedulerNote')}
             </Text>
-            <Table
-              dataSource={jobs}
+            <DataTable
+              rows={jobs}
               columns={jobColumns}
               rowKey="id"
-              size="small"
-              pagination={false}
-              locale={{ emptyText: t('settings.agentGrowth.jobsEmpty') }}
+              emptyLabel={t('settings.agentGrowth.jobsEmpty')}
             />
           </Card>
 
-          <Card size="small" title={<Space><Brain size={14} /><span>{t('settings.agentGrowth.memories', { count: memories.length })}</span></Space>}>
-            <Table
-              dataSource={memories}
+          <Card
+            className="sc-growth__card"
+            data-growth-card="memories"
+            heading={
+              <span className="sc-growth__card-title">
+                <Icon iconId="brain" size={14} />
+                <span>{t('settings.agentGrowth.memories', { count: memories.length })}</span>
+              </span>
+            }
+          >
+            <DataTable
+              rows={memories}
               columns={memoryColumns}
               rowKey="id"
-              size="small"
-              pagination={{ pageSize: 10 }}
-              locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('settings.agentGrowth.noMemories')} /> }}
+              pageSize={10}
+              emptyLabel={t('settings.agentGrowth.noMemories')}
             />
           </Card>
 
-          <Card size="small" title={<Space><BookOpen size={14} /><span>{t('settings.agentGrowth.skills', { count: skills.length })}</span></Space>}>
-            <Table
-              dataSource={skills}
+          <Card
+            className="sc-growth__card"
+            data-growth-card="skills"
+            heading={
+              <span className="sc-growth__card-title">
+                <Icon iconId="book-open" size={14} />
+                <span>{t('settings.agentGrowth.skills', { count: skills.length })}</span>
+              </span>
+            }
+          >
+            <DataTable
+              rows={skills}
               columns={skillColumns}
               rowKey="id"
-              size="small"
-              pagination={{ pageSize: 10 }}
-              locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('settings.agentGrowth.noSkills')} /> }}
+              pageSize={10}
+              emptyLabel={t('settings.agentGrowth.noSkills')}
             />
           </Card>
         </>
       )}
       {loading && !snapshot && memories.length === 0 ? (
-        <Flexbox align="center" justify="center" style={{ padding: 48 }}>
-          <Spin />
-        </Flexbox>
+        <div className="sc-growth__loading"><Spin /></div>
       ) : null}
-    </Flexbox>
+    </div>
   );
 }

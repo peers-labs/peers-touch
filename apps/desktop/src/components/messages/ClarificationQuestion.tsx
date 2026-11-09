@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Flex, Input, Typography } from 'antd';
+import { Button, TextArea } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 import type { ToolCallInfo } from '../../store/chat';
 import { toolRuntime } from '../../runtimes/toolRuntime';
@@ -30,54 +30,64 @@ export function ClarificationQuestion({ tool }: { tool: ToolCallInfo }) {
   }
 
   return (
-    <Flex vertical gap={8} data-pt-agent-clarification={tool.id}>
-      <Typography.Text strong>{question.prompt}</Typography.Text>
+    <div className="sc-clarify" data-pt-agent-clarification={tool.id}>
+      <strong className="sc-clarify__prompt">{question.prompt}</strong>
       {waiting && (
         <>
-          <Flex gap={8} wrap>
+          <div className="sc-clarify__choices">
             {choices.map((choice) => (
               <Button
                 key={choice}
-                disabled={submitting}
-                type={!other && answer === choice ? 'primary' : 'default'}
-                onClick={() => { setOther(false); setAnswer(choice); }}
+                actionId={`clarification-choice-${choice}`}
+                density="compact"
+                emphasis={!other && answer === choice ? 'primary' : 'secondary'}
+                label={choice}
+                availability={submitting ? { kind: 'disabled', reason: choice } : undefined}
+                onActivate={() => { setOther(false); setAnswer(choice); }}
                 data-pt-agent-clarification-choice={choice}
-              >{choice}</Button>
+              />
             ))}
             {choices.length > 0 && (
               <Button
-                disabled={submitting}
-                type={other ? 'primary' : 'default'}
-                onClick={() => { setOther(true); setAnswer(''); }}
+                actionId="clarification-other"
+                density="compact"
+                emphasis={other ? 'primary' : 'secondary'}
+                label={t('chat.clarification.other')}
+                availability={submitting ? { kind: 'disabled', reason: t('chat.clarification.other') } : undefined}
+                onActivate={() => { setOther(true); setAnswer(''); }}
                 data-pt-agent-clarification-other
-              >{t('chat.clarification.other')}</Button>
+              />
             )}
-          </Flex>
+          </div>
           {(other || choices.length === 0) && (
-            <Input.TextArea
+            <TextArea
+              className="sc-clarify__input"
               value={answer}
               disabled={submitting}
               maxLength={4000}
-              autoSize={{ minRows: 2, maxRows: 6 }}
+              rows={3}
               onChange={(event) => setAnswer(event.target.value)}
               data-pt-agent-clarification-input
             />
           )}
           <Button
-            type="primary"
-            loading={submitting}
-            disabled={!answer.trim()}
-            onClick={() => void submit()}
+            actionId="clarification-submit"
+            density="compact"
+            emphasis="primary"
+            execution={submitting ? 'pending' : undefined}
+            label={t('chat.clarification.submit')}
+            availability={!answer.trim() ? { kind: 'disabled', reason: t('chat.clarification.submit') } : undefined}
+            onActivate={() => void submit()}
             data-pt-agent-clarification-submit
-          >{t('chat.clarification.submit')}</Button>
+          />
         </>
       )}
       {tool.result && (
-        <Typography.Paragraph data-pt-agent-clarification-answer>
+        <p className="sc-clarify__answer" data-pt-agent-clarification-answer>
           {tool.result}
-        </Typography.Paragraph>
+        </p>
       )}
-      {error && <Typography.Text type="danger">{t(error)}</Typography.Text>}
-    </Flex>
+      {error && <p className="sc-clarify__error">{t(error)}</p>}
+    </div>
   );
 }

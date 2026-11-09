@@ -32,7 +32,7 @@ class FederationTwoStationLifecycleGateTest(unittest.TestCase):
         section.is_displayed.return_value = True
         elements = {
             '[data-pt-primary-nav="settings"] [role="button"]': [primary],
-            '[data-pt-secondary-tab="federation"]': [secondary],
+            '[data-pt-secondary-tab="network"]': [secondary],
             '[data-pt-section-host="federation"]': [section],
         }
         session.find_elements.side_effect = elements.__getitem__

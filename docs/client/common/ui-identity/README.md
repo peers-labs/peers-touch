@@ -1,11 +1,12 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-10-27
+updated: 2026-11-07
 review-cadence: quarterly
-next-review: 2027-01-27
+next-review: 2027-02-07
 related:
-  - docs/client/common/ux-design-methodology.md
+  - docs/architecture/platform/client/ui-system/design.md
+  - docs/architecture/platform/client/ui-system/prototype/north-star-frame.md
   - docs/client/common/ui-identity/component-spec-map.md
 ---
 
@@ -45,37 +46,46 @@ Rules:
 
 ## 3. Peers Touch UI ID
 
-Peers Touch uses **Structured Expressive Minimalism** as its product-level
-north star. **Quiet Protocol Minimalism** is the default expression for dense,
-recurring workflow surfaces:
+The product-level identity, making cycle, and composition kernel are owned by
+**Peers UI System**: [design.md](../../../architecture/platform/client/ui-system/design.md)
+(Definition → Composition → Resolution) and the self-training
+[methodology](../../../architecture/platform/client/ui-system/prototype/self-training-methodology.md).
 
-- Structured: hierarchy, boundaries, actions, and trust semantics stay stable.
-- Expressive: each module has a declared, Peers-owned signature and appropriate
-  expression strength.
-- Quiet: recurring workflows use low-noise surfaces, calm motion, and
-  disciplined accent colors.
-- Protocol: identity, station, audience, trust, and privacy states are visible when they affect user decisions.
-- Minimalism: structure is clear without heavy borders, dashboard chrome, or decorative density.
-- Human-first: social and collaboration flows prioritize readable human activity before system metadata.
-- Verifiable: UI states expose data source, processing path, and trust boundary when relevant.
+The active desktop visual grammar is the **north-star desktop frame**
+([north-star-frame.md](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md)):
+
+- Neutral paper/glass surfaces; chrome zones separate by material, never hairlines.
+- The dominant action is a near-ink **capsule** (`#1a1d20`, dark inverts) and wins by weight.
+- **Pine `#2f6a50` is the single brand accent**: identity/current-location,
+  connection and online points, accept/answer, favorite marks. Small touch
+  points only — never a canvas/card fill, never the success color.
+- Identity elements are rounded-square; circles only for status points.
+- These values are promoted into `@peers-touch/ui-tokens`; the frame is the
+  only allowed desktop prototype frame (Frontend Eles → 桌面原型).
+
+The earlier "Structured Expressive Minimalism / Quiet Protocol Minimalism"
+wording is **superseded** (see `foundations.md`, `new-identity.md`). This
+directory keeps token/component/state/craft contracts that implement the frame.
 
 ## 4. Reading Order
 
-1. [foundations.md](./foundations.md) — product-level UI identity and visual philosophy.
-2. [tokens.md](./tokens.md) — shared token decisions for color, radius, spacing, type, border, shadow, and motion.
-3. [layout.md](./layout.md) — shell, content rail, page density, and responsive layout rules.
-4. [components.md](./components.md) — shared component anatomy and style constraints.
-5. [grammar-bindings.json](./grammar-bindings.json) — machine-readable semantic
+1. [Peers UI System design](../../../architecture/platform/client/ui-system/design.md) — identity, making cycle, composition kernel (authoritative).
+2. [north-star-frame.md](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md) — active desktop frame grammar and pine color boundaries.
+3. [self-training-methodology.md](../../../architecture/platform/client/ui-system/prototype/self-training-methodology.md) — gap-first prototype → promotion gate.
+4. [tokens.md](./tokens.md) — shared token decisions for color, radius, spacing, type, border, shadow, and motion.
+5. [layout.md](./layout.md) — shell, content rail, page density, and responsive layout rules.
+6. [components.md](./components.md) — shared component anatomy and style constraints.
+7. [grammar-bindings.json](./grammar-bindings.json) — machine-readable semantic
    role, representation and Desktop/Mobile adapter binding.
-6. [interaction.md](./interaction.md) — state, feedback, loading, failure, and optimistic interaction rules.
-7. [accessibility.md](./accessibility.md) — focus, keyboard, contrast, hover, and reduced-motion requirements.
-8. [craft-quality.md](./craft-quality.md) — evidence-backed craft calibration,
-   accessibility/performance baseline, and findings-first review gate.
-9. [frontend-component-tree.md](./frontend-component-tree.md) — Frontend component tree, alive policy, render boundary, and jank-prevention standard.
-10. [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) — Alive / non-alive / lazy / LRU registry for primary modules, settings, applets, and large content surfaces.
-11. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
-12. [component-spec-map.md](./component-spec-map.md) — component→token→value benchmarking map (skeleton/inventory for the full component contract).
-13. [new-identity.md](./new-identity.md) — Structured Expressive Minimalism 的方向来源与迁移背景；规范性工艺要求已收敛到 `craft-quality.md`。
+8. [interaction.md](./interaction.md) — state, feedback, loading, failure, and optimistic interaction rules.
+9. [accessibility.md](./accessibility.md) — focus, keyboard, contrast, hover, and reduced-motion requirements.
+10. [craft-quality.md](./craft-quality.md) — evidence-backed craft calibration,
+    accessibility/performance baseline, and findings-first review gate.
+11. [frontend-component-tree.md](./frontend-component-tree.md) — Frontend component tree, alive policy, render boundary, and jank-prevention standard.
+12. [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) — Alive / non-alive / lazy / LRU registry for primary modules, settings, applets, and large content surfaces.
+13. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
+14. [component-spec-map.md](./component-spec-map.md) — component→token→value benchmarking map (skeleton/inventory for the full component contract).
+15. [foundations.md](./foundations.md) / [new-identity.md](./new-identity.md) — **superseded**, history only.
 
 ## 5. Module Contracts
 
@@ -108,8 +118,10 @@ Patterns are reusable surface contracts across modules:
 
 ## 7. Implementation Rules
 
-- Use LobeUI first for Desktop UI primitives.
-- Use antd only when the component is necessary and visually normalized into this identity.
+- Use `@peers-touch/ui` primitives first for Desktop UI.
+- Use antd only when no peers-ui primitive exists yet and the control is
+  visually normalized into the north-star identity; the file belongs on the
+  migration list until then.
 - Do not mix component-library defaults directly on one surface.
 - Do not define raw visual values in page code when a token or shared component rule exists.
 - **The app/page/prototype layer composes primitives; it never defines them.**
@@ -131,6 +143,7 @@ Patterns are reusable surface contracts across modules:
 
 Before editing client UI:
 
+- [ ] Read [Peers UI System design](../../../architecture/platform/client/ui-system/design.md) and the [north-star frame grammar](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md).
 - [ ] Read this file.
 - [ ] Read the closest module contract under `modules/`.
 - [ ] Read the closest shared pattern under `patterns/`.

@@ -14,6 +14,8 @@ describe('runtime-resume-unavailable recovery wiring', () => {
       handlerStart,
     );
     const handler = source.slice(handlerStart, handlerEnd);
+    const resetCallbackStart = source.indexOf('const performRuntimeReset', handlerStart);
+    const opener = source.slice(handlerStart, resetCallbackStart);
     const actionStart = source.indexOf(
       "if (message.resolution!.type === 'confirmReset')",
     );
@@ -24,14 +26,20 @@ describe('runtime-resume-unavailable recovery wiring', () => {
     const action = source.slice(actionStart, actionEnd);
 
     expect(handlerStart).toBeGreaterThan(-1);
-    expect(handler).toContain('Modal.confirm({');
-    expect(handler).toContain("'agent.recovery.confirmResetDescription'");
-    expect(handler).toContain('danger: true');
+    // The handler only opens a peer confirm Dialog; it never resets directly.
+    expect(opener).toContain('setResetConfirmOpen(true)');
+    expect(opener).not.toContain('resetExternalRuntime');
+    // The guarded reset lives in the confirm callback.
+    expect(handler).toContain('const performRuntimeReset');
     expect(handler).toContain('await resetExternalRuntime(currentSessionKey)');
+    // The declarative Dialog carries the destructive description, danger tone,
+    // and the acceptance anchor on its confirm button.
+    expect(source).toContain("'agent.recovery.confirmResetDescription'");
+    expect(source).toContain('tone="danger"');
+    expect(source).toContain('data-pt-agent-runtime-reset-confirm');
     expect(action).toContain('handleConfirmRuntimeReset()');
     expect(action).not.toContain('handleRetry(');
     expect(source).toContain("'confirm-reset'");
-    expect(source).toContain('data-pt-agent-runtime-reset-confirm');
     expect(source).toContain('data-pt-agent-error-runtime-profile-id');
   });
 });

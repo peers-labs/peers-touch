@@ -9,6 +9,10 @@ const identityRowSource = readFileSync(
   new URL('./ChatActorIdentityRow.tsx', import.meta.url),
   'utf8',
 );
+const chatStylesSource = readFileSync(
+  new URL('../../ui/chat.css', import.meta.url),
+  'utf8',
+);
 
 describe('CreateGroupModal recovery contract', () => {
   it('keeps the dialog draft until Group preparation is accepted', () => {
@@ -74,7 +78,11 @@ describe('CreateGroupModal recovery contract', () => {
     expect(source).toContain('<ChatActorIdentityRow');
     expect(identityRowSource).toContain('data-chat-identity-federation');
     expect(identityRowSource).toContain('data-chat-identity-station');
-    expect(identityRowSource).toContain("whiteSpace: 'normal'");
+    // Metadata wraps instead of truncating: the row carries the wrapping
+    // class and chat.css gives it normal whitespace / anywhere wrapping.
+    expect(identityRowSource).toContain('sc-identity-row__metadata');
+    expect(chatStylesSource).toMatch(/\.sc-identity-row__metadata[^}]*white-space:\s*normal/);
+    expect(chatStylesSource).toMatch(/\.sc-identity-row__metadata span[^}]*overflow-wrap:\s*anywhere/);
     expect(identityRowSource).not.toContain(
       'ellipsis={{ tooltip: labelledMetadata }}',
     );

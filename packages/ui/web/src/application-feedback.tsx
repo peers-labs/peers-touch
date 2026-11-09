@@ -14,9 +14,17 @@ export interface ConfirmationRequest {
   onConfirm?: () => void | Promise<void>;
   onCancel?: () => void;
 }
+export interface AcknowledgementRequest {
+  title: ReactNode;
+  description?: ReactNode;
+  confirmLabel?: string;
+  tone?: Tone;
+  onConfirm?: () => void;
+}
 interface PendingConfirmation extends ConfirmationRequest {
   id: string;
   settle: (confirmed: boolean) => void;
+  acknowledge?: boolean;
   choices?: readonly { label: ReactNode }[];
   select?: (index: number) => void;
 }
@@ -34,6 +42,11 @@ export function createFeedbackChannel() {
     dismissNotice: notices.dismiss,
     requestConfirmation: (request: ConfirmationRequest): Promise<boolean> =>
       new Promise(resolve => { queue = [...queue,{...request,id:`confirm.${++serial}`,settle:resolve}]; emit(); }),
+    requestAcknowledgement: (request: AcknowledgementRequest): Promise<void> =>
+      new Promise(resolve => {
+        queue = [...queue, { ...request, id: `ack.${++serial}`, acknowledge: true, settle: () => resolve(undefined) }];
+        emit();
+      }),
     requestChoice: (request: { title: ReactNode; choices: readonly { label: ReactNode }[]; cancelLabel?: string }): Promise<number | undefined> =>
       new Promise(resolve => {
         queue = [...queue, { ...request, id: `choice.${++serial}`, settle: () => resolve(undefined), select: resolve }];
@@ -68,9 +81,9 @@ export function FeedbackHost({channel}:{channel:FeedbackChannel}) {
     {current && <Dialog open title={current.title} description={current.description}
       onDismiss={()=>{if(!pending)channel.finish(current.id,false);}}
       footer={<>
-        <Button actionId={`${current.id}.cancel`} label={current.cancelLabel ?? 'Cancel'}
+        {!current.acknowledge && !current.choices && <Button actionId={`${current.id}.cancel`} label={current.cancelLabel ?? 'Cancel'}
           availability={pending?{kind:'disabled',reason:'Confirmation is running'}:undefined}
-          onActivate={()=>channel.finish(current.id,false)}/>
+          onActivate={()=>channel.finish(current.id,false)}/>}
         {!current.choices && <Button actionId={current.id} label={current.confirmLabel ?? 'Confirm'} emphasis="primary" tone={asActionTone(current.tone)}
           execution={pending?'pending':'idle'} onActivate={async()=>{
             setPending(true);setFailure('');

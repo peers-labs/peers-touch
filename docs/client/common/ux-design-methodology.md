@@ -1,12 +1,19 @@
 ---
-status: active
+status: superseded-by:../../architecture/platform/client/ui-system/prototype/self-training-methodology.md
 owner: Client Platform Team
-updated: 2026-06-09
+updated: 2026-11-07
 review-cadence: quarterly
 next-review: 2027-01-27
 ---
 
 # Client UX Design Methodology
+
+> **Superseded (2026-11-07).** The operative methodology is the self-training
+> UI/UX loop (six tabs, gap-first, promotion gate) in
+> [Peers UI System / self-training-methodology.md](../../architecture/platform/client/ui-system/prototype/self-training-methodology.md),
+> composed through the
+> [north-star desktop frame](../../architecture/platform/client/ui-system/prototype/north-star-frame.md).
+> This file stays for history only.
 
 ## 1. Purpose
 

@@ -1,9 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Tag, theme } from 'antd';
-import {
-  ShieldCheck,
-} from 'lucide-react';
 import { MomentsFeedView } from './MomentsFeedPage';
 import { MomentsExploreView } from './MomentsExplorePage';
 import { MomentDetailView } from './MomentDetailPage';
@@ -15,67 +11,35 @@ import {
   ensureMomentDetailProjection,
   ensureUserMomentsProjection,
 } from '../../runtimes/momentsRuntime';
-import {
-  SocialContentRail,
-  SocialScopeBar,
-  SocialSection,
-} from '../../components/moments/surfaces';
-import { useActiveDiscoverySlice, useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
+import { SocialContentRail, SocialScopeBar } from '../../components/moments/surfaces';
+import { useActiveDiscoverySlice } from '../../components/moments/useActiveMomentsStore';
 import { useMomentsNavigationStore, type MomentsTab } from '../../store/momentsNavigation';
+import './moments-app.css';
 
 // MomentsApp — the single page registered in the module registry.
 //
-// UI Identity refactor notes:
-//   - The page header (title + tabs + primary CTA) is rendered
-//     through SocialScopeBar. They share one group — no more
-//     "tabs and button look like different component systems".
-//   - The main column is SocialContentRail. It owns width, padding,
-//     vertical rhythm. Child pages render their content directly
-//     inside it.
-//   - Context sidebar (ShieldCheck block) and Circles panel keep
-//     using antd Card but with token-aligned styling — the visual
-//     surface is a separate concern from the content rail.
+// Layout follows the confirmed mobile-social-parity prototype:
+//   one centered content rail with a thin header (Home/Explore segment,
+//   quiet Search/Audiences entries, one compose action). There is no
+//   explanatory side card and no second column — the feed is the product.
 
 type MainTab = MomentsTab;
 
 export function MomentsApp() {
   const { t } = useTranslation('moments');
-  const { token } = theme.useToken();
   const view = useMomentsNavigationStore(state => state.view);
   const setView = useMomentsNavigationStore(state => state.setView);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [layoutWidth, setLayoutWidth] = useState(1080);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   const me = useActiveDiscoverySlice((s) => s.me);
-  const { circles, circleMembers } = useActiveMomentsSlice((s) => ({
-    circles: s.circles,
-    circleMembers: s.circleMembers,
-  }));
 
   const activeTab: MainTab =
     view.kind === 'tab' ? view.tab : view.from;
-  const isNarrow = layoutWidth < 960;
-  const isCompact = layoutWidth < 700;
-
-  useEffect(() => {
-    const target = scrollerRef.current;
-    if (!target) return;
-
-    const updateWidth = () => setLayoutWidth(target.clientWidth);
-    updateWidth();
-
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, []);
 
   const goTab = useCallback((tab: MainTab) => {
     setView({ kind: 'tab', tab });
-    if (tab === 'circles') {
-      void ensureCircleMemberProfiles();
-    }
-  }, []);
+  }, [setView]);
 
   const goDetail = useCallback(
     (postId: string) => {
@@ -86,7 +50,7 @@ export function MomentsApp() {
         from: prev.kind === 'tab' ? prev.tab : prev.from,
       }));
     },
-    [],
+    [setView],
   );
 
   const goUser = useCallback(
@@ -98,14 +62,14 @@ export function MomentsApp() {
         from: prev.kind === 'tab' ? prev.tab : prev.from,
       }));
     },
-    [],
+    [setView],
   );
 
   const goBack = useCallback(() => {
     setView((prev) =>
       prev.kind === 'tab' ? prev : { kind: 'tab', tab: prev.from },
     );
-  }, []);
+  }, [setView]);
 
   const scrollFeedTop = useCallback(() => {
     scrollerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -119,47 +83,36 @@ export function MomentsApp() {
       return;
     }
     scrollFeedTop();
-  }, [activeTab, scrollFeedTop]);
+  }, [activeTab, scrollFeedTop, setView]);
 
   const closeComposer = useCallback(() => {
     setComposerOpen(false);
   }, []);
 
-  const tabs = useMemo(
-    () => [
-      { value: 'feed', label: t('moments.tab.feed') },
-      { value: 'explore', label: t('moments.tab.explore') },
-      { value: 'search', label: t('moments.tab.search') },
-      { value: 'circles', label: t('moments.tab.circle') },
-    ],
-    [t],
-  );
+  const goCircles = useCallback(() => {
+    void ensureCircleMemberProfiles();
+    setView({ kind: 'tab', tab: 'circles' });
+  }, [setView]);
 
-  const activeContext = useMemo(() => {
-    switch (activeTab) {
-      case 'explore':
-        return {
-          title: t('moments.context.federatedTitle'),
-          description: t('moments.context.federatedDescription'),
-        };
-      case 'search':
-        return {
-          title: t('moments.context.searchTitle'),
-          description: t('moments.context.searchDescription'),
-        };
-      case 'circles':
-        return {
-          title: t('moments.context.circlesTitle'),
-          description: t('moments.context.circlesDescription'),
-        };
-      case 'feed':
-      default:
-        return {
-          title: t('moments.context.homeTitle'),
-          description: t('moments.context.homeDescription'),
-        };
-    }
-  }, [activeTab, t]);
+  const scopeTabs = [
+    { value: 'feed', label: t('moments.tab.feed') },
+    { value: 'explore', label: t('moments.tab.explore') },
+  ];
+
+  const scopeEntries = [
+    {
+      value: 'search',
+      iconId: 'search' as const,
+      label: t('moments.tab.search'),
+      onActivate: () => goTab('search'),
+    },
+    {
+      value: 'circles',
+      iconId: 'users-round' as const,
+      label: t('moments.tab.circle'),
+      onActivate: () => goCircles(),
+    },
+  ];
 
   const content = (() => {
     if (view.kind === 'detail') {
@@ -193,10 +146,9 @@ export function MomentsApp() {
             onAuthorClick={goUser}
             composerOpen={composerOpen}
             onCloseComposer={closeComposer}
-            onComposerPublished={(postId) => {
+            onComposerPublished={() => {
               setComposerOpen(false);
               scrollFeedTop();
-              void postId;
             }}
           />
         );
@@ -222,164 +174,24 @@ export function MomentsApp() {
     }
   })();
 
-  const contextPanel = (
-    <Card
-      styles={{
-        body: { padding: isCompact ? 12 : 14 },
-      }}
-      style={{
-        borderRadius: 14,
-        borderColor: token.colorBorderSecondary,
-        boxShadow: 'none',
-      }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <ShieldCheck size={16} color={token.colorPrimary} />
-          <span style={{ fontWeight: 600, fontSize: 13 }}>{activeContext.title}</span>
-        </div>
-        <span style={{ fontSize: 12.5, lineHeight: 1.6, color: token.colorTextSecondary }}>
-          {activeContext.description}
-        </span>
-        {!isCompact && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            <Tag
-              color={activeTab === 'feed' ? 'blue' : 'default'}
-              style={{ margin: 0, borderRadius: 999 }}
-            >
-              {t('moments.filter.following')}
-            </Tag>
-            <Tag
-              color={activeTab === 'circles' ? 'blue' : 'default'}
-              style={{ margin: 0, borderRadius: 999 }}
-            >
-              {t('moments.filter.circles')}
-            </Tag>
-            <Tag
-              color={activeTab === 'explore' ? 'blue' : 'default'}
-              style={{ margin: 0, borderRadius: 999 }}
-            >
-              {t('moments.filter.remotePublic')}
-            </Tag>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-
-  const circlesPanel = (
-    <Card
-      styles={{ body: { padding: 14 } }}
-      style={{ borderRadius: 14, borderColor: token.colorBorderSecondary, boxShadow: 'none' }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 600, fontSize: 13 }}>{t('moments.sidebar.circlesTitle')}</span>
-          <Button type="link" size="small" onClick={() => goTab('circles')}>
-            {t('moments.action.manageCircles')}
-          </Button>
-        </div>
-        {circles.length === 0 ? (
-          <span style={{ fontSize: 12.5, color: token.colorTextSecondary }}>
-            {t('moments.placeholder.circleEmpty')}
-          </span>
-        ) : (
-          circles.slice(0, 4).map((circle) => (
-            <div
-              key={String(circle.id)}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-            >
-              <span
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  maxWidth: 180,
-                }}
-              >
-                {circle.name}
-              </span>
-              <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                {t('moments.circle.memberCount', {
-                  count: circleMembers[String(circle.id)]?.length ?? 0,
-                })}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-    </Card>
-  );
-
   return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        background: token.colorBgLayout,
-        minHeight: 0,
-      }}
-    >
-      <div
-        ref={scrollerRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: isCompact ? '14px 12px 28px' : '18px 24px 32px',
-          minHeight: 0,
-        }}
-      >
-        <div style={{ maxWidth: isNarrow ? 720 : 1080, margin: '0 auto' }}>
+    <div className="pt-social">
+      <div ref={scrollerRef} className="pt-social__scroll">
+        <div className="pt-social__inner">
           <SocialScopeBar
-            tabs={tabs}
+            tabs={scopeTabs}
             activeTab={activeTab}
             onTabChange={(v) => goTab(v as MainTab)}
+            entries={scopeEntries}
             primaryAction={{
               label: t('moments.action.compose'),
+              iconId: 'plus',
               onClick: openComposer,
             }}
-            compact={isCompact}
           />
-
-          {isNarrow && (
-            <SocialSection tone="soft">{contextPanel}</SocialSection>
-          )}
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isNarrow
-                ? 'minmax(0, 1fr)'
-                : 'minmax(0, 700px) minmax(240px, 280px)',
-              alignItems: 'start',
-              gap: 16,
-            }}
-          >
-            <main
-              style={{
-                minWidth: 0,
-                maxWidth: isNarrow ? 700 : undefined,
-                width: '100%',
-                margin: isNarrow ? '0 auto' : undefined,
-              }}
-            >
-              <SocialContentRail narrow={isNarrow} compact={isCompact}>
-                {content}
-              </SocialContentRail>
-            </main>
-            <aside
-              style={{
-                position: 'sticky',
-                top: 18,
-                display: isNarrow ? 'none' : 'flex',
-                flexDirection: 'column',
-                gap: 12,
-              }}
-            >
-              {contextPanel}
-              {circlesPanel}
-            </aside>
-          </div>
+          <SocialContentRail>
+            {content}
+          </SocialContentRail>
         </div>
       </div>
     </div>

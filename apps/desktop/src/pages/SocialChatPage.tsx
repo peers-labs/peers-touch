@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { IconButton, Tooltip } from '@peers-touch/ui';
-import type { IconId } from '@peers-touch/ui';
-import { ChatSessionList } from '../components/chat/ChatSessionList';
+import { ChatSessionList, type ChatRailTab } from '../components/chat/ChatSessionList';
 import { MessagingRecoveryGate } from '../components/chat/MessagingRecoveryGate';
 import { ChatContactsPanel } from '../components/chat/ChatContactsPanel';
-import { ChatContactsDetailPanel } from '../components/chat/ChatContactsDetailPanel';
 import { ChatMessageArea } from '../components/chat/ChatMessageArea';
 import { ChatDetailPanel } from '../components/chat/ChatDetailPanel';
 import { ChatThreadPanel } from '../components/chat/ChatThreadPanel';
@@ -31,7 +27,7 @@ import { log } from '../utils/logger';
 import { readFeatureFlags } from '../modules/settings/featureFlags';
 import { callP2p } from '../modules/p2p/callP2p';
 
-type ChatSubPage = 'chats' | 'contacts';
+type ChatSubPage = ChatRailTab;
 
 interface OwnedContactSelection {
   actorPtid: string;
@@ -52,7 +48,6 @@ interface OwnedContactSelection {
 //     docs/client/desktop/runtime-projections.md.
 
 export function SocialChatPage() {
-  const { t } = useTranslation('chat');
   const {
     showDetail,
     openThreadRootUlid,
@@ -256,11 +251,6 @@ export function SocialChatPage() {
     };
   }, []);
 
-  const subNavItems: { key: ChatSubPage; iconId: IconId; label: string }[] = [
-    { key: 'chats', iconId: 'message-circle', label: t('chat.social.subNav.chats') },
-    { key: 'contacts', iconId: 'contact', label: t('chat.social.subNav.contacts') },
-  ];
-
   return (
     <div
       className="sc-chat"
@@ -268,39 +258,21 @@ export function SocialChatPage() {
       data-chat-active-peer-ptid={activePeerDid ?? ''}
       data-chat-side-panel-open={openThreadRootUlid || showDetail ? 'true' : 'false'}
     >
-      {/* Sub-navigation: thin vertical icon bar */}
-      <nav className="sc-chat__subnav" aria-label={t('chat.social.subNav.chats')}>
-        {subNavItems.map(({ key, iconId, label }) => (
-          <Tooltip key={key} label={label} placement="right">
-            <IconButton
-              actionId={`chat.subpage.${key}`}
-              iconId={iconId}
-              iconSize={20}
-              label={label}
-              data-chat-subpage={key}
-              aria-current={subPage === key ? 'page' : undefined}
-              onClick={() => {
-                if (key === 'contacts') setContactsMounted(true);
-                setSubPage(key);
-              }}
-            />
-          </Tooltip>
-        ))}
-      </nav>
-
-      {/* Left panel: keep both mounted once visited, toggle visibility */}
-      <div
-        data-chat-conversation-list-shell
-        style={{ display: subPage === 'chats' ? 'contents' : 'none' }}
-      >
-        <ChatSessionList
-          onConversationSelected={cancelDirectOpenIntent}
-          onOpenDirect={openDirectConversation}
-        />
-      </div>
-      {contactsMounted && (
-        <div style={{ display: subPage === 'contacts' ? 'contents' : 'none' }}>
+      {/* Unified 300px rail: Segmented 消息/联系人 header lives inside
+          ChatSessionList; contacts render in the same rail and open
+          conversations directly. */}
+      <ChatSessionList
+        onConversationSelected={cancelDirectOpenIntent}
+        onOpenDirect={openDirectConversation}
+        tab={subPage}
+        onTabChange={(next) => {
+          if (next === 'contacts') setContactsMounted(true);
+          setSubPage(next);
+        }}
+        renderContacts={(query) => (contactsMounted || subPage === 'contacts') ? (
           <ChatContactsPanel
+            embedded
+            query={query}
             selectedContact={selectedContact}
             onSelectContact={(contact) => {
               setOwnedContactSelection({ actorPtid: contactOwnerPtid, contact });
@@ -310,45 +282,33 @@ export function SocialChatPage() {
               handleContactMessage(contact);
             }}
           />
-        </div>
-      )}
+        ) : null}
+      />
 
-      {/* Right area: the active sub-page owns its own content semantics. */}
-      {subPage === 'chats' ? (
-        <>
-          <AttachmentDetailHost />
-          <ChatMessageArea
-            directOpenIntent={directOpenIntent}
-            onRetryDirectOpen={() => {
-              if (!directOpenIntent) return;
-              openDirectConversation({
-                kind: 'friend',
-                peerPtid: directOpenIntent.peerPtid,
-                federationId: directOpenIntent.federationId,
-                federationName: directOpenIntent.federationName,
-                displayName: directOpenIntent.displayName,
-                avatar: directOpenIntent.avatar,
-                username: directOpenIntent.username,
-                federatedHandle: directOpenIntent.federatedHandle,
-                homeStationDomain: directOpenIntent.homeStationDomain,
-                homeStationPeerId: directOpenIntent.homeStationPeerId,
-                homeStationName: directOpenIntent.homeStationName,
-              });
-            }}
-          />
-          {openThreadRootUlid ? <ChatThreadPanel /> : showDetail && <ChatDetailPanel />}
-        </>
-      ) : (
-        <ChatContactsDetailPanel
-          selectedContact={selectedContact}
-          openingPeerPtid={
-            directOpenIntent?.phase === 'creating'
-              ? directOpenIntent.peerPtid
-              : undefined
-          }
-          onMessage={handleContactMessage}
-        />
-      )}
+      {/* The conversation stage is always present; selecting a contact flips
+          the rail back to 消息 and opens the conversation here. */}
+      <AttachmentDetailHost />
+      <ChatMessageArea
+        directOpenIntent={directOpenIntent}
+        onRetryDirectOpen={() => {
+          if (!directOpenIntent) return;
+          openDirectConversation({
+            kind: 'friend',
+            peerPtid: directOpenIntent.peerPtid,
+            federationId: directOpenIntent.federationId,
+            federationName: directOpenIntent.federationName,
+            displayName: directOpenIntent.displayName,
+            avatar: directOpenIntent.avatar,
+            username: directOpenIntent.username,
+            federatedHandle: directOpenIntent.federatedHandle,
+            homeStationDomain: directOpenIntent.homeStationDomain,
+            homeStationPeerId: directOpenIntent.homeStationPeerId,
+            homeStationName: directOpenIntent.homeStationName,
+          });
+        }}
+      />
+      {openThreadRootUlid ? <ChatThreadPanel /> : showDetail && <ChatDetailPanel />}
+
       {/* Voice / video call surface — page-level so a ringing call
           stays visible regardless of which conversation is open. */}
       <CallSurface />

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { message, notification, theme, Typography } from 'antd';
-import { ArrowLeft, ChevronRight } from 'lucide-react';
+import { Card, Icon } from '@peers-touch/ui';
+import { feedbackChannel, notifyError } from '../../ui/feedback';
+import { BRANDING } from '../../branding';
+import { LanguageSwitcher } from '../../components/common/LanguageSwitcher';
 import {
   isOAuthAuthorizationCancelled,
   useOAuth2Store,
@@ -20,22 +21,14 @@ import {
   type AccessDecision,
 } from '../../services/accessGate';
 import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
-import { StationNetworkIntro } from '../../components/common/StationNetworkIntro';
+import { StationSwitcher } from './StationSwitcher';
 import { AccountPickerView } from './views/AccountPickerView';
 import { PinEntryView } from './views/PinEntryView';
 import { SetPinView } from './views/SetPinView';
 import { RelinkPinView } from './views/RelinkPinView';
 import { WelcomeBackView } from './views/WelcomeBackView';
 import { LoginFormView, type GateState } from './views/LoginFormView';
-import {
-  CARD_WIDTH,
-  CARD_MIN_HEIGHT,
-  LOGIN_CARD_MIN_HEIGHT,
-  REAUTH_CARD_MIN_HEIGHT,
-} from './constants';
 import { accountIdentityToSessionUser, type LoginState, type LoginTab, type AuthState, type SessionUser } from './types';
-
-const { Text } = Typography;
 
 interface Props {
   onComplete: () => Promise<void>;
@@ -52,13 +45,6 @@ interface Props {
   restoredUser?: SessionUser | null;
   knownAccounts?: SessionUser[];
   embedded?: boolean;
-}
-
-function loginCardMinHeight(loginState: LoginState, hasExpiredAccount: boolean): number {
-  if (loginState === 'logged_out' || loginState === 'pin_recovery_auth') {
-    return hasExpiredAccount ? REAUTH_CARD_MIN_HEIGHT : LOGIN_CARD_MIN_HEIGHT;
-  }
-  return CARD_MIN_HEIGHT;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -85,7 +71,6 @@ export function LoginPage({
   knownAccounts = [],
   embedded,
 }: Props) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('auth');
   const providers = useOAuth2Store(s => s.providers);
   const loadAll = useOAuth2Store(s => s.loadAll);
@@ -223,7 +208,7 @@ export function LoginPage({
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '';
         const isMismatch = msg.includes('mismatch');
-        message.error(isMismatch
+        notifyError(isMismatch
           ? t('auth.pin.recovery.mismatch')
           : t('auth.pin.recovery.authFailed', { defaultValue: 'Recovery authorization failed. Please try again.' }),
         );
@@ -378,14 +363,20 @@ export function LoginPage({
           markAccountSessionless(selectedAccount.accountId);
         }
         setPinRevoked(true);
-        notification.warning({
-          message: t('auth.pin.sessionExpiredTitle', { defaultValue: 'Session expired' }),
-          description: t('auth.pin.sessionExpiredDesc', {
-            defaultValue: `Your saved session for ${selectedAccount.name || 'this account'} is no longer valid. Sign in again to continue.`,
-            name: selectedAccount.name || 'this account',
-          }),
-          placement: 'topRight',
-          duration: 6,
+        feedbackChannel.notify({
+          tone: 'warning',
+          duration: 6000,
+          message: (
+            <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+              <strong>{t('auth.pin.sessionExpiredTitle', { defaultValue: 'Session expired' })}</strong>
+              <span style={{ fontWeight: 400 }}>
+                {t('auth.pin.sessionExpiredDesc', {
+                  defaultValue: `Your saved session for ${selectedAccount.name || 'this account'} is no longer valid. Sign in again to continue.`,
+                  name: selectedAccount.name || 'this account',
+                })}
+              </span>
+            </span>
+          ),
         });
         setTimeout(() => {
           setPinRevoked(false);
@@ -438,7 +429,7 @@ export function LoginPage({
       setReauthReason('continue');
       setLoginState('pin_recovery_auth');
     } catch (err: unknown) {
-      message.error(errorMessage(err, t('auth.pin.recovery.error', { defaultValue: 'Could not start PIN recovery' })));
+      notifyError(errorMessage(err, t('auth.pin.recovery.error', { defaultValue: 'Could not start PIN recovery' })));
     }
   }, [selectedAccount, t]);
 
@@ -720,50 +711,7 @@ export function LoginPage({
     }
   }, [resetOAuthAction]);
 
-  // ── Network intro labels (memoized) ──
-  const networkIntroLabels = useMemo(() => ({
-    title: t('auth.network.title'),
-    people: {
-      alice: { name: t('auth.network.alice'), handle: t('auth.network.alice.handle'), station: t('auth.network.alice.station') },
-      bob: { name: t('auth.network.bob'), handle: t('auth.network.bob.handle'), station: t('auth.network.bob.station') },
-      carol: { name: t('auth.network.carol'), handle: t('auth.network.carol.handle'), station: t('auth.network.carol.station') },
-      dana: { name: t('auth.network.dana'), handle: t('auth.network.dana.handle'), station: t('auth.network.dana.station') },
-      evan: { name: t('auth.network.evan'), handle: t('auth.network.evan.handle'), station: t('auth.network.evan.station') },
-    },
-    relays: {
-      fern: t('auth.network.relay.fern'),
-      tide: t('auth.network.relay.tide'),
-      ridge: t('auth.network.relay.ridge'),
-      loom: t('auth.network.relay.loom'),
-    },
-    kinds: {
-      msg: t('auth.network.kind.msg'),
-      img: t('auth.network.kind.img'),
-      video: t('auth.network.kind.video'),
-      file: t('auth.network.kind.file'),
-    },
-    card: {
-      station: t('auth.network.card.station'),
-      via: t('auth.network.card.via'),
-      relay: t('auth.network.card.relay'),
-      peer: t('auth.network.card.peer'),
-    },
-  }), [t]);
-
   // ── Styles ──
-  const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
-  const cardStyle: React.CSSProperties = {
-    width: CARD_WIDTH,
-    maxWidth: '100%',
-    minHeight: cardMinHeight,
-    background: token.colorBgContainer,
-    borderRadius: 24,
-    boxShadow: token.boxShadow,
-    border: `1px solid ${token.colorBorderSecondary}`,
-    padding: '36px 32px',
-    position: 'relative',
-  };
-
   const hasSignedInUser = hasValidRestoredUser;
 
   // ── Gate state prop for LoginFormView ──
@@ -779,10 +727,8 @@ export function LoginPage({
   // ── Back button content for LoginFormView ──
   const backButtonContent = hasMultipleAccounts ? (
     <>
-      <ArrowLeft size={14} style={{ color: token.colorTextTertiary }} />
-      <Text style={{ fontSize: 11, color: token.colorTextSecondary }}>
-        {t('auth.accountPicker.back')}
-      </Text>
+      <Icon iconId="arrow-left" size={14} />
+      <span style={{ fontSize: 12 }}>{t('auth.accountPicker.back')}</span>
     </>
   ) : (
     <>
@@ -792,7 +738,7 @@ export function LoginPage({
         size={24}
         radius={6}
       />
-      <ChevronRight size={12} style={{ color: token.colorTextTertiary }} />
+      <Icon iconId="chevron-right" size={12} />
     </>
   );
 
@@ -864,10 +810,8 @@ export function LoginPage({
             gateState={gateStateProp}
             backContent={
               <>
-                <ArrowLeft size={14} style={{ color: token.colorTextTertiary }} />
-                <Text style={{ fontSize: 11, color: token.colorTextSecondary }}>
-                  {t('auth.pin.recovery.cancel')}
-                </Text>
+                <Icon iconId="arrow-left" size={14} />
+                <span style={{ fontSize: 12 }}>{t('auth.pin.recovery.cancel')}</span>
               </>
             }
             title={t('auth.pin.recovery.authenticating')}
@@ -921,39 +865,36 @@ export function LoginPage({
     }
   };
 
-  const cardContent = (
-    <div
-      className="login-card-cluster"
-      style={{
-        '--login-card-width': `${CARD_WIDTH}px`,
-      } as React.CSSProperties}
-    >
-      <Flexbox
-        className="login-card"
-        data-pt-login-card
-        style={cardStyle}
-        align="center"
-        justify="center"
-        gap={0}
-      >
-        {renderCardContent()}
-      </Flexbox>
+  const cardHead = (
+    <div className="pt-auth-head">
+      <span className="pt-auth-brand">
+        <img src={BRANDING.logos.desktop} alt="" />
+        <span className="pt-auth-brand-name">{BRANDING.appName}</span>
+      </span>
+      {!embedded && <LanguageSwitcher />}
     </div>
   );
 
-  if (embedded) return cardContent;
+  const card = (
+    <Card
+      className="pt-auth-card"
+      data-pt-login-card
+      footer={embedded ? undefined : (
+        <div className="pt-auth-station">
+          <StationSwitcher />
+        </div>
+      )}
+    >
+      {cardHead}
+      {renderCardContent()}
+    </Card>
+  );
+
+  if (embedded) return card;
 
   return (
-    <div className="login-network-shell">
-      <div
-        className="login-network-backdrop"
-        aria-hidden="true"
-      >
-        <StationNetworkIntro labels={networkIntroLabels} />
-      </div>
-      <div className="login-card-region">
-        {cardContent}
-      </div>
+    <div className="pt-auth-shell">
+      <div className="pt-auth-region">{card}</div>
     </div>
   );
 }

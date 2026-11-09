@@ -1,4 +1,5 @@
-import { Alert } from 'antd';
+import { useTranslation } from 'react-i18next';
+import { Alert } from '@peers-touch/ui';
 import type { PresentedError } from '../../services/errorPresenter';
 
 interface PresentedErrorAlertProps {
@@ -7,13 +8,18 @@ interface PresentedErrorAlertProps {
 }
 
 export function PresentedErrorAlert({ error, onClose }: PresentedErrorAlertProps) {
+  const { t } = useTranslation('common');
+  const tone = error.severity === 'warning'
+    ? 'warning'
+    : error.severity === 'info'
+      ? 'info'
+      : 'danger';
   return (
     <Alert
-      type={error.severity === 'warning' ? 'warning' : error.severity === 'info' ? 'info' : 'error'}
-      showIcon
-      closable={Boolean(onClose)}
-      onClose={onClose}
-      message={error.message}
+      tone={tone}
+      title={error.message}
+      onDismiss={onClose}
+      dismissLabel={t('common.action.close')}
     />
   );
 }

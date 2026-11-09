@@ -5,7 +5,6 @@ import { Alert } from '@lobehub/ui';
 import { Spin, theme } from 'antd';
 import { Bot, User } from 'lucide-react';
 import { LazyMarkdown as Markdown } from '../components/LazyMarkdown';
-import { chatMarkdownProps } from '../components/messages/markdownConfig';
 
 interface SharedMessage {
   id: string;
@@ -166,9 +165,7 @@ export default function SharePage({ token }: { token: string }) {
                     <span style={{ marginLeft: 8, fontWeight: 400 }}>{msg.model}</span>
                   )}
                 </div>
-                <Markdown {...chatMarkdownProps} variant="chat" fontSize={14}>
-                  {msg.content}
-                </Markdown>
+                <Markdown content={msg.content} style={{ fontSize: 14 }} />
               </Flexbox>
             </Flexbox>
           ))}

@@ -31,6 +31,8 @@ const copy = zh
       ],
       cross: [
         ['authority', '权威与状态归属', '每类状态只有唯一的 Mutation Owner，其余各处都是投影、缓存或派生产物。'],
+        ['crypto', '整体加密架构', '端到端内容、传输链路、静态与部署密钥三层分治；每层复用唯一加密底层，不重复造。'],
+        ['secret-provisioning', '部署密钥配给安全管道', 'Bridge 等 Class B 密钥的五段密文/明文边界，以及目标主机 root 这一显式信任边界。'],
         ['agent-execution', 'Agent 执行架构', 'Session 与 Turn 的权威归 Agent Domain；具体落在 Station 还是 Client Capability，显式声明。'],
         ['applet-runtime', 'Applet 运行时架构', 'Lynx 沙箱、类型化 Bridge、带权限的 Host Capability Gateway 与 Station Service。'],
         ['contracts', '共享契约底座', 'Proto 是唯一语义真源，TS、Rust、Go 的 Binding 都由它派生，本身不是在线服务。'],
@@ -73,6 +75,8 @@ const copy = zh
       ],
       cross: [
         ['authority', 'Authority and state ownership', 'Every state has one mutation owner; all other copies are projections, caches or generated artifacts.'],
+        ['crypto', 'Cryptography architecture', 'Three layers — end-to-end content, transport, and at-rest/deployment secrets — each reusing one crypto substrate.'],
+        ['secret-provisioning', 'Deployment secret provisioning pipeline', 'The five ciphertext/plaintext stages for Class B secrets like the bridge key, with the host root as an explicit trust boundary.'],
         ['agent-execution', 'Agent execution architecture', 'Agent Domain owns sessions and turns while placement explicitly selects Station or Client Capability.'],
         ['applet-runtime', 'Applet runtime architecture', 'Lynx sandbox, typed Bridge, permissioned Host Capability Gateway and Station service.'],
         ['contracts', 'Shared contract substrate', 'Proto owns semantics; TS, Rust and Go bindings are derived artifacts, not online services.'],
@@ -104,6 +108,8 @@ const DIAGRAM_VIEWBOX: Record<string, [number, number]> = {
   'federation-center': [1288, 542],
   connectivity: [1260, 552],
   authority: [1080, 418],
+  crypto: [1248, 682],
+  'secret-provisioning': [1302, 482],
   'agent-execution': [1300, 492],
   'applet-runtime': [1300, 472],
   contracts: [1018, 542],

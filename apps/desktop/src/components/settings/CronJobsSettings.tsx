@@ -1,36 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
 import {
-  Popconfirm,
-  message,
-  Spin,
-  Typography,
-  Badge,
-  Collapse,
+  Button,
+  ConfirmAction,
   Drawer,
-} from 'antd';
-import { Button, Empty, Tag, Tooltip, Input } from '@lobehub/ui';
-import {
-  Plus,
-  Play,
-  Pause,
-  Trash2,
-  Clock,
-  Bot,
-  Edit2,
-  RefreshCw,
-  ChevronRight,
-  Timer,
-  CalendarClock,
-  Zap,
-  History,
-} from 'lucide-react';
+  Empty,
+  Icon,
+  IconButton,
+  Spin,
+  Tag,
+  Text,
+  TextField,
+  Tooltip,
+  type Tone,
+} from '@peers-touch/ui';
 import { api, type CronJob, type CronRun } from '../../services/desktop_api';
 import { CronJobDrawer } from '../CronJobDrawer';
 import { SettingsContainer, SettingsPanelHeader } from './SettingsLayout';
-
-const { Text, Paragraph } = Typography;
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -76,18 +63,19 @@ function scheduleLabel(job: CronJob, t: (key: string, opts?: Record<string, unkn
   return job.scheduleKind;
 }
 
-function ScheduleIcon({ kind }: { kind: string }) {
-  if (kind === 'interval') return <Timer size={14} />;
-  if (kind === 'cron') return <CalendarClock size={14} />;
-  return <Zap size={14} />;
+function ScheduleGlyph({ kind }: { kind: string }) {
+  const iconId = kind === 'interval' ? 'timer' : kind === 'cron' ? 'calendar-clock' : 'zap';
+  return <Icon iconId={iconId} size={14} />;
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusTag({ status }: { status: string }) {
   const { t } = useTranslation('cron');
-  if (status === 'ok') return <Badge status="success" text={t('cron.status.ok')} />;
-  if (status === 'error') return <Badge status="error" text={t('cron.status.error')} />;
-  if (status === 'running') return <Badge status="processing" text={t('cron.status.running')} />;
-  return <Badge status="default" text="—" />;
+  let tone: Tone = 'neutral';
+  let label = '—';
+  if (status === 'ok') { tone = 'success'; label = t('cron.status.ok'); }
+  else if (status === 'error') { tone = 'danger'; label = t('cron.status.error'); }
+  else if (status === 'running') { tone = 'info'; label = t('cron.status.running'); }
+  return <Tag tone={tone}>{label}</Tag>;
 }
 
 export function CronJobsSettings() {
@@ -104,45 +92,45 @@ export function CronJobsSettings() {
     try {
       const data = await api.listCronJobs();
       setJobs(data);
-    } catch (err: any) {
-      message.error(t('cron.list.loadFailed', { message: err.message }));
+    } catch (err) {
+      notifyError(t('cron.list.loadFailed', { message: (err as Error).message }));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    loadJobs();
-    const interval = setInterval(loadJobs, 15000);
+    void loadJobs();
+    const interval = setInterval(() => void loadJobs(), 15000);
     return () => clearInterval(interval);
   }, [loadJobs]);
 
   const handleToggle = async (job: CronJob) => {
     try {
       await api.toggleCronJob(job.id, !job.enabled);
-      loadJobs();
-    } catch (err: any) {
-      message.error(err.message);
+      void loadJobs();
+    } catch (err) {
+      notifyError((err as Error).message);
     }
   };
 
   const handleDelete = async (id: string) => {
     try {
       await api.deleteCronJob(id);
-      message.success(t('cron.job.deleteSuccess'));
-      loadJobs();
-    } catch (err: any) {
-      message.error(err.message);
+      notifySuccess(t('cron.job.deleteSuccess'));
+      void loadJobs();
+    } catch (err) {
+      notifyError((err as Error).message);
     }
   };
 
   const handleRun = async (id: string) => {
     try {
       await api.runCronJob(id);
-      message.success(t('cron.job.triggerSuccess'));
-      setTimeout(loadJobs, 2000);
-    } catch (err: any) {
-      message.error(err.message);
+      notifySuccess(t('cron.job.triggerSuccess'));
+      setTimeout(() => void loadJobs(), 2000);
+    } catch (err) {
+      notifyError((err as Error).message);
     }
   };
 
@@ -152,8 +140,8 @@ export function CronJobsSettings() {
     try {
       const runs = await api.listCronRuns(job.id);
       setRunsDrawer({ job, runs });
-    } catch (err: any) {
-      message.error(err.message);
+    } catch (err) {
+      notifyError((err as Error).message);
     } finally {
       setRunsLoading(false);
     }
@@ -162,7 +150,7 @@ export function CronJobsSettings() {
   const handleSave = () => {
     setDrawerOpen(false);
     setEditingJob(null);
-    loadJobs();
+    void loadJobs();
   };
 
   const filteredJobs = jobs.filter(
@@ -179,178 +167,179 @@ export function CronJobsSettings() {
     <SettingsContainer fullHeight tier="standard">
       <SettingsPanelHeader
         title={t('cron.header.title')}
-        icon={<Clock size={20} />}
-        extra={<>
-          <Tag color="blue">{t('cron.header.activeCount', { count: activeCount })}</Tag>
-          {pausedCount > 0 && <Tag>{t('cron.header.pausedCount', { count: pausedCount })}</Tag>}
-        </>}
-        actions={<>
-          <Button icon={<RefreshCw size={14} />} onClick={loadJobs}>
-            {t('cron.header.refresh')}
-          </Button>
-          <Button
-            type="primary"
-            icon={<Plus size={14} />}
-            onClick={() => {
-              setEditingJob(null);
-              setDrawerOpen(true);
-            }}
-          >
-            {t('cron.header.newJob')}
-          </Button>
-        </>}
-      />
-
-      <Flexbox style={{ minHeight: 0 }}>
-      {/* Search */}
-      <Input
-        placeholder={t('cron.search.placeholder')}
-        prefix={<ChevronRight size={14} />}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        allowClear
-        style={{ marginBottom: 16, maxWidth: 360 }}
-      />
-
-      {/* Job List */}
-      {loading ? (
-        <Flexbox align="center" justify="center" style={{ padding: 60 }}>
-          <Spin />
-        </Flexbox>
-      ) : filteredJobs.length === 0 ? (
-        <Empty
-          icon={CalendarClock}
-          title={search ? t('cron.list.noMatchingJobs') : t('cron.list.noJobsYet')}
-          action={
-            search ? undefined : (
-              <Button type="primary" onClick={() => setDrawerOpen(true)}>
-                {t('cron.list.createFirst')}
-              </Button>
-            )
-          }
-          padding="64px 16px"
-        />
-      ) : (
-        <Flexbox gap={8}>
-          {filteredJobs.map((job) => (
-            <div
-              key={job.id}
-              style={{
-                border: '1px solid var(--ant-color-border)',
-                borderRadius: 8,
-                padding: '14px 18px',
-                background: job.enabled ? undefined : 'var(--ant-color-bg-text-hover)',
-                opacity: job.enabled ? 1 : 0.7,
-                transition: 'all 0.2s',
+        icon={<Icon iconId="clock" size={20} />}
+        extra={(
+          <>
+            <Tag tone="info">{t('cron.header.activeCount', { count: activeCount })}</Tag>
+            {pausedCount > 0 && <Tag>{t('cron.header.pausedCount', { count: pausedCount })}</Tag>}
+          </>
+        )}
+        actions={(
+          <>
+            <Button
+              actionId="cron-refresh"
+              leading={<Icon iconId="refresh-cw" size={14} />}
+              label={t('cron.header.refresh')}
+              onActivate={() => void loadJobs()}
+            />
+            <Button
+              actionId="cron-new"
+              emphasis="primary"
+              leading={<Icon iconId="plus" size={14} />}
+              label={t('cron.header.newJob')}
+              onActivate={() => {
+                setEditingJob(null);
+                setDrawerOpen(true);
               }}
-            >
-              <Flexbox horizontal justify="space-between" align="flex-start">
-                <Flexbox gap={6} style={{ flex: 1, minWidth: 0 }}>
-                  {/* Row 1: Icon + Name + Tags */}
-                  <Flexbox horizontal align="center" gap={8}>
-                    <Bot size={16} style={{ color: '#7c3aed', flexShrink: 0 }} />
-                    <Text
-                      strong
-                      style={{
-                        fontSize: 14,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {job.name}
-                    </Text>
-                    <Tag
-                      style={{ fontSize: 11, lineHeight: '18px', marginLeft: 4 }}
-                      bordered={false}
-                    >
-                      <Flexbox horizontal align="center" gap={4}>
-                        <ScheduleIcon kind={job.scheduleKind} />
+            />
+          </>
+        )}
+      />
+
+      <div className="sc-cron-body">
+        <TextField
+          className="sc-cron-search"
+          clearable
+          leading={<Icon iconId="search" size={14} />}
+          placeholder={t('cron.search.placeholder')}
+          value={search}
+          onValueChange={setSearch}
+        />
+
+        {loading ? (
+          <div className="sc-cron-loading"><Spin /></div>
+        ) : filteredJobs.length === 0 ? (
+          <div className="sc-cron-empty">
+            <Empty
+              icon={<Icon iconId="calendar-clock" size={40} />}
+              description={search ? t('cron.list.noMatchingJobs') : t('cron.list.noJobsYet')}
+              action={search ? undefined : (
+                <Button
+                  actionId="cron-create-first"
+                  emphasis="primary"
+                  label={t('cron.list.createFirst')}
+                  onActivate={() => setDrawerOpen(true)}
+                />
+              )}
+            />
+          </div>
+        ) : (
+          <div className="sc-cron-list">
+            {filteredJobs.map((job) => (
+              <div
+                key={job.id}
+                className={`sc-cron-job${job.enabled ? '' : ' is-paused'}`}
+              >
+                <div className="sc-cron-job__main">
+                  <div className="sc-cron-job__title-row">
+                    <Icon iconId="bot" size={16} className="sc-cron-job__bot" />
+                    <Text strong className="sc-cron-job__name">{job.name}</Text>
+                    <Tag className="sc-cron-job__schedule">
+                      <span className="sc-cron-job__schedule-inner">
+                        <ScheduleGlyph kind={job.scheduleKind} />
                         {scheduleLabel(job, t)}
-                      </Flexbox>
+                      </span>
                     </Tag>
                     {job.agentId && job.agentId !== 'assistant' && (
-                      <Tag color="purple" style={{ fontSize: 11, lineHeight: '18px' }} bordered={false}>
+                      <Tag tone="info" className="sc-cron-job__agent">
                         {job.agentId}
                       </Tag>
                     )}
-                  </Flexbox>
+                  </div>
 
-                  {/* Row 2: Status info */}
-                  <Flexbox horizontal align="center" gap={16} style={{ fontSize: 12, color: '#888' }}>
-                    <StatusBadge status={job.lastStatus} />
+                  <div className="sc-cron-job__status-row">
+                    <StatusTag status={job.lastStatus} />
                     {job.lastDurationMs > 0 && (
                       <span>{formatDuration(job.lastDurationMs)}</span>
                     )}
                     {job.nextRunAt && (
-                      <Tooltip title={new Date(job.nextRunAt).toLocaleString()}>
+                      <Tooltip label={new Date(job.nextRunAt).toLocaleString()}>
                         <span>{formatNextRunLabel(job.nextRunAt, t)}</span>
                       </Tooltip>
                     )}
                     {job.lastError && (
-                      <Tooltip title={job.lastError}>
-                        <Text type="danger" style={{ fontSize: 12, maxWidth: 200 }} ellipsis>
+                      <Tooltip label={job.lastError}>
+                        <Text tone="danger" truncate className="sc-cron-job__error">
                           {job.lastError}
                         </Text>
                       </Tooltip>
                     )}
-                  </Flexbox>
-                </Flexbox>
+                  </div>
+                </div>
 
-                {/* Actions */}
-                <Flexbox horizontal gap={4} style={{ flexShrink: 0, marginLeft: 12 }}>
-                  <Tooltip title={t('cron.action.runNow')}>
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<Play size={14} />}
-                      onClick={() => handleRun(job.id)}
+                <div className="sc-cron-job__actions">
+                  <Tooltip label={t('cron.action.runNow')}>
+                    <IconButton
+                      actionId={`cron-run-${job.id}`}
+                      iconId="play"
+                      iconSize={14}
+                      density="compact"
+                      emphasis="quiet"
+                      label={t('cron.action.runNow')}
+                      onActivate={() => void handleRun(job.id)}
                     />
                   </Tooltip>
-                  <Tooltip title={t('cron.action.runHistory')}>
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<History size={14} />}
-                      onClick={() => handleShowRuns(job)}
+                  <Tooltip label={t('cron.action.runHistory')}>
+                    <IconButton
+                      actionId={`cron-history-${job.id}`}
+                      iconId="history"
+                      iconSize={14}
+                      density="compact"
+                      emphasis="quiet"
+                      label={t('cron.action.runHistory')}
+                      onActivate={() => void handleShowRuns(job)}
                     />
                   </Tooltip>
-                  <Tooltip title={job.enabled ? t('cron.action.pause') : t('cron.action.resume')}>
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={job.enabled ? <Pause size={14} /> : <Play size={14} />}
-                      onClick={() => handleToggle(job)}
+                  <Tooltip label={job.enabled ? t('cron.action.pause') : t('cron.action.resume')}>
+                    <IconButton
+                      actionId={`cron-toggle-${job.id}`}
+                      iconId={job.enabled ? 'pause' : 'play'}
+                      iconSize={14}
+                      density="compact"
+                      emphasis="quiet"
+                      label={job.enabled ? t('cron.action.pause') : t('cron.action.resume')}
+                      onActivate={() => void handleToggle(job)}
                     />
                   </Tooltip>
-                  <Tooltip title={t('cron.action.edit')}>
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<Edit2 size={14} />}
-                      onClick={() => {
+                  <Tooltip label={t('cron.action.edit')}>
+                    <IconButton
+                      actionId={`cron-edit-${job.id}`}
+                      iconId="pencil-line"
+                      iconSize={14}
+                      density="compact"
+                      emphasis="quiet"
+                      label={t('cron.action.edit')}
+                      onActivate={() => {
                         setEditingJob(job);
                         setDrawerOpen(true);
                       }}
                     />
                   </Tooltip>
-                  <Popconfirm
+                  <ConfirmAction
+                    actionId={`cron-delete-${job.id}`}
                     title={t('cron.job.deleteConfirm')}
+                    confirmLabel={t('cron.job.deleteOk')}
+                    cancelLabel={t('cron.job.deleteCancel')}
                     onConfirm={() => handleDelete(job.id)}
-                    okText={t('cron.job.deleteOk')}
-                    cancelText={t('cron.job.deleteCancel')}
                   >
-                    <Tooltip title={t('cron.action.delete')}>
-                      <Button size="small" type="text" danger icon={<Trash2 size={14} />} />
+                    <Tooltip label={t('cron.action.delete')}>
+                      <IconButton
+                        actionId={`cron-delete-trigger-${job.id}`}
+                        iconId="delete"
+                        iconSize={14}
+                        density="compact"
+                        emphasis="quiet"
+                        className="sc-cron-job__delete"
+                        label={t('cron.action.delete')}
+                      />
                     </Tooltip>
-                  </Popconfirm>
-                </Flexbox>
-              </Flexbox>
-            </div>
-          ))}
-        </Flexbox>
-      )}
-      </Flexbox>
+                  </ConfirmAction>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Create / Edit Drawer */}
       <CronJobDrawer
@@ -367,60 +356,45 @@ export function CronJobsSettings() {
       <Drawer
         title={t('cron.runs.title', { name: runsDrawer?.job.name || '' })}
         open={!!runsDrawer}
-        onClose={() => setRunsDrawer(null)}
-        size="default"
+        onDismiss={() => setRunsDrawer(null)}
       >
         {runsLoading ? (
-          <Flexbox align="center" justify="center" style={{ padding: 40 }}>
-            <Spin />
-          </Flexbox>
+          <div className="sc-cron-loading"><Spin /></div>
         ) : runsDrawer?.runs.length === 0 ? (
-          <Empty icon={History} title={t('cron.runs.noRuns')} padding="48px 16px" />
+          <div className="sc-cron-empty">
+            <Empty
+              icon={<Icon iconId="history" size={40} />}
+              description={t('cron.runs.noRuns')}
+            />
+          </div>
         ) : (
-          <Collapse
-            items={(runsDrawer?.runs || []).map((run) => ({
-              key: run.id,
-              label: (
-                <Flexbox horizontal align="center" gap={12}>
-                  <StatusBadge status={run.status} />
+          <div className="sc-cron-runs">
+            {(runsDrawer?.runs || []).map((run) => (
+              <details key={run.id} className="sc-cron-run">
+                <summary className="sc-cron-run__summary">
+                  <StatusTag status={run.status} />
                   <Text style={{ fontSize: 12 }}>
                     {new Date(run.startedAt).toLocaleString()}
                   </Text>
                   {run.durationMs > 0 && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text tone="secondary" style={{ fontSize: 12 }}>
                       {formatDuration(run.durationMs)}
                     </Text>
                   )}
-                </Flexbox>
-              ),
-              children: (
-                <Flexbox gap={8}>
+                </summary>
+                <div className="sc-cron-run__body">
                   {run.error && (
-                    <Paragraph type="danger" style={{ fontSize: 12, margin: 0 }}>
+                    <Text tone="danger" className="sc-cron-run__error">
                       {run.error}
-                    </Paragraph>
+                    </Text>
                   )}
                   {run.output && (
-                    <pre
-                      style={{
-                        fontSize: 12,
-                        background: '#f5f5f5',
-                        padding: 8,
-                        borderRadius: 4,
-                        maxHeight: 200,
-                        overflow: 'auto',
-                        margin: 0,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-all',
-                      }}
-                    >
-                      {run.output}
-                    </pre>
+                    <pre className="sc-cron-run__output">{run.output}</pre>
                   )}
-                </Flexbox>
-              ),
-            }))}
-          />
+                </div>
+              </details>
+            ))}
+          </div>
         )}
       </Drawer>
     </SettingsContainer>

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { theme, Typography } from 'antd';
 import {
   Camera,
   CameraOff,
@@ -17,25 +15,50 @@ import {
 import { groupCallManager } from '../../modules/groupCall';
 import type { GroupCallSnapshot, Participant } from '../../modules/groupCall';
 import { log } from '../../utils/logger';
-import { ActionIcon, toast } from '@lobehub/ui';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useChatActorIdentity } from './useChatActorIdentity';
 import { useSocialChatStore } from '../../store/socialChat';
-
-const { Text } = Typography;
+import { notifyError } from '../../ui/feedback';
 
 type DisplayMode = 'compact' | 'expanded' | 'fullscreen';
 
 const TRAY_EDGE = 20;
 const TRAY_MAX_WIDTH = 360;
 
+function GroupCallButton({
+  label,
+  onClick,
+  tone,
+  children,
+  extra,
+}: {
+  label: string;
+  onClick: () => void;
+  tone?: 'danger' | 'muted';
+  children: React.ReactNode;
+  extra?: Record<string, string>;
+}) {
+  return (
+    <button
+      type="button"
+      className={`sc-gcall__btn${tone ? ` sc-gcall__btn--${tone}` : ''}`}
+      aria-label={label}
+      title={label}
+      data-group-call-display-mode-target={extra?.['data-group-call-display-mode-target']}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ParticipantBadge({ actorPtid }: { actorPtid: string }) {
   const identity = useChatActorIdentity(actorPtid);
   return (
-    <Flexbox horizontal align="center" gap={5} style={{ minWidth: 0 }} title={identity.displayName}>
+    <span className="sc-gcall__badge" title={identity.displayName}>
       <UserSquareAvatar remoteUrl={identity.avatarUrl} name={identity.displayName} size={24} />
-      <Text ellipsis style={{ fontSize: 11, maxWidth: 74 }}>{identity.displayName}</Text>
-    </Flexbox>
+      <span>{identity.displayName}</span>
+    </span>
   );
 }
 
@@ -46,16 +69,15 @@ function ParticipantTile({
   participant: Participant;
   isLocal: boolean;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const identity = useChatActorIdentity(participant.actorPtid);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const qualityColor =
+  const qualityTone =
     participant.connectionQuality === 'excellent' || participant.connectionQuality === 'good'
-      ? token.colorSuccess
+      ? 'good'
       : participant.connectionQuality === 'poor'
-        ? token.colorWarning
-        : token.colorError;
+        ? 'poor'
+        : 'bad';
 
   useEffect(() => groupCallManager.attachParticipantMedia(
     participant.actorPtid,
@@ -68,36 +90,18 @@ function ParticipantTile({
   ]);
 
   return (
-    <Flexbox
+    <div
+      className={`sc-gcall__tile${participant.isSpeaking ? ' is-speaking' : ''}`}
       data-group-call-participant={participant.actorPtid}
       data-group-call-participant-local={isLocal ? 'true' : 'false'}
       data-group-call-camera={participant.isCameraEnabled ? 'on' : 'off'}
       data-group-call-microphone={participant.isMicEnabled ? 'on' : 'off'}
-      align="center"
-      justify="center"
-      style={{
-        width: 80,
-        height: 108,
-        borderRadius: 12,
-        background: token.colorFillSecondary,
-        border: participant.isSpeaking
-          ? `2px solid ${token.colorPrimary}`
-          : `1px solid ${token.colorBorderSecondary}`,
-        position: 'relative',
-        flexShrink: 0,
-      }}
     >
       <video
         ref={videoRef}
         muted={isLocal}
         aria-label={identity.displayName}
-        style={{
-          display: participant.isCameraEnabled ? 'block' : 'none',
-          width: '100%',
-          height: 80,
-          objectFit: 'cover',
-          borderRadius: 10,
-        }}
+        style={{ display: participant.isCameraEnabled ? 'block' : 'none' }}
       />
       {!participant.isCameraEnabled && (
         <UserSquareAvatar
@@ -106,34 +110,15 @@ function ParticipantTile({
           size={44}
         />
       )}
-      <Flexbox
-        horizontal
-        align="center"
-        gap={2}
-        style={{
-          position: 'absolute',
-          bottom: 6,
-          left: 4,
-          right: 4,
-          justifyContent: 'center',
-        }}
-      >
-        <Text ellipsis style={{ fontSize: 11, maxWidth: 52 }}>
+      <div className="sc-gcall__tile-meta">
+        <span className="sc-gcall__tile-name">
           {isLocal ? t('chat.groupCall.you') : identity.displayName}
-        </Text>
-        {!participant.isMicEnabled && <MicOff size={10} color={token.colorTextTertiary} />}
-        {!participant.isCameraEnabled && <CameraOff size={10} color={token.colorTextTertiary} />}
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: 3,
-            background: qualityColor,
-            display: 'inline-block',
-          }}
-        />
-      </Flexbox>
-    </Flexbox>
+        </span>
+        {!participant.isMicEnabled && <MicOff size={10} />}
+        {!participant.isCameraEnabled && <CameraOff size={10} />}
+        <span className={`sc-gcall__quality sc-gcall__quality--${qualityTone}`} />
+      </div>
+    </div>
   );
 }
 
@@ -157,7 +142,6 @@ function ParticipantAudio({ participant }: { participant: Participant }) {
 }
 
 export function GroupCallSurface() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [snapshot, setSnapshot] = useState<GroupCallSnapshot>(
     () => groupCallManager.getSnapshot(),
@@ -167,10 +151,9 @@ export function GroupCallSurface() {
     || state.conversations.find((group) => group.conversationId === snapshot.groupUlid)?.name
     || ''
   ));
-  const [activeRooms, setActiveRooms] = useState<Map<string, string>>(new Map());
+  const [, setActiveRooms] = useState<Map<string, string>>(new Map());
   const [displayMode, setDisplayMode] = useState<DisplayMode>('compact');
   const surfaceRef = useRef<HTMLDivElement | null>(null);
-  void activeRooms;
 
   useEffect(() => {
     const unsub = groupCallManager.onSnapshot((s) => {
@@ -207,7 +190,7 @@ export function GroupCallSurface() {
       await groupCallManager.setMicEnabled(!snapshot.localMicEnabled);
     } catch (error) {
       log.warn('groupCallSurface', 'toggle mic failed', error);
-      toast.error(t('chat.groupCall.failed'));
+      notifyError(t('chat.groupCall.failed'));
     }
   }, [snapshot.localMicEnabled, t]);
 
@@ -216,7 +199,7 @@ export function GroupCallSurface() {
       await groupCallManager.setCameraEnabled(!snapshot.localCameraEnabled);
     } catch (error) {
       log.warn('groupCallSurface', 'toggle camera failed', error);
-      toast.error(t('chat.groupCall.failed'));
+      notifyError(t('chat.groupCall.failed'));
     }
   }, [snapshot.localCameraEnabled, t]);
 
@@ -241,114 +224,74 @@ export function GroupCallSurface() {
           : t('chat.groupCall.active');
 
   const participantCount = snapshot.participants.length;
+  const connected = snapshot.state === 'connected';
 
-  const compactSurface = (
-    <Flexbox
+  const surface = (
+    <div
       ref={surfaceRef}
+      className={`sc-gcall sc-gcall--${displayMode}`}
       data-group-call-surface
       data-group-call-state={snapshot.state}
       data-group-call-display-mode={displayMode}
       role="dialog"
       aria-live="polite"
       aria-label={t('chat.groupCall.active')}
-      style={{
-        position: 'fixed',
-        right: TRAY_EDGE,
-        bottom: TRAY_EDGE,
-        zIndex: 1100,
-        width:
-          displayMode === 'fullscreen'
-            ? '100vw'
-            : displayMode === 'expanded'
-              ? `min(${TRAY_MAX_WIDTH + 200}px, calc(100vw - ${TRAY_EDGE * 2}px))`
-              : `min(${TRAY_MAX_WIDTH}px, calc(100vw - ${TRAY_EDGE * 2}px))`,
-        ...(displayMode === 'fullscreen'
-          ? { top: 0, left: 0, right: 0, bottom: 0, borderRadius: 0 }
-          : {}),
-        maxHeight: displayMode === 'fullscreen' ? '100vh' : 400,
-        padding: '10px 12px',
-        borderRadius: displayMode === 'fullscreen' ? 0 : 14,
-        border:
-          displayMode === 'fullscreen'
-            ? 'none'
-            : `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgElevated,
-        boxShadow: displayMode === 'fullscreen' ? 'none' : token.boxShadowSecondary,
-        boxSizing: 'border-box',
-        overflow: 'hidden',
-      }}
+      style={displayMode === 'expanded'
+        ? { width: `min(${TRAY_MAX_WIDTH + 200}px, calc(100vw - ${TRAY_EDGE * 2}px))` }
+        : undefined}
     >
       {/* Header bar */}
-      <Flexbox horizontal align="center" gap={10} style={{ marginBottom: 8 }}>
-        <Flexbox
-          align="center"
-          justify="center"
-          style={{
-            width: 36,
-            height: 36,
-            flexShrink: 0,
-            borderRadius: 10,
-            background:
-              snapshot.state === 'connected'
-                ? token.colorSuccessBg
-                : token.colorWarningBg,
-            color:
-              snapshot.state === 'connected'
-                ? token.colorSuccess
-                : token.colorWarning,
-          }}
-        >
+      <div className="sc-gcall__header">
+        <span className={`sc-gcall__state-glyph${connected ? ' is-connected' : ''}`}>
           <Users size={18} />
-        </Flexbox>
-        <Flexbox flex={1} style={{ minWidth: 0 }}>
-          <Text strong ellipsis style={{ fontSize: 13 }}>
-            {groupName || stateLabel}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 11 }}>
+        </span>
+        <div className="sc-gcall__heading">
+          <strong>{groupName || stateLabel}</strong>
+          <span>
             {groupName ? `${stateLabel} · ` : ''}
             {t('chat.groupCall.participants', { count: participantCount })}
-          </Text>
-        </Flexbox>
+          </span>
+        </div>
 
         {/* Display mode toggles */}
-        <Flexbox horizontal align="center" gap={2} style={{ flexShrink: 0 }}>
+        <div className="sc-gcall__display-toggle">
           {displayMode === 'compact' ? (
-            <ActionIcon
-              icon={Maximize2}
-              size="small"
+            <GroupCallButton
+              label={t('chat.groupCall.videoCall')}
               onClick={() => setDisplayMode('expanded')}
-              data-group-call-display-mode-target="expanded"
-              title={t('chat.groupCall.videoCall')}
-            />
+              extra={{ 'data-group-call-display-mode-target': 'expanded' }}
+            >
+              <Maximize2 size={15} />
+            </GroupCallButton>
           ) : (
             <>
               {displayMode === 'expanded' && (
-                <ActionIcon
-                  icon={Expand}
-                  size="small"
+                <GroupCallButton
+                  label={t('chat.groupCall.fullscreen')}
                   onClick={() => setDisplayMode('fullscreen')}
-                  data-group-call-display-mode-target="fullscreen"
-                  title={t('chat.groupCall.fullscreen')}
-                />
+                  extra={{ 'data-group-call-display-mode-target': 'fullscreen' }}
+                >
+                  <Expand size={15} />
+                </GroupCallButton>
               )}
-              <ActionIcon
-                icon={Minimize2}
-                size="small"
+              <GroupCallButton
+                label={t('chat.groupCall.compact')}
                 onClick={() => setDisplayMode('compact')}
-                data-group-call-display-mode-target="compact"
-                title={t('chat.groupCall.compact')}
-              />
+                extra={{ 'data-group-call-display-mode-target': 'compact' }}
+              >
+                <Minimize2 size={15} />
+              </GroupCallButton>
             </>
           )}
-        </Flexbox>
-      </Flexbox>
+        </div>
+      </div>
 
       {displayMode === 'compact' && snapshot.participants.length > 0 ? (
-        <Flexbox horizontal gap={8} wrap="wrap" style={{ marginBottom: 8 }}>
+        <div className="sc-gcall__badges">
           {snapshot.participants.slice(0, 4).map((participant) => (
             <ParticipantBadge key={participant.actorPtid} actorPtid={participant.actorPtid} />
           ))}
-        </Flexbox>
+        </div>
       ) : null}
 
       <div aria-hidden="true" style={{ display: 'none' }}>
@@ -359,17 +302,7 @@ export function GroupCallSurface() {
 
       {/* Participant grid (expanded modes only) */}
       {displayMode !== 'compact' && (
-        <Flexbox
-          horizontal
-          wrap="wrap"
-          gap={8}
-          align="flex-start"
-          style={{
-            padding: '8px 0',
-            maxHeight: displayMode === 'fullscreen' ? 'calc(100vh - 120px)' : 240,
-            overflowY: 'auto',
-          }}
-        >
+        <div className="sc-gcall__grid">
           {snapshot.participants.map((p, i) => (
             <ParticipantTile
               key={p.actorPtid}
@@ -377,47 +310,39 @@ export function GroupCallSurface() {
               isLocal={i === 0}
             />
           ))}
-        </Flexbox>
+        </div>
       )}
 
       {/* Controls bar */}
-      <Flexbox horizontal align="center" justify="center" gap={8} style={{ marginTop: 4 }}>
-        <ActionIcon
-          icon={snapshot.localMicEnabled ? Mic : MicOff}
-          size="small"
+      <div className="sc-gcall__controls">
+        <GroupCallButton
+          label={snapshot.localMicEnabled
+            ? t('chat.groupCall.mic.on')
+            : t('chat.groupCall.mic.off')}
+          tone={snapshot.localMicEnabled ? undefined : 'muted'}
           onClick={handleToggleMic}
-          title={
-            snapshot.localMicEnabled
-              ? t('chat.groupCall.mic.on')
-              : t('chat.groupCall.mic.off')
-          }
-          style={{
-            color: snapshot.localMicEnabled ? token.colorText : token.colorTextTertiary,
-          }}
-        />
-        <ActionIcon
-          icon={snapshot.localCameraEnabled ? Camera : CameraOff}
-          size="small"
+        >
+          {snapshot.localMicEnabled ? <Mic size={15} /> : <MicOff size={15} />}
+        </GroupCallButton>
+        <GroupCallButton
+          label={snapshot.localCameraEnabled
+            ? t('chat.groupCall.camera.on')
+            : t('chat.groupCall.camera.off')}
+          tone={snapshot.localCameraEnabled ? undefined : 'muted'}
           onClick={handleToggleCamera}
-          title={
-            snapshot.localCameraEnabled
-              ? t('chat.groupCall.camera.on')
-              : t('chat.groupCall.camera.off')
-          }
-          style={{
-            color: snapshot.localCameraEnabled ? token.colorText : token.colorTextTertiary,
-          }}
-        />
-        <ActionIcon
-          icon={PhoneOff}
-          size="small"
+        >
+          {snapshot.localCameraEnabled ? <Camera size={15} /> : <CameraOff size={15} />}
+        </GroupCallButton>
+        <GroupCallButton
+          label={t('chat.groupCall.leave')}
+          tone="danger"
           onClick={handleLeave}
-          title={t('chat.groupCall.leave')}
-          style={{ color: token.colorError }}
-        />
-      </Flexbox>
-    </Flexbox>
+        >
+          <PhoneOff size={15} />
+        </GroupCallButton>
+      </div>
+    </div>
   );
 
-  return createPortal(compactSurface, document.body);
+  return createPortal(surface, document.body);
 }

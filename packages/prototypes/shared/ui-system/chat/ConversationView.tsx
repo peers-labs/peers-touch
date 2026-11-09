@@ -16,6 +16,7 @@ import {
   MessageReactions, ReportDialog, type MessageActionTarget,
 } from './MessageActions';
 import { MessageAttachments } from './MessageAttachments';
+import { ActivityCard } from './ActivityCard';
 import { VoicePlayer } from './VoiceNote';
 import { ChatComposer, type ComposerPayload } from './ChatComposer';
 import { CallOverlay, type CallKind } from './CallOverlay';
@@ -95,7 +96,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [toast, setToast] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { t } = useT();
+  const { t, locale } = useT();
   // Squared-square avatar geometry: group senders keep the 8px tile, direct
   // chats the skin radius — applies to both peers and the viewer.
   const avatarRadius: string | number = conversation.kind === 'group' ? 8 : 'var(--sk-avatar-radius)';
@@ -114,9 +115,30 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
   }, [conversation.id]);
 
   const selectableMessages = useMemo(
-    () => messages.filter(m => m.kind !== 'service' && !m.recalled),
+    () => messages.filter(m => m.kind !== 'service' && m.kind !== 'activity' && !m.recalled),
     [messages],
   );
+  // Day separators derive from message timestamps, mirroring desktop's
+  // buildChatMessageSurfaceItems showDateSeparator behavior.
+  const streamEntries = useMemo(() => {
+    const nowYear = new Date().getFullYear();
+    let previousDay = '';
+    return messages.map((message) => {
+      const day = message.ts ? new Date(message.ts).toDateString() : '';
+      let dateLabel: string | undefined;
+      if (day && day !== previousDay) {
+        const date = new Date(message.ts!);
+        dateLabel = date.toLocaleDateString(
+          locale === 'en' ? 'en-US' : 'zh-CN',
+          date.getFullYear() === nowYear
+            ? { month: 'short', day: 'numeric' }
+            : { year: 'numeric', month: 'short', day: 'numeric' },
+        );
+      }
+      if (day) previousDay = day;
+      return { message, dateLabel };
+    });
+  }, [messages, locale]);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   function enterSelectMode(seedId: string) {
@@ -204,15 +226,28 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
 
       <div className="sk-msg-stream" ref={scrollRef}>
         {messages.length === 0 && (
-          <Empty className="sk-conversation-empty" description={t('conv.empty')} />
+          <Empty className="sk-conversation-empty"
+            description={conversation.selfDirect ? t('conv.emptySelf') : t('conv.empty')} />
         )}
-        {messages.map(m => {
+        {streamEntries.map(({ message: m, dateLabel }) => {
+          const datePill = dateLabel
+            ? <div className="sk-msg-date" data-date-separator><span>{dateLabel}</span></div>
+            : null;
           if (m.kind === 'service') {
-            return <div key={m.id} className="sk-msg-service"><span>{m.text}</span></div>;
+            return <div key={m.id}>{datePill}<div className="sk-msg-service"><span>{m.text}</span></div></div>;
+          }
+          if (m.kind === 'activity' && m.activity) {
+            return <div key={m.id}>{datePill}
+              <div className="sk-msg-activity" data-activity-message>
+                <ActivityCard event={m.activity} />
+              </div>
+            </div>;
           }
           if (m.recalled) {
             return (
-              <div key={m.id} className={`sk-msg sk-msg-${m.from}`} data-message-id={m.id}>
+              <div key={m.id}>
+                {datePill}
+                <div className={`sk-msg sk-msg-${m.from}`} data-message-id={m.id}>
                 {m.from === 'peer' ? (
                   <Avatar name={m.senderName ?? conversation.name}
                     background={m.senderTone ?? conversation.tone} size={32}
@@ -227,12 +262,15 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                   </span>
                 </div>
               </div>
+              </div>
             );
           }
           const emojiOnly = isEmojiOnly(m.text);
           const checked = selectedSet.has(m.id);
           return (
-            <div key={m.id}
+            <div key={m.id}>
+              {datePill}
+            <div
               className={`sk-msg sk-msg-${m.from}${emojiOnly ? ' is-emoji-only' : ''}${selectMode ? ' is-selectable' : ''}${checked ? ' is-selected' : ''}`}
               data-message-id={m.id}
               onClick={selectMode ? () => toggleSelected(m.id) : undefined}>
@@ -347,6 +385,7 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
                 </div>
               </div>
             </div>
+            </div>
           );
         })}
         {peerTyping && (
@@ -393,7 +432,9 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
             text: replyTarget.text,
           } : null}
           editTarget={editTarget ? { id: editTarget.id, text: editTarget.text } : null}
-          placeholder={t('composer.placeholder', { name: conversation.name })}
+          placeholder={conversation.selfDirect
+            ? t('composer.selfPlaceholder')
+            : t('composer.placeholder', { name: conversation.name })}
           onCancelReply={() => setReplyTarget(null)}
           onCancelEdit={() => setEditTarget(null)}
           onSend={submit} />
@@ -426,18 +467,26 @@ export function ConversationView({ conversation, messages, call, peerTyping, onE
           onSetGroupMemberRole={(name, role) => onSetGroupMemberRole(conversation.id, name, role)}
           onDissolve={() => onDissolveGroup(conversation.id)}
           onLeave={() => onLeaveGroup(conversation.id)}
-          onSimulateIncoming={conversation.kind === 'person' ? onSimulateIncoming : undefined} />
+          onSimulateIncoming={conversation.kind === 'person' && !conversation.selfDirect ? onSimulateIncoming : undefined} />
       )}
       {threadId && threadMessage && (
-        <ThreadSheet root={threadMessage} peerName={conversation.name}
+        <ThreadSheet root={threadMessage}
+          peerName={conversation.selfDirect ? t('contacts.savedMessages') : conversation.name}
           initialReplies={threads[threadId] ?? []}
           onClose={() => setThreadId(null)}
           onReply={replyInThread} />
       )}
       <MessageSearchDialog open={searchOpen} messages={messages}
-        conversationName={conversation.name}
+        conversationName={conversation.selfDirect ? t('contacts.savedMessages') : conversation.name}
         onClose={() => setSearchOpen(false)}
-        onLocate={() => { /* scroll-to-result lands with follow-up increments */ }} />
+        onLocate={message => {
+          // Scroll the located row into view (same owner as bookmark locate).
+          requestAnimationFrame(() => {
+            document.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`)?.scrollIntoView({
+              behavior: 'smooth', block: 'center',
+            });
+          });
+        }} />
 
       <ForwardDialog open={forwardTargets.length > 0} messages={forwardTargets}
         conversations={conversations.filter(c => c.id !== conversation.id)}

@@ -227,8 +227,11 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
             const row = document.querySelector(
               `[data-pt-conversation-item="${CSS.escape(conversationId)}"]`
             );
+            // The unread pill rides the avatar corner (north-star rail
+            // anatomy); resolve the preview text independently instead of
+            // relying on a sibling relationship with the badge.
             const lane = row?.querySelector('[data-chat-session-unread-lane]');
-            const text = lane?.previousElementSibling;
+            const text = row?.querySelector('.sc-session-row__preview');
             const rect = (element) => {
               const value = element?.getBoundingClientRect();
               return value ? {

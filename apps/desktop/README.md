@@ -23,7 +23,7 @@ Desktop client for Peers Touch - Decentralized Social + AI Agent platform.
 │   ├── utils/               # Utility functions
 │   ├── App.tsx              # Root component
 │   ├── main.tsx             # Application entry
-│   └── style.css            # Global styles
+│   └── index.css            # Global styles
 ├── src-tauri/               # Tauri backend code
 │   ├── src/
 │   │   └── main.rs          # Rust entry point

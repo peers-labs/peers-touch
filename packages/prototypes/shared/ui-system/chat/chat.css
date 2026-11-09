@@ -153,6 +153,15 @@
 /* contacts: collapsible sections + request cards + list */
 .sk-contacts { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 
+/* Saved Messages — the singleton self-direct entry pinned atop the contacts
+   pane (desktop ChatContactsPanel parity). Material hairline, no tile. */
+.sk-contact-self {
+  margin: 4px 2px 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--sk-text) 7%, transparent);
+}
+.sk-contact-self .sk-conv-row { border-radius: var(--sk-radius-control); }
+
 .sk-contact-section { display: flex; flex-direction: column; }
 .sk-section-toggle.pt-button {
   margin: 6px 2px 2px; justify-content: flex-start;
@@ -303,6 +312,67 @@
   background: color-mix(in srgb, var(--sk-text) 6%, transparent);
   border-radius: 999px; padding: 3px 12px;
 }
+
+/* Day separator: quiet centered pill, no connecting hairlines. */
+.sk-msg-date { display: flex; justify-content: center; margin: 10px 0 6px; }
+.sk-msg-date span {
+  font-size: 11px; font-weight: 500; color: var(--sk-text-3);
+  background: color-mix(in srgb, var(--sk-text) 6%, transparent);
+  border-radius: 999px; padding: 3px 12px;
+}
+
+/* Automation/activity task card: its own chrome, never nested in a bubble.
+   The 3px rail and glyph share one semantic state color. */
+.sk-msg-activity { display: flex; justify-content: flex-start; margin: 8px 0; }
+.sk-activity {
+  --sk-activity: #2469a8;
+  position: relative;
+  width: 300px; max-width: 100%;
+  border-radius: 14px; overflow: hidden;
+  background: var(--sk-card-bg);
+  border: 1px solid var(--sk-card-border);
+  box-shadow: var(--sk-card-shadow);
+}
+.sk-activity[data-state='failed'] { --sk-activity: var(--sk-danger); }
+.sk-activity[data-state='waiting'],
+.sk-activity[data-state='attention'] { --sk-activity: var(--sk-warning); }
+.sk-activity[data-state='completed'] { --sk-activity: var(--sk-success); }
+.sk-activity[data-state='cancelled'] { --sk-activity: var(--sk-text-3); }
+.sk-activity-rail { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--sk-activity); }
+.sk-activity-body { display: flex; flex-direction: column; gap: 5px; padding: 11px 12px; }
+.sk-activity-head { display: flex; align-items: center; gap: 8px; color: var(--sk-activity); }
+.sk-activity-title {
+  flex: 1; min-width: 0;
+  font-size: 13px; line-height: 20px; font-weight: 650;
+  color: var(--sk-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-activity-history {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px;
+  border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-size: 11px; color: var(--sk-text-3);
+  padding: 2px 7px; border-radius: 999px;
+}
+.sk-activity-history:hover {
+  color: var(--sk-text-2);
+  background: color-mix(in srgb, var(--sk-text) 6%, transparent);
+}
+.sk-activity-text {
+  margin: 0; font-size: 13px; line-height: 1.55;
+  color: var(--sk-text-2); white-space: pre-wrap;
+}
+.sk-activity-note { margin: 0; font-size: 11px; color: var(--sk-text-3); }
+.sk-activity-note.is-warning { color: var(--sk-warning); }
+.sk-activity-meta {
+  margin: 0; font-size: 11px; color: var(--sk-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-activity-action {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 2px; font-size: 12px; font-weight: 650;
+  color: var(--sk-accent); text-decoration: none;
+}
+.sk-activity-action:hover { text-decoration: underline; }
 
 /* WeChat-style persistent two-pane: rail + chat stay side by side down to
    tablet width; only below 720px (phones) does the rail swap to single-pane
@@ -675,6 +745,40 @@
   padding: 6px 2px;
 }
 .sk-side-call-demo-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* identity verification (SafetyVerificationPanel prototype parity) */
+.sk-verify { gap: 8px; }
+.sk-verify-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.sk-verify-head .sk-profile-card-title { display: inline-flex; align-items: center; gap: 6px; }
+.sk-verify-toggle { align-self: flex-start; padding: 0; }
+.sk-verify-body { display: flex; flex-direction: column; gap: 10px; padding-top: 2px; }
+.sk-verify-desc { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--sk-text-3); }
+.sk-verify-number-block { display: flex; flex-direction: column; gap: 6px; }
+.sk-verify-number {
+  font-family: var(--sk-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px; line-height: 1.9; letter-spacing: .4px;
+  text-align: center; white-space: pre;
+  background: var(--sk-tile); border-radius: 10px; padding: 10px 8px;
+  color: var(--sk-text);
+}
+.sk-verify-material { display: flex; gap: 12px; align-items: flex-start; }
+.sk-verify-qr {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  flex-shrink: 0;
+}
+.sk-verify-fingerprints { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
+.sk-verify-fingerprint { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sk-verify-fingerprint code {
+  font-family: var(--sk-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px; color: var(--sk-text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sk-verify-label { font-size: 11px; color: var(--sk-text-3); }
+.sk-verify-actions { display: flex; gap: 8px; align-items: center; }
+.sk-verify-main { flex: 1; }
+.sk-verify-note { margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--sk-text-3); opacity: .85; }
 
 /* in-conversation search */
 .sk-msg-search { display: flex; flex-direction: column; gap: 10px; }

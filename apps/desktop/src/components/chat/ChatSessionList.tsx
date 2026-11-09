@@ -1,6 +1,6 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge, Button, ContextMenu, Empty, Icon, IconButton, Menu, TextField } from '@peers-touch/ui';
+import { Button, ContextMenu, Empty, Icon, IconButton, Menu, Segmented, TextField } from '@peers-touch/ui';
 import type { MenuAction } from '@peers-touch/ui';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -28,8 +28,8 @@ import {
 } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import {
+  cappedChatUnreadCount,
   CHAT_SESSION_ROW_HEIGHT,
-  CHAT_SESSION_UNREAD_LANE_WIDTH,
 } from './chatGeometry';
 import type { FriendContactSelection } from './contactSelection';
 import { CreateGroupModal } from './CreateGroupModal';
@@ -69,7 +69,7 @@ function ConversationListError({
       role={compact ? 'status' : 'alert'}
       aria-busy={retrying}
     >
-      <span className="sc-list-error__glyph" style={{ color: compact ? 'var(--pt-warning)' : 'var(--pt-danger)' }}>
+      <span className="sc-list-error__glyph">
         <Icon iconId="warning" size={compact ? 14 : 24} />
       </span>
       <span className="sc-list-error__text">
@@ -131,14 +131,27 @@ function conversationWithActorIdentity(
   };
 }
 
+export type ChatRailTab = 'chats' | 'contacts';
+
 interface ChatSessionListProps {
   onConversationSelected: () => void;
   onOpenDirect: (contact: FriendContactSelection) => void;
+  /** Active rail tab (消息 / 联系人). Contacts renders the renderContacts slot. */
+  tab: ChatRailTab;
+  onTabChange: (tab: ChatRailTab) => void;
+  /** Contacts pane factory; receives the live in-rail search query. */
+  renderContacts?: (query: string) => ReactNode;
 }
+
+// Rail width is one fixed catalog column (prototype sk-conv-rail parity).
+const CHAT_RAIL_WIDTH = 300;
 
 export function ChatSessionList({
   onConversationSelected,
   onOpenDirect,
+  tab,
+  onTabChange,
+  renderContacts,
 }: ChatSessionListProps) {
   const { t } = useTranslation(['chat', 'common']);
   const {
@@ -166,6 +179,7 @@ export function ChatSessionList({
     markGroupRead,
     hideConversation,
     loadSessions,
+    peerOnline,
   } = useActiveSocialChatSlice((state) => ({
     sessions: state.sessions,
     groups: state.groups,
@@ -191,6 +205,7 @@ export function ChatSessionList({
     markGroupRead: state.markGroupRead,
     hideConversation: state.hideConversation,
     loadSessions: state.loadSessions,
+    peerOnline: state.peerOnline,
   }));
   const { actorStationEntries, federations } = useActiveChatFederationSlice((state) => ({
     actorStationEntries: state.actorStationEntries,
@@ -198,8 +213,23 @@ export function ChatSessionList({
   }));
 
   const [searchText, setSearchText] = useState('');
+  // Inline rail search stays collapsed until the magnifier is tapped
+  // (prototype sk-rail-search parity).
+  const [searchOpen, setSearchOpen] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
+
+  const switchTab = (next: ChatRailTab) => {
+    onTabChange(next);
+    if (next !== 'chats') {
+      setSearchOpen(false);
+      setSearchText('');
+    }
+  };
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchText('');
+  };
   const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
   const stationNamesByPeerId = useMemo(() => Object.fromEntries(
     Object.values(actorStationEntries)
@@ -478,34 +508,105 @@ export function ChatSessionList({
 
   return (
     <>
-      <div className="sc-sessions" data-chat-conversation-pane>
-        <div className="sc-sessions__toolbar">
-          <TextField
-            className="sc-sessions__search"
-            data-chat-session-search
-            density="compact"
-            leading={<Icon iconId="search" size={14} className="sc-sessions__search-glyph" />}
-            placeholder={t('chat.social.sessionList.searchPlaceholder')}
-            value={searchText}
-            onValueChange={setSearchText}
-            clearable
-            onClear={() => setSearchText('')}
-          />
-          <Menu actions={plusMenuItems} placement="bottom">
-            <IconButton
-              actionId="chat.new-menu"
-              className="sc-sessions__new"
-              data-chat-new-menu
-              iconId="plus"
-              iconSize={16}
-              label={t('chat.social.sessionList.newMenu')}
-            />
-          </Menu>
+      <div
+        className="sc-sessions"
+        data-chat-conversation-pane
+        data-rail-tab={tab}
+        data-rail-search={searchOpen ? 'active' : 'idle'}
+        style={{ width: CHAT_RAIL_WIDTH, minWidth: CHAT_RAIL_WIDTH, maxWidth: CHAT_RAIL_WIDTH }}
+      >
+        {/* Rail header — one fixed 52px band. The search tile expands and
+            TAKES OVER the band (prototype sk-rail-header parity): while open
+            the segmented island and chrome tiles unmount, leaving the field
+            plus one close tile on the same row so the list never jumps. */}
+        <div
+          className="sc-rail-header"
+          data-rail-search={searchOpen ? 'active' : 'idle'}
+        >
+          {searchOpen ? (
+            <>
+              <span className="sc-rail-search">
+                <TextField
+                  className="sc-rail-search-field"
+                  data-chat-session-search
+                  data-rail-search-value={searchText}
+                  density="compact"
+                  autoFocus
+                  leading={<Icon iconId="search" size={14} />}
+                  placeholder={t('chat.social.sessionList.searchPlaceholder')}
+                  value={searchText}
+                  onValueChange={setSearchText}
+                  clearable
+                  onClear={() => setSearchText('')}
+                  onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }}
+                />
+              </span>
+              <IconButton
+                actionId="chat.rail-search-close"
+                className="sc-rail-icon"
+                iconId="close"
+                iconSize={15}
+                emphasis="quiet"
+                density="compact"
+                label={t('common.action.close', { ns: 'common' })}
+                onClick={closeSearch}
+              />
+            </>
+          ) : (
+            <>
+              <Segmented<ChatRailTab>
+                className="sc-rail-subnav"
+                density="compact"
+                fullWidth
+                aria-label={t('chat.social.subNav.chats')}
+                value={tab}
+                onValueChange={value => switchTab((value ?? 'chats') as ChatRailTab)}
+                options={[
+                  { value: 'chats', label: t('chat.social.subNav.chats'), leading: <Icon iconId="message-circle" size={13} /> },
+                  { value: 'contacts', label: t('chat.social.subNav.contacts'), leading: <Icon iconId="users" size={13} /> },
+                ]}
+              />
+              <IconButton
+                actionId="chat.rail-search"
+                className="sc-rail-icon"
+                data-rail-search-trigger
+                iconId="search"
+                iconSize={15}
+                emphasis="quiet"
+                density="compact"
+                label={t('chat.social.sessionList.searchPlaceholder')}
+                aria-expanded={searchOpen}
+                onClick={() => setSearchOpen(true)}
+              />
+              <Menu actions={plusMenuItems} placement="bottom">
+                <IconButton
+                  actionId="chat.new-menu"
+                  className="sc-rail-icon"
+                  data-chat-new-menu
+                  iconId="plus"
+                  iconSize={16}
+                  emphasis="quiet"
+                  density="compact"
+                  label={t('chat.social.sessionList.newMenu')}
+                />
+              </Menu>
+            </>
+          )}
         </div>
+
+        {tab === 'contacts' ? (
+          renderContacts?.(searchText)
+        ) : (
+          <>
 
         {loadError && visibleConversations.length > 0 && (
           <ConversationListError compact onRetry={handleRetry} />
         )}
+
+        {/* The Recent label stays mounted while searching (prototype
+            sk-conv-title parity): it reserves constant vertical rhythm so
+            opening the in-rail search field never shifts the list. */}
+        <h2 className="sc-rail-title">{t('chat.social.sessionList.recent')}</h2>
 
         <div className="sc-sessions__scroll">
           {loadError && visibleConversations.length === 0 ? (
@@ -567,6 +668,22 @@ export function ChatSessionList({
               }
 
               const contextMenuTarget = `context-menu:chat:${c.kind}:${c.id}`;
+              const isMutedRow = Boolean(localState?.muted || localState?.alertEnabled === false);
+              // Unread count rides the avatar corner (prototype sk-unread-badge
+              // parity): an absolutely positioned pill, so presence changes and
+              // unread deltas never reflow the row. The element stays mounted
+              // at zero count (visibility-hidden) to keep the acceptance
+              // geometry probe's bounding box stable.
+              const unreadBadge = (
+                <span
+                  className={`sc-session-unread${unread <= 0 ? ' is-empty' : ''}${isMutedRow ? ' is-muted' : ''}`}
+                  data-chat-session-unread={unread}
+                  data-chat-session-unread-lane
+                  aria-hidden={unread <= 0}
+                >
+                  {unread > 0 ? (unread > 99 ? '99+' : cappedChatUnreadCount(unread)) : ''}
+                </span>
+              );
 
               return (
                 <ContextMenu
@@ -582,7 +699,7 @@ export function ChatSessionList({
                   }}
                 >
                   <div
-                    className={`sc-session-row${isActive ? ' is-active' : ''}`}
+                    className={`sc-session-row${isActive ? ' is-active' : ''}${localState?.sticky ? ' is-pinned-row' : ''}`}
                     data-pt-conversation-item={c.id}
                     data-chat-conversation-kind={c.kind}
                     data-chat-session-ulid={c.kind === 'friend' ? c.id : undefined}
@@ -606,38 +723,45 @@ export function ChatSessionList({
                   >
                     <OverlayCommitProfiler owner={contextMenuTarget} surface="chat-conversation-context-menu">
                       {c.kind === 'group' ? (
-                        <GroupSquareAvatar
-                          remoteUrl={c.avatar || undefined}
-                          members={projectGroupAvatarSlots(
-                            groupMembers[c.id] || [],
-                            (ptid, nickname) => resolveActorIdentity({
-                              ptid,
-                              currentUserPtid,
-                              currentUserProfile,
-                              peerProfiles,
-                              sessions,
-                              nickname,
-                            }),
-                          )}
-                          name={name}
-                          size={36}
-                        />
+                        <span className="sc-session-avatar sc-session-avatar--group">
+                          <GroupSquareAvatar
+                            remoteUrl={c.avatar || undefined}
+                            members={projectGroupAvatarSlots(
+                              groupMembers[c.id] || [],
+                              (ptid, nickname) => resolveActorIdentity({
+                                ptid,
+                                currentUserPtid,
+                                currentUserProfile,
+                                peerProfiles,
+                                sessions,
+                                nickname,
+                              }),
+                            )}
+                            name={name}
+                            size={40}
+                          />
+                          {unreadBadge}
+                        </span>
                       ) : (
                         <span
+                          className="sc-session-avatar"
                           data-chat-avatar-ptid={c.peerPtid || ''}
                           data-chat-avatar-src={c.avatar || ''}
                           data-chat-identity-federated-handle={c.federatedHandle || ''}
                           data-chat-identity-home-station-domain={c.homeStationDomain || ''}
                           data-chat-identity-home-station-peer-id={c.homeStationPeerId || ''}
                           data-chat-identity-federation-id={c.federationId || ''}
-                          style={{ display: 'inline-flex', flexShrink: 0 }}
                         >
                           <UserSquareAvatar
                             remoteUrl={c.avatar}
                             actorPtid={c.peerPtid || null}
                             name={name}
-                            size={36}
+                            size={40}
                           />
+                          {c.peerPtid && peerOnline[c.peerPtid] ? (
+                            <span className="sc-session-presence" data-presence="online" aria-hidden />
+                          ) : null}
+                          {unreadBadge}
                         </span>
                       )}
 
@@ -665,16 +789,53 @@ export function ChatSessionList({
                         </span>
                         <span className="sc-session-row__sub">
                           <span className="sc-session-row__preview">{subtitle}</span>
-                          <span
-                            className="sc-session-row__unread"
-                            data-chat-session-unread={unread}
-                            data-chat-session-unread-lane
-                            style={{ width: CHAT_SESSION_UNREAD_LANE_WIDTH, minWidth: CHAT_SESSION_UNREAD_LANE_WIDTH }}
-                            aria-hidden={unread <= 0}
-                          >
-                            <Badge count={unread} limit={99} />
-                          </span>
                         </span>
+                      </span>
+                      {/* Hover quick actions (prototype sk-conv-actions
+                          parity): mute / pin toggle + the full action menu. */}
+                      <span className="sc-session-row__actions">
+                        <IconButton
+                          className="sc-session-state"
+                          actionId={`session.mute-${c.id}`}
+                          iconId={localState?.muted ? 'volume-2' : 'bell-off'}
+                          iconSize={11}
+                          emphasis="quiet"
+                          density="compact"
+                          label={localState?.muted
+                            ? t('chat.social.contextMenu.unmute')
+                            : t('chat.social.contextMenu.mute')}
+                          onClick={event => {
+                            event.stopPropagation();
+                            buildContextActions(c).find(action => action.id === 'mute')?.onActivate();
+                          }}
+                        />
+                        <IconButton
+                          className="sc-session-state"
+                          actionId={`session.pin-${c.id}`}
+                          iconId="pin"
+                          iconSize={11}
+                          emphasis="quiet"
+                          density="compact"
+                          label={localState?.sticky
+                            ? t('chat.social.contextMenu.unpin')
+                            : t('chat.social.contextMenu.pin')}
+                          onClick={event => {
+                            event.stopPropagation();
+                            buildContextActions(c).find(action => action.id === 'pin')?.onActivate();
+                          }}
+                        />
+                        <Menu actions={buildContextActions(c)} placement="bottom">
+                          <IconButton
+                            className="sc-session-state"
+                            actionId={`session.more-${c.id}`}
+                            iconId="more-horizontal"
+                            iconSize={12}
+                            emphasis="quiet"
+                            density="compact"
+                            label={t('chat.social.contextMenu.moreActions')}
+                            onClick={event => event.stopPropagation()}
+                          />
+                        </Menu>
                       </span>
                     </OverlayCommitProfiler>
                   </div>
@@ -690,6 +851,8 @@ export function ChatSessionList({
           onSelect={handleSearchSelect}
           onDismiss={() => setSearchText('')}
         />
+          </>
+        )}
       </div>
 
       <CreateGroupModal open={showCreateGroup} onClose={() => setShowCreateGroup(false)} />

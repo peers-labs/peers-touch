@@ -1,0 +1,575 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "整体加密架构",
+    "subtitle": "消息用端到端密钥（只在设备）；登录用 Station↔Broker 共享密钥（make station 时经 git-crypt→SSH 注入）。两类密钥分开。",
+    "locale": "zh-CN",
+    "output": "peers-multicenter-architecture-20261021/crypto.zh.html",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/peers-labs/peers-touch",
+      "revision": "9f32b700debdc370f11b7043fd7e1ed93a05a309",
+      "provider": "github",
+      "link_mode": "web"
+    },
+    "views": [
+      {
+        "id": "flow",
+        "focus": [
+          "sender",
+          "encrypt",
+          "station",
+          "relay",
+          "sfu",
+          "federation",
+          "decrypt",
+          "receiver"
+        ],
+        "label": "端到端数据流",
+        "note": "中间所有服务只接触密文；明文只存在于两端设备。"
+      },
+      {
+        "id": "keys",
+        "focus": [
+          "sender-key",
+          "pair-key",
+          "server-nokey",
+          "receiver-key",
+          "local-db",
+          "local-key",
+          "host-secrets",
+          "deploy-secrets"
+        ],
+        "label": "谁持有密钥",
+        "note": "端到端密钥只在设备；服务端不持有；静态与部署密钥在最下方分层。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "sender",
+      "type": "frontend",
+      "label": "发送设备",
+      "sublabel": "明文消息",
+      "tag": "可信端",
+      "pos": [
+        16,
+        150
+      ],
+      "size": [
+        150,
+        92
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src",
+          "label": "client",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "encrypt",
+      "type": "security",
+      "label": "端到端加密",
+      "sublabel": "MLS · HPKE · X25519",
+      "tag": "在设备上",
+      "pos": [
+        216,
+        150
+      ],
+      "size": [
+        170,
+        92
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/mls/provider.rs",
+          "label": "provider.rs",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "station",
+      "type": "cloud",
+      "label": "Home Station",
+      "sublabel": "转发 / 存储密文",
+      "tag": "不可见内容",
+      "pos": [
+        430,
+        92
+      ],
+      "size": [
+        168,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/main.go",
+          "label": "main.go",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "sfu",
+      "type": "messagebus",
+      "label": "媒体 SFU / TURN",
+      "sublabel": "转发加密媒体流",
+      "tag": "不可见内容",
+      "pos": [
+        624,
+        92
+      ],
+      "size": [
+        168,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/application/p2p",
+          "label": "p2p",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "external",
+      "label": "Relay",
+      "sublabel": "Circuit 不透明转发",
+      "tag": "不可见内容",
+      "pos": [
+        430,
+        230
+      ],
+      "size": [
+        168,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/station/frame/core/runtime/role/role.go",
+          "label": "role.go",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "federation",
+      "type": "database",
+      "label": "Federation 节点",
+      "sublabel": "存密文 · 验签名",
+      "tag": "不可见内容",
+      "pos": [
+        624,
+        230
+      ],
+      "size": [
+        168,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/federation/domain/repository.go",
+          "label": "repository.go",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "decrypt",
+      "type": "security",
+      "label": "端到端解密",
+      "sublabel": "收件人 Ed25519 私钥",
+      "tag": "在设备上",
+      "pos": [
+        838,
+        150
+      ],
+      "size": [
+        170,
+        92
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/Cargo.toml",
+          "label": "messaging-core",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "receiver",
+      "type": "frontend",
+      "label": "接收设备",
+      "sublabel": "明文消息",
+      "tag": "可信端",
+      "pos": [
+        1058,
+        150
+      ],
+      "size": [
+        150,
+        92
+      ],
+      "sources": [
+        {
+          "path": "apps/mobile/src-tauri/src",
+          "label": "client",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "sender-key",
+      "type": "security",
+      "label": "发送端持有",
+      "sublabel": "本人私钥 · 仅本机",
+      "tag": "密钥持有者",
+      "pos": [
+        16,
+        404
+      ],
+      "size": [
+        150,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/station-trust/Cargo.toml",
+          "label": "station-trust",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "pair-key",
+      "type": "security",
+      "label": "端到端会话密钥",
+      "sublabel": "X25519 协商 · 两端派生",
+      "tag": "密钥持有者",
+      "pos": [
+        216,
+        404
+      ],
+      "size": [
+        170,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/messaging-core/src/mls/provider.rs",
+          "label": "provider.rs",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "server-nokey",
+      "type": "external",
+      "label": "服务端不持有内容密钥",
+      "sublabel": "无 E2E 消息密钥",
+      "tag": "无密钥",
+      "pos": [
+        430,
+        404
+      ],
+      "size": [
+        168,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/station/app/subserver/oauth/legacy.go",
+          "label": "legacy.go",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "receiver-key",
+      "type": "security",
+      "label": "接收端持有",
+      "sublabel": "收件人私钥 · 仅本机",
+      "tag": "密钥持有者",
+      "pos": [
+        838,
+        404
+      ],
+      "size": [
+        170,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/station-trust/Cargo.toml",
+          "label": "station-trust",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    },
+    {
+      "id": "local-db",
+      "type": "database",
+      "label": "设备本地库",
+      "sublabel": "SQLCipher 整库加密",
+      "tag": "静态",
+      "pos": [
+        150,
+        548
+      ],
+      "size": [
+        200,
+        66
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/Cargo.toml",
+          "label": "Cargo.toml",
+          "line": 1,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "local-key",
+      "type": "database",
+      "label": "本地库密钥",
+      "sublabel": "OS keychain/DPAPI · Argon2id",
+      "tag": "静态",
+      "pos": [
+        372,
+        548
+      ],
+      "size": [
+        210,
+        66
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop/src-tauri/src/infrastructure/storage/key_provider.rs",
+          "label": "key_provider.rs",
+          "line": 1,
+          "end_line": 100
+        }
+      ]
+    },
+    {
+      "id": "host-secrets",
+      "type": "backend",
+      "label": "Station/Relay 主机密钥",
+      "sublabel": "AUTH/DB · 主机一次性生成 · TLS/Noise",
+      "tag": "服务端",
+      "pos": [
+        604,
+        548
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "tooling/docker/entrypoint.sh",
+          "label": "entrypoint.sh",
+          "line": 1,
+          "end_line": 90
+        }
+      ]
+    },
+    {
+      "id": "deploy-secrets",
+      "type": "backend",
+      "label": "部署密钥配给",
+      "sublabel": "git-crypt → SSH/TLS → 0600",
+      "tag": "服务端",
+      "pos": [
+        856,
+        548
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "tooling/scripts/deploy",
+          "label": "deploy",
+          "line": 1,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "broker",
+      "type": "cloud",
+      "label": "OAuth Broker (Vercel)",
+      "sublabel": "登录代理 · 外部托管",
+      "tag": "登录服务",
+      "pos": [
+        635,
+        404
+      ],
+      "size": [
+        168,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/oauth2-client",
+          "label": "oauth2-client",
+          "line": 1,
+          "end_line": 30
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "不可信中转区：只看到密文，不持有密钥",
+      "wraps": [
+        "station",
+        "sfu",
+        "relay",
+        "federation"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "encrypt",
+      "to": "station",
+      "variant": "security",
+      "route": "orthogonal-h",
+      "label": "密文"
+    },
+    {
+      "from": "encrypt",
+      "to": "relay",
+      "variant": "security",
+      "route": "orthogonal-h",
+      "label": "密文"
+    },
+    {
+      "from": "station",
+      "to": "sfu",
+      "variant": "security",
+      "route": "straight"
+    },
+    {
+      "from": "relay",
+      "to": "federation",
+      "variant": "dashed",
+      "route": "straight"
+    },
+    {
+      "from": "sfu",
+      "to": "decrypt",
+      "variant": "security",
+      "route": "orthogonal-h",
+      "label": "密文"
+    },
+    {
+      "from": "federation",
+      "to": "decrypt",
+      "variant": "dashed",
+      "route": "orthogonal-h",
+      "label": "签名副本"
+    },
+    {
+      "from": "sender",
+      "to": "encrypt",
+      "variant": "emphasis",
+      "route": "straight",
+      "label": "明文"
+    },
+    {
+      "from": "decrypt",
+      "to": "receiver",
+      "variant": "emphasis",
+      "route": "straight",
+      "label": "明文"
+    },
+    {
+      "from": "sender",
+      "to": "sender-key",
+      "variant": "default",
+      "route": "straight",
+      "label": "持有",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "encrypt",
+      "to": "pair-key",
+      "variant": "default",
+      "route": "straight",
+      "label": "使用",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "decrypt",
+      "to": "receiver-key",
+      "variant": "default",
+      "route": "straight",
+      "label": "使用",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "receiver-key",
+      "to": "receiver",
+      "variant": "default",
+      "route": "orthogonal-h",
+      "label": "持有"
+    },
+    {
+      "from": "broker",
+      "to": "host-secrets",
+      "variant": "security",
+      "label": "同一 Bridge 密钥(HMAC)",
+      "route": "orthogonal-v",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "两类密钥，别混淆",
+      "items": [
+        "内容密钥（MLS/HPKE/Ed25519）：保护消息，只在两端设备；中间服务没有，见第二行。",
+        "登录桥接密钥 PEERS_OAUTH_BRIDGE_SECRET：不保护消息，是 Station 与 OAuth Broker 的共享 HMAC；两者持同值，用于登录回调验签。"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Bridge 密钥怎么到 Station（make station）",
+      "items": [
+        "权威值在 OAuth Broker（Vercel）侧配置；同值写入 env 仓 per-role 的 git-crypt runtime.env。",
+        "make station 时 deploy 经 SSH/TLS 把它随命名空间 runtime.env 下发到主机(0600)，compose 注入 Station 容器。",
+        "图中 Broker 与“Station/Relay 主机密钥”之间的红色竖线即“同一 Bridge 密钥(HMAC)”；缺失则部署/启动 fail-closed。",
+        "最下方：本地库 SQLCipher+OS keychain、主机一次性 AUTH/DB 密钥、部署密钥 git-crypt 配给；产品代码不内置部署密钥加密。"
+      ]
+    }
+  ]
+}

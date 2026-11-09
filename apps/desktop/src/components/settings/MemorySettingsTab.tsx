@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { Alert, Button, Spin, Tag, Tooltip, Typography, theme, message } from 'antd';
-import { Database, HelpCircle, RefreshCw, Zap } from 'lucide-react';
+import { Alert, Button, Icon, Spin, Tag, Text, Tooltip } from '@peers-touch/ui';
+import { RefreshCw, Zap } from 'lucide-react';
 import { api } from '../../services/desktop_api';
-import { SettingsContainer, SettingsSection } from './SettingsLayout';
+import {
+  SettingsContainer,
+  SettingsSection,
+  SettingsRow,
+} from './SettingsLayout';
 import { useTranslation } from 'react-i18next';
-
-const { Text } = Typography;
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
 interface EmbeddingStatus {
   provider: string;
@@ -22,7 +24,6 @@ function formatStorage(bytes: number): string {
 }
 
 export function MemorySettingsTab() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('provider');
   const [embedding, setEmbedding] = useState<EmbeddingStatus | null>(null);
   const [stats, setStats] = useState<{ total: number; storage_bytes: number; by_layer: Record<string, number> } | null>(null);
@@ -49,16 +50,16 @@ export function MemorySettingsTab() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const handleReEmbed = async () => {
     setReembedding(true);
     try {
       const result = await api.reEmbed();
-      message.success(t('provider.memory.reembedDone', { count: result.reembedded_count ?? 0 }));
+      notifySuccess(t('provider.memory.reembedDone', { count: result.reembedded_count ?? 0 }));
       await load();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : t('provider.memory.reembedFailed'));
+      notifyError(error instanceof Error ? error.message : t('provider.memory.reembedFailed'));
     } finally {
       setReembedding(false);
     }
@@ -67,7 +68,7 @@ export function MemorySettingsTab() {
   if (loading) {
     return (
       <SettingsContainer fullHeight tier="standard">
-        <Flexbox align="center" justify="center" style={{ padding: 60 }}><Spin /></Flexbox>
+        <div className="sc-memory-loading"><Spin /></div>
       </SettingsContainer>
     );
   }
@@ -77,89 +78,92 @@ export function MemorySettingsTab() {
   return (
     <SettingsContainer fullHeight tier="standard">
       <SettingsSection
-        icon={<Database size={16} style={{ color: token.colorPrimary }} />}
+        icon={<Icon iconId="database" size={16} />}
         title={t('provider.memory.memory')}
         extra={
-          <Button size="small" icon={<RefreshCw size={14} />} onClick={load} loading={loading}>
-            {t('provider.memory.refreshStatus')}
-          </Button>
+          <Button
+            actionId="memory-refresh"
+            density="compact"
+            leading={<RefreshCw size={14} />}
+            execution={loading ? 'pending' : 'idle'}
+            label={t('provider.memory.refreshStatus')}
+            onActivate={() => void load()}
+          />
         }
       >
         {unavailable && (
           <Alert
-            type="error"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={t('provider.memory.stationUnavailable')}
+            className="sc-memory-alert"
+            tone="danger"
+            title={t('provider.memory.stationUnavailable')}
             description={t('provider.memory.stationUnavailableDesc')}
           />
         )}
 
-        <Flexbox gap={14}>
-          <Flexbox horizontal align="center" justify="space-between">
-            <Flexbox horizontal align="center" gap={8}>
-              <Text strong style={{ fontSize: 13 }}>{t('provider.memory.embeddingModel')}</Text>
-              <Tooltip title={t('provider.memory.embeddingModelTooltip')}>
-                <HelpCircle size={12} style={{ color: token.colorTextQuaternary }} />
+        <SettingsRow
+          label={
+            <span className="sc-memory-label">
+              {t('provider.memory.embeddingModel')}
+              <Tooltip label={t('provider.memory.embeddingModelTooltip')}>
+                <Icon iconId="circle-question-mark" size={12} className="sc-memory-label__help" />
               </Tooltip>
-            </Flexbox>
-            {embeddingReady ? (
-              <Tag color="green">{embedding!.provider} / {embedding!.model}</Tag>
-            ) : (
-              <Tag>{t('provider.memory.embeddingUnavailable')}</Tag>
-            )}
-          </Flexbox>
-
+            </span>
+          }
+        >
           {embeddingReady ? (
-            <Flexbox horizontal gap={24} style={{ fontSize: 13, color: token.colorTextSecondary }}>
-              <span>{t('provider.memory.dimensions', { count: embedding!.dimensions })}</span>
-              <span>{t('provider.memory.vectorCount', { count: embedding!.vector_count })}</span>
-              {stats && <span>{t('provider.memory.storageBytes', { bytes: formatStorage(stats.storage_bytes) })}</span>}
-            </Flexbox>
+            <Tag tone="success">{embedding!.provider} / {embedding!.model}</Tag>
           ) : (
-            <Alert
-              type="info"
-              showIcon
-              icon={<Zap size={14} />}
-              style={{ fontSize: 12 }}
-              message={t('provider.memory.ftsMode')}
-              description={t('provider.memory.ftsDesc')}
+            <Tag>{t('provider.memory.embeddingUnavailable')}</Tag>
+          )}
+        </SettingsRow>
+
+        {embeddingReady ? (
+          <div className="sc-memory-facts">
+            <Tag>{t('provider.memory.dimensions', { count: embedding!.dimensions })}</Tag>
+            <Tag>{t('provider.memory.vectorCount', { count: embedding!.vector_count })}</Tag>
+            {stats && (
+              <Tag>{t('provider.memory.storageBytes', { bytes: formatStorage(stats.storage_bytes) })}</Tag>
+            )}
+          </div>
+        ) : (
+          <Alert
+            tone="info"
+            icon={<Zap size={14} />}
+            title={t('provider.memory.ftsMode')}
+            description={t('provider.memory.ftsDesc')}
+          />
+        )}
+
+        {stats && (
+          <SettingsRow vertical label={t('provider.memory.statsByLayer')}>
+            <div className="sc-memory-layers__tags">
+              {Object.entries(stats.by_layer || {}).map(([layer, count]) => (
+                <Tag key={layer}>{layer}: {count}</Tag>
+              ))}
+              <Tag tone="info">{t('provider.memory.totalEntries', { count: stats.total })}</Tag>
+            </div>
+          </SettingsRow>
+        )}
+
+        {embeddingReady && (
+          <SettingsRow
+            label={t('provider.memory.reembed')}
+            description={t('provider.memory.reembedHint')}
+          >
+            <Button
+              actionId="memory-reembed"
+              density="compact"
+              leading={<RefreshCw size={14} />}
+              execution={reembedding ? 'pending' : 'idle'}
+              label={t('provider.memory.reembed')}
+              onActivate={() => void handleReEmbed()}
             />
-          )}
+          </SettingsRow>
+        )}
 
-          {stats && (
-            <Flexbox gap={6}>
-              <Text strong style={{ fontSize: 13 }}>{t('provider.memory.statsByLayer')}</Text>
-              <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-                {Object.entries(stats.by_layer || {}).map(([layer, count]) => (
-                  <Tag key={layer}>{layer}: {count}</Tag>
-                ))}
-                <Tag color="blue">{t('provider.memory.totalEntries', { count: stats.total })}</Tag>
-              </Flexbox>
-            </Flexbox>
-          )}
-
-          {embeddingReady && (
-            <Flexbox>
-              <Button
-                size="small"
-                icon={<RefreshCw size={14} />}
-                onClick={handleReEmbed}
-                loading={reembedding}
-                style={{ alignSelf: 'flex-start' }}
-              >
-                {t('provider.memory.reembed')}
-              </Button>
-              <Text type="secondary" style={{ fontSize: 11, marginTop: 6 }}>
-                {t('provider.memory.reembedHint')}
-              </Text>
-            </Flexbox>
-          )}
-
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {t('provider.memory.stationManaged')}
-          </Text>
-        </Flexbox>
+        <Text tone="secondary" className="sc-memory-managed-note">
+          {t('provider.memory.stationManaged')}
+        </Text>
       </SettingsSection>
     </SettingsContainer>
   );

@@ -14,8 +14,7 @@
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@lobehub/ui';
-import { message } from 'antd';
+import { Button } from '@peers-touch/ui';
 import { Check, Globe, MessageCircle, UserPlus, Clock } from 'lucide-react';
 
 import { useSessionStore } from '../../store/session';
@@ -23,6 +22,7 @@ import { useSocialChatStore } from '../../store/socialChat';
 import { useFederationStore } from '../../store/federation';
 import { singleFederationId } from '../../store/friendshipProjection';
 import { EVENT, eventBus } from '../../kernel/events';
+import { notifyError, notifySuccess, notifyWarning } from '../../ui/feedback';
 import { findFriendRequest } from './profileRelationship';
 import { useProfileRelationship } from './useProfileRelationship';
 
@@ -61,62 +61,72 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
   if (kind === 'self') {
     return (
       <Button
-        block
-        icon={<Globe size={14} />}
+        actionId="profile.manage-account"
+        fullWidth
+        emphasis="secondary"
+        density="compact"
+        leading={<Globe size={15} />}
         data-chat-profile-manage
-        onClick={() => {
+        onActivate={() => {
           close();
           window.location.hash = '#/settings';
           eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings', id: 'account' });
         }}
-      >
-        {t('layout.user.manageAccount')}
-      </Button>
+        label={t('layout.user.manageAccount')}
+      />
     );
   }
 
   if (kind === 'requested') {
+    const requestedLabel = t('chat.social.profile.requested');
     return (
-      <Button block disabled icon={<Clock size={14} />} data-chat-profile-requested>
-        {t('chat.social.profile.requested')}
-      </Button>
+      <Button
+        actionId="profile.requested"
+        fullWidth
+        emphasis="secondary"
+        leading={<Clock size={14} />}
+        availability={{ kind: 'disabled', reason: requestedLabel }}
+        data-chat-profile-requested
+        label={requestedLabel}
+      />
     );
   }
 
   if (kind === 'incoming-request' && friendRequest) {
     return (
       <Button
-        block
-        type="primary"
-        icon={<Check size={14} />}
-        loading={busy === 'accept'}
+        actionId="profile.accept-request"
+        fullWidth
+        emphasis="primary"
+        leading={<Check size={14} />}
+        execution={busy === 'accept' ? 'pending' : 'idle'}
         data-chat-profile-accept
-        onClick={async () => {
+        onActivate={async () => {
           setBusy('accept');
           try {
             await acceptFriendRequest(friendRequest);
-            message.success(t('chat.social.contacts.accept'));
+            notifySuccess(t('chat.social.contacts.accept'));
             close();
           } catch {
-            message.error(t('chat.social.findPeople.addFailed'));
+            notifyError(t('chat.social.findPeople.addFailed'));
           } finally {
             setBusy(null);
           }
         }}
-      >
-        {t('chat.social.contacts.accept')}
-      </Button>
+        label={t('chat.social.contacts.accept')}
+      />
     );
   }
 
   if (kind === 'friend') {
     return (
       <Button
-        block
-        type="primary"
-        icon={<MessageCircle size={14} />}
+        actionId="profile.send-message"
+        fullWidth
+        emphasis="primary"
+        leading={<MessageCircle size={14} />}
         data-chat-contact-message
-        onClick={() => {
+        onActivate={() => {
           if (onMessage) {
             onMessage();
           } else {
@@ -128,9 +138,8 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
           }
           close();
         }}
-      >
-        {t('chat.social.contacts.sendMessage')}
-      </Button>
+        label={t('chat.social.contacts.sendMessage')}
+      />
     );
   }
 
@@ -147,16 +156,16 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
       || existingConversation?.federationId
       || singleFederationId(federations);
     if (!homeStationPeerId || !federationId) {
-      message.warning(t('chat.social.profile.addIdentityUnavailable'));
+      notifyWarning(t('chat.social.profile.addIdentityUnavailable'));
       return;
     }
     setBusy('add');
     try {
       await sendFriendRequest(actorPtid, homeStationPeerId, federationId, '');
-      message.success(t('chat.social.findPeople.requestSent'));
+      notifySuccess(t('chat.social.findPeople.requestSent'));
       close();
     } catch (error) {
-      message.error(
+      notifyError(
         (error as { message?: string })?.message
           || t('chat.social.findPeople.addFailed'),
       );
@@ -167,14 +176,14 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
 
   return (
     <Button
-      block
-      type="primary"
-      icon={<UserPlus size={14} />}
-      loading={busy === 'add'}
+      actionId="profile.add-friend"
+      fullWidth
+      emphasis="primary"
+      leading={<UserPlus size={14} />}
+      execution={busy === 'add' ? 'pending' : 'idle'}
       data-chat-profile-add-friend
-      onClick={() => void addFriend()}
-    >
-      {t('chat.social.profile.addFriend')}
-    </Button>
+      onActivate={() => void addFriend()}
+      label={t('chat.social.profile.addFriend')}
+    />
   );
 }

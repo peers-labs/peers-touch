@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Input, Popconfirm, Spin, Tag, theme } from 'antd';
-import { ActionIcon, Empty as LobeEmpty } from '@lobehub/ui';
-import { ArrowLeft, BookOpen, Package, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Alert,
+  Button,
+  Card,
+  ConfirmAction,
+  Empty,
+  Icon,
+  IconButton,
+  Spin,
+  Tag,
+  TextField,
+  TextArea,
+  type Tone,
+} from '@peers-touch/ui';
+import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
 import type { KnowledgeResourceDescriptor } from '../../gen/proto/domain/agent/capability_pb';
 import {
   KnowledgeResourceAvailability,
@@ -12,8 +23,6 @@ import {
 import { useAgentCapabilityStore } from '../../store/agentCapabilities';
 import { knowledgeService } from '../../services/knowledge-service';
 import { log } from '../../utils/logger';
-
-const { TextArea } = Input;
 
 type View =
   | { mode: 'list' }
@@ -40,21 +49,15 @@ function KnowledgeCover({ descriptor }: { descriptor: KnowledgeResourceDescripto
     .join('');
   const hue = deterministicHue(descriptor.resourceId);
   return (
-    <Flexbox
+    <div
       aria-hidden
-      align="center"
-      justify="center"
+      className="sc-knowledge-cover"
       style={{
-        height: 92,
-        color: '#3f3b63',
-        fontSize: 25,
-        fontWeight: 750,
-        letterSpacing: '0.04em',
         background: `linear-gradient(135deg, hsl(${hue} 42% 92%), hsl(${(hue + 48) % 360} 46% 84%))`,
       }}
     >
-      {initials || <BookOpen size={24} />}
-    </Flexbox>
+      {initials || <Icon iconId="book-open" size={24} />}
+    </div>
   );
 }
 
@@ -86,34 +89,49 @@ function KnowledgeEditor({
   }, [content, onSubmit, t, title]);
 
   return (
-    <Flexbox gap={12} data-pt-knowledge-editor>
-      <Flexbox horizontal align="center" gap={8}>
-        <ActionIcon icon={ArrowLeft} title={t('settings.knowledge.back')} onClick={onCancel} />
+    <div className="sc-knowledge-editor" data-pt-knowledge-editor>
+      <div className="sc-knowledge-editor__head">
+        <IconButton
+          actionId="knowledge-editor-back"
+          iconId="arrow-left"
+          iconSize={16}
+          density="compact"
+          emphasis="quiet"
+          label={t('settings.knowledge.back')}
+          onActivate={onCancel}
+        />
         <strong>{initial ? t('settings.knowledge.editTitle') : t('settings.knowledge.createTitle')}</strong>
-      </Flexbox>
-      <Input
+      </div>
+      <TextField
         autoFocus
         aria-label={t('settings.knowledge.titleLabel')}
         placeholder={t('settings.knowledge.titlePlaceholder')}
         value={title}
-        onChange={(event) => setTitle(event.target.value)}
+        onValueChange={setTitle}
       />
       <TextArea
         aria-label={t('settings.knowledge.contentLabel')}
         placeholder={t('settings.knowledge.contentPlaceholder')}
         rows={13}
         value={content}
-        onChange={(event) => setContent(event.target.value)}
-        style={{ fontFamily: 'inherit' }}
+        onValueChange={setContent}
       />
-      {error ? <Alert type="error" showIcon message={error} /> : null}
-      <Flexbox horizontal justify="flex-end" gap={8}>
-        <Button onClick={onCancel}>{t('settings.knowledge.cancel')}</Button>
-        <Button type="primary" loading={submitting} onClick={() => { void submit(); }}>
-          {t('settings.knowledge.save')}
-        </Button>
-      </Flexbox>
-    </Flexbox>
+      {error ? <Alert tone="danger" title={error} /> : null}
+      <div className="sc-knowledge-editor__actions">
+        <Button
+          actionId="knowledge-editor-cancel"
+          label={t('settings.knowledge.cancel')}
+          onActivate={onCancel}
+        />
+        <Button
+          actionId="knowledge-editor-save"
+          emphasis="primary"
+          execution={submitting ? 'pending' : 'idle'}
+          label={t('settings.knowledge.save')}
+          onActivate={() => void submit()}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -122,7 +140,6 @@ function KnowledgeReader({ descriptor, onBack }: {
   onBack: () => void;
 }) {
   const { t } = useTranslation('settings');
-  const { token } = theme.useToken();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -147,32 +164,30 @@ function KnowledgeReader({ descriptor, onBack }: {
   }, [descriptor, t]);
 
   return (
-    <Flexbox gap={12} data-pt-knowledge-reader>
-      <Flexbox horizontal align="center" gap={8}>
-        <ActionIcon icon={ArrowLeft} title={t('settings.knowledge.back')} onClick={onBack} />
-        <strong style={{ minWidth: 0, flex: 1 }}>{descriptor.title}</strong>
+    <div className="sc-knowledge-reader" data-pt-knowledge-reader>
+      <div className="sc-knowledge-reader__head">
+        <IconButton
+          actionId="knowledge-reader-back"
+          iconId="arrow-left"
+          iconSize={16}
+          density="compact"
+          emphasis="quiet"
+          label={t('settings.knowledge.back')}
+          onActivate={onBack}
+        />
+        <strong className="sc-knowledge-reader__title">{descriptor.title}</strong>
         <Tag>r{Number(descriptor.revision)}</Tag>
-      </Flexbox>
-      {loading ? <Flexbox align="center" padding={32}><Spin /></Flexbox> : null}
-      {error ? <Alert type="error" showIcon message={error} /> : null}
+      </div>
+      {loading ? (
+        <div className="sc-knowledge-loading"><Spin /></div>
+      ) : null}
+      {error ? <Alert tone="danger" title={error} /> : null}
       {!loading && !error ? (
-        <div
-          className="selectable"
-          style={{
-            whiteSpace: 'pre-wrap',
-            lineHeight: 1.65,
-            fontSize: 13,
-            padding: 14,
-            border: `1px solid ${token.colorBorderSecondary}`,
-            borderRadius: 10,
-            maxHeight: 560,
-            overflow: 'auto',
-          }}
-        >
+        <div className="sc-knowledge-reader__content selectable">
           {content}
         </div>
       ) : null}
-    </Flexbox>
+    </div>
   );
 }
 
@@ -191,7 +206,7 @@ function KnowledgeDetail({ descriptor, onBack, onChanged }: {
     await knowledgeService.tombstone(descriptor, t('settings.knowledge.tombstoneReason'));
     await onChanged();
     onBack();
-  }, [descriptor, onBack, onChanged, t]);
+  }, [descriptor, onBack, onChanged]);
 
   const editFromStation = useCallback(async () => {
     setSubmitting(true);
@@ -230,33 +245,68 @@ function KnowledgeDetail({ descriptor, onBack, onChanged }: {
     );
   }
 
+  const availabilityTone: Tone = descriptor.availability === KnowledgeResourceAvailability.READY
+    ? 'success'
+    : 'warning';
+
   return (
-    <Flexbox gap={12} data-pt-knowledge-detail>
-      <Flexbox horizontal align="center" gap={8}>
-        <ActionIcon icon={ArrowLeft} title={t('settings.knowledge.back')} onClick={onBack} />
-        <strong style={{ minWidth: 0, flex: 1 }}>{descriptor.title}</strong>
-        <Tag color="purple">{resourceKindLabel(descriptor.resourceKind)}</Tag>
+    <div className="sc-knowledge-detail" data-pt-knowledge-detail>
+      <div className="sc-knowledge-detail__head">
+        <IconButton
+          actionId="knowledge-detail-back"
+          iconId="arrow-left"
+          iconSize={16}
+          density="compact"
+          emphasis="quiet"
+          label={t('settings.knowledge.back')}
+          onActivate={onBack}
+        />
+        <strong className="sc-knowledge-detail__title">{descriptor.title}</strong>
+        <Tag tone="info">{resourceKindLabel(descriptor.resourceKind)}</Tag>
         <Tag>r{Number(descriptor.revision)}</Tag>
-      </Flexbox>
-      <Flexbox horizontal gap={8} wrap="wrap">
-        <Tag color="blue">{descriptor.availability === KnowledgeResourceAvailability.READY ? t('settings.knowledge.retrievalLocal') : t('settings.knowledge.unavailable')}</Tag>
+      </div>
+      <div className="sc-knowledge-detail__tags">
+        <Tag tone={availabilityTone}>
+          {descriptor.availability === KnowledgeResourceAvailability.READY
+            ? t('settings.knowledge.retrievalLocal')
+            : t('settings.knowledge.unavailable')}
+        </Tag>
         <Tag>{descriptor.contentHash.slice(0, 16)}</Tag>
-      </Flexbox>
-      <Alert type="info" showIcon message={t('settings.knowledge.retrievalNotice')} />
-      <Flexbox horizontal gap={8}>
-        <Button onClick={() => setReaderOpen(true)}>{t('settings.knowledge.openReader')}</Button>
-        <Button onClick={() => void editFromStation()} loading={submitting}>{t('settings.knowledge.addRevision')}</Button>
-        <Popconfirm title={t('settings.knowledge.tombstoneConfirm')} onConfirm={() => void tombstone()}>
-          <Button danger icon={<Trash2 size={14} />}>{t('settings.knowledge.tombstone')}</Button>
-        </Popconfirm>
-      </Flexbox>
-    </Flexbox>
+      </div>
+      <Alert tone="info" title={t('settings.knowledge.retrievalNotice')} />
+      <div className="sc-knowledge-detail__actions">
+        <Button
+          actionId="knowledge-open-reader"
+          label={t('settings.knowledge.openReader')}
+          onActivate={() => setReaderOpen(true)}
+        />
+        <Button
+          actionId="knowledge-add-revision"
+          execution={submitting ? 'pending' : 'idle'}
+          label={t('settings.knowledge.addRevision')}
+          onActivate={() => void editFromStation()}
+        />
+        <ConfirmAction
+          actionId="knowledge-tombstone"
+          title={t('settings.knowledge.tombstoneConfirm')}
+          confirmLabel={t('settings.knowledge.tombstone')}
+          cancelLabel={t('settings.knowledge.cancel')}
+          onConfirm={() => void tombstone()}
+        >
+          <Button
+            actionId="knowledge-tombstone-trigger"
+            tone="danger"
+            leading={<Icon iconId="delete" size={14} />}
+            label={t('settings.knowledge.tombstone')}
+          />
+        </ConfirmAction>
+      </div>
+    </div>
   );
 }
 
 export function KnowledgeSettings() {
   const { t } = useTranslation('settings');
-  const { token } = theme.useToken();
   const descriptors = useAgentCapabilityStore((state) => state.knowledgeDescriptors);
   const loading = useAgentCapabilityStore((state) => state.loadingKnowledgeDescriptors);
   const loadKnowledgeDescriptors = useAgentCapabilityStore((state) => state.loadKnowledgeDescriptors);
@@ -284,7 +334,7 @@ export function KnowledgeSettings() {
 
   if (view.mode === 'create') {
     return (
-      <Card data-pt-settings-knowledge bordered={false}>
+      <Card flat data-pt-settings-knowledge>
         <KnowledgeEditor
           submitting={submitting}
           onCancel={() => setView({ mode: 'list' })}
@@ -305,15 +355,18 @@ export function KnowledgeSettings() {
 
   if (view.mode === 'reader') {
     return (
-      <Card data-pt-settings-knowledge bordered={false}>
-        <KnowledgeReader descriptor={view.descriptor} onBack={() => setView({ mode: 'detail', descriptor: view.descriptor })} />
+      <Card flat data-pt-settings-knowledge>
+        <KnowledgeReader
+          descriptor={view.descriptor}
+          onBack={() => setView({ mode: 'detail', descriptor: view.descriptor })}
+        />
       </Card>
     );
   }
 
   if (view.mode === 'detail') {
     return (
-      <Card data-pt-settings-knowledge bordered={false}>
+      <Card flat data-pt-settings-knowledge>
         <KnowledgeDetail
           descriptor={view.descriptor}
           onBack={() => setView({ mode: 'list' })}
@@ -325,83 +378,90 @@ export function KnowledgeSettings() {
 
   return (
     <Card
+      flat
       data-pt-settings-knowledge
-      bordered={false}
-      title={(
-        <Flexbox horizontal align="center" gap={8}>
-          <BookOpen size={16} />
+      heading={(
+        <span className="sc-knowledge-heading">
+          <Icon iconId="book-open" size={16} />
           <span>{t('settings.knowledge.title')}</span>
-        </Flexbox>
+        </span>
       )}
-      extra={(
-        <Flexbox horizontal gap={8}>
-          <ActionIcon icon={RefreshCw} title={t('settings.knowledge.refresh')} onClick={() => void refresh()} />
-          <Button size="small" type="primary" icon={<Plus size={14} />} onClick={() => setView({ mode: 'create' })}>
-            {t('settings.knowledge.create')}
-          </Button>
-        </Flexbox>
+      actions={(
+        <span className="sc-knowledge-heading__actions">
+          <IconButton
+            actionId="knowledge-refresh"
+            iconId="refresh-cw"
+            iconSize={15}
+            density="compact"
+            emphasis="quiet"
+            label={t('settings.knowledge.refresh')}
+            onActivate={() => void refresh()}
+          />
+          <Button
+            actionId="knowledge-create"
+            emphasis="primary"
+            density="compact"
+            leading={<Plus size={14} />}
+            label={t('settings.knowledge.create')}
+            onActivate={() => setView({ mode: 'create' })}
+          />
+        </span>
       )}
     >
-      <Flexbox gap={12}>
-        <Alert type="info" showIcon message={t('settings.knowledge.retrievalNotice')} />
-        <Input.Search
-          allowClear
+      <div className="sc-knowledge-list">
+        <Alert tone="info" title={t('settings.knowledge.retrievalNotice')} />
+        <TextField
+          clearable
+          leading={<Icon iconId="search" size={14} />}
           value={query}
           placeholder={t('settings.knowledge.search')}
-          onChange={(event) => setQuery(event.target.value)}
+          onValueChange={setQuery}
         />
-        {loading ? <Flexbox align="center" padding={32}><Spin /></Flexbox> : null}
+        {loading ? (
+          <div className="sc-knowledge-loading"><Spin /></div>
+        ) : null}
         {!loading && visible.length === 0 ? (
-          <LobeEmpty
-            icon={Package}
-            title={query ? t('settings.knowledge.emptySearch') : t('settings.knowledge.empty')}
-            padding="48px 16px"
-          />
+          <div className="sc-knowledge-empty">
+            <Empty
+              icon={<Icon iconId="book-open" size={40} />}
+              description={query
+                ? t('settings.knowledge.emptySearch')
+                : t('settings.knowledge.empty')}
+            />
+          </div>
         ) : null}
         {!loading ? (
-          <div
-            data-pt-knowledge-grid
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
-              gap: 14,
-            }}
-          >
+          <div className="sc-knowledge-grid" data-pt-knowledge-grid>
             {visible.map((descriptor) => (
               <button
                 key={descriptor.resourceId}
                 type="button"
+                className="sc-knowledge-card"
                 data-pt-knowledge-card={descriptor.resourceId}
                 onClick={() => setView({ mode: 'detail', descriptor })}
-                style={{
-                  textAlign: 'left',
-                  padding: 0,
-                  overflow: 'hidden',
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  borderRadius: 12,
-                  background: token.colorBgContainer,
-                  cursor: 'pointer',
-                }}
               >
                 <KnowledgeCover descriptor={descriptor} />
-                <Flexbox gap={8} style={{ padding: '12px 14px 14px' }}>
-                  <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div className="sc-knowledge-card__body">
+                  <strong className="sc-knowledge-card__title">
                     {descriptor.title}
                   </strong>
-                  <Flexbox horizontal gap={6} align="center">
+                  <span className="sc-knowledge-card__tags">
                     <Tag>r{Number(descriptor.revision)}</Tag>
-                    <Tag color={descriptor.availability === KnowledgeResourceAvailability.READY ? 'green' : 'orange'}>
+                    <Tag tone={descriptor.availability === KnowledgeResourceAvailability.READY
+                      ? 'success'
+                      : 'warning'}
+                    >
                       {descriptor.availability === KnowledgeResourceAvailability.READY
                         ? t('settings.knowledge.retrievalLocalShort')
                         : t('settings.knowledge.unavailableShort')}
                     </Tag>
-                  </Flexbox>
-                </Flexbox>
+                  </span>
+                </div>
               </button>
             ))}
           </div>
         ) : null}
-      </Flexbox>
+      </div>
     </Card>
   );
 }

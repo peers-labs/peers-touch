@@ -5,12 +5,12 @@ export { expressionCandidate, expressionCandidateVariables } from './expression-
 export { northStarTheme, northStarVariables } from './north-star-theme';
 
 export const geometry = {
-  radius: { xs: 4, sm: 6, md: 8, lg: 12, xl: 16, full: 999 },
+  radius: { xs: 4, sm: 8, md: 10, lg: 14, xl: 18, '2xl': 22, full: 999 },
   space: { xxs: 4, xs: 8, sm: 12, md: 16, lg: 20, xl: 24, xxl: 32 },
   control: { compact: 28, row: 30, menu: 30, normal: 36, comfortable: 44 },
   icon: { compact: 16, normal: 18, comfortable: 20 },
   font: {
-    sans: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', sans-serif",
+    sans: "Manrope, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', sans-serif",
     mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
   },
   typography: { body: 14, small: 12, heading2: 30, heading4: 20, strong: 600 },
@@ -34,46 +34,53 @@ export const geometry = {
 // Never collapse the canvas↔surface tonal step: hairline + rest shadow alone
 // are not enough on low-contrast (e.g. warm/neutral) palettes.
 //
-// Neutral-ink action primitive (UI Identity decision, 2026-10-30):
-// Structured Expressive Minimalism reserves hue for *meaning* (success,
-// warning, danger, info, trust.*). The dominant action therefore carries no
-// brand hue — it is the same ink as primary text, so a CTA wins by weight and
-// hierarchy, never by competing with a semantic color. `solid` is the single
-// primitive referenced by text.primary, action.primary, focus, and the
-// self-authored bubble; `subtle` backs selection/avatar/pressed fills.
-// Light = dark ink on white; dark inverts to near-white fill with ink text.
+// North-star color contract (promoted from the confirmed desktop frame,
+// docs/architecture/platform/client/ui-system/prototype/north-star-frame.md):
+// Structured quiet surfaces + an ink action capsule + a single pine brand mark.
+//   * primary  near-ink capsule (#1a1d20 / dark inverts) — dominant action,
+//              selection, scope/data capsules. Wins by weight, not brand hue.
+//   * accent   pine #2f6a50 — the ONLY brand chroma: identity/current-location,
+//              connection and online points, accept/answer, favorite marks.
+//              Small touch points only; never a canvas/card fill, never the
+//              success color. Semantic success/warning/danger/info stay separate.
+// Structural Expressive Minimalism and Quiet Protocol Minimalism are superseded
+// by the north-star frame grammar (see the ui-system docs above).
 const ink: Record<'light' | 'dark', { solid: string; hover: string; onSolid: string; subtle: string }> = {
-  light: { solid: '#202431', hover: '#3a4154', onSolid: '#ffffff', subtle: '#e9ecf2' },
-  dark: { solid: '#f1f3f8', hover: '#e2e7f0', onSolid: '#202431', subtle: '#2c323d' },
+  light: { solid: '#1a1d20', hover: '#2b2f33', onSolid: '#ffffff', subtle: 'rgba(26,29,32,0.08)' },
+  dark: { solid: '#f1f3f2', hover: '#e2e8e4', onSolid: '#14171a', subtle: 'rgba(241,243,242,0.10)' },
+};
+// Pine brand accent. Light is the frame's #2f6a50; dark lifts the same hue so
+// the connection mark stays legible on deep surfaces.
+const pine: Record<'light' | 'dark', { solid: string; hover: string; on: string; subtle: string }> = {
+  light: { solid: '#2f6a50', hover: '#35775b', on: '#ffffff', subtle: 'rgba(47,106,80,0.12)' },
+  dark: { solid: '#5ea182', hover: '#6fb091', on: '#0e1a14', subtle: 'rgba(94,161,130,0.16)' },
 };
 const light = {
-  canvas: '#f3f5f8', surface: '#ffffff', subtle: '#f7f8fb', raised: '#ffffff',
-  text: ink.light.solid, secondary: '#626979', muted: '#757d8c',
+  canvas: '#f4f5f4', surface: '#ffffff', subtle: '#eef0f0', raised: '#ffffff',
+  text: '#171a1c', secondary: '#5d6368', muted: '#8a9096',
   primary: ink.light.solid, primaryHover: ink.light.hover, onPrimary: ink.light.onSolid,
-  primarySubtle: ink.light.subtle, border: '#e5e8ef', borderStrong: '#cbd0da',
-  // Brand accent is deliberately neutral in the canonical cold-ink theme:
-  // chromatic brand identities belong to candidate/product themes. Primary
-  // already carries hierarchy through ink, so accent mirrors it here.
-  accent: ink.light.solid, accentHover: ink.light.hover, onAccent: ink.light.onSolid, accentSubtle: ink.light.subtle,
-  // Success foreground must clear AA 4.5 not only on white/surface but on the
-  // subtle wells where alerts/tags actually render (4.81/4.63); the prior
-  // #25875a measured 4.48/4.21/4.06 and failed all three small-text cases.
-  success: '#1f7d52', warning: '#9a5a00', danger: '#c63939', info: '#2469a8',
+  primarySubtle: ink.light.subtle,
+  border: 'rgba(22,26,24,0.10)', borderStrong: 'rgba(22,26,24,0.18)',
+  accent: pine.light.solid, accentHover: pine.light.hover, onAccent: pine.light.on, accentSubtle: pine.light.subtle,
+  success: '#1f7d52', warning: '#9a5f00', danger: '#c0392f', info: '#2469a8',
   successSubtle: '#eaf7ef', warningSubtle: '#fff5e1', dangerSubtle: '#fceeee', infoSubtle: '#eaf3fc', white: '#ffffff',
-  focus: ink.light.solid, scrim: 'rgba(0,0,0,0.38)',
+  focus: 'rgba(47,106,80,0.34)', scrim: 'rgba(17,20,18,0.40)',
   ownBubble: ink.light.solid, peerBubble: '#ffffff',
+  overlay: '#ffffff',
   mediaStage: '#10131a', mediaStageSoft: '#1b1f29', mediaStageText: 'rgba(255,255,255,0.65)',
 };
 const dark: typeof light = {
-  canvas: '#111318', surface: '#181b22', subtle: '#1f232c', raised: '#242832',
-  text: ink.dark.solid, secondary: '#b1b7c4', muted: '#969daa',
+  canvas: '#101211', surface: '#171b19', subtle: '#1f2421', raised: '#232926',
+  text: '#f1f3f2', secondary: '#aeb6b1', muted: '#8f9792',
   primary: ink.dark.solid, primaryHover: ink.dark.hover, onPrimary: ink.dark.onSolid,
-  primarySubtle: ink.dark.subtle, border: '#2d323d', borderStrong: '#4a5261',
-  accent: ink.dark.solid, accentHover: ink.dark.hover, onAccent: ink.dark.onSolid, accentSubtle: ink.dark.subtle,
-  success: '#63c28f', warning: '#e2a54a', danger: '#f07b7b', info: '#7ab9ed',
-  successSubtle: '#173c2b', warningSubtle: '#3c2d14', dangerSubtle: '#402326', infoSubtle: '#1c304a', white: '#ffffff',
-  focus: ink.dark.solid, scrim: 'rgba(0,0,0,0.6)',
-  ownBubble: ink.dark.solid, peerBubble: '#242832',
+  primarySubtle: ink.dark.subtle,
+  border: 'rgba(230,235,232,0.10)', borderStrong: 'rgba(230,235,232,0.20)',
+  accent: pine.dark.solid, accentHover: pine.dark.hover, onAccent: pine.dark.on, accentSubtle: pine.dark.subtle,
+  success: '#63c28f', warning: '#e2a54a', danger: '#ef7d73', info: '#7ab9ed',
+  successSubtle: '#16382a', warningSubtle: '#3c2d14', dangerSubtle: '#402326', infoSubtle: '#1c304a', white: '#ffffff',
+  focus: 'rgba(94,161,130,0.40)', scrim: 'rgba(0,0,0,0.60)',
+  ownBubble: ink.dark.solid, peerBubble: '#232926',
+  overlay: '#232926',
   mediaStage: '#10131a', mediaStageSoft: '#1b1f29', mediaStageText: 'rgba(255,255,255,0.65)',
 };
 export type UITokens = {
@@ -94,9 +101,9 @@ export function getUITokens(mode: 'light' | 'dark'): UITokens {
           float: '0 16px 44px rgba(0,0,0,0.42)',
         }
       : {
-          rest: '0 1px 2px rgba(32,36,49,0.05), 0 2px 6px -2px rgba(32,36,49,0.06)',
-          soft: '0 2px 10px rgba(32,36,49,0.08)',
-          float: '0 14px 40px rgba(32,36,49,0.18)',
+          rest: '0 1px 2px rgba(20,24,22,0.05), 0 2px 8px -3px rgba(20,24,22,0.08)',
+          soft: '0 4px 14px rgba(20,24,22,0.10)',
+          float: '0 18px 48px -12px rgba(20,24,22,0.28)',
         },
   };
 }

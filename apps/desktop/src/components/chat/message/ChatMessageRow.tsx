@@ -1,8 +1,12 @@
 import { memo, useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Tooltip } from '@lobehub/ui';
-import { Popover, Spin, theme, Typography } from 'antd';
-import { Flexbox } from 'react-layout-kit';
+import {
+  Button as PtButton,
+  Popover as PtPopover,
+  Spin as PtSpin,
+  Text as PtText,
+  Tooltip as PtTooltip,
+} from '@peers-touch/ui';
 import { countHiddenEarlierChatThreadReplies } from '@peers-touch/client-chat-core';
 import {
   Check,
@@ -27,6 +31,7 @@ import type { DesktopIMSenderProfileProjection } from '../../../store/socialProj
 import { actorDisplayName } from '../../../store/socialProfileProjection';
 import { ChatMessageContent } from './ChatMessageContent';
 import {
+  isBareEmojiOnlyMessage,
   isEncryptedPlaceholder,
   isFriendMessage,
   isOwnMessage,
@@ -42,8 +47,6 @@ import { blocksMessageActionOverlay } from './messageReactionState';
 import { DeliveryVerdictMeta } from './DeliveryVerdictMeta';
 import { MessageSenderProfileCard } from './MessageSenderProfileCard';
 import type { ServiceEventAggregation } from './serviceEventAggregation';
-
-const { Text } = Typography;
 
 interface ChatMessageRowProps {
   activeConversationId: string;
@@ -91,15 +94,13 @@ function formatMsgTime(sentAtMs: number): string {
 }
 
 function ReadReceipt({ status }: { status: MessageStatus }) {
-  const { token } = theme.useToken();
-  if (status === MessageStatus.READ) {
-    return <CheckCheck size={14} style={{ color: token.colorPrimary }} />;
-  }
-  if (status === MessageStatus.DELIVERED) {
-    return <CheckCheck size={14} style={{ color: token.colorTextQuaternary }} />;
+  // North-star .sk-msg-status grammar: 11px ticks, color owned by the
+  // .sc-msg-status.is-* wrapper state class, never inline.
+  if (status === MessageStatus.READ || status === MessageStatus.DELIVERED) {
+    return <CheckCheck size={11} />;
   }
   if (status === MessageStatus.SENT) {
-    return <Check size={14} style={{ color: token.colorTextQuaternary }} />;
+    return <Check size={11} />;
   }
   return null;
 }
@@ -120,35 +121,19 @@ function ReplyBlock({
   messages: ChatMessage[];
   replyToUlid: string;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const replyMsg = messages.find((m) => m.ulid === replyToUlid);
 
   return (
-    <Flexbox
+    <div
+      className="sc-reply-quote"
       data-message-reply-target-state={replyMsg ? 'available' : 'unavailable'}
-      style={{
-        padding: '6px 9px',
-        marginBottom: 8,
-        borderLeft: `3px solid ${isOwn ? 'rgba(255,255,255,0.55)' : token.colorPrimary}`,
-        borderRadius: 8,
-        background: isOwn ? 'rgba(255,255,255,0.14)' : token.colorFillTertiary,
-        fontSize: 11,
-        color: isOwn ? 'rgba(255,255,255,0.8)' : token.colorTextSecondary,
-        maxWidth: '100%',
-        overflow: 'hidden',
-      }}
+      data-own={isOwn ? 'true' : 'false'}
     >
-      <Text
-        ellipsis
-        style={{
-          fontSize: 11,
-          color: isOwn ? 'rgba(255,255,255,0.8)' : token.colorTextSecondary,
-        }}
-      >
+      <span className="sc-reply-quote__text">
         {replyMsg?.content ?? t('chat.social.messageArea.replyTargetUnavailable')}
-      </Text>
-    </Flexbox>
+      </span>
+    </div>
   );
 }
 
@@ -162,6 +147,7 @@ function MessageInteractionRail({
   reactionMutationEmoji,
   reactionMutationPhase,
   reactions,
+  currentUserPtid,
 }: {
   isOwn: boolean;
   message: ChatMessage;
@@ -172,15 +158,23 @@ function MessageInteractionRail({
   reactionMutationEmoji?: string;
   reactionMutationPhase?: 'pending' | 'awaiting-projection' | 'error';
   reactions: { actorPtid: string; emoji: string }[];
+  currentUserPtid: string | null;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const reactionCounts = Object.entries(
-    reactions.reduce<Record<string, number>>((acc, reaction) => {
-      acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
+  // Group reaction events by emoji while remembering whether the current
+  // viewer reacted, so the chip can take the solid accent "mine" state
+  // (prototype .sk-msg-reaction[data-mine="1"] parity).
+  const reactionGroups = Object.entries(
+    reactions.reduce<Record<string, { count: number; mine: boolean }>>((acc, reaction) => {
+      const entry = acc[reaction.emoji] ?? { count: 0, mine: false };
+      entry.count += 1;
+      if (currentUserPtid && reaction.actorPtid === currentUserPtid) entry.mine = true;
+      acc[reaction.emoji] = entry;
       return acc;
     }, {}),
-  ).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  ).sort((left, right) => right[1].count - left[1].count || left[0].localeCompare(right[0]));
+  const reactionCounts = reactionGroups.map(([emoji, group]) => [emoji, group.count] as const);
+  const mineByEmoji = new Map(reactionGroups.map(([emoji, group]) => [emoji, group.mine]));
   const visibleReactions = reactionCounts.slice(0, 3);
   const hiddenReactionCount = reactionCounts
     .slice(visibleReactions.length)
@@ -191,12 +185,9 @@ function MessageInteractionRail({
 
   if (!hasContent) return null;
   return (
-    <Flexbox
+    <div
       data-message-metadata-rail={message.ulid}
       data-message-metadata-state="populated"
-      horizontal
-      align="center"
-      gap={4}
       style={{
         alignSelf: isOwn ? 'flex-end' : 'flex-start',
         boxSizing: 'border-box',
@@ -208,85 +199,60 @@ function MessageInteractionRail({
         marginTop: 2,
         paddingLeft: isOwn ? 0 : 4,
         paddingRight: isOwn ? 4 : 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
         overflow: 'hidden',
       }}
     >
-      <Flexbox
-        horizontal
-        align="center"
-        gap={4}
+      <div
         style={{
           minWidth: 0,
           flex: 1,
           height: CHAT_MESSAGE_METADATA_RAIL_HEIGHT,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
           overflow: 'hidden',
           whiteSpace: 'nowrap',
         }}
       >
         {pinned && (
-          <Tooltip title={t('chat.social.contextMenu.unpin')}>
-            <Button
+          <PtTooltip label={t('chat.social.contextMenu.unpin')}>
+            <PtButton
+              actionId={`message-pin-${message.ulid}`}
               data-message-pinned="true"
               aria-label={t('chat.social.contextMenu.unpin')}
-              type="text"
-              size="small"
-              icon={<Pin size={11} />}
-              onClick={onPin}
-              style={{
-                width: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
-                minWidth: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
-                height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
-                padding: 0,
-                color: token.colorTextQuaternary,
-              }}
+              emphasis="quiet"
+              density="compact"
+              leading={<Pin size={11} />}
+              onActivate={onPin}
+              className="sc-reaction-icon"
             />
-          </Tooltip>
+          </PtTooltip>
         )}
         {visibleReactions.map(([emoji, count]) => (
           <button
             type="button"
             data-message-reaction={emoji}
+            data-mine={mineByEmoji.get(emoji) ? 'true' : 'false'}
+            aria-pressed={mineByEmoji.get(emoji) ?? false}
             key={emoji}
             aria-label={`${t('chat.social.messageArea.actionReact')} ${emoji}`}
             onClick={() => onReact(emoji)}
-            style={{
-              boxSizing: 'border-box',
-              flexShrink: 0,
-              height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
-              padding: '0 5px',
-              border: 0,
-              borderRadius: 8,
-              background: token.colorFillTertiary,
-              color: token.colorTextSecondary,
-              cursor: 'pointer',
-              fontSize: 11,
-              lineHeight: `${CHAT_MESSAGE_REACTION_CHIP_HEIGHT}px`,
-              whiteSpace: 'nowrap',
-            }}
+            className={`sc-reaction-chip${mineByEmoji.get(emoji) ? ' sc-reaction-chip--mine' : ''}`}
           >
             {emoji}{count > 1 ? ` ${count}` : ''}
           </button>
         ))}
         {hiddenReactionCount > 0 && (
-          <Tooltip title={reactionCounts.slice(3).map(([emoji, count]) => `${emoji} ${count}`).join(' · ')}>
-            <span
-              data-message-reaction-overflow={hiddenReactionCount}
-              style={{
-                flexShrink: 0,
-                height: CHAT_MESSAGE_REACTION_CHIP_HEIGHT,
-                padding: '0 5px',
-                borderRadius: 8,
-                background: token.colorFillQuaternary,
-                color: token.colorTextTertiary,
-                fontSize: 11,
-                lineHeight: `${CHAT_MESSAGE_REACTION_CHIP_HEIGHT}px`,
-              }}
-            >
+          <PtTooltip label={reactionCounts.slice(3).map(([emoji, count]) => `${emoji} ${count}`).join(' · ')}>
+            <span className="sc-reaction-chip sc-reaction-chip--overflow" data-message-reaction-overflow={hiddenReactionCount}>
               +{hiddenReactionCount}
             </span>
-          </Tooltip>
+          </PtTooltip>
         )}
-      </Flexbox>
+      </div>
       <span
         data-message-reaction-state={reactionMutationPhase || 'idle'}
         data-message-reaction-emoji={reactionMutationEmoji}
@@ -303,19 +269,20 @@ function MessageInteractionRail({
         }}
       >
         {reactionMutationPhase === 'error' ? (
-          <Tooltip title={t('chat.message.resolution.actionFailed')}>
-            <Button
+          <PtTooltip label={t('chat.message.resolution.actionFailed')}>
+            <PtButton
+              actionId={`message-reaction-retry-${message.ulid}`}
               data-message-reaction-retry={message.ulid}
               aria-label={t('chat.message.action.retry')}
-              type="text"
-              size="small"
-              icon={<RotateCcw size={11} />}
-              onClick={onRetryReaction}
-              style={{ width: 20, minWidth: 20, height: 20, padding: 0 }}
+              emphasis="quiet"
+              density="compact"
+              leading={<RotateCcw size={11} />}
+              onActivate={onRetryReaction}
+              className="sc-reaction-icon sc-reaction-icon--retry"
             />
-          </Tooltip>
+          </PtTooltip>
         ) : reactionMutationPhase ? (
-          <Spin size="small" />
+          <PtSpin size="small" />
         ) : (
           <span
             aria-hidden
@@ -323,7 +290,7 @@ function MessageInteractionRail({
           />
         )}
       </span>
-    </Flexbox>
+    </div>
   );
 }
 
@@ -358,7 +325,6 @@ function ThreadReplyPreviewList({
   totalCount: number;
   unreadCount: number;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const hiddenEarlierCount = countHiddenEarlierChatThreadReplies(totalCount, messages.length);
   const hasHiddenEarlierReplies = messages.length > 0 && hiddenEarlierCount > 0;
@@ -372,16 +338,9 @@ function ThreadReplyPreviewList({
   };
 
   return (
-    <Flexbox
+    <div
+      className={`sc-thread-preview-wrap${isOwnRoot ? ' is-own' : ''}`}
       data-message-thread-summary={totalCount}
-      align="flex-start"
-      style={{
-        alignSelf: isOwnRoot ? 'flex-end' : 'flex-start',
-        marginTop: 5,
-        maxWidth: '100%',
-        paddingLeft: isOwnRoot ? 0 : 4,
-        paddingRight: isOwnRoot ? 4 : 0,
-      }}
     >
       <div
         role="button"
@@ -390,73 +349,31 @@ function ThreadReplyPreviewList({
         onKeyDown={handleKeyDown}
         aria-label={openLabel}
         title={openLabel}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '9px minmax(0, 1fr)',
-          columnGap: 7,
-          maxWidth: 'min(320px, 100%)',
-          padding: '1px 0 0',
-          border: 0,
-          outline: 'none',
-          cursor: 'pointer',
-        }}
+        className="sc-thread-preview"
       >
         <span
           aria-hidden="true"
-          style={{
-            width: 1,
-            minHeight: messages.length > 0 ? '100%' : 18,
-            marginLeft: 4,
-            background: unreadCount > 0 ? token.colorErrorBorder : token.colorBorderSecondary,
-            opacity: unreadCount > 0 ? 0.9 : 0.72,
-          }}
+          className="sc-thread-preview__rail"
+          data-unread={unreadCount > 0 ? 'true' : 'false'}
         />
-        <Flexbox
-          gap={3}
-          style={{
-            maxWidth: '100%',
-            minWidth: 0,
-          }}
-        >
+        <div className="sc-thread-preview__body">
           {messages.length === 0 ? (
-            <Flexbox
-              horizontal
-              align="center"
-              gap={5}
-              style={{
-                height: 18,
-                color: token.colorTextQuaternary,
-                fontSize: 11,
-                lineHeight: '18px',
-              }}
-            >
+            <div className="sc-thread-preview__count">
               <MessagesSquare size={11} />
-              <Text
-                ellipsis
-                style={{
-                  color: unreadCount > 0 ? token.colorError : token.colorTextTertiary,
-                  fontSize: 11,
-                  lineHeight: '18px',
-                  maxWidth: 220,
-                }}
+              <PtText
+                truncate
+                className="sc-thread-preview__label"
+                tone={unreadCount > 0 ? 'danger' : 'muted'}
               >
                 {openLabel}
-              </Text>
-            </Flexbox>
+              </PtText>
+            </div>
           ) : (
             <>
               {hasHiddenEarlierReplies && (
-                <Text
-                  ellipsis
-                  style={{
-                    maxWidth: '100%',
-                    color: unreadCount > 0 ? token.colorError : token.colorTextTertiary,
-                    fontSize: 11,
-                    lineHeight: '18px',
-                  }}
-                >
+                <PtText truncate className="sc-thread-preview__label" tone={unreadCount > 0 ? 'danger' : 'muted'}>
                   {t('chat.social.thread.loadEarlierPreview', { count: hiddenEarlierCount })}
-                </Text>
+                </PtText>
               )}
               {messages.map((reply) => {
                 const profile = getSenderProfile(activeKind, activeConversationId, reply.senderPtid);
@@ -466,64 +383,34 @@ function ThreadReplyPreviewList({
                   t('chat.social.detail.unknownMember'),
                 );
                 return (
-                  <div
-                    key={reply.ulid}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'max-content minmax(0, 1fr)',
-                      alignItems: 'baseline',
-                      columnGap: 5,
-                      width: '100%',
-                      minHeight: 18,
-                      color: token.colorTextSecondary,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <Text
-                      ellipsis
-                      style={{
-                        maxWidth: 92,
-                        fontSize: 11,
-                        color: token.colorTextTertiary,
-                        fontWeight: 500,
-                        lineHeight: 1.35,
-                      }}
-                    >
+                  <div key={reply.ulid} className="sc-thread-preview__reply">
+                    <PtText truncate className="sc-thread-preview__sender" tone="muted">
                       {ownReply ? t('chat.social.thread.you') : replySenderName}
-                    </Text>
-                    <Text
-                      ellipsis
-                      style={{
-                        minWidth: 0,
-                        fontSize: 11,
-                        color: token.colorTextSecondary,
-                        lineHeight: 1.35,
-                      }}
-                    >
+                    </PtText>
+                    <PtText truncate className="sc-thread-preview__snippet" tone="secondary">
                       {reply.content || reply.attachments?.[0]?.filename || t('chat.social.thread.attachment')}
-                    </Text>
+                    </PtText>
                   </div>
                 );
               })}
             </>
           )}
-        </Flexbox>
+        </div>
       </div>
-    </Flexbox>
+    </div>
   );
 }
 
 export function ChatMessageRowInteractionStyle() {
-  const { token } = theme.useToken();
+  // North-star focus/highlight ring for message rows; token-driven so it
+  // follows light/dark without a runtime antd token lookup.
   const rowInteractionStyle = `
     .msg-row[data-message-anchor-focused]:focus {
       outline: none;
     }
-    .msg-row[data-message-anchor-focused]:focus .msg-bubble {
-      box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
-    }
+    .msg-row[data-message-anchor-focused]:focus .msg-bubble,
     .msg-row.highlighted .msg-bubble {
-      box-shadow: 0 0 0 2px ${token.colorPrimaryBorder}, ${token.boxShadowSecondary} !important;
+      box-shadow: 0 0 0 2px var(--pt-focus), var(--pt-shadow-rest) !important;
     }
   `;
 
@@ -560,7 +447,6 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   threadUnreadCount,
   timelineGap,
 }: ChatMessageRowProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const isOwn = isOwnMessage(message, currentUserPtid);
   const isGroup = !isFriendMessage(message);
@@ -570,10 +456,12 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const replyToUlid = messageReplyToUlid(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
   const isRecalled = isRecalledMessage(message);
+  const serviceOnly = !isRecalled && !encryptedPlaceholder && Boolean(message.serviceMessage);
   const editedAtMs = messageEditedAtMs(message);
   const readByPtids = message.readByPtids ?? [];
   const attachments = message.attachments || [];
-  const mediaOnlyMessage = !isRecalled
+  const mediaOnlyMessage = !serviceOnly
+    && !isRecalled
     && !encryptedPlaceholder
     && message.content.trim().length === 0
     && attachments.length > 0
@@ -585,28 +473,46 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   );
   const avatarSize = layout.avatarSize;
   const avatarGap = layout.avatarGap;
+  // Prototype ConversationView: group message avatars use an 8px tile, direct
+  // chats use the surface --sk-avatar-radius.
+  const avatarRadius = isGroup ? 8 : layout.avatarRadius;
   const messageActionAnchorRef = useRef<HTMLDivElement>(null);
   const messageActionsAvailable = showHoverActions
     && !blocksMessageActionOverlay(reactionMutationPhase);
-  const showDeliveryVerdict = isOwn && !isRecalled;
+  const showDeliveryVerdict = isOwn && !isRecalled && !serviceOnly;
 
-  const bubbleBg = mediaOnlyMessage
+  // Prototype parity: a text-only message that is just emoji renders as a
+  // bare enlarged glyph (no bubble background/border/padding/shadow).
+  const emojiOnlyBare = isBareEmojiOnlyMessage(message);
+
+  const bareCard = mediaOnlyMessage || serviceOnly || emojiOnlyBare;
+  const bubbleBg = serviceOnly
     ? 'transparent'
+    : mediaOnlyMessage
+      ? 'transparent'
+      : emojiOnlyBare
+        ? 'transparent'
+        : isOwn
+          ? 'var(--pt-ownBubble)'
+          : 'var(--pt-peerBubble)';
+  const bubbleColor = isOwn && !bareCard ? 'var(--pt-onPrimary)' : 'var(--pt-text)';
+  const bubbleRadius: CSSProperties['borderRadius'] = serviceOnly
+    ? 0
     : isOwn
-      ? token.colorPrimary
-      : token.colorBgContainer;
-  const bubbleColor = isOwn && !mediaOnlyMessage ? '#fff' : token.colorText;
-  const bubbleRadius: CSSProperties['borderRadius'] = isOwn
-    ? layout.ownBubbleRadius
-    : layout.peerBubbleRadius;
-  const bubbleBorder = mediaOnlyMessage
+      ? layout.ownBubbleRadius
+      : layout.peerBubbleRadius;
+  const bubbleBorder = serviceOnly
     ? '1px solid transparent'
-    : isOwn
+    : mediaOnlyMessage
       ? '1px solid transparent'
-      : `1px solid ${token.colorBorderSecondary}`;
+      : isRecalled
+        ? '1px solid var(--pt-border)'
+        : isOwn
+          ? '1px solid transparent'
+          : '1px solid var(--pt-border)';
 
   return (
-    <Flexbox
+    <div
       data-message-ulid={message.ulid}
       data-pt-message-item={message.ulid}
       data-message-edited={editedAtMs ? 'true' : 'false'}
@@ -652,24 +558,28 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         event.preventDefault();
         onActionTargetChange(message, messageActionAnchorRef.current, true);
       }}
-      horizontal
-      align="flex-start"
-      justify={isOwn ? 'flex-end' : 'flex-start'}
       style={{
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: isOwn ? 'flex-end' : 'flex-start',
         alignSelf: isOwn ? 'flex-end' : 'flex-start',
+        gap: avatarGap,
         maxWidth: desktopChatMessageRowMaxWidth(layout, {
           own: isOwn,
           groupPeer: isGroup,
         }),
         width: 'fit-content',
         position: 'relative',
+        // Base inter-row rhythm is the prototype .sk-msg-stream gap (14px,
+        // owned by CHAT_MESSAGE_SPACING.item); a timeline break adds desktop's
+        // own functional emphasis (the prototype has no time-gap grammar).
         marginTop: timelineGap ? (compact ? 6 : 8) : 0,
         paddingBottom: compact ? CHAT_MESSAGE_SPACING.compactItem : CHAT_MESSAGE_SPACING.item,
       }}
-      gap={avatarGap}
     >
-      {!isOwn && (
-        <Popover
+      {!isOwn && !serviceOnly && (
+        <PtPopover
           content={(
             <MessageSenderProfileCard
               senderPtid={message.senderPtid}
@@ -677,9 +587,9 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               fallbackAvatar={senderAvatar}
             />
           )}
-          trigger="click"
-          placement="rightTop"
-          destroyTooltipOnHide
+          placement="right"
+          label={senderName}
+          className="ds-author-popover"
         >
           <div
             data-chat-avatar-ptid={message.senderPtid}
@@ -691,55 +601,61 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               actorPtid={message.senderPtid}
               name={senderName}
               size={avatarSize}
+              radius={avatarRadius}
             />
           </div>
-        </Popover>
+        </PtPopover>
       )}
 
-      <Flexbox
+      <div
         ref={messageActionAnchorRef}
         data-message-action-anchor={message.ulid}
-        align={isOwn ? 'flex-end' : 'flex-start'}
         style={{
           position: 'relative',
           minWidth: 0,
           width: 'fit-content',
-          maxWidth: `calc(100% - ${avatarSize + avatarGap}px)`,
+          maxWidth: `calc(100% - ${serviceOnly ? 0 : avatarSize + avatarGap}px)`,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: isOwn ? 'flex-end' : 'flex-start',
         }}
       >
-        {!isOwn && isGroup && (
-          <Text
-            type="secondary"
-            style={{
-              fontSize: compact ? 10 : 11,
-              marginBottom: compact ? 3 : 4,
-              paddingLeft: 4,
-              color: token.colorTextTertiary,
-              fontWeight: 500,
-            }}
-          >
+        {!isOwn && isGroup && !serviceOnly && (
+          <span className="sc-msg-sender">
             {senderName}
-          </Text>
+          </span>
         )}
 
-        <Flexbox
+        <div
           data-message-content={message.ulid}
+          data-emoji-only={emojiOnlyBare || undefined}
           className="msg-bubble"
           style={{
             alignSelf: isOwn ? 'flex-end' : 'flex-start',
-            width: mediaOnlyMessage ? 'fit-content' : undefined,
+            width: bareCard ? 'fit-content' : undefined,
             maxWidth: '100%',
-            minWidth: mediaOnlyMessage ? undefined : layout.bubbleMinWidth,
-            padding: mediaOnlyMessage ? layout.mediaBubblePadding : layout.bubblePadding,
-            borderRadius: bubbleRadius,
-            background: isRecalled ? token.colorFillQuaternary : bubbleBg,
-            border: isRecalled ? `1px solid ${token.colorBorderSecondary}` : bubbleBorder,
-            boxShadow: mediaOnlyMessage ? 'none' : isOwn ? token.boxShadowTertiary : token.boxShadowSecondary,
-            color: isRecalled ? token.colorTextSecondary : bubbleColor,
-            fontSize: compact ? 12 : 13,
-            lineHeight: 1.5,
+            minWidth: bareCard ? undefined : layout.bubbleMinWidth,
+            padding: serviceOnly || emojiOnlyBare || isRecalled
+              ? 0
+              : mediaOnlyMessage
+                ? layout.mediaBubblePadding
+                : layout.bubblePadding,
+            borderRadius: emojiOnlyBare || isRecalled ? 0 : bubbleRadius,
+            background: isRecalled ? 'transparent' : bubbleBg,
+            border: emojiOnlyBare || isRecalled ? '1px solid transparent' : bubbleBorder,
+            boxShadow: bareCard
+              ? 'none'
+              : isOwn
+                ? 'none'
+                : isRecalled
+                  ? 'none'
+                  : 'var(--pt-shadow-rest)',
+            color: isRecalled ? 'var(--pt-secondary)' : bubbleColor,
+            // Prototype .sk-msg-bubble p: 13.5px / 1.6 (compact narrow-pane keeps 12px).
+            fontSize: compact ? 12 : 13.5,
+            lineHeight: compact ? 1.5 : 1.6,
             wordBreak: 'break-word',
-            fontStyle: isRecalled ? 'italic' : 'normal',
+            fontStyle: 'normal',
           }}
         >
           <ChatMessageContent
@@ -755,9 +671,9 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               />
             ) : undefined}
           />
-        </Flexbox>
+        </div>
 
-        {showThreadSummary && threadReplyCount > 0 && !isRecalled && (
+        {showThreadSummary && threadReplyCount > 0 && !isRecalled && !serviceOnly && (
           <ThreadReplyPreviewList
             activeConversationId={activeConversationId}
             activeKind={activeKind}
@@ -771,91 +687,66 @@ export const ChatMessageRow = memo(function ChatMessageRow({
           />
         )}
 
-        <Flexbox
-          data-message-meta={message.ulid}
-          horizontal
-          align="center"
-          justify={isOwn ? 'flex-end' : 'flex-start'}
-          gap={5}
-          style={{
-            alignSelf: isOwn ? 'flex-end' : 'flex-start',
-            marginTop: CHAT_MESSAGE_SPACING.meta,
-            paddingLeft: isOwn ? 0 : 4,
-            paddingRight: isOwn ? 4 : 0,
-            boxSizing: 'border-box',
-            minHeight: 16,
-            maxWidth: '100%',
-            overflow: 'hidden',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: compact ? 10 : 11,
-              color: token.colorTextTertiary,
-              lineHeight: 1.2,
-            }}
+        {!serviceOnly && (
+          <div
+            data-message-meta={message.ulid}
+            className="sc-msg-meta"
+            data-own={isOwn ? 'true' : 'false'}
           >
-            {formatMsgTime(message.sentAtMs)}
-          </Text>
-          {editedAtMs && !isRecalled && (
-            <Tooltip title={
-              t('chat.social.messageArea.editedAtTooltip', {
-                time: new Date(editedAtMs).toLocaleString(),
-              })
-            }>
-              <Text
-                style={{
-                  fontSize: 11,
-                  color: token.colorTextTertiary,
-                  fontStyle: 'italic',
-                  lineHeight: 1.2,
-                }}
-              >
-                {t('chat.social.messageArea.editedTag')}
-              </Text>
-            </Tooltip>
-          )}
-          {isOwn && isGroup && readByPtids.length > 0 && !isRecalled && (
-            <Text
-              data-message-read-state="read"
-              style={{
-                fontSize: 11,
-                color: token.colorTextTertiary,
-                lineHeight: 1.2,
-              }}
-            >
-              {t('chat.social.messageArea.readByCount', { count: readByPtids.length })}
-            </Text>
-          )}
-          {isOwn && isFriendMessage(message) && !isRecalled && (
-            <span data-message-receipt={receiptEvidenceStatus(message.status as MessageStatus)}>
-              <ReadReceipt status={message.status as MessageStatus} />
+            <span className={`sc-msg-time${compact ? ' sc-msg-time--compact' : ''}`}>
+              {formatMsgTime(message.sentAtMs)}
             </span>
-          )}
-          {showDeliveryVerdict && (
-            <DeliveryVerdictMeta
-              message={message}
-              isGroup={isGroup}
-              compact={compact}
-              onRetryMessage={onRetryMessage}
-            />
-          )}
-        </Flexbox>
-        <MessageInteractionRail
-          isOwn={isOwn}
-          message={message}
-          onPin={() => onPin(message)}
-          onReact={(emoji) => onReact(message, emoji)}
-          onRetryReaction={() => onRetryReaction(message)}
-          pinned={pinned}
-          reactionMutationEmoji={reactionMutationEmoji}
-          reactionMutationPhase={reactionMutationPhase}
-          reactions={reactions ?? []}
-        />
-      </Flexbox>
+            {editedAtMs && !isRecalled && (
+              <PtTooltip label={
+                t('chat.social.messageArea.editedAtTooltip', {
+                  time: new Date(editedAtMs).toLocaleString(),
+                })
+              }>
+                <span className="sc-msg-edited">
+                  {t('chat.social.messageArea.editedTag')}
+                </span>
+              </PtTooltip>
+            )}
+            {isOwn && isGroup && readByPtids.length > 0 && !isRecalled && (
+              <span data-message-read-state="read" className="sc-msg-readby">
+                {t('chat.social.messageArea.readByCount', { count: readByPtids.length })}
+              </span>
+            )}
+            {isOwn && isFriendMessage(message) && !isRecalled && (
+              <span
+                className={`sc-msg-status is-${receiptEvidenceStatus(message.status as MessageStatus)}`}
+                data-message-receipt={receiptEvidenceStatus(message.status as MessageStatus)}
+              >
+                <ReadReceipt status={message.status as MessageStatus} />
+              </span>
+            )}
+            {showDeliveryVerdict && (
+              <DeliveryVerdictMeta
+                message={message}
+                isGroup={isGroup}
+                compact={compact}
+                onRetryMessage={onRetryMessage}
+              />
+            )}
+          </div>
+        )}
+        {!serviceOnly && (
+          <MessageInteractionRail
+            isOwn={isOwn}
+            message={message}
+            onPin={() => onPin(message)}
+            onReact={(emoji) => onReact(message, emoji)}
+            onRetryReaction={() => onRetryReaction(message)}
+            pinned={pinned}
+            reactionMutationEmoji={reactionMutationEmoji}
+            reactionMutationPhase={reactionMutationPhase}
+            reactions={reactions ?? []}
+            currentUserPtid={currentUserPtid}
+          />
+        )}
+      </div>
 
-      {isOwn && (
+      {isOwn && !serviceOnly && (
         <span
           data-chat-avatar-ptid={currentUserPtid || message.senderPtid}
           data-chat-avatar-src={senderAvatar || ''}
@@ -866,10 +757,11 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             actorPtid={currentUserPtid || message.senderPtid}
             name={senderName}
             size={avatarSize}
+            radius={avatarRadius}
             style={{ flexShrink: 0 }}
           />
         </span>
       )}
-    </Flexbox>
+    </div>
   );
 });

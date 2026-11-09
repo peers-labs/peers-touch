@@ -1,49 +1,28 @@
-import { useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, type ComponentProps, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Modal, theme } from 'antd';
-import {
-  Search,
-  Home,
-  MessageSquare,
-  Bot,
-  Settings,
-  FileText,
-  FlaskConical,
-  UserCircle,
-  Network,
-  Users,
-  Store,
-  Puzzle,
-  Plus,
-  PlusCircle,
-  MessagesSquare,
-  Command,
-  type LucideIcon,
-} from 'lucide-react';
-
+import { Icon } from '@peers-touch/ui';
 import { useCommandMenuStore } from '../store/commandMenu';
 import { useCommandMenuItems } from '../hooks/useCommandMenuItems';
 import type { CommandItem, CommandItemType } from '../store/commandMenu';
 import type { Page } from '../types/navigation';
+import './search/SearchOverlay.css';
+import './CommandMenu.css';
 
-const ICON_MAP: Record<string, LucideIcon> = {
-  Home,
-  MessageSquare,
-  Bot,
-  Settings,
-  Search,
-  FileText,
-  FlaskConical,
-  UserCircle,
-  Network,
-  Users,
-  Store,
-  Puzzle,
-  Plus,
-  PlusCircle,
-  MessagesSquare,
-  Command,
+// Command items carry PascalCase lucide names from useCommandMenuItems; map
+// them onto the Peers glyph set so the directory matches the search palette.
+type GlyphId = ComponentProps<typeof Icon>['iconId'];
+const GLYPH_MAP: Record<string, GlyphId> = {
+  Home: 'house',
+  MessageSquare: 'message-square',
+  MessagesSquare: 'messages-square',
+  Bot: 'bot',
+  Settings: 'settings',
+  UserCircle: 'user-round',
+  Users: 'users',
+  FileText: 'file-text',
+  Plus: 'plus',
+  PlusCircle: 'user-plus',
+  Compass: 'compass',
 };
 
 interface CommandMenuProps {
@@ -54,7 +33,6 @@ interface CommandMenuProps {
 
 export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSettings }: CommandMenuProps) {
   const { t } = useTranslation('agent');
-  const { token } = theme.useToken();
   const open = useCommandMenuStore((s) => s.open);
   const query = useCommandMenuStore((s) => s.query);
   const selectedIndex = useCommandMenuStore((s) => s.selectedIndex);
@@ -78,22 +56,20 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
 
   const totalCount = flatItems.length;
 
-  // Auto-focus the input when modal opens
+  // Auto-focus the input when the palette opens
   useEffect(() => {
     if (open) {
-      // Allow the modal animation to complete before focusing
-      const timer = setTimeout(() => inputRef.current?.focus(), 50);
-      return () => clearTimeout(timer);
+      const timer = window.setTimeout(() => inputRef.current?.focus(), 16);
+      return () => window.clearTimeout(timer);
     }
+    return undefined;
   }, [open]);
 
   // Scroll selected item into view
   useEffect(() => {
     if (!listRef.current) return;
     const selected = listRef.current.querySelector('[data-selected="true"]');
-    if (selected) {
-      selected.scrollIntoView({ block: 'nearest' });
-    }
+    selected?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
 
   const handleKeyDown = useCallback(
@@ -140,76 +116,42 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
   const renderGroup = (items: CommandItem[], type: CommandItemType, startIdx: number) => {
     if (items.length === 0) return null;
     return (
-      <Flexbox key={type} gap={2}>
-        <Flexbox
-          style={{
-            padding: '6px 12px 4px',
-            fontSize: 11,
-            fontWeight: 600,
-            color: token.colorTextTertiary,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}
-        >
-          {groupLabel(type)}
-        </Flexbox>
-        {items.map((item, idx) => {
-          const globalIdx = startIdx + idx;
-          const isSelected = globalIdx === selectedIndex;
-          const IconComponent = ICON_MAP[item.icon ?? ''] ?? FileText;
-          return (
-            <Flexbox
-              key={item.id}
-              horizontal
-              align="center"
-              gap={10}
-              data-selected={isSelected}
-              onClick={() => executeCommand(item)}
-              onMouseEnter={() => setSelectedIndex(globalIdx)}
-              style={{
-                padding: '8px 12px',
-                borderRadius: 6,
-                cursor: 'pointer',
-                background: isSelected ? token.colorFillSecondary : 'transparent',
-                transition: 'background 0.15s',
-              }}
-            >
-              <IconComponent size={16} color={token.colorTextSecondary} />
-              <Flexbox flex={1} style={{ minWidth: 0 }}>
-                <span
-                  style={{
-                    fontSize: 13,
-                    color: token.colorText,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
+      <div key={type} className="pt-search-group">
+        <div className="pt-search-group-title">{groupLabel(type)}</div>
+        <div className="pt-search-list">
+          {items.map((item, idx) => {
+            const globalIdx = startIdx + idx;
+            const isSelected = globalIdx === selectedIndex;
+            return (
+              <div
+                key={item.id}
+                className={isSelected ? 'pt-search-row active' : 'pt-search-row'}
+                data-selected={isSelected}
+              >
+                <button
+                  type="button"
+                  className="pt-search-row-target"
+                  onClick={() => executeCommand(item)}
+                  onMouseEnter={() => setSelectedIndex(globalIdx)}
                 >
-                  {item.title}
-                </span>
-                {item.subtitle && (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: token.colorTextTertiary,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {item.subtitle}
+                  <span className="pt-search-row-icon">
+                    <Icon iconId={GLYPH_MAP[item.icon ?? ''] ?? 'file-text'} size={15} />
                   </span>
-                )}
-              </Flexbox>
-              {type === 'page' && (
-                <span style={{ fontSize: 11, color: token.colorTextQuaternary }}>
-                  {getShortcutHint(item.id)}
-                </span>
-              )}
-            </Flexbox>
-          );
-        })}
-      </Flexbox>
+                  <span className="pt-search-main">
+                    <span className="pt-search-title">{item.title}</span>
+                    {item.subtitle && (
+                      <span className="pt-search-snippet">{item.subtitle}</span>
+                    )}
+                  </span>
+                  {type === 'page' && getShortcutHint(item.id) && (
+                    <span className="pt-command-hint-chip">{getShortcutHint(item.id)}</span>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     );
   };
 
@@ -223,95 +165,38 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
   offset += grouped.topics.length;
   const actionsStart = offset;
 
-  return (
-    <Modal
-      open={open}
-      onCancel={closeMenu}
-      footer={null}
-      closable={false}
-      centered
-      width={560}
-      destroyOnClose
-      styles={{
-        body: {
-          padding: 0,
-        },
-        mask: {
-          backdropFilter: 'blur(2px)',
-        },
-      }}
-      style={{
-        borderRadius: 12,
-      }}
-      className="command-menu-modal"
-    >
-      <Flexbox style={{ maxHeight: '70vh' }}>
-        {/* Search input */}
-        <Flexbox
-          horizontal
-          align="center"
-          gap={8}
-          style={{
-            padding: '12px 16px',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          }}
-        >
-          <Search size={16} color={token.colorTextTertiary} />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={t('agent.commandMenu.placeholder')}
-            style={{
-              flex: 1,
-              border: 'none',
-              outline: 'none',
-              background: 'transparent',
-              fontSize: 14,
-              color: token.colorText,
-              lineHeight: '22px',
-            }}
-          />
-          <Flexbox
-            horizontal
-            align="center"
-            gap={2}
-            style={{
-              padding: '2px 6px',
-              borderRadius: 4,
-              background: token.colorFillTertiary,
-              fontSize: 11,
-              color: token.colorTextTertiary,
-            }}
-          >
-            <Command size={11} />
-            <span>⇧ K</span>
-          </Flexbox>
-        </Flexbox>
+  if (!open) return null;
 
-        {/* Results list */}
-        <Flexbox
-          ref={listRef}
-          gap={4}
-          style={{
-            padding: '8px',
-            overflowY: 'auto',
-            maxHeight: 'calc(70vh - 50px)',
-          }}
-        >
+  return (
+    <div
+      className="pt-search-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('agent.commandMenu.placeholder')}
+    >
+      <div className="pt-search-scrim" onClick={closeMenu} />
+      <div className="pt-search-panel pt-command-panel">
+        <div className="pt-search-field-area">
+          <div className="pt-search-field">
+            <Icon iconId="search" size={16} />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={t('agent.commandMenu.placeholder')}
+              aria-label={t('agent.commandMenu.placeholder')}
+            />
+            <span className="pt-command-kbd">
+              <Icon iconId="command" size={11} />
+              <span>⇧K</span>
+            </span>
+          </div>
+        </div>
+
+        <div ref={listRef} className="pt-search-body">
           {totalCount === 0 ? (
-            <Flexbox
-              align="center"
-              justify="center"
-              style={{
-                padding: '24px 16px',
-                color: token.colorTextTertiary,
-                fontSize: 13,
-              }}
-            >
-              {t('agent.commandMenu.noResults')}
-            </Flexbox>
+            <div className="pt-search-empty">{t('agent.commandMenu.noResults')}</div>
           ) : (
             <>
               {renderGroup(grouped.pages, 'page', pagesStart)}
@@ -320,27 +205,24 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
               {renderGroup(grouped.actions, 'action', actionsStart)}
             </>
           )}
-        </Flexbox>
+        </div>
 
-        {/* Footer hint */}
-        <Flexbox
-          horizontal
-          align="center"
-          justify="center"
-          gap={16}
-          style={{
-            padding: '8px 16px',
-            borderTop: `1px solid ${token.colorBorderSecondary}`,
-            fontSize: 11,
-            color: token.colorTextQuaternary,
-          }}
-        >
-          <span>↑↓ {t('agent.commandMenu.navigate')}</span>
-          <span>↵ {t('agent.commandMenu.select')}</span>
-          <span>esc {t('agent.commandMenu.close')}</span>
-        </Flexbox>
-      </Flexbox>
-    </Modal>
+        <div className="pt-search-footer">
+          <span className="pt-command-foot">
+            <kbd>↑↓</kbd>
+            {t('agent.commandMenu.navigate')}
+          </span>
+          <span className="pt-command-foot">
+            <kbd>↵</kbd>
+            {t('agent.commandMenu.select')}
+          </span>
+          <span className="pt-command-foot">
+            <kbd>esc</kbd>
+            {t('agent.commandMenu.close')}
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 

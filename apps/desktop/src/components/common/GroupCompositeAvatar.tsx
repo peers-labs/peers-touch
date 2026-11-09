@@ -1,4 +1,3 @@
-import { theme } from 'antd';
 import { Users } from 'lucide-react';
 import { UserSquareAvatar } from './UserSquareAvatar';
 
@@ -15,7 +14,6 @@ interface GroupCompositeAvatarProps {
 }
 
 export function GroupCompositeAvatar({ members, size = 36, gap = 1 }: GroupCompositeAvatarProps) {
-  const { token } = theme.useToken();
   const slots = members.slice(0, 4);
   const count = slots.length;
   const cellSize = count <= 1 ? size : Math.floor((size - gap) / 2);
@@ -24,8 +22,8 @@ export function GroupCompositeAvatar({ members, size = 36, gap = 1 }: GroupCompo
     return (
       <div style={{
         width: size, height: size, borderRadius: Math.round(size * 0.25),
-        background: token.colorFillSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: token.colorTextSecondary, flexShrink: 0,
+        background: 'var(--pt-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: 'var(--pt-secondary)', flexShrink: 0,
       }}>
         <Users size={Math.round(size * 0.44)} />
       </div>

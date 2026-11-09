@@ -1,8 +1,6 @@
 import { useMemo } from 'react';
-import { ActionIcon } from '@lobehub/ui';
-import { Cloud, ExternalLink, FileText, HardDrive, MonitorSmartphone } from 'lucide-react';
-import { Flexbox } from 'react-layout-kit';
-import { theme, Typography } from 'antd';
+import { IconButton } from '@peers-touch/ui';
+import { Cloud, FileText, HardDrive, MonitorSmartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { ChatFileArtifact } from '../../store/chatArtifacts';
@@ -29,7 +27,6 @@ function artifactLocation(artifact: ChatFileArtifact, onDeviceLabel: string, sta
  * extracted from message text intentionally do not appear here.
  */
 export function TurnArtifactBar({ turnId }: TurnArtifactBarProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('agent');
   const conversationId = useChatStore((state) => state.currentSessionKey);
   const conversationArtifacts = useChatArtifactStore((state) => {
@@ -49,17 +46,13 @@ export function TurnArtifactBar({ turnId }: TurnArtifactBarProps) {
   };
 
   return (
-    <Flexbox
-      data-pt-agent-turn-artifacts={turnId}
-      gap={6}
-      style={{ marginBottom: 8 }}
-    >
-      <Flexbox horizontal align="center" gap={6}>
-        <FileText size={14} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
-        <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
+    <div className="sc-artifacts" data-pt-agent-turn-artifacts={turnId}>
+      <div className="sc-artifacts__head">
+        <FileText size={14} className="sc-artifacts__head-icon" />
+        <span className="sc-artifacts__title">
           {t('agent.turnArtifact.title', { count: turnArtifacts.length })}
         </span>
-      </Flexbox>
+      </div>
       {turnArtifacts.map((artifact) => {
         const { Icon, label } = artifactLocation(
           artifact,
@@ -68,46 +61,35 @@ export function TurnArtifactBar({ turnId }: TurnArtifactBarProps) {
           t('agent.portal.artifact.originalDevice'),
         );
         return (
-          <Flexbox
+          <div
             key={artifact.id}
+            className="sc-artifacts__row"
             data-pt-agent-turn-artifact={artifact.id}
             data-turn-artifact-turn-id={artifact.turnId}
-            horizontal
-            align="center"
-            gap={8}
-            style={{
-              border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: 10,
-              padding: '6px 10px',
-              background: token.colorFillQuaternary,
-            }}
           >
-            <FileText size={14} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
-            <Flexbox style={{ minWidth: 0, flex: 1 }}>
-              <Typography.Text
-                ellipsis
-                style={{ fontSize: 13, color: token.colorText }}
-                data-pt-agent-turn-artifact-name
-              >
+            <FileText size={14} className="sc-artifacts__row-icon" />
+            <div className="sc-artifacts__row-body">
+              <span className="sc-artifacts__name" data-pt-agent-turn-artifact-name>
                 {artifact.name}
-              </Typography.Text>
-              <Flexbox horizontal align="center" gap={4}>
-                <Icon size={11} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
-                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                  {label}
-                </Typography.Text>
-              </Flexbox>
-            </Flexbox>
-            <ActionIcon
+              </span>
+              <span className="sc-artifacts__location">
+                <Icon size={11} />
+                {label}
+              </span>
+            </div>
+            <IconButton
+              actionId={`turn-artifact-open-${artifact.id}`}
+              iconId="external-link"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              label={t('agent.portal.artifact.open')}
               data-pt-agent-turn-artifact-open={artifact.id}
-              icon={<ExternalLink size={14} />}
-              size="small"
-              title={t('agent.portal.artifact.open')}
-              onClick={() => openArtifact(artifact)}
+              onActivate={() => openArtifact(artifact)}
             />
-          </Flexbox>
+          </div>
         );
       })}
-    </Flexbox>
+    </div>
   );
 }
