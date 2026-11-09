@@ -731,13 +731,14 @@ class CrossStationSocialNativeProvisioner(
         from tooling.acceptance.fixtures.social_feed_notification import (
             CAPABILITY_ID, SocialFeedNotificationHandler,
         )
+        from tooling.acceptance.fixtures.social_relay_capture import CAPABILITY_ID as CAPTURE_ID
         if gate_id != "social-public-feed-native-e2e":
             return super().create_gate_launch_context(
                 gate_id=gate_id, evidence_run_id=evidence_run_id,
                 provisioning_run_id=provisioning_run_id,
                 required_capabilities=required_capabilities,
             )
-        if (required_capabilities != (CAPABILITY_ID,) or self._manifest is None
+        if (required_capabilities != (CAPABILITY_ID, CAPTURE_ID) or self._manifest is None
                 or not self._manifest.is_ready()
                 or evidence_run_id != self.evidence_run.run_id
                 or provisioning_run_id != self._manifest.run_id
@@ -767,6 +768,10 @@ class CrossStationSocialNativeProvisioner(
             commit=self._manifest.source_commit, station=receiver.runtime_identity,
             source_station=sender.runtime_identity,
         ))
+        if self._social_relay_fixture is None:
+            raise BlockedError(reason="Public Social has no prepared Relay capture owner",
+                               resource=CAPTURE_ID)
+        context.register_capability(CAPTURE_ID, self._social_relay_fixture.capture_handler())
         return context
 
     def _provision_station_services(
@@ -790,6 +795,7 @@ class CrossStationSocialNativeProvisioner(
             relay.equip(manifest)
             services = super()._provision_station_services(manifest)
             services["relay"] = relay.attach(manifest, services)
+            relay.prepare_capture_probe()
             self.evidence_run.write_json(
                 "runtime/social-relay-preparation.json", relay.inventory,
                 role="social-relay-preparation",

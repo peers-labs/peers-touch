@@ -39,6 +39,7 @@ SCENARIOS = (
     "circle-members-pagination", "circle-cancel", "circle-partial-save-retry",
     "lost-federation-notification",
     "circle-block", "circle-account-epoch",
+    "relay-opaque",
 )
 RUNTIME_REUSE = RuntimeReuseContract.from_dict({
     "scope": "suite", "entryCheckId": GATE_ID, "scenarioIds": list(SCENARIOS),
@@ -601,6 +602,55 @@ class Gate(DeviceSearchGate):
             "social-feed-notification", operation, payload or {}, timeout_seconds=15,
         )
 
+    def relay_opaque_scenario(self, ledger: SuiteRuntimeLedger) -> None:
+        """The same prepared Suite proves its real bilateral Circuit delivery."""
+        scenario = "relay-opaque"
+        self.begin_scenario(ledger, scenario)
+        suffix = f"{self.manifest['runId']}-{secrets.token_hex(24)}"
+        text, comment = f"Relay-post-{suffix}", f"Relay-comment-{suffix}"
+
+        def control(operation: str, payload: dict | None = None):
+            return self.capability_client.invoke(
+                "social-relay-opaque", operation, payload or {}, timeout_seconds=30,
+            )
+        try:
+            self.assert_condition("relay-capture-ready",
+                                  control("arm", {"markers": [text, comment]})["armed"] is True)
+            before = self.action("alice", "publicFeedStatus")
+            self.publish_text_ui(text)
+            alice_card = self.await_card("alice", text)
+            bob_card = self.await_card("bob", text)
+            after = self.action("alice", "publicFeedStatus")
+            self.assert_condition("relay-publication-verified-head",
+                after["pendingCount"] == 0 and after["verifiedSequence"] is not None
+                and int(after["verifiedSequence"]) > int(before["verifiedSequence"] or "0"))
+            alice_selector = f'[data-post-id="{alice_card.get_attribute("data-post-id")}"]'
+            bob_selector = f'[data-post-id="{bob_card.get_attribute("data-post-id")}"]'
+            self.open_comments("bob", bob_selector)
+            self.set_input("bob", f'{bob_selector} [data-acceptance-id="social-comment-input"]', comment)
+            self.click("bob", f'{bob_selector} [data-acceptance-id="social-comment-send"]')
+            self.open_comments("alice", alice_selector)
+            # The original confirmed comment reader rejects optimistic commands
+            # and requires actually painted verified interaction state.
+            self.assert_comment_like("alice", alice_selector, comment, 0, False)
+            self.assert_comment_like("bob", bob_selector, comment, 0, False)
+            self.await_painted_public_card("bob", text)
+            self.capture("bob", scenario)
+            self.capture("alice", scenario)
+            observation = control("finish")
+            self.report.runtime["relayOpaque"] = {
+                **observation, "verifiedHead": after["verifiedSequence"],
+            }
+            self.assert_condition("relay-both-legs-both-directions",
+                all(value > 0 for leg in observation["directionBytes"] for value in leg))
+            self.assert_condition("relay-exact-plaintext-absent", observation["plaintextObserved"] is False)
+            self.complete_scenario(ledger, scenario, "alice,bob:publish-and-confirm-comment-over-Circuit",
+                                   "alice,bob:painted-verified-content-and-bound-opaque-two-leg-capture")
+        finally:
+            cleanup_preserving_primary_failure(
+                lambda: control("clear"), self.report, "Social Relay capture",
+            )
+
     def lost_notification_scenario(self, ledger: SuiteRuntimeLedger) -> str:
         scenario = "lost-federation-notification"
         self.begin_scenario(ledger, scenario)
@@ -1113,6 +1163,7 @@ class Gate(DeviceSearchGate):
 
                 self.action("bob", "followActor", {"actorPtid": fixture["alicePtid"]})
                 self.baseline_read_scenario(ledger)
+                self.relay_opaque_scenario(ledger)
                 self.lost_notification_scenario(ledger)
                 recent_text = self.lost_ack_scenario(ledger)
                 recent_text = self.read_integrity_scenario(

@@ -25,6 +25,7 @@ from tooling.acceptance.provisioners.posix_service_runtime import (
 def relay_json_request(
     url: str, *, method: str, body: Mapping[str, object] | None = None,
     token: str = "", trust_anchor: bytes | None = None,
+    timeout_seconds: float = 30,
 ) -> tuple[int, dict[str, Any]]:
     headers = {"Accept": "application/json"}
     payload = None
@@ -42,7 +43,7 @@ def relay_json_request(
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_verify_locations(cadata=trust_anchor.decode("ascii"))
     try:
-        with urllib.request.urlopen(request, context=context, timeout=30) as response:
+        with urllib.request.urlopen(request, context=context, timeout=timeout_seconds) as response:
             raw, status = response.read((1 << 20) + 1), response.status
     except urllib.error.HTTPError as error:
         raw, status = error.read((1 << 20) + 1), error.code

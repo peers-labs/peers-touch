@@ -29,6 +29,7 @@
       "AFL-J02 missing notification reconciliation and late follower history",
       "AFL-J03 non-follower comment and reaction plus independent thread history",
       "IC-J01 root-comment and reply LIKE set/remove converge on both Native readers and survive receiver restart",
+      "AFL-O09 original two-Station Suite binds real publication and confirmed comment to verified Circuit routes, unchanged authenticated TCP legs, immutable complete packet capture and receiver paint; Relay exposes only transport metadata",
       "AFL-J04 restart, cancellation of subscription, second device denial and tamper rejection"
     ]
   },

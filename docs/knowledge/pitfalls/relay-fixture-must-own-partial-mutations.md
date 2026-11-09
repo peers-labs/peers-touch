@@ -64,3 +64,12 @@ containers, peer identities and joined route generations must be read back.
 Run `python3 -m unittest tooling.acceptance.tests.test_social_relay` to check
 that order and the original parent's evidence/cleanup ownership.
 Focused checks do not establish deployed Social or Circuit product proof.
+
+Capture has a separate source-bound, one-shot ephemeral capability. Register
+its unique root before the first remote write; quarantine stops only recorded
+PID/start-time identities and removes only owned private files. The capture
+worker must use immediate kernel packet delivery as well as unbuffered file
+output: `tcpdump -U` alone can stop with a valid header and no packets despite
+completed socket traffic. Require complete dpkt framing, exact authenticated
+four-tuples, positive bytes in both directions on both legs and zero kernel
+drops. Pcap and lifecycle checks never substitute for original receiver paint.

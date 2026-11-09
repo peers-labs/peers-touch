@@ -33,6 +33,29 @@
 - Direct and Circuit route candidates retain transport-independent Station scope.
 - Relay A and Relay B state remain independent.
 
+Public Social composes its existing two-Station Suite with one reviewed Relay.
+The parent prepares the signed-route observer once, using the canonical
+`peer.VerifyStationRouteAttestation` implementation. At capture start and end,
+it independently verifies both public Circuit routes, Node identities,
+generations, destination SPKI and addresses. The operator-protected Relay stats
+projection exposes only libp2p connection IDs, authenticated Node IDs and local/
+remote multiaddresses. The Relay still has no business route or payload parser.
+
+The source-bound `social-relay-opaque` capability owns a unique capture process
+and directory in the prepared Relay network namespace. Its BPF filter matches
+the actual four-tuples of both authenticated TCP legs, including distinct
+source ports behind a shared NAT. Immediate packet delivery and complete
+snapshots avoid an empty kernel-buffer readback. Time and file-size limits,
+Linux parent-death signaling, exact PID/start-time checks, SIGINT flush, zero
+kernel drops and child extinction are required; forced, partial, empty or
+single-leg capture cannot pass. Capture artifacts retain the original bytes.
+
+The original Public Suite publishes namespaced content and confirms a
+bilateral comment through real UI. Verified author head, painted receiver
+content, unchanged route/connection identity, positive traffic in both
+directions on both legs and absent exact plaintext markers are one assertion.
+Transport-only qualification and source checks cannot replace that Journey.
+
 ## 3. Replaced Boundaries
 
 The target state removes these limitations rather than preserving parallel owners:

@@ -1,9 +1,11 @@
 """Social Suite composition of reviewed Relay equipment and attachment owners."""
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import subprocess
+import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import urlparse
@@ -42,10 +44,13 @@ class SocialRelayFixture:
         self.repo_root = repo_root
         self._acquire_profile = acquire_profile_lease
         self._acquire_source = acquire_source_lease
+        self._register_cleanup = register_cleanup
         self.attachments = RelayAttachmentFixture(register_cleanup=register_cleanup)
         self.config: PosixServiceRuntimeConfig | None = None
         self.relay_health = ""
         self.inventory: dict[str, object] | None = None
+        self.capture_probe: Path | None = None
+        self.capture_probe_digest = ""
 
     def equip(self, manifest: RuntimeManifest, *, timeout_seconds: float = 600) -> None:
         """Canonical deployment owns acquisition, before any retained Suite lease."""
@@ -216,4 +221,41 @@ class SocialRelayFixture:
             station_runtime=first_runtime, relay_runtime=relay_runtime,
             runtime_security=security, trust_anchor=trust, trust_anchor_digest=trust_digest,
             relay_peer_id=peer_id,
+        )
+
+    def prepare_capture_probe(self) -> None:
+        """Build the original trust observer once in the parent preparation."""
+        if self.inventory is None or self.config is None:
+            raise BlockedError(reason="Social Relay capture preparation has no attested runtime",
+                               resource="social-relay-capture")
+        directory = tempfile.TemporaryDirectory(prefix="peers-social-route-observer-")
+        self._register_cleanup("social-relay-route-observer", directory.cleanup)
+        probe = Path(directory.name) / "observe-routes"
+        result = GateProcessLauncher(
+            cwd=str(self.repo_root / "apps/station"), environment=dict(os.environ),
+            termination_timeout_seconds=1,
+        ).run(GateLaunchSpec((
+            "go", "build", "-o", str(probe),
+            str(self.repo_root / "tooling/acceptance/fixtures/social_relay_routes.go"),
+        ), 180, ()), None)
+        if result.returncode:
+            raise BlockedError(reason="Canonical Social signed-route observer did not build",
+                               resource="social-relay-capture")
+        self.capture_probe = probe
+        self.capture_probe_digest = hashlib.sha256(probe.read_bytes()).hexdigest()
+        self.inventory["captureObserver"] = {
+            "sourceCommit": self.inventory["sourceCommit"],
+            "binarySha256": self.capture_probe_digest,
+        }
+
+    def capture_handler(self):
+        from tooling.acceptance.fixtures.social_relay_capture import SocialRelayCaptureHandler
+        if self.capture_probe is None:
+            raise BlockedError(reason="Social Relay has no prepared trust observer",
+                               resource="social-relay-capture")
+        trust, _ = resolve_posix_relay_trust_anchor(self.config.environment_name)
+        return SocialRelayCaptureHandler(
+            config=self.config, inventory=self.inventory, trust_anchor=trust,
+            probe=self.capture_probe, probe_digest=self.capture_probe_digest,
+            repo_root=self.repo_root,
         )

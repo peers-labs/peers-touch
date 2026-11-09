@@ -221,7 +221,7 @@ class PublicFeedNativeEntryTest(unittest.TestCase):
         launch = runner["gate_launch_fields"](GATE_ID, definition)
         self.assertEqual(launch, {
             "argv": ["python3", "-m", "tooling.acceptance.gates.social.public_feed_native"],
-            "ephemeralCapabilities": ["social-feed-notification"],
+            "ephemeralCapabilities": ["social-feed-notification", "social-relay-opaque"],
         })
         invalid = dict(definition)
         invalid["command"] = " ".join(invalid.pop("argv"))

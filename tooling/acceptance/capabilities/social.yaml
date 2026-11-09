@@ -9,10 +9,10 @@
       "required_gates": ["social-public-feed-source", "station-api-ownership", "social-public-feed-native-e2e"],
       "synthetic_paths": ["apps/desktop/src/services/publicFeedNative.ts"],
       "evidence": {
-        "truth_sources": ["Native-verified public/v1 bytes and two deployed Station projections"],
-        "surfaces": ["Native Desktop composer, remote feed, comment, reaction and restart"],
+        "truth_sources": ["Native-verified public/v1 bytes and two deployed Station projections", "Canonical signed Circuit route verification and immutable source-bound dual-leg Relay packet observations"],
+        "surfaces": ["Native Desktop composer, remote feed, comment, reaction and restart", "Operator-protected standard Relay connection metadata and parent-owned bounded packet capture"],
         "proven_by": ["social-public-feed-native-e2e"],
-        "proven_scope": ["Only publication, late follower history, non-follower interaction and restart after current-source Native proof"],
+        "proven_scope": ["Named publication, late follower, interaction, restart and opaque Relay scenarios only after the same current-source Native Suite and owned cleanup pass"],
         "unproven_scope": ["Native edit/tombstone and public Search", "Lost ACK and dropped notification faults", "Second writer denial, projection tamper and head rollback faults", "Prototype visual parity", "Mobile Native"]
       }
     },
