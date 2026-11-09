@@ -54,3 +54,5 @@ export const notifyError = (message: ReactNode, duration?: number) =>
   notify({ message, tone: 'danger', duration });
 export const notifyInfo = (message: ReactNode, duration?: number) =>
   notify({ message, tone: 'info', duration });
+export const notifyWarning = (message: ReactNode, duration?: number) =>
+  notify({ message, tone: 'warning', duration });

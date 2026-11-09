@@ -18,23 +18,13 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { Button, message, Typography } from 'antd';
-import {
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  Globe2,
-  ImagePlus,
-  LockKeyhole,
-  RotateCcw,
-  ShieldCheck,
-  UserMinus,
-  UserRound,
-  UsersRound,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { Button, Icon, type IconId } from '@peers-touch/ui';
 
+import {
+  notifyError,
+  notifySuccess,
+  notifyWarning,
+} from '../../app/feedback/mobileFeedback';
 import { useLifecycleKernel } from '../../app/lifecycle';
 import { useVisualKeyboardOverlap } from '../../app/layout/useVisualKeyboardOverlap';
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -69,7 +59,6 @@ import {
 } from './MomentAudienceTargetPicker';
 import './MomentComposer.css';
 
-const { Text } = Typography;
 const MAX_IMAGES_PER_POST = 9;
 const VISIBLE_SOCIAL_AUDIENCE_CHOICES = SOCIAL_AUDIENCE_CHOICES.filter(
   (choice) => choice.id !== 'DIRECT',
@@ -91,43 +80,43 @@ function isMomentAudienceTargetChoice(
 
 const SOCIAL_AUDIENCE_PRESENTATION: Record<
   SocialAudienceChoice,
-  { readonly detailKey: string; readonly icon: LucideIcon }
+  { readonly detailKey: string; readonly icon: IconId }
 > = {
   PUBLIC: {
     detailKey: 'mobile.moments.audience.publicDescription',
-    icon: Globe2,
+    icon: 'globe',
   },
   FOLLOWERS: {
     detailKey: 'mobile.moments.audience.followersDescription',
-    icon: UsersRound,
+    icon: 'users-round',
   },
   FRIENDS: {
     detailKey: 'mobile.moments.audience.friendsDescription',
-    icon: ShieldCheck,
+    icon: 'shield-check',
   },
   CIRCLE: {
     detailKey: 'mobile.moments.audience.circleDescription',
-    icon: UsersRound,
+    icon: 'users-round',
   },
   GROUP: {
     detailKey: 'mobile.moments.audience.groupDescription',
-    icon: UsersRound,
+    icon: 'users-round',
   },
   CUSTOM_ALLOW: {
     detailKey: 'mobile.moments.audience.customAllowDescription',
-    icon: UserRound,
+    icon: 'user-round',
   },
   CUSTOM_DENY: {
     detailKey: 'mobile.moments.audience.customDenyDescription',
-    icon: UserMinus,
+    icon: 'user-minus',
   },
   DIRECT: {
     detailKey: 'mobile.moments.audience.directDescription',
-    icon: UserRound,
+    icon: 'user-round',
   },
   SELF: {
     detailKey: 'mobile.moments.audience.selfDescription',
-    icon: LockKeyhole,
+    icon: 'lock-keyhole',
   },
 };
 
@@ -486,7 +475,6 @@ export function MomentComposer({
       ?? 'mobile.moments.audience.public',
   );
   const audiencePresentation = SOCIAL_AUDIENCE_PRESENTATION[audienceChoice];
-  const AudienceIcon = audiencePresentation.icon;
   const selectedCircle = circles.find(
     (circle) => circle.id.toString() === circleId,
   );
@@ -566,7 +554,7 @@ export function MomentComposer({
   ]);
 
   const completePublishedMoment = useCallback(() => {
-    message.success(t('mobile.moments.published'));
+    notifySuccess(t('mobile.moments.published'));
     resetComposer();
     onPublished();
   }, [onPublished, resetComposer, t]);
@@ -612,7 +600,7 @@ export function MomentComposer({
     if (editingDisabled || saving || discarding || !canClear) return;
     if (!await discardDraft()) return;
     resetComposer();
-    message.success(t('mobile.moments.composer.draftCleared'));
+    notifySuccess(t('mobile.moments.composer.draftCleared'));
   }, [
     canClear,
     discardDraft,
@@ -667,11 +655,11 @@ export function MomentComposer({
   const handlePickImages = async () => {
     if (editingDisabled) return;
     if (pendingImages.some((item) => item.source === 'restored-reference')) {
-      message.warning(t('mobile.moments.composer.mixedMediaUnavailable'));
+      notifyWarning(t('mobile.moments.composer.mixedMediaUnavailable'));
       return;
     }
     if (slotsLeft <= 0) {
-      message.warning(t('mobile.moments.imageMaxReached', { max: MAX_IMAGES_PER_POST }));
+      notifyWarning(t('mobile.moments.imageMaxReached', { max: MAX_IMAGES_PER_POST }));
       return;
     }
     let selection: Awaited<ReturnType<typeof pickNativeMedia>>;
@@ -689,12 +677,12 @@ export function MomentComposer({
         maxTotalBytes: 30 * 1024 * 1024,
       });
     } catch (error) {
-      message.error(readableErrorMessage(error, 'moment_media_pick_failed'));
+      notifyError(readableErrorMessage(error, 'moment_media_pick_failed'));
       return;
     }
     if (selection.outcome === 'cancelled') return;
     if (selection.outcome !== 'selected') {
-      message.error(selection.errorCode || `moment_media_${selection.outcome}`);
+      notifyError(selection.errorCode || `moment_media_${selection.outcome}`);
       return;
     }
     const drafts = selection.items.slice(0, slotsLeft).map((stagedHandle) => {
@@ -750,19 +738,19 @@ export function MomentComposer({
       (item) => item.status === 'done' && item.persistedRef,
     );
     if (!trimmed && completedImages.length === 0) {
-      message.warning(t('mobile.moments.emptyError'));
+      notifyWarning(t('mobile.moments.emptyError'));
       return;
     }
     if (uploadingCount > 0) {
-      message.warning(t('mobile.moments.imageUploading'));
+      notifyWarning(t('mobile.moments.imageUploading'));
       return;
     }
     if (errorCount > 0) {
-      message.warning(t('mobile.moments.imageHasErrors'));
+      notifyWarning(t('mobile.moments.imageHasErrors'));
       return;
     }
     if (!audience) {
-      message.error(t('mobile.moments.audience.targetRequired'));
+      notifyError(t('mobile.moments.audience.targetRequired'));
       return;
     }
     if (!await persistDraftNow(text, audience, successfulMediaRefs)) {
@@ -777,7 +765,7 @@ export function MomentComposer({
         );
       } catch (error) {
         setPublishing(false);
-        message.error(readableErrorMessage(error, 'moment_media_upload_failed'));
+        notifyError(readableErrorMessage(error, 'moment_media_upload_failed'));
         return;
       }
       const uploadedRefs = completedImages
@@ -806,7 +794,7 @@ export function MomentComposer({
       && privateFiles.some((file) => file === null)
     ) {
       setPublishing(false);
-      message.error(t('mobile.moments.audience.privateMediaUnavailable'));
+      notifyError(t('mobile.moments.audience.privateMediaUnavailable'));
       return;
     }
 
@@ -830,7 +818,7 @@ export function MomentComposer({
       });
     } catch (error) {
       setPublishing(false);
-      message.error(readableErrorMessage(error, 'moment_publish_failed'));
+      notifyError(readableErrorMessage(error, 'moment_publish_failed'));
       return;
     }
 
@@ -851,13 +839,13 @@ export function MomentComposer({
       if (removed) completePublishedMoment();
     } else if (result.route === 'PUBLIC' && result.outcome.ok) {
       setPublishing(false);
-      message.error(t('mobile.moments.imageReadbackFailed'));
+      notifyError(t('mobile.moments.imageReadbackFailed'));
     } else if (result.route === 'PUBLIC' && !result.outcome.ok) {
       setPublishing(false);
-      message.error(result.outcome.error.message);
+      notifyError(result.outcome.error.message);
     } else if (result.route === 'PRIVATE') {
       setPublishing(false);
-      message.error(
+      notifyError(
         result.projection.state === 'UNKNOWN_OUTCOME'
           ? t('mobile.moments.publishUnknown')
           : t('mobile.moments.publishPrivateFailed'),
@@ -918,15 +906,17 @@ export function MomentComposer({
             data-product-surface="moments.composer-draft-failed"
             role="alert"
           >
-            <AlertTriangle size={18} aria-hidden="true" />
-            <Text type="secondary">
+            <Icon iconId="warning" size={18} aria-hidden="true" />
+            <span className="moment-composer-draft-failure-detail">
               {t('common.state.error')}: {persistenceFailure.message}
-            </Text>
+            </span>
             <Button
-              size="small"
-              icon={<RotateCcw size={14} />}
-              loading={saving || discarding}
-              onClick={() => void handlePersistenceRetry()}
+              actionId="social-composer-draft-retry"
+              emphasis="quiet"
+              density="compact"
+              execution={saving || discarding ? 'pending' : 'idle'}
+              leading={<Icon iconId="rotate-ccw" size={14} />}
+              onActivate={() => void handlePersistenceRetry()}
             >
               {t('common.action.retry')}
             </Button>
@@ -969,7 +959,7 @@ export function MomentComposer({
                   onClick={() => retryImage(item.localId)}
                   aria-label={t('mobile.moments.retryImage')}
                 >
-                  <RotateCcw size={15} />
+                  <Icon iconId="rotate-ccw" size={15} />
                 </button>
               )}
               <button
@@ -979,7 +969,7 @@ export function MomentComposer({
                 onClick={() => removeImage(item.localId)}
                 aria-label={t('mobile.moments.removeImage')}
               >
-                <X size={15} />
+                <Icon iconId="close" size={15} />
               </button>
             </div>
           ))}
@@ -995,7 +985,7 @@ export function MomentComposer({
                 max: MAX_IMAGES_PER_POST,
               })}
             >
-              <ImagePlus size={24} />
+              <Icon iconId="image-plus" size={24} />
             </button>
           )}
           </div>
@@ -1010,28 +1000,27 @@ export function MomentComposer({
           onClick={() => setAudienceOpen(true)}
         >
           <span className="moment-composer-audience-icon">
-            <AudienceIcon size={17} />
+            <Icon iconId={audiencePresentation.icon} size={17} />
           </span>
           <span className="moment-composer-audience-copy">
             <strong>{audienceLabel}</strong>
             <small>{audienceDetail}</small>
           </span>
-          <ChevronRight size={17} />
+          <Icon iconId="chevron-right" size={17} />
         </button>
 
         {!audience && (
-          <Text
+          <span
             className="moment-composer-validation"
-            type="danger"
             role="alert"
           >
             {t('mobile.moments.audience.targetRequired')}
-          </Text>
+          </span>
         )}
 
         <div className="moment-composer-meta">
           <span>
-            <ShieldCheck size={14} />
+            <Icon iconId="shield-check" size={14} />
             {t('mobile.moments.composer.privacyHint')}
           </span>
           <span>{text.length}/5000</span>
@@ -1066,7 +1055,6 @@ export function MomentComposer({
             <div className="moments-audience-list">
               {VISIBLE_SOCIAL_AUDIENCE_CHOICES.map((option) => {
                 const presentation = SOCIAL_AUDIENCE_PRESENTATION[option.id];
-                const OptionIcon = presentation.icon;
                 return (
                   <button
                     key={option.id}
@@ -1083,15 +1071,15 @@ export function MomentComposer({
                     }}
                   >
                     <span className="moment-audience-choice-icon">
-                      <OptionIcon size={18} />
+                      <Icon iconId={presentation.icon} size={18} />
                     </span>
                     <span className="moment-audience-choice-copy">
                       <strong>{t(option.labelKey)}</strong>
                       <small>{t(presentation.detailKey)}</small>
                     </span>
                     {audienceChoice === option.id
-                      ? <Check size={18} />
-                      : <ChevronRight size={17} />}
+                      ? <Icon iconId="check" size={18} />
+                      : <Icon iconId="chevron-right" size={17} />}
                   </button>
                 );
               })}

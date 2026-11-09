@@ -867,6 +867,7 @@
   "mobile.moments.comment.loadMore": "Load more comments",
   "mobile.moments.comment.placeholder": "Write a comment...",
   "mobile.moments.comment.send": "Send",
+  "mobile.moments.comment.sendDisabled": "Enter a comment first",
   "mobile.moments.comment.sendError": "Failed to send comment",
   "mobile.moments.comment.showMore": "Show {{count}} more",
   "mobile.moments.comment.title": "Comments",

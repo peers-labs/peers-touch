@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Typography, message } from 'antd';
-import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
+import { Button, Icon, IconButton } from '@peers-touch/ui';
 
+import { notifySuccess } from '../../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
@@ -31,7 +31,6 @@ import {
 export { readAuthoritativeMomentDetail } from '../../features/social/momentsFeedStore';
 export type { MomentDetailReadback } from '../../features/social/momentsFeedStore';
 
-const { Text, Paragraph } = Typography;
 const INITIAL_COMMENT_COUNT = 10;
 
 export type CommentView =
@@ -281,7 +280,7 @@ export function MomentCommentsSection({
     async (commentId: string) => {
       if (privateRoute) return;
       if (await deleteMomentCommentAndReload(intents, postId, commentId)) {
-        message.success(t('mobile.moments.comment.deleted'));
+        notifySuccess(t('mobile.moments.comment.deleted'));
       }
     },
     [intents, postId, privateRoute, t],
@@ -319,13 +318,19 @@ export function MomentCommentsSection({
     >
       {mode === 'detail' && (
         <div className="moments-comments-header">
-          <Button
-            type="text"
-            icon={<ArrowLeft size={18} />}
-            onClick={onClose}
-            aria-label={t('mobile.moments.detail.back')}
-          />
-          <Text strong>{t('mobile.moments.detail.title')}</Text>
+          <span className="moments-comments-header-back">
+            <IconButton
+              actionId="moment-comments-back"
+              iconId="arrow-left"
+              iconSize={18}
+              label={t('mobile.moments.detail.back')}
+              emphasis="quiet"
+              onActivate={onClose}
+            />
+          </span>
+          <strong className="moments-comments-header-title">
+            {t('mobile.moments.detail.title')}
+          </strong>
           <div className="moments-comments-header-spacer" />
         </div>
       )}
@@ -357,7 +362,9 @@ export function MomentCommentsSection({
               data-product-surface="moments.detail-deleted"
               role="status"
             >
-              <Text type="secondary">{t('mobile.moments.detail.deleted')}</Text>
+              <span className="moments-comments-muted">
+                {t('mobile.moments.detail.deleted')}
+              </span>
             </div>
           )}
 
@@ -373,7 +380,9 @@ export function MomentCommentsSection({
               onReactionPickerOpenChange={onReactionPickerOpenChange}
             />
             <div className="moments-detail-comments-title">
-              <Text strong>{t('mobile.moments.comment.title')}</Text>
+              <strong className="moments-comments-title">
+                {t('mobile.moments.comment.title')}
+              </strong>
             </div>
           </>
         )}
@@ -383,7 +392,9 @@ export function MomentCommentsSection({
             className="moments-comments-empty"
             data-product-surface="moments.comments-loading"
           >
-            <Text type="secondary">{t('mobile.moments.comment.loading')}</Text>
+            <span className="moments-comments-muted">
+              {t('mobile.moments.comment.loading')}
+            </span>
           </div>
         )}
         {canRenderThread &&
@@ -396,8 +407,10 @@ export function MomentCommentsSection({
               className="moments-comments-empty"
               data-product-surface="moments.comments-empty"
             >
-              <MessageCircle size={28} />
-              <Text type="secondary">{t('mobile.moments.comment.empty')}</Text>
+              <Icon iconId="message-circle" size={28} />
+              <span className="moments-comments-muted">
+                {t('mobile.moments.comment.empty')}
+              </span>
             </div>
           )}
         {canRenderThread && errorMessage && (
@@ -405,10 +418,14 @@ export function MomentCommentsSection({
             className="moments-comments-error"
             data-product-surface="moments.comments-error"
           >
-            <Text type="danger">{t('mobile.moments.comment.error')}</Text>
+            <span className="moments-comments-error-copy">
+              {t('mobile.moments.comment.error')}
+            </span>
             <Button
-              size="small"
-              onClick={() => {
+              actionId="moment-comments-error-retry"
+              emphasis="quiet"
+              density="compact"
+              onActivate={() => {
                 if (usePrivateThread) {
                   void intents
                     .readPrivateComments(postId, '', INITIAL_COMMENT_COUNT)
@@ -459,10 +476,11 @@ export function MomentCommentsSection({
           !expanded &&
           (comments.length > INITIAL_COMMENT_COUNT || hasMore) && (
             <Button
-              type="text"
-              size="small"
+              actionId="moment-comments-expand"
+              emphasis="quiet"
+              density="compact"
               className="moments-comments-expand"
-              onClick={() => {
+              onActivate={() => {
                 setExpanded(true);
                 if (comments.length <= INITIAL_COMMENT_COUNT && hasMore) {
                   handleLoadMore();
@@ -480,17 +498,23 @@ export function MomentCommentsSection({
           expanded &&
           comments.length > INITIAL_COMMENT_COUNT && (
             <Button
-              type="text"
-              size="small"
+              actionId="moment-comments-collapse"
+              emphasis="quiet"
+              density="compact"
               className="moments-comments-expand"
-              onClick={() => setExpanded(false)}
+              onActivate={() => setExpanded(false)}
             >
               {t('mobile.moments.comment.collapse')}
             </Button>
           )}
         {canRenderThread && expanded && hasMore && !loading && (
           <div className="moments-comments-load-more">
-            <Button type="text" size="small" onClick={handleLoadMore}>
+            <Button
+              actionId="moment-comments-load-more"
+              emphasis="quiet"
+              density="compact"
+              onActivate={handleLoadMore}
+            >
               {t('mobile.moments.comment.loadMore')}
             </Button>
           </div>
@@ -501,7 +525,9 @@ export function MomentCommentsSection({
             className="moments-comments-loading-more"
             data-product-surface="moments.comments-loading-more"
           >
-            <Text type="secondary">{t('mobile.moments.feed.loadingMore')}</Text>
+            <span className="moments-comments-muted">
+              {t('mobile.moments.feed.loadingMore')}
+            </span>
           </div>
         )}
       </div>
@@ -521,10 +547,12 @@ export function MomentCommentsSection({
             <MobileNotice onClose={() => setSendError(false)}>
               {t('mobile.moments.comment.sendError')}
               <Button
-                size="small"
-                icon={<Send size={14} />}
+                actionId="social-comment-retry"
+                emphasis="secondary"
+                density="compact"
                 data-acceptance-id="social-comment-retry"
-                onClick={() => void handleSendComment()}
+                leading={<Icon iconId="send" size={14} />}
+                onActivate={() => void handleSendComment()}
               >
                 {t('common.action.retry')}
               </Button>
@@ -560,7 +588,7 @@ export function MomentCommentsSection({
                     onClick={() => setReplyTarget(null)}
                     aria-label={t('mobile.moments.reply.cancel')}
                   >
-                    <X size={14} />
+                    <Icon iconId="close" size={14} />
                   </button>
                 ) : null}
               </div>
@@ -571,7 +599,7 @@ export function MomentCommentsSection({
                 disabled={!commentText.trim() || sending}
                 aria-label={t('mobile.moments.comment.send')}
               >
-                <Send size={16} />
+                <Icon iconId="send" size={16} />
               </button>
             </>
           ) : (
@@ -580,7 +608,7 @@ export function MomentCommentsSection({
                 className="moments-comment-input-field"
                 data-replying={Boolean(replyTarget)}
               >
-                <Input
+                <input
                   value={commentText}
                   data-acceptance-id="social-comment-input"
                   aria-label={t('mobile.moments.comment.title')}
@@ -592,7 +620,9 @@ export function MomentCommentsSection({
                         })
                       : t('mobile.moments.comment.placeholder')
                   }
-                  onPressEnter={() => void handleSendComment()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void handleSendComment();
+                  }}
                   disabled={sending}
                 />
                 {replyTarget ? (
@@ -602,20 +632,32 @@ export function MomentCommentsSection({
                     onClick={() => setReplyTarget(null)}
                     aria-label={t('mobile.moments.reply.cancel')}
                   >
-                    <X size={14} />
+                    <Icon iconId="close" size={14} />
                   </button>
                 ) : null}
               </div>
               <Button
-                type="primary"
-                icon={<Send size={14} />}
+                actionId="social-comment-send"
+                emphasis="primary"
+                density="compact"
+                fullWidth
+                className="moments-comment-send"
+                leading={<Icon iconId="send" size={14} />}
                 data-acceptance-id="social-comment-send"
-                onClick={() => void handleSendComment()}
-                disabled={!commentText.trim() || sending}
-                loading={sending}
-                size="small"
+                availability={
+                  !commentText.trim() || sending
+                    ? {
+                        kind: 'disabled',
+                        reason: t('mobile.moments.comment.sendDisabled'),
+                      }
+                    : undefined
+                }
+                execution={sending ? 'pending' : 'idle'}
+                onActivate={() => void handleSendComment()}
                 aria-label={t('mobile.moments.comment.send')}
-              />
+              >
+                {t('mobile.moments.comment.send')}
+              </Button>
             </>
           )}
         </div>
@@ -646,7 +688,9 @@ function CommentItem({
   if (deleted) {
     return (
       <div className="moments-comment-item moments-comment-item--deleted">
-        <Text type="secondary">{t('mobile.moments.comment.deleted')}</Text>
+        <span className="moments-comments-muted">
+          {t('mobile.moments.comment.deleted')}
+        </span>
       </div>
     );
   }
@@ -659,19 +703,19 @@ function CommentItem({
         size={28}
       />
       <div className="moments-comment-item__body">
-        <Text strong className="moments-comment-item__author">
+        <strong className="moments-comment-item__author">
           {authorIdentity.displayName}
-        </Text>
+        </strong>
         {commentViewReplyTo(comment) && (
-          <Text type="secondary" className="moments-comment-item__reply-badge">
+          <span className="moments-comment-item__reply-badge">
             {t('moments.comment.reply')}
-          </Text>
+          </span>
         )}
-        <Paragraph className="moments-comment-item__content">
+        <p className="moments-comment-item__content">
           {comment.route === 'PUBLIC'
             ? comment.comment.content
             : comment.comment.text}
-        </Paragraph>
+        </p>
         <div className="moments-comment-item__actions">
           <button
             type="button"

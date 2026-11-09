@@ -211,7 +211,7 @@ describe('Moment composer media restoration', () => {
     expect(source).toContain('data-acceptance-id="social-composer-clear"');
     expect(source).toContain('if (!await discardDraft()) return;');
     expect(source).toContain(
-      "message.success(t('mobile.moments.composer.draftCleared'))",
+      "notifySuccess(t('mobile.moments.composer.draftCleared'))",
     );
   });
 
