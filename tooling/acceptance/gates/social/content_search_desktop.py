@@ -508,7 +508,7 @@ return {
             self.receiver.find_element(".pt-search-footer button", 20).click()
             self.settled()
             self.visible("social_source_partial", lambda: self.query + " 原始正文" in self.rows()
-                         and any(copy in self.receiver.find_element(".pt-search-footer").text
+                         and any(copy in self.receiver.find_element(".pt-search-footer").text.casefold()
                                  for copy in ("暂不可用", "unavailable")))
         self.report.runtime["search"]["stationOutage"] = (
             SimulatorSocialGate._restart_source_bound_station(
