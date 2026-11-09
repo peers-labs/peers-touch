@@ -12,7 +12,8 @@ import { ConversationView } from './ConversationView';
 import { CreateGroupDialog, PickPersonDialog } from './ChatDialogs';
 import type { CallDirection, CallKind } from './CallOverlay';
 import {
-  CONVERSATIONS, FEDERATION_DIRECTORY, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES, VIEWER_NAME,
+  CONVERSATIONS, FEDERATION_DIRECTORY, FRIEND_REQUESTS, PEOPLE, SEED_MESSAGES, SELF_DIRECT_ID,
+  VIEWER_NAME, VIEWER_TONE,
   type ChatMessage, type Conversation, type FriendRequest, type Person,
 } from './chat-data';
 import { usePrefs, makeTranslate, locTag } from '../prefs';
@@ -269,6 +270,20 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
     markAsRead(id);
   };
 
+  // Saved Messages: the singleton one-member Direct. Created once on first
+  // open (idempotent id), never federated, never unread; display name resolves
+  // at render time to the localized savedMessages fallback.
+  const openSelfDirect = () => {
+    setSessions(list => list.some(c => c.id === SELF_DIRECT_ID)
+      ? list
+      : [{
+          id: SELF_DIRECT_ID, name: '', last: '', lastAt: '', lastTs: 0, unread: 0,
+          tone: VIEWER_TONE, kind: 'person', selfDirect: true,
+        }, ...list]);
+    setSelectedId(SELF_DIRECT_ID);
+    setTab('chats');
+  };
+
   const acceptRequest = (id: string) => {
     // One transient failure, then success — mirrors desktop request error/retry.
     if (!failedRequests.has(id)) {
@@ -402,6 +417,7 @@ export function ChatFeature({ navigation, newChatSignal = 0, onUnreadTotal,
         onSelectContact={openPerson}
         onFindPeople={() => setPickerOpen(true)}
         onCreateGroup={() => setGroupOpen(true)}
+        onOpenSelf={openSelfDirect}
       />
 
       <div className="sk-chat-main">

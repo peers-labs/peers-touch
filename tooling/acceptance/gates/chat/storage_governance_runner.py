@@ -209,7 +209,7 @@ class ChatStorageAccountingGate(NativeTwoClientGate):
                 timeout=20,
             )
             client.find_element(
-                '[data-pt-secondary-tab="data"]',
+                '[data-pt-secondary-tab="advanced"]',
                 20,
             ).click()
             client.find_element(

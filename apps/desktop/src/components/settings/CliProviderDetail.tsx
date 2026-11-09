@@ -1,21 +1,19 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { Divider, InputNumber, Modal, Select, Switch, Typography, theme } from 'antd';
-import { Button, Input, Tag, TextArea, Tooltip, toast } from '@lobehub/ui';
 import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Eye,
-  Image,
-  RadioTower,
-  RefreshCw,
-  RotateCcw,
-  Save,
-  Search,
-  Sparkles,
-  Wrench,
-} from 'lucide-react';
+  Button,
+  Divider,
+  Field,
+  Icon,
+  NumberField,
+  Select,
+  Switch,
+  Tag,
+  Text,
+  TextField,
+  TextArea,
+  Tooltip,
+  type Tone,
+} from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -26,8 +24,7 @@ import {
 } from '../../services/desktop_api';
 import { ProviderIcon } from './ProviderIcon';
 import { useActiveProviderSlice } from './useActiveSettingsStores';
-
-const { Text, Title } = Typography;
+import { confirmRequest, notifyError, notifySuccess } from '../../ui/feedback';
 
 function runtimeConfigFromDetail(detail: ProviderDetail): ProviderRuntimeConfig {
   return {
@@ -85,9 +82,15 @@ function formatContextWindow(value: number): string {
   return String(value);
 }
 
+function readinessTone(readiness: string): Tone {
+  if (readiness === 'ready') return 'success';
+  if (readiness === 'invalid' || readiness === 'error') return 'danger';
+  if (readiness === 'saving' || readiness === 'checking') return 'info';
+  return 'neutral';
+}
+
 export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const {
     checkProvider,
     discoverModels,
@@ -116,13 +119,6 @@ export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
   const [modelSearch, setModelSearch] = useState('');
 
   const readiness = readinessById[detail.id]?.status ?? 'loading';
-  const readinessColor = readiness === 'ready'
-    ? 'success'
-    : readiness === 'invalid' || readiness === 'error'
-      ? 'error'
-      : readiness === 'saving' || readiness === 'checking'
-        ? 'processing'
-        : 'default';
   const models = useMemo(
     () => detail.models.filter((model) => modelMatches(model, modelSearch)),
     [detail.models, modelSearch],
@@ -153,9 +149,9 @@ export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
           : runtimeConfig.environment,
       };
       await updateProviderRuntimeConfig(detail.id, next);
-      toast.success(t('provider.cli.saved'));
+      notifySuccess(t('provider.cli.saved'));
     } catch (error) {
-      toast.error(
+      notifyError(
         error instanceof EnvironmentEntryError
           ? t('provider.cli.environmentInvalid', { line: error.line })
           : error instanceof Error
@@ -184,12 +180,12 @@ export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
     try {
       const result = await checkProvider(detail.id);
       if (result.ok) {
-        toast.success(t('provider.cli.ready'));
+        notifySuccess(t('provider.cli.ready'));
       } else {
-        toast.error(result.installHint || result.error || t('provider.cli.notReady'));
+        notifyError(result.installHint || result.error || t('provider.cli.notReady'));
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('provider.cli.notReady'));
+      notifyError(error instanceof Error ? error.message : t('provider.cli.notReady'));
     } finally {
       setChecking(false);
     }
@@ -199,9 +195,9 @@ export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
     setDiscovering(true);
     try {
       const result = await discoverModels(detail.id);
-      toast.success(t('provider.cli.discovered', { count: result.count }));
+      notifySuccess(t('provider.cli.discovered', { count: result.count }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('provider.cli.discoveryFailed'));
+      notifyError(error instanceof Error ? error.message : t('provider.cli.discoveryFailed'));
     } finally {
       setDiscovering(false);
     }
@@ -212,21 +208,21 @@ export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
       try {
         const references = await api.getProviderReferences(detail.id);
         if (references.length > 0) {
-          Modal.confirm({
+          const confirmed = await confirmRequest({
+            tone: 'warning',
             title: t('provider.detail.disableConfirm.title'),
-            content: t('provider.detail.disableConfirm.note'),
-            okText: t('provider.detail.disableConfirm.ok'),
-            cancelText: t('provider.detail.disableConfirm.cancel'),
-            onOk: async () => {
-              setEnabled(false);
-              try {
-                await toggleProvider(detail.id, false);
-              } catch {
-                setEnabled(true);
-                toast.error(t('provider.detail.failedToToggle'));
-              }
-            },
+            description: t('provider.detail.disableConfirm.note'),
+            confirmLabel: t('provider.detail.disableConfirm.ok'),
+            cancelLabel: t('provider.detail.disableConfirm.cancel'),
           });
+          if (!confirmed) return;
+          setEnabled(false);
+          try {
+            await toggleProvider(detail.id, false);
+          } catch {
+            setEnabled(true);
+            notifyError(t('provider.detail.failedToToggle'));
+          }
           return;
         }
       } catch {
@@ -238,77 +234,60 @@ export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
       await toggleProvider(detail.id, next);
     } catch {
       setEnabled(!next);
-      toast.error(t('provider.detail.failedToToggle'));
+      notifyError(t('provider.detail.failedToToggle'));
     }
   };
 
   return (
-    <Flexbox
-      gap={0}
-      style={{
-        height: '100%',
-        minHeight: 0,
-        overflowY: 'auto',
-        padding: '18px 24px 24px',
-      }}
-    >
-      <Flexbox
-        horizontal
-        align="center"
-        justify="space-between"
-        gap={16}
-        style={{ paddingBottom: 16, borderBottom: `1px solid ${token.colorBorderSecondary}` }}
-      >
-        <Flexbox horizontal align="center" gap={12} style={{ minWidth: 0 }}>
+    <div className="sc-cli-detail">
+      <div className="sc-cli-detail__header">
+        <div className="sc-cli-detail__identity">
           <ProviderIcon providerId={detail.id} providerName={detail.name} size={32} />
-          <Flexbox gap={2} style={{ minWidth: 0 }}>
-            <Flexbox horizontal align="center" gap={8}>
-              <Title level={5} ellipsis style={{ margin: 0, fontSize: 16 }}>
+          <div className="sc-cli-detail__identity-text">
+            <div className="sc-cli-detail__title-row">
+              <Text strong truncate className="sc-cli-detail__title">
                 {detail.name}
-              </Title>
-              <Tag color="gold" bordered={false} style={{ margin: 0 }}>
-                {t('provider.runtime.cli')}
-              </Tag>
-              <Tag color={readinessColor} bordered={false} style={{ margin: 0 }}>
+              </Text>
+              <Tag tone="warning">{t('provider.runtime.cli')}</Tag>
+              <Tag tone={readinessTone(readiness)}>
                 {t(`provider.readiness.${readiness}`)}
               </Tag>
-            </Flexbox>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            </div>
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {t('provider.cli.subtitle')}
             </Text>
-          </Flexbox>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
+          </div>
+        </div>
+        <div className="sc-cli-detail__header-actions">
           <Button
-            icon={<CheckCircle2 size={14} />}
-            loading={checking}
-            onClick={check}
-          >
-            {t('provider.cli.check')}
-          </Button>
+            actionId="cli-provider-check"
+            leading={<Icon iconId="circle-check-big" size={14} />}
+            execution={checking ? 'pending' : 'idle'}
+            label={t('provider.cli.check')}
+            onActivate={() => void check()}
+          />
           <Switch
             checked={enabled}
             aria-label={t('provider.cli.enabled')}
-            onChange={toggleEnabled}
+            onCheckedChange={(value) => void toggleEnabled(value)}
           />
-        </Flexbox>
-      </Flexbox>
+        </div>
+      </div>
 
-      <Flexbox gap={0} style={{ padding: '4px 0 0' }}>
+      <div className="sc-cli-detail__body">
         <CliField
           label={t('provider.cli.defaultModel')}
           description={t('provider.cli.defaultModelDesc')}
         >
           <Select
+            searchable
             value={runtimeConfig.default_model || undefined}
             options={defaultModelOptions}
-            onChange={(value) => setRuntimeConfig((current) => ({
-              ...current,
-              default_model: value,
-            }))}
-            style={{ width: '100%' }}
-            showSearch
-            optionFilterProp="label"
+            onValueChange={(value) => {
+              if (typeof value === 'string') {
+                setRuntimeConfig((current) => ({ ...current, default_model: value }));
+              }
+            }}
           />
         </CliField>
 
@@ -319,9 +298,9 @@ export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
           >
             <TextArea
               value={startupArgs}
-              onChange={(event) => setStartupArgs(event.target.value)}
+              onValueChange={setStartupArgs}
               rows={3}
-              style={{ width: '100%', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}
+              className="sc-cli-detail__mono"
             />
           </CliField>
         )}
@@ -333,193 +312,191 @@ export function CliProviderDetail({ detail }: { detail: ProviderDetail }) {
           >
             <TextArea
               value={environment}
-              onChange={(event) => setEnvironment(event.target.value)}
+              onValueChange={setEnvironment}
               rows={3}
-              style={{ width: '100%', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}
+              className="sc-cli-detail__mono"
             />
           </CliField>
         )}
 
-        <button
-          type="button"
+        <Button
+          actionId="cli-detail-advanced-toggle"
+          className="sc-cli-detail__advanced"
+          emphasis="quiet"
           aria-expanded={advancedOpen}
-          onClick={() => setAdvancedOpen((open) => !open)}
-          style={{
-            width: '100%',
-            minHeight: 40,
-            padding: 0,
-            border: 0,
-            borderTop: `1px solid ${token.colorBorderSecondary}`,
-            background: 'transparent',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            color: token.colorTextSecondary,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
+          leading={<Icon iconId={advancedOpen ? 'chevron-down' : 'chevron-right'} size={14} />}
+          onActivate={() => setAdvancedOpen((open) => !open)}
         >
-          {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           {t('provider.cli.advanced')}
-        </button>
+        </Button>
 
         {advancedOpen && (
-          <Flexbox gap={0} style={{ paddingLeft: 22 }}>
+          <div className="sc-cli-detail__advanced-body">
             <CliField
               label={t('provider.cli.command')}
               description={t('provider.cli.commandDesc')}
             >
-              <Input
+              <TextField
                 readOnly
                 value={detail.cli_command}
-                style={{ width: '100%', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}
+                className="sc-cli-detail__mono"
               />
             </CliField>
             <CliField label={t('provider.cli.workspace')}>
-              <Input
+              <TextField
                 readOnly
                 value={t(
                   `provider.cli.workspacePolicy.${detail.workspace_policy || 'unknown'}`,
-                  { defaultValue: detail.workspace_policy || t('provider.cli.workspacePolicy.unknown') },
+                  {
+                    defaultValue:
+                      detail.workspace_policy || t('provider.cli.workspacePolicy.unknown'),
+                  },
                 )}
-                style={{ width: '100%' }}
               />
             </CliField>
             {capabilities.configurable_timeout && (
               <CliField label={t('provider.cli.timeout')}>
-                <Flexbox horizontal align="center" gap={8}>
-                  <InputNumber
+                <div className="sc-cli-detail__timeout">
+                  <NumberField
                     min={10}
                     max={3600}
                     value={runtimeConfig.timeout_seconds}
-                    onChange={(value) => setRuntimeConfig((current) => ({
+                    style={{ width: 120 }}
+                    onValueChange={(value) => setRuntimeConfig((current) => ({
                       ...current,
                       timeout_seconds: Number(value || 10),
                     }))}
-                    style={{ width: 120 }}
                   />
-                  <Text type="secondary" style={{ fontSize: 12 }}>
+                  <Text tone="secondary" style={{ fontSize: 12 }}>
                     {t('provider.cli.seconds')}
                   </Text>
-                </Flexbox>
+                </div>
               </CliField>
             )}
             <CliField label={t('provider.cli.capabilities')}>
-              <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
+              <div className="sc-cli-detail__capabilities">
                 {capabilities.runtime_capabilities.map((capability) => (
-                  <Tag key={capability} color="cyan" style={{ margin: 0 }}>
+                  <Tag key={capability} tone="info">
                     {t(`provider.cli.capability.${capability}`, { defaultValue: capability })}
                   </Tag>
                 ))}
-              </Flexbox>
+              </div>
             </CliField>
-          </Flexbox>
+          </div>
         )}
 
-        <Flexbox
-          horizontal
-          justify="flex-end"
-          gap={8}
-          style={{ padding: '14px 0 18px', borderTop: `1px solid ${token.colorBorderSecondary}` }}
-        >
-          <Button icon={<RotateCcw size={14} />} onClick={restoreDefaults}>
-            {t('provider.cli.restoreDefaults')}
-          </Button>
-          <Button type="primary" icon={<Save size={14} />} loading={saving} onClick={save}>
-            {t('provider.cli.save')}
-          </Button>
-        </Flexbox>
-      </Flexbox>
+        <div className="sc-cli-detail__form-actions">
+          <Button
+            actionId="cli-provider-restore"
+            leading={<Icon iconId="rotate-ccw" size={14} />}
+            label={t('provider.cli.restoreDefaults')}
+            onActivate={restoreDefaults}
+          />
+          <Button
+            actionId="cli-provider-save"
+            emphasis="primary"
+            leading={<Icon iconId="save" size={14} />}
+            execution={saving ? 'pending' : 'idle'}
+            label={t('provider.cli.save')}
+            onActivate={() => void save()}
+          />
+        </div>
+      </div>
 
-      <Divider style={{ margin: 0 }} />
+      <Divider />
 
-      <Flexbox gap={12} style={{ paddingTop: 18, minHeight: 240 }}>
-        <Flexbox horizontal align="center" justify="space-between" gap={12}>
-          <Flexbox gap={2}>
-            <Title level={5} style={{ margin: 0, fontSize: 14 }}>
-              {t('provider.cli.models')}
-            </Title>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+      <div className="sc-cli-detail__models">
+        <div className="sc-cli-detail__models-head">
+          <div className="sc-cli-detail__models-title">
+            <Text strong style={{ fontSize: 14 }}>{t('provider.cli.models')}</Text>
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {t('provider.cli.modelsDesc', { count: detail.models.length })}
             </Text>
-          </Flexbox>
+          </div>
           {capabilities.model_discovery && (
             <Button
-              icon={<RefreshCw size={14} />}
-              loading={discovering}
-              onClick={discover}
-            >
-              {t('provider.cli.refreshModels')}
-            </Button>
+              actionId="cli-provider-discover"
+              leading={<Icon iconId="refresh-cw" size={14} />}
+              execution={discovering ? 'pending' : 'idle'}
+              label={t('provider.cli.refreshModels')}
+              onActivate={() => void discover()}
+            />
           )}
-        </Flexbox>
+        </div>
 
         {detail.models.length > 0 && (
-          <Input
-            prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
+          <TextField
+            clearable
+            leading={<Icon iconId="search" size={14} />}
             value={modelSearch}
-            onChange={(event) => setModelSearch(event.target.value)}
             placeholder={t('provider.model.searchModels')}
-            allowClear
+            onValueChange={setModelSearch}
           />
         )}
 
         <div data-ui-rows="cli-provider-models">
           {models.map((model, index) => (
-            <Flexbox
+            <div
               key={model.id}
               data-ui-row={model.id}
-              horizontal
-              align="center"
-              gap={12}
-              style={{
-                minHeight: 54,
-                padding: '8px 2px',
-                borderBottom: index < models.length - 1
-                  ? `1px solid ${token.colorBorderSecondary}`
-                  : undefined,
-              }}
+              className="sc-cli-model-row"
+              data-border={index < models.length - 1 ? 'true' : 'false'}
             >
-              <Flexbox flex={1} gap={2} style={{ minWidth: 0 }} data-ui-column="content">
-                <Text strong ellipsis style={{ fontSize: 13 }}>
+              <div className="sc-cli-model-row__content" data-ui-column="content">
+                <Text strong truncate style={{ fontSize: 13 }}>
                   {model.display_name || model.id}
                 </Text>
-                <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
+                <Text tone="secondary" truncate style={{ fontSize: 11 }}>
                   {model.description || model.id}
                 </Text>
-              </Flexbox>
-              <Flexbox
-                horizontal
-                align="center"
-                gap={6}
+              </div>
+              <div
+                className="sc-cli-model-row__meta"
                 data-ui-column="metadata"
                 data-ui-column-align="end"
-                style={{ flexShrink: 0 }}
               >
-                {model.context_window > 0 && <Tag style={{ margin: 0 }}>{formatContextWindow(model.context_window)}</Tag>}
-                {model.streaming && <Tooltip title={t('provider.model.capability.streaming')}><RadioTower size={13} /></Tooltip>}
-                {model.function_call && <Tooltip title={t('provider.model.capability.toolUse')}><Wrench size={13} /></Tooltip>}
-                {model.vision && <Tooltip title={t('provider.model.capability.vision')}><Eye size={13} /></Tooltip>}
-                {model.reasoning && <Tooltip title={t('provider.model.capability.deepThinking')}><Sparkles size={13} /></Tooltip>}
-                {model.image_output && <Tooltip title={t('provider.model.capability.imageOutput')}><Image size={13} /></Tooltip>}
-              </Flexbox>
-            </Flexbox>
+                {model.context_window > 0 && <Tag>{formatContextWindow(model.context_window)}</Tag>}
+                {model.streaming && (
+                  <Tooltip label={t('provider.model.capability.streaming')}>
+                    <Icon iconId="radio-tower" size={13} />
+                  </Tooltip>
+                )}
+                {model.function_call && (
+                  <Tooltip label={t('provider.model.capability.toolUse')}>
+                    <Icon iconId="wrench" size={13} />
+                  </Tooltip>
+                )}
+                {model.vision && (
+                  <Tooltip label={t('provider.model.capability.vision')}>
+                    <Icon iconId="eye" size={13} />
+                  </Tooltip>
+                )}
+                {model.reasoning && (
+                  <Tooltip label={t('provider.model.capability.deepThinking')}>
+                    <Icon iconId="sparkles" size={13} />
+                  </Tooltip>
+                )}
+                {model.image_output && (
+                  <Tooltip label={t('provider.model.capability.imageOutput')}>
+                    <Icon iconId="image" size={13} />
+                  </Tooltip>
+                )}
+              </div>
+            </div>
           ))}
           {models.length === 0 && (
-            <Flexbox align="center" gap={4} style={{ padding: '28px 0' }}>
+            <div className="sc-cli-model-row__empty">
               <Text strong>{t('provider.cli.noModels')}</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text tone="secondary" style={{ fontSize: 12 }}>
                 {capabilities.model_discovery
                   ? t('provider.cli.noModelsRefresh')
                   : t('provider.cli.noModelsStatic')}
               </Text>
-            </Flexbox>
+            </div>
           )}
         </div>
-      </Flexbox>
-    </Flexbox>
+      </div>
+    </div>
   );
 }
 
@@ -532,24 +509,9 @@ function CliField({
   description?: string;
   children: ReactNode;
 }) {
-  const { token } = theme.useToken();
   return (
-    <Flexbox
-      gap={8}
-      style={{
-        padding: '14px 0',
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-      }}
-    >
-      <Flexbox gap={2}>
-        <Text strong style={{ fontSize: 13 }}>{label}</Text>
-        {description && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {description}
-          </Text>
-        )}
-      </Flexbox>
+    <Field label={label} description={description} className="sc-cli-field">
       {children}
-    </Flexbox>
+    </Field>
   );
 }

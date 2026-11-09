@@ -16,6 +16,7 @@ import {
   Alert, Avatar, Button, Dialog, Empty, IconButton, Menu, Segmented, Tag, TextField,
 } from '@peers-touch/ui';
 import type { Conversation, Person } from './chat-data';
+import { SELF_DIRECT_ID, VIEWER_NAME, VIEWER_TONE } from './chat-data';
 import { useT, type Translate } from '../prefs';
 import { GroupAvatarComposite } from './GroupAvatar';
 
@@ -75,6 +76,7 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
         {sessions.map(c => (
           <li key={c.id} className="sk-conv-item"
             data-conversation-kind={c.kind}
+            data-self-direct={c.selfDirect ? 'true' : 'false'}
             data-pinned={c.pinned ? 'true' : 'false'}
             data-muted={c.muted ? 'true' : 'false'}
             onContextMenu={event => {
@@ -88,9 +90,9 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
               <span className="sk-conv-avatar">
                 {c.kind === 'group'
                   ? <GroupAvatarComposite members={c.members ?? []} label={c.name} size={40} imageUrl={c.avatarImage} />
-                  : <Avatar name={c.name} background={c.tone} size={40}
-                      style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={c.name} />}
-                {c.kind === 'person' && (
+                  : <Avatar name={c.selfDirect ? VIEWER_NAME : c.name} background={c.tone} size={40}
+                      style={{ borderRadius: 'var(--sk-avatar-radius)' }} aria-label={c.selfDirect ? t('contacts.savedMessages') : c.name} />}
+                {c.kind === 'person' && !c.selfDirect && (
                   <span className={`sk-presence-dot ${c.online ? 'is-online' : 'is-offline'}`}
                     data-presence={c.online ? 'online' : 'offline'} aria-hidden />
                 )}
@@ -102,14 +104,14 @@ function SessionRows({ sessions, selectedId, onSelect, onTogglePin, onToggleMute
               </span>
               <span className="sk-conv-meta">
                 <span className="sk-conv-name-line">
-                  <strong>{c.name}</strong>
+                  <strong>{c.selfDirect ? t('contacts.savedMessages') : c.name}</strong>
                   <span className="sk-conv-flags">
                     {c.pinned && <Pin size={11} aria-label={t('session.pinnedFlag')} />}
                     {c.muted && <BellOff size={11} aria-label={t('session.mutedFlag')} />}
                   </span>
                 </span>
                 <span className="sk-conv-preview">
-                  <span className="sk-conv-last">{c.last}</span>
+                  <span className="sk-conv-last">{c.selfDirect && !c.last ? t('contacts.savedMessagesHint') : c.last}</span>
                   <time>{relativeTime(c.lastTs, t) || c.lastAt}</time>
                 </span>
               </span>
@@ -264,7 +266,8 @@ function ContactSection({ sectionKey, label, collapsed, onToggle, children }: {
 }
 
 export function ContactsPane({ requests, friends, groups, selectedContactId, failedIds, query,
-  onAccept, onReject, onCancelRequest, onDeleteRecord, onRemoveContact, onSelectContact, onOpenGroup }: {
+  onAccept, onReject, onCancelRequest, onDeleteRecord, onRemoveContact, onSelectContact, onOpenGroup,
+  onOpenSelf, selfSelectedId }: {
   requests: FriendRequest[];
   friends: Person[];
   groups: Conversation[];
@@ -278,6 +281,10 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   onRemoveContact: (id: string) => void;
   onSelectContact: (person: Person) => void;
   onOpenGroup: (id: string) => void;
+  /** Opens the singleton self-direct (Saved Messages) Direct. */
+  onOpenSelf: () => void;
+  /** Conversation id of the self-direct row when it exists in the session list. */
+  selfSelectedId: string | null;
 }) {
   const { t } = useT();
   const [collapsed, setCollapsed] = useState(SECTION_COLLAPSED_DEFAULT);
@@ -348,11 +355,35 @@ export function ContactsPane({ requests, friends, groups, selectedContactId, fai
   const matchedGroups = searching ? groups.filter(groupMatches) : [];
   const matchedFriends = searching ? friends.filter(friendMatches) : [];
 
+  // Saved Messages = the singleton self-direct Direct. It stays pinned at the
+  // top of the contacts pane (desktop ChatContactsPanel parity); it carries no
+  // presence dot, no calls and no peer profile, per the self-direct invariant.
+  const selfMatches = !searching
+    || [t('contacts.savedMessages'), t('contacts.savedMessagesHint')].join(' ').toLowerCase().includes(q);
+  const selfEntry = selfMatches ? (
+    <ul className="sk-conv-list sk-contact-self" data-self-direct-entry>
+      <li className="sk-conv-item">
+        <Button actionId="contact.open-self" emphasis="quiet" density="normal"
+          className={`sk-conv-row${selfSelectedId ? ' is-selected' : ''}`}
+          onActivate={onOpenSelf}>
+          <Avatar name={VIEWER_NAME} background={VIEWER_TONE} size={38}
+            style={{ borderRadius: 'var(--sk-avatar-radius)' }}
+            aria-label={t('contacts.savedMessages')} />
+          <span className="sk-conv-meta">
+            <span className="sk-conv-name-line"><strong>{t('contacts.savedMessages')}</strong></span>
+            <span className="sk-conv-preview"><span className="sk-conv-last">{t('contacts.savedMessagesHint')}</span></span>
+          </span>
+        </Button>
+      </li>
+    </ul>
+  ) : null;
+
   return (
     <div className="sk-contacts" data-pending-count={incoming.length} data-outgoing-count={outgoing.length}
       data-history-count={history.length} data-groups-count={groups.length}
       data-friends-count={friends.length}
       data-searching={searching ? 'true' : 'false'}>
+      {selfEntry}
       {searching ? (
         <>
           {matchedRequests.map(renderCard)}
@@ -426,7 +457,7 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
   onMarkRead, onHide, onDelete,
   requests, friends, groups, selectedContactId, failedRequestIds, onAccept, onReject, onCancelRequest,
   onDeleteRequestRecord, onRemoveContact, onSelectContact, onOpenGroup,
-  onFindPeople, onCreateGroup }: {
+  onFindPeople, onCreateGroup, onOpenSelf }: {
   tab: 'chats' | 'contacts';
   onTabChange: (tab: 'chats' | 'contacts') => void;
   sessions: Conversation[];
@@ -453,6 +484,8 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
   onOpenGroup: (id: string) => void;
   onFindPeople: () => void;
   onCreateGroup: () => void;
+  /** Opens (creating once) the singleton self-direct conversation. */
+  onOpenSelf: () => void;
 }) {
   const { t } = useT();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -467,7 +500,8 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
   }), [sessions]);
   const q = query.trim().toLowerCase();
   const visibleSessions = q
-    ? sortedSessions.filter(c => [c.name, c.last].join(' ').toLowerCase().includes(q))
+    ? sortedSessions.filter(c => [c.selfDirect ? t('contacts.savedMessages') : c.name, c.last]
+      .join(' ').toLowerCase().includes(q))
     : sortedSessions;
   // Desktop parity: search also surfaces known people without a conversation,
   // so picking one starts it directly (search-as-create).
@@ -559,7 +593,9 @@ export function ChatRail({ tab, onTabChange, sessions, selectedId, people, onSel
           onAccept={onAccept} onReject={onReject} onCancelRequest={onCancelRequest}
           onDeleteRecord={onDeleteRequestRecord} onRemoveContact={onRemoveContact}
           onSelectContact={person => { closeSearch(); onSelectContact(person); }}
-          onOpenGroup={id => { closeSearch(); onOpenGroup(id); }} />
+          onOpenGroup={id => { closeSearch(); onOpenGroup(id); }}
+          onOpenSelf={() => { closeSearch(); onOpenSelf(); }}
+          selfSelectedId={selectedId === SELF_DIRECT_ID ? SELF_DIRECT_ID : null} />
       )}
     </aside>
   );

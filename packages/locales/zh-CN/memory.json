@@ -32,6 +32,7 @@
   "memory.browse.accessCount": "{{count}} 次访问",
   "memory.browse.noSummary": "（无摘要）",
   "memory.browse.deleteConfirm": "确定删除这条记忆？",
+  "memory.browse.delete": "删除",
   "memory.browse.deleteSuccess": "记忆已删除",
   "memory.browse.deleteFailed": "删除记忆失败",
   "memory.browse.noMemories": "未找到记忆",

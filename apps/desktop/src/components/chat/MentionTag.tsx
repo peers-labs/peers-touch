@@ -1,7 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { theme, Tag } from 'antd';
-import { Avatar } from '@lobehub/ui';
-import { Flexbox } from 'react-layout-kit';
 import { X } from 'lucide-react';
 
 import { useMentionStore } from '../../store/mentions';
@@ -17,38 +14,37 @@ interface MentionTagProps {
 }
 
 export function MentionTag({ agentId }: MentionTagProps) {
-  const { token } = theme.useToken();
   const removeMention = useMentionStore((s) => s.removeMention);
   const agent = useAgentStore((s) => s.agents.find((a) => a.id === agentId));
 
   if (!agent) return null;
 
+  const name = agent.title || agent.name;
+
   return (
-    <Tag
-      data-pt-agent-mention-tag={agentId}
-      closable
-      closeIcon={<X size={12} />}
-      onClose={() => removeMention(agentId)}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: token.marginXXS,
-        borderRadius: token.borderRadiusSM,
-        paddingInline: token.paddingXS,
-        margin: 0,
-      }}
-    >
-      <Avatar
-        avatar={agent.avatar || undefined}
-        title={agent.title || agent.name}
-        size={16}
-        shape="circle"
-        background={agent.backgroundColor || token.colorPrimary}
-      />
-      <span style={{ fontSize: token.fontSizeSM }}>
-        {agent.title || agent.name}
-      </span>
-    </Tag>
+    <span className="sc-mention-tag" data-pt-agent-mention-tag={agentId}>
+      {agent.avatar ? (
+        <span className="sc-mention-tag__avatar">
+          <img src={agent.avatar} alt={name} />
+        </span>
+      ) : (
+        <span
+          className="sc-mention-tag__avatar"
+          style={{ background: agent.backgroundColor || 'var(--pt-primary)' }}
+        >
+          {name.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <span className="sc-mention-tag__name">{name}</span>
+      <button
+        type="button"
+        className="sc-mention-tag__remove"
+        aria-label={name}
+        onClick={() => removeMention(agentId)}
+      >
+        <X size={12} />
+      </button>
+    </span>
   );
 }
 
@@ -58,26 +54,16 @@ export function MentionTag({ agentId }: MentionTagProps) {
 
 export function MentionTagBar() {
   const { t } = useTranslation('agent');
-  const { token } = theme.useToken();
   const mentionedAgentIds = useMentionStore((s) => s.mentionedAgentIds);
 
   if (mentionedAgentIds.length === 0) return null;
 
   return (
-    <Flexbox
-      data-pt-agent-mention-tags
-      horizontal
-      align="center"
-      gap={token.marginXS}
-      wrap="wrap"
-      style={{ padding: `${token.paddingXXS}px ${token.paddingSM}px` }}
-    >
-      <span style={{ fontSize: token.fontSizeSM, color: token.colorTextSecondary }}>
-        {t('agent.mentions.title')}
-      </span>
+    <div className="sc-mention-tagbar" data-pt-agent-mention-tags>
+      <span className="sc-mention-tagbar__label">{t('agent.mentions.title')}</span>
       {mentionedAgentIds.map((id) => (
         <MentionTag key={id} agentId={id} />
       ))}
-    </Flexbox>
+    </div>
   );
 }

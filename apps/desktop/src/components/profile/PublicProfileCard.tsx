@@ -1,10 +1,14 @@
 /**
  * PublicProfileCard — the single identity-card surface for self, peer and
- * group profiles (popover, contact detail, chat detail panel).
+ * group profiles (rail popover, message-avatar popover, chat detail sheet).
  *
- * Visual parity with the self popover: banner background, overlapping
- * avatar, name + federated handle, intro, practical metadata and one
- * primary action row.
+ * Three variants carry the three north-star prototype grammars:
+ *   - `self`   rail self popover: cover banner, overlapping avatar
+ *              (prototype SelfCardPopover / .sk-self-card)
+ *   - `author` quick identity popover opened from a message avatar
+ *              (prototype IdentityCard / .sk-author-card)
+ *   - `sheet`  centered hero inside the chat detail side sheet
+ *              (prototype .sk-profile-hero)
  *
  * The card is strictly declarative: it renders the data bag and whatever
  * `actions` node the caller passes. It MUST NOT branch on self/friend/
@@ -14,22 +18,20 @@
  * see developer plumbing.
  */
 
-import type { ReactNode } from 'react';
-import { Button, toast } from '@lobehub/ui';
-import { Flexbox } from 'react-layout-kit';
-import { Divider, Tooltip, theme, Typography } from 'antd';
-import { Copy, Link2 } from 'lucide-react';
+import type { CSSProperties, ReactNode } from 'react';
+import { IconButton, Tooltip as PtTooltip } from '@peers-touch/ui';
+import { Link2 } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
-
-const { Text } = Typography;
+import { notifyError, notifySuccess } from '../../ui/feedback';
+import './profileCard.css';
 
 // ─── Model ──────────────────────────────────────────────────────────────────
 
 export interface PublicProfileModel {
   displayName: string;
   avatar?: string;
-  /** Banner/background image URL. Empty renders the neutral gradient. */
+  /** Banner/background image URL. Empty renders the primary wash. */
   header?: string;
   /** Bare username; combined with homeStationDomain into the @user@host handle. */
   username?: string;
@@ -56,12 +58,14 @@ export interface PublicProfileModel {
   tags?: string[];
   links?: { label?: string; url?: string }[];
   relationLabel?: string;
-  relationTone?: 'default' | 'success' | 'warning' | 'processing' | (string & {});
+  relationTone?: 'success' | 'warning' | 'processing' | 'default' | (string & {});
   badges?: { label: string; tone: 'success' | 'warning' | (string & {}) }[];
   stats?: { label: string; value: number }[];
 }
 
 // ─── Props ──────────────────────────────────────────────────────────────────
+
+export type ProfileCardVariant = 'self' | 'author' | 'sheet';
 
 interface PublicProfileCardProps {
   profile: PublicProfileModel;
@@ -71,10 +75,8 @@ interface PublicProfileCardProps {
    * behaviour.
    */
   actions?: ReactNode;
-  /** Compact density for popovers. */
-  compact?: boolean;
-  /** Replace the avatar slot (e.g. group composite avatar). */
-  avatarNode?: ReactNode;
+  /** Surface grammar; see class doc. */
+  variant?: ProfileCardVariant;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -84,22 +86,9 @@ function getInitial(name: string): string {
   return trimmed ? trimmed.charAt(0).toUpperCase() : '?';
 }
 
-function toneToColor(tone: string | undefined, token: ReturnType<typeof theme.useToken>['token']): string {
-  switch (tone) {
-    case 'success': return token.colorSuccess;
-    case 'warning': return token.colorWarning;
-    case 'processing': return token.colorInfo;
-    default: return token.colorTextSecondary;
-  }
-}
-
-function toneToBg(tone: string | undefined, token: ReturnType<typeof theme.useToken>['token']): string {
-  switch (tone) {
-    case 'success': return token.colorSuccessBg;
-    case 'warning': return token.colorWarningBg;
-    case 'processing': return token.colorInfoBg;
-    default: return token.colorFillTertiary;
-  }
+function pillTone(tone: string | undefined): string {
+  if (tone === 'success' || tone === 'warning' || tone === 'processing') return tone;
+  return 'default';
 }
 
 async function copyText(
@@ -128,9 +117,9 @@ async function copyText(
   };
   try {
     await copy();
-    toast.success(copiedLabel);
+    notifySuccess(copiedLabel);
   } catch {
-    toast.error(copyFailedLabel);
+    notifyError(copyFailedLabel);
   }
 }
 
@@ -145,291 +134,244 @@ function safeUrl(url: string): string | null {
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export function PublicProfileCard({ profile, actions, compact = true, avatarNode }: PublicProfileCardProps) {
-  const { token } = theme.useToken();
-  const avatarSize = compact ? 56 : 72;
-  const avatarRadius = compact ? 14 : 18;
-  const bannerHeight = compact ? 84 : 104;
+export function PublicProfileCard({
+  profile,
+  actions,
+  variant = 'author',
+}: PublicProfileCardProps) {
   const links = (profile.links ?? []).filter((link) => link.url && safeUrl(link.url));
+  const identityLines = (profile.identityMetadata ?? []).filter(Boolean);
 
-  return (
-    <Flexbox
-      data-chat-profile-card
-      data-chat-avatar-ptid={profile.did || ''}
-      data-chat-avatar-src={profile.avatar || ''}
-      gap={0}
-      style={{ width: '100%', overflow: 'hidden' }}
-    >
-      {/* Banner */}
-      <div
-        data-chat-profile-banner={profile.header ? 'image' : 'gradient'}
-        style={{
-          width: '100%',
-          height: bannerHeight,
-          borderRadius: 12,
-          background: profile.header
-            ? `url(${profile.header}) center/cover no-repeat, ${token.colorFillQuaternary}`
-            : `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
-          flexShrink: 0,
-        }}
-      />
+  const avatarGeometry: Record<ProfileCardVariant, { size: number; radius: number }> = {
+    self: { size: 64, radius: 16 },
+    author: { size: 44, radius: 12 },
+    sheet: { size: 72, radius: 18 },
+  };
+  const avatar = (
+    <UserSquareAvatar
+      remoteUrl={profile.avatar}
+      actorPtid={profile.did || null}
+      name={profile.displayName}
+      size={avatarGeometry[variant].size}
+      radius={avatarGeometry[variant].radius}
+      background="var(--pt-subtle)"
+      fallback={getInitial(profile.displayName)}
+      style={{
+        color: 'var(--pt-secondary)',
+        fontSize: Math.round(avatarGeometry[variant].size * 0.4),
+        fontWeight: 700,
+      }}
+    />
+  );
 
-      <Flexbox gap={12} style={{ padding: '0 4px' }}>
-        {/* Avatar overlaps the banner; name/handle sit beside it on the body
-            background so a two-line name never lands on the image. */}
-        <Flexbox horizontal gap={12} align="flex-start" style={{ marginTop: -avatarSize / 2 }}>
-          {avatarNode ?? (
-            <div
-              style={{
-                marginTop: 0,
-                borderRadius: avatarRadius + 2,
-                lineHeight: 0,
-                boxShadow: `0 0 0 2px ${token.colorBgContainer}`,
-                flexShrink: 0,
-              }}
-            >
-              <UserSquareAvatar
-                remoteUrl={profile.avatar}
-                actorPtid={profile.did || null}
-                name={profile.displayName}
-                size={avatarSize}
-                radius={avatarRadius}
-                background={token.colorFillSecondary}
-                fallback={getInitial(profile.displayName)}
-                style={{
-                  color: token.colorTextSecondary,
-                  fontSize: Math.round(avatarSize * 0.4),
-                  fontWeight: 700,
+  const handle = profile.username ? (
+    <FederatedHandle
+      localPart={profile.username}
+      home={profile.homeStationDomain}
+      fontSize={12}
+    />
+  ) : null;
+
+  const bio = profile.bio ? (
+    <p className="pp-bio" title={profile.bio}>{profile.bio}</p>
+  ) : null;
+
+  const relationPill = profile.relationLabel ? (
+    <div className="pp-pills">
+      <span
+        className="pp-pill"
+        data-chat-profile-relation={profile.relationLabel}
+        data-tone={pillTone(profile.relationTone)}
+      >
+        {profile.relationLabel}
+      </span>
+    </div>
+  ) : null;
+
+  const badgePills = profile.badges && profile.badges.length > 0 ? (
+    <div className="pp-pills">
+      {profile.badges.map((badge) => (
+        <span key={badge.label} className="pp-pill" data-tone={pillTone(badge.tone)}>
+          {badge.label}
+        </span>
+      ))}
+    </div>
+  ) : null;
+
+  const statBlock = profile.stats && profile.stats.length > 0 ? (
+    <div className={`pp-stats pp-stats--${variant}`}>
+      {profile.stats.map((stat) => (
+        <span key={stat.label} className="pp-stat">
+          <strong>{stat.value}</strong>
+          {stat.label}
+        </span>
+      ))}
+    </div>
+  ) : null;
+
+  const metaLine = (profile.joined || profile.region) ? (
+    <div className="pp-meta-line">
+      {profile.joined ? <span>{profile.joined}</span> : null}
+      {profile.region ? <span>{profile.region}</span> : null}
+    </div>
+  ) : null;
+
+  const tagPills = profile.tags && profile.tags.length > 0 ? (
+    <div className="pp-pills">
+      {profile.tags.map((tag) => (
+        <span key={tag} className="pp-pill">{tag}</span>
+      ))}
+    </div>
+  ) : null;
+
+  const linkBlock = links.length > 0 ? (
+    <div className="pp-links">
+      {links.map((link, index) => {
+        const href = safeUrl(link.url as string);
+        if (!href) return null;
+        return (
+          <a
+            key={`${href}-${index}`}
+            className="pp-link"
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Link2 size={12} style={{ flexShrink: 0 }} />
+            <span>{link.label?.trim() || href}</span>
+          </a>
+        );
+      })}
+    </div>
+  ) : null;
+
+  const actionBlock = actions ? (
+    <div className="pp-actions">{actions}</div>
+  ) : null;
+
+  const technicalDetails = profile.technicalDetails && profile.technicalDetails.length > 0 ? (
+    <details className="pp-details" data-chat-profile-technical-details>
+      <summary>{profile.technicalDetailsLabel}</summary>
+      <div className="pp-details__rows">
+        {profile.technicalDetails.map((detail) => (
+          <div
+            key={detail.id}
+            className="pp-details__row"
+            data-chat-profile-technical-detail={detail.id}
+          >
+            <span className="pp-details__label">{detail.label}</span>
+            <span className="pp-details__value" title={detail.value}>{detail.value}</span>
+            <PtTooltip label={detail.copyLabel}>
+              <IconButton
+                iconId="copy"
+                iconSize={13}
+                emphasis="quiet"
+                density="compact"
+                actionId={`profile.copy.${detail.id}`}
+                label={detail.copyLabel}
+                data-chat-profile-copy={detail.id}
+                onActivate={() => {
+                  void copyText(detail.value, detail.copiedLabel, detail.copyFailedLabel);
                 }}
               />
-            </div>
-          )}
+            </PtTooltip>
+          </div>
+        ))}
+      </div>
+    </details>
+  ) : null;
 
-          <Flexbox gap={2} style={{ paddingTop: avatarSize / 2 + 4, minWidth: 0, flex: 1 }}>
-            <Text
-              strong
-              ellipsis={{ tooltip: profile.displayName }}
-              style={{ fontSize: compact ? 16 : 18, lineHeight: 1.3 }}
-            >
-              {profile.displayName}
-            </Text>
-            <FederatedHandle
-              localPart={profile.username ?? ''}
-              home={profile.homeStationDomain}
-              fontSize={12}
-            />
-          </Flexbox>
-        </Flexbox>
+  const rootData = {
+    'data-chat-profile-card': true,
+    'data-chat-avatar-ptid': profile.did || '',
+    'data-chat-avatar-src': profile.avatar || '',
+  } as const;
 
-        {profile.identityMetadata && profile.identityMetadata.length > 0 ? (
-          <Flexbox gap={2} style={{ maxWidth: '100%' }}>
-            {profile.identityMetadata.filter(Boolean).map((value) => (
-              <Text
-                key={value}
-                type="secondary"
-                ellipsis={{ tooltip: value }}
-                style={{ fontSize: 11, lineHeight: 1.3, maxWidth: '100%' }}
-              >
-                {value}
-              </Text>
-            ))}
-          </Flexbox>
-        ) : null}
-
-        {/* Intro */}
-        {profile.bio ? (
-          <Text
-            ellipsis={{ tooltip: profile.bio }}
-            style={{
-              fontSize: 13,
-              lineHeight: 1.5,
-              color: token.colorText,
-              maxWidth: '100%',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            {profile.bio}
-          </Text>
-        ) : null}
-
-        {/* Relation badge */}
-        {profile.relationLabel ? (
-          <Flexbox horizontal>
-            <Text
-              data-chat-profile-relation={profile.relationLabel}
-              style={{
-                fontSize: 11,
-                padding: '2px 10px',
-                borderRadius: 999,
-                background: toneToBg(profile.relationTone, token),
-                color: toneToColor(profile.relationTone, token),
-                fontWeight: 500,
-              }}
-            >
-              {profile.relationLabel}
-            </Text>
-          </Flexbox>
-        ) : null}
-
-        {/* Badges */}
-        {profile.badges && profile.badges.length > 0 ? (
-          <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
-            {profile.badges.map((badge) => (
-              <Text
-                key={badge.label}
-                style={{
-                  fontSize: 11,
-                  padding: '2px 8px',
-                  borderRadius: 999,
-                  background: toneToBg(badge.tone, token),
-                  color: toneToColor(badge.tone, token),
-                  fontWeight: 500,
-                }}
-              >
-                {badge.label}
-              </Text>
-            ))}
-          </Flexbox>
-        ) : null}
-
-        {/* Practical stats */}
-        {profile.stats && profile.stats.length > 0 ? (
-          <Flexbox horizontal gap={18} style={{ flexWrap: 'wrap' }}>
-            {profile.stats.map((stat) => (
-              <Flexbox key={stat.label} gap={0}>
-                <Text strong style={{ fontSize: 15, lineHeight: 1.2 }}>{stat.value}</Text>
-                <Text type="secondary" style={{ fontSize: 11 }}>{stat.label}</Text>
-              </Flexbox>
-            ))}
-          </Flexbox>
-        ) : null}
-
-        {/* Joined / region */}
-        {(profile.joined || profile.region) ? (
-          <Flexbox horizontal gap={8} style={{ flexWrap: 'wrap' }}>
-            {profile.joined ? (
-              <Text type="secondary" style={{ fontSize: 11 }}>{profile.joined}</Text>
-            ) : null}
-            {profile.region ? (
-              <Text type="secondary" style={{ fontSize: 11 }}>{profile.region}</Text>
-            ) : null}
-          </Flexbox>
-        ) : null}
-
-        {/* Tags */}
-        {profile.tags && profile.tags.length > 0 ? (
-          <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap' }}>
-            {profile.tags.map((tag) => (
-              <Text
-                key={tag}
-                style={{
-                  fontSize: 11,
-                  padding: '1px 8px',
-                  borderRadius: 999,
-                  background: token.colorFillTertiary,
-                  color: token.colorTextSecondary,
-                }}
-              >
-                {tag}
-              </Text>
-            ))}
-          </Flexbox>
-        ) : null}
-
-        {/* Links */}
-        {links.length > 0 ? (
-          <Flexbox gap={4}>
-            {links.map((link, index) => {
-              const href = safeUrl(link.url as string);
-              if (!href) return null;
-              return (
-                <a
-                  key={`${href}-${index}`}
-                  href={href}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    fontSize: 12,
-                    color: token.colorPrimary,
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <Link2 size={12} style={{ flexShrink: 0 }} />
-                  {link.label?.trim() || href}
-                </a>
-              );
-            })}
-          </Flexbox>
-        ) : null}
-
-        {actions ? (
-          <>
-            <Divider style={{ margin: '4px 0 0' }} />
-            <Flexbox style={{ width: '100%' }}>{actions}</Flexbox>
-          </>
-        ) : null}
-
-        {/* Raw identity disclosure — CHAT-UR09: expandable/copyable only. */}
-        {profile.technicalDetails && profile.technicalDetails.length > 0 ? (
-          <details data-chat-profile-technical-details style={{ color: token.colorTextSecondary }}>
-            <summary
-              style={{
-                cursor: 'pointer',
-                fontSize: 12,
-                userSelect: 'none',
-              }}
-            >
-              {profile.technicalDetailsLabel}
-            </summary>
-            <Flexbox gap={6} style={{ paddingTop: 8 }}>
-              {profile.technicalDetails.map((detail) => (
-                <Flexbox
-                  key={detail.id}
-                  data-chat-profile-technical-detail={detail.id}
-                  horizontal
-                  align="center"
-                  gap={8}
-                  style={{
-                    minWidth: 0,
-                    padding: '6px 8px',
-                    borderRadius: 6,
-                    background: token.colorFillQuaternary,
-                  }}
-                >
-                  <Text type="secondary" style={{ flexShrink: 0, fontSize: 11 }}>
-                    {detail.label}
-                  </Text>
-                  <Text
-                    ellipsis={{ tooltip: detail.value }}
-                    style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: 11 }}
-                  >
-                    {detail.value}
-                  </Text>
-                  <Tooltip title={detail.copyLabel}>
-                    <Button
-                      data-chat-profile-copy={detail.id}
-                      type="text"
-                      size="small"
-                      icon={<Copy size={13} />}
-                      aria-label={detail.copyLabel}
-                      onClick={() => {
-                        void copyText(detail.value, detail.copiedLabel, detail.copyFailedLabel);
-                      }}
-                    />
-                  </Tooltip>
-                </Flexbox>
+  if (variant === 'self') {
+    const bannerStyle: CSSProperties | undefined = profile.header
+      ? { backgroundImage: `url("${profile.header}")` }
+      : undefined;
+    return (
+      <div className="pp-card pp-card--self" {...rootData}>
+        <div
+          className="pp-self-banner"
+          data-chat-profile-banner={profile.header ? 'image' : 'gradient'}
+          style={bannerStyle}
+        />
+        <div className="pp-self-body">
+          <div className="pp-self-avatar">{avatar}</div>
+          <div className="pp-self-name" title={profile.displayName}>{profile.displayName}</div>
+          {handle ? <div className="pp-self-handle">{handle}</div> : null}
+          {identityLines.length > 0 ? (
+            <div className="pp-self-identity">
+              {identityLines.map((value) => (
+                <span key={value} className="pp-author-station" title={value}>{value}</span>
               ))}
-            </Flexbox>
-          </details>
-        ) : null}
-      </Flexbox>
-    </Flexbox>
+            </div>
+          ) : null}
+          {statBlock}
+          {metaLine ? <div className="pp-self-joined">{metaLine}</div> : null}
+          {bio}
+          {relationPill}
+          {badgePills}
+          {tagPills}
+          {linkBlock}
+          {actionBlock}
+          {technicalDetails}
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === 'sheet') {
+    return (
+      <div className="pp-card pp-card--sheet" {...rootData}>
+        <section className="pp-sheet-hero" data-profile-identity>
+          <div className="pp-sheet-avatar">{avatar}</div>
+          <strong className="pp-sheet-name">{profile.displayName}</strong>
+          <div className="pp-sheet-sub">
+            {identityLines.map((value) => <span key={value}>{value}</span>)}
+            {handle}
+          </div>
+        </section>
+        <div className="pp-sheet-body">
+          {bio}
+          {relationPill}
+          {badgePills}
+          {statBlock}
+          {metaLine}
+          {tagPills}
+          {linkBlock}
+          {actionBlock}
+          {technicalDetails}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pp-card pp-card--author" {...rootData}>
+      <header className="pp-author-head">
+        {avatar}
+        <div className="pp-author-idcol">
+          <strong className="pp-author-name" title={profile.displayName}>
+            {profile.displayName}
+          </strong>
+          {handle}
+          {identityLines.map((value) => (
+            <span key={value} className="pp-author-station" title={value}>{value}</span>
+          ))}
+        </div>
+      </header>
+      {bio}
+      {relationPill}
+      {badgePills}
+      {statBlock}
+      {metaLine}
+      {tagPills}
+      {linkBlock}
+      {actionBlock}
+      {technicalDetails}
+    </div>
   );
 }

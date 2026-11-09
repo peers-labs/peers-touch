@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { theme, Tooltip } from 'antd';
+import { Tooltip } from '@peers-touch/ui';
 import { Download, FileText, Image, Music, Video } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -37,16 +36,15 @@ export function MessageAttachments({ attachments, marginBottom = false }: Messag
   if (attachments.length === 0) return null;
 
   return (
-    <Flexbox horizontal gap={8} wrap="wrap" style={{ marginBottom: marginBottom ? 8 : 0 }}>
+    <div className={`sc-msg-attachments${marginBottom ? ' has-margin' : ''}`}>
       {attachments.map((item) => (
         <MessageAttachmentItem key={item.cid} item={item} />
       ))}
-    </Flexbox>
+    </div>
   );
 }
 
 function MessageAttachmentItem({ item }: { item: ChatComposerAttachment }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const resolvedUrl = useOssAttachmentUrl(item.cid);
   const downloadUrl = resolvedUrl || item.url || item.previewUrl;
@@ -59,24 +57,13 @@ function MessageAttachmentItem({ item }: { item: ChatComposerAttachment }) {
     if (downloadUrl) window.open(downloadUrl, '_blank');
   };
 
-  return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={8}
+  const card = (
+    <div
+      className={`sc-msg-attachment${downloadUrl ? ' is-clickable' : ''}`}
       data-pt-agent-message-attachment={item.attachment?.attachment_id ?? item.cid}
       role={downloadUrl ? 'button' : undefined}
       tabIndex={downloadUrl ? 0 : undefined}
       aria-label={downloadUrl ? t('chat.input.attachmentDownload') : undefined}
-      style={{
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: 8,
-        padding: '8px 10px',
-        background: token.colorFillQuaternary,
-        minWidth: 180,
-        maxWidth: 280,
-        cursor: downloadUrl ? 'pointer' : 'default',
-      }}
       onClick={openAttachment}
       onKeyDown={(event) => {
         if (downloadUrl && (event.key === 'Enter' || event.key === ' ')) {
@@ -87,34 +74,29 @@ function MessageAttachmentItem({ item }: { item: ChatComposerAttachment }) {
     >
       {isImage && downloadUrl ? (
         <img
+          className="sc-msg-attachment__thumb"
           src={downloadUrl}
           alt={item.filename || t('chat.input.attachmentFallbackName')}
-          style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }}
         />
       ) : (
-        <Icon size={18} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
+        <Icon size={18} className="sc-msg-attachment__type-icon" />
       )}
-      <Flexbox style={{ minWidth: 0, flex: 1 }}>
-        <span
-          style={{
-            fontSize: 13,
-            color: token.colorText,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
+      <div className="sc-msg-attachment__body">
+        <span className="sc-msg-attachment__name">
           {item.filename || t('chat.input.attachmentFallbackName')}
         </span>
-        <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
-          {formatSize(item.size)}
-        </span>
-      </Flexbox>
+        <span className="sc-msg-attachment__size">{formatSize(item.size)}</span>
+      </div>
       {downloadUrl && (
-        <Tooltip title={t('chat.input.attachmentDownload')}>
-          <Download size={14} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />
-        </Tooltip>
+        <Download size={14} className="sc-msg-attachment__download" />
       )}
-    </Flexbox>
+    </div>
+  );
+
+  if (!downloadUrl) return card;
+  return (
+    <Tooltip label={t('chat.input.attachmentDownload')}>
+      {card}
+    </Tooltip>
   );
 }

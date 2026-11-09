@@ -1,0 +1,207 @@
+/* PublicProfileCard — one declarative identity card with three surface
+ * grammars taken verbatim from the north-star prototype:
+ *   self   rail self popover        (.sk-self-card)
+ *   author message-avatar popover   (.sk-author-card)
+ *   sheet  chat detail side sheet   (.sk-profile-hero)
+ * The card only paints; relationship actions arrive through `actions`. */
+
+.pp-card { font-family: inherit; }
+
+/* ── self popover ───────────────────────────────────────────────────────── */
+.pp-card--self { width: 300px; background: var(--pt-surface); }
+.pp-self-banner {
+  height: 92px;
+  background: linear-gradient(120deg,
+    color-mix(in srgb, var(--pt-primary) 42%, transparent),
+    color-mix(in srgb, var(--pt-primary) 10%, transparent));
+  background-position: center;
+  background-size: cover;
+}
+/* padding-top (not a child margin) owns overlap clearance, mirroring the
+   prototype: a first-child margin would collapse through the body edge. */
+.pp-self-body {
+  position: relative;
+  padding: 44px 16px 14px;
+  display: flex;
+  flex-direction: column;
+}
+/* 64px avatar overlaps the banner 28px with a card-colored ring. */
+.pp-self-avatar {
+  position: absolute;
+  top: -28px;
+  left: 16px;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  overflow: hidden;
+  line-height: 0;
+  box-shadow: 0 0 0 4px var(--pt-surface), 0 6px 16px rgba(15, 23, 42, .18);
+}
+.pp-self-name {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pp-self-handle { margin-top: 2px; font-size: 12px; min-width: 0; }
+.pp-self-identity { margin-top: 2px; display: flex; flex-direction: column; gap: 2px; }
+
+/* ── author quick popover ───────────────────────────────────────────────── */
+.pp-card--author {
+  box-sizing: border-box;
+  width: 264px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pp-author-head { display: flex; align-items: center; gap: 10px; }
+.pp-author-idcol { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pp-author-name {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pp-author-station {
+  font-size: 11.5px;
+  color: var(--pt-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── sheet hero ─────────────────────────────────────────────────────────── */
+.pp-card--sheet { display: flex; flex-direction: column; }
+.pp-sheet-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 12px;
+}
+.pp-sheet-avatar {
+  line-height: 0;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pt-text) 8%, transparent);
+}
+.pp-sheet-name {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--pt-text);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.pp-sheet-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11.5px;
+  color: var(--pt-muted);
+  text-align: center;
+}
+.pp-sheet-body { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 8px; }
+.pp-card--sheet .pp-pills,
+.pp-card--sheet .pp-stats { justify-content: center; }
+
+/* ── shared identity sections ───────────────────────────────────────────── */
+.pp-bio {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--pt-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.pp-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pp-pill {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+  color: var(--pt-secondary);
+  font-weight: 500;
+}
+.pp-pill[data-tone='success'] {
+  color: var(--pt-success);
+  background: color-mix(in srgb, var(--pt-success) 12%, transparent);
+}
+.pp-pill[data-tone='warning'] {
+  color: var(--pt-warning);
+  background: color-mix(in srgb, var(--pt-warning) 12%, transparent);
+}
+.pp-pill[data-tone='processing'] {
+  color: var(--pt-primary);
+  background: color-mix(in srgb, var(--pt-primary) 12%, transparent);
+}
+.pp-stats { display: flex; flex-wrap: wrap; align-items: center; }
+.pp-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11.5px;
+  color: var(--pt-muted);
+}
+.pp-stat strong { font-size: 13px; font-weight: 650; color: var(--pt-text); }
+.pp-stats--author { gap: 12px; font-size: 12px; }
+.pp-stats--author .pp-stat { flex-direction: row; align-items: baseline; gap: 3px; font-size: 12px; }
+.pp-stats--self { gap: 20px; margin-top: 12px; }
+.pp-stats--sheet { gap: 20px; }
+.pp-stats--self .pp-stat strong,
+.pp-stats--sheet .pp-stat strong { font-size: 16px; }
+.pp-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--pt-muted);
+}
+.pp-self-joined { margin-top: 9px; }
+.pp-links { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pp-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--pt-primary);
+  max-width: 100%;
+}
+.pp-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pp-self-body .pp-actions { margin-top: 13px; }
+
+/* Raw identity disclosure: quiet expandable technical plumbing. */
+.pp-details { color: var(--pt-secondary); border: 0; padding: 0; }
+.pp-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+  color: var(--pt-secondary);
+}
+.pp-details__rows { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.pp-details__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+}
+.pp-details__label { flex-shrink: 0; font-size: 11px; color: var(--pt-muted); }
+.pp-details__value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pt-mono);
+  font-size: 11px;
+  color: var(--pt-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

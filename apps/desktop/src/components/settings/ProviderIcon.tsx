@@ -1,40 +1,29 @@
-import Doubao from '@lobehub/icons/es/Doubao';
-import OpenAI from '@lobehub/icons/es/OpenAI';
-import Anthropic from '@lobehub/icons/es/Anthropic';
-import Google from '@lobehub/icons/es/Google';
-import DeepSeek from '@lobehub/icons/es/DeepSeek';
-import Ollama from '@lobehub/icons/es/Ollama';
-import OpenRouter from '@lobehub/icons/es/OpenRouter';
-import Mistral from '@lobehub/icons/es/Mistral';
-import Groq from '@lobehub/icons/es/Groq';
-import Together from '@lobehub/icons/es/Together';
-import Cohere from '@lobehub/icons/es/Cohere';
-import Codex from '@lobehub/icons/es/Codex';
-import ClaudeCode from '@lobehub/icons/es/ClaudeCode';
-import Cursor from '@lobehub/icons/es/Cursor';
-import Trae from '@lobehub/icons/es/Trae';
-import { theme } from 'antd';
+import { BrandMark } from '@peers-touch/ui';
+import type { BrandId } from '@peers-touch/ui';
 
-type IconComponent = React.ComponentType<{ size?: number | string; style?: React.CSSProperties }>;
-
-const ICON_MAP: Record<string, IconComponent> = {
-  ark: Doubao.Color,
-  doubao: Doubao.Color,
-  openai: OpenAI,
-  anthropic: Anthropic,
-  google: Google.Color,
-  deepseek: DeepSeek.Color,
-  ollama: Ollama,
-  openrouter: OpenRouter,
-  mistral: Mistral.Color,
-  groq: Groq,
-  together: Together.Color,
-  cohere: Cohere.Color,
-  // CLI providers reuse their official brand marks.
-  'codex-cli': Codex,
-  'claude-cli': ClaudeCode.Color,
-  'cursor-cli': Cursor,
-  'trae-cli': Trae.Color,
+/**
+ * Provider brand marks render through the peers-ui BrandMark catalog so the
+ * AI settings surface uses one monochrome, currentColor brand grammar (the
+ * north-star quiet-icon style) instead of full-color third-party logo
+ * packages. Unknown providers fall back to an initial-letter ink tile.
+ */
+const PROVIDER_BRAND_MAP: Record<string, BrandId> = {
+  ark: 'doubao',
+  doubao: 'doubao',
+  openai: 'openai',
+  anthropic: 'anthropic',
+  google: 'google',
+  deepseek: 'deepseek',
+  ollama: 'ollama',
+  openrouter: 'openrouter',
+  mistral: 'mistral',
+  groq: 'groq',
+  together: 'together',
+  cohere: 'cohere',
+  'codex-cli': 'codex',
+  'claude-cli': 'claude',
+  'cursor-cli': 'cursor',
+  'trae-cli': 'trae',
 };
 
 interface Props {
@@ -44,17 +33,20 @@ interface Props {
 }
 
 export function ProviderIcon({ providerId, providerName, size = 32 }: Props) {
-  const { token } = theme.useToken();
-  const Icon = ICON_MAP[providerId];
+  const brandId = PROVIDER_BRAND_MAP[providerId];
 
-  if (Icon) {
+  if (brandId) {
     return (
-      <div
+      <span
+        className="sc-provider-icon"
+        data-provider-icon={providerId}
         style={{
           width: size,
           height: size,
           borderRadius: '50%',
-          background: token.colorBgContainer,
+          background: 'var(--pt-surface)',
+          border: '1px solid var(--pt-border)',
+          color: 'var(--pt-text)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -62,28 +54,30 @@ export function ProviderIcon({ providerId, providerName, size = 32 }: Props) {
           overflow: 'hidden',
         }}
       >
-        <Icon size={size * 0.7} />
-      </div>
+        <BrandMark brandId={brandId} size={size * 0.62} label={providerName ?? providerId} />
+      </span>
     );
   }
 
   return (
-    <div
+    <span
+      className="sc-provider-icon sc-provider-icon--fallback"
+      data-provider-icon={providerId}
       style={{
         width: size,
         height: size,
         borderRadius: size * 0.25,
-        background: token.colorPrimary,
+        background: 'var(--pt-primary)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: '#fff',
+        color: 'var(--pt-onPrimary)',
         fontSize: size * 0.44,
         fontWeight: 700,
         flexShrink: 0,
       }}
     >
       {(providerName || providerId).charAt(0).toUpperCase()}
-    </div>
+    </span>
   );
 }

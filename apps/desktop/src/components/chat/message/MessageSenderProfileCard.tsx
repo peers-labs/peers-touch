@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Spin } from 'antd';
+import { Spin as PtSpin } from '@peers-touch/ui';
 
 import { useSocialChatStore } from '../../../store/socialChat';
 import { useFederationStore, resolveFederationStationName } from '../../../store/federation';
@@ -148,18 +147,18 @@ export function MessageSenderProfileCard({
   ]);
 
   return (
-    <Flexbox style={{ width: 320 }}>
+    <div data-sender-profile-card>
       {isSelf && !selfProfile && !selfLoadFailed ? (
-        <Flexbox align="center" justify="center" style={{ height: 120 }}>
-          <Spin size="small" />
-        </Flexbox>
+        <div className="sc-sender-profile__loading">
+          <PtSpin size="small" />
+        </div>
       ) : (
         <PublicProfileCard
-          compact
+          variant="author"
           profile={profile}
           actions={<ProfilePrimaryAction actorPtid={senderPtid} />}
         />
       )}
-    </Flexbox>
+    </div>
   );
 }

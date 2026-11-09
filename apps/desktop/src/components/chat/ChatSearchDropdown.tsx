@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Empty, theme, type GlobalToken } from 'antd';
+import { Empty as PtEmpty } from '@peers-touch/ui';
 import { Search } from 'lucide-react';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
@@ -14,7 +13,6 @@ interface ChatSearchDropdownProps {
 }
 
 export function ChatSearchDropdown({ searchText, results, onSelect, onDismiss }: ChatSearchDropdownProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
   const contacts = results.filter((c) => c.kind === 'friend');
@@ -26,88 +24,49 @@ export function ChatSearchDropdown({ searchText, results, onSelect, onDismiss }:
     <>
       {onDismiss && (
         <div
+          className="sc-search-dropdown__scrim"
+          aria-hidden="true"
           onClick={onDismiss}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 19,
-          }}
         />
       )}
-      <div
-        style={{
-          position: 'absolute',
-          top: 48,
-          left: 12,
-          right: 12,
-          zIndex: 20,
-        background: token.colorBgElevated,
-        borderRadius: 10,
-        boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
-        border: `1px solid ${token.colorBorderSecondary}`,
-        minHeight: '30%',
-        maxHeight: 'calc(100% - 60px)',
-        overflow: 'auto',
-        padding: '6px 0',
-      }}
-    >
-      {results.length === 0 ? (
-        <Flexbox align="center" justify="center" style={{ padding: '24px 0' }}>
-          <Empty
-            image={<Search size={24} style={{ color: token.colorTextQuaternary }} />}
-            imageStyle={{ height: 28 }}
+      <div className="sc-search-dropdown">
+        {results.length === 0 ? (
+          <PtEmpty
+            className="sc-search-dropdown__empty"
+            icon={<Search size={24} />}
             description={
-              <span style={{ fontSize: 12, color: token.colorTextTertiary }}>
+              <span className="sc-search-dropdown__empty-label">
                 {t('chat.social.sessionList.noResults')}
               </span>
             }
           />
-        </Flexbox>
-      ) : (
-        <>
-          {contacts.length > 0 && (
-            <Section token={token} label={t('chat.social.contacts.friends')}>
-              {contacts.map((c) => (
-                <ResultRow key={c.id} conversation={c} token={token} onSelect={onSelect} />
-              ))}
-            </Section>
-          )}
-          {groups.length > 0 && (
-            <Section token={token} label={t('chat.social.sessionList.groups')}>
-              {groups.map((c) => (
-                <ResultRow key={c.id} conversation={c} token={token} onSelect={onSelect} />
-              ))}
-            </Section>
-          )}
-        </>
-      )}
-    </div>
+        ) : (
+          <>
+            {contacts.length > 0 && (
+              <Section label={t('chat.social.contacts.friends')}>
+                {contacts.map((c) => (
+                  <ResultRow key={c.id} conversation={c} onSelect={onSelect} />
+                ))}
+              </Section>
+            )}
+            {groups.length > 0 && (
+              <Section label={t('chat.social.sessionList.groups')}>
+                {groups.map((c) => (
+                  <ResultRow key={c.id} conversation={c} onSelect={onSelect} />
+                ))}
+              </Section>
+            )}
+          </>
+        )}
+      </div>
     </>
   );
 }
 
-function Section({
-  token,
-  label,
-  children,
-}: {
-  token: GlobalToken;
-  label: string;
-  children: React.ReactNode;
-}) {
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ padding: '2px 0' }}>
-      <div
-        style={{
-          padding: '4px 14px',
-          fontSize: 11,
-          fontWeight: 600,
-          color: token.colorTextTertiary,
-          letterSpacing: 0.3,
-        }}
-      >
-        {label}
-      </div>
+    <div className="sc-search-dropdown__section">
+      <div className="sc-search-dropdown__section-label">{label}</div>
       {children}
     </div>
   );
@@ -115,11 +74,9 @@ function Section({
 
 function ResultRow({
   conversation,
-  token,
   onSelect,
 }: {
   conversation: DesktopIMConversationProjection;
-  token: GlobalToken;
   onSelect: (c: DesktopIMConversationProjection) => void;
 }) {
   const { t } = useTranslation('chat');
@@ -137,6 +94,7 @@ function ResultRow({
   return (
     <button
       type="button"
+      className="sc-search-dropdown__row"
       aria-label={name}
       data-chat-search-result
       data-chat-search-result-id={conversation.id}
@@ -147,53 +105,20 @@ function ResultRow({
       data-chat-identity-home-station-peer-id={conversation.homeStationPeerId || ''}
       data-chat-identity-federation-id={conversation.federationId || ''}
       onClick={() => onSelect(conversation)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        width: '100%',
-        padding: '8px 14px',
-        border: 'none',
-        background: 'transparent',
-        color: 'inherit',
-        font: 'inherit',
-        textAlign: 'left',
-        cursor: 'pointer',
-        transition: 'background 0.12s',
-      }}
-      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillQuaternary; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       <UserSquareAvatar remoteUrl={conversation.avatar} name={name} size={30} />
-      <Flexbox flex={1} gap={2} style={{ minWidth: 0 }}>
-        <span
-          style={{
-            fontSize: 13,
-            fontWeight: 500,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {name}
-        </span>
+      <span className="sc-search-dropdown__row-body">
+        <span className="sc-search-dropdown__row-name">{name}</span>
         {identityMetadata ? (
           <span
+            className="sc-search-dropdown__row-meta"
             data-chat-identity-metadata
             title={identityMetadata}
-            style={{
-              color: token.colorTextSecondary,
-              fontSize: 11,
-              lineHeight: 1.2,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
           >
             {identityMetadata}
           </span>
         ) : null}
-      </Flexbox>
+      </span>
     </button>
   );
 }

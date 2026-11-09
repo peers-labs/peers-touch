@@ -1,4 +1,3 @@
-import { Tag, theme } from 'antd';
 import {
   BookOpenText,
   Brain,
@@ -11,7 +10,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Flexbox } from 'react-layout-kit';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -115,24 +113,13 @@ export function TurnAttribution({
 }: {
   projection?: TurnAttributionProjection;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
 
   if (!projection) return null;
   if (projection.state === TurnAttributionState.UNAVAILABLE) {
     return (
-      <span
-        data-turn-attribution-state="unavailable"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 5,
-          marginTop: 8,
-          color: token.colorTextTertiary,
-          fontSize: 11,
-        }}
-      >
+      <span className="sc-attribution-unavailable" data-turn-attribution-state="unavailable">
         <FileText size={12} />
         {t('chat.message.attribution.unavailable')}
       </span>
@@ -149,16 +136,13 @@ export function TurnAttribution({
 
   return (
     <div
+      className="sc-attribution"
       data-turn-attribution
       data-turn-attribution-turn-id={projection.turnId}
       data-turn-attribution-attempt-id={projection.attemptId}
-      style={{ marginTop: 10 }}
     >
-      <Flexbox
-        horizontal
-        align="center"
-        gap={5}
-        wrap="wrap"
+      <div
+        className="sc-attribution__chips"
         aria-label={t('chat.message.attribution.sources')}
       >
         {groups.map((group) => {
@@ -195,114 +179,52 @@ export function TurnAttribution({
             <button
               key={`attribution-kind-${meta.localeKey}`}
               type="button"
+              className={`sc-attribution__chip${group.truncated ? ' is-warning' : ''}`}
               aria-expanded={open}
               aria-label={chipLabel}
               data-attribution-kind={meta.localeKey}
               data-attribution-count={group.entries.length}
               data-attribution-outcome={representativeOutcome}
               onClick={() => setOpen((value) => !value)}
-              style={{
-                minHeight: 26,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                border: `1px solid ${
-                  group.truncated
-                    ? token.colorWarningBorder
-                    : token.colorBorderSecondary
-                }`,
-                borderRadius: token.borderRadiusSM,
-                background:
-                  group.truncated
-                    ? token.colorWarningBg
-                    : token.colorFillQuaternary,
-                color:
-                  group.truncated
-                    ? token.colorWarningText
-                    : token.colorTextSecondary,
-                padding: '0 7px',
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer',
-                maxWidth: 220,
-              }}
             >
               <Icon size={12} />
-              <span
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {label}
-              </span>
+              <span className="sc-attribution__chip-label">{label}</span>
             </button>
           );
         })}
         <button
           type="button"
+          className="sc-attribution__toggle"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
-          style={{
-            minHeight: 26,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-            border: 0,
-            borderRadius: token.borderRadiusSM,
-            background: 'transparent',
-            color: token.colorTextTertiary,
-            padding: '0 6px',
-            fontSize: 11,
-            cursor: 'pointer',
-          }}
         >
           <FileText size={12} />
           {t('chat.message.attribution.sources')}
           <ChevronDown
             size={12}
-            style={{
-              transform: open ? 'rotate(180deg)' : 'none',
-              transition: 'transform 120ms ease',
-            }}
+            className="sc-attribution__chevron"
+            style={{ transform: open ? 'rotate(180deg)' : 'none' }}
           />
         </button>
-      </Flexbox>
+      </div>
 
       {open && (
         <section
+          className="sc-attribution__detail"
           aria-label={t('chat.message.attribution.details')}
-          style={{
-            marginTop: 8,
-            border: `1px solid ${token.colorBorderSecondary}`,
-            borderRadius: token.borderRadiusLG,
-            background: token.colorFillQuaternary,
-            padding: 10,
-          }}
         >
-          <Flexbox horizontal align="center" justify="space-between" gap={8}>
-            <strong style={{ color: token.colorText, fontSize: 12.5 }}>
-              {t('chat.message.attribution.sources')}
-            </strong>
-            <span
-              style={{
-                color: token.colorTextTertiary,
-                fontSize: 10.5,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {t('chat.message.attribution.pinned')}
-            </span>
-          </Flexbox>
-          <Flexbox gap={2} style={{ marginTop: 8 }}>
+          <div className="sc-attribution__detail-head">
+            <strong>{t('chat.message.attribution.sources')}</strong>
+            <span>{t('chat.message.attribution.pinned')}</span>
+          </div>
+          <div className="sc-attribution__detail-list">
             {projection.entries.map((entry) => (
               <AttributionDetail
                 entry={entry}
                 key={entry.attributionId}
               />
             ))}
-          </Flexbox>
+          </div>
         </section>
       )}
     </div>
@@ -310,101 +232,44 @@ export function TurnAttribution({
 }
 
 function AttributionDetail({ entry }: { entry: TurnAttributionEntry }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const meta = KIND_META.get(entry.kind);
   if (!meta) return null;
   const Icon = meta.icon;
   const outcomeKey = attributionOutcomeKey(entry.outcome);
   const reasonKey = REASON_KEYS[entry.reasonCode] ?? 'unknown';
+  const tone = entry.outcome === TurnAttributionOutcome.TRUNCATED
+    ? 'warning'
+    : entry.outcome === TurnAttributionOutcome.OMITTED
+      ? 'neutral'
+      : 'success';
 
   return (
     <div
+      className="sc-attribution__row"
       data-attribution-detail-kind={meta.localeKey}
       data-attribution-detail-outcome={outcomeKey}
-      style={{
-        minHeight: 46,
-        display: 'grid',
-        gridTemplateColumns: '24px minmax(0, 1fr) auto',
-        alignItems: 'center',
-        gap: 8,
-        padding: '5px 6px',
-        borderRadius: token.borderRadiusSM,
-        background: token.colorBgContainer,
-      }}
     >
-      <span
-        style={{
-          width: 24,
-          height: 24,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: token.borderRadiusSM,
-          background: token.colorFillQuaternary,
-          color: token.colorTextSecondary,
-        }}
-      >
+      <span className="sc-attribution__row-icon">
         <Icon size={13} />
       </span>
-      <span
-        style={{
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1,
-        }}
-      >
-        <span
-          style={{
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <span
-            style={{
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              color: token.colorText,
-              fontSize: 11.5,
-            }}
-          >
+      <span className="sc-attribution__row-body">
+        <span className="sc-attribution__row-title">
+          <span className="sc-attribution__row-name">
             {entry.name
               || t(`chat.message.attribution.kind.${meta.localeKey}`)}
           </span>
           {entry.version && (
-            <span
-              style={{
-                flexShrink: 0,
-                color: token.colorTextTertiary,
-                fontSize: 10.5,
-              }}
-            >
-              v{entry.version}
-            </span>
+            <span className="sc-attribution__row-version">v{entry.version}</span>
           )}
         </span>
-        <span style={{ color: token.colorTextSecondary, fontSize: 10.5 }}>
+        <span className="sc-attribution__row-reason">
           {t(`chat.message.attribution.reason.${reasonKey}`)}
         </span>
       </span>
-      <Tag
-        bordered={false}
-        color={
-          entry.outcome === TurnAttributionOutcome.TRUNCATED
-            ? 'warning'
-            : entry.outcome === TurnAttributionOutcome.OMITTED
-              ? 'default'
-              : 'success'
-        }
-        style={{ margin: 0, fontSize: 10.5 }}
-      >
+      <span className={`sc-attribution__outcome is-${tone}`}>
         {t(`chat.message.attribution.outcome.${outcomeKey}`)}
-      </Tag>
+      </span>
     </div>
   );
 }

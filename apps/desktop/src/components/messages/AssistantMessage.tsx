@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Tag, toast } from '@lobehub/ui';
-import { theme, Button, Modal } from 'antd';
+import { Button, Dialog } from '@peers-touch/ui';
 import {
   Copy,
   ChevronRight,
@@ -47,9 +45,9 @@ import { ToolCallsBlock } from './ToolCallCard';
 import { TurnArtifactBar } from './TurnArtifactBar';
 import { DocumentArtifactActions } from '../agent/workbench/DocumentArtifactActions';
 import { ThinkingIndicator } from './ThinkingBlock';
-import { chatMarkdownProps } from './markdownConfig';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
 import { TurnAttribution } from './TurnAttribution';
+import { notifySuccess, notifyError } from '../../ui/feedback';
 
 // --- Collect delegation results from message + tool calls ---
 
@@ -83,98 +81,91 @@ function ArtifactBlock({
   artifacts: MessageArtifact[];
   onOpenArtifact?: (artifact: MessageArtifact) => void;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
   const handleCopy = useCallback((artifact: MessageArtifact) => {
     navigator.clipboard.writeText(artifact.content).then(() => {
-      toast.success(t('chat.message.toast.artifactCopied'));
+      notifySuccess(t('chat.message.toast.artifactCopied'));
     });
   }, [t]);
 
   const handleExport = useCallback((artifact: MessageArtifact) => {
     downloadArtifact(artifact);
-    toast.success(t('chat.message.toast.artifactExported'));
+    notifySuccess(t('chat.message.toast.artifactExported'));
   }, [t]);
 
   return (
-    <Flexbox gap={8} style={{ marginBottom: 8 }}>
-      <Flexbox horizontal align="center" gap={6}>
-        <FileText size={14} style={{ color: token.colorTextSecondary }} />
-        <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
+    <div className="sc-artifact-block">
+      <div className="sc-artifact-block__head">
+        <FileText size={14} className="sc-artifact-block__head-icon" />
+        <span className="sc-artifact-block__title">
           {t('chat.message.artifact.title')}
         </span>
-        <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
+        <span className="sc-tool-tag">
           {t('chat.message.artifact.count', { count: artifacts.length })}
-        </Tag>
-      </Flexbox>
-      <Flexbox gap={6}>
+        </span>
+      </div>
+      <div className="sc-artifact-block__list">
         {artifacts.map((artifact, index) => (
-          <Flexbox
-            key={artifact.id}
-            horizontal
-            align="center"
-            gap={8}
-            style={{
-              border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: 10,
-              padding: '8px 10px',
-              background: token.colorFillQuaternary,
-            }}
-          >
-            <span style={{ color: token.colorTextSecondary, display: 'flex', flexShrink: 0 }}>
+          <div key={artifact.id} className="sc-artifact-block__row">
+            <span className="sc-artifact-block__row-icon">
               <ArtifactIcon kind={artifact.kind} />
             </span>
-            <Flexbox style={{ minWidth: 0, flex: 1 }}>
-              <span style={{ fontSize: 13, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div className="sc-artifact-block__row-body">
+              <span className="sc-artifact-block__row-title">
                 {t('chat.message.artifact.itemTitle', {
                   type: t(artifactTypeKey(artifact.kind)),
                   index: index + 1,
                   language: artifact.language || t('chat.message.code.plainText'),
                 })}
               </span>
-              <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+              <span className="sc-artifact-block__row-source">
                 {t('chat.message.artifact.sourceMessage', { id: artifact.messageId.slice(0, 8) })}
               </span>
-            </Flexbox>
-            <Flexbox horizontal align="center" gap={2}>
+            </div>
+            <div className="sc-artifact-block__actions">
               {onOpenArtifact && (
-                <ActionIcon
-                  icon={<ExternalLink size={14} />}
-                  size="small"
-                  title={t('chat.message.artifact.open')}
-                  onClick={() => onOpenArtifact(artifact)}
+                <Button
+                  actionId={`artifact-open-${artifact.id}`}
+                  emphasis="quiet"
+                  density="compact"
+                  leading={<ExternalLink size={14} />}
+                  label={t('chat.message.artifact.open')}
+                  onActivate={() => onOpenArtifact(artifact)}
                 />
               )}
-              <ActionIcon
-                icon={<Copy size={14} />}
-                size="small"
-                title={t('chat.message.artifact.copy')}
-                onClick={() => handleCopy(artifact)}
+              <Button
+                actionId={`artifact-copy-${artifact.id}`}
+                emphasis="quiet"
+                density="compact"
+                leading={<Copy size={14} />}
+                label={t('chat.message.artifact.copy')}
+                onActivate={() => handleCopy(artifact)}
               />
-              <ActionIcon
-                icon={<Download size={14} />}
-                size="small"
-                title={t('chat.message.artifact.export')}
-                onClick={() => handleExport(artifact)}
+              <Button
+                actionId={`artifact-export-${artifact.id}`}
+                emphasis="quiet"
+                density="compact"
+                leading={<Download size={14} />}
+                label={t('chat.message.artifact.export')}
+                onActivate={() => handleExport(artifact)}
               />
-            </Flexbox>
-          </Flexbox>
+            </div>
+          </div>
         ))}
-      </Flexbox>
-    </Flexbox>
+      </div>
+    </div>
   );
 }
 
 // --- Diagnostics row ---
 
 function DiagnosticsRow({ label, value }: { label: string; value: ReactNode }) {
-  const { token } = theme.useToken();
   return (
-    <Flexbox horizontal align="center" justify="space-between" gap={12}>
-      <span style={{ fontSize: 12, color: token.colorTextSecondary }}>{label}</span>
-      <span style={{ fontSize: 12, color: token.colorText, textAlign: 'right', minWidth: 0 }}>{value}</span>
-    </Flexbox>
+    <div className="sc-diag-row">
+      <span className="sc-diag-row__label">{label}</span>
+      <span className="sc-diag-row__value">{value}</span>
+    </div>
   );
 }
 
@@ -188,7 +179,6 @@ function DiagnosticsBlock({
   providerName: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'agent']);
   const toolCalls = message.toolCalls || [];
   const delegationResults = collectDelegationResults(message);
@@ -212,89 +202,57 @@ function DiagnosticsBlock({
 
   return (
     <div
+      className={`sc-diag${diagnosticError ? ' is-error' : ''}`}
       data-pt-agent-message-error={diagnosticError}
       data-pt-agent-error-type={message.typedError?.error_type}
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
-      style={{
-      borderRadius: 8,
-      border: `1px solid ${diagnosticError ? token.colorErrorBorder : token.colorBorderSecondary}`,
-      background: diagnosticError ? token.colorErrorBg : token.colorFillQuaternary,
-      marginBottom: message.content ? 6 : 0,
-      overflow: 'hidden',
-      }}
     >
-      <div
+      <button
+        type="button"
+        className="sc-diag__toggle"
         data-pt-agent-message-error-toggle={diagnosticError ? 'true' : undefined}
         data-pt-agent-activity-toggle
-        role="button"
-        tabIndex={0}
         aria-expanded={expanded}
         aria-label={message.error ? t('chat.message.errorTitle', { defaultValue: 'Could not complete' }) : t('chat.message.diagnostics.title')}
         onClick={() => setExpanded(!expanded)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            setExpanded(!expanded);
-          }
-        }}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px 10px',
-          cursor: 'pointer',
-          fontSize: 12,
-          fontWeight: 500,
-          color: diagnosticError ? token.colorErrorText : token.colorTextSecondary,
-        }}
       >
         {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         {diagnosticError ? <AlertTriangle size={13} /> : <Activity size={13} />}
         <span>{diagnosticError ? t('chat.message.errorTitle', { defaultValue: 'Could not complete' }) : t('chat.message.diagnostics.title')}</span>
         {message.processDuration != null && (
-          <Tag bordered={false} style={{ marginLeft: 'auto', fontSize: 11 }}>
+          <span className="sc-diag__duration sc-tool-tag">
             {t('chat.message.diagnostics.duration', { seconds: message.processDuration })}
-          </Tag>
+          </span>
         )}
-      </div>
+      </button>
       {expanded && (
-        <Flexbox gap={8} style={{ padding: '8px 10px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+        <div className="sc-diag__body">
           {diagnosticError && (
-            <Flexbox gap={3}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: token.colorErrorText }}>{t('chat.message.diagnostics.error')}</span>
+            <div className="sc-diag__error">
+              <span className="sc-diag__error-title">{t('chat.message.diagnostics.error')}</span>
               <span
+                className="sc-diag__error-text"
                 data-pt-agent-message-error-text={diagnosticError}
-                style={{ fontSize: 12, color: token.colorErrorText }}
               >
                 {presentedError}
               </span>
-            </Flexbox>
+            </div>
           )}
           {message.thinking && (
-            <Flexbox gap={3}>
-              <Flexbox horizontal align="center" gap={6}>
-                <Brain size={13} style={{ color: token.colorTextSecondary }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>{t('chat.message.diagnostics.thinking')}</span>
-                <Tag bordered={false} color={message.thinkingDone ? 'success' : 'processing'} style={{ margin: 0, fontSize: 11 }}>
+            <div className="sc-diag__thinking">
+              <div className="sc-diag__thinking-head">
+                <Brain size={13} className="sc-diag__thinking-icon" />
+                <span className="sc-diag__thinking-title">{t('chat.message.diagnostics.thinking')}</span>
+                <span className={`sc-tool-tag${message.thinkingDone ? ' is-success' : ' is-processing'}`}>
                   {message.thinkingDone ? t('chat.message.thinking.done') : t('chat.message.thinking.thinking')}
-                </Tag>
-              </Flexbox>
-              <pre style={{
-                margin: 0,
-                padding: '6px 8px',
-                borderRadius: 6,
-                background: token.colorBgContainer,
-                color: token.colorTextSecondary,
-                fontSize: 11,
-                whiteSpace: 'pre-wrap',
-                maxHeight: 140,
-                overflow: 'auto',
-              }}>{message.thinking}</pre>
-            </Flexbox>
+                </span>
+              </div>
+              <pre className="sc-diag__thinking-pre">{message.thinking}</pre>
+            </div>
           )}
           <DiagnosticsRow
             label={t('chat.message.diagnostics.provider')}
-            value={<Flexbox horizontal align="center" gap={6}><Cpu size={12} />{providerName || t('chat.message.diagnostics.unknown')}</Flexbox>}
+            value={<span className="sc-diag__provider"><Cpu size={12} />{providerName || t('chat.message.diagnostics.unknown')}</span>}
           />
           <DiagnosticsRow label={t('chat.message.diagnostics.model')} value={message.model || t('chat.message.diagnostics.unknown')} />
           <DiagnosticsRow label={t('chat.message.diagnostics.tools')} value={t('chat.message.diagnostics.toolSummary', { total: toolCalls.length, pending: pendingTools, failed: failedTools })} />
@@ -302,18 +260,18 @@ function DiagnosticsBlock({
             label={t('chat.message.diagnostics.delegation')}
             value={delegationResults.length > 0
               ? (
-                <Flexbox gap={4}>
+                <span className="sc-diag__delegation">
                   <span>{t('chat.message.diagnostics.delegationSummary', { total: delegationResults.length, failed: failedDelegations })}</span>
                   {delegationResults.slice(0, 3).map((result) => (
-                    <span key={result.taskId} style={{ fontSize: 11, color: token.colorTextSecondary }}>
+                    <span key={result.taskId} className="sc-diag__delegation-item">
                       {result.taskDescription} · {t(`chat.message.delegation.status.${result.status}`)}
                     </span>
                   ))}
-                </Flexbox>
+                </span>
               )
               : t('chat.message.diagnostics.none')}
           />
-        </Flexbox>
+        </div>
       )}
     </div>
   );
@@ -331,7 +289,6 @@ interface AssistantMessageProps {
  * artifacts, markdown content, error display, and the action bar.
  */
 export function AssistantMessage({ message, onOpenArtifact }: AssistantMessageProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'agent']);
   const presentedError = message.error
     ? message.error.startsWith('agent.')
@@ -341,6 +298,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const [hovered, setHovered] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
   const continueGeneration = useChatStore(s => s.continueGeneration);
@@ -463,7 +421,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       text = toolText + '\n\n' + text;
     }
     navigator.clipboard.writeText(text).then(() => {
-      toast.success(t('chat.message.toast.copied'));
+      notifySuccess(t('chat.message.toast.copied'));
     });
   }, [message.content, message.toolCalls, t]);
 
@@ -534,7 +492,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       || !resolution.turnId
       || resolution.turnId !== message.turnId
     ) {
-      toast.error(t('chat.message.turnDetails.loadFailed'));
+      notifyError(t('chat.message.turnDetails.loadFailed'));
       return;
     }
     const notice = Array.from(document.querySelectorAll<HTMLElement>(
@@ -544,7 +502,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
         ?.dataset.ptAgentMessageId === message.id
     ));
     if (!notice) {
-      toast.error(t('chat.message.turnDetails.loadFailed'));
+      notifyError(t('chat.message.turnDetails.loadFailed'));
       return;
     }
     notice.scrollIntoView({ block: 'nearest' });
@@ -560,14 +518,14 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       || resolution.turnId !== message.turnId
       || resolution.terminalStatus !== message.terminalStatus
     ) {
-      toast.error(t('chat.message.turnDetails.loadFailed'));
+      notifyError(t('chat.message.turnDetails.loadFailed'));
       return;
     }
     const result = Array.from(document.querySelectorAll<HTMLElement>(
       '[data-pt-agent-message-id]',
     )).find((candidate) => candidate.dataset.ptAgentMessageId === message.id);
     if (!result) {
-      toast.error(t('chat.message.turnDetails.loadFailed'));
+      notifyError(t('chat.message.turnDetails.loadFailed'));
       return;
     }
     result.scrollIntoView({ block: 'nearest' });
@@ -590,14 +548,14 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       ),
     );
     if (!originalMessage) {
-      toast.error(t('chat.message.turnDetails.loadFailed'));
+      notifyError(t('chat.message.turnDetails.loadFailed'));
       return;
     }
     const original = Array.from(document.querySelectorAll<HTMLElement>(
       '[data-pt-agent-message-id]',
     )).find((candidate) => candidate.dataset.ptAgentMessageId === originalMessage.id);
     if (!original) {
-      toast.error(t('chat.message.turnDetails.loadFailed'));
+      notifyError(t('chat.message.turnDetails.loadFailed'));
       return;
     }
     original.scrollIntoView({ block: 'nearest' });
@@ -607,7 +565,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
   const handleChooseCompatibleModel = useCallback(() => {
     if (!currentSessionKey || !useChatStore.getState().messages.some((candidate) => candidate.id === message.id)) {
-      toast.error(t('chat.message.resolution.actionFailed'));
+      notifyError(t('chat.message.resolution.actionFailed'));
       return;
     }
     requestComposerModelSelection(currentSessionKey);
@@ -621,7 +579,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       || !resolution.capabilityId
       || !resolution.permissionKind
     ) {
-      toast.error(t('chat.message.resolution.actionFailed'));
+      notifyError(t('chat.message.resolution.actionFailed'));
       return;
     }
     focusAgentCapability(
@@ -645,42 +603,34 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       resolution?.type !== 'confirmReset'
       || !resolution.runtimeProfileId
     ) {
-      toast.error(t('chat.message.resolution.actionFailed'));
+      notifyError(t('chat.message.resolution.actionFailed'));
       return;
     }
-    Modal.confirm({
-      title: t('agent.recovery.confirmReset', { ns: 'agent' }),
-      content: t('agent.recovery.confirmResetDescription', { ns: 'agent' }),
-      okText: t('agent.recovery.confirmReset', { ns: 'agent' }),
-      cancelText: t('chat.message.action.cancel', { ns: 'chat' }),
-      okButtonProps: {
-        danger: true,
-        'data-pt-agent-runtime-reset-confirm': currentSessionKey,
-      },
-      centered: true,
-      onOk: async () => {
-        try {
-          await resetExternalRuntime(currentSessionKey);
-          toast.success(
-            t('agent.recovery.runtimeResetCompleted', { ns: 'agent' }),
-          );
-        } catch (error) {
-          const messageText = error instanceof Error
-            ? error.message
-            : String(error);
-          toast.error(
-            messageText || t('chat.message.resolution.actionFailed'),
-          );
-          throw error;
-        }
-      },
-    });
+    // Destructive action: open the peer confirm dialog (FeedbackHost) instead
+    // of dispatching the reset immediately. The confirm button carries the
+    // acceptance anchor and performs the guarded runtime reset.
+    setResetConfirmOpen(true);
   }, [
-    currentSessionKey,
     message.resolution,
-    resetExternalRuntime,
     t,
   ]);
+
+  const performRuntimeReset = useCallback(async () => {
+    try {
+      await resetExternalRuntime(currentSessionKey);
+      notifySuccess(
+        t('agent.recovery.runtimeResetCompleted', { ns: 'agent' }),
+      );
+    } catch (error) {
+      const messageText = error instanceof Error
+        ? error.message
+        : String(error);
+      notifyError(
+        messageText || t('chat.message.resolution.actionFailed'),
+      );
+      throw error;
+    }
+  }, [currentSessionKey, resetExternalRuntime, t]);
 
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
@@ -696,7 +646,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
   const handleExportCodeBlock = useCallback((content: string, language: string) => {
     downloadCodeBlock(content, language);
-    toast.success(t('chat.message.toast.codeExported'));
+    notifySuccess(t('chat.message.toast.codeExported'));
   }, [t]);
 
   const handleRunCodeBlock = useCallback((content: string, language: string) => {
@@ -754,7 +704,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   // #endregion
 
   return (
-    <Flexbox
+    <div
+      className={`sc-assistant-message${hovered ? ' is-hovered' : ''}`}
       data-pt-agent-message="assistant"
       data-pt-agent-message-id={message.id}
       data-pt-turn-tail={isTurnTail ? 'true' : 'false'}
@@ -790,25 +741,17 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-lease-id={message.typedError?.details.lease_id}
       data-pt-agent-error-expired-at={message.typedError?.details.expired_at}
       id={`agent-message-${message.id}`}
-      align="flex-start"
-      gap={8}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        position: 'relative',
-        paddingBlock: 8,
-        paddingInlineStart: 0,
-        paddingInlineEnd: 36,
-      }}
     >
       {/* Header: avatar + name + model + timestamp */}
-      <Flexbox direction="horizontal" align="center" gap={8}>
+      <div className="sc-assistant-message__head">
         <AgentIconTile size={32} />
-        <strong style={{ fontSize: 13, color: token.colorText, fontWeight: 600 }}>
+        <strong className="sc-assistant-message__name">
           {agentDisplayName || t('chat.message.assistant')}
         </strong>
         {message.model && !message.loading && (
-          <Flexbox horizontal align="center" gap={3} style={{ opacity: 0.85 }}>
+          <span className="sc-assistant-message__model">
             {messageModel && (
               <ProviderIcon
                 providerId={messageModel.provider_id || ''}
@@ -816,82 +759,54 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                 size={11}
               />
             )}
-            <span style={{ fontSize: 11, color: token.colorTextQuaternary }}>
+            <span className="sc-assistant-message__model-name">
               {messageModel?.display_name || message.model}
             </span>
-          </Flexbox>
+          </span>
         )}
         <span
-          style={{
-            fontSize: 12,
-            color: token.colorTextQuaternary,
-            opacity: hovered ? 1 : 0,
-            transition: 'opacity 0.2s',
-          }}
+          className="sc-assistant-message__time"
           title={fullTime(message.timestamp)}
         >
           {timeAgo(message.timestamp, t)}
         </span>
-      </Flexbox>
+      </div>
 
       {/* Message body */}
-      <Flexbox
-        gap={8}
-        style={{
-          maxWidth: '100%',
-          overflow: 'hidden',
-          position: 'relative',
-          width: '100%',
-        }}
-      >
-        <div
-          style={{
-            borderRadius: token.borderRadiusLG,
-            padding: 0,
-            background: 'transparent',
-            alignSelf: 'flex-start',
-          }}
-        >
+      <div className="sc-assistant-message__body">
+        <div className="sc-assistant-message__content">
           <DiagnosticsBlock
             message={message}
             providerName={providerName}
           />
 
           {message.budgetNotice && (
-            <Flexbox
+            <div
+              className="sc-budget-notice"
               data-budget-notice
               data-budget-kind={message.budgetNotice.kind}
-              gap={8}
-              style={{
-                border: `1px solid ${token.colorWarningBorder}`,
-                borderRadius: token.borderRadiusLG,
-                background: token.colorWarningBg,
-                color: token.colorWarningText,
-                marginBottom: 8,
-                padding: '10px 12px',
-              }}
             >
-              <Flexbox horizontal align="center" gap={6}>
+              <div className="sc-budget-notice__head">
                 <AlertTriangle size={14} />
                 <strong>{t('chat.message.budget.title')}</strong>
-              </Flexbox>
-              <span style={{ fontSize: 12 }}>
+              </div>
+              <span className="sc-budget-notice__text">
                 {t(`chat.message.budget.kind.${message.budgetNotice.kind}`, {
                   limit: message.budgetNotice.limit,
                 })}
               </span>
               {message.resolution?.type === 'inspectBudget' && (
                 <Button
+                  actionId="assistant-inspect-budget"
                   data-pt-agent-message-error-recovery="inspect-budget"
-                  icon={<Activity size={14} />}
-                  size="small"
-                  type="primary"
-                  onClick={handleInspectBudget}
-                >
-                  {resolutionLabel}
-                </Button>
+                  emphasis="primary"
+                  density="compact"
+                  leading={<Activity size={14} />}
+                  label={resolutionLabel}
+                  onActivate={handleInspectBudget}
+                />
               )}
-            </Flexbox>
+            </div>
           )}
 
           {/* Tool calls block */}
@@ -907,33 +822,22 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           {/* User-stopped turn: neutral terminal notice (not an error) with an
               explicit retry that re-runs the turn's original user input. */}
           {message.terminalStatus === 'cancelled' && !message.loading && (
-            <Flexbox
+            <div
+              className="sc-turn-stopped"
               data-pt-agent-turn-stopped
-              horizontal
-              align="center"
-              gap={8}
-              style={{
-                borderRadius: token.borderRadiusLG,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                background: token.colorFillQuaternary,
-                color: token.colorTextSecondary,
-                padding: '8px 12px',
-                marginBottom: message.content ? 8 : 0,
-                fontSize: 13,
-              }}
             >
-              <Ban size={14} style={{ flexShrink: 0 }} />
+              <Ban size={14} className="sc-turn-stopped__icon" />
               <strong>{t('chat.message.turnStopped')}</strong>
               <Button
-                size="small"
-                type="text"
-                icon={<RotateCcw size={13} />}
-                onClick={handleRetry}
-                style={{ marginLeft: 'auto' }}
-              >
-                {t('chat.message.turnStopped.retry')}
-              </Button>
-            </Flexbox>
+                actionId="assistant-turn-stopped-retry"
+                className="sc-turn-stopped__retry"
+                emphasis="quiet"
+                density="compact"
+                leading={<RotateCcw size={13} />}
+                label={t('chat.message.turnStopped.retry')}
+                onActivate={handleRetry}
+              />
+            </div>
           )}
 
           {/* Real Station-persisted file artifacts produced by this turn.
@@ -949,7 +853,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
               including reconnects after partial output has arrived. */}
           {message.loading && !message.queued && (
             <ThinkingIndicator
-              token={token}
               runState={operation?.runState ?? 'streaming'}
               startedAt={operation?.startedAt ?? null}
             />
@@ -957,16 +860,14 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
           {/* Content area */}
           {message.queued ? (
-            <Flexbox
+            <div
+              className="sc-assistant-message__queued"
               data-pt-agent-message-queued
               data-pt-agent-message-queue-entry={message.queueEntryId}
-              horizontal
-              align="center"
-              gap={8}
-              style={{ color: token.colorTextSecondary, fontSize: 13 }}
             >
-              <Tag
-                style={{ cursor: 'pointer' }}
+              <button
+                type="button"
+                className="sc-tool-tag sc-assistant-message__queue-tag"
                 title={t('chat.queue.showInQueue')}
                 onClick={() => {
                   document
@@ -975,48 +876,44 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                 }}
               >
                 {t('chat.queue.position', { position: message.queuePosition })}
-              </Tag>
+              </button>
               <span>{t('chat.queue.waiting')}</span>
-            </Flexbox>
+            </div>
           ) : collapsed ? (
-            <div
-              style={{ fontSize: 13, color: token.colorTextDescription, fontStyle: 'italic', cursor: 'pointer' }}
+            <button
+              type="button"
+              className="sc-assistant-message__collapsed"
               onClick={() => setCollapsed(false)}
             >
               {t('chat.message.collapsed')}
-            </div>
+            </button>
           ) : message.content ? (
             <div className="selectable">
               <Markdown
-                {...chatMarkdownProps}
-                variant="chat"
-                animated={message.loading}
-                fontSize={14}
-                componentProps={{
-                  highlight: {
-                    actionsRender: ({ content, language, originalNode }) => (
-                      <Flexbox horizontal align="center" gap={4}>
-                        {originalNode}
-                        <ActionIcon
-                          icon={<Download size={14} />}
-                          size="small"
-                          title={t('chat.message.code.export')}
-                          onClick={() => handleExportCodeBlock(content, language)}
-                        />
-                        <ActionIcon
-                          icon={<Play size={14} />}
-                          size="small"
-                          title={t('chat.message.code.run')}
-                          onClick={() => handleRunCodeBlock(content, language)}
-                        />
-                      </Flexbox>
-                    ),
-                    fullFeatured: true,
-                  },
-                }}
-              >
-                {message.content}
-              </Markdown>
+                content={message.content}
+                streaming={message.loading}
+                style={{ fontSize: 14 }}
+                codeActions={(block) => (
+                  <span className="sc-code-actions">
+                    <Button
+                      actionId="code-block-export"
+                      emphasis="quiet"
+                      density="compact"
+                      leading={<Download size={14} />}
+                      label={t('chat.message.code.export')}
+                      onActivate={() => handleExportCodeBlock(block.code, block.language)}
+                    />
+                    <Button
+                      actionId="code-block-run"
+                      emphasis="quiet"
+                      density="compact"
+                      leading={<Play size={14} />}
+                      label={t('chat.message.code.run')}
+                      onActivate={() => handleRunCodeBlock(block.code, block.language)}
+                    />
+                  </span>
+                )}
+              />
             </div>
           ) : null}
 
@@ -1024,23 +921,14 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
           {/* Inline translation */}
           {message.translation && (
-            <div
-              style={{
-                borderTop: `1px solid ${token.colorBorderSecondary}`,
-                paddingTop: 8,
-                marginTop: 8,
-              }}
-            >
-              <div style={{ fontSize: 11, color: token.colorTextSecondary, marginBottom: 4 }}>
+            <div className="sc-assistant-message__translation">
+              <div className="sc-assistant-message__translation-label">
                 {t('chat.message.translation.label')}
               </div>
               <Markdown
-                {...chatMarkdownProps}
-                variant="chat"
-                fontSize={14}
-              >
-                {message.translation}
-              </Markdown>
+                content={message.translation}
+                style={{ fontSize: 14 }}
+              />
             </div>
           )}
 
@@ -1050,7 +938,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             && !message.budgetNotice
             && message.typedError?.error_type !== 'LIFECYCLE_CANCELLED' && (
             <div
-              className="selectable"
+              className="sc-error-block selectable"
               data-pt-agent-error-conversation-id={
                 message.resolution?.type === 'editQueue'
                   ? message.resolution.conversationId
@@ -1061,41 +949,28 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                   ? message.resolution.capacity
                   : undefined
               }
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 8,
-                padding: '8px 12px',
-                marginTop: message.content ? 8 : 0,
-                borderRadius: 8,
-                background: token.colorErrorBg,
-                border: `1px solid ${token.colorErrorBorder}`,
-                fontSize: 13,
-                color: token.colorErrorText,
-              }}
             >
-              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-              <div style={{ flex: 1 }}>
+              <AlertTriangle size={14} className="sc-error-block__icon" />
+              <div className="sc-error-block__body">
                 <div data-pt-agent-message-error-text={message.error}>{presentedError}</div>
                 {isContextOverflow && (
                   <Button
+                    actionId="assistant-reduce-context"
                     data-pt-agent-message-error-recovery="reduce-context"
-                    type="primary"
-                    size="small"
-                    danger
-                    icon={<Minimize2 size={14} />}
-                    style={{ marginTop: 8 }}
-                    onClick={requestComposerFocus}
-                  >
-                    {t('agent.recovery.reduceContext', { ns: 'agent' })}
-                  </Button>
+                    tone="danger"
+                    emphasis="primary"
+                    density="compact"
+                    className="sc-error-block__action"
+                    leading={<Minimize2 size={14} />}
+                    label={t('agent.recovery.reduceContext', { ns: 'agent' })}
+                    onActivate={requestComposerFocus}
+                  />
                 )}
                 {message.resolution && (
                   <Button
+                    actionId="assistant-error-recovery"
                     data-pt-agent-message-error-recovery={resolutionTarget}
-                    type="primary"
-                    size="small"
-                    danger={
+                    tone={
                       message.resolution.type !== 'openOriginal'
                       && message.resolution.type !== 'openResult'
                       && message.resolution.type !== 'editQueue'
@@ -1110,8 +985,13 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       && message.resolution.type !== 'chooseResourceAgain'
                       && message.resolution.type !== 'reconcile'
                       && message.resolution.type !== 'recover'
+                        ? 'danger'
+                        : undefined
                     }
-                    icon={
+                    emphasis="primary"
+                    density="compact"
+                    className="sc-error-block__action"
+                    leading={
                       message.resolution.type === 'openProviderSettings'
                       || message.resolution.type === 'chooseCompatibleModel'
                       || message.resolution.type === 'chooseTool'
@@ -1144,15 +1024,15 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                                 ? <X size={14} />
                                 : undefined
                     }
-                    style={{ marginTop: 8 }}
-                    onClick={async () => {
+                    label={resolutionLabel}
+                    onActivate={async () => {
                       try {
                         if (message.resolution!.type === 'openProviderSettings') {
                           eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
                             resource: 'settings',
                             id: 'providers',
                           });
-                          toast.success(t('chat.message.resolution.settingsOpened'));
+                          notifySuccess(t('chat.message.resolution.settingsOpened'));
                           return;
                         }
                         if (message.resolution!.type === 'openOriginal') {
@@ -1203,7 +1083,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'chooseTool') {
                           if (!activeAgent) {
-                            toast.error(t('chat.message.resolution.actionFailed'));
+                            notifyError(t('chat.message.resolution.actionFailed'));
                             return;
                           }
                           setAgentSurface(activeAgent.name, 'profile');
@@ -1234,23 +1114,21 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         const result = await api.resolveErrorAction(message.resolution!);
                         if (result.message) {
-                          toast.success(result.message);
+                          notifySuccess(result.message);
                         } else if (result.reauth) {
-                          toast.success(t('chat.message.resolution.authOpened'));
+                          notifySuccess(t('chat.message.resolution.authOpened'));
                         } else if (result.opened) {
                           eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
                             resource: 'settings',
                           });
-                          toast.success(t('chat.message.resolution.settingsOpened'));
+                          notifySuccess(t('chat.message.resolution.settingsOpened'));
                         }
                       } catch (err: unknown) {
                         const errMessage = err instanceof Error ? err.message : String(err);
-                        toast.error(errMessage || t('chat.message.resolution.actionFailed'));
+                        notifyError(errMessage || t('chat.message.resolution.actionFailed'));
                       }
                     }}
-                  >
-                    {resolutionLabel}
-                  </Button>
+                  />
                 )}
               </div>
             </div>
@@ -1259,25 +1137,54 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
 
         {/* Audit row */}
         {(message.operation || message.replacementOf || message.replacedBy) && !message.loading && (
-          <Flexbox horizontal align="center" gap={4}>
+          <div className="sc-assistant-message__audit">
             {message.operation && (
-              <Tag bordered={false} color="processing" style={{ margin: 0, fontSize: 11 }}>
+              <span className="sc-tool-tag is-processing">
                 {t(`chat.message.audit.${message.operation}`)}
-              </Tag>
+              </span>
             )}
             {message.replacementOf && (
-              <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
-                {t('chat.message.audit.replacement')}
-              </Tag>
+              <span className="sc-tool-tag">{t('chat.message.audit.replacement')}</span>
             )}
             {message.replacedBy && (
-              <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
-                {t('chat.message.audit.replaced')}
-              </Tag>
+              <span className="sc-tool-tag">{t('chat.message.audit.replaced')}</span>
             )}
-          </Flexbox>
+          </div>
         )}
-      </Flexbox>
+      </div>
+
+      {/* Destructive runtime reset confirmation (peer Dialog via FeedbackHost). */}
+      <Dialog
+        open={resetConfirmOpen}
+        onDismiss={() => setResetConfirmOpen(false)}
+        title={t('agent.recovery.confirmReset', { ns: 'agent' })}
+        description={t('agent.recovery.confirmResetDescription', { ns: 'agent' })}
+        closeLabel={t('chat.message.action.cancel', { ns: 'chat' })}
+        width={440}
+        footer={
+          <div className="sc-reset-confirm__footer">
+            <Button
+              actionId="runtime-reset-cancel"
+              emphasis="secondary"
+              density="compact"
+              label={t('chat.message.action.cancel', { ns: 'chat' })}
+              onActivate={() => setResetConfirmOpen(false)}
+            />
+            <Button
+              actionId="runtime-reset-confirm"
+              data-pt-agent-runtime-reset-confirm={currentSessionKey}
+              tone="danger"
+              emphasis="primary"
+              density="compact"
+              label={t('agent.recovery.confirmReset', { ns: 'agent' })}
+              onActivate={() => {
+                setResetConfirmOpen(false);
+                void performRuntimeReset();
+              }}
+            />
+          </div>
+        }
+      />
 
       {/* Action bar */}
       {!message.loading && (
@@ -1326,6 +1233,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
         messages={[message]}
         onClose={() => setForwardOpen(false)}
       />
-    </Flexbox>
+    </div>
   );
 }

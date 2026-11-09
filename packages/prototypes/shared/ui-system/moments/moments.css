@@ -259,6 +259,13 @@
      animated/transient pill width could widen the whole column past the
      shell's right edge. */
   min-width: 0;
+  /* Anchor the overlay INSIDE the card, never on the card's boundary: the
+     right edge of the feed content box coincides exactly with the card edge,
+     so a flush-justified pill sat on that hairline and its drop shadow bled
+     into the shell gutter, reading as a control crossing out of the card.
+     This inset mirrors the top offset and keeps the capsule (and its halo)
+     wholly inside the card it overlays. */
+  padding-right: 14px;
   /* flex-start (not the default stretch): the zero-height row would
       otherwise crush the chip to its vertical padding and paint a detached
       white sliver while the 28px buttons overflow below it. */
@@ -285,7 +292,10 @@
   padding: 4px;
   border-radius: var(--sk-radius-control);
   background: var(--sk-overlay);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, .16);
+  /* Tight, mostly-down shadow: its horizontal half-extent (~6px) stays
+     inside the float row's 14px right inset, so no halo paints across the
+     card edge into the shell gutter. */
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .14);
   overflow: hidden;
   width: var(--sk-feed-pill-w, 112px);
   transition: width .3s cubic-bezier(.22, 1, .36, 1);

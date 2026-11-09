@@ -7,7 +7,6 @@ import { useActiveMomentsSlice } from '../../components/moments/useActiveMoments
 import {
   SocialComposer,
   SocialEmptyState,
-  SocialScopeHint,
 } from '../../components/moments/surfaces';
 import type { ReactionKind } from '../../gen/proto/domain/social/post_pb';
 
@@ -76,8 +75,6 @@ export function MomentsFeedView({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <SocialScopeHint>{t('moments.feedContext.homeDescription')}</SocialScopeHint>
-
       {composerOpen && (
         <SocialComposer
           title={t('moments.compose.title')}

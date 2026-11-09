@@ -7,8 +7,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Button, Tooltip } from '@lobehub/ui';
-import { theme } from 'antd';
+import { Button as PtButton, Tooltip as PtTooltip } from '@peers-touch/ui';
 import {
   CornerUpRight,
   MessageSquareReply,
@@ -101,7 +100,6 @@ export function ChatMessageActionOverlay({
   target,
   viewportElement,
 }: ChatMessageActionOverlayProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const surfaceRef = useRef<HTMLDivElement>(null);
   const pointerInsideRef = useRef(false);
@@ -253,11 +251,11 @@ export function ChatMessageActionOverlay({
 
   if (!hostElement || !message) return null;
 
+  // Geometry only; color/border-radius belong to the .sc-actionbar__btn class.
+  // Prototype .sk-msg-action: 26px circular glyph targets.
   const actionButtonStyle: CSSProperties = {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    transitionProperty: 'color, background-color, border-color, box-shadow',
+    width: 26,
+    height: 26,
   };
   const surfacePosition = geometry
     ? {
@@ -285,6 +283,7 @@ export function ChatMessageActionOverlay({
       data-message-action-overlay={pickerOpen ? 'reaction-picker' : 'toolbar'}
       data-message-action-message={message.ulid}
       data-message-action-placement={geometry?.placement ?? 'unplaced'}
+      className="sc-actionbar"
       onPointerDownCapture={() => {
         pointerInsideRef.current = true;
         onHoverEnter();
@@ -310,14 +309,12 @@ export function ChatMessageActionOverlay({
         position: 'absolute',
         display: pickerOpen ? 'grid' : 'flex',
         gridTemplateColumns: pickerOpen
-          ? `repeat(${REACTION_PICKER_COLUMNS}, 28px)`
+          ? `repeat(${REACTION_PICKER_COLUMNS}, 34px)`
           : undefined,
-        gap: pickerOpen ? 4 : 3,
-        padding: pickerOpen ? 8 : 3,
-        background: token.colorBgElevated,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: 10,
-        boxShadow: token.boxShadowSecondary,
+        // Prototype .sk-msg-actions-bar (toolbar: 1px gap / 2px padding) and
+        // .sk-react-pop (picker: 2px gap / 5px padding).
+        gap: pickerOpen ? 2 : 1,
+        padding: pickerOpen ? 5 : 2,
         pointerEvents: 'auto',
         zIndex: 1,
         ...surfacePosition,
@@ -327,6 +324,7 @@ export function ChatMessageActionOverlay({
         <button
           key={emoji}
           type="button"
+          className="sc-actionbar__emoji"
           data-reaction-emoji={emoji}
           aria-label={emoji}
           onClick={() => {
@@ -334,112 +332,125 @@ export function ChatMessageActionOverlay({
             restoreReactionFocusRef.current = true;
             setPickerOpen(false);
           }}
-          style={{
-            width: 28,
-            height: 28,
-            padding: 0,
-            border: 0,
-            borderRadius: 8,
-            background: 'transparent',
-            cursor: 'pointer',
-            fontSize: 17,
-          }}
         >
           {emoji}
         </button>
       )) : (
         <>
-          <Tooltip title={t('chat.social.thread.open')}>
-            <Button
+          <PtTooltip label={t('chat.social.thread.open')}>
+            <PtButton
+              actionId={`message-action-thread-${message.ulid}`}
+              className="sc-actionbar__btn"
               data-message-action="thread"
-              type="text"
-              size="small"
-              icon={<MessagesSquare size={14} />}
-              onClick={() => runAndDismiss(() => onOpenThread(
+              emphasis="quiet"
+              density="compact"
+              leading={<MessagesSquare size={14} />}
+              aria-label={t('chat.social.thread.open')}
+              onActivate={() => runAndDismiss(() => onOpenThread(
                 messageThreadRootUlid(message) || message.ulid,
               ))}
               style={actionButtonStyle}
             />
-          </Tooltip>
-          <Tooltip title={t('chat.social.messageArea.actionReact')}>
-            <Button
+          </PtTooltip>
+          <PtTooltip label={t('chat.social.messageArea.actionReact')}>
+            <PtButton
+              actionId={`message-action-reaction-${message.ulid}`}
+              className="sc-actionbar__btn"
               data-message-action="reaction"
-              type="text"
-              size="small"
-              icon={<SmilePlus size={14} />}
+              emphasis="quiet"
+              density="compact"
+              leading={<SmilePlus size={14} />}
               aria-label={t('chat.social.messageArea.actionReact')}
               aria-haspopup="dialog"
               aria-expanded={pickerOpen}
-              onClick={() => setPickerOpen(true)}
+              onActivate={() => setPickerOpen(true)}
               style={actionButtonStyle}
             />
-          </Tooltip>
-          <Tooltip title={t('chat.social.contextMenu.pin')}>
-            <Button
+          </PtTooltip>
+          <PtTooltip label={t('chat.social.contextMenu.pin')}>
+            <PtButton
+              actionId={`message-action-pin-${message.ulid}`}
+              className="sc-actionbar__btn"
               data-message-action="pin"
-              type="text"
-              size="small"
-              icon={<Pin size={14} />}
-              onClick={() => runAndDismiss(() => onPin(message))}
+              emphasis="quiet"
+              density="compact"
+              leading={<Pin size={14} />}
+              aria-label={t('chat.social.contextMenu.pin')}
+              onActivate={() => runAndDismiss(() => onPin(message))}
               style={actionButtonStyle}
             />
-          </Tooltip>
+          </PtTooltip>
           {!isRecalled && (
-            <Tooltip title={t('chat.social.messageArea.actionReply')}>
-              <Button
+            <PtTooltip label={t('chat.social.messageArea.actionReply')}>
+              <PtButton
+                actionId={`message-action-reply-${message.ulid}`}
+                className="sc-actionbar__btn"
                 data-message-action="reply"
-                type="text"
-                size="small"
-                icon={<MessageSquareReply size={14} />}
-                onClick={() => runAndDismiss(() => onReply(message.ulid))}
+                emphasis="quiet"
+                density="compact"
+                leading={<MessageSquareReply size={14} />}
+                aria-label={t('chat.social.messageArea.actionReply')}
+                onActivate={() => runAndDismiss(() => onReply(message.ulid))}
                 style={actionButtonStyle}
               />
-            </Tooltip>
+            </PtTooltip>
           )}
-          <Tooltip title={t('chat.social.messageArea.actionForward')}>
-            <Button
+          <PtTooltip label={t('chat.social.messageArea.actionForward')}>
+            <PtButton
+              actionId={`message-action-forward-${message.ulid}`}
+              className="sc-actionbar__btn"
               data-message-action="forward"
-              type="text"
-              size="small"
-              icon={<CornerUpRight size={14} />}
-              onClick={() => runAndDismiss(() => onForward(message))}
+              emphasis="quiet"
+              density="compact"
+              leading={<CornerUpRight size={14} />}
+              aria-label={t('chat.social.messageArea.actionForward')}
+              onActivate={() => runAndDismiss(() => onForward(message))}
               style={actionButtonStyle}
             />
-          </Tooltip>
+          </PtTooltip>
           {canEdit && (
-            <Tooltip title={t('chat.social.messageArea.actionEdit')}>
-              <Button
+            <PtTooltip label={t('chat.social.messageArea.actionEdit')}>
+              <PtButton
+                actionId={`message-action-edit-${message.ulid}`}
+                className="sc-actionbar__btn"
                 data-message-action="edit"
-                type="text"
-                size="small"
-                icon={<Pencil size={14} />}
-                onClick={() => runAndDismiss(() => onEdit(message))}
+                emphasis="quiet"
+                density="compact"
+                leading={<Pencil size={14} />}
+                aria-label={t('chat.social.messageArea.actionEdit')}
+                onActivate={() => runAndDismiss(() => onEdit(message))}
                 style={actionButtonStyle}
               />
-            </Tooltip>
+            </PtTooltip>
           )}
           {canRecall && (
-            <Tooltip title={t('chat.social.messageArea.actionRecall')}>
-              <Button
+            <PtTooltip label={t('chat.social.messageArea.actionRecall')}>
+              <PtButton
+                actionId={`message-action-retract-${message.ulid}`}
+                className="sc-actionbar__btn"
                 data-message-action="retract"
-                type="text"
-                size="small"
-                icon={<RotateCcw size={14} />}
-                onClick={() => runAndDismiss(() => onRecall(message))}
+                emphasis="quiet"
+                density="compact"
+                leading={<RotateCcw size={14} />}
+                aria-label={t('chat.social.messageArea.actionRecall')}
+                onActivate={() => runAndDismiss(() => onRecall(message))}
                 style={actionButtonStyle}
               />
-            </Tooltip>
+            </PtTooltip>
           )}
-          <Tooltip title={t('chat.social.messageArea.actionDelete')}>
-            <Button
+          <PtTooltip label={t('chat.social.messageArea.actionDelete')}>
+            <PtButton
+              actionId={`message-action-delete-${message.ulid}`}
+              className="sc-actionbar__btn sc-actionbar__btn--danger"
               data-message-action="delete"
-              type="text"
-              size="small"
-              icon={<Trash2 size={14} />}
-              onClick={() => runAndDismiss(() => onDelete(message))}
-              style={{ ...actionButtonStyle, color: token.colorError }}
+              emphasis="quiet"
+              density="compact"
+              leading={<Trash2 size={14} />}
+              aria-label={t('chat.social.messageArea.actionDelete')}
+              onActivate={() => runAndDismiss(() => onDelete(message))}
+              style={actionButtonStyle}
             />
-          </Tooltip>
+          </PtTooltip>
         </>
       )}
     </div>,

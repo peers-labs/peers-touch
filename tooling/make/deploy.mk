@@ -22,9 +22,23 @@
 #   make git-serve-stop     # Stop local git server
 #   make git-serve-status   # Check if running
 
-.PHONY: deploy deploy-repair deploy-status deploy-logs setup-git-server git-serve git-serve-stop git-serve-status
+.PHONY: deploy deploy-repair deploy-status deploy-logs setup-git-server git-serve git-serve-stop git-serve-status secret-set secret-status
 
 DEPLOY_SCRIPTS := tooling/scripts/deploy
+
+# Manage Class B (externally-shared) secret VALUES in the git-crypt env repo.
+#   make secret-set    PROFILE=four ROLE=station KEY=PEERS_OAUTH_BRIDGE_SECRET
+#                      Value is read from stdin (hidden prompt, or pipe it in).
+#   make secret-status PROFILE=four ROLE=station
+secret-set:
+	@if [ -z "$(PROFILE)" ] || [ -z "$(ROLE)" ] || [ -z "$(KEY)" ]; then \
+		echo "Usage: make secret-set PROFILE=<profile> ROLE=<station|relay> KEY=<UPPER_KEY>  (value via stdin)"; exit 1; fi
+	@/bin/bash $(DEPLOY_SCRIPTS)/secret-edit.sh set '$(PROFILE)' '$(ROLE)' '$(KEY)'
+
+secret-status:
+	@if [ -z "$(PROFILE)" ] || [ -z "$(ROLE)" ]; then \
+		echo "Usage: make secret-status PROFILE=<profile> ROLE=<station|relay>"; exit 1; fi
+	@/bin/bash $(DEPLOY_SCRIPTS)/secret-edit.sh status '$(PROFILE)' '$(ROLE)'
 
 deploy:
 	@if [ -z "$(ENV)" ]; then echo "Usage: make deploy ENV=<environment> SRV=<service> [BRANCH=main]"; exit 1; fi

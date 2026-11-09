@@ -6,7 +6,18 @@
 .pt-ui :where(button,a,input,textarea,select,[tabindex]):focus-visible{outline:2px solid var(--pt-focus);outline-offset:2px}
 .pt-ui :where(button,input,textarea,select):disabled,.pt-ui :where(button,[role=button])[aria-disabled='true']{cursor:not-allowed}
 /* B19: unavailable commands remain in the tab order; aria-disabled carries state. */
-.pt-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+/* Visually-hidden accessibility utility. It is applied directly ON controls
+   (e.g. a .pt-button context-menu anchor), so its declarations must outrank
+   every component chrome rule regardless of stylesheet order. Attribute +
+   class compound selectors raise specificity without !important:
+   (0,3,0) beats any single-attribute component rule such as
+   .pt-button[data-density=compact] (0,2,0). */
+.pt-sr-only,
+.pt-sr-only.pt-sr-only[class]{
+  position:absolute;width:1px;height:1px;min-height:0;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);
+  white-space:nowrap;border:0;
+}
 .pt-button{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:var(--pt-space-xs);min-height:var(--pt-control-normal);padding:0 var(--pt-space-sm);border:1px solid var(--pt-borderStrong);border-radius:var(--pt-radius-md);background:var(--pt-surface);color:var(--pt-text);cursor:pointer;flex-shrink:0;vertical-align:middle;transition:background var(--pt-motion-fast) var(--pt-motion-standard),border-color var(--pt-motion-fast) var(--pt-motion-standard),color var(--pt-motion-fast) var(--pt-motion-standard),box-shadow var(--pt-motion-fast) var(--pt-motion-standard)}
 .pt-button[aria-disabled='true']{pointer-events:none}
 .pt-button:hover:not([aria-disabled='true']){background:var(--pt-subtle);border-color:var(--pt-primary)}
@@ -20,6 +31,13 @@
 .pt-button[data-tone=danger][data-emphasis=primary]{background:var(--pt-danger);color:var(--pt-surface)}
 .pt-button[aria-disabled='true']{color:var(--pt-secondary);background:var(--pt-subtle);border-color:var(--pt-border)}
 .pt-button[aria-pressed=true]{background:var(--pt-primarySubtle);color:var(--pt-primary);border-color:var(--pt-primary)}
+/* A pressed/selected control keeps its selected fill while hovered. The
+   generic hover rule is (0,3,0) — :not([aria-disabled]) contributes an
+   attribute — so without these (0,4,0)/(0,5,0) rules it repaints a selected
+   option with the track color and the selection visually disappears (notably
+   Segmented: the active pill blends into its own track on mouse-over). */
+.pt-button[aria-pressed=true]:hover:not([aria-disabled='true']){background:var(--pt-primarySubtle)}
+.pt-button[data-emphasis=primary][aria-pressed=true]:hover:not([aria-disabled='true']){background:var(--pt-primaryHover)}
 /* Must out-specify the generic hover rule above (0,3,0): quiet/inline chrome
    never paints a border, including while hovered/pressed/disabled-released. */
 .pt-button[data-emphasis=quiet]:hover:not([aria-disabled='true']),
@@ -148,8 +166,14 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-switch:disabled{opacity:.55;cursor:not-allowed}
 .pt-select-trigger{width:100%;display:flex;justify-content:space-between;font-weight:400;min-width:0}
 .pt-select-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pt-select-options{max-height:280px;overflow:auto}
-.pt-select-option{display:flex;align-items:center;gap:var(--pt-space-xs);width:100%;min-height:var(--pt-control-row);padding:0 var(--pt-space-xs);border:0;border-radius:var(--pt-radius-sm);text-align:left;background:transparent;color:var(--pt-text);cursor:pointer}
+/* The options panel shrink-fits its widest item (max-content) while never
+   going narrower than the trigger (panel min-width, set per-instance). A
+   fixed floor here is what produced ~150px of dead space beside 2-character
+   options. */
+.pt-select-popover{min-width:0;padding:var(--pt-space-xxs)}
+.pt-select-panel{width:max-content;min-width:100%}
+.pt-select-options{max-height:280px;overflow:auto;width:max-content;min-width:100%}
+.pt-select-option{display:flex;align-items:center;gap:var(--pt-space-xs);width:100%;min-height:var(--pt-control-row);padding:0 var(--pt-space-xs);border:0;border-radius:var(--pt-radius-sm);text-align:left;background:transparent;color:var(--pt-text);cursor:pointer;white-space:nowrap}
 /* Ghost select: inside a flat settings/list row the trigger is a quiet
    action, not a bordered input box. Resting state is transparent; only hover
    /open paints the neutral well. The field-box appearance stays available
@@ -170,7 +194,8 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-select-option:disabled{color:var(--pt-secondary)}
 .pt-choice-group,.pt-segmented{display:flex;align-items:center;gap:var(--pt-space-xs);flex-wrap:wrap}
 .pt-segmented{padding:var(--pt-space-xxs);gap:var(--pt-space-xxs);background:var(--pt-subtle);border-radius:var(--pt-radius-md)}
-.pt-segmented>.pt-button{min-width:0;flex-shrink:1;border-color:transparent}
+.pt-segmented>.pt-button{min-width:0;flex-shrink:1;border-color:transparent;white-space:nowrap}
+.pt-segmented>.pt-button .pt-button-content{white-space:nowrap}
 .pt-segmented[data-full-width=true]>.pt-button{flex:1}
 /* Scrollable island: never wraps; the group scrolls in one line and keeps
    peer elements' relative positions under spatial squeeze. Options keep

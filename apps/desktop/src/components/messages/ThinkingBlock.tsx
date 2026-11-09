@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ThemeToken } from './shared';
 
 const STREAMING_PHRASE_KEYS = [
   'chat.tray.phrase.connecting',
@@ -18,7 +17,6 @@ function formatElapsed(ms: number): string {
 }
 
 interface ThinkingIndicatorProps {
-  token: ThemeToken;
   // Operation run state of the owning turn. The running indicator is the only
   // progress surface for the current turn: no detached composer-adjacent tray
   // exists, so stage phrase and elapsed time live inside the assistant row.
@@ -30,7 +28,7 @@ interface ThinkingIndicatorProps {
  * In-turn running indicator (pulsing dots, stage phrase, elapsed timer) shown
  * while the assistant owns an active turn, including after partial output.
  */
-export function ThinkingIndicator({ token, runState, startedAt }: ThinkingIndicatorProps) {
+export function ThinkingIndicator({ runState, startedAt }: ThinkingIndicatorProps) {
   const { t } = useTranslation('chat');
   const [now, setNow] = useState(() => Date.now());
   const [phraseIndex, setPhraseIndex] = useState(0);
@@ -60,44 +58,18 @@ export function ThinkingIndicator({ token, runState, startedAt }: ThinkingIndica
     return formatElapsed(Math.max(0, now - startedAt));
   }, [now, startedAt]);
 
-  const dotStyle = (delay: string): CSSProperties => ({
-    width: 6,
-    height: 6,
-    borderRadius: '50%',
-    background: isReconnecting ? token.colorWarning : token.colorPrimary,
-    opacity: 0.6,
-    animation: 'ptPulse 1.2s ease-in-out infinite',
-    animationDelay: delay,
-  });
-
   return (
     <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '4px 0',
-        color: token.colorTextSecondary,
-        fontSize: 13,
-      }}
+      className="sc-thinking-indicator"
+      data-reconnecting={isReconnecting ? 'true' : undefined}
     >
-      <span style={dotStyle('0s')} />
-      <span style={dotStyle('0.2s')} />
-      <span style={dotStyle('0.4s')} />
-      <span style={{ fontWeight: 500 }}>{phrase}</span>
+      <span className="sc-thinking-indicator__dot" style={{ animationDelay: '0s' }} />
+      <span className="sc-thinking-indicator__dot" style={{ animationDelay: '0.2s' }} />
+      <span className="sc-thinking-indicator__dot" style={{ animationDelay: '0.4s' }} />
+      <span className="sc-thinking-indicator__phrase">{phrase}</span>
       {elapsed && (
-        <span
-          style={{
-            fontFamily: 'monospace',
-            fontSize: 12,
-            color: token.colorTextTertiary,
-            marginLeft: 2,
-          }}
-        >
-          {elapsed}
-        </span>
+        <span className="sc-thinking-indicator__elapsed">{elapsed}</span>
       )}
-      <style>{`@keyframes ptPulse { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 0.9; transform: scale(1); } }`}</style>
     </div>
   );
 }

@@ -13,16 +13,18 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useDismissOutside } from '../use-dismiss-outside';
 import {
-  BellOff, Bookmark, ChevronLeft, Eraser, File as FileIcon,
-  Image as ImageIcon, LogOut, Phone, Pin, Smartphone, Trash2,
-  Users, Video,
+  BellOff, Bookmark, Check, ChevronLeft, Eraser, File as FileIcon,
+  Image as ImageIcon, Lock, LogOut, Phone, Pin, RefreshCw, ShieldCheck,
+  Smartphone, Trash2, Users, Video,
 } from 'lucide-react';
 import {
-  Avatar, Button, Checkbox, Dialog, Empty, IconButton, Switch, TextArea, TextField, Toggle,
+  Avatar, Button, Checkbox, Dialog, Empty, IconButton, QrCode, Switch, Tag,
+  TextArea, TextField, Toggle,
 } from '@peers-touch/ui';
 import type { CallKind } from './CallOverlay';
 import type { ChatMessage, Conversation, GroupMemberSeed, ThreadReply } from './chat-data';
 import { CHAT_BACKGROUND_PRESETS, VIEWER_NAME } from './chat-data';
+import { demoFingerprint, demoSafetyNumber, demoSafetyQrPayload } from './safetySim';
 import { GroupAvatarComposite } from './GroupAvatar';
 import { useT, locTag, type Translate } from '../prefs';
 
@@ -40,28 +42,39 @@ export function ConversationHeader({ conversation, infoOpen,
   onInfo: () => void;
 }) {
   const { t } = useT();
-  const subtitle = conversation.kind === 'group'
-    ? t('conv.members', { n: conversation.members?.length ?? 0 })
-    : conversation.muted
-      ? t('conv.muted')
-      : conversation.online === false ? t('conv.offline') : t('conv.online');
+  const displayName = conversation.selfDirect ? t('contacts.savedMessages') : conversation.name;
+  // Self-direct has no peer presence: the subtitle is the Saved Messages hint
+  // (mute state is already reachable from the detail sheet).
+  const subtitle = conversation.selfDirect
+    ? t('contacts.savedMessagesHint')
+    : conversation.kind === 'group'
+      ? t('conv.members', { n: conversation.members?.length ?? 0 })
+      : conversation.muted
+        ? t('conv.muted')
+        : conversation.online === false ? t('conv.offline') : t('conv.online');
   return (
-    <header className="sk-chat-head" data-conversation-open="true">
+    <header className="sk-chat-head" data-conversation-open="true"
+      data-self-direct={conversation.selfDirect ? 'true' : 'false'}>
       <button type="button" className="sk-chat-back" aria-label={t('conv.back')}
         data-action-id="chat.back-to-list" onClick={onBack}><ChevronLeft size={18} /></button>
       <div className="sk-chat-head-id">
         <div className="sk-chat-head-name">
-          <strong>{conversation.name}</strong>
+          <strong>{displayName}</strong>
           <span data-head-subtitle>{subtitle}</span>
         </div>
       </div>
       <div className="sk-chat-head-actions">
-        <IconButton iconId="phone" iconSize={19} label={t('conv.callAudio')} actionId="chat.call-audio"
-          density="comfortable" emphasis="quiet" className="sk-head-action"
-          onActivate={onAudio} />
-        <IconButton iconId="video" iconSize={19} label={t('conv.callVideo')} actionId="chat.call-video"
-          density="comfortable" emphasis="quiet" className="sk-head-action"
-          onActivate={onVideo} />
+        {/* Calls are peer chrome: never offered on the self-direct conversation. */}
+        {!conversation.selfDirect && (
+          <>
+            <IconButton iconId="phone" iconSize={19} label={t('conv.callAudio')} actionId="chat.call-audio"
+              density="comfortable" emphasis="quiet" className="sk-head-action"
+              onActivate={onAudio} />
+            <IconButton iconId="video" iconSize={19} label={t('conv.callVideo')} actionId="chat.call-video"
+              density="comfortable" emphasis="quiet" className="sk-head-action"
+              onActivate={onVideo} />
+          </>
+        )}
         <IconButton iconId="info" iconSize={19} label={t('conv.info')}
           actionId="chat.open-info"
           density="comfortable" emphasis="quiet" className={`sk-head-action${infoOpen ? ' is-active' : ''}`}
@@ -127,7 +140,7 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
   const sheetRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filePickTarget = useRef<'avatar' | 'background'>('avatar');
-  const { t } = useT();
+  const { t, locale } = useT();
 
   // Non-modal side sheet: press anywhere outside its scope to hide, like a
   // popover. The info ⓘ trigger is excluded so toggling never reopens it,
@@ -139,6 +152,8 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
   ]);
 
   const isGroup = conversation.kind === 'group';
+  const isSelf = !!conversation.selfDirect;
+  const displayName = isSelf ? t('contacts.savedMessages') : conversation.name;
   const members = useMemo(() => {
     const list = conversation.members ?? [];
     return [...list].sort((a, b) => ROLE_RANK[a.role ?? 'member'] - ROLE_RANK[b.role ?? 'member']);
@@ -153,6 +168,28 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
     (m.attachments ?? []).filter(a => a.kind === 'file')
       .map(a => ({ id: a.id, name: a.name }))), [messages]);
   const markedMessages = useMemo(() => messages.filter(m => m.markedForLater && !m.recalled), [messages]);
+
+  // Identity verification (desktop SafetyVerificationPanel parity). The
+  // prototype holds no key bundles: material is deterministic demo data
+  // (see safetySim.ts) and trust state lives only for the sheet's lifetime.
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [verifiedAt, setVerifiedAt] = useState<number | null>(null);
+  const localFingerprint = useMemo(() => demoFingerprint(`self:${VIEWER_NAME}`), []);
+  const peerFingerprint = useMemo(() => demoFingerprint(`peer:${conversation.id}`), [conversation.id]);
+  const safetyNumber = useMemo(
+    () => demoSafetyNumber(VIEWER_NAME, conversation.id), [conversation.id]);
+  // Production renders the 12 safety-number groups as 4 rows × 3 groups.
+  const safetyRows = useMemo(() => {
+    const groups = safetyNumber.split(' ');
+    const rows: string[] = [];
+    for (let i = 0; i < groups.length; i += 3) {
+      rows.push(groups.slice(i, i + 3).join('  '));
+    }
+    return rows.join('\n');
+  }, [safetyNumber]);
+  const safetyQr = useMemo(
+    () => demoSafetyQrPayload(`self:${VIEWER_NAME}`, `peer:${conversation.id}`), [conversation.id]);
 
   // Add-member candidates: station friends not already in the group.
   const addCandidates = useMemo(() => {
@@ -224,7 +261,7 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
     <aside ref={sheetRef} className="sk-side-sheet sk-profile-sheet" aria-label={t('conv.info')} data-detail-panel="true"
       data-my-role={myRole}>
       <div className="sk-side-head">
-        <strong>{isGroup ? t('profile.titleGroup') : t('profile.titlePerson')}</strong>
+        <strong>{isSelf ? t('contacts.savedMessages') : isGroup ? t('profile.titleGroup') : t('profile.titlePerson')}</strong>
         {/* Background + message search are header icon actions (self-evident
             glyphs next to close), not two full settings rows. */}
         <span className="sk-side-head-actions">
@@ -253,7 +290,7 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
               )}
             </div>
           ) : (
-            <Avatar name={conversation.name} background={conversation.tone} size={72}
+            <Avatar name={isSelf ? VIEWER_NAME : conversation.name} background={conversation.tone} size={72}
               style={{ borderRadius: 18 }} />
           )}
           {isGroup && editingName ? (
@@ -273,12 +310,13 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
                 onActivate={canManage ? () => { setNameDraft(conversation.name); setEditingName(true); } : undefined}>
                 {conversation.name}
               </Button>
-            ) : <strong className="sk-profile-name-static">{conversation.name}</strong>
+            ) : <strong className="sk-profile-name-static">{displayName}</strong>
           )}
           <span className="sk-profile-sub">
-            {isGroup ? t('conv.members', { n: members.length })
-              : conversation.muted ? t('conv.muted')
-                : conversation.online === false ? t('conv.offline') : t('conv.online')}
+            {isSelf ? t('contacts.savedMessagesHint')
+              : isGroup ? t('conv.members', { n: members.length })
+                : conversation.muted ? t('conv.muted')
+                  : conversation.online === false ? t('conv.offline') : t('conv.online')}
           </span>
         </section>
 
@@ -437,8 +475,78 @@ export function DetailSheet({ conversation, messages, people, onClose, onToggleP
           )}
         </section>
 
-        {/* Incoming-call demos (1:1, prototype only) */}
-        {conversation.kind === 'person' && onSimulateIncoming && (
+        {/* Identity verification — 1:1 peer chats only (self-direct carries
+            no peer; group safety numbers remain a deferred N×N problem). */}
+        {!isGroup && !isSelf && (
+          <section className="sk-profile-card sk-verify" data-profile-verify
+            data-verify-state={verified ? 'verified' : 'unverified'}>
+            <div className="sk-verify-head">
+              <span className="sk-profile-card-title">
+                <Lock size={14} /> {t('verify.title')}
+              </span>
+              <Tag tone={verified ? 'success' : 'warning'}
+                leading={verified ? <ShieldCheck size={13} /> : undefined}>
+                {verified ? t('verify.statusVerified') : t('verify.statusUnverified')}
+              </Tag>
+            </div>
+            <Button emphasis="quiet" density="compact" className="sk-verify-toggle"
+              actionId="profile.verify-toggle"
+              label={verifyOpen ? t('verify.hide') : t('verify.show')}
+              aria-expanded={verifyOpen}
+              onActivate={() => setVerifyOpen(v => !v)} />
+            {verifyOpen && (
+              <div className="sk-verify-body">
+                <p className="sk-verify-desc">{t('verify.desc')}</p>
+                <div className="sk-verify-number-block">
+                  <span className="sk-verify-label">{t('verify.safetyNumber')}</span>
+                  <code className="sk-verify-number" data-safety-number>{safetyRows}</code>
+                </div>
+                <div className="sk-verify-material">
+                  <div className="sk-verify-qr">
+                    <QrCode value={safetyQr} size={150} label={t('verify.qrLabel')} />
+                    <span className="sk-verify-label">{t('verify.qrLabel')}</span>
+                  </div>
+                  <div className="sk-verify-fingerprints">
+                    <div className="sk-verify-fingerprint">
+                      <span className="sk-verify-label">{t('verify.yourFingerprint')}</span>
+                      <code>{localFingerprint}</code>
+                    </div>
+                    <div className="sk-verify-fingerprint">
+                      <span className="sk-verify-label">{t('verify.peerFingerprint')}</span>
+                      <code>{peerFingerprint}</code>
+                    </div>
+                  </div>
+                </div>
+                <div className="sk-verify-actions">
+                  {!verified ? (
+                    <Button emphasis="primary" fullWidth className="sk-verify-main" actionId="profile.verify-mark"
+                      leading={<Check size={14} />} label={t('verify.markVerified')}
+                      onActivate={() => { setVerified(true); setVerifiedAt(Date.now()); }} />
+                  ) : (
+                    <>
+                      <Button emphasis="quiet" fullWidth className="sk-verify-main"
+                        actionId="profile.verify-verified"
+                        availability={{ kind: 'disabled', reason: t('verify.statusVerified') }}
+                        leading={<ShieldCheck size={14} />}
+                        label={t('verify.verifiedAt', {
+                          when: new Date(verifiedAt ?? Date.now())
+                            .toLocaleDateString(locTag(locale), { month: 'short', day: 'numeric' }),
+                        })} />
+                      <Button emphasis="quiet" tone="danger" actionId="profile.verify-reset"
+                        leading={<RefreshCw size={14} />} aria-label={t('verify.reset')}
+                        label={t('verify.reset')}
+                        onActivate={() => { setVerified(false); setVerifiedAt(null); }} />
+                    </>
+                  )}
+                </div>
+                <p className="sk-verify-note">{t('verify.prototypeNote')}</p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Incoming-call demos (1:1 peer chats, prototype only; never self) */}
+        {conversation.kind === 'person' && !isSelf && onSimulateIncoming && (
           <section className="sk-profile-card sk-side-call-demo">
             <span className="sk-profile-card-title">{t('profile.callDemo')}</span>
             <div className="sk-side-call-demo-row">
@@ -637,9 +745,12 @@ export function MessageSearchDialog({ open, messages, conversationName, onClose,
 }) {
   const { t } = useT();
   const [query, setQuery] = useState('');
-  const results = useMemo(() => messages
-    .filter(m => m.kind !== 'service')
-    .filter(m => m.text.toLowerCase().includes(query.trim().toLowerCase())), [messages, query]);
+  const searchable = useMemo(
+    () => messages.filter(m => m.kind !== 'service' && m.kind !== 'activity'),
+    [messages],
+  );
+  const results = useMemo(() => searchable
+    .filter(m => m.text.toLowerCase().includes(query.trim().toLowerCase())), [searchable, query]);
 
   return (
     <Dialog open={open} onDismiss={onClose} title={t('ms.title', { name: conversationName })}
@@ -651,7 +762,7 @@ export function MessageSearchDialog({ open, messages, conversationName, onClose,
           data-search-value={query} />
         <div className="sk-msg-search-list">
           {query.trim() && results.length === 0 && <Empty description={t('ms.empty')} />}
-          {(!query.trim() ? messages.filter(m => m.kind !== 'service').slice(-5) : results).map(m => (
+          {(!query.trim() ? searchable.slice(-5) : results).map(m => (
             <button key={m.id} type="button" className="sk-msg-search-row"
               data-message-id={m.id}
               onClick={() => { onLocate(m); onClose(); }}>

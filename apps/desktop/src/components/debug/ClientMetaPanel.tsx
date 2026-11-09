@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Tag, Typography, theme } from "antd";
+import { Tag } from "@peers-touch/ui";
 import { Flexbox } from "react-layout-kit";
 import { RadioTower, Server } from "lucide-react";
 import {
@@ -11,8 +11,6 @@ import {
   getXConfigProjection,
   subscribeXConfigProjection,
 } from "../../services/xConfig";
-
-const { Text } = Typography;
 
 function short(value: string | null | undefined, head = 8, tail = 6): string {
   if (!value) return "—";
@@ -29,18 +27,15 @@ function MetaRow({
   value: string;
   mono?: boolean;
 }) {
-  const { token } = theme.useToken();
   return (
     <Flexbox horizontal justify="space-between" gap={12}>
-      <Text style={{ fontSize: 11, color: token.colorTextTertiary }}>
-        {label}
-      </Text>
-      <Text
+      <span style={{ fontSize: 11, color: "var(--pt-muted)" }}>{label}</span>
+      <span
         title={value}
         style={{
           fontSize: 11,
-          color: token.colorTextSecondary,
-          fontFamily: mono ? "monospace" : "inherit",
+          color: "var(--pt-secondary)",
+          fontFamily: mono ? "var(--pt-mono)" : "inherit",
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
@@ -48,7 +43,7 @@ function MetaRow({
         }}
       >
         {value}
-      </Text>
+      </span>
     </Flexbox>
   );
 }
@@ -62,41 +57,33 @@ function DirectiveDefault({
   label: string;
   value: XConfigProjection["defaults"]["default_relay"];
 }) {
-  const { token } = theme.useToken();
   return (
     <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
-      <span style={{ color: token.colorTextTertiary, display: "inline-flex" }}>
+      <span style={{ color: "var(--pt-muted)", display: "inline-flex" }}>
         {icon}
       </span>
-      <Text style={{ fontSize: 11, color: token.colorTextTertiary }}>
-        {label}
-      </Text>
+      <span style={{ fontSize: 11, color: "var(--pt-muted)" }}>{label}</span>
       {value ? (
-        <Text
+        <span
           title={`${value.seed_id} → ${value.canonical_origin}`}
           style={{
             fontSize: 11,
-            color: value.actionable
-              ? token.colorPrimary
-              : token.colorTextTertiary,
+            color: value.actionable ? "var(--pt-primary)" : "var(--pt-muted)",
           }}
         >
           {value.display_name}
           {value.matched_rule_id
             ? ` · ${value.matched_rule_id}`
             : " · fallback"}
-        </Text>
+        </span>
       ) : (
-        <Text style={{ fontSize: 11, color: token.colorTextQuaternary }}>
-          —
-        </Text>
+        <span style={{ fontSize: 11, color: "var(--pt-muted)" }}>—</span>
       )}
     </Flexbox>
   );
 }
 
 export function ClientMetaPanel() {
-  const { token } = theme.useToken();
   const [meta, setMeta] = useState<ClientMeta | null>(null);
   const xConfig = useSyncExternalStore(
     subscribeXConfigProjection,
@@ -117,21 +104,18 @@ export function ClientMetaPanel() {
       gap={12}
       style={{
         padding: "8px 12px",
-        border: `1px solid ${token.colorBorderSecondary}`,
+        border: "1px solid var(--pt-border)",
         borderRadius: 8,
-        background: token.colorFillQuaternary,
+        background: "var(--pt-surface)",
         alignItems: "stretch",
       }}
     >
       <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
         <Flexbox horizontal align="center" gap={8}>
-          <Text strong style={{ fontSize: 12 }}>
+          <strong style={{ fontSize: 12, color: "var(--pt-text)" }}>
             Client meta
-          </Text>
-          <Tag
-            color={meta?.packaged ? "green" : "default"}
-            style={{ marginInlineEnd: 0 }}
-          >
+          </strong>
+          <Tag tone={meta?.packaged ? "success" : "neutral"}>
             {meta?.packaged ? "packaged" : "development"}
           </Tag>
         </Flexbox>
@@ -157,19 +141,10 @@ export function ClientMetaPanel() {
       </Flexbox>
       <Flexbox gap={2} style={{ flex: 1, minWidth: 0 }}>
         <Flexbox horizontal align="center" gap={8}>
-          <Text strong style={{ fontSize: 12 }}>
+          <strong style={{ fontSize: 12, color: "var(--pt-text)" }}>
             X Config
-          </Text>
-          <Tag
-            color={
-              xConfig.freshness === "current"
-                ? "green"
-                : xConfig.freshness === "stale"
-                  ? "orange"
-                  : "default"
-            }
-            style={{ marginInlineEnd: 0 }}
-          >
+          </strong>
+          <Tag tone={xConfig.freshness === "current" ? "success" : xConfig.freshness === "stale" ? "warning" : "neutral"}>
             {xConfig.freshness}
           </Tag>
         </Flexbox>

@@ -4,6 +4,7 @@
   "layout.nav.agent": "智能体",
   "layout.nav.contacts": "通讯录",
   "layout.nav.settings": "设置",
+  "layout.nav.primary": "主导航",
 
   "layout.online.tooltip": "过去 5 分钟内有 {{count}} 位访客在线",
 
@@ -21,6 +22,7 @@
   "layout.splash.peers": "Peers",
 
   "layout.user.defaultName": "用户",
+  "layout.user.viewProfile": "查看我的资料",
   "layout.user.posts": "帖子",
   "layout.user.following": "关注",
   "layout.user.followers": "粉丝",

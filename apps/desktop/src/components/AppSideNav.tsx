@@ -1,14 +1,6 @@
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActionIcon, SideNav } from '@lobehub/ui';
-import { Badge } from 'antd';
-import {
-  Bot,
-  MessageCircle,
-  Settings,
-  Search,
-  Sparkles,
-} from 'lucide-react';
+import { Badge, Button, IconButton } from '@peers-touch/ui';
 import { NotificationBell } from './NotificationBell';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
@@ -44,13 +36,19 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function AppSideNav({ page, navigation }: AppSideNavProps) {
   const userAvatar = useUserAvatar();
   const { t, i18n } = useTranslation('layout');
-  const searchOpen = useSearchStore(state => state.open);
+  const searchOpen = useSearchStore((state) => state.open);
   const agents = useAgentStore((state) => state.agents);
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const setAgentSurface = useAgentStore((state) => state.setAgentSurface);
   const newSession = useChatStore((state) => state.newSession);
   const chatUnreadTotal = useNavigationBadgeStore((state) => state.chatUnreadTotal);
   const momentsEnabled = getDesktopHostPolicy().nativeSocialEnabled;
+
+  // Atelier stays hidden: no top-level rail surface until a coherent product
+  // entry and ownership model is re-established (task-workbench branch).
+  const isAgentActive = page === 'agent'
+    || page === 'agent-profile'
+    || page === 'agent-orchestration';
 
   const navigatePrimary = useCallback((pageId: Page) => {
     markInteractionStarted('shell', `primary-nav:${pageId}`, { pageId });
@@ -126,84 +124,61 @@ export function AppSideNav({ page, navigation }: AppSideNavProps) {
   }, [handleNewChat, handleNextAgent, navigatePrimary]);
 
   return (
-    <>
-      <SideNav
-        avatar={
-          <UserProfilePopover>
-            <div style={{ cursor: 'pointer', width: 36, height: 36 }}>
-              <UserSquareAvatar remoteUrl={userAvatar.url} name={userAvatar.name} size={36} radius={8} />
-            </div>
-          </UserProfilePopover>
-        }
-        topActions={
-          <>
-            <PrimaryNavAnchor pageId="search">
-              <ActionIcon
-                icon={Search}
-                size="large"
-                active={searchOpen}
-                onClick={() => searchActions.open(page, i18n.language)}
-                title={t('layout.nav.search')}
-              />
-            </PrimaryNavAnchor>
-            <PrimaryNavAnchor pageId="chat">
-              <span
-                data-pt-navigation-badge="chat"
-                data-pt-unread-count={chatUnreadTotal}
-                style={{ display: 'contents' }}
-              >
-                <Badge count={chatUnreadTotal} size="small" offset={[-2, 2]}>
-                  <ActionIcon
-                    icon={MessageCircle}
-                    size="large"
-                    active={page === 'chat'}
-                    onClick={() => navigatePrimary('chat')}
-                    title={t('layout.nav.chat')}
-                  />
-                </Badge>
-              </span>
-            </PrimaryNavAnchor>
-            <PrimaryNavAnchor pageId="agent">
-              <ActionIcon
-                icon={Bot}
-                size="large"
-                active={
-                  page === 'agent'
-                  || page === 'agent-profile'
-                  || page === 'agent-orchestration'
-                }
-                onClick={navigateAgentChat}
-                title={t('layout.nav.agent')}
-              />
-            </PrimaryNavAnchor>
-            {momentsEnabled && (
-              <PrimaryNavAnchor pageId="moments">
-                <ActionIcon
-                  icon={Sparkles}
-                  size="large"
-                  active={page === 'moments'}
-                  onClick={() => navigatePrimary('moments')}
-                  title={t('moments.title', { ns: 'moments' })}
-                />
-              </PrimaryNavAnchor>
-            )}
-          </>
-        }
-        bottomActions={
-          <>
-            <NotificationBell />
-            <PrimaryNavAnchor pageId="settings">
-              <ActionIcon
-                icon={Settings}
-                size="large"
-                active={page === 'settings'}
-                onClick={() => navigatePrimary('settings')}
-                title={t('layout.nav.settings')}
-              />
-            </PrimaryNavAnchor>
-          </>
-        }
-      />
-    </>
+    <nav className="ds-rail" aria-label={t('layout.nav.primary')}>
+      <UserProfilePopover>
+        <Button actionId="rail.open-self" emphasis="quiet" className="ds-rail-avatar"
+          aria-label={t('layout.user.viewProfile')} aria-haspopup="dialog">
+          <UserSquareAvatar remoteUrl={userAvatar.url} name={userAvatar.name} size={44} radius={12} />
+        </Button>
+      </UserProfilePopover>
+
+      <div className="ds-rail-group">
+        <PrimaryNavAnchor pageId="search">
+          <IconButton actionId="primary-nav.search" iconId="search" iconSize={19}
+            label={t('layout.nav.search')} aria-haspopup="dialog"
+            aria-expanded={searchOpen || undefined}
+            onClick={() => searchActions.open(page, i18n.language)} />
+        </PrimaryNavAnchor>
+
+        <PrimaryNavAnchor pageId="chat">
+          <span className="ds-rail-entry"
+            data-pt-navigation-badge="chat"
+            data-pt-unread-count={chatUnreadTotal}>
+            <Badge count={chatUnreadTotal} tone="danger" label={t('layout.nav.chat')}>
+              <IconButton actionId="primary-nav.chat" iconId="message-circle" iconSize={19}
+                label={t('layout.nav.chat')} aria-current={page === 'chat' ? 'page' : undefined}
+                onClick={() => navigatePrimary('chat')} />
+            </Badge>
+          </span>
+        </PrimaryNavAnchor>
+
+        <PrimaryNavAnchor pageId="agent">
+          <IconButton actionId="primary-nav.agent" iconId="bot" iconSize={19}
+            label={t('layout.nav.agent')} aria-current={isAgentActive ? 'page' : undefined}
+            onClick={navigateAgentChat} />
+        </PrimaryNavAnchor>
+
+        {momentsEnabled && (
+          <PrimaryNavAnchor pageId="moments">
+            <IconButton actionId="primary-nav.moments" iconId="sparkles" iconSize={19}
+              label={t('moments.title', { ns: 'moments' })}
+              aria-current={page === 'moments' ? 'page' : undefined}
+              onClick={() => navigatePrimary('moments')} />
+          </PrimaryNavAnchor>
+        )}
+      </div>
+
+      <span className="ds-rail-spacer" />
+
+      <div className="ds-rail-group">
+        <NotificationBell />
+        <PrimaryNavAnchor pageId="settings">
+          <IconButton actionId="primary-nav.settings" iconId="settings" iconSize={19}
+            label={t('layout.nav.settings')}
+            aria-current={page === 'settings' ? 'page' : undefined}
+            onClick={() => navigatePrimary('settings')} />
+        </PrimaryNavAnchor>
+      </div>
+    </nav>
   );
 }

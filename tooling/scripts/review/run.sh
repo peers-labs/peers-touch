@@ -81,6 +81,12 @@ echo "== Primitive layer boundary =="
 node tooling/scripts/review/primitive-layer-guard.mjs
 
 echo
+echo "== peers token reference guard =="
+# Every var(--pt-*) the desktop renderer consumes must be emitted by the
+# token package or defined as a local alias/extension point.
+node tooling/scripts/review/pt-token-reference-guard.mjs "$(pwd)"
+
+echo
 echo "== Mobile surface boundary =="
 # Product surface (mobile/chat/src/app) and the evidence harness
 # (MobilePrototype/mp-*) have different machine-locked contracts; views must

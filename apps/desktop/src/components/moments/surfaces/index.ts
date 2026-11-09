@@ -15,14 +15,15 @@
 // build their own views.  If you need a new visual shape, add a new
 // component here — don't inline border-radius tokens in a page.
 
-export { SocialContentRail, SocialSection, SocialScopeDivider } from './SocialContentRail';
-export type {
-  SocialContentRailProps,
-  SocialSectionProps,
-} from './SocialContentRail';
+export { SocialContentRail } from './SocialContentRail';
+export type { SocialContentRailProps } from './SocialContentRail';
 
-export { SocialScopeBar, SocialScopeHint } from './SocialScopeBar';
-export type { SocialScopeBarProps, SocialScopeBarTab } from './SocialScopeBar';
+export { SocialScopeBar } from './SocialScopeBar';
+export type {
+  SocialScopeBarProps,
+  SocialScopeBarTab,
+  SocialScopeEntry,
+} from './SocialScopeBar';
 
 export { SocialTrustMeta } from './SocialTrustMeta';
 export type { SocialTrustMetaProps } from './SocialTrustMeta';

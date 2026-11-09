@@ -1,5 +1,5 @@
 /**
- * ModelServiceTab — Settings tab for configuring which model each scenario uses.
+ * ModelServiceTab — Settings row for configuring which model each scenario uses.
  *
  * Architecture:
  *   - Config stored in KV as "prefs:model-registry" (key-value map)
@@ -8,17 +8,15 @@
  *   - Invalid references (disabled provider) show inline warnings
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { Alert, toast } from '@lobehub/ui';
-import { Typography, theme } from 'antd';
+import { Alert, Text } from '@peers-touch/ui';
+import { Brain } from 'lucide-react';
 import { api, type ModelServiceConfig, type ModelRef } from '../services/desktop_api';
 import { ModelSelect } from './ModelSelect';
-import { SettingsContainer } from './settings/SettingsLayout';
+import { SettingsContainer, SettingsSection, SettingsRow } from './settings/SettingsLayout';
 import { useTranslation } from 'react-i18next';
 import { log } from '../utils/logger';
 import { useAgentStore } from '../store/agent';
-
-const { Title, Text } = Typography;
+import { notifyError } from '../ui/feedback';
 
 const SLOT_KEYS: (keyof ModelServiceConfig)[] = [
   'default',
@@ -26,7 +24,6 @@ const SLOT_KEYS: (keyof ModelServiceConfig)[] = [
 
 export function ModelServiceTab() {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const [config, setConfig] = useState<ModelServiceConfig>({});
   const [loading, setLoading] = useState(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -58,7 +55,7 @@ export function ModelServiceTab() {
         const body = ref.provider || ref.model ? ref : null;
         api.setModelConfig(key, body)
           .then(() => useAgentStore.getState().loadModels())
-          .catch(() => toast.error(t('provider.modelService.failedToSave')));
+          .catch(() => notifyError(t('provider.modelService.failedToSave')));
       }, 500);
 
       return next;
@@ -67,64 +64,36 @@ export function ModelServiceTab() {
 
   if (loading || (modelsLoading && models.length === 0)) {
     return (
-      <Flexbox align="center" justify="center" style={{ padding: 40 }}>
-        <Text type="secondary">{t('provider.modelService.loading')}</Text>
-      </Flexbox>
+      <SettingsContainer>
+        <Text tone="secondary">{t('provider.modelService.loading')}</Text>
+      </SettingsContainer>
     );
   }
 
   const noModels = models.length === 0;
 
   return (
-    <SettingsContainer fullHeight tier="standard">
-      <Flexbox gap={0}>
-        <Title level={5} style={{ margin: '0 0 4px' }}>{t('provider.modelService.title')}</Title>
-        <Text type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
-          {t('provider.modelService.desc')}
-        </Text>
-      </Flexbox>
-
-      {noModels && (
-        <Alert
-          type="warning"
-          showIcon
-          message={t('provider.modelService.noModels')}
-          description={t('provider.modelService.noModelsDesc')}
-          style={{ marginBottom: 16 }}
-        />
-      )}
-
-      <Flexbox gap={0}>
-        {SLOT_KEYS.map((slotKey, i) => {
+    <SettingsContainer>
+      <SettingsSection icon={<Brain size={15} />} title={t('provider.modelService.title')} subtitle={t('provider.modelService.desc')}>
+        {noModels && (
+          <Alert
+            tone="warning"
+            title={t('provider.modelService.noModels')}
+            description={t('provider.modelService.noModelsDesc')}
+          />
+        )}
+        {SLOT_KEYS.map((slotKey) => {
           const ref = config[slotKey];
           const isInvalid = ref?.model && !models.some(
-            (m) => m.provider_id === ref.provider && m.id === ref.model
+            (m) => m.provider_id === ref.provider && m.id === ref.model,
           );
-
           return (
-            <Flexbox
+            <SettingsRow
               key={slotKey}
-              style={{
-                padding: '20px 24px',
-                background: token.colorBgContainer,
-                borderRadius: i === 0 ? '12px 12px 0 0' : i === SLOT_KEYS.length - 1 ? '0 0 12px 12px' : 0,
-                borderBottom: i < SLOT_KEYS.length - 1 ? `1px solid ${token.colorBorderSecondary}` : undefined,
-              }}
+              label={t(`provider.modelService.slot.${slotKey}.title`)}
+              description={t(`provider.modelService.slot.${slotKey}.desc`)}
             >
-              <Text strong style={{ fontSize: 15, marginBottom: 4 }}>{t(`provider.modelService.slot.${slotKey}.title`)}</Text>
-
-              <Flexbox
-                horizontal
-                align="center"
-                justify="space-between"
-                gap={16}
-                style={{ marginTop: 4 }}
-              >
-                <Flexbox flex={1}>
-                  <Text type="secondary" style={{ fontSize: 13 }}>{t('provider.modelService.modelLabel')}</Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{t(`provider.modelService.slot.${slotKey}.desc`)}</Text>
-                </Flexbox>
-
+              <span className="sc-model-service-control">
                 <ModelSelect
                   className="pt-model-service-default-select"
                   value={ref}
@@ -132,21 +101,19 @@ export function ModelServiceTab() {
                     if (next) handleSlotChange(slotKey, next);
                   }}
                   models={models}
-                  showWarning={!!isInvalid}
                   style={{ width: 280 }}
                   disabled={noModels}
                 />
-              </Flexbox>
-
-              {isInvalid && (
-                <Text type="warning" style={{ fontSize: 12, marginTop: 4 }}>
-                  ⚠ {t('provider.modelService.modelInvalid', { model: ref?.model, provider: ref?.provider })}
-                </Text>
-              )}
-            </Flexbox>
+                {isInvalid && (
+                  <Text tone="warning" className="sc-model-service-control__invalid">
+                    {t('provider.modelService.modelInvalid', { model: ref?.model, provider: ref?.provider })}
+                  </Text>
+                )}
+              </span>
+            </SettingsRow>
           );
         })}
-      </Flexbox>
+      </SettingsSection>
     </SettingsContainer>
   );
 }

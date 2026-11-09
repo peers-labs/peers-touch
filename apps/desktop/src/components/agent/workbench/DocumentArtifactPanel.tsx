@@ -3,7 +3,6 @@ import { Button, Select, Tag, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { useTranslation } from 'react-i18next';
 import { LazyMarkdown as Markdown } from '../../LazyMarkdown';
-import { chatMarkdownProps } from '../../messages/markdownConfig';
 import { useChatStore } from '../../../store/chat';
 import { useTaskArtifactStore, ArtifactStaleBaseError } from '../../../store/taskArtifacts';
 import type {
@@ -465,9 +464,7 @@ export function DocumentArtifactPanel() {
             fontSize: 14,
           }}
         >
-          <Markdown {...chatMarkdownProps} variant="chat" fontSize={14}>
-            {body}
-          </Markdown>
+          <Markdown content={body} style={{ fontSize: 14 }} />
         </div>
       )}
 

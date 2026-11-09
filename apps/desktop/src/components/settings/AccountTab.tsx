@@ -1,30 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { Flexbox } from 'react-layout-kit';
-import { Tooltip, toast } from '@lobehub/ui';
 import {
-  Input,
-  AutoComplete,
+  Button,
+  Empty,
+  Icon,
+  IconButton,
   Select,
   Spin,
   Tag,
-  Typography,
-  theme,
-} from 'antd';
-import {
-  Camera,
-  Clock3,
-  Copy,
-  Hash,
-  IdCard,
-  Link2,
-  MapPin,
-  Pencil,
-  Plus,
-  Trash2,
-} from 'lucide-react';
-import { Button, Empty as LobeEmpty } from '@lobehub/ui';
+  TextArea,
+  TextField,
+  Tooltip,
+} from '@peers-touch/ui';
 import {
   api,
   type AccountProfile,
@@ -36,20 +24,20 @@ import { identityRuntime } from '../../kernel/identityRuntime';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
 import { useSessionStore } from '../../store/session';
 import { useTranslation } from 'react-i18next';
-import { SettingsContainer, SettingsSection } from './SettingsLayout';
+import { SettingsContainer, SettingsSection, SettingsRow } from './SettingsLayout';
 import {
   accountLoginProviderLocaleKey,
   resolveAccountLoginProvider,
 } from './accountIdentityPresentation';
 import { log } from '../../utils/logger';
 import { DeviceLinkPanel } from './DeviceLinkPanel';
-
-const { Text, Title } = Typography;
-const { TextArea } = Input;
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
 // Mirrors `PROFILE_IMAGE_UPLOAD_PROGRESS_EVENT` in
 // apps/desktop/src-tauri/src/interface/tauri_commands/profile.rs.
 const PROFILE_IMAGE_UPLOAD_PROGRESS_EVENT = 'profile-image-upload-progress';
+// antd motionDurationMid equivalent for the optimistic image reveal.
+const MOTION_DURATION_MID = '0.2s';
 type ProfileImageField = 'avatar' | 'header';
 type ImageProgress = Record<ProfileImageField, number>;
 type PendingImage = Partial<Record<ProfileImageField, string>>;
@@ -73,8 +61,8 @@ function usePrefersReducedMotion(): boolean {
 // revealed bottom-up by `progress` (real multipart bytes), like a bottle
 // filling. Reduced-motion users get the crisp image immediately; the
 // determinate progress bar is rendered by the caller as a sibling of the
-// interactive control, so progress/live semantics never nest inside a
-// role="button" element.
+// interactive control, so progress/live semantics never nest inside the
+// upload button.
 function OptimisticImageLayer({
   url,
   progress,
@@ -86,7 +74,6 @@ function OptimisticImageLayer({
   radius: number;
   reducedMotion: boolean;
 }) {
-  const { token } = theme.useToken();
   const fraction = Math.max(0, Math.min(1, progress));
   const imageStyle: CSSProperties = {
     position: 'absolute',
@@ -117,32 +104,22 @@ function OptimisticImageLayer({
           ...imageStyle,
           clipPath: `inset(${((1 - fraction) * 100).toFixed(2)}% 0 0 0)`,
           // motion.fast role (tokens.md §8): small continuous state reveal.
-          transition: `clip-path ${token.motionDurationMid} linear`,
+          transition: `clip-path ${MOTION_DURATION_MID} linear`,
         }}
       />
     </>
   );
 }
 
-// Screen-reader progress announcement. Must stay a sibling of the
-// role="button" surface (ARIA forbids role=status/progressbar inside a button).
+// Screen-reader progress announcement. Must stay a sibling of the upload
+// button (ARIA forbids role=status/progressbar inside a button).
 function UploadLiveRegion({ fieldKey, percent }: { fieldKey: string; percent: number }) {
   const { t } = useTranslation('provider');
   return (
     <span
       role="status"
       aria-live="polite"
-      style={{
-        position: 'absolute',
-        width: 1,
-        height: 1,
-        padding: 0,
-        margin: -1,
-        overflow: 'hidden',
-        clip: 'rect(0 0 0 0)',
-        whiteSpace: 'nowrap',
-        border: 0,
-      }}
+      className="pt-sr-only"
     >
       {t(fieldKey, { percent })}
     </span>
@@ -152,16 +129,15 @@ function UploadLiveRegion({ fieldKey, percent }: { fieldKey: string; percent: nu
 // Determinate progress bar for reduced-motion users; a sibling (not a child)
 // of the interactive surface.
 function UploadProgressBar({ percent }: { percent: number }) {
-  const { token } = theme.useToken();
   return (
     <div
       role="progressbar"
       aria-valuenow={percent}
       aria-valuemin={0}
       aria-valuemax={100}
-      style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, background: 'rgba(0,0,0,0.28)' }}
+      className="sc-account-upload-bar"
     >
-      <div style={{ height: '100%', width: `${percent}%`, background: token.colorPrimary }} />
+      <div className="sc-account-upload-bar__fill" style={{ width: `${percent}%` }} />
     </div>
   );
 }
@@ -282,8 +258,8 @@ function createEmptyLink(): AccountProfileLink {
 
 function copyToClipboard(text: string, t: (key: string, opts?: Record<string, unknown>) => string) {
   navigator.clipboard.writeText(text).then(
-    () => toast.success(t('provider.account.identity.copied')),
-    () => toast.error(t('provider.account.identity.copyFailed')),
+    () => notifySuccess(t('provider.account.identity.copied')),
+    () => notifyError(t('provider.account.identity.copyFailed')),
   );
 }
 
@@ -304,6 +280,7 @@ function EditableAvatar({
   uploading,
   pendingUrl,
   progress,
+  actionLabel,
   onUpload,
 }: {
   src?: string;
@@ -312,49 +289,28 @@ function EditableAvatar({
   uploading: boolean;
   pendingUrl?: string;
   progress: number;
+  actionLabel: string;
   onUpload: () => void;
 }) {
-  const { token } = theme.useToken();
   const reducedMotion = usePrefersReducedMotion();
-  // The edit affordance is shown on hover and on keyboard focus — never
-  // hover-only (accessibility.md §5).
-  const [editHint, setEditHint] = useState(false);
 
   return (
     <div
       data-pt-account-avatar-url={src || ''}
-      style={{ position: 'relative', flexShrink: 0, width: size, height: size, borderRadius: AVATAR_RADIUS, overflow: 'hidden' }}
+      data-uploading={uploading ? 'true' : undefined}
+      className="sc-account-avatar"
+      style={{ width: size, height: size, borderRadius: AVATAR_RADIUS }}
     >
       <div
-        role="button"
-        tabIndex={0}
-        aria-busy={uploading}
-        aria-label={fallbackText}
-        onClick={() => !uploading && onUpload()}
-        onKeyDown={(event) => {
-          if (!uploading && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault();
-            onUpload();
-          }
-        }}
-        onMouseEnter={() => setEditHint(true)}
-        onMouseLeave={() => setEditHint(false)}
-        onFocus={() => setEditHint(true)}
-        onBlur={() => setEditHint(false)}
-        style={{
-          position: 'relative',
-          width: '100%',
-          height: '100%',
-          borderRadius: AVATAR_RADIUS,
-          cursor: uploading ? 'wait' : 'pointer',
-        }}
+        className="sc-account-avatar__surface"
+        style={{ borderRadius: AVATAR_RADIUS }}
       >
         <UserSquareAvatar
           remoteUrl={src}
           name={fallbackText}
           size={size}
           radius={AVATAR_RADIUS}
-          border={`2px solid ${token.colorBorderSecondary}`}
+          border="2px solid var(--pt-border)"
         />
 
         {pendingUrl && (
@@ -365,48 +321,29 @@ function EditableAvatar({
             reducedMotion={reducedMotion}
           />
         )}
-
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            right: 0,
-            width: 24,
-            height: 24,
-            borderRadius: 6,
-            background: token.colorPrimary,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: `2px solid ${token.colorBgContainer}`,
-            boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-          }}
-        >
-          {uploading ? (
-            <Spin size="small" style={{ fontSize: 10 }} />
-          ) : (
-            <Camera size={12} style={{ color: '#fff' }} />
-          )}
-        </div>
-
-        {!uploading && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              borderRadius: AVATAR_RADIUS,
-              background: 'rgba(0,0,0,0.25)',
-              opacity: editHint ? 1 : 0,
-              transition: `opacity ${token.motionDurationMid}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Pencil size={20} style={{ color: '#fff' }} />
-          </div>
-        )}
       </div>
+
+      {/* Corner edit control, revealed on hover/focus (prototype
+          .sk-identity-avatar-action grammar); a peers IconButton invokes the
+          Tauri-native image picker, so no browser file input is needed. */}
+      <span className="sc-account-avatar__action">
+        {uploading ? (
+          <span className="sc-account-image-action__tile" aria-busy="true">
+            <Spin active size="small" />
+          </span>
+        ) : (
+          <IconButton
+            actionId="account.avatar-change"
+            iconId="edit"
+            iconSize={15}
+            density="compact"
+            emphasis="quiet"
+            label={actionLabel}
+            data-pt-account-avatar-edit
+            onActivate={onUpload}
+          />
+        )}
+      </span>
 
       {uploading && reducedMotion && (
         <UploadProgressBar percent={Math.round(progress * 100)} />
@@ -439,58 +376,25 @@ function EditableHeaderBanner({
   onUpload: () => void;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
-  const { token } = theme.useToken();
   const reducedMotion = usePrefersReducedMotion();
-  const [editHint, setEditHint] = useState(false);
 
   return (
     <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        height: HEADER_HEIGHT,
-        borderRadius: HEADER_RADIUS,
-        overflow: 'hidden',
-        background: `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`,
-        border: `1px solid ${token.colorBorderSecondary}`,
-      }}
+      className="sc-account-banner"
+      data-uploading={uploading ? 'true' : undefined}
+      style={{ height: HEADER_HEIGHT, borderRadius: HEADER_RADIUS }}
     >
       <div
-        role="button"
-        tabIndex={0}
-        aria-busy={uploading}
-        aria-label={t('provider.account.identity.changeHeader')}
-        onClick={() => !uploading && onUpload()}
-        onKeyDown={(event) => {
-          if (!uploading && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault();
-            onUpload();
-          }
-        }}
-        onMouseEnter={() => setEditHint(true)}
-        onMouseLeave={() => setEditHint(false)}
-        onFocus={() => setEditHint(true)}
-        onBlur={() => setEditHint(false)}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          cursor: uploading ? 'wait' : 'pointer',
-          borderRadius: HEADER_RADIUS,
-        }}
+        className="sc-account-banner__surface"
+        style={{ borderRadius: HEADER_RADIUS }}
       >
         {src && (
           <img
             src={src}
             alt=""
             aria-hidden
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              borderRadius: HEADER_RADIUS,
-            }}
+            className="sc-account-banner__image"
+            style={{ borderRadius: HEADER_RADIUS }}
           />
         )}
 
@@ -503,45 +407,26 @@ function EditableHeaderBanner({
           />
         )}
 
-        {uploading && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 8,
-              right: 8,
-              width: 28,
-              height: 28,
-              borderRadius: 8,
-              background: 'rgba(0,0,0,0.45)',
-              display: 'grid',
-              placeItems: 'center',
-            }}
-          >
-            <Spin size="small" />
-          </div>
-        )}
-
-        {!uploading && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'rgba(0,0,0,0.3)',
-              opacity: editHint ? 1 : 0,
-              transition: `opacity ${token.motionDurationMid}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              borderRadius: HEADER_RADIUS,
-            }}
-          >
-            <Camera size={16} style={{ color: '#fff' }} />
-            <Text style={{ color: '#fff', fontSize: 12 }}>
-              {t('provider.account.identity.changeHeader')}
-            </Text>
-          </div>
-        )}
+        {/* Corner edit control revealed on hover/focus (prototype
+            .sk-banner-action grammar). */}
+        <span className="sc-account-banner__action">
+          {uploading ? (
+            <span className="sc-account-image-action__tile" aria-busy="true">
+              <Spin active size="small" />
+            </span>
+          ) : (
+            <IconButton
+              actionId="account.header-change"
+              iconId="edit"
+              iconSize={15}
+              density="compact"
+              emphasis="quiet"
+              label={t('provider.account.identity.changeHeader')}
+              data-pt-account-header-edit
+              onActivate={onUpload}
+            />
+          )}
+        </span>
       </div>
 
       {uploading && reducedMotion && (
@@ -572,67 +457,28 @@ function IdentityField({
   identityKey?: string;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
-  const { token } = theme.useToken();
   return (
-    <Flexbox
+    <div
       data-pt-account-identity={identityKey}
-      gap={4}
-      style={{ flex: '1 1 240px', minWidth: 200 }}
+      className="sk-identity-field"
     >
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        {label}
-      </Text>
-      <Flexbox
-        horizontal
-        align="center"
-        gap={8}
-        style={{
-          padding: '6px 12px',
-          borderRadius: 8,
-          background: token.colorFillQuaternary,
-          minHeight: 36,
-        }}
-      >
-        <Text
-          style={{ fontSize: 13, flex: 1, wordBreak: 'break-all' }}
-          ellipsis={{ tooltip: value }}
-        >
-          {prefix}
-          {value || '—'}
-        </Text>
-        {copiable && value ? (
-          <Tooltip title={t('common.action.copy', { ns: 'common' })}>
-            <Copy
-              size={14}
-              style={{ color: token.colorTextTertiary, cursor: 'pointer', flexShrink: 0 }}
-              onClick={() => copyToClipboard(value, t)}
-            />
-          </Tooltip>
-        ) : null}
-      </Flexbox>
-    </Flexbox>
-  );
-}
-
-function StatChip({ label, value }: { label: string; value: number }) {
-  const { token } = theme.useToken();
-  return (
-    <Flexbox
-      align="center"
-      gap={2}
-      style={{
-        padding: '4px 12px',
-        borderRadius: 8,
-        background: token.colorFillQuaternary,
-      }}
-    >
-      <Text strong style={{ fontSize: 16, lineHeight: 1.2 }}>
-        {value}
-      </Text>
-      <Text type="secondary" style={{ fontSize: 11 }}>
-        {label}
-      </Text>
-    </Flexbox>
+      <span>{label}</span>
+      <code>
+        {prefix}
+        {value || '—'}
+      </code>
+      {copiable && value ? (
+        <IconButton
+          actionId={`account-copy-${identityKey ?? 'field'}`}
+          iconId="copy"
+          iconSize={13}
+          density="compact"
+          emphasis="quiet"
+          label={t('common.action.copy', { ns: 'common' })}
+          onActivate={() => copyToClipboard(value, t)}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -640,7 +486,6 @@ const AUTO_SAVE_DELAY = 800;
 
 export function AccountTab() {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const activeAccount = useAccountIdentityStore((state) => (
     state.accounts.find((account) => account.id === state.activeAccountId) ?? null
   ));
@@ -680,7 +525,7 @@ export function AccountTab() {
         });
       }
     } catch (error: any) {
-      if (!silent) toast.error(error?.message || t('provider.account.failedToLoad'));
+      if (!silent) notifyError(error?.message || t('provider.account.failedToLoad'));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -732,15 +577,15 @@ export function AccountTab() {
         });
         setProfile((current) => applyProfileMutationRevision(current, result));
         if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
-          toast.error(t('provider.account.failedToUpdate'));
+          notifyError(t('provider.account.failedToUpdate'));
         } else {
-          toast.success(t('provider.account.saved'));
+          notifySuccess(t('provider.account.saved'));
         }
         // Do not setProfile here — local state is already up-to-date.
         // Overwriting with the server response causes controlled inputs
         // to re-render and lose cursor position / focus (the "flicker" bug).
       } catch (error: any) {
-        toast.error(error?.message || t('provider.account.failedToUpdate'));
+        notifyError(error?.message || t('provider.account.failedToUpdate'));
       } finally {
         setSaving(false);
       }
@@ -807,7 +652,7 @@ export function AccountTab() {
       const result = await api.profileUploadAvatarOss({ file_path: path });
       if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
         setProfile((current) => applyProfileMutationRevision(current, result));
-        toast.error(t('provider.account.avatarHeader.failedToUploadAvatar'));
+        notifyError(t('provider.account.avatarHeader.failedToUploadAvatar'));
         return;
       }
       const next = normalizeProfile(result.profile);
@@ -825,9 +670,9 @@ export function AccountTab() {
       setProfile(next);
       clearPendingImage('avatar');
       committed = true;
-      toast.success(t('provider.account.avatarHeader.avatarUpdated'));
+      notifySuccess(t('provider.account.avatarHeader.avatarUpdated'));
     } catch (error: any) {
-      toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
+      notifyError(error?.message || t('provider.account.avatarHeader.failedToUploadAvatar'));
     } finally {
       if (!committed) clearPendingImage('avatar');
       setUploadingAvatar(false);
@@ -846,7 +691,7 @@ export function AccountTab() {
       const result = await api.profileUploadHeaderOss({ file_path: path });
       if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
         setProfile((current) => applyProfileMutationRevision(current, result));
-        toast.error(t('provider.account.avatarHeader.failedToUploadHeader'));
+        notifyError(t('provider.account.avatarHeader.failedToUploadHeader'));
         return;
       }
       const next = normalizeProfile(result.profile);
@@ -856,9 +701,9 @@ export function AccountTab() {
       setProfile(next);
       clearPendingImage('header');
       committed = true;
-      toast.success(t('provider.account.avatarHeader.headerUpdated'));
+      notifySuccess(t('provider.account.avatarHeader.headerUpdated'));
     } catch (error: any) {
-      toast.error(error?.message || t('provider.account.avatarHeader.failedToUploadHeader'));
+      notifyError(error?.message || t('provider.account.avatarHeader.failedToUploadHeader'));
     } finally {
       if (!committed) clearPendingImage('header');
       setUploadingHeader(false);
@@ -867,259 +712,208 @@ export function AccountTab() {
 
   if (loading) {
     return (
-      <Flexbox align="center" justify="center" style={{ padding: 64 }}>
-        <Spin />
-      </Flexbox>
+      <div className="sc-account__state">
+        <Spin active />
+      </div>
     );
   }
 
   if (!profile) {
     return (
-      <Flexbox align="center" justify="center" style={{ padding: 64 }}>
-        <LobeEmpty icon={IdCard} title={t('provider.account.noProfile')} />
-      </Flexbox>
+      <div className="sc-account__state">
+        <Empty
+          icon={<Icon iconId="contact" size={32} />}
+          description={t('provider.account.noProfile')}
+        />
+      </div>
     );
   }
 
   return (
     <SettingsContainer>
       {saving && (
-        <Text type="secondary" style={{ fontSize: 11, textAlign: 'right' }}>
+        <p className="sc-account__saving">
           {t('provider.account.autoSaving', { defaultValue: 'Saving...' })}
-        </Text>
+        </p>
       )}
       {/* ── Section 1: Identity Overview ── */}
       <SettingsSection
         title={t('provider.account.identity.title')}
         subtitle={t('provider.account.identity.subtitle')}
       >
-
-        <EditableHeaderBanner
-          src={profile.header || undefined}
-          uploading={uploadingHeader}
-          pendingUrl={pendingImage.header}
-          progress={uploadProgress.header}
-          onUpload={handleUploadHeader}
-          t={t}
-        />
-
-        <Flexbox horizontal gap={20} align="flex-start" style={{ flexWrap: 'wrap', marginTop: -40 }}>
-          <div style={{ marginLeft: 16 }}>
-            <EditableAvatar
-              src={profile.avatar || undefined}
-              fallbackText={profile.display_name || profile.username}
-              size={80}
-              uploading={uploadingAvatar}
-              pendingUrl={pendingImage.avatar}
-              progress={uploadProgress.avatar}
-              onUpload={handleUploadAvatar}
+        <div className="sk-identity" data-pt-account-identity>
+          <div className="sk-banner" data-has-image={profile.header ? 'true' : 'false'}>
+            <EditableHeaderBanner
+              src={profile.header || undefined}
+              uploading={uploadingHeader}
+              pendingUrl={pendingImage.header}
+              progress={uploadProgress.header}
+              onUpload={handleUploadHeader}
+              t={t}
             />
           </div>
 
-          <Flexbox gap={8} style={{ flex: 1, minWidth: 0, paddingTop: 44 }}>
-            <Flexbox
-              data-pt-account-identity-summary
-              horizontal
-              align="center"
-              gap={10}
-              style={{ flexWrap: 'wrap' }}
-            >
-              <Title level={4} style={{ margin: 0 }}>
-                {profile.display_name || profile.username}
-              </Title>
-              <Tag color="processing" style={{ margin: 0 }}>
-                @{profile.username}
-              </Tag>
-              {loginProviderLabel ? (
-                <Tag data-pt-account-login-provider style={{ margin: 0 }}>
-                  {loginProviderLabel}
-                </Tag>
-              ) : null}
-            </Flexbox>
+          <div className="sk-identity-card">
+            <div className="sk-identity-row">
+              <div className="sk-identity-avatar">
+                <EditableAvatar
+                  src={profile.avatar || undefined}
+                  fallbackText={profile.display_name || profile.username}
+                  size={80}
+                  uploading={uploadingAvatar}
+                  pendingUrl={pendingImage.avatar}
+                  progress={uploadProgress.avatar}
+                  actionLabel={t('provider.account.identity.changeAvatar')}
+                  onUpload={handleUploadAvatar}
+                />
+              </div>
 
-            <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
-              <StatChip label={t('provider.account.identity.posts')} value={profile.statuses_count} />
-              <StatChip label={t('provider.account.identity.following')} value={profile.following_count} />
-              <StatChip label={t('provider.account.identity.followers')} value={profile.followers_count} />
-              <Text type="secondary" style={{ fontSize: 12, alignSelf: 'center' }}>
-                {t('provider.account.identity.created', { date: formatDate(profile.created_at) })}
-              </Text>
-            </Flexbox>
-          </Flexbox>
-        </Flexbox>
+              <div className="sk-identity-meta">
+                <div className="sk-identity-names" data-pt-account-identity-summary>
+                  <strong>{profile.display_name || profile.username}</strong>
+                  <Tag tone="info">@{profile.username}</Tag>
+                  {loginProviderLabel ? (
+                    <Tag data-pt-account-login-provider>{loginProviderLabel}</Tag>
+                  ) : null}
+                </div>
+                <div className="sk-identity-stats">
+                  <span><strong>{profile.statuses_count}</strong>{t('provider.account.identity.posts')}</span>
+                  <span><strong>{profile.following_count}</strong>{t('provider.account.identity.following')}</span>
+                  <span><strong>{profile.followers_count}</strong>{t('provider.account.identity.followers')}</span>
+                  <span className="sk-identity-joined">
+                    {t('provider.account.identity.created', { date: formatDate(profile.created_at) })}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-        <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
-          <IdentityField label={t('provider.account.identity.preferredUsername')} value={profile.username} prefix="@" copiable t={t} />
-          <IdentityField
-            identityKey="ptid"
-            label={t('provider.account.identity.ptid')}
-            value={profile.peers_touch.network_id}
-            copiable
-            t={t}
-          />
-        </Flexbox>
+            <div className="sk-identity-fields">
+              <IdentityField label={t('provider.account.identity.preferredUsername')} value={profile.username} prefix="@" copiable t={t} />
+              <IdentityField
+                identityKey="ptid"
+                label={t('provider.account.identity.ptid')}
+                value={profile.peers_touch.network_id}
+                copiable
+                t={t}
+              />
+            </div>
+          </div>
+        </div>
       </SettingsSection>
       <DeviceLinkPanel />
       {/* ── Section 2: Public Profile (editable, auto-save) ── */}
       <SettingsSection
         title={t('provider.account.profile.title')}
         subtitle={t('provider.account.profile.subtitle')}
-        style={{ gap: 18 }}
       >
-
-        <Flexbox gap={6}>
-          <Text strong style={{ fontSize: 13 }}>
-            {t('provider.account.identity.name')}
-          </Text>
-          <Input
+        <SettingsRow label={t('provider.account.identity.name')}>
+          <TextField
             value={profile.display_name}
-            onChange={(e) => onFieldChange('display_name', e.target.value)}
+            onValueChange={(value) => onFieldChange('display_name', value)}
             placeholder={t('provider.account.identity.name')}
             maxLength={60}
+            aria-label={t('provider.account.identity.name')}
           />
-        </Flexbox>
+        </SettingsRow>
 
-        <Flexbox gap={6}>
-          <Text strong style={{ fontSize: 13 }}>
-            {t('provider.account.profile.bio')}
-          </Text>
+        <SettingsRow vertical label={t('provider.account.profile.bio')}>
           <TextArea
+            framing="embedded"
             value={profile.note}
-            onChange={(e) => onFieldChange('note', e.target.value)}
+            onValueChange={(value) => onFieldChange('note', value)}
             rows={4}
             maxLength={280}
-            showCount
+            characterCount
             placeholder={t('provider.account.profile.bioPlaceholder')}
-            style={{ resize: 'vertical' }}
+            data-bio-value={profile.note}
           />
-        </Flexbox>
+        </SettingsRow>
 
-        <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
-          <Flexbox gap={6} style={{ flex: '1 1 280px', minWidth: 240 }}>
-            <Flexbox horizontal align="center" gap={6}>
-              <MapPin size={14} style={{ color: token.colorTextTertiary }} />
-              <Text strong style={{ fontSize: 13 }}>
-                {t('provider.account.profile.region')}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                {t('provider.account.profile.regionOptional')}
-              </Text>
-            </Flexbox>
-            <Input
+        <div className="sk-form-grid">
+          <SettingsRow label={t('provider.account.profile.region')} description={t('provider.account.profile.regionOptional')}>
+            <TextField
               value={profile.region}
-              onChange={(e) => onFieldChange('region', e.target.value)}
+              onValueChange={(value) => onFieldChange('region', value)}
               placeholder={t('provider.account.profile.regionPlaceholder')}
               maxLength={120}
+              aria-label={t('provider.account.profile.region')}
             />
-          </Flexbox>
-
-          <Flexbox gap={6} style={{ flex: '1 1 280px', minWidth: 240 }}>
-            <Flexbox horizontal align="center" gap={6}>
-              <Clock3 size={14} style={{ color: token.colorTextTertiary }} />
-              <Text strong style={{ fontSize: 13 }}>
-                {t('provider.account.profile.timezone')}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                {t('provider.account.profile.timezoneOptional')}
-              </Text>
-            </Flexbox>
-            <AutoComplete
+          </SettingsRow>
+          <SettingsRow label={t('provider.account.profile.timezone')} description={t('provider.account.profile.timezoneOptional')}>
+            <Select<string>
+              searchable
+              clearable
+              createValue={(query) => query}
               value={profile.timezone || undefined}
-              onChange={(value) => onFieldChange('timezone', value || '')}
               options={timezoneOptions}
               placeholder={t('provider.account.profile.timezonePlaceholder')}
-              allowClear
-              style={{ width: '100%' }}
-              filterOption={(input, option) =>
-                (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
-              }
+              onValueChange={(value) => onFieldChange('timezone', typeof value === 'string' ? value : '')}
             />
-          </Flexbox>
-        </Flexbox>
+          </SettingsRow>
+        </div>
 
-        <Flexbox gap={6}>
-          <Flexbox horizontal align="center" gap={6}>
-            <Hash size={14} style={{ color: token.colorTextTertiary }} />
-            <Text strong style={{ fontSize: 13 }}>
-              {t('provider.account.profile.tags')}
-            </Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              {t('provider.account.profile.tagsDesc')}
-            </Text>
-          </Flexbox>
-          <Select
-            mode="tags"
+        <SettingsRow vertical label={t('provider.account.profile.tags')} description={t('provider.account.profile.tagsDesc')}>
+          <Select<string>
+            multiple
+            searchable
+            clearable
+            createValue={(query) => query}
             value={profile.tags}
-            onChange={(value) => onFieldChange('tags', value)}
+            options={[]}
             placeholder={t('provider.account.profile.tagsPlaceholder')}
-            style={{ width: '100%' }}
-            tokenSeparators={[',']}
+            onValueChange={(value) => {
+              if (Array.isArray(value)) onFieldChange('tags', value);
+            }}
           />
-        </Flexbox>
+        </SettingsRow>
 
-        <Flexbox gap={10}>
-          <Flexbox horizontal justify="space-between" align="center" gap={12}>
-            <Flexbox horizontal align="center" gap={6}>
-              <Link2 size={14} style={{ color: token.colorTextTertiary }} />
-              <Text strong style={{ fontSize: 13 }}>
-                {t('provider.account.profile.links')}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                {t('provider.account.profile.linksDesc')}
-              </Text>
-            </Flexbox>
-            <Button size="small" icon={<Plus size={14} />} onClick={addLink}>
-              {t('provider.account.profile.addLink')}
-            </Button>
-          </Flexbox>
-
-          {profile.links.length === 0 ? (
-            <Text type="secondary" style={{ fontSize: 12, paddingLeft: 4 }}>
-              {t('provider.account.profile.noLinks')}
-            </Text>
-          ) : null}
-
-          {profile.links.map((link, index) => (
-            <Flexbox
-              key={`link-${index}`}
-              horizontal
-              gap={8}
-              align="center"
-              style={{
-                padding: '8px 12px',
-                borderRadius: 10,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                background: token.colorFillQuaternary,
-              }}
-            >
-              <Input
-                value={link.label}
-                onChange={(e) => onLinkChange(index, 'label', e.target.value)}
-                placeholder={t('provider.account.profile.linkLabelPlaceholder')}
-                style={{ flex: 1, fontSize: 12 }}
-                size="small"
+        <SettingsRow vertical label={t('provider.account.profile.links')} description={t('provider.account.profile.linksDesc')}>
+          <div className="sk-links-list">
+            <div className="sk-links-head">
+              <span><Icon iconId="link-2" size={13} /> {t('provider.account.profile.linksDesc')}</span>
+              <Button
+                actionId="account-add-link"
+                emphasis="quiet"
+                density="compact"
+                leading={<Icon iconId="plus" size={13} />}
+                label={t('provider.account.profile.addLink')}
+                onActivate={addLink}
               />
-              <Input
-                value={link.url}
-                onChange={(e) => onLinkChange(index, 'url', e.target.value)}
-                placeholder={t('provider.account.profile.linkUrlPlaceholder')}
-                style={{ flex: 2, fontSize: 12 }}
-                size="small"
-              />
-              <Tooltip title={t('common.action.delete', { ns: 'common' })}>
-                <Button
-                  size="small"
-                  type="text"
-                  danger
-                  icon={<Trash2 size={14} />}
-                  onClick={() => removeLink(index)}
+            </div>
+            {profile.links.map((link, index) => (
+              <div key={`link-${index}`} className="sk-link-row">
+                <TextField
+                  value={link.label}
+                  onValueChange={(value) => onLinkChange(index, 'label', value)}
+                  placeholder={t('provider.account.profile.linkLabelPlaceholder')}
+                  aria-label={`${t('provider.account.profile.linkLabelPlaceholder')} ${index + 1}`}
                 />
-              </Tooltip>
-            </Flexbox>
-          ))}
-        </Flexbox>
+                <TextField
+                  value={link.url}
+                  onValueChange={(value) => onLinkChange(index, 'url', value)}
+                  placeholder={t('provider.account.profile.linkUrlPlaceholder')}
+                  aria-label={`${t('provider.account.profile.linkUrlPlaceholder')} ${index + 1}`}
+                />
+                <Tooltip label={t('common.action.delete', { ns: 'common' })}>
+                  <IconButton
+                    actionId={`account-remove-link-${index}`}
+                    iconId="delete"
+                    iconSize={14}
+                    density="compact"
+                    emphasis="quiet"
+                    tone="danger"
+                    label={t('common.action.delete', { ns: 'common' })}
+                    onActivate={() => removeLink(index)}
+                  />
+                </Tooltip>
+              </div>
+            ))}
+            {profile.links.length === 0 ? (
+              <p className="sk-field-hint">{t('provider.account.profile.noLinks')}</p>
+            ) : null}
+          </div>
+        </SettingsRow>
       </SettingsSection>
-
     </SettingsContainer>
   );
 }

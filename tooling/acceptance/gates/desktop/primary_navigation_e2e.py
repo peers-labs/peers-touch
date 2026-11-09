@@ -534,7 +534,8 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         )
         assertions["memory_owned_by_settings_ai"] = True
 
-        self._click(session, '[data-pt-secondary-tab="tools"]')
+        # Cron folded into the AI group under the five-group settings IA.
+        self._click(session, '[data-pt-secondary-tab="ai"]')
         self._click(session, '[data-pt-section-item="cron"]')
         self._wait(
             session,
@@ -561,6 +562,11 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         )
         assertions["cron_jobs_controls_available_in_settings"] = True
 
+        # Command palette lives in the advanced group under the five-group IA.
+        self._click(
+            session,
+            '[data-pt-secondary-tab="advanced"]',
+        )
         self._click(
             session,
             '[data-pt-section-item="command-menu"]',
@@ -619,7 +625,8 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         )
         assertions["command_palette_uses_one_global_overlay"] = True
 
-        self._click(session, '[data-pt-secondary-tab="data"]')
+        # Object storage (My Files) moved under the advanced group.
+        self._click(session, '[data-pt-secondary-tab="advanced"]')
         self._click(session, '[data-pt-section-item="oss"]')
         self._wait(
             session,

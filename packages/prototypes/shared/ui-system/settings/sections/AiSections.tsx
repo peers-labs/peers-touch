@@ -462,6 +462,54 @@ export function McpSection() {
   );
 }
 
+/* ── Voice input (desktop voice module parity: STT preferences only;
+   TTS playback was removed in production) ─────────────────────────────── */
+
+type SttProvider = 'browser' | 'openai';
+type SttLanguage = 'auto' | 'en' | 'zh' | 'ja' | 'ko' | 'fr' | 'de' | 'es';
+
+export function VoiceSection() {
+  const { t } = useT();
+  const [provider, setProvider] = useState<SttProvider>('browser');
+  const [language, setLanguage] = useState<SttLanguage>('auto');
+  const [autoStop, setAutoStop] = useState(true);
+
+  return (
+    <SettingsSection icon={Activity} title={t('voice.title')} subtitle={t('voice.desc')}>
+      <SettingsRow label={t('voice.provider')} description={t('voice.providerDesc')}>
+        <Select<SttProvider> appearance="ghost" aria-label={t('voice.provider')}
+          data-voice-provider
+          options={[
+            { value: 'browser', label: t('voice.providerBrowser') },
+            { value: 'openai', label: t('voice.providerOpenai') },
+          ]}
+          value={provider}
+          onValueChange={value => setProvider((Array.isArray(value) ? value[0] : value) ?? 'browser')} />
+      </SettingsRow>
+      <SettingsRow label={t('voice.language')} description={t('voice.languageDesc')}>
+        <Select<SttLanguage> appearance="ghost" aria-label={t('voice.language')}
+          data-voice-language
+          options={[
+            { value: 'auto', label: t('voice.lang.auto') },
+            { value: 'en', label: t('voice.lang.en') },
+            { value: 'zh', label: t('voice.lang.zh') },
+            { value: 'ja', label: t('voice.lang.ja') },
+            { value: 'ko', label: t('voice.lang.ko') },
+            { value: 'fr', label: t('voice.lang.fr') },
+            { value: 'de', label: t('voice.lang.de') },
+            { value: 'es', label: t('voice.lang.es') },
+          ]}
+          value={language}
+          onValueChange={value => setLanguage((Array.isArray(value) ? value[0] : value) ?? 'auto')} />
+      </SettingsRow>
+      <SettingsRow label={t('voice.autoStop')} description={t('voice.autoStopDesc')}>
+        <Switch checked={autoStop} aria-label={t('voice.autoStop')} data-voice-auto-stop
+          onCheckedChange={setAutoStop} />
+      </SettingsRow>
+    </SettingsSection>
+  );
+}
+
 /* ── shared atoms ─────────────────────────────────────────────────────── */
 
 function Segmented2<T extends string>({ value, onChange, options }: {

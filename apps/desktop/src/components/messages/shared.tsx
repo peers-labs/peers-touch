@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { theme } from 'antd';
 import type { MessageArtifact } from '../../store/chat';
 
 // --- Time formatting helpers ---
@@ -95,7 +93,7 @@ export function downloadArtifact(artifact: MessageArtifact) {
   URL.revokeObjectURL(url);
 }
 
-// --- Shared mini button component ---
+// --- Shared mini button component (quiet ghost icon; CSS owns hover) ---
 
 export function MiniButton({
   icon,
@@ -106,32 +104,15 @@ export function MiniButton({
   title: string;
   onClick: () => void;
 }) {
-  const { token } = theme.useToken();
-  const [hovered, setHovered] = useState(false);
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       title={title}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 28,
-        height: 28,
-        borderRadius: 6,
-        cursor: 'pointer',
-        background: hovered ? token.colorFillSecondary : 'transparent',
-        color: token.colorTextTertiary,
-        transition: 'all 0.15s',
-      }}
+      aria-label={title}
+      className="sc-mini-button"
     >
       {icon}
-    </div>
+    </button>
   );
 }
-
-// --- Shared type for theme token ---
-
-export type ThemeToken = ReturnType<typeof theme.useToken>['token'];

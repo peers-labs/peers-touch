@@ -1,7 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { Tag } from '@lobehub/ui';
-import { theme } from 'antd';
+import { useEffect, useRef, useState, useSyncExternalStore, type HTMLAttributes } from 'react';
 import {
   Wrench,
   Loader2,
@@ -34,6 +31,28 @@ import {
 import { useTranslation } from 'react-i18next';
 import { ClarificationQuestion } from './ClarificationQuestion';
 
+// LobeHub/antd Tag color values mapped to north-star status tones.
+type ToolTagTone = 'neutral' | 'success' | 'error' | 'warning' | 'processing';
+
+interface ToolTagProps extends HTMLAttributes<HTMLSpanElement> {
+  tone?: ToolTagTone;
+}
+
+function ToolTag({ tone = 'neutral', children, className = '', ...rest }: ToolTagProps) {
+  return (
+    <span {...rest} className={`sc-tool-tag is-${tone}${className ? ` ${className}` : ''}`}>
+      {children}
+    </span>
+  );
+}
+
+function tagToneFromStatusColor(color: string): ToolTagTone {
+  if (color === 'success') return 'success';
+  if (color === 'error') return 'error';
+  if (color === 'warning' || color === 'processing') return color;
+  return 'neutral';
+}
+
 function executionOwnerLocaleKey(owner: ToolExecutionOwner): string {
   if (owner === ToolExecutionOwner.STATION) return 'station';
   if (owner === ToolExecutionOwner.CLIENT_CAPABILITY) return 'clientCapability';
@@ -49,29 +68,12 @@ function policyLocaleKey(policy: string): string {
   return 'unknown';
 }
 
-function ToolGovernanceRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  const { token } = theme.useToken();
+function ToolGovernanceRow({ label, value }: { label: string; value: string }) {
   return (
-    <Flexbox horizontal align="flex-start" justify="space-between" gap={12}>
-      <span style={{ color: token.colorTextTertiary, fontSize: 11 }}>{label}</span>
-      <span
-        style={{
-          color: token.colorTextSecondary,
-          fontSize: 11,
-          minWidth: 0,
-          overflowWrap: 'anywhere',
-          textAlign: 'right',
-        }}
-      >
-        {value}
-      </span>
-    </Flexbox>
+    <div className="sc-tool-gov-row">
+      <span className="sc-tool-gov-row__label">{label}</span>
+      <span className="sc-tool-gov-row__value">{value}</span>
+    </div>
   );
 }
 
@@ -98,74 +100,56 @@ function parseTodoPayload(raw: string | undefined): TodoCardItem[] | undefined {
 }
 
 function TodoToolCard({ tool }: { tool: ToolCallInfo }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const items =
     parseTodoPayload(tool.result) ?? parseTodoPayload(tool.args) ?? [];
   const doneCount = items.filter((item) => item.status === 'completed').length;
 
   return (
-    <Flexbox gap={6} style={{ marginBottom: 8 }} data-pt-agent-tool="todo">
-      <Flexbox horizontal align="center" gap={6}>
-        <ListChecks size={13} style={{ color: token.colorTextSecondary }} />
-        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+    <div className="sc-tool-stack sc-tool-subcard" data-pt-agent-tool="todo">
+      <div className="sc-tool-row sc-tool-subcard__head">
+        <ListChecks size={13} className="sc-tool-subcard__icon" />
+        <span className="sc-tool-subcard__title">
           {t('chat.message.toolCall.todo.title')}
         </span>
-        <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
+        <ToolTag>
           {t('chat.message.toolCall.todo.progress', {
             done: doneCount,
             total: items.length,
           })}
-        </Tag>
-      </Flexbox>
+        </ToolTag>
+      </div>
       {items.length === 0 && (
-        <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+        <span className="sc-tool-subcard__empty">
           {t('chat.message.toolCall.todo.empty')}
         </span>
       )}
-      <Flexbox gap={4}>
+      <div className="sc-tool-stack sc-tool-todo-list">
         {items.map((item, index) => {
           const completed = item.status === 'completed';
           const inProgress = item.status === 'in_progress';
           return (
-            <Flexbox
+            <div
               key={item.id || `${item.content}-${index}`}
-              horizontal
-              align="center"
-              gap={8}
-              style={{
-                border: `1px solid ${token.colorBorderSecondary}`,
-                borderRadius: 6,
-                background: token.colorBgContainer,
-                padding: '5px 8px',
-              }}
+              className={`sc-tool-todo-item${completed ? ' is-done' : ''}`}
             >
               {completed ? (
-                <CheckCircle2 size={13} style={{ color: token.colorSuccess, flexShrink: 0 }} />
+                <CheckCircle2 size={13} className="sc-tool-todo-item__icon is-success" />
               ) : inProgress ? (
-                <CircleDot size={13} style={{ color: token.colorPrimary, flexShrink: 0 }} />
+                <CircleDot size={13} className="sc-tool-todo-item__icon is-processing" />
               ) : (
-                <Circle size={13} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
+                <Circle size={13} className="sc-tool-todo-item__icon" />
               )}
-              <span
-                style={{
-                  fontSize: 12,
-                  color: completed ? token.colorTextTertiary : token.colorText,
-                  textDecoration: completed ? 'line-through' : 'none',
-                }}
-              >
-                {item.content}
-              </span>
-            </Flexbox>
+              <span className="sc-tool-todo-item__text">{item.content}</span>
+            </div>
           );
         })}
-      </Flexbox>
-    </Flexbox>
+      </div>
+    </div>
   );
 }
 
 function WebFetchToolCard({ tool }: { tool: ToolCallInfo }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
   let requestedUrl = '';
@@ -188,37 +172,35 @@ function WebFetchToolCard({ tool }: { tool: ToolCallInfo }) {
   const displayUrl = fetched.url || requestedUrl;
 
   return (
-    <Flexbox gap={4} style={{ marginBottom: 8 }} data-pt-agent-tool="web-fetch">
-      <Flexbox horizontal align="center" gap={6}>
-        <Globe size={13} style={{ color: token.colorTextSecondary }} />
-        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+    <div className="sc-tool-stack sc-tool-subcard" data-pt-agent-tool="web-fetch">
+      <div className="sc-tool-row sc-tool-subcard__head">
+        <Globe size={13} className="sc-tool-subcard__icon" />
+        <span className="sc-tool-subcard__title">
           {t('chat.message.toolCall.webFetch.title')}
         </span>
         {fetched.status ? (
-          <Tag bordered={false} color="success" style={{ margin: 0, fontSize: 11 }}>
-            {t('chat.message.toolCall.webFetch.status', {
-              status: fetched.status,
-            })}
-          </Tag>
+          <ToolTag tone="success">
+            {t('chat.message.toolCall.webFetch.status', { status: fetched.status })}
+          </ToolTag>
         ) : null}
-      </Flexbox>
+      </div>
       {displayUrl && (
         <a
+          className="sc-tool-link"
           href={displayUrl}
           target="_blank"
           rel="noreferrer"
-          style={{ fontSize: 12, color: token.colorPrimary, overflowWrap: 'anywhere' }}
           onClick={(event) => event.stopPropagation()}
         >
           {displayUrl}
         </a>
       )}
       {fetched.truncated && (
-        <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+        <span className="sc-tool-subcard__empty">
           {t('chat.message.toolCall.webFetch.truncated')}
         </span>
       )}
-    </Flexbox>
+    </div>
   );
 }
 
@@ -246,42 +228,25 @@ function clientToolOutput(raw: string | undefined): Record<string, unknown> | un
   return envelope;
 }
 
-function DiffLines({ diff, token }: { diff: string; token: ReturnType<typeof theme.useToken>['token'] }) {
+// Renders the device-worker unified diff with add/del/hunk line tones driven
+// by the north-star CSS tokens; line classification is identical to the
+// task-workbench contract and keeps the data-pt-tool-diff e2e selector.
+function DiffLines({ diff }: { diff: string }) {
   return (
-    <pre
-      data-pt-tool-diff
-      style={{
-        margin: 0,
-        padding: '4px 8px',
-        borderRadius: 4,
-        background: token.colorFillQuaternary,
-        color: token.colorTextSecondary,
-        fontSize: 11,
-        lineHeight: 1.5,
-        maxHeight: 220,
-        overflow: 'auto',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}
-    >
+    <pre className="sc-tool-diff" data-pt-tool-diff>
       {diff.split('\n').map((line, index) => {
         const isAdd = line.startsWith('+') && !line.startsWith('+++');
         const isDel = line.startsWith('-') && !line.startsWith('---');
         const isHunk = line.startsWith('@@');
-        const color = isAdd
-          ? token.colorSuccessText
+        const toneClass = isAdd
+          ? 'sc-tool-diff__line--add'
           : isDel
-            ? token.colorErrorText
+            ? 'sc-tool-diff__line--del'
             : isHunk
-              ? token.colorPrimary
-              : token.colorTextTertiary;
-        const background = isAdd
-          ? token.colorSuccessBg
-          : isDel
-            ? token.colorErrorBg
-            : 'transparent';
+              ? 'sc-tool-diff__line--hunk'
+              : undefined;
         return (
-          <div key={`${index}-${line.slice(0, 16)}`} style={{ color, background }}>
+          <div key={`${index}-${line.slice(0, 16)}`} className={toneClass}>
             {line || ' '}
           </div>
         );
@@ -291,7 +256,6 @@ function DiffLines({ diff, token }: { diff: string; token: ReturnType<typeof the
 }
 
 function WorkspaceFileCard({ tool }: { tool: ToolCallInfo }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const args = parseToolJSON(tool.args);
   const output = clientToolOutput(tool.result);
@@ -320,34 +284,32 @@ function WorkspaceFileCard({ tool }: { tool: ToolCallInfo }) {
   const writeContent = asString(args?.content);
 
   return (
-    <Flexbox gap={6} style={{ marginBottom: 8 }} data-pt-agent-tool="workspace-file">
-      <Flexbox horizontal align="center" gap={6}>
+    <div className="sc-tool-stack sc-tool-subcard" data-pt-agent-tool="workspace-file">
+      <div className="sc-tool-row sc-tool-subcard__head">
         {isEdit ? (
-          <FilePenLine size={13} style={{ color: token.colorTextSecondary }} />
+          <FilePenLine size={13} className="sc-tool-subcard__icon" />
         ) : (
-          <FilePlus2 size={13} style={{ color: token.colorTextSecondary }} />
+          <FilePlus2 size={13} className="sc-tool-subcard__icon" />
         )}
-        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+        <span className="sc-tool-subcard__title">
           {t(
             isEdit
               ? 'chat.message.toolCall.workspace.edit'
               : 'chat.message.toolCall.workspace.write',
           )}
         </span>
-        <span style={{ fontSize: 11, color: token.colorTextTertiary, overflowWrap: 'anywhere' }}>
-          {path}
-        </span>
+        <span className="sc-tool-subcard__path">{path}</span>
         {changeType && (
-          <Tag bordered={false} style={{ margin: 0, fontSize: 11 }} data-pt-tool-change-type={changeType}>
+          <ToolTag data-pt-tool-change-type={changeType}>
             {t(`chat.message.toolCall.workspace.changeType.${changeType}`, changeType)}
-          </Tag>
+          </ToolTag>
         )}
-      </Flexbox>
+      </div>
       {realDiff ? (
         <>
-          <DiffLines diff={realDiff} token={token} />
+          <DiffLines diff={realDiff} />
           {diffTruncated && (
-            <span style={{ fontSize: 11, color: token.colorWarning }} data-pt-tool-diff-truncated>
+            <span className="sc-tool-warn" data-pt-tool-diff-truncated>
               {t('chat.message.toolCall.workspace.diffTruncated')}
             </span>
           )}
@@ -355,55 +317,34 @@ function WorkspaceFileCard({ tool }: { tool: ToolCallInfo }) {
       ) : (
         <>
           {isEdit && oldText && (
-            <pre
-              style={{
-                margin: 0,
-                padding: '4px 8px',
-                borderRadius: 4,
-                background: token.colorErrorBg,
-                color: token.colorErrorText,
-                fontSize: 11,
-                maxHeight: 96,
-                overflow: 'auto',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
-              {oldText}
-            </pre>
+            <pre className="sc-tool-pre sc-tool-pre--danger">{oldText}</pre>
           )}
           {(isEdit ? newText : writeContent) && (
-            <pre
-              style={{
-                margin: 0,
-                padding: '4px 8px',
-                borderRadius: 4,
-                background: token.colorSuccessBg,
-                color: token.colorSuccessText,
-                fontSize: 11,
-                maxHeight: 96,
-                overflow: 'auto',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
+            <pre className="sc-tool-pre sc-tool-pre--success">
               {isEdit ? newText : writeContent}
             </pre>
           )}
         </>
       )}
       {(beforeSHA || afterSHA) && (
-        <Flexbox horizontal gap={8} style={{ fontSize: 10, color: token.colorTextTertiary }} data-pt-tool-digests>
-          {beforeSHA && <span title={beforeSHA}>{t('chat.message.toolCall.workspace.beforeDigest')}: {beforeSHA.slice(0, 12)}</span>}
-          {afterSHA && <span title={afterSHA}>{t('chat.message.toolCall.workspace.afterDigest')}: {afterSHA.slice(0, 12)}</span>}
-        </Flexbox>
+        <div className="sc-tool-meta" data-pt-tool-digests>
+          {beforeSHA && (
+            <span title={beforeSHA}>
+              {t('chat.message.toolCall.workspace.beforeDigest')}: {beforeSHA.slice(0, 12)}
+            </span>
+          )}
+          {afterSHA && (
+            <span title={afterSHA}>
+              {t('chat.message.toolCall.workspace.afterDigest')}: {afterSHA.slice(0, 12)}
+            </span>
+          )}
+        </div>
       )}
-    </Flexbox>
+    </div>
   );
 }
 
 function WorkspaceShellCard({ tool }: { tool: ToolCallInfo }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const args = parseToolJSON(tool.args);
   const command = asString(args?.command);
@@ -421,41 +362,26 @@ function WorkspaceShellCard({ tool }: { tool: ToolCallInfo }) {
   const stderrTruncated = output?.stderr_truncated === true;
 
   return (
-    <Flexbox gap={4} style={{ marginBottom: 8 }} data-pt-agent-tool="workspace-shell">
-      <Flexbox horizontal align="center" gap={6} wrap="wrap">
-        <TerminalSquare size={13} style={{ color: token.colorTextSecondary }} />
-        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+    <div className="sc-tool-stack sc-tool-subcard" data-pt-agent-tool="workspace-shell">
+      <div className="sc-tool-row sc-tool-subcard__head">
+        <TerminalSquare size={13} className="sc-tool-subcard__icon" />
+        <span className="sc-tool-subcard__title">
           {t('chat.message.toolCall.workspace.shell')}
         </span>
-        <code
-          style={{
-            fontSize: 11,
-            color: token.colorText,
-            background: token.colorFillQuaternary,
-            borderRadius: 4,
-            padding: '1px 6px',
-          }}
-        >
-          {[command, ...argList].join(' ')}
-        </code>
+        <code className="sc-tool-code">{[command, ...argList].join(' ')}</code>
         {typeof exitCode === 'number' && (
-          <Tag
-            bordered={false}
-            color={exitCode === 0 ? 'success' : 'error'}
-            style={{ margin: 0, fontSize: 11 }}
-            data-pt-tool-exit-code={exitCode}
-          >
+          <ToolTag tone={exitCode === 0 ? 'success' : 'error'} data-pt-tool-exit-code={exitCode}>
             {t('chat.message.toolCall.workspace.exit', { code: exitCode })}
-          </Tag>
+          </ToolTag>
         )}
         {typeof durationMs === 'number' && (
-          <span style={{ fontSize: 10, color: token.colorTextTertiary }} data-pt-tool-duration>
+          <span className="sc-tool-meta" data-pt-tool-duration>
             {t('chat.message.toolCall.workspace.duration', { ms: durationMs })}
           </span>
         )}
         {(timedOut || failureReason) && (
           <span
-            style={{ fontSize: 10, color: token.colorWarning }}
+            className="sc-tool-warn"
             data-pt-tool-failure-reason={failureReason || 'timed_out'}
           >
             {timedOut
@@ -463,32 +389,19 @@ function WorkspaceShellCard({ tool }: { tool: ToolCallInfo }) {
               : failureReason}
           </span>
         )}
-      </Flexbox>
+      </div>
       {cwd && (
-        <div style={{ fontSize: 10, color: token.colorTextTertiary }} data-pt-tool-cwd title={cwd}>
+        <div className="sc-tool-meta" data-pt-tool-cwd title={cwd}>
           {t('chat.message.toolCall.workspace.cwd')}: {cwd}
         </div>
       )}
       {typeof output?.stdout === 'string' && output.stdout && (
         <>
-          <pre
-            data-pt-tool-stdout
-            style={{
-              margin: 0,
-              padding: '4px 8px',
-              borderRadius: 4,
-              background: token.colorFillQuaternary,
-              fontSize: 11,
-              maxHeight: 120,
-              overflow: 'auto',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
+          <pre className="sc-tool-pre sc-tool-pre--tall" data-pt-tool-stdout>
             {output.stdout}
           </pre>
           {stdoutTruncated && (
-            <span style={{ fontSize: 10, color: token.colorWarning }} data-pt-tool-stdout-truncated>
+            <span className="sc-tool-warn" data-pt-tool-stdout-truncated>
               {t('chat.message.toolCall.workspace.stdoutTruncated', {
                 bytes: String(output.stdout_total_bytes ?? ''),
               })}
@@ -498,25 +411,11 @@ function WorkspaceShellCard({ tool }: { tool: ToolCallInfo }) {
       )}
       {typeof output?.stderr === 'string' && output.stderr && (
         <>
-          <pre
-            data-pt-tool-stderr
-            style={{
-              margin: 0,
-              padding: '4px 8px',
-              borderRadius: 4,
-              background: token.colorErrorBg,
-              color: token.colorErrorText,
-              fontSize: 11,
-              maxHeight: 120,
-              overflow: 'auto',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
+          <pre className="sc-tool-pre sc-tool-pre--danger" data-pt-tool-stderr>
             {output.stderr}
           </pre>
           {stderrTruncated && (
-            <span style={{ fontSize: 10, color: token.colorWarning }}>
+            <span className="sc-tool-warn">
               {t('chat.message.toolCall.workspace.stderrTruncated', {
                 bytes: String(output.stderr_total_bytes ?? ''),
               })}
@@ -524,79 +423,59 @@ function WorkspaceShellCard({ tool }: { tool: ToolCallInfo }) {
           )}
         </>
       )}
-    </Flexbox>
+    </div>
   );
 }
 
 // --- Delegation helpers ---
 
-function delegationStatusColor(status: DelegationTaskInfo['status']) {
+function delegationStatusTone(status: DelegationTaskInfo['status']): ToolTagTone {
   if (status === 'completed') return 'success';
   if (status === 'failed') return 'error';
   if (status === 'timeout') return 'warning';
-  return 'default';
+  return 'neutral';
 }
 
 export function DelegationResultsBlock({ results }: { results: DelegationTaskInfo[] }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
   return (
-    <Flexbox gap={6} style={{ marginBottom: 8 }}>
-      <Flexbox horizontal align="center" gap={6}>
-        <Workflow size={13} style={{ color: token.colorTextSecondary }} />
-        <span style={{ fontWeight: 500, color: token.colorTextSecondary }}>
+    <div className="sc-tool-stack sc-tool-subcard">
+      <div className="sc-tool-row sc-tool-subcard__head">
+        <Workflow size={13} className="sc-tool-subcard__icon" />
+        <span className="sc-tool-subcard__title">
           {t('chat.message.delegation.title')}
         </span>
-        <Tag bordered={false} style={{ margin: 0, fontSize: 11 }}>
-          {t('chat.message.delegation.summary', { count: results.length })}
-        </Tag>
-      </Flexbox>
-      <Flexbox gap={6}>
+        <ToolTag>{t('chat.message.delegation.summary', { count: results.length })}</ToolTag>
+      </div>
+      <div className="sc-tool-stack">
         {results.map((result) => (
-          <div
-            key={result.taskId}
-            style={{
-              border: `1px solid ${token.colorBorderSecondary}`,
-              borderRadius: 6,
-              background: token.colorBgContainer,
-              padding: '6px 8px',
-            }}
-          >
-            <Flexbox horizontal align="center" gap={6} style={{ marginBottom: 4 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: token.colorText }}>
-                {result.taskDescription}
-              </span>
-              <Tag bordered={false} color={delegationStatusColor(result.status)} style={{ margin: 0, fontSize: 11 }}>
+          <div key={result.taskId} className="sc-tool-delegation">
+            <div className="sc-tool-row sc-tool-delegation__head">
+              <span className="sc-tool-delegation__desc">{result.taskDescription}</span>
+              <ToolTag tone={delegationStatusTone(result.status)}>
                 {t(`chat.message.delegation.status.${result.status}`)}
-              </Tag>
-            </Flexbox>
+              </ToolTag>
+            </div>
             {result.childToolset.length > 0 && (
-              <div style={{ fontSize: 11, color: token.colorTextTertiary, marginBottom: 4 }}>
+              <div className="sc-tool-delegation__meta">
                 {t('chat.message.delegation.tools', { tools: result.childToolset.join(', ') })}
               </div>
             )}
-            <div style={{ fontSize: 11, color: token.colorTextTertiary, marginBottom: 4 }}>
+            <div className="sc-tool-delegation__meta">
               {t('chat.message.delegation.iterations', { count: result.toolIterations })}
             </div>
             {result.resultSummary && (
-              <pre style={{
-                margin: 0,
-                padding: '4px 6px',
-                borderRadius: 4,
-                background: token.colorFillQuaternary,
-                color: result.status === 'failed' ? token.colorErrorText : token.colorTextSecondary,
-                fontSize: 11,
-                overflow: 'auto',
-                maxHeight: 140,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}>{result.resultSummary}</pre>
+              <pre
+                className={`sc-tool-pre${result.status === 'failed' ? ' sc-tool-pre--danger' : ''}`}
+              >
+                {result.resultSummary}
+              </pre>
             )}
           </div>
         ))}
-      </Flexbox>
-    </Flexbox>
+      </div>
+    </div>
   );
 }
 
@@ -623,7 +502,6 @@ export function ToolCallItem({
   const [submittingDecision, setSubmittingDecision] = useState(false);
   const [reconnectingExecutor, setReconnectingExecutor] = useState(false);
   const [requestingAgain, setRequestingAgain] = useState(false);
-  const { token } = theme.useToken();
   const { t, i18n } = useTranslation(['chat', 'agent']);
   const projection = useSyncExternalStore(
     toolRuntime.subscribe,
@@ -719,57 +597,40 @@ export function ToolCallItem({
 
   return (
     <div
+      className="sc-tool-item"
       data-pt-agent-tool-call={tool.id}
       data-pt-agent-tool-turn={turnId}
       data-pt-agent-tool-message={messageId}
-      style={{ borderRadius: 6, overflow: 'hidden' }}
     >
-      <div
+      <button
+        type="button"
+        className="sc-tool-item__toggle"
         data-pt-agent-tool-call-toggle
+        aria-expanded={visibleExpanded}
         onClick={() => setExpanded(!visibleExpanded)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '4px 8px',
-          cursor: 'pointer',
-          borderRadius: 6,
-          fontSize: 12,
-          color: token.colorTextSecondary,
-          background: 'transparent',
-          transition: 'background 0.15s',
-        }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = token.colorFillQuaternary; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
       >
         {visibleExpanded
-          ? <ChevronDown size={12} style={{ flexShrink: 0 }} />
-          : <ChevronRight size={12} style={{ flexShrink: 0 }} />
-        }
+          ? <ChevronDown size={12} className="sc-tool-item__chevron" />
+          : <ChevronRight size={12} className="sc-tool-item__chevron" />}
         {approvalRequired || unknownSideEffect
-          ? <AlertTriangle size={12} style={{ color: token.colorWarning, flexShrink: 0 }} />
+          ? <AlertTriangle size={12} className="sc-tool-item__status-icon is-warning" />
           : denied
-            ? <XCircle size={12} style={{ color: token.colorError, flexShrink: 0 }} />
+            ? <XCircle size={12} className="sc-tool-item__status-icon is-error" />
             : tool.pending
-          ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: token.colorPrimary, flexShrink: 0 }} />
-          : <CheckCircle2 size={12} style={{ color: token.colorSuccess, flexShrink: 0 }} />
-        }
-        <span style={{ fontWeight: 500 }}>{tool.name}</span>
-        <Tag bordered={false} color={statusColor} style={{ margin: 0, fontSize: 11 }}>
+              ? <Loader2 size={12} className="sc-tool-item__status-icon is-spinning is-processing" />
+              : <CheckCircle2 size={12} className="sc-tool-item__status-icon is-success" />}
+        <span className="sc-tool-item__name">{tool.name}</span>
+        <ToolTag tone={tagToneFromStatusColor(statusColor)}>
           {t(`chat.message.toolCall.status.${status}`)}
-        </Tag>
+        </ToolTag>
         {tool.args && !visibleExpanded && (
-          <span style={{ color: token.colorTextQuaternary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+          <span className="sc-tool-item__args-ellipsis">
             {tool.args.length > 60 ? tool.args.slice(0, 60) + '…' : tool.args}
           </span>
         )}
-      </div>
+      </button>
       {visibleExpanded && (
-        <div style={{
-          padding: '4px 8px 8px 26px',
-          fontSize: 12,
-          color: token.colorTextTertiary,
-        }}>
+        <div className="sc-tool-item__body">
           {tool.name === 'ask_user' && <ClarificationQuestion key={tool.id} tool={tool} />}
           {(tool.name === 'todo_write' || tool.name === 'todo_update') && (
             <TodoToolCard key={tool.id} tool={tool} />
@@ -785,38 +646,19 @@ export function ToolCallItem({
             tool.name !== 'todo_update' && tool.name !== 'web_fetch' &&
             tool.name !== 'local_file_write' && tool.name !== 'local_file_edit' &&
             tool.name !== 'local_shell_exec' && (
-            <div style={{ marginBottom: 4 }}>
-              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.arguments')}</div>
-              <pre style={{
-                margin: 0,
-                padding: '4px 8px',
-                borderRadius: 4,
-                background: token.colorFillQuaternary,
-                fontSize: 11,
-                overflow: 'auto',
-                maxHeight: 120,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-              }}>{tool.args}</pre>
+            <div className="sc-tool-block">
+              <div className="sc-tool-block__label">{t('chat.message.toolCall.arguments')}</div>
+              <pre className="sc-tool-pre sc-tool-pre--tall">{tool.args}</pre>
             </div>
           )}
           {tool.serverName && (
-            <div style={{ marginBottom: 4 }}>
-              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.server')}</div>
+            <div className="sc-tool-block">
+              <div className="sc-tool-block__label">{t('chat.message.toolCall.server')}</div>
               <span>{tool.serverName}</span>
             </div>
           )}
           {governanceVisible && (
-            <Flexbox
-              data-pt-agent-tool-governance={tool.id}
-              gap={4}
-              style={{
-                borderTop: `1px solid ${token.colorBorderSecondary}`,
-                marginBottom: 8,
-                marginTop: 6,
-                paddingTop: 8,
-              }}
-            >
+            <div className="sc-tool-governance" data-pt-agent-tool-governance={tool.id}>
               {tool.manifestId && (
                 <ToolGovernanceRow
                   label={t('chat.message.toolCall.capability')}
@@ -879,11 +721,11 @@ export function ToolCallItem({
                   value={tool.source}
                 />
               )}
-            </Flexbox>
+            </div>
           )}
           {tool.approvalActor && (
-            <div style={{ marginBottom: 4 }}>
-              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.approval')}</div>
+            <div className="sc-tool-block">
+              <div className="sc-tool-block__label">{t('chat.message.toolCall.approval')}</div>
               <span>
                 {tool.status === 'denied'
                   ? t('chat.message.toolCall.deniedBy', { actor: tool.approvalActor })
@@ -892,8 +734,10 @@ export function ToolCallItem({
             </div>
           )}
           {approvalRequired && tool.approvalId && tool.name !== 'ask_user' && (
-            <Flexbox horizontal gap={8} style={{ marginBottom: 8 }}>
+            <div className="sc-tool-row sc-tool-decisions">
               <button
+                type="button"
+                className="sc-tool-btn sc-tool-btn--primary"
                 data-pt-agent-tool-decision="approve"
                 disabled={!canApprove}
                 onClick={(event) => {
@@ -904,20 +748,13 @@ export function ToolCallItem({
                     .catch((error: unknown) => logToolDecisionFailure(tool.id, error))
                     .finally(() => setSubmittingDecision(false));
                 }}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  border: 'none',
-                  background: token.colorPrimary,
-                  color: '#fff',
-                  cursor: canApprove ? 'pointer' : 'not-allowed',
-                  fontSize: 12,
-                }}
               >
                 {t('chat.message.toolCall.approve')}
               </button>
               <button
                 ref={cancelRef}
+                type="button"
+                className="sc-tool-btn sc-tool-btn--danger"
                 data-pt-agent-tool-recovery="continue-without-tool"
                 disabled={!canSubmitDecision}
                 onClick={(event) => {
@@ -928,30 +765,20 @@ export function ToolCallItem({
                     .catch((error: unknown) => logToolDecisionFailure(tool.id, error))
                     .finally(() => setSubmittingDecision(false));
                 }}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  border: `1px solid ${token.colorErrorBorder}`,
-                  background: token.colorErrorBg,
-                  color: token.colorErrorText,
-                  cursor: 'pointer',
-                  fontSize: 12,
-                }}
               >
                 {t('agent.recovery.continueWithoutTool', { ns: 'agent' })}
               </button>
-            </Flexbox>
+            </div>
           )}
           {toolErrorMessage && (
-            <div
-              data-pt-agent-tool-error={tool.error}
-              style={{ marginBottom: 8, color: token.colorErrorText }}
-            >
+            <div className="sc-tool-error" data-pt-agent-tool-error={tool.error}>
               {toolErrorMessage}
             </div>
           )}
           {executorUnavailable && (
             <button
+              type="button"
+              className="sc-tool-btn sc-tool-btn--neutral"
               data-pt-agent-tool-recovery="reconnect-executor"
               disabled={reconnectingExecutor}
               onClick={(event) => {
@@ -962,19 +789,6 @@ export function ToolCallItem({
                     logToolRecoveryFailure(tool.id, error))
                   .finally(() => setReconnectingExecutor(false));
               }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 10px',
-                marginBottom: 8,
-                borderRadius: 6,
-                border: `1px solid ${token.colorBorder}`,
-                background: token.colorBgContainer,
-                color: token.colorText,
-                cursor: reconnectingExecutor ? 'not-allowed' : 'pointer',
-                fontSize: 12,
-              }}
             >
               <RotateCcw size={12} />
               {t('agent.recovery.reconnectExecutor', { ns: 'agent' })}
@@ -982,6 +796,8 @@ export function ToolCallItem({
           )}
           {approvalExpired && onRequestAgain && (
             <button
+              type="button"
+              className="sc-tool-btn sc-tool-btn--neutral"
               data-pt-agent-tool-recovery="request-again"
               disabled={requestingAgain}
               onClick={(event) => {
@@ -991,19 +807,6 @@ export function ToolCallItem({
                   .catch((error: unknown) =>
                     logToolRecoveryFailure(tool.id, error))
                   .finally(() => setRequestingAgain(false));
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 10px',
-                marginBottom: 8,
-                borderRadius: 6,
-                border: `1px solid ${token.colorBorder}`,
-                background: token.colorBgContainer,
-                color: token.colorText,
-                cursor: requestingAgain ? 'not-allowed' : 'pointer',
-                fontSize: 12,
               }}
             >
               <RotateCcw size={12} />
@@ -1017,19 +820,9 @@ export function ToolCallItem({
             tool.name !== 'todo_update' && tool.name !== 'web_fetch' &&
             tool.name !== 'local_file_write' && tool.name !== 'local_file_edit' &&
             tool.name !== 'local_shell_exec' && (
-            <div>
-              <div style={{ fontWeight: 500, marginBottom: 2, color: token.colorTextSecondary }}>{t('chat.message.toolCall.result')}</div>
-              <pre style={{
-                margin: 0,
-                padding: '4px 8px',
-                borderRadius: 4,
-                background: token.colorFillQuaternary,
-                fontSize: 11,
-                overflow: 'auto',
-                maxHeight: 160,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-              }}>{tool.result}</pre>
+            <div className="sc-tool-block">
+              <div className="sc-tool-block__label">{t('chat.message.toolCall.result')}</div>
+              <pre className="sc-tool-pre">{tool.result}</pre>
             </div>
           )}
         </div>
@@ -1087,7 +880,6 @@ export function ToolCallsBlock({
       || toolCall.name === 'local_file_edit'
       || toolCall.name === 'local_shell_exec');
   const [expanded, setExpanded] = useState(includesWorkspaceTool);
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const pendingCount = projectedToolCalls.filter((toolCall) =>
     toolCall.pending).length;
@@ -1101,43 +893,29 @@ export function ToolCallsBlock({
 
   return (
     <div
+      className="sc-tool-card"
       data-pt-agent-tool-call-group={turnId}
       data-pt-agent-tool-call-total={toolCalls.length}
       data-pt-agent-tool-call-pending={pendingCount}
-      style={{
-        borderRadius: 8,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorFillQuaternary,
-        marginBottom: 8,
-        overflow: 'hidden',
-      }}
     >
-      <div
+      <button
+        type="button"
+        className="sc-tool-card__toggle"
         data-pt-agent-tool-call-group-toggle
+        aria-expanded={visibleExpanded}
         onClick={() => setExpanded(!visibleExpanded)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px 10px',
-          cursor: 'pointer',
-          fontSize: 12,
-          fontWeight: 500,
-          color: token.colorTextSecondary,
-        }}
       >
         {visibleExpanded
-          ? <ChevronDown size={13} style={{ flexShrink: 0 }} />
-          : <ChevronRight size={13} style={{ flexShrink: 0 }} />
-        }
-        <Wrench size={13} style={{ flexShrink: 0, color: token.colorTextTertiary }} />
+          ? <ChevronDown size={13} className="sc-tool-card__chevron" />
+          : <ChevronRight size={13} className="sc-tool-card__chevron" />}
+        <Wrench size={13} className="sc-tool-card__wrench" />
         <span>{summary}</span>
         {pendingCount > 0 && (
-          <Loader2 size={12} style={{ animation: 'spin 1s linear infinite', color: token.colorPrimary, marginLeft: 'auto' }} />
+          <Loader2 size={12} className="sc-tool-card__spinner is-spinning" />
         )}
-      </div>
+      </button>
       {visibleExpanded && (
-        <div style={{ padding: '0 4px 4px', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+        <div className="sc-tool-card__items">
           {toolCalls.map((tc) => (
             <ToolCallItem
               key={tc.id}
@@ -1155,9 +933,9 @@ export function ToolCallsBlock({
         <div
           key={tool.id}
           role="status"
+          className="sc-tool-card__receipt"
           data-pt-agent-tool-receipt={tool.id}
           data-pt-agent-tool-receipt-status={tool.status}
-          style={{ padding: '4px 8px', fontSize: 12, color: token.colorTextSecondary }}
         >
           {tool.name} · {t(`chat.message.toolCall.status.${tool.status}`)}
         </div>

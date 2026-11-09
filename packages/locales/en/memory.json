@@ -32,6 +32,7 @@
   "memory.browse.accessCount": "{{count}} accesses",
   "memory.browse.noSummary": "(no summary)",
   "memory.browse.deleteConfirm": "Delete this memory?",
+  "memory.browse.delete": "Delete",
   "memory.browse.deleteSuccess": "Memory deleted",
   "memory.browse.deleteFailed": "Failed to delete memory",
   "memory.browse.noMemories": "No memories found",

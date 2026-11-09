@@ -16,6 +16,24 @@ export type MessageAttachment = {
 
 export type DeliveryStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
+/** Automation/service task states mirrored from desktop DesktopServiceMessage. */
+export type ActivityState = 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'info';
+
+export type ActivityEvent = {
+  state: ActivityState;
+  /** Needs attention without a hard failure (production severity === 2). */
+  attention?: boolean;
+  title: string;
+  body?: string;
+  source?: { program?: string; workspace?: string; sessionId?: string };
+  action?: { label: string; url: string };
+  /** Collapsed history roll-up (production ServiceEventAggregation). */
+  knownCount?: number;
+  conflicting?: boolean;
+  historyOnly?: boolean;
+  expanded?: boolean;
+};
+
 export type ChatMessage = {
   id: string;
   from: 'me' | 'peer';
@@ -25,7 +43,7 @@ export type ChatMessage = {
   at: string;
   /** Epoch ms; drives the 4m30s edit/recall window and relative times. */
   ts?: number;
-  kind?: 'text' | 'service' | 'image' | 'voice' | 'link';
+  kind?: 'text' | 'service' | 'image' | 'voice' | 'link' | 'activity';
   status?: DeliveryStatus;
   edited?: boolean;
   recalled?: boolean;
@@ -42,6 +60,8 @@ export type ChatMessage = {
   reactions?: import('../../chat-domain').ReactionState;
   replyTo?: { who: string; text: string };
   threadCount?: number;
+  /** Automation/activity card payload when kind === 'activity'. */
+  activity?: ActivityEvent;
 };
 
 export type Conversation = {
@@ -53,6 +73,13 @@ export type Conversation = {
   unread: number;
   tone: string;
   kind: 'person' | 'group';
+  /**
+   * Projection flag mirroring desktop `selfDirect`: a one-member Direct whose
+   * only member is the authenticated actor (Saved Messages). Never a new
+   * conversation kind — no peer chrome (presence dot, calls, safety section).
+   * Display name falls back to the localized `contacts.savedMessages` string.
+   */
+  selfDirect?: boolean;
   online?: boolean;
   pinned?: boolean;
   muted?: boolean;
@@ -87,6 +114,13 @@ import { IDENTITY_INK, IDENTITY_PINE } from '../identity-tone';
 /** Local viewer identity (seeds are frozen local data). */
 export const VIEWER_NAME = '林野';
 export const VIEWER_TONE = IDENTITY_PINE;
+
+/**
+ * Stable id for the singleton self-direct (Saved Messages) conversation.
+ * Production derives `direct-self-<sha256(ptid)[:16]>`; the prototype has no
+ * ptid, so a frozen local id keeps reopen/select idempotent.
+ */
+export const SELF_DIRECT_ID = 'cv-self';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -197,7 +231,27 @@ export const SEED_MESSAGES: Record<string, ChatMessage[]> = {
     { id: 's1', from: 'peer', kind: 'service', text: '林晚 通过 苏禾 的邀请加入了群聊', at: '周二', ts: NOW - 3 * 86400_000 },
     { id: 'm1', from: 'peer', senderName: '周禾', senderTone: '#9f6a2c', text: '周末书架见，记得带想交换的书。', at: '昨天 20:11', ts: NOW - 38 * 3600_000, threadCount: 3 },
     { id: 'm2', from: 'peer', senderName: '苏禾', senderTone: '#a6513c', text: '我带两盆罗勒苗，先到先得。', at: '昨天 20:14', ts: NOW - 38 * 3600_000 + 180_000 },
+    {
+      id: 'a1', from: 'peer', kind: 'activity', at: '昨天 20:16', ts: NOW - 38 * 3600_000 + 300_000,
+      text: '书架值班排期已更新',
+      activity: {
+        state: 'waiting', attention: true, knownCount: 3,
+        title: '书架值班排期需要确认',
+        body: '本周六 14:00–16:00 尚缺一位值班成员，确认后自动通知群内。',
+        source: { program: 'bookshelf-scheduler', workspace: '小区生活群' },
+      },
+    },
     { id: 'm3', from: 'me', text: '我整理了一批绘本，周六搬到架上。', at: '昨天 20:20', ts: NOW - 38 * 3600_000 + 540_000, status: 'read', edited: true },
+    {
+      id: 'a2', from: 'peer', kind: 'activity', at: '昨天 20:24', ts: NOW - 38 * 3600_000 + 780_000,
+      text: '交换清单已归档',
+      activity: {
+        state: 'completed',
+        title: '本周交换清单已归档',
+        source: { program: 'exchange-ledger', workspace: '小区生活群', sessionId: 's-8842' },
+        action: { label: '查看归档', url: 'https://songshelf.local/archive/w42' },
+      },
+    },
   ],
   'cv-linwan': [
     { id: 'm1', from: 'peer', text: '诗集散会我帮你留了位置。', at: '08:40', ts: NOW - 84 * MIN },
