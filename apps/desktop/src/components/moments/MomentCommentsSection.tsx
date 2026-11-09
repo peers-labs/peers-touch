@@ -156,6 +156,8 @@ export function MomentCommentsSection({
       composerRetryAfterSeconds={privateDraft?.retryAfterSeconds}
       composerPublicationState={privateDraft?.publicationState}
       composerDraftText={isPrivate ? privateDraft?.text : undefined}
+      composerDraftReplyToCommentId={isPrivate ? privateDraft?.replyToCommentId : undefined}
+      composerDraftMentions={isPrivate ? privateDraft?.mentions : undefined}
       viewerActorPtid={viewerActorPtid ?? privateScope.actorPtid ?? undefined}
       failureVariant={isPrivate ? 'private' : 'public'}
       onLoadMore={() => {

@@ -226,9 +226,9 @@ function normalizePrivateCommentMention(value: unknown): PrivateCommentMention {
   return { actorPtid, offset, length, display };
 }
 
-function sameMentions(
-  left: PrivateCommentMention[],
-  right: PrivateCommentMention[],
+export function samePrivateCommentMentions(
+  left: readonly PrivateCommentMention[],
+  right: readonly PrivateCommentMention[],
 ): boolean {
   return left.length === right.length && left.every((mention, index) => {
     const candidate = right[index];
@@ -467,7 +467,7 @@ function normalizeIntentDraft(
     || draft.postId !== intent.postId
     || draft.replyToCommentId !== (intent.replyToCommentId ?? '')
     || draft.text !== intent.text
-    || !sameMentions(draft.mentions, intent.mentions ?? [])
+    || !samePrivateCommentMentions(draft.mentions, intent.mentions ?? [])
   ) {
     throw contractError('private Comment Native draft changed its local identity');
   }

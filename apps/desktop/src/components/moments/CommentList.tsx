@@ -70,6 +70,8 @@ interface CommentListProps {
   composerRetryAfterSeconds?: number;
   composerPublicationState?: PrivateCommentPublicationState;
   composerDraftText?: string;
+  composerDraftReplyToCommentId?: string;
+  composerDraftMentions?: SocialTextMention[];
   viewerActorPtid?: string;
   /** 'public' selects the public failure copy; the default private
    * copy is kept for the Secure Content path. */
@@ -111,6 +113,8 @@ export function CommentList({
   composerRetryAfterSeconds,
   composerPublicationState,
   composerDraftText,
+  composerDraftReplyToCommentId,
+  composerDraftMentions,
   viewerActorPtid,
   failureVariant = 'private',
   onLoadMore,
@@ -140,7 +144,9 @@ export function CommentList({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [publicSubmitError, setPublicSubmitError] = useState(false);
-  const [replyTargetId, setReplyTargetId] = useState(storedDraft?.replyToCommentId ?? '');
+  const [replyTargetId, setReplyTargetId] = useState(
+    storedDraft?.replyToCommentId ?? composerDraftReplyToCommentId ?? '',
+  );
   const commentsById = useMemo(() => new Map(comments.map(comment => [comment.id, comment])), [comments]);
   const replyTarget = commentsById.get(replyTargetId);
   const replyRootId = replyTarget ? rootComment(replyTarget, commentsById).id : replyTargetId || undefined;
@@ -161,8 +167,14 @@ export function CommentList({
 
   const [text, setText] = useState(() => storedDraft?.text ?? composerDraftText ?? '');
   const [mentions, setMentions] = useState<SocialTextMention[]>(
-    () => storedDraft?.mentions ?? [],
+    () => storedDraft?.mentions ?? composerDraftMentions ?? [],
   );
+  const submittedMentions = useMemo(() => {
+    const leadingWhitespace = text.length - text.trimStart().length;
+    return normalizeMentions(text.trim(), mentions.map(mention => ({
+      ...mention, offset: mention.offset - leadingWhitespace,
+    })));
+  }, [mentions, text]);
   const [composing, setComposing] = useState(false);
   const [caret, setCaret] = useState(0);
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
@@ -263,7 +275,7 @@ export function CommentList({
     if (composerActionDisabled) return;
     const trimmed = text.trim();
     if ((composerAction === 'submit' && !trimmed) || submitInFlight.current) return;
-    const normalized = normalizeMentions(text, mentions);
+    const normalized = submittedMentions;
     submitInFlight.current = true;
     setSubmitting(true);
     setSubmitError(null);
@@ -341,8 +353,13 @@ export function CommentList({
       retryDeadlinePending: withinRetryDeadline,
       text,
       draftText: composerDraftText,
+      replyToCommentId: replyRootId,
+      draftReplyToCommentId: composerDraftReplyToCommentId,
+      mentions: submittedMentions,
+      draftMentions: composerDraftMentions,
     });
-  }, [composerDraftText, composerPublicationState, composerState, onRetry, text, withinRetryDeadline]);
+  }, [composerDraftText, composerDraftReplyToCommentId, composerDraftMentions,
+    composerPublicationState, composerState, onRetry, replyRootId, submittedMentions, text, withinRetryDeadline]);
 
   const composerDisabled = parentUnavailable
     || nativePending

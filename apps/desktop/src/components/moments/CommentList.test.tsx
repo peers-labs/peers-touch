@@ -141,3 +141,54 @@ it('can confirm committed readback with an empty editor', async () => {
   expect(retry).toHaveBeenCalledTimes(1);
   expect(submit).not.toHaveBeenCalled();
 });
+
+it('submits a changed reply target with unchanged text', async () => {
+  const input = await render({
+    composerDraftReplyToCommentId: 'first',
+    comments: ['first', 'second'].map(id => ({
+      id, postId: 'post', authorPtid: 'ptid:alice', replyToCommentId: '', content: id,
+    })),
+  });
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('[data-moments-comment-reply="second"]')!.click();
+  });
+  await enter(input);
+  expect(submit).toHaveBeenCalledWith('unchanged', 'second', []);
+  expect(retry).not.toHaveBeenCalled();
+});
+
+it('recovers the retained reply and mention intent when the editor has no local draft', async () => {
+  const mention = { actorPtid: 'ptid:alice', offset: 0, length: 6, display: '@Alice' };
+  const input = await render({
+    composerDraftText: '@Alice hello', composerDraftReplyToCommentId: 'first',
+    composerDraftMentions: [mention],
+  });
+  await enter(input);
+  expect(retry).toHaveBeenCalledTimes(1);
+  expect(submit).not.toHaveBeenCalled();
+  expect(input.value).toBe('@Alice hello');
+});
+
+it('submits a changed same-name mention with unchanged final text', async () => {
+  const input = await render({
+    composerDraftText: '@Alice hello',
+    composerDraftMentions: [{ actorPtid: 'ptid:old-alice', offset: 0, length: 6, display: '@Alice' }],
+  });
+  await type(input, '@Ali');
+  await enter(input);
+  await type(input, '@Alice hello');
+  await enter(input);
+  expect(submit).toHaveBeenCalledWith('@Alice hello', undefined,
+    [{ actorPtid: 'ptid:alice', offset: 0, length: 6, display: '@Alice' }]);
+  expect(retry).not.toHaveBeenCalled();
+});
+
+it('binds mention offsets to the trimmed submitted text', async () => {
+  const input = await render({ composerState: undefined, composerDraftText: '' });
+  await type(input, '  @Ali');
+  await enter(input);
+  await type(input, '  @Alice hello  ');
+  await enter(input);
+  expect(submit).toHaveBeenCalledWith('@Alice hello', undefined,
+    [{ actorPtid: 'ptid:alice', offset: 0, length: 6, display: '@Alice' }]);
+});
