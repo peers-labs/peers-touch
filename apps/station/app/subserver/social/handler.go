@@ -1311,7 +1311,6 @@ func (s *subServer) handleGetMomentResourceWithReader(
 		"post_id",
 		"social.get_moment_resource",
 	); err != nil {
-		logger.Warn(ctx, "private Moment point-read rejected noncanonical content identity")
 		return nil, privateContentResponseError(
 			nethttp.StatusNotFound,
 			model.ErrorCode_ERROR_CODE_POST_NOT_FOUND,
@@ -1322,8 +1321,6 @@ func (s *subServer) handleGetMomentResourceWithReader(
 	actorPTID, ok := getActorPTID(ctx)
 	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
 	if !ok || deviceID == "" {
-		logger.Warnf(ctx, "private Moment point-read identity incomplete: actor=%t device=%t",
-			ok, deviceID != "")
 		return nil, privateContentResponseError(
 			nethttp.StatusNotFound,
 			model.ErrorCode_ERROR_CODE_POST_NOT_FOUND,
@@ -1348,11 +1345,8 @@ func (s *subServer) handleGetMomentResourceWithReader(
 		req.GetPostId(),
 	)
 	if err != nil {
-		logger.Warnf(ctx, "private Moment point-read owner rejected: code=%s",
-			domain.PrivateContentCodeOf(err))
 		return nil, privateContentHandlerError(err)
 	}
-	logger.Info(ctx, "private Moment point-read owner succeeded")
 	return response, nil
 }
 
