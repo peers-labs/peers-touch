@@ -707,14 +707,20 @@ pub fn social_private_moments_teardown(
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<Value> {
-    if let Err(error) = lease_for_window(
+    let lease = match lease_for_window(
         state.inner(),
         &window,
         &input.actor_ptid,
         input.renderer_generation,
     ) {
-        return native_failure(error, "AUTHENTICATION_REQUIRED");
-    }
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
+    };
+    tracing::info!(
+        renderer_generation = input.renderer_generation,
+        session_generation = lease.session.key.session_generation,
+        "Secure Content renderer teardown requested"
+    );
     if let Err(error) = state.secure_content.teardown_actor(&input.actor_ptid) {
         return native_failure(error, "PRIVATE_UNSUPPORTED_ON_DEVICE");
     }

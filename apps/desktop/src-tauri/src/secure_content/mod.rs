@@ -577,6 +577,12 @@ impl SecureContentSupervisor {
                 lease: lease.clone(),
             },
         );
+        tracing::info!(
+            renderer_generation,
+            session_generation = lease.session.key.session_generation,
+            lifecycle_epoch = expected_lifecycle_epoch,
+            "Secure Content runtime activated"
+        );
         drop(active);
         if let Some(previous) = previous {
             retire_runtime(previous, self.app_handle().as_ref())?;
@@ -864,6 +870,16 @@ impl SecureContentSupervisor {
                 })
                 .collect::<Vec<_>>();
             self.lifecycle_epoch.fetch_add(1, Ordering::AcqRel);
+            for label in &labels {
+                if let Some(runtime) = active.get(label) {
+                    tracing::info!(
+                        renderer_generation = runtime.lease.renderer_generation,
+                        session_generation = runtime.lease.session.key.session_generation,
+                        lifecycle_epoch = self.lifecycle_epoch(),
+                        "Secure Content actor runtime detached"
+                    );
+                }
+            }
             labels
                 .into_iter()
                 .filter_map(|label| active.remove(&label))
