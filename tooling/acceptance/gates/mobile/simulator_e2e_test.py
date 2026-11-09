@@ -1406,6 +1406,11 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
         self.assertFalse(result["successfulCallbackInjected"])
         self.assertFalse(result["stationMocksUsed"])
         self.assertEqual(set(result["clients"]), {"sim-ios", "sim-ios-peer"})
+        self.assertTrue(result["assertions"])
+        self.assertTrue(
+            all(item["passed"] for item in result["assertions"]),
+            result["assertions"],
+        )
         self.assertEqual(
             artifacts.json_values[
                 "mobile-simulator/source-identity.json"
@@ -1430,7 +1435,18 @@ class SimulatorJourneyProtocolTests(unittest.TestCase):
         ) -> dict[str, Any]:
             observed.append(spec.client_id)
             barrier.wait(timeout=1)
-            return {"clientId": spec.client_id}
+            return {
+                "platform": "ios",
+                "deviceRole": spec.client_id,
+                "physicalRoleClaimed": False,
+                "stages": [
+                    "initial",
+                    "warm-invalid",
+                    "cold-invalid",
+                    "restart-reconnected",
+                ],
+                "finalPhase": "failed",
+            }
 
         gate = SimulatorCallbackRoutingGate(
             session_factory=(  # type: ignore[arg-type]

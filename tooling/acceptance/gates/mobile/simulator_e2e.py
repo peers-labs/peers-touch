@@ -1341,12 +1341,61 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                 for spec in clients
             }
 
+        assertions = self._assertions_from_clients(client_results)
+        failed = [item["name"] for item in assertions if not item["passed"]]
+        if failed:
+            raise GateError(
+                "Mobile simulator access assertions failed: "
+                + ", ".join(failed)
+            )
+
         return {
             **self._result_base("PASS"),
             "completionStatus": "DONE",
             "proofStatus": "PROVEN",
             "clients": client_results,
+            "assertions": assertions,
         }
+
+    def _assertions_from_clients(
+        self,
+        client_results: Mapping[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Build explicit, evidence-derived assertions for the proof contract.
+
+        Every isolated client must reach all fail-closed stages (warm/cold
+        invalid callback routing plus post-restart reconnection) and end with
+        the OAuth phase unadvanced; no simulator client may claim a physical
+        device role.
+        """
+        required_stages = (
+            "initial",
+            "warm-invalid",
+            "cold-invalid",
+            "restart-reconnected",
+        )
+        # Fail-closed terminals: idle (nothing advanced) or failed (callback
+        # explicitly rejected). An admitted "active_session" phase would mean an
+        # invalid callback was wrongly accepted.
+        fail_closed_phases = {"idle", "failed"}
+        assertions: list[dict[str, Any]] = []
+        for client_id, result in sorted(client_results.items()):
+            stages = result.get("stages", [])
+            assertions.extend([
+                {
+                    "name": f"MS-AG02:{client_id}:all-fail-closed-stages-observed",
+                    "passed": all(stage in stages for stage in required_stages),
+                },
+                {
+                    "name": f"MS-AG02:{client_id}:invalid-callback-leaves-access-unadmitted",
+                    "passed": result.get("finalPhase") in fail_closed_phases,
+                },
+                {
+                    "name": f"MS-AG02:{client_id}:does-not-claim-physical-device",
+                    "passed": result.get("physicalRoleClaimed") is False,
+                },
+            ])
+        return assertions
 
     def _client_specs(
         self,
