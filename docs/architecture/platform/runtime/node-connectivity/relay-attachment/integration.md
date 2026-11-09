@@ -149,6 +149,30 @@ The canonical `station-dashboard` prototype is replaced in place:
 
 ## 9. Verification
 
+Relay runtime preparation uses the shared
+`tooling/acceptance/provisioners/relay_attachment.py` owner. The original Relay
+and Mobile provisioners compose it directly and register cleanup in their own
+Suite lifetime. Preparation occurs under already retained service/source
+leases; exact-source equipment still completes before those leases.
+
+CA additions use unique run-scoped paths, exclusive partial writes and atomic
+no-clobber publication. Cleanup is registered before writing, admits empty
+partial writes, verifies file type/mode/owner and final certificate digest, and
+rejects a replaced Compose container before mutation. It removes only its own
+paths and restarts that same container to retire cached trust.
+
+Existing active attachments with the exact Relay origin are reused without
+cleanup ownership. Existing recovering, disabled-but-live or foreign-origin
+attachments remain untouched and prevent replacement. Newly issued invitations
+and imported attachments acquire cleanup before their respective API calls,
+including unknown outcomes. Cleanup verifies the Station identity and unique
+invitation label/origin, detaches through the original Controller, and closes
+unused invitations through the original Relay API with readback. Consumed
+one-use invitations carry no remaining enrollment authority.
+
+These preparation checks do not prove a deployed Circuit journey or Relay
+payload opacity; those remain required product observations.
+
 Source checks:
 
 - role allowlists and prohibited imports;

@@ -124,10 +124,10 @@ from tooling.acceptance.provisioners.preset_actor import (
     actor_identity_key_name,
 )
 from tooling.acceptance.provisioners.station_access_relay_role import (
-    StationAccessRelayRoleProvisioner,
     _relay_peer_identity,
     _station_runtime_config,
 )
+from tooling.acceptance.provisioners.relay_attachment import RelayAttachmentFixture
 
 
 IOS_RUNTIME = "iOS 26.5"
@@ -9318,11 +9318,7 @@ class MobileRelaySimulatorProvisioner(
             Callable[[str, str, str], bytes] | None
         ) = None,
         relay_attachment_fixture_factory: (
-            Callable[
-                [EnvironmentContract],
-                StationAccessRelayRoleProvisioner,
-            ]
-            | None
+            Callable[..., RelayAttachmentFixture] | None
         ) = None,
         **kwargs: Any,
     ) -> None:
@@ -9340,7 +9336,7 @@ class MobileRelaySimulatorProvisioner(
         )
         self._relay_attachment_fixture_factory = (
             relay_attachment_fixture_factory
-            or StationAccessRelayRoleProvisioner
+            or RelayAttachmentFixture
         )
 
     def _prepare_service_fixtures(
@@ -9368,15 +9364,9 @@ class MobileRelaySimulatorProvisioner(
             relay.deployment_environment
         )
         fixture = self._relay_attachment_fixture_factory(
-            EnvironmentContract.from_yaml(
-                ENVIRONMENTS_DIR / "station-access-relay-role.yaml"
-            )
+            register_cleanup=self.register_cleanup,
         )
-        self.register_cleanup(
-            "mobile-relay-attachment-fixture",
-            fixture.cleanup,
-        )
-        fixture._prepare_native_relay_fixture(
+        fixture.prepare(
             manifest=manifest,
             station_config=_station_runtime_config(
                 station.deployment_environment,

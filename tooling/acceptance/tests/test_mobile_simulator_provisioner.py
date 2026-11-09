@@ -1633,16 +1633,16 @@ class MobileSimulatorContractTests(unittest.TestCase):
         events: list[object] = []
 
         class RelayAttachmentFixture:
-            def __init__(self, received_contract: EnvironmentContract) -> None:
-                self.contract = received_contract
-                events.append(("contract", received_contract.id))
+            def __init__(self, *, register_cleanup) -> None:
+                self.register_cleanup = register_cleanup
+                events.append(("register-cleanup", register_cleanup))
 
-            def _prepare_native_relay_fixture(self, **kwargs: object) -> None:
+            def prepare(self, **kwargs: object) -> None:
                 events.append(("prepare", kwargs))
+                self.register_cleanup("test-relay-attachment", self.cleanup)
 
-            def cleanup(self) -> tuple[str, ...]:
+            def cleanup(self) -> None:
                 events.append("cleanup")
-                return ("relay-attachment",)
 
         provisioner = MobileRelaySimulatorProvisioner(
             contract,
@@ -1705,7 +1705,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             station_url="https://station.example",
             allow_profile_managed=True,
         )
-        self.assertEqual(events[0], ("contract", "station-access-relay-role"))
+        self.assertEqual(events[0], ("register-cleanup", provisioner.register_cleanup))
         prepared = events[1]
         self.assertIsInstance(prepared, tuple)
         _, kwargs = prepared
@@ -1723,7 +1723,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.assertEqual(
             provisioner.cleanup(),
-            ("mobile-relay-attachment-fixture",),
+            ("test-relay-attachment",),
         )
         self.assertEqual(events[-1], "cleanup")
 

@@ -24,6 +24,7 @@ from tooling.acceptance.provisioners import (
 from tooling.acceptance.provisioners.posix_service_runtime import (
     PosixServiceRuntimeConfig,
 )
+from tooling.acceptance.provisioners.relay_attachment import RelayAttachmentFixture
 from tooling.acceptance.provisioners.station_access_relay_role import (
     DESKTOP_RELAY_NATIVE_GATE_ID,
     NODE_CONNECTIVITY_NATIVE_GATE_ID,
@@ -124,76 +125,47 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             StationAccessRelayRoleProvisioner,
         )
 
-    def test_non_active_attachment_is_replaced_with_fresh_invitation(
+    def test_non_active_operator_attachment_is_preserved(
         self,
     ) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
         manifest = provisioner._new_base_manifest(
             DESKTOP_RELAY_NATIVE_GATE_ID
         )
-        invitation = {
-            "relay_peer_id": "relay-peer",
-            "invite_token": "invite",
-        }
+        fixture = provisioner.relay_attachment_fixture
         with (
             patch.object(
-                provisioner,
-                "_dashboard_token",
+                fixture,
+                "dashboard_token",
                 return_value="dashboard-token",
             ),
             patch.object(
-                provisioner,
-                "_attachment_items",
+                fixture,
+                "attachment_items",
                 return_value=[
                     {
                         "relay_peer_id": "relay-peer",
                         "state": "recovering",
                         "enabled": True,
+                        "control_origin": "https://relay.example:18081",
                     }
                 ],
             ),
-            patch.object(
-                provisioner,
-                "_disable_fixture_relay_for_replacement",
-            ) as disable,
-            patch.object(
-                provisioner,
-                "_wait_attachment_state",
-                return_value={"state": "active"},
-            ),
             patch(
-                "tooling.acceptance.provisioners.station_access_relay_role."
-                "mint_posix_relay_operator_token",
-                return_value="operator-token",
-            ),
-            patch(
-                "tooling.acceptance.provisioners.station_access_relay_role."
-                "read_service_runtime_identity",
-                return_value="station-peer",
-            ),
-            patch(
-                "tooling.acceptance.provisioners.station_access_relay_role."
-                "_json_request",
-                side_effect=[
-                    (200, {"invitation": invitation}),
-                    (200, {}),
-                ],
+                "tooling.acceptance.provisioners.relay_attachment.relay_json_request",
             ) as request,
         ):
-            provisioner._ensure_fixture_relay(
-                manifest=manifest,
-                station_url="http://station.example",
-                relay_url="https://relay.example:18081",
-                relay_peer_id="relay-peer",
-                relay_config=_config("relay"),
-                trust_anchor=b"certificate",
-            )
-
-        disable.assert_called_once_with(
-            "http://station.example",
-            "relay-peer",
-        )
-        self.assertEqual(request.call_count, 2)
+            with self.assertRaises(BlockedError):
+                fixture.ensure_attachment(
+                    manifest=manifest,
+                    station_url="http://station.example",
+                    relay_url="https://relay.example:18081",
+                    relay_peer_id="relay-peer",
+                    relay_config=_config("relay"),
+                    trust_anchor=b"certificate",
+                )
+        request.assert_not_called()
+        self.assertEqual(provisioner.cleanup(), ())
 
     def test_attach_only_provisioning_emits_route_service_without_cleanup(
         self,
@@ -332,11 +304,10 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                         or "https://station-proxy.example"
                     ),
                 ),
-                _prepare_native_relay_fixture=Mock(
-                    side_effect=lambda **_: lifecycle_order.append(
-                        "relay-fixture"
-                    )
-                ),
+            ),
+            patch.object(
+                provisioner.relay_attachment_fixture, "prepare",
+                side_effect=lambda **_: lifecycle_order.append("relay-fixture"),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -508,11 +479,10 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                         or "https://station-proxy.example"
                     ),
                 ),
-                _prepare_native_relay_fixture=Mock(
-                    side_effect=lambda **_: lifecycle_order.append(
-                        "relay-fixture"
-                    )
-                ),
+            ),
+            patch.object(
+                provisioner.relay_attachment_fixture, "prepare",
+                side_effect=lambda **_: lifecycle_order.append("relay-fixture"),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -802,7 +772,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         expected = _status("station", 101)
         with (
             patch(
-                "tooling.acceptance.provisioners.station_access_relay_role."
+                "tooling.acceptance.provisioners.relay_attachment."
                 "inspect_posix_runtime",
                 side_effect=(
                     BlockedError(
@@ -813,11 +783,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 ),
             ) as inspect_runtime,
             patch(
-                "tooling.acceptance.provisioners.station_access_relay_role."
+                "tooling.acceptance.provisioners.relay_attachment."
                 "time.sleep",
             ),
         ):
-            result = StationAccessRelayRoleProvisioner._wait_posix_runtime(
+            result = RelayAttachmentFixture.wait_runtime(
                 _config("station"),
             )
 
@@ -1131,17 +1101,12 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         }
         with (
             patch.object(
-                provisioner,
-                "_wait_posix_runtime",
+                provisioner.relay_attachment_fixture,
+                "wait_runtime",
                 side_effect=(runtime_status, runtime_status),
             ) as wait_runtime,
-            patch.object(
-                provisioner,
-                "_remote_home",
-                return_value="/home/operator",
-            ),
         ):
-            provisioner._install_station_relay_ca(
+            provisioner.relay_attachment_fixture.install_station_ca(
                 config,
                 b"certificate",
                 run_id="run-1",
