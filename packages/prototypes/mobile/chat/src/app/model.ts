@@ -91,8 +91,6 @@ export interface ChatMessage {
   /** Quoted source rendered as a left-rule block inside the bubble. */
   replyTo?: { who: string; text: string };
   pinned?: boolean;
-  /** Device-local personal bookmark (no protocol object). */
-  markedForLater?: boolean;
   edited?: boolean;
   /** Recalled messages collapse to a centered "你撤回了一条消息" notice. */
   recalled?: boolean;
@@ -171,7 +169,7 @@ export interface AppState {
   signedOut: boolean;
   /** Station access attempt projection (fixture decision machine). */
   access: AccessRuntimeState;
-  settings: { notify: boolean; sound: boolean; readReceipt: boolean; autoLock: string };
+  settings: { notify: boolean; sound: boolean };
   call: CallState;
 }
 
@@ -217,7 +215,6 @@ function adaptMessages(id: string): ChatMessage[] {
     reactions: m.reactions,
     replyTo: m.replyTo,
     pinned: m.pinned,
-    markedForLater: m.markedForLater,
     edited: m.edited,
     recalled: m.recalled,
   }));
@@ -449,7 +446,7 @@ export function createInitialState(scenario: ProductScenario = 'default'): AppSt
     // specific access decision. The board/product default boots into the app.
     signedOut: scenario === 'journey' || scenario === 'station-offline' || injectedAccess !== null,
     access: injectedAccess ?? emptyAccessState(),
-    settings: { notify: true, sound: false, readReceipt: true, autoLock: '5m' },
+    settings: { notify: true, sound: false },
     call: { status: 'idle' },
   };
   if (scenario === 'long-content' && state.messages['cv-chenyu']) {

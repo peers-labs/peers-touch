@@ -77,7 +77,6 @@ export type Action =
   | { type: 'chat/send-voice'; conversationId: string; voice: { url: string; durationSeconds: number } }
   | { type: 'message/react'; conversationId: string; messageId: string; kind: import('./model').ReactionKind }
   | { type: 'message/pin'; conversationId: string; messageId: string }
-  | { type: 'message/markLater'; conversationId: string; messageId: string }
   | { type: 'message/edit'; conversationId: string; messageId: string; text: string }
   | { type: 'message/recall'; conversationId: string; messageId: string }
   | { type: 'message/hide'; conversationId: string; messageIds: string[] }
@@ -652,15 +651,13 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'message/pin':
-    case 'message/markLater': {
-      const flag = action.type === 'message/pin' ? 'pinned' as const : 'markedForLater' as const;
+    case 'message/pin': {
       return {
         ...state,
         messages: {
           ...state.messages,
           [action.conversationId]: (state.messages[action.conversationId] ?? []).map(m =>
-            m.id === action.messageId ? { ...m, [flag]: !m[flag] } : m),
+            m.id === action.messageId ? { ...m, pinned: !m.pinned } : m),
         },
       };
     }

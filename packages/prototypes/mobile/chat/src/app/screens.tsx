@@ -18,7 +18,7 @@ import type { IconId } from '@peers-touch/ui';
 import {
   REACTION_CATALOG, REACTION_BY_KIND, reactionLabel,
   QUICK_REACTION_KINDS, emojiForKind, orderedKinds,
-  messageActionGroups, reportReasonKey, REPORT_REASONS,
+  messageActionGroups,
   type MessageActionId,
   type ReactionKind,
 } from '../../../../shared/chat-domain';
@@ -688,20 +688,27 @@ function withinMutationWindow(message: ChatMessage, now = Date.now()): boolean {
   return !!message.mine && !!message.ts && now - message.ts <= MUTATION_WINDOW_MS;
 }
 
+/** Mobile product has no owner for these shared-catalog actions (verified in
+    functional-coverage: no chat bookmark or member-facing report command), so
+    the mobile action sheet must never render them. */
+const MOBILE_UNSUPPORTED_MESSAGE_ACTIONS = new Set<MessageActionId>([
+  'mark-later',
+  'report',
+]);
+type MobileMessageActionId = Exclude<MessageActionId, 'mark-later' | 'report'>;
+
 /** Action glyphs stay local; labels/ownership/order all come from the shared
     catalog descriptor (action.labelKey → t()) so mobile never keeps a private
     Chinese copy of the desktop menu vocabulary. */
-const ACTION_ICONS: Record<MessageActionId, IconId> = {
+const ACTION_ICONS: Record<MobileMessageActionId, IconId> = {
   reply: 'corner-up-left',
   forward: 'forward',
   thread: 'message-square',
   pin: 'pin',
   copy: 'copy',
   multiselect: 'list-checks',
-  'mark-later': 'bookmark',
   edit: 'edit-note',
   recall: 'rotate-ccw',
-  report: 'flag',
   moderate: 'shield-x',
   hide: 'eye-off',
 };
@@ -750,6 +757,13 @@ function MessageActionSheet({ message, onClose, onAction }: {
         hasText: !!message.text.trim(),
         inMutationWindow: withinMutationWindow(message),
       })
+        .map(group => ({
+          ...group,
+          actions: group.actions.filter(
+            action => !MOBILE_UNSUPPORTED_MESSAGE_ACTIONS.has(action.id),
+          ),
+        }))
+        .filter(group => group.actions.length > 0)
     : [];
   const quickKinds = expanded ? REACTION_CATALOG.map(meta => meta.kind) : QUICK_REACTION_KINDS;
 
@@ -796,7 +810,7 @@ function MessageActionSheet({ message, onClose, onAction }: {
                     emphasis="quiet" fullWidth density="comfortable"
                     className={`ma-sheet-row${action.danger ? ' is-danger' : ''}`}
                     tone={action.danger ? 'danger' : undefined}
-                    leading={<Icon iconId={ACTION_ICONS[action.id]} size={16} />}
+                    leading={<Icon iconId={ACTION_ICONS[action.id as MobileMessageActionId]} size={16} />}
                     label={action.id === 'pin' && message.pinned ? t('session.unpin') : t(action.labelKey as StringKey)}
                     availability={action.enabled
                       ? undefined
@@ -895,41 +909,6 @@ function ThreadReplySheet({ root, replies, group, conversation, onClose, onSend 
   );
 }
 
-function ReportSheet({ message, onClose, onSubmit }: {
-  message: ChatMessage | null;
-  onClose: () => void;
-  onSubmit: (reasonCode: string) => void;
-}) {
-  const { t } = useT();
-  const [reason, setReason] = useState<string | null>(null);
-  useEffect(() => { if (message) setReason(null); }, [message]);
-  return (
-    <BottomSheet open={!!message} title={t('report.title')} onDismiss={onClose}>
-      {message && (
-        <div className="ma-report-sheet" data-report-sheet>
-          <p className="ma-report-body">{t('mobile.report.body')}</p>
-          <div className="ma-report-reasons">
-            {REPORT_REASONS.map(r => (
-              <Button key={r} actionId={`msg.report.${r}`} emphasis="quiet" fullWidth
-                className="ma-report-reason" aria-pressed={reason === r}
-                data-selected={reason === r ? 'true' : 'false'}
-                label={t(reportReasonKey(r) as StringKey)}
-                leading={<Icon iconId={reason === r ? 'circle-check-big' : 'flag'} size={15} />}
-                onActivate={() => setReason(r)} />
-            ))}
-          </div>
-          <div className="ma-form-foot">
-            <Button actionId="msg.report.cancel" emphasis="quiet" label={t('common.cancel')} onActivate={onClose} />
-            <Button actionId="msg.report.submit" emphasis="primary" label={t('report.submit')}
-              availability={reason ? undefined : { kind: 'disabled', reason: t('mobile.report.required') }}
-              onActivate={() => reason && onSubmit(reason)} />
-          </div>
-        </div>
-      )}
-    </BottomSheet>
-  );
-}
-
 export function ThreadScreen({ state, dispatch, conversation }: { state: AppState; dispatch: Dispatch; conversation: Conversation }) {
   const { t } = useT();
   const messages = messagesFor(state, conversation.id);
@@ -939,7 +918,6 @@ export function ThreadScreen({ state, dispatch, conversation }: { state: AppStat
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [editTarget, setEditTarget] = useState<ChatMessage | null>(null);
   const [forwardTargets, setForwardTargets] = useState<ChatMessage[]>([]);
-  const [reportTarget, setReportTarget] = useState<ChatMessage | null>(null);
   const [hideTargetIds, setHideTargetIds] = useState<string[] | null>(null);
   const [threadRoot, setThreadRoot] = useState<ChatMessage | null>(null);
   const [threadReplies, setThreadReplies] = useState<Record<string, ThreadReply[]>>({});
@@ -1014,17 +992,11 @@ export function ThreadScreen({ state, dispatch, conversation }: { state: AppStat
         setActionTarget(null);
         break;
       case 'multiselect': setActionTarget(null); setSelectIds([target.id]); break;
-      case 'mark-later':
-        dispatch({ type: 'message/markLater', conversationId: conversation.id, messageId: target.id });
-        flash(target.markedForLater ? t('action.markLaterRemoved') : t('action.markLaterDone'));
-        setActionTarget(null);
-        break;
       case 'edit': setActionTarget(null); setReplyTarget(null); setEditTarget(target); break;
       case 'recall':
         dispatch({ type: 'message/recall', conversationId: conversation.id, messageId: target.id });
         setActionTarget(null);
         break;
-      case 'report': setActionTarget(null); setReportTarget(target); break;
       case 'hide': setActionTarget(null); setHideTargetIds([target.id]); break;
       default: setActionTarget(null);
     }
@@ -1124,9 +1096,6 @@ export function ThreadScreen({ state, dispatch, conversation }: { state: AppStat
                 </div>
               )}
               <div className="ma-msg-flags">
-                {m.markedForLater && (
-                  <span className="ma-msg-flag" data-msg-marked><Icon iconId="bookmark" size={10} /> {t('action.markLater')}</span>
-                )}
                 {m.pinned && <span className="ma-msg-flag" data-msg-pinned-chip><Icon iconId="pin" size={10} /> {t('mobile.pinnedFlag')}</span>}
               </div>
               <MessageReactionChips message={m} conversationId={conversation.id} dispatch={dispatch} />
@@ -1169,9 +1138,6 @@ export function ThreadScreen({ state, dispatch, conversation }: { state: AppStat
           const reply: ThreadReply = { id: `tr-local-${nextLocalId()}`, mine: true, name: ME.name, tone: ME.tone, text };
           setThreadReplies(map => ({ ...map, [threadRoot.id]: [...(map[threadRoot.id] ?? []), reply] }));
         }} />
-      <ReportSheet message={reportTarget}
-        onClose={() => setReportTarget(null)}
-        onSubmit={() => { setReportTarget(null); flash(t('report.done')); }} />
       <Dialog open={!!hideTargetIds} onDismiss={() => setHideTargetIds(null)}
         title={hideTargetIds && hideTargetIds.length > 1 ? t('mobile.hide.title.bulk', { n: hideTargetIds.length }) : t('mobile.hide.title.one')}
         description={t('mobile.hide.body')}
@@ -1847,7 +1813,6 @@ export function ContactDetailScreen({ person, state, dispatch }: { person: Perso
       </div>
       <ListSection className="ma-settings" title="通知与隐私">
         <ListRow label="消息免打扰" control={<Switch checked={!state.settings.notify} onCheckedChange={v => dispatch({ type: 'setting/set', key: 'notify', value: !v })} aria-label="消息免打扰" />} />
-        <ListRow label="发送已读回执" control={<Switch checked={state.settings.readReceipt} onCheckedChange={v => dispatch({ type: 'setting/set', key: 'readReceipt', value: v })} aria-label="发送已读回执" />} />
       </ListSection>
       <div className="ma-settings ma-danger-zone">
         <Button actionId="ma.contact.block" emphasis="quiet" tone="danger" fullWidth leading={<Icon iconId="ban" size={16} />}>拉黑</Button>
@@ -1994,9 +1959,6 @@ export function MeScreen({ state, dispatch }: { state: AppState; dispatch: Dispa
       <ListSection inset className="ma-settings" data-section="preferences" title="偏好" description="这些默认只影响本机与本站。">
         <ListRow label="消息通知" description="在本机通道接收提醒。" control={<Switch checked={s.notify} onCheckedChange={v => dispatch({ type: 'setting/set', key: 'notify', value: v })} aria-label="消息通知" />} />
         <ListRow label="提示音" control={<Switch checked={s.sound} onCheckedChange={v => dispatch({ type: 'setting/set', key: 'sound', value: v })} aria-label="提示音" />} />
-        <ListRow label="已读回执" control={<Switch checked={s.readReceipt} onCheckedChange={v => dispatch({ type: 'setting/set', key: 'readReceipt', value: v })} aria-label="已读回执" />} />
-        <ListRow label="自动锁定" control={<Select appearance="ghost" aria-label="自动锁定" value={s.autoLock} onValueChange={v => dispatch({ type: 'setting/set', key: 'autoLock', value: String(v) })}
-          options={[{ value: '1m', label: '1 分钟后' }, { value: '5m', label: '5 分钟后' }, { value: 'never', label: '永不' }]} />} />
       </ListSection>
       <ListSection inset className="ma-settings" data-section="network" title="网络">
         <NavRow label="当前站点"

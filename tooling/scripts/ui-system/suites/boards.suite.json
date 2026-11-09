@@ -547,7 +547,7 @@
     },
     {
       "id": "ui.prototype.eles.mobile-msg-action-sheet-peer",
-      "title": "手机产品面：长按他人气泡出消息操作表——8 个快捷反应、回复/转发与他人长动作（话题/复制/多选/稍后处理/举报/隐藏），绝无编辑/撤回",
+      "title": "手机产品面：长按他人气泡出消息操作表——8 个快捷反应、回复/转发与他人长动作（话题/复制/多选/隐藏），绝无编辑/撤回/稍后处理/举报",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
@@ -566,8 +566,8 @@
         { "id": "thread-row", "type": "exists", "scope": "global", "target": "[data-action-id='msg.action.thread']" },
         { "id": "copy-row", "type": "exists", "scope": "global", "target": "[data-action-id='msg.action.copy']" },
         { "id": "multiselect-row", "type": "exists", "scope": "global", "target": "[data-action-id='msg.action.multiselect']" },
-        { "id": "mark-later-row", "type": "exists", "scope": "global", "target": "[data-action-id='msg.action.mark-later']" },
-        { "id": "report-row", "type": "exists", "scope": "global", "target": "[data-action-id='msg.action.report']" },
+        { "id": "mark-later-gone-no-mobile-owner", "type": "missing", "scope": "global", "target": "[data-action-id='msg.action.mark-later']" },
+        { "id": "report-gone-no-mobile-owner", "type": "missing", "scope": "global", "target": "[data-action-id='msg.action.report']" },
         { "id": "hide-row", "type": "exists", "scope": "global", "target": "[data-action-id='msg.action.hide']" },
         { "id": "danger-row-flat-border", "type": "computedStyle", "scope": "global", "target": ".ma-sheet-row.is-danger", "prop": "border-top-color", "equals": "rgba(0, 0, 0, 0)" },
         { "id": "danger-row-red-text", "type": "computedStyle", "scope": "global", "target": ".ma-sheet-row.is-danger", "prop": "color", "equals": "rgb(192, 57, 47)" },
