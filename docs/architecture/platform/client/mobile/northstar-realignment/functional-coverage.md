@@ -52,21 +52,21 @@
 | Forward (single/multi) | forward command | REAL-RESTYLE | chat-contacts |
 | Multiselect bulk actions | message multi-select state | REAL-RESTYLE | chat-contacts |
 | Pin message + pin banner | pin command + projection | REAL-RESTYLE | chat-contacts |
-| Mark-later (local bookmark) | OPEN: confirm a local-flag owner exists | OPEN → REAL-RESTYLE or PROTOTYPE-FAKE-REMOVE | chat fixtures |
+| Mark-later (local bookmark) | No chat-message bookmark owner (verified: `mobileCommands.ts` defines no bookmark kind; `is_bookmarked` exists only on social posts in `post_pb.ts`) | PROTOTYPE-FAKE-REMOVE: prototype `message/markLater` local state and bookmark chip deleted | chat fixtures |
 | Copy | clipboard (native/web) | REAL-RESTYLE | chat functional |
-| Report | OPEN: confirm a moderation/report command owner | OPEN → REAL-RESTYLE, else PROTOTYPE-FAKE-REMOVE (no fake toast) | chat-contracts |
-| Hide for me | OPEN: confirm a real hide/visibility command owner | OPEN → REAL-RESTYLE or PROTOTYPE-FAKE-REMOVE | chat-contracts |
+| Report | No member-facing report command (verified: only the on-device flag in `messageFlagState` and the role-gated `dispatchModerateMessage`; neither is a user report) | PROTOTYPE-FAKE-REMOVE: report sheet and reason list deleted; the local flag remains the real on-device surface | chat-contracts |
+| Hide for me | `chatCommands.ts:86 dispatchHideMessageForMe` (`hideForActor`), wired in `MessageActionSheet` as delete-for-me behind a destructive confirm | REAL-RESTYLE (shipped) | chat-contracts |
 | Reactions (quick 8 / all 16 grid) | `components/reactions/*` + private/public reaction channels | REAL-RESTYLE (align 8×2 grid grammar) | moments/chat reaction convergence |
-| Long-press sheet + vibration | touch action sheet; haptics via platform if available | REAL-RESTYLE; OPEN: haptics REAL-GAP if no bridge | chat functional |
+| Long-press sheet + vibration | Touch action sheet is real; no haptics bridge exists (verified: no haptic/vibrate symbol in `apps/mobile`) | REAL-RESTYLE for the sheet; vibration REAL-GAP-PRESENT only when a native bridge lands | chat functional |
 | Typing indicator | `typingDispatch` + real typing events | REAL-RESTYLE (replace prototype always-on bubble with real signal) | chat-contracts |
-| Thread/topic replies | OPEN: confirm thread command owner; prototype local-only version is fake | OPEN → REAL-RESTYLE or PROTOTYPE-FAKE-REMOVE | chat-contracts |
-| @mentions | **prototype has none**; real mobile mention support OPEN to confirm | OPEN → NOT-THIS-PASS unless real owner present | — |
+| Thread/topic replies | `ChatPage.tsx openMessageThread` and the thread action in `MessageActionSheet` over the real route-based thread surface | REAL-RESTYLE (shipped); prototype local-only thread state deleted | chat-contracts |
+| @mentions | No chat mention owner (verified: `mentions` appears only in private-moment payloads in `mobileCommands.ts`, never in chat commands) | NOT-THIS-PASS: no chat mention surface this release | — |
 | **Calls**: outgoing, auto-connect, mute, camera, hang-up, timer, E2EE | `features/call/callState` (WebRTC + signalling), `MobileCallSurface` | REAL-RESTYLE; signalling real, media on-device | platform/call journey (media NOT-THIS-PASS matrix) |
 | Incoming call (accept/decline) | `MobileCallSurface.tsx:42-110` already renders incoming/ringing accept/decline; real `call-signal` over SSE; mounted in `MobileShell.tsx:453` (prototype is outgoing-only) | REAL-RESTYLE | call journey |
 | **Contacts**: detail, add, note/role | social contacts gateway + friend-request reliable channel | REAL-RESTYLE | chat-contacts, contacts surfaces |
 | Friend requests (incoming/outgoing/accept/decline/federated) | `ContactsPage.tsx:118-185` inbound/outbound sections + decision fence; `social_friend_request_*` + reliability | REAL-RESTYLE (already built; prototype omitted) | social-convergence |
 | Block contact | `ContactsPage.tsx:392-407` block/unblock confirm; Rust block commands | REAL-RESTYLE (prototype button was dead; real UI exists) | social/settings |
-| Per-contact notify / read-receipt switches | real per-conversation settings if present, else remove fake | OPEN → confirm owner then REAL-RESTYLE or PROTOTYPE-FAKE-REMOVE | contacts contracts |
+| Per-contact notify / mute / read-receipt switches | `chatActionState.ts ChatActionState` (`muted`, `alertEnabled`) persisted in actor `chatPreferences`; no read-receipt owner exists in `apps/mobile/src` | notify/mute REAL-RESTYLE (shipped); read-receipt PROTOTYPE-FAKE-REMOVE (no owner) | contacts contracts |
 | **Groups**: create, detail, members | MLS group commands (genesis, membership transition) | REAL-RESTYLE | chat-contacts |
 | Group admin (rename/remove/leave/dissolve/transfer/add members) | `ChatOverlayHost.tsx:749-900` real authority-gated UI over MLS membership commands | REAL-RESTYLE (already built; prototype dead controls removed) | chat-contacts |
 | **Moments**: feed, 8 audiences, publish, image 9-grid | `momentsFeedStore`, moments gateway, composer | REAL-RESTYLE; real network wins | moments-e2e |
@@ -76,12 +76,12 @@
 | Federated / remote moments ("来自 xx 站") | social federation projection | REAL-RESTYLE | social-convergence |
 | Private (E2EE) moments | `privateMomentsRuntime`, Rust `secure_content`, `social_private_*` | REAL-RESTYLE (prototype public-only; real private is additive) | moments-e2e |
 | Sort latest/hot; back-to-top; inline search | feed projection + search | REAL-RESTYLE | moments surfaces |
-| Author profile page | `SocialProfilePage` exists and is routed | REAL-RESTYLE; wire feed author entry to the real route if unreachable (OPEN: confirm feed entry point) | moments/contacts |
+| Author profile page | `SocialProfilePage` routed at `detail:social-profile` (navigationDescriptors.ts:117); feed rows only use `authorPtid` for own-post styling and do not navigate yet (verified in MomentsPage) | REAL-GAP-PRESENT: wire the Moments feed author entry to `detail:social-profile` | moments/contacts |
 | Delete own moment | crud command | REAL-RESTYLE | moments-e2e |
 | **Me/profile**: cover/avatar change | `profileGateway` + avatar asset runtime | REAL-RESTYLE (real upload wins over prototype dataURL) | settings/social |
-| Credentials / PTID detail | OPEN: confirm identity/credential owner; build a real detail only over that owner | OPEN → REAL-GAP-PRESENT (thin placeholder today) | settings-e2e |
+| Credentials / PTID detail | PTID display is real in `ProfileSection` (`mobile.settings.profile.userId`, `actorIdentity`); no credential/key-detail owner exists (verified: `identityKey` only feeds avatar color and key-exchange transport, no inventory UI) | PTID REAL-RESTYLE (shipped); credential/key detail REAL-GAP-PRESENT scheduled separately, no fabricated detail | settings-e2e |
 | Safety number / chat background | intentionally unavailable this release; no owner (`SettingsPage.tsx:489-496`, parent design §12.7) | NOT-THIS-PASS (keep unavailable; do not fabricate) | — |
-| Preferences (notify/sound/read-receipt/auto-lock) | `deviceSettingsRuntime`, notification prefs, storage retention | REAL-RESTYLE; OPEN: auto-lock stays fake-removed unless a real lock owner exists | settings-e2e |
+| Preferences (notify/sound/auto-lock) | `deviceSettingsRuntime`, profile notification preference gateway, storage retention; no auto-lock owner (verified: no auto-lock symbol in `apps/mobile/src`) | REAL-RESTYLE for the real preferences; auto-lock PROTOTYPE-FAKE-REMOVE (no owner) | settings-e2e |
 | Language | `languageRuntime` (en/zh-CN) | REAL-RESTYLE | layout-a11y bilingual |
 | About / version | real app metadata | REAL-RESTYLE | settings surfaces |
 | Sign out | lifecycle `transitionScope` fence/teardown | REAL-RESTYLE | lifecycle-e2e |
