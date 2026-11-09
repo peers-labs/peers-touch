@@ -56,7 +56,11 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     DIRECT_SIMULATOR_ENVIRONMENT_ID,
     EXPECTED_CLIENTS,
     EXPECTED_DRIVERS,
+    IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+    IOS_TAURI_FRONTEND_CONFIG_ENV,
+    IOS_TAURI_FRONTEND_CONFIG_FILENAME,
     IOS_WEB_ASSETS_RELATIVE_PATH,
+    IOS_WEB_DIST_SNAPSHOT_DIRNAME,
     IOS_DEVICE_NAME,
     IOS_PEER_DEVICE_NAME,
     IOS_LAYOUT_CLIENTS,
@@ -88,6 +92,12 @@ from tooling.acceptance.provisioners.mobile_service_bindings import (
     MobileServiceBinding,
     resolve_mobile_service_bindings,
 )
+
+
+FIXTURE_WEB_INDEX_HTML = (
+    '<!doctype html><script src="/assets/main.js"></script>\n'
+)
+FIXTURE_REGISTRY_CHUNK = "registry-stub.js"
 
 
 def _write_valid_ndk(path: Path) -> Path:
@@ -129,11 +139,12 @@ class FakeProcess:
 
 
 class FakeCommandExecutor:
-    def __init__(self, repo_root: Path) -> None:
+    def __init__(self, repo_root: Path, *, embed_staged_assets: bool = True) -> None:
         self.repo_root = repo_root
         self.events: list[str] = []
         self.commands: list[tuple[str, ...]] = []
         self.environments: list[dict[str, str]] = []
+        self.embed_staged_assets = embed_staged_assets
         self.browser_versions = {
             "com.android.chrome": "124.0.6367.82",
             "com.google.android.webview": "124.0.6367.82",
@@ -230,20 +241,26 @@ class FakeCommandExecutor:
             dist = self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
             (dist / "assets").mkdir(parents=True, exist_ok=True)
             (dist / "index.html").write_text(
-                "fresh-mobile-web-bundle\n",
+                FIXTURE_WEB_INDEX_HTML,
                 encoding="utf-8",
             )
             (dist / "assets" / "main.js").write_text(
                 "mobile\n",
                 encoding="utf-8",
             )
+            if env.get("VITE_ACCEPTANCE_HARNESS") == "1":
+                (dist / "assets" / FIXTURE_REGISTRY_CHUNK).write_text(
+                    "acceptance\n",
+                    encoding="utf-8",
+                )
             return CommandResult(0)
         if command and command[0] == "xcodebuild":
             assets = self.repo_root / IOS_WEB_ASSETS_RELATIVE_PATH
             try:
-                self.ios_asset_payloads.append(
-                    (assets / "index.html").read_text(encoding="utf-8")
-                )
+                staged_index = (
+                    assets / "index.html"
+                ).read_text(encoding="utf-8")
+                self.ios_asset_payloads.append(staged_index)
             except OSError as error:
                 return CommandResult(
                     1,
@@ -258,7 +275,16 @@ class FakeCommandExecutor:
                 / "peers-touch-mobile_iOS.app"
             )
             app.mkdir(parents=True, exist_ok=True)
-            (app / "Peers").write_text("ios-app\n", encoding="utf-8")
+            stub = "ios-app\n"
+            if self.embed_staged_assets:
+                staged_assets = assets / "assets"
+                if staged_assets.is_dir():
+                    stub += "".join(
+                        f"/assets/{path.name}\n"
+                        for path in sorted(staged_assets.iterdir())
+                        if path.is_file()
+                    )
+            (app / "Peers").write_text(stub, encoding="utf-8")
             return CommandResult(0)
         if (
             command[:4] == ("pnpm", "--dir", "apps/mobile", "exec")
@@ -3882,13 +3908,16 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         )
         self.assertEqual(
             (ios_assets / "index.html").read_text(encoding="utf-8"),
-            "fresh-mobile-web-bundle\n",
+            FIXTURE_WEB_INDEX_HTML,
         )
         self.assertTrue((ios_assets / "assets" / "main.js").is_file())
+        self.assertTrue(
+            (ios_assets / "assets" / FIXTURE_REGISTRY_CHUNK).is_file()
+        )
         self.assertEqual(self.fetches, [])
         self.assertEqual(
             self.executor.ios_asset_payloads,
-            ["fresh-mobile-web-bundle\n"],
+            [FIXTURE_WEB_INDEX_HTML],
         )
         self.assertTrue(
             (self.repo_root / IOS_WEB_ASSETS_RELATIVE_PATH / "index.html").is_file()
@@ -4194,7 +4223,7 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.assertFalse((assets / "legacy.txt").exists())
         self.assertEqual(
             (assets / "index.html").read_text(encoding="utf-8"),
-            "fresh-mobile-web-bundle\n",
+            FIXTURE_WEB_INDEX_HTML,
         )
 
         self.provisioner.cleanup()
@@ -4204,6 +4233,85 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
             "preserve-me\n",
         )
         self.assertFalse((assets / "index.html").exists())
+
+    def test_ios_build_binds_cargo_to_immutable_dist_snapshot(self) -> None:
+        manifest = self.provisioner.provision(
+            "mobile-simulator-access-e2e"
+        )
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+
+        web_envs = [
+            environment
+            for command, environment in zip(
+                self.executor.commands, self.executor.environments
+            )
+            if command == ("pnpm", "--dir", "apps/mobile", "run", "build")
+        ]
+        self.assertTrue(web_envs)
+        self.assertNotIn(
+            IOS_TAURI_FRONTEND_CONFIG_ENV,
+            {key for environment in web_envs for key in environment},
+        )
+
+        xcode_envs = [
+            environment
+            for command, environment in zip(
+                self.executor.commands, self.executor.environments
+            )
+            if command[:1] == ("xcodebuild",)
+        ]
+        self.assertTrue(xcode_envs)
+        override_paths = {
+            environment[IOS_TAURI_FRONTEND_CONFIG_ENV]
+            for environment in xcode_envs
+        }
+        self.assertEqual(len(override_paths), 1)
+        override_path = Path(override_paths.pop())
+        self.assertEqual(
+            override_path.name, IOS_TAURI_FRONTEND_CONFIG_FILENAME
+        )
+        override = json.loads(override_path.read_text(encoding="utf-8"))
+        frontend_dist = Path(override["build"]["frontendDist"])
+        self.assertEqual(
+            frontend_dist.name, IOS_WEB_DIST_SNAPSHOT_DIRNAME
+        )
+        self.assertEqual(
+            (frontend_dist / "index.html").read_text(encoding="utf-8"),
+            FIXTURE_WEB_INDEX_HTML,
+        )
+        self.assertTrue(
+            (frontend_dist / "assets" / FIXTURE_REGISTRY_CHUNK).is_file()
+        )
+
+        # The run-owned snapshot must stay immutable even when a concurrent
+        # worktree web build overwrites the mutable dist directory.
+        worktree_dist = self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+        (worktree_dist / "assets" / "contaminated.js").write_text(
+            "stale\n",
+            encoding="utf-8",
+        )
+        self.assertFalse(
+            (frontend_dist / "assets" / "contaminated.js").exists()
+        )
+        self.provisioner.cleanup()
+
+    def test_ios_build_blocks_when_native_embedding_diverges(self) -> None:
+        self.executor = FakeCommandExecutor(
+            self.repo_root,
+            embed_staged_assets=False,
+        )
+        self.provisioner = self._new_provisioner()
+
+        manifest = self.provisioner.provision(
+            "mobile-simulator-access-e2e"
+        )
+
+        self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
+        self.assertEqual(
+            manifest.blocked_resource,
+            IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+        self.provisioner.cleanup()
 
     def test_missing_android_toolchain_does_not_block_dual_ios(
         self,

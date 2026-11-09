@@ -539,6 +539,13 @@ IOS_WEB_ASSETS_RELATIVE_PATH = Path(
     "apps/mobile/src-tauri/gen/apple/assets"
 )
 MOBILE_WEB_DIST_RELATIVE_PATH = Path("apps/mobile/dist")
+# Run-owned immutable copy of the harness web build. The Xcode resource copy
+# and the Rust asset embedding both consume this snapshot so a concurrent
+# worktree web build can never split the native binary from the bundle.
+IOS_WEB_DIST_SNAPSHOT_DIRNAME = "ios-web-dist"
+IOS_TAURI_FRONTEND_CONFIG_FILENAME = "tauri-ios-frontend-config.json"
+IOS_TAURI_FRONTEND_CONFIG_ENV = "MOBILE_TAURI_DEV_CONFIG"
+IOS_EMBEDDED_WEB_ASSETS_RESOURCE = "mobile-simulator:ios-embedded-web-assets"
 ANDROID_DEEP_LINK_MARKER = (
     "<!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->"
 )
@@ -2200,6 +2207,145 @@ def _with_simulator_resources(
     )
 
 
+def _snapshot_ios_web_dist(repo_root: Path, runtime_root: Path) -> Path:
+    """Freeze the harness web build into a run-owned immutable directory."""
+    source = repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+    if (
+        source.is_symlink()
+        or not source.is_dir()
+        or not (source / "index.html").is_file()
+    ):
+        raise BlockedError(
+            reason="Mobile web build output is unavailable before iOS staging",
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    _GeneratedAppleAssetsGuard._reject_symlinks(
+        source, "Mobile web build output"
+    )
+    snapshot = runtime_root / IOS_WEB_DIST_SNAPSHOT_DIRNAME
+    if snapshot.is_symlink() or snapshot.is_file():
+        snapshot.unlink()
+    elif snapshot.exists():
+        shutil.rmtree(snapshot)
+    shutil.copytree(source, snapshot)
+    return snapshot
+
+
+def _write_ios_tauri_frontend_config(
+    runtime_root: Path,
+    dist_snapshot: Path,
+) -> Path:
+    """Bind tauri-build's frontendDist to the immutable snapshot.
+
+    The generated iOS Rust build script already exports TAURI_CONFIG from
+    MOBILE_TAURI_DEV_CONFIG, so the override needs no new build-script path.
+    """
+    config_path = runtime_root / IOS_TAURI_FRONTEND_CONFIG_FILENAME
+    config_path.write_text(
+        json.dumps(
+            {"build": {"frontendDist": str(dist_snapshot)}},
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def _ios_native_binary_asset_tokens(application: Path) -> set[bytes]:
+    """Collect embedded /assets/* index tokens from top-level native binaries."""
+    tokens: set[bytes] = set()
+    for child in application.iterdir():
+        if child.is_symlink() or not child.is_file():
+            continue
+        if child.name != "Peers" and child.suffix not in {".dylib", ".so"}:
+            continue
+        tokens.update(
+            set(re.findall(rb"/assets/[A-Za-z0-9._-]+", child.read_bytes()))
+        )
+    return tokens
+
+
+def _assert_ios_embedded_web_assets(
+    application: Path,
+    dist_snapshot: Path,
+    *,
+    harness_enabled: bool,
+) -> None:
+    """Fail closed when the embedded web assets diverge from the staged dist.
+
+    Tauri embeds frontendDist into the native binary at cargo build time. A
+    concurrent non-harness web build can otherwise leave the bundle resources
+    and the embedded asset index out of sync, which only surfaces much later as
+    a missing Acceptance harness during the simulator Gate.
+    """
+    index_path = dist_snapshot / "index.html"
+    if not index_path.is_file():
+        raise BlockedError(
+            reason="Staged iOS web dist snapshot has no index.html",
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    index_html = index_path.read_text(encoding="utf-8")
+    expected_tokens = {
+        f"/assets/{name}"
+        for name in re.findall(r"/assets/([^\s\"'<>]+)", index_html)
+    }
+    if not expected_tokens:
+        raise BlockedError(
+            reason="Staged iOS web dist references no bundled assets",
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    if harness_enabled:
+        registry_chunks = sorted(
+            (dist_snapshot / "assets").glob("registry-*.js")
+        )
+        if len(registry_chunks) != 1:
+            raise BlockedError(
+                reason=(
+                    "Staged iOS harness web dist must contain exactly one "
+                    f"registry chunk, found {len(registry_chunks)}"
+                ),
+                resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+            )
+        expected_tokens.add(f"/assets/{registry_chunks[0].name}")
+    if not application.is_dir():
+        raise BlockedError(
+            reason=(
+                "iOS application artifact is missing after the native build: "
+                f"{application.name}"
+            ),
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    embedded_tokens = _ios_native_binary_asset_tokens(application)
+    if not embedded_tokens:
+        raise BlockedError(
+            reason="iOS native binaries expose no embedded web asset index",
+            resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+        )
+    missing = sorted(
+        token
+        for token in expected_tokens
+        if token.encode("utf-8") not in embedded_tokens
+    )
+    if not missing:
+        return
+    embedded_entries = sorted(
+        token.decode("utf-8", errors="replace")
+        for token in embedded_tokens
+        if re.fullmatch(rb"/assets/index-[A-Za-z0-9_-]+\.js", token)
+        and token.decode("utf-8") not in expected_tokens
+    )
+    detail = ", ".join(missing)
+    if embedded_entries:
+        detail += f"; stale embedded entries: {', '.join(embedded_entries)}"
+    raise BlockedError(
+        reason=(
+            "iOS native binary embedded web assets diverge from the staged "
+            f"harness dist; missing: {detail}"
+        ),
+        resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+    )
+
+
 def _artifact_digest(path: Path) -> str:
     digest = hashlib.sha256()
     if path.is_file():
@@ -3310,6 +3456,8 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             _artifact, cached_build_identity = cached
             return cached_build_identity
 
+        ios_build_env = dict(env)
+        dist_snapshot: Path | None = None
         for name in ("web", "ios"):
             build_root = ios_build_root if name == "ios" else runtime_root
             if name in spec.artifact_patterns and name != "ios":
@@ -3340,14 +3488,46 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             )
             self._run_checked(
                 command,
-                env=env,
+                env=ios_build_env if name == "ios" else env,
                 timeout=1800,
                 resource=f"mobile-simulator:build:{name}",
             )
             if name == "web":
-                apple_assets_guard.stage(
-                    self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+                # Freeze the harness web build before the native compile. Both
+                # the Xcode resource copy and Rust asset embedding read this
+                # run-owned snapshot, so concurrent worktree builds cannot
+                # split the native binary from the bundle resources.
+                dist_snapshot = _snapshot_ios_web_dist(
+                    self.repo_root, runtime_root
                 )
+                apple_assets_guard.stage(dist_snapshot)
+                ios_build_env[IOS_TAURI_FRONTEND_CONFIG_ENV] = str(
+                    _write_ios_tauri_frontend_config(
+                        runtime_root, dist_snapshot
+                    )
+                )
+        if dist_snapshot is None:
+            raise BlockedError(
+                reason="iOS build skipped the immutable web dist snapshot",
+                resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+            )
+        applications = self._artifact_matches(
+            spec, "ios", ios_build_root
+        )
+        if len(applications) != 1:
+            raise BlockedError(
+                reason=(
+                    "iOS build produced "
+                    f"{len(applications)} application artifacts; exactly one "
+                    "is required for embedded asset verification"
+                ),
+                resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+            )
+        _assert_ios_embedded_web_assets(
+            applications[0],
+            dist_snapshot,
+            harness_enabled=env.get("VITE_ACCEPTANCE_HARNESS") == "1",
+        )
         self._record_ios_build_cache(
             spec,
             ios_build_root,
@@ -4131,6 +4311,7 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                 "ios_udid": str(first_ios),
                 "runtime_root": str(runtime_root),
             }
+            ios_dist_snapshot: Path | None = None
             for platform in platforms:
                 platform_env = {
                     **command_env,
@@ -4175,9 +4356,19 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                             resource=f"mobile-simulator:build:{name}",
                         )
                         if name == "web" and platform == "ios":
-                            apple_assets_guard.stage(
-                                self.repo_root
-                                / MOBILE_WEB_DIST_RELATIVE_PATH
+                            # Freeze the harness web build so the native
+                            # compile and the bundle copy share one immutable
+                            # source instead of the mutable worktree dist.
+                            ios_dist_snapshot = _snapshot_ios_web_dist(
+                                self.repo_root, runtime_root
+                            )
+                            apple_assets_guard.stage(ios_dist_snapshot)
+                            platform_env[
+                                IOS_TAURI_FRONTEND_CONFIG_ENV
+                            ] = str(
+                                _write_ios_tauri_frontend_config(
+                                    runtime_root, ios_dist_snapshot
+                                )
                             )
                     finally:
                         if (
@@ -4186,6 +4377,34 @@ class SelectedMobileSimulatorProvisioner(MobileSimulatorProvisioner):
                         ):
                             android_manifest_guard.restore()
 
+            if "ios" in platforms:
+                if ios_dist_snapshot is None:
+                    raise BlockedError(
+                        reason=(
+                            "iOS build skipped the immutable web dist snapshot"
+                        ),
+                        resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+                    )
+                ios_applications = self._artifact_matches(
+                    spec, "ios", runtime_root
+                )
+                if len(ios_applications) != 1:
+                    raise BlockedError(
+                        reason=(
+                            "iOS build produced "
+                            f"{len(ios_applications)} application artifacts; "
+                            "exactly one is required for embedded asset "
+                            "verification"
+                        ),
+                        resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+                    )
+                _assert_ios_embedded_web_assets(
+                    ios_applications[0],
+                    ios_dist_snapshot,
+                    harness_enabled=(
+                        command_env.get("VITE_ACCEPTANCE_HARNESS") == "1"
+                    ),
+                )
             applications: dict[str, dict[str, Any]] = {}
             for platform in platforms:
                 application = self._stage_application(
@@ -4756,6 +4975,8 @@ class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
                 "ios_udid": str(first_device["udid"]),
                 "runtime_root": str(runtime_root),
             }
+            ios_build_env = dict(command_env)
+            ios_dist_snapshot: Path | None = None
             for name in ("web", "ios"):
                 if name in base.artifact_patterns:
                     self._remove_artifact_matches(
@@ -4783,15 +5004,48 @@ class MobileIOSLayoutSimulatorProvisioner(MobileSimulatorProvisioner):
                 )
                 self._run_checked(
                     command,
-                    env=command_env,
+                    env=ios_build_env if name == "ios" else command_env,
                     timeout=1800,
                     resource=f"{self.environment_id}:build:{name}",
                 )
                 if name == "web":
-                    apple_assets_guard.stage(
-                        self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+                    # Freeze the harness web build so the native compile and
+                    # the bundle copy share one immutable source.
+                    ios_dist_snapshot = _snapshot_ios_web_dist(
+                        self.repo_root, runtime_root
+                    )
+                    apple_assets_guard.stage(ios_dist_snapshot)
+                    ios_build_env[IOS_TAURI_FRONTEND_CONFIG_ENV] = str(
+                        _write_ios_tauri_frontend_config(
+                            runtime_root, ios_dist_snapshot
+                        )
                     )
 
+            if ios_dist_snapshot is None:
+                raise BlockedError(
+                    reason="iOS build skipped the immutable web dist snapshot",
+                    resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+                )
+            ios_applications = self._artifact_matches(
+                base, "ios", runtime_root
+            )
+            if len(ios_applications) != 1:
+                raise BlockedError(
+                    reason=(
+                        "iOS build produced "
+                        f"{len(ios_applications)} application artifacts; "
+                        "exactly one is required for embedded asset "
+                        "verification"
+                    ),
+                    resource=IOS_EMBEDDED_WEB_ASSETS_RESOURCE,
+                )
+            _assert_ios_embedded_web_assets(
+                ios_applications[0],
+                ios_dist_snapshot,
+                harness_enabled=(
+                    command_env.get("VITE_ACCEPTANCE_HARNESS") == "1"
+                ),
+            )
             application = self._stage_application(
                 base,
                 "ios",
