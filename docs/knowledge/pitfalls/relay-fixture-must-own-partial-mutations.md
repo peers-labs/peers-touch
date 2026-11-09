@@ -7,9 +7,11 @@ owns:
   - tooling/acceptance/provisioners/station_access_relay_role.py
   - tooling/acceptance/provisioners/mobile_simulator.py
   - tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py
+  - tooling/acceptance/provisioners/social_relay.py
   - tooling/acceptance/tests/test_relay_attachment.py
   - tooling/acceptance/tests/test_station_access_relay_role.py
   - tooling/acceptance/tests/test_mobile_simulator_provisioner.py
+  - tooling/acceptance/tests/test_social_relay.py
 related:
   - ../../architecture/platform/runtime/node-connectivity/relay-attachment/integration.md
 referenced-by: []
@@ -52,4 +54,13 @@ no replacement or deletion call.
 All consumers compose the shared owner through their own cleanup registration.
 Do not instantiate another concrete provisioner to borrow private methods.
 Equipment precedes retained leases; preparation and cleanup consume them.
+Public Social composes `SocialRelayFixture` at the original Suite parent.
+Its optional Relay service cannot become a third Station or alter private
+Social schema ownership. Equipment must reject a foreign health origin or
+stable target before deployment; the original canonical deployment process
+receives no inherited parent lease or Station runtime-control fields.
+Under retained leases, the exact Relay source and executable plus both Station
+containers, peer identities and joined route generations must be read back.
+Run `python3 -m unittest tooling.acceptance.tests.test_social_relay` to check
+that order and the original parent's evidence/cleanup ownership.
 Focused checks do not establish deployed Social or Circuit product proof.

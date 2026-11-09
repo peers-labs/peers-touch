@@ -696,9 +696,13 @@ class CrossStationSocialNativeProvisioner(
         *,
         station_profiles: Mapping[str, str] | None = None,
     ) -> None:
+        supplied = dict(station_profiles or {})
+        relay_roles = {key for key, service in contract.services.items() if service.kind == "relay"}
+        self._relay_profiles = {key: supplied.pop(key) for key in relay_roles if key in supplied}
+        self._social_relay_fixture = None
         super().__init__(
             contract,
-            station_profiles=station_profiles,
+            station_profiles=supplied,
         )
 
     def _station_equipment_options(
@@ -768,6 +772,30 @@ class CrossStationSocialNativeProvisioner(
     def _provision_station_services(
         self, manifest: RuntimeManifest,
     ) -> dict[str, ServiceAttestation]:
+        if manifest.gate_id == "social-public-feed-native-e2e":
+            from .social_relay import SocialRelayFixture
+            profiles = resolve_service_profiles(
+                self.contract, self._relay_profiles, kinds=frozenset({"relay"}), repo_root=REPO_ROOT,
+            )
+            if set(profiles) != {"relay"}:
+                raise BlockedError(reason="Public Social requires the declared Relay service",
+                                   resource="social-relay-binding")
+            relay = SocialRelayFixture(
+                profile=profiles["relay"], repo_root=REPO_ROOT,
+                register_cleanup=self.register_cleanup,
+                acquire_profile_lease=self.acquire_profile_lease,
+                acquire_source_lease=self.acquire_remote_git_source_lease,
+            )
+            # Both deployment owners finish before retained service/source leases.
+            relay.equip(manifest)
+            services = super()._provision_station_services(manifest)
+            services["relay"] = relay.attach(manifest, services)
+            self.evidence_run.write_json(
+                "runtime/social-relay-preparation.json", relay.inventory,
+                role="social-relay-preparation",
+            )
+            self._social_relay_fixture = relay
+            return services
         if manifest.gate_id != "social-cross-station-native-e2e":
             return super()._provision_station_services(manifest)
         from tooling.acceptance.core import workspace_id

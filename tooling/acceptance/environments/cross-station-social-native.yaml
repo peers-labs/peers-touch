@@ -5,6 +5,16 @@
     "identity_match": true
   },
   "services": {
+    "relay": {
+      "kind": "relay",
+      "profile_ref": "profile:fedlab-a",
+      "required": false,
+      "runtime_identity_required": true,
+      "ready_action": "relay",
+      "health_action": "relay-check",
+      "status_action": "relay-status",
+      "attestation_producer": "station-relay-role-attachment"
+    },
     "station-four": {
       "kind": "station",
       "profile_ref": "profile:four",

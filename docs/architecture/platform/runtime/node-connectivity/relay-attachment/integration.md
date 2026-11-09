@@ -150,10 +150,22 @@ The canonical `station-dashboard` prototype is replaced in place:
 ## 9. Verification
 
 Relay runtime preparation uses the shared
-`tooling/acceptance/provisioners/relay_attachment.py` owner. The original Relay
-and Mobile provisioners compose it directly and register cleanup in their own
-Suite lifetime. Preparation occurs under already retained service/source
+`tooling/acceptance/provisioners/relay_attachment.py` owner. The original Relay,
+Mobile and public Social provisioners compose it directly and register cleanup
+in their own Suite lifetime. Preparation occurs under already retained service/source
 leases; exact-source equipment still completes before those leases.
+
+The public Social parent selects the declared optional `relay` service through
+its reviewed `fedlab-a` Profile. `SocialRelayFixture` invokes the canonical
+deployment pipeline before the original Station preparation retains leases.
+It then retains the Relay deployment/source leases through the original parent,
+rechecks exact source, protocol and executable identity, and attaches the two
+already prepared Stations. Each Station's container and peer identity is checked
+around attachment preparation. The original joined route generation and public
+dial metadata are retained in an immutable preparation inventory. Private
+Social and Federation lifecycle consumers retain their original Station-only
+preparation. This inventory is equipment evidence; it cannot establish actual
+Social traffic, receiver convergence or Relay opacity.
 
 CA additions use unique run-scoped paths, exclusive partial writes and atomic
 no-clobber publication. Cleanup is registered before writing, admits empty

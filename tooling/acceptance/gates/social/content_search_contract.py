@@ -1,12 +1,12 @@
 """Social-owned Search injection contract; native proof remains separate."""
 from __future__ import annotations
 
+import ast
 import json
 from tooling.acceptance.core import AcceptanceGate, REPO_ROOT
 from tooling.acceptance.gates.chat.mobile_device_search import (
     MobileDeviceSearchGate, SCENARIOS,
 )
-from tooling.acceptance.gates.social.content_search_mobile import SocialContentSearchMobileGate
 from tooling.acceptance.provisioners.mobile_search import MobileSearchSimulatorProvisioner
 
 
@@ -16,6 +16,20 @@ def read(path: str) -> str:
 
 def document(path: str) -> dict:
     return json.loads(read(f"tooling/acceptance/{path}"))
+
+
+def class_literal(path: str, class_name: str, field: str) -> object:
+    """A source contract observes the original Gate without importing its executor."""
+    classes = [node for node in ast.parse(read(path)).body
+               if isinstance(node, ast.ClassDef) and node.name == class_name]
+    if len(classes) != 1:
+        raise ValueError("Search Suite class declaration is ambiguous")
+    values = [node.value for node in classes[0].body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == field for target in node.targets)]
+    if len(values) != 1:
+        raise ValueError("Search Suite budget declaration is ambiguous")
+    return ast.literal_eval(values[0])
 
 
 class SocialContentSearchContractGate(AcceptanceGate):
@@ -54,7 +68,10 @@ class SocialContentSearchContractGate(AcceptanceGate):
                               and environment["default_client_ids"] == ["sim-ios", "sim-android"])
         self.assert_condition("existing_suite_owners",
                               MobileDeviceSearchGate.max_client_launches == 2
-                              and SocialContentSearchMobileGate.max_client_launches == 3
+                              and class_literal(
+                                  "tooling/acceptance/gates/social/content_search_mobile.py",
+                                  "SocialContentSearchMobileGate", "max_client_launches",
+                              ) == 3
                               and SCENARIOS == ("ios-search", "android-search", "ios-account", "android-account")
                               and MobileSearchSimulatorProvisioner.cross_station_friendship_roles
                               == ("alice", "bob"))

@@ -261,7 +261,7 @@ class EnvironmentContractTests(unittest.TestCase):
 
         self.assertEqual("cross-station-social-native", contract.id)
         self.assertEqual(
-            {"station-four", "station-five-arm"},
+            {"station-four", "station-five-arm", "relay"},
             set(contract.services),
         )
         bindings = {
