@@ -1,6 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { UIProvider } from '@peers-touch/ui';
 import { ContactsPage } from './ContactsPage';
 import { normalizeFriendRequest } from '../features/social/socialNormalizers';
 import { useSocialStore } from '../features/social/socialStore';
@@ -21,12 +22,16 @@ vi.mock('../features/social/socialStore', async (original) => {
   };
 });
 function render() {
-  return renderToStaticMarkup(<ContactsPage
-    activeContactPtid={null} activeOverlay={null}
-    onOpenChat={() => undefined} onOpenContact={() => undefined}
-    onOpenOverlay={() => undefined} onCloseOverlay={() => undefined}
-    onBack={() => undefined}
-  />);
+  return renderToStaticMarkup(
+    <UIProvider theme="light">
+      <ContactsPage
+        activeContactPtid={null} activeOverlay={null}
+        onOpenChat={() => undefined} onOpenContact={() => undefined}
+        onOpenOverlay={() => undefined} onCloseOverlay={() => undefined}
+        onBack={() => undefined}
+      />
+    </UIProvider>,
+  );
 }
 
 describe('Contacts bounded surface', () => {

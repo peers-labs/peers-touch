@@ -10,9 +10,8 @@
  */
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
-import { Button, Input, Modal, Spin, Typography, type InputRef } from 'antd';
+import { Button, Icon, Spin, Text, TextField } from '@peers-touch/ui';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { ArrowLeft, CornerUpLeft, Flag, FolderOpen, Mic, MoreHorizontal, Phone, Plus, RotateCcw, Scissors, Send, Smile, Square, Video, X } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
 import {
   canSubmitChatComposerDraft,
@@ -21,6 +20,7 @@ import {
   shouldSendComposerEnter,
 } from '@peers-touch/client-chat-core';
 
+import { confirm, confirmDestructive, notifySuccess } from '../app/feedback/mobileFeedback';
 import { useMobileI18n } from '../app/mobileI18n';
 import type { MobileChatDetailRoute } from '../app/navigation';
 import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
@@ -167,7 +167,6 @@ import {
   mobileChatVisualCssVars,
 } from './chat/chatPresentationPolicy';
 
-const { Text } = Typography;
 const TYPING_TRUE_INTERVAL_MS = 3000;
 const TYPING_FALSE_DELAY_MS = 4000;
 const EMPTY_MESSAGES: SocialMessage[] = [];
@@ -247,7 +246,11 @@ export function ChatPage(props: ChatPageProps) {
     <ChatMountGuard fallback={(retry) => (
       <section className="mobile-page" data-testid="chat-render-error" role="alert" data-product-surface="chat.list-error">
         <MobileNotice tone="error">{t('mobile.chat.renderFailed')}</MobileNotice>
-        <Button icon={<RotateCcw size={16} />} onClick={retry}>
+        <Button
+          actionId="chat.retry-render"
+          leading={<Icon iconId="rotate-ccw" size={16} />}
+          onActivate={retry}
+        >
           {t('common.action.retry')}
         </Button>
       </section>
@@ -541,7 +544,7 @@ function ChatPageInner({
 
   // --- Refs ---
   const composingRef = useRef(false);
-  const composerInputRef = useRef<InputRef | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastCompositionEndRef = useRef(0);
   const lastTypingPulseRef = useRef(0);
@@ -1248,9 +1251,9 @@ function ChatPageInner({
       const releasedBytes = chatStorageReleasedBytes(result) ?? 0n;
       await selectSession(activeConversationId);
       setClearHistoryConfirmOpen(false);
-      Modal.success({
-        title: t('mobile.chat.clearHistorySuccessTitle'),
-        content: (
+      notifySuccess(
+        <>
+          <Text strong>{t('mobile.chat.clearHistorySuccessTitle')}</Text>{' '}
           <span
             data-chat-conversation-clear-result="succeeded"
             data-chat-storage-released-bytes={releasedBytes.toString()}
@@ -1259,8 +1262,8 @@ function ChatPageInner({
               bytes: formatReleasedBytes(releasedBytes),
             })}
           </span>
-        ),
-      });
+        </>,
+      );
     } catch (error) {
       setLocalActionError(formatChatOperationError(error));
     } finally {
@@ -1440,12 +1443,12 @@ function ChatPageInner({
             }
             onBack();
           }} aria-label={t('common.action.back')}>
-            <ArrowLeft size={20} />
+            <Icon iconId="arrow-left" size={20} />
           </button>
           <>
               <div className="header-title-stack">
                 <h1 className="header-title compact">{headerTitle}</h1>
-                <Text type="secondary">{subtitle}</Text>
+                <Text tone="secondary">{subtitle}</Text>
               </div>
               {!threadRootMessageUlid ? (
                 <div className="chat-header-actions">
@@ -1465,7 +1468,7 @@ function ChatPageInner({
                         }}
                         aria-label={t('mobile.chat.startAudioCall')}
                       >
-                        <Phone size={19} />
+                        <Icon iconId="phone" size={19} />
                       </button>
                       <button
                         className="header-action"
@@ -1481,11 +1484,11 @@ function ChatPageInner({
                         }}
                         aria-label={t('mobile.chat.startVideoCall')}
                       >
-                        <Video size={20} />
+                        <Icon iconId="video" size={20} />
                       </button>
                     </>
                   ) : null}
-                  <button data-chat-actions-open className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><MoreHorizontal size={20} /></button>
+                  <button data-chat-actions-open className="header-action" type="button" onClick={() => setActionSheetOpen(true)} aria-label={t('mobile.chat.moreActions')}><Icon iconId="more-horizontal" size={20} /></button>
                 </div>
               ) : null}
           </>
@@ -1518,18 +1521,25 @@ function ChatPageInner({
             peerBlocked={activePeerBlocked}
             onBlockPeer={() => {
               if (!activeConversation) return;
-              Modal.confirm({
-                title: t('mobile.contacts.blockConfirmTitle'), content: t('mobile.contacts.blockConfirmBody'),
-                okText: t('mobile.contacts.block'), cancelText: t('common.action.cancel'), okButtonProps: { danger: true },
-                onOk: async () => { await dispatchBlockUser(activeConversation.peerPtid); setActionSheetOpen(false); },
+              void confirmDestructive({
+                title: t('mobile.contacts.blockConfirmTitle'),
+                description: t('mobile.contacts.blockConfirmBody'),
+                confirmLabel: t('mobile.contacts.block'),
+                cancelLabel: t('common.action.cancel'),
+                onConfirm: async () => {
+                  await dispatchBlockUser(activeConversation.peerPtid);
+                  setActionSheetOpen(false);
+                },
               });
             }}
             onUnblockPeer={() => {
               if (!activeConversation) return;
-              Modal.confirm({
-                title: t('mobile.contacts.unblockConfirmTitle'), content: t('mobile.contacts.unblockConfirmBody'),
-                okText: t('mobile.contacts.unblock'), cancelText: t('common.action.cancel'),
-                onOk: async () => { await dispatchUnblockUser(activeConversation.peerPtid); },
+              void confirm({
+                title: t('mobile.contacts.unblockConfirmTitle'),
+                description: t('mobile.contacts.unblockConfirmBody'),
+                confirmLabel: t('mobile.contacts.unblock'),
+                cancelLabel: t('common.action.cancel'),
+                onConfirm: async () => { await dispatchUnblockUser(activeConversation.peerPtid); },
               });
             }}
           />
@@ -1612,13 +1622,12 @@ function ChatPageInner({
               if (!selectedActionMessage) return;
               const messageUlid = selectedActionMessage.ulid;
               setMessageActionUlid('');
-              Modal.confirm({
+              void confirmDestructive({
                 title: t('mobile.chat.deleteForMeConfirmTitle'),
-                content: t('mobile.chat.deleteForMeConfirmBody'),
-                okText: t('mobile.chat.deleteForMe'),
-                cancelText: t('common.action.cancel'),
-                okButtonProps: { danger: true },
-                onOk: () => runChatOperation(
+                description: t('mobile.chat.deleteForMeConfirmBody'),
+                confirmLabel: t('mobile.chat.deleteForMe'),
+                cancelLabel: t('common.action.cancel'),
+                onConfirm: () => runChatOperation(
                   () => dispatchHideMessageForMe(
                     isGroupThread ? 'group' : 'friend',
                     activeConversationId,
@@ -1633,13 +1642,12 @@ function ChatPageInner({
               if (!selectedActionMessage || !isGroupThread) return;
               const messageUlid = selectedActionMessage.ulid;
               setMessageActionUlid('');
-              Modal.confirm({
+              void confirmDestructive({
                 title: t('mobile.chat.moderateConfirmTitle'),
-                content: t('mobile.chat.moderateConfirmBody'),
-                okText: t('mobile.chat.moderate'),
-                cancelText: t('common.action.cancel'),
-                okButtonProps: { danger: true },
-                onOk: () => runChatOperation(
+                description: t('mobile.chat.moderateConfirmBody'),
+                confirmLabel: t('mobile.chat.moderate'),
+                cancelLabel: t('common.action.cancel'),
+                onConfirm: () => runChatOperation(
                   () => dispatchModerateMessage(
                     activeConversationId,
                     messageUlid,
@@ -1810,7 +1818,7 @@ function ChatPageInner({
               className="message-composer-surface readonly"
               ref={chatBottomOcclusion.composerRef}
             >
-              <Text type="secondary">{t('mobile.chat.blockedComposer')}</Text>
+              <Text tone="secondary">{t('mobile.chat.blockedComposer')}</Text>
             </div>
           </footer>
         ) : (
@@ -1828,9 +1836,9 @@ function ChatPageInner({
               ) : null}
               {composerMoreOpen ? (
                 <div className="message-composer-panel more-panel">
-                  <ComposerToolButton icon={<FolderOpen size={16} />} label={t('mobile.chat.composerFile')} onClick={openMobileFilePicker} disabled={attachmentUploading || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)} />
-                  <ComposerToolButton icon={<Scissors size={16} />} label={t('mobile.chat.composerScreenshot')} onClick={() => { setLocalActionError(t('mobile.chat.composerUnavailable')); setComposerMoreOpen(false); }} />
-                  <ComposerToolButton icon={<Mic size={16} />} label={t('mobile.chat.composerVoice')} onClick={startVoiceRecording} disabled={attachmentUploading || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)} />
+                  <ComposerToolButton icon={<Icon iconId="folder-open" size={16} />} label={t('mobile.chat.composerFile')} onClick={openMobileFilePicker} disabled={attachmentUploading || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)} />
+                  <ComposerToolButton icon={<Icon iconId="scissors" size={16} />} label={t('mobile.chat.composerScreenshot')} onClick={() => { setLocalActionError(t('mobile.chat.composerUnavailable')); setComposerMoreOpen(false); }} />
+                  <ComposerToolButton icon={<Icon iconId="mic" size={16} />} label={t('mobile.chat.composerVoice')} onClick={startVoiceRecording} disabled={attachmentUploading || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)} />
                 </div>
               ) : null}
               {voiceRecorder.recording ? (
@@ -1843,10 +1851,21 @@ function ChatPageInner({
                     <Text>{t('chat.social.composer.recording', { seconds: voiceRecorder.recordingSeconds })}</Text>
                   </span>
                   <span className="voice-recording-actions">
-                    <Button size="small" icon={<X size={13} />} onClick={() => voiceRecorder.stopRecording(true)}>
+                    <Button
+                      actionId="chat.voice.cancel"
+                      density="compact"
+                      leading={<Icon iconId="close" size={13} />}
+                      onActivate={() => voiceRecorder.stopRecording(true)}
+                    >
                       {t('chat.social.composer.cancelRecord')}
                     </Button>
-                    <Button size="small" type="primary" icon={<Square size={13} />} onClick={() => voiceRecorder.stopRecording(false)}>
+                    <Button
+                      actionId="chat.voice.finish"
+                      density="compact"
+                      emphasis="primary"
+                      leading={<Icon iconId="square" size={13} />}
+                      onActivate={() => voiceRecorder.stopRecording(false)}
+                    >
                       {t('chat.social.composer.finishRecord')}
                     </Button>
                   </span>
@@ -1884,9 +1903,9 @@ function ChatPageInner({
                       ))
                     : null}
                   {attachmentUploading ? <Spin size="small" /> : null}
-                  {pendingAttachmentSubmission ? <Text type="secondary">{t('chat.social.messageArea.attachmentStateDownloading')}</Text> : null}
+                  {pendingAttachmentSubmission ? <Text tone="secondary">{t('chat.social.messageArea.attachmentStateDownloading')}</Text> : null}
                   {attachmentDrafts.length === 0 && encryptedAttachmentRefs.length > 0
-                    ? <Text type="secondary">{t('mobile.chat.retryAttachmentUnavailable')}</Text>
+                    ? <Text tone="secondary">{t('mobile.chat.retryAttachmentUnavailable')}</Text>
                     : null}
                 </div>
               ) : null}
@@ -1904,39 +1923,53 @@ function ChatPageInner({
               </span>
               {editingMessage ? (
                 <div className="message-editing-banner">
-                  <Text type="secondary" ellipsis>{t('mobile.chat.editing')}</Text>
-                  <button type="button" className="message-action-button light" onClick={() => { setEditingMessage(null); handleDraftChange(''); }} aria-label={t('common.action.cancel')}><X size={13} /></button>
+                  <Text tone="secondary" truncate>{t('mobile.chat.editing')}</Text>
+                  <button type="button" className="message-action-button light" onClick={() => { setEditingMessage(null); handleDraftChange(''); }} aria-label={t('common.action.cancel')}><Icon iconId="close" size={13} /></button>
                 </div>
               ) : null}
               {!editingMessage && replyToMessageUlid ? (
                 <div className="message-editing-banner message-reply-context">
-                  <CornerUpLeft size={14} />
-                  <Text type="secondary" ellipsis>
+                  <Icon iconId="corner-up-left" size={14} />
+                  <Text tone="secondary" truncate>
                     {t('mobile.chat.replyingTo', {
                       message: replyTargetMessage
                         ? messageContentForSearch(replyTargetMessage, t)
                         : t('mobile.chat.noPreview'),
                     })}
                   </Text>
-                  <button type="button" className="message-action-button light" onClick={() => updateReplyContext('')} aria-label={t('common.action.cancel')}><X size={13} /></button>
+                  <button type="button" className="message-action-button light" onClick={() => updateReplyContext('')} aria-label={t('common.action.cancel')}><Icon iconId="close" size={13} /></button>
                 </div>
               ) : null}
               <input ref={fileInputRef} className="visually-hidden-file-input" type="file" multiple onChange={(e) => { void handleMobileFilesSelected(e.target.files); }} />
               <div className="message-composer-row">
                 {MOBILE_THREAD_COMPOSER_CAPABILITIES.emoji ? (
-                  <button type="button" className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerEmoji')} onClick={() => { composerInputRef.current?.blur(); setComposerEmojiOpen((o) => !o); setComposerMoreOpen(false); }} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)}><Smile size={18} /></button>
+                  <button type="button" className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerEmoji')} onClick={() => { composerInputRef.current?.blur(); setComposerEmojiOpen((o) => !o); setComposerMoreOpen(false); }} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)}><Icon iconId="smile" size={18} /></button>
                 ) : null}
-                <Input ref={composerInputRef} className="message-composer-input" value={draft} onChange={(e) => handleDraftChange(e.target.value)}
-                  data-product-surface={chatBottomOcclusion.keyboardOverlapHeight > 0 ? 'chat.composer-keyboard' : undefined}
-                  onFocus={() => { setComposerEmojiOpen(false); setComposerMoreOpen(false); }}
-                  onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; lastCompositionEndRef.current = Date.now(); }}
-                  onKeyDown={handleComposerKeyDown} placeholder={t(threadRootMessageUlid ? 'mobile.chat.threadReplyPlaceholder' : 'mobile.chat.messagePlaceholder')} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} />
-                <button type="button" className={`message-composer-tool ${composerMoreOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerMore')} onClick={() => { composerInputRef.current?.blur(); setComposerMoreOpen((o) => !o); setComposerEmojiOpen(false); }} disabled={voiceRecorder.recording || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)}><Plus size={18} /></button>
-                <Button className="message-send-button" type="primary" icon={<Send size={16} />}
+                <span className="message-composer-input-frame">
+                  <TextField
+                    ref={composerInputRef}
+                    className="message-composer-input"
+                    value={draft}
+                    onValueChange={handleDraftChange}
+                    data-product-surface={chatBottomOcclusion.keyboardOverlapHeight > 0 ? 'chat.composer-keyboard' : undefined}
+                    onFocus={() => { setComposerEmojiOpen(false); setComposerMoreOpen(false); }}
+                    onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; lastCompositionEndRef.current = Date.now(); }}
+                    onKeyDown={handleComposerKeyDown} placeholder={t(threadRootMessageUlid ? 'mobile.chat.threadReplyPlaceholder' : 'mobile.chat.messagePlaceholder')} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false}
+                  />
+                </span>
+                <button type="button" className={`message-composer-tool ${composerMoreOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerMore')} onClick={() => { composerInputRef.current?.blur(); setComposerMoreOpen((o) => !o); setComposerEmojiOpen(false); }} disabled={voiceRecorder.recording || Boolean(editingMessage) || Boolean(pendingAttachmentSubmission)}><Icon iconId="plus" size={18} /></button>
+                <Button
+                  actionId="chat.send-message"
+                  className="message-send-button"
+                  emphasis="primary"
+                  leading={<Icon iconId="send" size={16} />}
                   aria-label={t('common.action.send')}
-                  disabled={voiceRecorder.recording || !canSubmitChatComposerDraft({ text: draft, attachmentCount: readyChatAttachmentStages(attachmentDrafts).length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || attachmentUploading || attachmentStagingFailed || encryptedAttachmentRefs.length > 0 || Boolean(pendingAttachmentSubmission)}
-                  loading={attachmentUploading || Boolean(pendingAttachmentSubmission)}
-                  onClick={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')} />
+                  availability={voiceRecorder.recording || !canSubmitChatComposerDraft({ text: draft, attachmentCount: readyChatAttachmentStages(attachmentDrafts).length, capabilities: MOBILE_THREAD_COMPOSER_CAPABILITIES }) || attachmentUploading || attachmentStagingFailed || encryptedAttachmentRefs.length > 0 || Boolean(pendingAttachmentSubmission)
+                    ? { kind: 'disabled', reason: t('chat.social.composer.sendDisabled') }
+                    : undefined}
+                  execution={attachmentUploading || Boolean(pendingAttachmentSubmission) ? 'pending' : 'idle'}
+                  onActivate={() => void runChatOperation(submitMessage, 'mobile.chat.operationSendFailed')}
+                />
               </div>
             </div>
           </footer>
@@ -2003,7 +2036,7 @@ function MessageMetaRow({
       {edited ? <span>{t('mobile.chat.edited')}</span> : null}
       {flaggedOnDevice ? (
         <span className="message-local-flag" data-message-local-flag="true">
-          <Flag size={11} />
+          <Icon iconId="flag" size={11} />
           <span>{t('mobile.chat.flaggedOnDevice')}</span>
         </span>
       ) : null}
@@ -2025,7 +2058,7 @@ function MessageMetaRow({
           aria-label={t('mobile.chat.messageActions')}
           onClick={onOpenActions}
         >
-          <MoreHorizontal size={13} />
+          <Icon iconId="more-horizontal" size={13} />
         </button>
       ) : null}
     </span>

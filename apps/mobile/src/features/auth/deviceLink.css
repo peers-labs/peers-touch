@@ -14,7 +14,6 @@ body:has(.mobile-device-link-scanner),
   height: auto;
 }
 
-.mobile-device-link-scanner .auth-gate-card > .ant-card-body,
 .mobile-device-link-scanner .auth-gate-card > .auth-gate-card-body {
   display: flex;
   padding: 16px !important;

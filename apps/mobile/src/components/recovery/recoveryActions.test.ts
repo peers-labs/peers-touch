@@ -141,7 +141,7 @@ describe('Mobile reliability recovery surfaces', () => {
       /\.header-action\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
     );
     expect(stylesSource).toMatch(
-      /\.chat-search-bar \.ant-input-affix-wrapper\s*\{[^}]*height:\s*44px;/s,
+      /\.chat-search-bar \.chat-search-field\s*\{[^}]*height:\s*44px;/s,
     );
     expect(stylesSource).toMatch(
       /\.mobile-notice-close\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,

@@ -77,10 +77,7 @@ input {
 
 input,
 textarea,
-select,
-.ant-input,
-.ant-input-affix-wrapper,
-.ant-select-selector {
+select {
   font-size: 16px !important;
 }
 
@@ -480,22 +477,6 @@ select,
   margin-top: auto;
 }
 
-.launch-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.launch-heading .ant-typography {
-  margin: 0 !important;
-}
-
-.launch-heading h1.ant-typography {
-  font-size: 24px;
-  line-height: 1.25;
-  letter-spacing: 0;
-}
-
 @media (orientation: landscape) and (max-height: 500px) {
   .launch-topbar {
     position: absolute;
@@ -863,7 +844,6 @@ select,
   box-shadow: 0 16px 48px rgba(27, 31, 59, 0.1);
 }
 
-.auth-gate-card > .ant-card-body,
 .auth-gate-card > .auth-gate-card-body {
   display: flex;
   flex-direction: column;
@@ -872,7 +852,6 @@ select,
   padding: 0 !important;
 }
 
-.auth-gate-screen[data-session-expired='true'] .auth-gate-card > .ant-card-body,
 .auth-gate-screen[data-session-expired='true'] .auth-gate-card > .auth-gate-card-body {
   gap: 12px;
 }
@@ -1138,7 +1117,6 @@ select,
     justify-content: flex-start;
   }
 
-  .auth-gate-card > .ant-card-body,
   .auth-gate-card > .auth-gate-card-body {
     padding: 18px !important;
   }
@@ -1149,22 +1127,6 @@ select,
     margin-bottom: 10px;
     border-radius: 15px;
   }
-}
-
-.launch-card {
-  flex: 0 0 auto;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
-.launch-card > .ant-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  padding: 0 !important;
 }
 
 .station-selector {
@@ -1236,7 +1198,7 @@ select,
   grid-template-columns: minmax(0, 1fr) 44px;
 }
 
-.station-input-row > .ant-btn {
+.station-input-row > button {
   height: 44px;
   width: 44px;
   padding: 0;
@@ -1680,7 +1642,6 @@ select,
     overflow: hidden;
   }
 
-  .auth-gate-card > .ant-card-body,
   .auth-gate-card > .auth-gate-card-body,
   .entry-progress-panel {
     padding: 16px 18px !important;
@@ -1691,7 +1652,6 @@ select,
     min-height: 0;
   }
 
-  .auth-gate-card > .ant-card-body,
   .auth-gate-card > .auth-gate-card-body {
     display: grid;
     grid-template-columns: minmax(180px, 0.8fr) minmax(300px, 1.2fr);
@@ -1933,20 +1893,11 @@ select,
   box-shadow: 0 8px 24px rgba(31, 41, 55, 0.08);
 }
 
-.mobile-shell .ant-avatar,
-.chat-header-avatar {
-  border-radius: 12px !important;
-}
-
-.mobile-shell .mobile-user-avatar.ant-avatar {
+.mobile-shell .mobile-user-avatar {
   flex: 0 0 auto;
   overflow: hidden;
   border-radius: var(--mobile-user-avatar-radius, 8px) !important;
   font-weight: 600;
-}
-
-.mobile-shell .mobile-user-avatar .ant-avatar-string {
-  border-radius: inherit;
 }
 
 .contacts-toolbar {
@@ -1955,12 +1906,6 @@ select,
   align-items: center;
   gap: 8px;
   padding: 0 18px 12px;
-}
-
-.contacts-search-input .ant-input-affix-wrapper,
-.contacts-search-input.ant-input-affix-wrapper {
-  height: 44px;
-  border-radius: 10px;
 }
 
 .contacts-add-button {
@@ -1981,12 +1926,8 @@ select,
   padding: 0 18px 12px;
 }
 
-.chat-search-bar .ant-input-affix-wrapper {
-  height: 44px;
-  border-radius: 10px;
-}
-
-.chat-search-bar .contact-search-field {
+.chat-search-bar .contact-search-field,
+.chat-search-bar .chat-search-field {
   height: 44px;
   border-radius: 10px;
 }
@@ -2042,7 +1983,7 @@ select,
   text-align: center;
 }
 
-.empty-copy .ant-btn {
+.empty-copy [data-action-id] {
   align-self: center;
   min-height: 44px;
   margin-top: 8px;
@@ -2115,17 +2056,6 @@ select,
   box-shadow: none;
 }
 
-.social-list-panel .ant-list {
-  overflow: hidden;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 10px 32px rgba(27, 31, 59, 0.06);
-}
-
-.social-list-panel .ant-list-item {
-  border-block-end: 0.5px solid rgba(15, 23, 42, 0.06) !important;
-}
-
 .conversation-item,
 .contact-item {
   display: flex;
@@ -2134,10 +2064,6 @@ select,
   min-height: 68px;
   padding: 10px 12px;
   cursor: pointer;
-}
-
-.conversation-item .ant-list-item-meta {
-  align-items: center !important;
 }
 
 .contact-item-meta {
@@ -2177,26 +2103,15 @@ select,
   padding-inline: 12px;
 }
 
-.conversation-item .ant-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px !important;
-  font-size: 17px;
-}
-
-.contact-item .mobile-user-avatar {
-  flex: 0 0 auto;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  font-size: 17px;
-}
-
 .conversation-avatar-frame {
   position: relative;
   display: inline-flex;
   width: 48px;
   height: 48px;
+}
+
+.conversation-avatar-frame .mobile-user-avatar {
+  border-radius: 14px !important;
 }
 
 .conversation-online-dot {
@@ -2211,28 +2126,6 @@ select,
   box-shadow: 0 2px 5px rgba(15, 23, 42, 0.16);
 }
 
-.conversation-item .ant-list-item-meta-title {
-  margin-bottom: 2px !important;
-}
-
-.conversation-item .ant-list-item-meta-description,
-.contact-item .ant-list-item-meta-description {
-  max-width: 210px;
-  overflow: hidden;
-  color: rgba(0, 0, 0, 0.45) !important;
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.conversation-item .ant-list-item-meta-description {
-  max-width: none;
-  overflow: visible;
-  overflow-wrap: anywhere;
-  text-overflow: clip;
-  white-space: normal;
-}
-
 .conversation-meta {
   display: flex;
   flex-direction: column;
@@ -2244,7 +2137,7 @@ select,
   padding-left: 8px;
 }
 
-.conversation-meta .ant-typography {
+.conversation-meta .conversation-time {
   font-size: 12px;
 }
 
@@ -2735,8 +2628,7 @@ select,
   flex: 0 0 44px;
 }
 
-.chat-thread-header.searching .ant-input-affix-wrapper,
-.chat-thread-header.searching .ant-input {
+.chat-thread-header.searching .chat-header-search-field > div {
   min-height: 44px;
 }
 
@@ -3046,13 +2938,6 @@ span.message-avatar {
   font-weight: 700;
 }
 
-.conversation-state-tag.ant-tag {
-  margin-inline-end: 0;
-  border-radius: 8px;
-  font-size: 10px;
-  line-height: 17px;
-}
-
 .message-bubble-row.mine .message-bubble {
   border-radius: var(--chat-message-bubble-radius-own, 17px 17px 5px 17px);
   background: #5d82f7;
@@ -3207,7 +3092,7 @@ span.message-avatar {
   justify-content: flex-start;
 }
 
-.message-reply-context > .ant-typography {
+.message-reply-context > span {
   flex: 1;
   min-width: 0;
 }
@@ -3586,18 +3471,7 @@ input.message-composer-input {
   padding-inline: 14px;
 }
 
-/* Transitional: antd composer in ChatPage until its peers migration lands. */
-.message-composer-input.ant-input {
-  height: max(44px, var(--chat-composer-input-min-height, 38px));
-  min-height: max(44px, var(--chat-composer-input-min-height, 38px));
-  border-color: transparent;
-  border-radius: var(--chat-composer-radius, 12px);
-  background: #fff;
-  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
-}
-
-[data-action-id].message-send-button,
-.message-send-button.ant-btn {
+[data-action-id].message-send-button {
   width: max(44px, var(--chat-composer-tool-button-size, 40px));
   height: max(44px, var(--chat-composer-input-min-height, 38px));
   border-radius: var(--chat-composer-radius, 12px);
@@ -3640,9 +3514,7 @@ input.message-composer-input {
 }
 
 .chat-acceptance-fixture [data-action-id],
-.chat-acceptance-fixture .ant-btn,
-.chat-thread-page [data-action-id],
-.chat-thread-page .ant-btn {
+.chat-thread-page [data-action-id] {
   min-width: 44px;
   min-height: 44px;
 }
@@ -4042,22 +3914,6 @@ input.message-composer-input {
 
 .settings-actions {
   padding: 0 18px 24px;
-}
-
-.ant-list {
-  background: transparent !important;
-}
-
-.ant-list-item-meta-avatar {
-  margin-inline-end: 12px !important;
-}
-
-.ant-input-search .ant-input {
-  border-radius: 20px !important;
-}
-
-.ant-card .ant-card-body {
-  padding: 18px !important;
 }
 
 .social-detail-page {
@@ -4582,7 +4438,7 @@ input.message-composer-input {
   letter-spacing: 0;
 }
 
-.settings-fixture-sheet .ant-btn {
+.settings-fixture-sheet [data-action-id] {
   min-width: 44px;
   min-height: 44px;
 }
@@ -4636,7 +4492,7 @@ input.message-composer-input {
   font-size: 11px !important;
 }
 
-.conversation-badge .ant-badge-count {
+.conversation-badge > span {
   font-size: 10px;
   font-weight: 600;
   min-width: 18px;
@@ -4690,12 +4546,6 @@ input.message-composer-input {
 
 .group-item:active {
   background: rgba(0, 0, 0, 0.03);
-}
-
-.group-item .ant-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px !important;
 }
 
 .group-info {

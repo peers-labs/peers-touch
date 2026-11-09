@@ -1092,12 +1092,12 @@
   min-height: 100%;
 }
 
-.moments-acceptance-fixture .ant-btn,
-.moments-acceptance-fixture .ant-input,
-.moments-acceptance-fixture .ant-input-affix-wrapper,
-.moments-fixture-backdrop .ant-btn,
-.moments-fixture-backdrop .ant-input,
-.moments-fixture-backdrop .ant-input-affix-wrapper {
+.moments-acceptance-fixture [data-action-id],
+.moments-acceptance-fixture input:not([type='checkbox']),
+.moments-acceptance-fixture textarea,
+.moments-fixture-backdrop [data-action-id],
+.moments-fixture-backdrop input:not([type='checkbox']),
+.moments-fixture-backdrop textarea {
   min-width: 44px;
   min-height: 44px;
 }
@@ -1390,8 +1390,8 @@
   gap: 8px;
 }
 
-.moments-fixture-comment-field .ant-input,
-.moments-fixture-comment-field .ant-btn {
+.moments-fixture-comment-field input,
+.moments-fixture-comment-field [data-action-id] {
   min-height: 44px;
 }
 

@@ -183,7 +183,7 @@ export function ChatConversationListPageContent({
                       >
                         <span className="conversation-row">
                           <span className="conversation-avatar-frame">
-                            <MobileAvatar src={conversationAvatar(conversation)}>
+                            <MobileAvatar src={conversationAvatar(conversation)} size={48}>
                               {conversationTitle(conversation).slice(0, 1)}
                             </MobileAvatar>
                             {conversation.kind === 'friend' && conversation.conversation.peerOnline
