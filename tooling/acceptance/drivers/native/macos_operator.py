@@ -41,6 +41,22 @@ _IDENTITY_FIELDS = (
 )
 
 
+class NativeFocusUnavailable(ValueError):
+    """Retain object presence and queried PID without exporting AX contents."""
+
+    def __init__(self, process_id: int, references: list, identity: dict) -> None:
+        self.observed = {
+            "actualControlRequestPid": process_id,
+            "actualFrontmostPid": identity["actualFrontmostPid"],
+            "focusReferenceCount": len(references),
+            "controlPresent": bool(references[0]) if references else False,
+            "windowPresent": bool(references[1]) if len(references) > 1 else False,
+            "rolePresent": bool(identity["platformRole"]),
+            **{key: identity[key] for key in ("frontmost", "focusedWindow", "mainWindow")},
+        }
+        super().__init__("native focus objects are unavailable")
+
+
 def _finite(value: object) -> bool:
     return type(value) in (int, float) and math.isfinite(value)
 
@@ -101,6 +117,8 @@ def _failure(error: BaseException) -> dict:
         if key in {
             "axAttribute", "axStatus", "valuePresent", "ownerWindowCount",
             "axReadElapsedSeconds", "focusDeadlineExceeded", "actualControlRequestPid",
+            "actualFrontmostPid", "focusReferenceCount", "controlPresent",
+            "windowPresent", "rolePresent", "frontmost", "focusedWindow", "mainWindow",
         }:
             observed[key] = value
     return {"reason": "macOS scoped native observation failed",
@@ -344,7 +362,7 @@ class FocusObjects:
                 if identity["actualFrontmostPid"] != operator_pid:
                     raise ValueError("native operator frontmost process changed")
                 if not identity["platformRole"] or len(current) != 2 or not all(current):
-                    raise ValueError("native focus objects are unavailable")
+                    raise NativeFocusUnavailable(operator_pid, current, identity)
                 if self.baseline and (
                     identity != self.baseline_identity or not self._equal(self.baseline, current)
                 ):

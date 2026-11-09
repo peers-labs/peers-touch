@@ -102,6 +102,13 @@ panel observation still requires its own exact-PID native presence. Failures
 of any required identity field remain terminal, with the original status,
 deadline, sticky baseline and CF ownership.
 
+An explicitly absent focus object retains the actual queried/frontmost PID,
+control/window presence, role presence and original window flags in the
+Driver's typed failure. Do not export object addresses, titles or values.
+A frontmost application with a main window but no focused UI element remains
+unqualified. Its absent object is an observed environment boundary; it cannot
+be replaced by the main window, an empty identity or a different application.
+
 Binding discovers and proves the reviewed canonical Station origin before a
 loopback fault proxy is switched in, and restores that origin before restart.
 An early loopback origin cannot satisfy signed discovery.

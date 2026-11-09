@@ -15,7 +15,7 @@ from tooling.acceptance.drivers.native.base import NativeOperatorObservation
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.drivers.native.macos_ax import AXReadSession
 from tooling.acceptance.drivers.native.macos_operator import (
-    FocusObjects, OperatorScope, _encode, _failure, _read_line,
+    FocusObjects, NativeFocusUnavailable, OperatorScope, _encode, _failure, _read_line,
 )
 
 
@@ -216,8 +216,21 @@ class FocusObjectTests(unittest.TestCase):
     def test_missing_objects_or_role_never_admit_an_empty_baseline(self):
         for refs, fields in (((None, 21), {}), ((11, None), {}), ((11, 21), {"role": ""})):
             objects, _, clock, session, live, *_ = self.fixture([refs], controls=[fields])
-            with self.subTest(refs=refs, fields=fields), self.assertRaisesRegex(ValueError, "unavailable"):
+            with self.subTest(refs=refs, fields=fields), self.assertRaises(
+                NativeFocusUnavailable,
+            ) as caught:
                 self.observe(objects, clock, session)
+            failure = _failure(caught.exception)
+            self.assertEqual(failure["observed"]["actualControlRequestPid"], 41)
+            self.assertEqual(failure["observed"]["actualFrontmostPid"], 41)
+            self.assertEqual(failure["observed"]["controlPresent"], bool(refs[0]))
+            self.assertEqual(failure["observed"]["windowPresent"], bool(refs[1]))
+            self.assertEqual(failure["observed"]["rolePresent"], fields.get("role") != "")
+            self.assertEqual(failure["observed"]["focusReferenceCount"], 2)
+            self.assertEqual(failure["observed"]["errorType"], "NativeFocusUnavailable")
+            self.assertEqual(objects.baseline, [])
+            self.assertNotIn("platformRole", failure["observed"])
+            self.assertNotIn("references", failure["observed"])
             objects.close()
             # None is not an owned CF reference.
             self.assertTrue(all(ref is None for ref in live))
