@@ -444,12 +444,31 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             intent.draft_revision,
         )?;
         if let Some(existing) = self.existing_publish_result(intent)? {
+            tracing::info!(
+                state = existing.state,
+                has_post_id = existing.post_id.is_some(),
+                "private Moment publication resumed its durable command"
+            );
             return Ok(existing.into());
         }
         let mut upload_transfer_ids = Vec::new();
         let mut content_id = None;
         match self.publish_new(intent, &mut upload_transfer_ids, &mut content_id) {
-            Ok(result) => Ok(result),
+            Ok(result) => {
+                let (state, has_post_id) = match &result {
+                    PrivateMomentPublishOutcome::Ready(result) => (result.state, false),
+                    PrivateMomentPublishOutcome::Published(result) => {
+                        (result.state.as_str(), result.post_id.is_some())
+                    }
+                    PrivateMomentPublishOutcome::Rejected(result) => (result.state, false),
+                };
+                tracing::info!(
+                    state,
+                    has_post_id,
+                    "private Moment publication returned its Native outcome"
+                );
+                Ok(result)
+            }
             Err(failure) => {
                 self.finish_publish_failure(intent, failure, content_id, upload_transfer_ids)
             }
@@ -525,6 +544,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 .map(|repost| repost.authority.clone()),
             poll_authority: poll_material.as_ref().map(|poll| poll.authority.clone()),
         };
+        tracing::info!("private Moment preparation started");
         let plan = self
             .transport
             .prepare_private_moment(&prepare)
@@ -535,6 +555,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             })?;
         self.ensure_current()
             .map_err(PrivatePublishFailure::preserve)?;
+        tracing::info!("private Moment preparation received its plan");
         validate_plan(
             &plan,
             &self.lease,
@@ -1443,6 +1464,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .lease
             .store
             .moment_command(&intent.draft_id, intent.draft_revision)?;
+        if let Some(command) = &existing {
+            tracing::info!(
+                operation_state = ?command.state,
+                "private Moment publication observed its durable command"
+            );
+        }
         match existing {
             Some(command)
                 if matches!(
@@ -1550,6 +1577,10 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         acquired: AcquiredMomentCommand,
     ) -> Result<PrivateMomentPublishResult, String> {
         let command = &acquired.command;
+        tracing::info!(
+            operation_state = ?command.state,
+            "private Moment submit dispatch started"
+        );
         let request =
             match social::SubmitPrivateMomentRequest::decode(command.request_bytes.as_slice()) {
                 Ok(request) => request,
@@ -1691,6 +1722,17 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             }
         };
         let operation = command.operation_record()?;
+        let readback_state = match &observation {
+            ReadbackObservation::Committed { .. } => "committed",
+            ReadbackObservation::AuthoritativeAbsent => "absent",
+            ReadbackObservation::Invalid { .. } => "invalid",
+            ReadbackObservation::Unavailable { .. } => "unavailable",
+        };
+        tracing::info!(
+            operation_state = ?command.state,
+            readback_state,
+            "private Moment journal observed its authoritative readback"
+        );
         let decision = match command.state {
             OperationState::UnknownOutcome => decide_unknown_outcome(&operation, observation),
             OperationState::CommittedPendingReadback => {
