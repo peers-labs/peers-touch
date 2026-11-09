@@ -1,6 +1,6 @@
 # Runtime Secrets Provisioning — 设计决策
 
-> **Status**: draft
+> **Status**: active
 > **Version**: v0.1
 > **Created**: 2026-11-06 | **Updated**: 2026-11-06
 > **Owner**: Platform Team
@@ -11,21 +11,21 @@
 
 | ID | 决策 | 状态 |
 |----|------|------|
-| RS-D01 | 密钥按权威分两类，区别配给 | proposed |
-| RS-D02 | 复用 per-role git-crypt runtime.env，不新建 secret 体系 | proposed |
-| RS-D03 | Class B 随 make 部署幂等对账，非一次性手工装备 | proposed |
-| RS-D04 | reconcile 仅 upsert 声明键，保留 Class A，compose 零改动 | proposed |
-| RS-D05 | 值只走 SSH stdin + 远端 0600 原子落盘 | proposed |
-| RS-D06 | 远端 env 按 compose project 命名空间隔离 | proposed |
-| RS-D07 | fail-closed 双层（部署前预检 + entrypoint 必需键） | proposed |
-| RS-D08 | 独立 runtime-secrets 模块而非扩写 service-coordination | proposed |
-| RS-D09 | 首期只 onboard Station OAuth bridge + Relay 共享项 | proposed |
+| RS-D01 | 密钥按权威分两类，区别配给 | accepted |
+| RS-D02 | 复用 per-role git-crypt runtime.env，不新建 secret 体系 | accepted |
+| RS-D03 | Class B 随 make 部署幂等对账，非一次性手工装备 | accepted |
+| RS-D04 | reconcile 仅 upsert 声明键，保留 Class A，compose 零改动 | accepted |
+| RS-D05 | 值只走 SSH stdin + 远端 0600 原子落盘 | accepted |
+| RS-D06 | 远端 env 按 compose project 命名空间隔离 | accepted |
+| RS-D07 | fail-closed 双层（部署前预检 + entrypoint 必需键） | accepted |
+| RS-D08 | 独立 runtime-secrets 模块而非扩写 service-coordination | accepted |
+| RS-D09 | 首期只 onboard Station OAuth bridge + Relay 共享项 | accepted |
 
 ---
 
 ## RS-D01: 密钥按权威分两类，区别配给
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context
@@ -56,7 +56,7 @@
 
 ## RS-D02: 复用 per-role git-crypt runtime.env，不新建 secret 体系
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context
@@ -86,7 +86,7 @@ Class B 值放入既有 env 仓 `peers-touch/<profile>/<role>/runtime.env`（git
 
 ## RS-D03: Class B 随 make 部署幂等对账，非一次性手工装备
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context
@@ -115,7 +115,7 @@ deploy 需要本地 git-crypt 已解锁；锁定时 reconcile 给出明确 BLOCK
 
 ## RS-D04: reconcile 仅 upsert 声明键，保留 Class A，compose 零改动
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context
@@ -144,7 +144,7 @@ resolver 必须严格按白名单写；对未声明键保持不变并可报告�
 
 ## RS-D05: 值只走 SSH stdin + 远端 0600 原子落盘
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context
@@ -173,7 +173,7 @@ deploy 输出与日志需继续经 redact 规则脱敏；reconcile 不回显值�
 
 ## RS-D06: 远端 env 按 compose project 命名空间隔离
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context
@@ -201,7 +201,7 @@ four 等旧扁平 profile 需迁到新契约（env 仓改动，需单独人类�
 
 ## RS-D07: fail-closed 双层
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context
@@ -229,7 +229,7 @@ four 等旧扁平 profile 需迁到新契约（env 仓改动，需单独人类�
 
 ## RS-D08: 独立 runtime-secrets 模块
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context
@@ -257,7 +257,7 @@ service-coordination.md 增加章节。
 
 ## RS-D09: 首期只 onboard Station OAuth bridge + Relay 共享项
 
-**Status**: proposed
+**Status**: accepted
 **Date**: 2026-11-06
 
 ### Context

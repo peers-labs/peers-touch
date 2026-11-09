@@ -1,6 +1,6 @@
 # Runtime Secrets Provisioning — 集成与映射
 
-> **Status**: draft
+> **Status**: active
 > **Version**: v0.1
 > **Created**: 2026-11-06 | **Updated**: 2026-11-06
 > **Owner**: Platform Team
