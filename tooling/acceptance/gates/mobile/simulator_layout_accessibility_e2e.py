@@ -130,13 +130,16 @@ if (!trigger) {
 }
 trigger.click();
 setTimeout(() => {
+  // peers-ui Menu: items are buttons[role="menuitem"][data-action-id]; the
+  // active language is marked with a check glyph, other items have no icon.
   const items = Array.from(
-    document.querySelectorAll('.ant-dropdown-menu-item'),
+    document.querySelectorAll('[role="menuitem"][data-action-id]'),
   ).filter((item) => item.getBoundingClientRect().width > 0);
   const target = items.find((item) => {
-    const selected = item.getAttribute('aria-selected') === 'true'
-      || item.classList.contains('ant-dropdown-menu-item-selected');
-    return !selected;
+    const currentAction = `language-${before}`;
+    const markedCurrent = item.getAttribute('data-action-id') === currentAction
+      || Boolean(item.querySelector('svg'));
+    return !markedCurrent;
   });
   if (!target) {
     done({error: 'alternate-language-missing', before});

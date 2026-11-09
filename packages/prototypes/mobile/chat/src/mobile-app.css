@@ -174,7 +174,10 @@
   display:block;width:100%;
   background:transparent;border:0;outline:0;resize:none;
   font-family:inherit;font-size:14px;line-height:1.5;color:var(--pt-text);text-align:start;
-  min-height:0;max-height:none;height:auto;padding:4px 2px;
+  min-height:0;max-height:none;
+  height:var(--ma-composer-height, auto);
+  overflow-y:var(--ma-composer-overflow, hidden);
+  padding:4px 2px;
 }
 .ma-composer textarea:focus-visible{outline:none}
 /* Send is a squircle, never a circle — circles are the small tool glyphs. */

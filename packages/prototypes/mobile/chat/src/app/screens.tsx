@@ -450,10 +450,13 @@ function ThreadComposer({ conversation, dispatch, replyTarget, editTarget, onCle
     const blockPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
     const minH = minRows * lineHeight + blockPad;
     const maxH = maxRows * lineHeight + blockPad;
-    el.style.height = 'auto';
+    // Drive the primitive's height through a CSS variable instead of direct
+    // visual style mutation (primitive-layer rule): reset to auto to measure,
+    // then publish the clamped row height for .ma-composer-input to consume.
+    el.style.setProperty('--ma-composer-height', 'auto');
     const next = Math.min(Math.max(el.scrollHeight, minH), maxH);
-    el.style.height = `${next}px`;
-    el.style.overflowY = el.scrollHeight > maxH + 1 ? 'auto' : 'hidden';
+    el.style.setProperty('--ma-composer-height', `${next}px`);
+    el.style.setProperty('--ma-composer-overflow', el.scrollHeight > maxH + 1 ? 'auto' : 'hidden');
   }, [draft, expanded, minRows, maxRows]);
 
   const insertEmoji = (emoji: string) => {
