@@ -1146,10 +1146,6 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             REPO_ROOT
             / "apps/mobile/src/features/station/StationSelector.tsx"
         ).read_text(encoding="utf-8")
-        launch = (
-            REPO_ROOT
-            / "apps/mobile/src/features/station/StationLaunchScreen.tsx"
-        ).read_text(encoding="utf-8")
         progress = (
             REPO_ROOT
             / "apps/mobile/src/features/station/EntryProgressScreen.tsx"
@@ -1163,7 +1159,6 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             self.assertTrue(
                 surface_id in app
                 or surface_id in station
-                or surface_id in launch
                 or surface_id in progress
                 or surface_id in access,
                 surface_id,
