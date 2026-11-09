@@ -1,19 +1,20 @@
 import { useTranslation } from 'react-i18next';
 import { MomentPoll as PeerMomentPoll } from '@peers-touch/ui';
 import { ReactionKind, type Post } from '../../gen/proto/domain/social/post_pb';
-import { useActiveMomentsSlice } from './useActiveMomentsStore';
+import { useActiveMomentsSlice, useActivePrivateMomentsSlice } from './useActiveMomentsStore';
 import { pollErrorKey } from '../../services/pollCommandState';
 import { privateReactionTargetKey } from '../../services/privateMomentsNative';
-import { usePrivateMomentsStore } from '../../store/privateMoments';
 
 export function MomentPoll({ post }: { post: Post }) {
   const { t } = useTranslation('moments');
   const { command, vote, retry } = useActiveMomentsSlice(state => ({
     command: state.pollCommands[post.id], vote: state.votePoll, retry: state.retryPoll,
   }));
-  const privateContent = usePrivateMomentsStore(state => state.postsById[post.id]?.content);
-  const privateCommand = usePrivateMomentsStore(state =>
-    state.reactionCommands[privateReactionTargetKey(post.id, '', ReactionKind.REACTION_UNSPECIFIED)]);
+  const { privateContent, privateCommand } = useActivePrivateMomentsSlice(state => ({
+    privateContent: state.postsById[post.id]?.content,
+    privateCommand: state.reactionCommands[
+      privateReactionTargetKey(post.id, '', ReactionKind.REACTION_UNSPECIFIED)],
+  }));
   const privatePoll = privateContent?.kind === 'POLL' ? privateContent : undefined;
   const publicPoll = post.content.case === 'pollPost' ? post.content.value : undefined;
   const poll = privatePoll ?? publicPoll?.poll;
