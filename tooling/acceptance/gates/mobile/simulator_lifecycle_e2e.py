@@ -238,6 +238,12 @@ class SimulatorRuntimeLifecycleGate(
             },
             role="mobile-simulator-lifecycle-source-identity",
         )
+        assertions = self._assertions_from_lifecycle_clients(client_results)
+        failed = [item["name"] for item in assertions if not item["passed"]]
+        if failed:
+            raise GateError(
+                "Mobile lifecycle assertions failed: " + ", ".join(failed)
+            )
         return {
             **self._result_base("PASS"),
             "completionStatus": "DONE",
@@ -245,7 +251,61 @@ class SimulatorRuntimeLifecycleGate(
             "source": source_identity,
             "runtime": runtime_identity,
             "clients": client_results,
+            "assertions": assertions,
         }
+
+    def _assertions_from_lifecycle_clients(
+        self,
+        client_results: Mapping[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Derive explicit assertions from observed lifecycle evidence."""
+        assertions: list[dict[str, Any]] = []
+        for client_id, result in sorted(client_results.items()):
+            initial = result.get("initial", {})
+            suspended = result.get("suspended", {})
+            resumed = result.get("resumed", {})
+            restarted = result.get("restarted", {})
+            navigation = result.get("navigation", {})
+            prefix = f"MS-AG04:{client_id}"
+            assertions.extend([
+                {
+                    "name": f"{prefix}:suspend-resume-phase-contract",
+                    "passed": initial.get("phase") == "ACTIVE"
+                    and suspended.get("phase") == "SUSPENDED"
+                    and resumed.get("phase") == "ACTIVE",
+                },
+                {
+                    "name": f"{prefix}:generation-advances-monotonically",
+                    "passed": isinstance(initial.get("generation"), int)
+                    and int(resumed.get("generation", -1))
+                    > int(initial.get("generation", -2))
+                    and int(restarted.get("generation", -2))
+                    > int(resumed.get("generation", -3)),
+                },
+                {
+                    "name": f"{prefix}:restart-restores-boot-order-and-launch-state",
+                    "passed": bool(restarted.get("bootOrder"))
+                    and restarted.get("bootOrder") == initial.get("bootOrder")
+                    and restarted.get("launchState")
+                    == initial.get("launchState"),
+                },
+                {
+                    "name": f"{prefix}:descriptor-navigation-routes-primary-and-overlay",
+                    "passed": navigation.get("contacts", {}).get("primaryRouteId")
+                    == "tab:contacts"
+                    and navigation.get("findPeople", {}).get("overlayRouteId")
+                    == "overlay:add-friend"
+                    and navigation.get("createGroup", {}).get("overlayRouteId")
+                    == "overlay:create-group"
+                    and navigation.get("overlayClosed", {}).get("overlayRouteId")
+                    is None,
+                },
+                {
+                    "name": f"{prefix}:does-not-claim-physical-device",
+                    "passed": result.get("physicalDeviceClaimed") is False,
+                },
+            ])
+        return assertions
 
     def _exercise_lifecycle(
         self,
