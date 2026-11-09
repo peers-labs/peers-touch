@@ -2402,12 +2402,50 @@ select,
   background: rgba(248, 250, 252, 0.9);
 }
 
-.group-management-panel .ant-list-item {
-  padding-inline: 0 !important;
+.group-member-row,
+.group-invite-row {
+  padding-inline: 0;
+  flex-wrap: wrap;
 }
 
-.group-management-panel .ant-tag {
-  margin-inline-end: 0;
+.group-member-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.group-member-actions {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.chat-overlay-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  background: var(--pt-subtle);
+  color: var(--pt-text);
+}
+
+.chat-overlay-alert[data-tone='error'] {
+  background: color-mix(in srgb, var(--pt-danger) 10%, transparent);
+  color: var(--pt-danger);
+}
+
+.chat-overlay-alert[data-tone='success'] {
+  background: color-mix(in srgb, var(--pt-success) 12%, transparent);
+  color: var(--pt-success);
+}
+
+.chat-overlay-alert button {
+  margin-left: auto;
 }
 
 .people-federation-chips {
@@ -3572,13 +3610,13 @@ select,
   min-height: var(--chat-composer-min-height);
 }
 
-.chat-action-sheet .ant-btn,
-.group-management-panel .ant-switch {
+.group-management-panel [role='switch'] {
   min-width: 44px;
   min-height: 44px;
 }
 
-.group-management-panel .ant-input {
+.group-management-panel input,
+.group-management-panel textarea {
   min-height: 44px;
 }
 
