@@ -1,28 +1,13 @@
 /**
- * MomentsFeedStates.tsx — Empty, unavailable, and policy state renderers
+ * MomentsFeedStates.tsx — Empty, unavailable, and policy state renderers.
  *
- * Pure renderers for feed edge cases:
- * - Empty feed (no posts, user needs to follow/join)
- * - Unavailable state (projection failure, service down)
- * - Policy violation (blocked, moderated content)
- * - Loading state (initial feed load)
- * - Error state (network failure with retry)
- *
- * All text uses i18n keys; no hardcoded strings.
- *
- * W6B: Initial implementation.
+ * Pure renderers for feed edge cases: empty, loading, error, unavailable,
+ * and policy violation. All text uses i18n keys. Presentational only.
  */
 
-import { Button, Typography } from 'antd';
-import { AlertTriangle, Inbox, RefreshCw, ShieldAlert, WifiOff } from 'lucide-react';
+import { Button, Icon } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
-
-const { Text, Title } = Typography;
-
-// ---------------------------------------------------------------------------
-// Empty feed
-// ---------------------------------------------------------------------------
 
 export function MomentsFeedEmpty() {
   const { t } = useMobileI18n();
@@ -33,16 +18,12 @@ export function MomentsFeedEmpty() {
       data-product-surface="moments.feed-empty"
       role="status"
     >
-      <Inbox size={48} strokeWidth={1.5} />
-      <Title level={5}>{t('mobile.moments.feed.empty')}</Title>
-      <Text type="secondary">{t('mobile.moments.feed.emptyHint')}</Text>
+      <Icon iconId="inbox" size={48} strokeWidth={1.5} />
+      <h3 className="moments-state__title">{t('mobile.moments.feed.empty')}</h3>
+      <span className="moments-state__body">{t('mobile.moments.feed.emptyHint')}</span>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Loading state
-// ---------------------------------------------------------------------------
 
 export function MomentsFeedLoading({
   productSurface = 'moments.feed-loading',
@@ -57,15 +38,11 @@ export function MomentsFeedLoading({
       data-product-surface={productSurface}
       role="status"
     >
-      <RefreshCw size={24} className="moments-state__spinner" />
-      <Text type="secondary">{t('mobile.moments.feed.loading')}</Text>
+      <Icon iconId="refresh-cw" size={24} className="moments-state__spinner" />
+      <span className="moments-state__body">{t('mobile.moments.feed.loading')}</span>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Error state
-// ---------------------------------------------------------------------------
 
 interface MomentsFeedErrorProps {
   readonly message: string;
@@ -81,19 +58,19 @@ export function MomentsFeedError({ message: errorMessage, onRetry }: MomentsFeed
       data-product-surface="moments.feed-error"
       role="alert"
     >
-      <WifiOff size={36} strokeWidth={1.5} />
-      <Title level={5}>{t('mobile.moments.feed.error')}</Title>
-      {errorMessage && <Text type="secondary">{errorMessage}</Text>}
-      <Button onClick={onRetry} icon={<RefreshCw size={14} />}>
+      <Icon iconId="wifi-off" size={36} strokeWidth={1.5} />
+      <h3 className="moments-state__title">{t('mobile.moments.feed.error')}</h3>
+      {errorMessage ? <span className="moments-state__body">{errorMessage}</span> : null}
+      <Button
+        actionId="moments.feed.retry"
+        leading={<Icon iconId="refresh-cw" size={14} />}
+        onActivate={onRetry}
+      >
         {t('mobile.moments.feed.retry')}
       </Button>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Unavailable state (projection failure)
-// ---------------------------------------------------------------------------
 
 interface MomentsUnavailableProps {
   readonly reason?: string;
@@ -114,21 +91,17 @@ export function MomentsUnavailable({
       data-product-surface={productSurface}
       role="alert"
     >
-      <AlertTriangle size={48} strokeWidth={1.5} />
-      <Title level={5}>{t('mobile.moments.unavailable.title')}</Title>
-      <Text type="secondary">
+      <Icon iconId="warning" size={48} strokeWidth={1.5} />
+      <h3 className="moments-state__title">{t('mobile.moments.unavailable.title')}</h3>
+      <span className="moments-state__body">
         {reason || t('mobile.moments.unavailable.description')}
-      </Text>
-      <Button onClick={onRetry}>
+      </span>
+      <Button actionId="moments.unavailable.retry" onActivate={onRetry}>
         {t('mobile.moments.unavailable.retry')}
       </Button>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Policy violation state
-// ---------------------------------------------------------------------------
 
 interface MomentsPolicyViolationProps {
   readonly blocked?: boolean;
@@ -147,19 +120,17 @@ export function MomentsPolicyViolation({
       data-product-surface={productSurface}
       role="alert"
     >
-      <ShieldAlert size={48} strokeWidth={1.5} />
-      <Title level={5}>
+      <Icon iconId="shield-alert" size={48} strokeWidth={1.5} />
+      <h3 className="moments-state__title">
         {blocked
           ? t('mobile.moments.policy.blocked')
-          : t('mobile.moments.policy.violation')
-        }
-      </Title>
-      <Text type="secondary">
+          : t('mobile.moments.policy.violation')}
+      </h3>
+      <span className="moments-state__body">
         {blocked
           ? t('mobile.moments.policy.blockedHint')
-          : t('mobile.moments.policy.violationHint')
-        }
-      </Text>
+          : t('mobile.moments.policy.violationHint')}
+      </span>
     </div>
   );
 }
