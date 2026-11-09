@@ -28,7 +28,7 @@ describe('StationSelector removal contract', () => {
     expect(source).toContain('setPendingRemoval(entry)');
     expect(source).toContain('open={pendingRemoval !== null}');
     expect(source).toContain('onClick={confirmStationRemoval}');
-    expect(source).toContain('onCancel={() => setPendingRemoval(null)}');
+    expect(source).toContain('onDismiss={() => setPendingRemoval(null)}');
     expect(source).toContain('className="entry-confirmation-button danger"');
     expect(source).toContain('data-product-surface="entry.station-remove-confirm"');
   });
@@ -188,9 +188,9 @@ describe('StationSelector layout contract', () => {
   });
 
   it('never draws an inner focus frame inside the outer control', () => {
-    expect(styles).toContain('.station-address-input:focus-visible');
+    expect(styles).not.toContain('.station-address-input:focus-visible');
     expect(styles).toMatch(
-      /\.station-url-control\s+\.station-address-input:focus-visible\s*\{[\s\S]*?outline:\s*none\s*!important;/,
+      /\.station-address-input\s*\{[\s\S]*?border:\s*0;[\s\S]*?outline:\s*none;/,
     );
   });
 });

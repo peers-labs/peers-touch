@@ -1,17 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Input, Modal, Typography } from 'antd';
-import {
-  AlertTriangle,
-  Check,
-  Cloud,
-  LoaderCircle,
-  Plus,
-  RadioTower,
-  Server,
-  Trash2,
-  X,
-  ScanLine,
-} from 'lucide-react';
+import { Button, Dialog, Icon, Spin, Text } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import {
@@ -20,8 +8,6 @@ import {
 } from './stationRegistry';
 import { stationDisplayName } from './stationDisplayName';
 import type { XConfigSuggestion } from '../../services/mobileCommands';
-
-const { Text, Title } = Typography;
 
 export type StationSelectorSurfaceFixture =
   | 'address'
@@ -120,16 +106,26 @@ export function StationSelector({
   const showsHttpWarning = surfaceFixture === 'address'
     || buildStationUrl(stationUrl)?.startsWith('http://');
 
+  const pendingRemovalLabel = pendingRemoval
+    ? stationDisplayName(
+      pendingRemoval.label,
+      pendingRemoval.url,
+      t('common.stationPicker.fallbackLabel'),
+    )
+    : '';
+
   return (
     <section className="station-selector">
       {onScan ? (
         <Button
+          actionId="station-scan"
           className="station-scan-entry"
-          block
-          size="large"
-          icon={<ScanLine size={20} />}
-          disabled={checking}
-          onClick={onScan}
+          fullWidth
+          leading={<Icon iconId="scan-line" size={20} />}
+          availability={checking
+            ? { kind: 'disabled', reason: t('mobile.deviceLink.scan') }
+            : undefined}
+          onActivate={onScan}
         >
           {t('mobile.deviceLink.scan')}
         </Button>
@@ -160,7 +156,7 @@ export function StationSelector({
                 : 'entry.station-address'
             }
           >
-            <Input
+            <input
               className="station-address-input"
               value={stationUrl}
               placeholder={t('mobile.launch.placeholder')}
@@ -169,42 +165,45 @@ export function StationSelector({
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              variant="borderless"
               onChange={(event) => setStationUrl(event.target.value)}
-              onPressEnter={submit}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submit();
+              }}
             />
             <button
               type="button"
               className="station-submit"
               aria-label={t('mobile.launch.addStation')}
               disabled={!canAdd || checking}
-              onClick={submit}
+              onClick={() => void submit()}
             >
               {checking
-                ? <LoaderCircle className="station-submit-spinner" size={17} aria-hidden="true" />
-                : <Plus size={17} aria-hidden="true" />}
+                ? <Spin size="small" />
+                : <Icon iconId="plus" size={17} />}
             </button>
           </div>
           {hasEntries ? (
-            <Button
+            <button
+              type="button"
               className="station-input-cancel"
-              icon={<X size={16} />}
               aria-label={t('common.action.cancel')}
               onClick={closeStationInput}
-            />
+            >
+              <Icon iconId="close" size={16} />
+            </button>
           ) : null}
         </div>
       ) : null}
 
       {showStationInput && showsHttpWarning ? (
         <Text className="station-field-helper warning">
-          <AlertTriangle size={12} aria-hidden="true" />
+          <Icon iconId="warning" size={12} />
           <span>{t('mobile.launch.helperHttpWarning')}</span>
         </Text>
       ) : null}
 
       {error ? (
-        <Text type="danger" className="station-error" role="alert">
+        <Text tone="danger" className="station-error" role="alert">
           {error}
         </Text>
       ) : null}
@@ -215,8 +214,8 @@ export function StationSelector({
             className="station-empty"
             data-product-surface="entry.station-empty"
           >
-            <Server size={18} />
-            <Text type="secondary">{t('mobile.launch.emptyStations')}</Text>
+            <Icon iconId="server" size={18} />
+            <Text tone="secondary">{t('mobile.launch.emptyStations')}</Text>
           </div>
         ) : (
           entries.map((entry) => {
@@ -249,7 +248,7 @@ export function StationSelector({
                   aria-pressed={isActive}
                   onClick={() => onSelect(entry.stationPeerId)}
                 >
-                  <Server size={18} aria-hidden="true" />
+                  <Icon iconId="server" size={18} />
                   <span className="station-entry-copy">
                     <Text strong={isActive} className="mobile-truncate">{displayName}</Text>
                   </span>
@@ -257,7 +256,7 @@ export function StationSelector({
                     {status.label}
                   </span>
                   <span className="station-entry-check" aria-hidden="true">
-                    {isActive ? <Check size={16} /> : null}
+                    {isActive ? <Icon iconId="check" size={16} /> : null}
                   </span>
                 </button>
                 <button
@@ -270,7 +269,7 @@ export function StationSelector({
                     setPendingRemoval(entry);
                   }}
                 >
-                  <Trash2 size={15} aria-hidden="true" />
+                  <Icon iconId="delete" size={15} />
                 </button>
               </div>
             );
@@ -300,13 +299,13 @@ export function StationSelector({
                   onClick={() => void selectSuggestion(suggestion)}
                 >
                   {selecting
-                    ? <LoaderCircle className="station-submit-spinner" size={18} aria-hidden="true" />
+                    ? <Spin size="small" />
                     : suggestion.kind === 'relay'
-                      ? <RadioTower size={18} aria-hidden="true" />
-                      : <Cloud size={18} aria-hidden="true" />}
+                      ? <Icon iconId="radio-tower" size={18} />
+                      : <Icon iconId="cloud" size={18} />}
                   <span className="station-entry-copy">
                     <Text strong className="mobile-truncate">{suggestion.displayName}</Text>
-                    <Text type="secondary" className="mobile-truncate">
+                    <Text tone="secondary" className="mobile-truncate">
                       {suggestion.canonicalOrigin}
                     </Text>
                   </span>
@@ -321,33 +320,28 @@ export function StationSelector({
       </div>
 
       {hasEntries && !addingStation ? (
-        <Button className="station-add-secondary" type="text" icon={<Plus size={15} />} onClick={() => setAddingStation(true)}>
+        <Button
+          actionId="station-add-secondary"
+          className="station-add-secondary"
+          emphasis="quiet"
+          leading={<Icon iconId="plus" size={15} />}
+          onActivate={() => setAddingStation(true)}
+        >
           {t('mobile.launch.addStation')}
         </Button>
       ) : null}
 
-      <Modal
+      <Dialog
         open={pendingRemoval !== null}
-        onCancel={() => setPendingRemoval(null)}
-        footer={null}
-        destroyOnClose
+        onDismiss={() => setPendingRemoval(null)}
+        title={t('common.stationPicker.removeLabel', { station: pendingRemovalLabel })}
+        closeLabel={t('common.action.cancel')}
       >
         <section
           className="entry-confirmation"
           data-product-surface="entry.station-remove-confirm"
         >
-          <Title level={1}>
-            {t('common.stationPicker.removeLabel', {
-              station: pendingRemoval
-                ? stationDisplayName(
-                    pendingRemoval.label,
-                    pendingRemoval.url,
-                    t('common.stationPicker.fallbackLabel'),
-                  )
-                : '',
-            })}
-          </Title>
-          <Text type="secondary">{t('mobile.launch.stationRemoveBody')}</Text>
+          <Text tone="secondary">{t('mobile.launch.stationRemoveBody')}</Text>
           <div className="entry-confirmation-actions">
             <button
               type="button"
@@ -365,7 +359,7 @@ export function StationSelector({
             </button>
           </div>
         </section>
-      </Modal>
+      </Dialog>
     </section>
   );
 }
