@@ -27,11 +27,23 @@
   gap: 8px;
 }
 
-.mobile-search-input-row .ant-input-affix-wrapper {
+.mobile-search-input {
+  display: flex;
   min-width: 0;
+  flex: 1;
 }
 
-.mobile-search-input-row .ant-btn {
+.mobile-search-input > * {
+  width: 100%;
+}
+
+.mobile-search-leading {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pt-muted);
+}
+
+.mobile-search-input-row > button {
   height: 44px;
   flex: none;
 }
@@ -66,12 +78,12 @@
   min-height: 44px;
 }
 
-.mobile-search-scope .ant-typography {
+.mobile-search-scope .mobile-search-scope-copy {
   color: inherit;
   opacity: 0.75;
 }
 
-.mobile-search-scope .ant-btn {
+.mobile-search-scope button {
   min-height: 44px;
 }
 
@@ -160,7 +172,7 @@
   padding: 12px 16px;
 }
 
-.mobile-search-pagination .ant-btn {
+.mobile-search-pagination button {
   min-height: 44px;
 }
 

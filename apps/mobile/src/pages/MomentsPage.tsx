@@ -23,8 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Button, Typography } from 'antd';
-import { ArrowLeft } from 'lucide-react';
+import { Button, Icon } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import { useMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
@@ -66,7 +65,6 @@ import {
 } from './moments/MomentsScopeHeader';
 import './moments/Moments.css';
 
-const { Text } = Typography;
 const MOMENTS_FEED_WINDOW_SIZE = 100;
 
 function momentPostKey(post: Post): string {
@@ -552,7 +550,7 @@ function MomentsPageInner({
                 aria-label={t('common.action.back')}
                 onClick={onBack}
               >
-                <ArrowLeft size={20} />
+                <Icon iconId="arrow-left" size={20} />
               </button>
               <h1 className="header-title compact">
                 {t('mobile.moments.detail.title')}
@@ -654,8 +652,14 @@ function MomentsPageInner({
           data-feed-failure={feed.failure.kind}
           role="alert"
         >
-          <Text type="secondary">{feed.failure.message}</Text>
-          <Button onClick={feed.retryFailure}>
+          <span className="moments-feed-state-copy">
+            {feed.failure.message}
+          </span>
+          <Button
+            actionId="moments-feed-retry-failure"
+            emphasis="secondary"
+            onActivate={feed.retryFailure}
+          >
             {t('mobile.moments.feed.retry')}
           </Button>
         </div>
@@ -756,7 +760,11 @@ function MomentsPageInner({
                     feed.hasMore &&
                     feed.loadState === 'idle' && (
                       <div className="moments-feed-load-more">
-                        <Button type="text" onClick={feed.loadMore}>
+                        <Button
+                          actionId="moments-feed-load-more"
+                          emphasis="quiet"
+                          onActivate={feed.loadMore}
+                        >
                           {t('mobile.moments.feed.loadMore')}
                         </Button>
                       </div>
@@ -765,17 +773,17 @@ function MomentsPageInner({
                   {isRetainedTailWindow &&
                     feed.loadState === 'loading-more' && (
                       <div className="moments-feed-loading-more">
-                        <Text type="secondary">
+                        <span className="moments-feed-state-copy">
                           {t('mobile.moments.feed.loadingMore')}
-                        </Text>
+                        </span>
                       </div>
                     )}
 
                   {isRetainedTailWindow && !feed.hasMore && (
                     <div className="moments-feed-end">
-                      <Text type="secondary">
+                      <span className="moments-feed-state-copy">
                         {t('mobile.moments.feed.noMore')}
-                      </Text>
+                      </span>
                     </div>
                   )}
                 </div>

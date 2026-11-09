@@ -827,6 +827,11 @@
   padding: 8px 0 0;
 }
 
+.moments-feed-state-copy {
+  color: var(--pt-secondary);
+  font-size: 12px;
+}
+
 .moments-sheet-backdrop {
   position: fixed;
   inset: 0;

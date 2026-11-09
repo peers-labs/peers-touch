@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, type CSSProperties } from 'react';
-import { Button, Input, Spin, Typography } from 'antd';
-import { ArrowLeft, ChevronRight, FileText, MessageCircle, Newspaper, RefreshCw, Search, Settings } from 'lucide-react';
+import { Button, Icon, Spin, TextField } from '@peers-touch/ui';
 import { useMobileI18n } from '../app/mobileI18n';
 import { useVisualKeyboardOverlap } from '../app/layout/useVisualKeyboardOverlap';
 import type { MobileDetailRoute } from '../app/navigation';
@@ -45,7 +44,7 @@ function SearchResult({
       disabled={opening} onClick={onOpen}
     >
       <span className="mobile-search-result__icon" aria-hidden="true">
-        {isSocial ? <Newspaper size={20} /> : item.kind === SearchKind.ATTACHMENT ? <FileText size={20} /> : <MessageCircle size={20} />}
+        {isSocial ? <Icon iconId="newspaper" size={20} /> : item.kind === SearchKind.ATTACHMENT ? <Icon iconId="file-text" size={20} /> : <Icon iconId="message-circle" size={20} />}
       </span>
       <span className="mobile-search-result__body">
         <span className="mobile-search-result__title">{item.snippet || item.title}</span>
@@ -60,7 +59,7 @@ function SearchResult({
           </time> : null}
         </span>
       </span>
-      <ChevronRight size={18} aria-hidden="true" />
+      <Icon iconId="chevron-right" size={18} aria-hidden="true" />
     </button>
   );
 }
@@ -97,12 +96,12 @@ export function SearchPage({
       data-product-surface="search.mobile" data-search-state={view.status}>
       <header className="page-header">
         <button type="button" className="header-action" onClick={onBack} aria-label={t('common.action.back')}>
-          <ArrowLeft size={20} />
+          <Icon iconId="arrow-left" size={20} />
         </button>
         <h1 className="header-title compact">{t('search.mobile.entry')}</h1>
         <button type="button" className="header-action" aria-label={t('search.refresh')}
           onClick={() => mobileSearchActions.submit(true)} disabled={!view.query.trim() || view.opening}>
-          <RefreshCw size={20} />
+          <Icon iconId="rotate-cw" size={20} />
         </button>
       </header>
       <form className="mobile-search-controls" onSubmit={event => {
@@ -111,12 +110,18 @@ export function SearchPage({
       }}>
         <label className="visually-hidden" htmlFor="mobile-search-input">{t('search.label')}</label>
         <div className="mobile-search-input-row">
-          <Input id="mobile-search-input" data-focus-id="search.input" value={view.query}
-            prefix={<Search size={18} />} allowClear
-            placeholder={t('search.mobile.placeholder')} autoComplete="off" autoCorrect="off"
-            autoCapitalize="none" spellCheck={false}
-            onChange={event => mobileSearchActions.query(event.target.value)} />
-          <Button type="primary" htmlType="submit">{t('search.mobile.submit')}</Button>
+          <span className="mobile-search-input">
+            <TextField id="mobile-search-input" data-focus-id="search.input" value={view.query}
+              leading={<Icon iconId="search" size={18} className="mobile-search-leading" />}
+              clearable onClear={() => mobileSearchActions.query('')}
+              placeholder={t('search.mobile.placeholder')} autoComplete="off" autoCorrect="off"
+              autoCapitalize="none" spellCheck={false}
+              onValueChange={value => mobileSearchActions.query(value)} />
+          </span>
+          <Button actionId="mobile-search-submit" behavior="submit" emphasis="primary"
+            className="mobile-search-submit">
+            {t('search.mobile.submit')}
+          </Button>
         </div>
         <div className="mobile-search-filters" role="group" aria-label={t('search.range')}>
           {FILTERS.map(filter => <button type="button" key={filter} aria-pressed={view.filter === filter}
@@ -124,15 +129,17 @@ export function SearchPage({
             onClick={() => mobileSearchActions.filter(filter)}>{t(`search.tab.${filter}`)}</button>)}
         </div>
         <div className="mobile-search-scope">
-          <Typography.Text type="secondary">{t(view.conversationId ? 'search.mobile.currentConversation' : 'search.mobile.allConversations')}</Typography.Text>
-          {view.conversationId ? <Button type="text" onClick={mobileSearchActions.allConversations}>{t('search.mobile.expandScope')}</Button> : null}
+          <span className="mobile-search-scope-copy">{t(view.conversationId ? 'search.mobile.currentConversation' : 'search.mobile.allConversations')}</span>
+          {view.conversationId ? <Button actionId="mobile-search-expand-scope" emphasis="quiet"
+            onActivate={mobileSearchActions.allConversations}>{t('search.mobile.expandScope')}</Button> : null}
         </div>
       </form>
       <div ref={viewport} className="mobile-search-viewport" data-search-viewport
         onScroll={event => useMobileSearchStore.setState({ scrollTop: event.currentTarget.scrollTop })}>
         {view.errorKey ? <div className="mobile-search-notice" role="alert">
           <span>{t(view.errorKey)}</span>
-          <Button onClick={() => mobileSearchActions.submit()}>{t('common.action.retry')}</Button>
+          <Button actionId="mobile-search-retry" emphasis="secondary"
+            onActivate={() => mobileSearchActions.submit()}>{t('common.action.retry')}</Button>
         </div> : null}
         {view.status === 'concealed' || view.status === 'loading' && view.stalled ? (
           <div className="mobile-search-state" role="status" aria-busy="true">
@@ -157,8 +164,16 @@ export function SearchPage({
           </div> : null}
           {view.mode === 'submit' && (view.page > 0 || view.response.hasMore) ? (
             <div className="mobile-search-pagination">
-              <Button disabled={view.page === 0 || view.status === 'loading'} onClick={() => mobileSearchActions.page(-1)}>{t('mobile.list.previous')}</Button>
-              <Button disabled={!view.response.hasMore || view.page >= 31 || view.status === 'loading'} onClick={() => mobileSearchActions.page(1)}>{t('mobile.list.next')}</Button>
+              <Button actionId="mobile-search-page-prev" emphasis="secondary"
+                availability={view.page === 0 || view.status === 'loading'
+                  ? { kind: 'disabled', reason: t('mobile.list.previous') }
+                  : undefined}
+                onActivate={() => mobileSearchActions.page(-1)}>{t('mobile.list.previous')}</Button>
+              <Button actionId="mobile-search-page-next" emphasis="secondary"
+                availability={!view.response.hasMore || view.page >= 31 || view.status === 'loading'
+                  ? { kind: 'disabled', reason: t('mobile.list.next') }
+                  : undefined}
+                onActivate={() => mobileSearchActions.page(1)}>{t('mobile.list.next')}</Button>
             </div>
           ) : null}
         </> : null}
@@ -166,7 +181,7 @@ export function SearchPage({
           <h2>{t('search.quickFunctions')}</h2>
           {functions.map(item => <button key={item.id} type="button" className="mobile-search-function"
             data-search-function={item.id} onClick={() => onOpenDetail({ routeId: 'detail:setting', settingId: item.id })}>
-            <Settings size={18} aria-hidden="true" /><span>{t(item.titleKey)}</span><ChevronRight size={18} aria-hidden="true" />
+            <Icon iconId="settings" size={18} aria-hidden="true" /><span>{t(item.titleKey)}</span><Icon iconId="chevron-right" size={18} aria-hidden="true" />
           </button>)}
           {view.filter === 'functions' && functions.length === 0 ? <p role="status">{t('search.empty.title', { query: view.query })}</p> : null}
         </section> : null}
