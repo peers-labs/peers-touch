@@ -1,24 +1,11 @@
 import { useMemo, type CSSProperties } from 'react';
-import { Button, Empty, Input, Spin, Typography } from 'antd';
-import {
-  ArrowLeft,
-  FileText,
-  MoreHorizontal,
-  Paperclip,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Search,
-  Send,
-  Square,
-  Users,
-  X,
-} from 'lucide-react';
+import { Button, Empty, Icon, IconButton, Spin, Text, TextField } from '@peers-touch/ui';
 
 import {
   type ChatSurfaceFixtureId,
 } from '../../acceptance/chatSurfaceFixture';
 import { useMobileI18n } from '../../app/mobileI18n';
+import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
 import type { ChatActionState } from '../../features/chat/chatActionState';
 import type { ChatMessageCommandOutcome } from '../../features/chat/messageCommandState';
@@ -49,8 +36,6 @@ import {
   useChatBottomOcclusion,
 } from './chatBottomOcclusion';
 import type { ConversationSettingsFeedback } from './conversationSettingsState';
-
-const { Text } = Typography;
 
 const FIXTURE_ATTACHMENT_NAME = 'launch-checklist.pdf';
 const FIXTURE_PEER_AVATAR = 'A';
@@ -196,23 +181,26 @@ function ChatFixtureList({
           className="header-action"
           aria-label={t('mobile.chat.moreActions')}
         >
-          <Pencil size={20} />
+          <Icon iconId="pen-line" size={20} />
         </button>
       </header>
       <div className="chat-search-bar">
-        <Input
+        <TextField
+          className="chat-search-field"
           data-chat-fixture-search
-          prefix={<Search size={16} />}
+          leading={<Icon iconId="search" size={16} className="chat-search-leading" />}
           placeholder={t('mobile.chat.searchPlaceholder')}
           value={query}
           readOnly
-          allowClear={false}
         />
       </div>
       {surfaceId === 'chat.list-error' ? (
         <MobileNotice>
           {t('mobile.chat.renderFailed')}
-          <Button icon={<RotateCcw size={14} />}>
+          <Button
+            actionId="chat.fixture.retry-list-error"
+            leading={<Icon iconId="rotate-ccw" size={14} />}
+          >
             {t('common.action.retry')}
           </Button>
         </MobileNotice>
@@ -220,7 +208,10 @@ function ChatFixtureList({
       {surfaceId === 'chat.list-unavailable' ? (
         <MobileNotice>
           {t('mobile.social.runtimeUnavailable')}
-          <Button icon={<RotateCcw size={14} />}>
+          <Button
+            actionId="chat.fixture.retry-list-unavailable"
+            leading={<Icon iconId="rotate-ccw" size={14} />}
+          >
             {t('common.action.retry')}
           </Button>
         </MobileNotice>
@@ -233,19 +224,15 @@ function ChatFixtureList({
           </div>
         ) : surfaceId === 'chat.list-empty' ? (
           <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={(
               <div className="empty-copy">
                 <Text strong>{t('mobile.chat.emptyTitle')}</Text>
-                <Text type="secondary">{t('mobile.chat.emptySubtitle')}</Text>
+                <Text tone="secondary">{t('mobile.chat.emptySubtitle')}</Text>
               </div>
             )}
           />
         ) : surfaceId === 'chat.list-search-empty' ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t('mobile.chat.noSearchResults')}
-          />
+          <Empty description={t('mobile.chat.noSearchResults')} />
         ) : showRows ? (
           <div className="chat-fixture-conversations">
             <FixtureConversation
@@ -289,11 +276,11 @@ function FixtureConversation({
       <span className="chat-fixture-conversation-copy">
         <span className="conversation-title-row">
           <Text strong>{name}</Text>
-          {group ? <Users size={14} aria-hidden="true" /> : null}
+          {group ? <Icon iconId="users" size={14} aria-hidden="true" /> : null}
         </span>
-        <Text type="secondary">{preview}</Text>
+        <Text tone="secondary">{preview}</Text>
       </span>
-      <Text type="secondary">{time}</Text>
+      <Text tone="secondary">{time}</Text>
     </button>
   );
 }
@@ -350,29 +337,31 @@ function ChatFixtureThread({
     >
       <header className={`page-header chat-thread-header ${isSearch ? 'searching' : ''}`}>
         <button className="header-action" type="button" aria-label={t('common.action.back')}>
-          <ArrowLeft size={20} />
+          <Icon iconId="arrow-left" size={20} />
         </button>
         {isSearch ? (
           <>
             <h1 className="chat-search-title">
               {t('mobile.chat.quickSearch')}
             </h1>
-            <Input
-              className="chat-header-search"
-              prefix={<Search size={16} />}
-              value={surfaceId === 'chat.thread-search-empty' ? 'Unavailable message' : 'launch'}
-              readOnly
-              aria-label={t('mobile.chat.searchMessagesPlaceholder')}
-            />
+            <span className="chat-header-search-field">
+              <TextField
+                className="chat-header-search"
+                leading={<Icon iconId="search" size={16} />}
+                value={surfaceId === 'chat.thread-search-empty' ? 'Unavailable message' : 'launch'}
+                readOnly
+                aria-label={t('mobile.chat.searchMessagesPlaceholder')}
+              />
+            </span>
             <button className="header-action" type="button" aria-label={t('common.action.cancel')}>
-              <X size={18} />
+              <Icon iconId="close" size={18} />
             </button>
           </>
         ) : (
           <>
             <div className="header-title-stack">
               <h1 className="header-title compact">{title}</h1>
-              <Text type="secondary">
+              <Text tone="secondary">
                 {isGroup
                   ? t('mobile.group.memberCount', { count: 3 })
                   : t('mobile.chat.peerAtStation', { station: 'home.peers' })}
@@ -383,7 +372,7 @@ function ChatFixtureThread({
               type="button"
               aria-label={t('mobile.chat.moreActions')}
             >
-              <MoreHorizontal size={20} />
+              <Icon iconId="more-horizontal" size={20} />
             </button>
           </>
         )}
@@ -398,7 +387,10 @@ function ChatFixtureThread({
       {surfaceId === 'chat.history-error' ? (
         <MobileNotice>
           {t('mobile.chat.operationThreadFailed')}
-          <Button icon={<RotateCcw size={14} />}>
+          <Button
+            actionId="chat.fixture.retry-history"
+            leading={<Icon iconId="rotate-ccw" size={14} />}
+          >
             {t('common.action.retry')}
           </Button>
         </MobileNotice>
@@ -406,7 +398,10 @@ function ChatFixtureThread({
       {surfaceId === 'chat.thread-search-error' ? (
         <MobileNotice>
           {t('mobile.chat.searchFailed')}
-          <Button icon={<RotateCcw size={14} />}>
+          <Button
+            actionId="chat.fixture.retry-search"
+            leading={<Icon iconId="rotate-ccw" size={14} />}
+          >
             {t('common.action.retry')}
           </Button>
         </MobileNotice>
@@ -414,11 +409,11 @@ function ChatFixtureThread({
       {isSearch ? (
         <section className="message-search-panel">
           {surfaceId === 'chat.thread-search-empty' ? (
-            <Text type="secondary">{t('mobile.chat.noMessageResults')}</Text>
+            <Text tone="secondary">{t('mobile.chat.noMessageResults')}</Text>
           ) : (
             <button type="button" className="message-search-result">
-              <Text ellipsis>{FIXTURE_SEARCH_RESULT}</Text>
-              <Text type="secondary">10:42</Text>
+              <Text truncate>{FIXTURE_SEARCH_RESULT}</Text>
+              <Text tone="secondary">10:42</Text>
             </button>
           )}
         </section>
@@ -426,10 +421,7 @@ function ChatFixtureThread({
 
       <section className="message-list chat-background-default" data-message-viewport>
         {isEmpty ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t('mobile.chat.emptyThread')}
-          />
+          <Empty description={t('mobile.chat.emptyThread')} />
         ) : (
           <>
             <FixtureMessage mine={false} text="I added the final review notes." />
@@ -451,19 +443,19 @@ function ChatFixtureThread({
           {attachmentState ? (
             <div className="message-composer-panel attachment-draft-panel">
               <div className="attachment-draft-chip">
-                <FileText size={17} />
+                <Icon iconId="file-text" size={17} />
                 <span>{FIXTURE_ATTACHMENT_NAME}</span>
                 {surfaceId === 'chat.attachment-uploading' ? <Spin size="small" /> : null}
                 {surfaceId === 'chat.attachment-failed' ? (
                   <button type="button" aria-label={t('common.action.retry')}>
-                    <RotateCcw size={14} />
+                    <Icon iconId="rotate-ccw" size={14} />
                   </button>
                 ) : null}
                 <button type="button" aria-label={t('common.action.delete')}>
-                  <X size={14} />
+                  <Icon iconId="close" size={14} />
                 </button>
               </div>
-              <Text type="secondary">
+              <Text tone="secondary">
                 {surfaceId === 'chat.attachment-uploading'
                   ? t('chat.social.messageArea.attachmentStateDownloading')
                   : surfaceId === 'chat.attachment-failed'
@@ -478,7 +470,10 @@ function ChatFixtureThread({
                 <span className="voice-recording-dot" />
                 <Text>{t('chat.social.composer.recording', { seconds: 8 })}</Text>
               </span>
-              <Button icon={<Square size={14} />}>
+              <Button
+                actionId="chat.fixture.finish-record"
+                leading={<Icon iconId="square" size={14} />}
+              >
                 {t('chat.social.composer.finishRecord')}
               </Button>
             </div>
@@ -486,7 +481,10 @@ function ChatFixtureThread({
           {surfaceId === 'chat.voice-failed' ? (
             <MobileNotice>
               {t('chat.social.composer.voiceSendFailed')}
-              <Button icon={<RotateCcw size={14} />}>
+              <Button
+                actionId="chat.fixture.retry-voice"
+                leading={<Icon iconId="rotate-ccw" size={14} />}
+              >
                 {t('common.action.retry')}
               </Button>
             </MobileNotice>
@@ -506,32 +504,36 @@ function ChatFixtureThread({
               className="message-composer-tool"
               aria-label={t('mobile.chat.composerMore')}
             >
-              <Paperclip size={18} />
+              <Icon iconId="paperclip" size={18} />
             </button>
-            <Input
-              data-chat-fixture-composer
-              data-product-surface={surfaceId === 'chat.composer-keyboard'
-                ? 'chat.composer-keyboard'
-                : undefined}
-              className="message-composer-input"
-              value={surfaceId === 'chat.composer-keyboard' ? 'Meet at 4 PM?' : ''}
-              readOnly={surfaceId !== 'chat.composer-keyboard'}
-              onChange={() => undefined}
-              autoFocus={surfaceId === 'chat.composer-keyboard'}
-              placeholder={t('mobile.chat.messagePlaceholder')}
-            />
+            <span className="message-composer-input-frame">
+              <TextField
+                className="message-composer-input"
+                data-chat-fixture-composer
+                data-product-surface={surfaceId === 'chat.composer-keyboard'
+                  ? 'chat.composer-keyboard'
+                  : undefined}
+                value={surfaceId === 'chat.composer-keyboard' ? 'Meet at 4 PM?' : ''}
+                readOnly={surfaceId !== 'chat.composer-keyboard'}
+                onChange={() => undefined}
+                autoFocus={surfaceId === 'chat.composer-keyboard'}
+                placeholder={t('mobile.chat.messagePlaceholder')}
+              />
+            </span>
             <button
               type="button"
               className="message-composer-tool"
               aria-label={t('mobile.chat.composerMore')}
             >
-              <Plus size={18} />
+              <Icon iconId="plus" size={18} />
             </button>
-            <Button
+            <IconButton
+              actionId="chat.fixture.send"
               className="message-send-button"
-              type="primary"
-              icon={<Send size={16} />}
-              aria-label={t('common.action.send')}
+              iconId="send"
+              iconSize={16}
+              label={t('common.action.send')}
+              emphasis="primary"
             />
           </div>
         </div>
@@ -561,7 +563,7 @@ function FixtureMessage({
   return (
     <div className={`message-bubble-row ${mine ? 'mine' : 'peer'}`}>
       {!mine ? (
-        <span className="message-avatar ant-avatar">{FIXTURE_PEER_AVATAR}</span>
+        <MobileAvatar className="message-avatar" size={38} name="Alice">{FIXTURE_PEER_AVATAR}</MobileAvatar>
       ) : null}
       <div className="message-bubble">
         <Text className="message-text">{text}</Text>
@@ -578,7 +580,7 @@ function FixtureMessage({
         </span>
       </div>
       {mine ? (
-        <span className="message-avatar ant-avatar">{FIXTURE_SELF_AVATAR}</span>
+        <MobileAvatar className="message-avatar" size={38} name="You">{FIXTURE_SELF_AVATAR}</MobileAvatar>
       ) : null}
     </div>
   );

@@ -1462,7 +1462,7 @@ select,
   margin-top: 4px;
 }
 
-.settings-station-routes .ant-btn {
+.settings-station-routes [data-action-id] {
   min-width: 72px;
 }
 
@@ -2918,33 +2918,17 @@ select,
   color: #3d5afe;
 }
 
-.chat-header-search.ant-input-search {
+.chat-header-search-field {
   display: flex;
   flex: 1;
   min-width: 0;
 }
 
-.chat-header-search.ant-input-search .ant-input-group,
-.chat-header-search.ant-input-search .ant-input-wrapper {
-  display: flex;
-  align-items: stretch;
+.chat-header-search-field > div {
   width: 100%;
-}
-
-.chat-header-search.ant-input-search .ant-input-affix-wrapper {
-  height: 44px;
-  border-radius: 12px 0 0 12px !important;
+  min-height: 44px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.92);
-}
-
-.chat-header-search.ant-input-search .ant-input-search-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 44px;
-  min-width: 44px;
-  border-radius: 0 12px 12px 0 !important;
-  box-shadow: none;
 }
 
 .message-list {
@@ -3052,7 +3036,7 @@ select,
   box-shadow: 0 0 0 2px rgba(76, 110, 245, 0.24), 0 10px 28px rgba(76, 110, 245, 0.16);
 }
 
-.message-avatar.ant-avatar {
+span.message-avatar {
   width: var(--chat-message-avatar-size, 38px);
   height: var(--chat-message-avatar-size, 38px);
   flex: 0 0 var(--chat-message-avatar-size, 38px);
@@ -3586,16 +3570,33 @@ select,
   background: rgba(15, 23, 42, 0.06);
 }
 
+.message-composer-input-frame {
+  min-width: 0;
+}
+
+.message-composer-input-frame > div {
+  min-height: max(44px, var(--chat-composer-input-min-height, 38px));
+  border-color: transparent;
+  border-radius: var(--chat-composer-radius, 12px);
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+}
+
+input.message-composer-input {
+  padding-inline: 14px;
+}
+
+/* Transitional: antd composer in ChatPage until its peers migration lands. */
 .message-composer-input.ant-input {
   height: max(44px, var(--chat-composer-input-min-height, 38px));
   min-height: max(44px, var(--chat-composer-input-min-height, 38px));
   border-color: transparent;
   border-radius: var(--chat-composer-radius, 12px);
-  padding-inline: 14px;
   background: #fff;
   box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
 }
 
+[data-action-id].message-send-button,
 .message-send-button.ant-btn {
   width: max(44px, var(--chat-composer-tool-button-size, 40px));
   height: max(44px, var(--chat-composer-input-min-height, 38px));
@@ -3638,7 +3639,9 @@ select,
   min-height: 100%;
 }
 
+.chat-acceptance-fixture [data-action-id],
 .chat-acceptance-fixture .ant-btn,
+.chat-thread-page [data-action-id],
 .chat-thread-page .ant-btn {
   min-width: 44px;
   min-height: 44px;
@@ -3695,7 +3698,7 @@ select,
   gap: 3px;
 }
 
-.chat-fixture-conversation-copy .ant-typography {
+.chat-fixture-conversation-copy span {
   overflow-wrap: anywhere;
   white-space: normal;
 }
@@ -3722,12 +3725,10 @@ select,
   min-height: 100%;
 }
 
-.contacts-acceptance-fixture .ant-btn,
-.contacts-fixture-sheet .ant-btn,
-.contacts-fixture-sheet .ant-input,
-.contacts-fixture-sheet .ant-input-affix-wrapper,
-.contacts-fixture-sheet .ant-input-search-button,
-.contacts-fixture-sheet .ant-checkbox-wrapper {
+.contacts-acceptance-fixture [data-action-id],
+.contacts-fixture-sheet [data-action-id],
+.contacts-fixture-sheet input:not([type='checkbox']),
+.contacts-fixture-sheet textarea {
   min-width: 44px;
   min-height: 44px;
 }
@@ -3959,24 +3960,6 @@ select,
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-}
-
-.settings-station-card,
-.settings-login-card {
-  margin: 0 18px 14px;
-  border-radius: 24px !important;
-  box-shadow: 0 18px 60px rgba(27, 31, 59, 0.08);
-}
-
-.settings-actions .settings-login-card {
-  margin: 0;
-}
-
-.settings-station-card > .ant-card-body,
-.settings-login-card > .ant-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
 .settings-station-header {
@@ -4399,7 +4382,6 @@ select,
   box-shadow: 0 1px 3px rgba(31, 35, 48, 0.03);
 }
 
-.settings-section > .ant-card-body,
 .settings-section-body {
   display: flex;
   flex-direction: column;
@@ -4432,7 +4414,7 @@ select,
   padding: 8px 0;
 }
 
-.settings-row > .ant-typography:last-child {
+.settings-row > span:last-child {
   min-width: 0;
   max-width: 62%;
   overflow-wrap: anywhere;
@@ -4454,7 +4436,7 @@ select,
   gap: 2px;
 }
 
-.settings-blocked-user-copy .ant-typography {
+.settings-blocked-user-copy span {
   margin: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -4473,8 +4455,8 @@ select,
   width: 100%;
 }
 
-.settings-profile-field > .ant-input,
-.settings-profile-field > .ant-input-textarea {
+.settings-profile-field input,
+.settings-profile-field textarea {
   width: 100%;
 }
 
@@ -4492,53 +4474,14 @@ select,
 .setting-row,
 .settings-profile-trigger,
 .settings-sign-out,
-.settings-section .ant-btn,
-.settings-section .ant-input,
-.settings-section .ant-input-affix-wrapper,
-.settings-section .ant-select-selector,
-.settings-dirty-bar .ant-btn,
-.settings-acceptance-fixture .ant-btn,
-.settings-acceptance-fixture .ant-input,
-.settings-acceptance-fixture .ant-input-affix-wrapper,
-.settings-acceptance-fixture .ant-select-selector {
+.settings-section [data-action-id],
+.settings-section input:not([type='checkbox']),
+.settings-section textarea,
+.settings-dirty-bar [data-action-id],
+.settings-acceptance-fixture [data-action-id],
+.settings-acceptance-fixture input:not([type='checkbox']),
+.settings-acceptance-fixture textarea {
   min-height: 44px;
-}
-
-.settings-section .ant-switch,
-.settings-acceptance-fixture .ant-switch {
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  background: transparent !important;
-}
-
-.settings-section .ant-switch .ant-switch-inner,
-.settings-acceptance-fixture .ant-switch .ant-switch-inner {
-  height: 24px;
-  margin: 10px 0;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.22);
-}
-
-.settings-section .ant-switch.ant-switch-checked .ant-switch-inner,
-.settings-acceptance-fixture .ant-switch.ant-switch-checked .ant-switch-inner {
-  background: var(--brand-primary);
-}
-
-.settings-section .ant-switch .ant-switch-handle,
-.settings-acceptance-fixture .ant-switch .ant-switch-handle {
-  top: 12px;
-}
-
-.settings-section .ant-select-selector,
-.settings-acceptance-fixture .ant-select-selector {
-  min-height: 44px !important;
-  align-items: center;
-}
-
-.settings-section .ant-select {
-  min-height: 44px;
-  align-items: center;
 }
 
 .settings-fixture-select {
@@ -4555,29 +4498,8 @@ select,
   -webkit-appearance: none;
 }
 
-.settings-section .ant-input-number,
-.settings-acceptance-fixture .ant-input-number {
-  min-height: 44px;
-}
-
-.settings-section .ant-input-number-input,
-.settings-acceptance-fixture .ant-input-number-input {
-  height: 42px;
-}
-
-.settings-section .ant-checkbox-wrapper,
-.settings-acceptance-fixture .ant-checkbox-wrapper {
-  min-height: 44px;
-  align-items: center;
-}
-
 .settings-row {
   flex-wrap: wrap;
-}
-
-.settings-row > .ant-select,
-.settings-row > .ant-input-number {
-  max-width: 100%;
 }
 
 .settings-acceptance-fixture {

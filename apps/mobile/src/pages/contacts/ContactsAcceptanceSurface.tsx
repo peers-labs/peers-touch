@@ -1,23 +1,10 @@
-import { Button, Checkbox, Empty, Input, Spin, Typography } from 'antd';
-import {
-  ArrowLeft,
-  Ban,
-  Check,
-  RotateCcw,
-  Search,
-  ShieldCheck,
-  UserPlus,
-  Users,
-  X,
-} from 'lucide-react';
+import { Button, Checkbox, Empty, Icon, IconButton, Spin, Text, TextArea, TextField } from '@peers-touch/ui';
 
 import type {
   ContactsSurfaceFixtureId,
 } from '../../acceptance/contactsSurfaceFixture';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileNotice } from '../../components/MobileNotice';
-
-const { Text } = Typography;
 
 const FIXTURE_CONTACTS = {
   alexandria: {
@@ -119,20 +106,21 @@ function ContactsFixtureList({
           className="header-action"
           aria-label={t('mobile.group.create')}
         >
-          <Users size={20} />
+          <Icon iconId="users" size={20} />
         </button>
         <button
           type="button"
           className="header-action"
           aria-label={t('mobile.contacts.findPeople')}
         >
-          <UserPlus size={20} />
+          <Icon iconId="user-plus" size={20} />
         </button>
       </header>
       <div className="chat-search-bar">
-        <Input
+        <TextField
+          className="contact-search-field"
           data-contacts-fixture-search
-          prefix={<Search size={16} />}
+          leading={<Icon iconId="search" size={16} className="chat-search-leading" />}
           placeholder={t('mobile.contacts.searchPlaceholder')}
           value={query}
           readOnly
@@ -141,7 +129,10 @@ function ContactsFixtureList({
       {surfaceId === 'contacts.list-error' ? (
         <MobileNotice>
           {t('mobile.social.runtimeUnavailable')}
-          <Button icon={<RotateCcw size={15} />}>
+          <Button
+            actionId="contacts.fixture.retry-list"
+            leading={<Icon iconId="rotate-ccw" size={15} />}
+          >
             {t('common.action.retry')}
           </Button>
         </MobileNotice>
@@ -152,7 +143,10 @@ function ContactsFixtureList({
       {requestState === 'failed' ? (
         <MobileNotice>
           {t('mobile.contacts.requestFailed')}
-          <Button icon={<RotateCcw size={15} />}>
+          <Button
+            actionId="contacts.fixture.retry-request"
+            leading={<Icon iconId="rotate-ccw" size={15} />}
+          >
             {t('common.action.retry')}
           </Button>
         </MobileNotice>
@@ -165,12 +159,15 @@ function ContactsFixtureList({
           </div>
         ) : surfaceId === 'contacts.list-empty' ? (
           <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={(
               <div className="empty-copy">
                 <Text strong>{t('mobile.contacts.emptyTitle')}</Text>
-                <Text type="secondary">{t('mobile.contacts.emptySubtitle')}</Text>
-                <Button icon={<UserPlus size={16} />}>
+                <Text tone="secondary">{t('mobile.contacts.emptySubtitle')}</Text>
+                <Button
+                  actionId="contacts.fixture.find-people-empty"
+                  emphasis="primary"
+                  leading={<Icon iconId="user-plus" size={16} />}
+                >
                   {t('mobile.contacts.findPeople')}
                 </Button>
               </div>
@@ -178,11 +175,12 @@ function ContactsFixtureList({
           />
         ) : surfaceId === 'contacts.local-search-empty' ? (
           <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={(
               <div className="empty-copy">
                 <Text>{t('mobile.contacts.noSearchResults')}</Text>
-                <Button>{t('mobile.contacts.findPeople')}</Button>
+                <Button actionId="contacts.fixture.find-people-search-empty">
+                  {t('mobile.contacts.findPeople')}
+                </Button>
               </div>
             )}
           />
@@ -231,7 +229,7 @@ function FixtureRequest({
       <span className="contacts-fixture-avatar">{FIXTURE_CONTACTS.jordan.avatar}</span>
       <span className="contacts-fixture-copy">
         <Text strong>{FIXTURE_CONTACTS.jordan.name}</Text>
-        <Text type="secondary">{t('mobile.contacts.defaultRequestMessage')}</Text>
+        <Text tone="secondary">{t('mobile.contacts.defaultRequestMessage')}</Text>
       </span>
       {state === 'pending' ? (
         <span className="contacts-fixture-request-state">
@@ -242,14 +240,18 @@ function FixtureRequest({
         <Text>{t('mobile.recovery.command.state.unknown-outcome')}</Text>
       ) : (
         <span className="contacts-fixture-request-actions">
-          <Button
-            type="primary"
-            icon={<Check size={15} />}
-            aria-label={t('mobile.contacts.acceptRequest')}
+          <IconButton
+            actionId="contacts.fixture.accept-request"
+            iconId="check"
+            iconSize={15}
+            label={t('mobile.contacts.acceptRequest')}
+            emphasis="primary"
           />
-          <Button
-            icon={<X size={15} />}
-            aria-label={t('mobile.contacts.rejectRequest')}
+          <IconButton
+            actionId="contacts.fixture.reject-request"
+            iconId="close"
+            iconSize={15}
+            label={t('mobile.contacts.rejectRequest')}
           />
         </span>
       )}
@@ -273,7 +275,7 @@ function FixtureContact({
       <span className="contacts-fixture-avatar">{name.slice(0, 1)}</span>
       <span className="contact-info">
         <Text strong>{name}</Text>
-        <Text type="secondary">{status}</Text>
+        <Text tone="secondary">{status}</Text>
       </span>
     </button>
   );
@@ -302,7 +304,7 @@ function ContactsFixtureProfile({
             type="button"
             aria-label={t('common.action.back')}
           >
-            <ArrowLeft size={20} />
+            <Icon iconId="arrow-left" size={20} />
           </button>
           <h1 className="header-title compact">
             {unavailable
@@ -313,11 +315,13 @@ function ContactsFixtureProfile({
         <section className="contacts-fixture-profile">
           {unavailable ? (
             <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={(
                 <div className="empty-copy">
                   <Text>{t('mobile.contacts.unavailable')}</Text>
-                  <Button icon={<RotateCcw size={15} />}>
+                  <Button
+                    actionId="contacts.fixture.retry-profile"
+                    leading={<Icon iconId="rotate-ccw" size={15} />}
+                  >
                     {t('common.action.retry')}
                   </Button>
                 </div>
@@ -332,20 +336,24 @@ function ContactsFixtureProfile({
                 <Text strong className="contact-profile-name">
                   {FIXTURE_CONTACTS.alexandria.name}
                 </Text>
-                <Text type="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
+                <Text tone="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
                 <Text className="contact-profile-note">
                   {FIXTURE_CONTACTS.alexandria.note}
                 </Text>
                 <span className="contacts-fixture-trust">
-                  <ShieldCheck size={15} />
+                  <Icon iconId="shield-check" size={15} />
                   {t('mobile.contacts.verified')}
                 </span>
               </div>
               <div className="contacts-fixture-profile-actions">
-                <Button type="primary">{t('mobile.contacts.openChat')}</Button>
+                <Button actionId="contacts.fixture.open-chat" emphasis="primary" fullWidth>
+                  {t('mobile.contacts.openChat')}
+                </Button>
                 <Button
-                  danger
-                  icon={<Ban size={15} />}
+                  actionId="contacts.fixture.block"
+                  tone="danger"
+                  fullWidth
+                  leading={<Icon iconId="ban" size={15} />}
                   data-contacts-fixture-block
                 >
                   {t('mobile.contacts.block')}
@@ -367,8 +375,12 @@ function ContactsFixtureProfile({
             <h2 id="contacts-block-title">{t('mobile.contacts.blockConfirmTitle')}</h2>
             <Text>{t('mobile.contacts.blockConfirmBody')}</Text>
             <div className="contacts-fixture-sheet-actions">
-              <Button>{t('common.action.cancel')}</Button>
-              <Button danger type="primary">{t('mobile.contacts.block')}</Button>
+              <Button actionId="contacts.fixture.block-cancel" fullWidth>
+                {t('common.action.cancel')}
+              </Button>
+              <Button actionId="contacts.fixture.block-confirm" emphasis="primary" tone="danger" fullWidth>
+                {t('mobile.contacts.block')}
+              </Button>
             </div>
           </section>
         </div>
@@ -403,13 +415,16 @@ function ContactsFixturePeople({
       >
         <header className="contacts-fixture-sheet-header">
           <h2 id="contacts-people-title">{t('mobile.contacts.findPeople')}</h2>
-          <Button
-            type="text"
-            icon={<X size={20} />}
-            aria-label={t('common.action.close')}
+          <IconButton
+            actionId="contacts.fixture.close-people"
+            iconId="close"
+            iconSize={20}
+            label={t('common.action.close')}
+            emphasis="quiet"
           />
         </header>
-        <Input
+        <TextField
+          className="people-search-field"
           data-contacts-fixture-people-search
           aria-label={t('mobile.contacts.findPeoplePlaceholder')}
           placeholder={t('mobile.contacts.findPeoplePlaceholder')}
@@ -417,11 +432,12 @@ function ContactsFixturePeople({
             ? ''
             : 'Alexandria'}
           readOnly
-          prefix={<Search size={16} />}
-          suffix={(
+          leading={<Icon iconId="search" size={16} />}
+          trailing={(
             <Button
-              type="link"
-              size="small"
+              actionId="contacts.fixture.people-search"
+              emphasis="quiet"
+              density="compact"
               tabIndex={-1}
               className="people-search-button"
             >
@@ -446,11 +462,12 @@ function ContactsFixturePeople({
           </div>
         ) : empty ? (
           <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={(
               <div className="empty-copy">
                 <Text>{t('mobile.contacts.noPeopleResults')}</Text>
-                <Button>{t('common.action.search')}</Button>
+                <Button actionId="contacts.fixture.people-search-again">
+                  {t('common.action.search')}
+                </Button>
               </div>
             )}
           />
@@ -461,12 +478,15 @@ function ContactsFixturePeople({
               : denied
                 ? 'mobile.contacts.roleDenied'
                 : 'mobile.contacts.searchFailed')}
-            <Button icon={<RotateCcw size={15} />}>
+            <Button
+              actionId="contacts.fixture.retry-people"
+              leading={<Icon iconId="rotate-ccw" size={15} />}
+            >
               {t('common.action.retry')}
             </Button>
           </MobileNotice>
         ) : surfaceId === 'contacts.add-friend' ? (
-          <Text type="secondary">{t('mobile.contacts.findPeopleHint')}</Text>
+          <Text tone="secondary">{t('mobile.contacts.findPeopleHint')}</Text>
         ) : showResult ? (
           <div className="contacts-fixture-person">
             <span className="contacts-fixture-avatar">
@@ -474,12 +494,17 @@ function ContactsFixturePeople({
             </span>
             <span className="contacts-fixture-copy">
               <Text strong>{FIXTURE_CONTACTS.alexandria.name}</Text>
-              <Text type="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
+              <Text tone="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
             </span>
             <Button
-              type="primary"
-              loading={pending}
-              disabled={duplicate || pending}
+              actionId="contacts.fixture.send-request"
+              emphasis="primary"
+              execution={pending ? 'pending' : 'idle'}
+              availability={duplicate || pending
+                ? { kind: 'disabled', reason: t(duplicate
+                  ? 'mobile.contacts.alreadyFriend'
+                  : 'mobile.contacts.requestPending') }
+                : undefined}
             >
               {duplicate
                 ? t('mobile.contacts.alreadyFriend')
@@ -516,10 +541,12 @@ function ContactsFixtureGroup({
       >
         <header className="contacts-fixture-sheet-header">
           <h2 id="contacts-group-title">{t('mobile.group.create')}</h2>
-          <Button
-            type="text"
-            icon={<X size={20} />}
-            aria-label={t('common.action.close')}
+          <IconButton
+            actionId="contacts.fixture.close-group"
+            iconId="close"
+            iconSize={20}
+            label={t('common.action.close')}
+            emphasis="quiet"
           />
         </header>
         {pending ? (
@@ -534,50 +561,64 @@ function ContactsFixtureGroup({
               ? 'mobile.group.roleDenied'
               : 'mobile.group.operationCreateFailed')}
             {!denied ? (
-              <Button icon={<RotateCcw size={15} />}>
+              <Button
+                actionId="contacts.fixture.retry-group"
+                leading={<Icon iconId="rotate-ccw" size={15} />}
+              >
                 {t('common.action.retry')}
               </Button>
             ) : null}
           </MobileNotice>
         ) : null}
-        <Input
+        <TextField
           value="Launch Readiness"
           readOnly
           disabled={pending || denied}
           aria-label={t('mobile.group.namePlaceholder')}
         />
-        <Input.TextArea
+        <TextArea
           value="Coordinate launch checks across design, engineering, and support."
           readOnly
           disabled={pending || denied}
           aria-label={t('mobile.group.descriptionPlaceholder')}
-          autoSize={{ minRows: 2, maxRows: 3 }}
+          minimumRows={2}
+          maximumRows={3}
         />
         <div className="social-section-title">
           <Text strong>{t('mobile.group.initialMembers')}</Text>
-          <Text type="secondary">2</Text>
+          <Text tone="secondary">2</Text>
         </div>
-        <label className="contacts-fixture-member">
+        <div className="contacts-fixture-member">
           <span className="contacts-fixture-avatar">
             {FIXTURE_CONTACTS.alexandria.avatar}
           </span>
           <span className="contacts-fixture-copy">
             <Text strong>{FIXTURE_CONTACTS.alexandria.name}</Text>
-            <Text type="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
+            <Text tone="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
           </span>
           <Checkbox checked disabled={pending || denied} />
-        </label>
-        <label className="contacts-fixture-member">
+        </div>
+        <div className="contacts-fixture-member">
           <span className="contacts-fixture-avatar">{FIXTURE_CONTACTS.morgan.avatar}</span>
           <span className="contacts-fixture-copy">
             <Text strong>{FIXTURE_CONTACTS.morgan.name}</Text>
-            <Text type="secondary">{FIXTURE_CONTACTS.morgan.handle}</Text>
+            <Text tone="secondary">{FIXTURE_CONTACTS.morgan.handle}</Text>
           </span>
           <Checkbox checked disabled={pending || denied} />
-        </label>
+        </div>
         <div className="contacts-fixture-sheet-actions">
-          <Button>{t('common.action.cancel')}</Button>
-          <Button type="primary" loading={pending} disabled={denied}>
+          <Button actionId="contacts.fixture.group-cancel" fullWidth>
+            {t('common.action.cancel')}
+          </Button>
+          <Button
+            actionId="contacts.fixture.group-create"
+            emphasis="primary"
+            fullWidth
+            execution={pending ? 'pending' : 'idle'}
+            availability={denied
+              ? { kind: 'disabled', reason: t('mobile.group.roleDenied') }
+              : undefined}
+          >
             {t('mobile.group.create')}
           </Button>
         </div>
