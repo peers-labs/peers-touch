@@ -88,6 +88,8 @@
 .nb-token-meta { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .nb-token-name { font-size: 12px; font-weight: 600; }
 .nb-token-code {
+  display: block;
+  max-width: 100%;
   font-family: var(--pt-mono, ui-monospace, Menlo, monospace);
   font-size: 10px; color: var(--pt-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

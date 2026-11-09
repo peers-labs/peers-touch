@@ -131,7 +131,7 @@
     },
     {
       "id": "ui.prototype.eles.mobile-product-default",
-      "title": "手机框默认是干净中文产品面 MobileApp（三个图标 tab，联系人是消息区分段，会话行真实存在）",
+      "title": "手机框默认是干净中文产品面 MobileApp（四个图标 tab：消息/动态/联系人/我的；会话行真实存在）",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
@@ -140,10 +140,11 @@
       "oracles": [
         { "id": "phone-frame", "type": "exists", "scope": "global", "target": "[data-phone-frame]" },
         { "id": "product-root", "type": "exists", "scope": "global", "target": "[data-phone-body] .ma-root" },
-        { "id": "three-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 3 },
+        { "id": "four-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 4 },
         { "id": "agent-tab-gone", "type": "missing", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.agent']" },
-        { "id": "contacts-not-a-tab", "type": "missing", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.contacts']" },
-        { "id": "chats-segment-two-options", "type": "count", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav button", "equals": 2 },
+        { "id": "contacts-is-tab", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.contacts']" },
+        { "id": "moments-is-tab", "type": "exists", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.moments']" },
+        { "id": "legacy-chat-segmented-gone", "type": "missing", "scope": "global", "target": "[data-phone-body] .ma-chat-subnav" },
         { "id": "statusbar-in-flow-on-chats", "type": "computedStyle", "scope": "global", "target": "[data-phone-body] .pt-mobile-statusbar", "prop": "position", "equals": "relative" },
         { "id": "conversation-rows", "type": "count", "scope": "global", "target": "[data-phone-body] .ma-conv-item", "gte": 5 }
       ],
@@ -151,12 +152,12 @@
     },
     {
       "id": "ui.prototype.eles.mobile-contact-detail",
-      "title": "手机产品面：联系人并入消息页分段——切联系人后进群详情，发消息进入中文群会话线程",
+      "title": "手机产品面：切到联系人 tab 进群详情，发消息进入中文群会话线程",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
         { "op": "wait", "ms": 900 },
-        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='segment.contacts']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.contacts']" },
         { "op": "wait", "ms": 300 },
         { "op": "click", "scope": "global", "target": "[data-phone-body] .ma-contact-group .ma-contact-row" },
         { "op": "wait", "ms": 300 },
@@ -206,6 +207,8 @@
         { "op": "type", "scope": "global", "target": "input[aria-label='联系人昵称']", "value": "注册新联系人" },
         { "op": "wait", "ms": 120 },
         { "op": "click", "scope": "global", "target": "[data-action-id='contact.add.confirm']" },
+        { "op": "wait", "ms": 350 },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.contacts']" },
         { "op": "wait", "ms": 350 }
       ],
       "oracles": [
@@ -417,7 +420,7 @@
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
         { "op": "wait", "ms": 900 },
-        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.me']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.settings']" },
         { "op": "wait", "ms": 350 },
         { "op": "click", "scope": "global", "target": "[data-phone-body] .pt-list-row:has-text('当前站点')" },
         { "op": "wait", "ms": 350 },
@@ -442,7 +445,7 @@
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
         { "op": "wait", "ms": 900 },
-        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.me']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.settings']" },
         { "op": "wait", "ms": 350 }
       ],
       "oracles": [
@@ -479,7 +482,7 @@
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
         { "op": "wait", "ms": 900 },
-        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.me']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.settings']" },
         { "op": "wait", "ms": 350 },
         { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='me.credentials']" },
         { "op": "wait", "ms": 350 }
@@ -506,7 +509,7 @@
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
         { "op": "wait", "ms": 900 },
-        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.me']" },
+        { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='mobile.tab.settings']" },
         { "op": "wait", "ms": 300 },
         { "op": "click", "scope": "global", "target": "[data-phone-body] [data-action-id='me.signout']" },
         { "op": "wait", "ms": 250 },
@@ -532,7 +535,7 @@
     },
     {
       "id": "ui.prototype.eles.mobile-single-product-ui",
-      "title": "手机框只渲染唯一产品面 MobileApp：三个图标 tab，无产品面/取证台切换、无 mp-* 旧皮",
+      "title": "手机框只渲染唯一产品面 MobileApp：四个图标 tab，无产品面/取证台切换、无 mp-* 旧皮",
       "level": "L3_DYNAMIC",
       "operations": [
         { "op": "click", "target": "[data-action-id='view.mobile']" },
@@ -540,7 +543,7 @@
       ],
       "oracles": [
         { "id": "no-view-toggle", "type": "missing", "scope": "global", "target": "[data-action-id='mobile.view.evidence']" },
-        { "id": "three-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 3 },
+        { "id": "four-tabs", "type": "count", "scope": "global", "target": "[data-phone-body] .pt-mobile-tabbar button", "equals": 4 },
         { "id": "no-mp-skin", "type": "missing", "scope": "global", "target": "[data-phone-body] .mp-tabbar, [data-phone-body] .mp-shell" }
       ],
       "finalizers": []
