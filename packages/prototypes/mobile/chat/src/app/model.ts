@@ -31,13 +31,12 @@ export type { AudienceKind, ReactionKind };
 /** Trust reason mirrors shared moments-data (why a post reached the viewer). */
 export type TrustReason = 'self' | 'following' | 'mutual' | 'circle' | 'public';
 
-// Bottom slots mirror the desktop outer rail (DesignDirections RAIL_NAV):
-// the two social destinations — messages → moments — plus the identity slot
-// (me/settings, the desktop rail avatar). Search is not a tab and not a page:
-// each surface owns an in-place scope filter, exactly like the desktop rail
-// (the header icon morphs into the field in place). Contacts are the second
-// segment inside messages.
-export type TabId = 'chats' | 'moments' | 'me';
+// Bottom slots mirror the REAL mobile shell (MobileShell TAB_ICON_MAP):
+// messages → moments → contacts → identity/settings. The desktop rail folds
+// contacts inside messages; mobile real product gives contacts their own tab,
+// and real functionality wins (ADR-4). Search is not a tab: each surface owns
+// an in-place scope filter (header icon morphs into the field in place).
+export type TabId = 'chats' | 'moments' | 'contacts' | 'settings';
 export type MediaKind = 'audio' | 'video';
 
 /** A secondary page pushed over a tab. Only one level deep — enhanced chains
@@ -45,9 +44,10 @@ export type MediaKind = 'audio' | 'video';
     as another pushed page. */
 export type ContactTarget = { kind: 'person' | 'group'; id: string };
 export type Route =
-  | { tab: 'chats'; conversationId?: string; contactDetail?: ContactTarget }
+  | { tab: 'chats'; conversationId?: string }
   | { tab: 'moments' }
-  | { tab: 'me'; setting?: 'credentials' | 'station' | 'about' };
+  | { tab: 'contacts'; contactDetail?: ContactTarget }
+  | { tab: 'settings'; setting?: 'credentials' | 'station' | 'about' };
 
 export interface MemberTile {
   id: string;

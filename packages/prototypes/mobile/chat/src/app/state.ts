@@ -400,7 +400,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         signedOut: true,
         access: emptyAccessState(),
-        route: { tab: 'me' },
+        route: { tab: 'settings' },
         chatsSheet: 'none',
         composerOpen: false,
         call: { status: 'idle' },
@@ -758,9 +758,12 @@ export function reducer(state: AppState, action: Action): AppState {
 function backFrom(state: AppState): AppState {
   const { route } = state;
   // Detail pages pop to their tab root; conversation pops to the chat list.
-  if (route.tab === 'me' && route.setting) return { ...state, route: { tab: 'me' } };
-  if (route.tab === 'chats' && (route.conversationId || route.contactDetail)) {
+  if (route.tab === 'settings' && route.setting) return { ...state, route: { tab: 'settings' } };
+  if (route.tab === 'chats' && route.conversationId) {
     return { ...state, route: { tab: 'chats' } };
+  }
+  if (route.tab === 'contacts' && route.contactDetail) {
+    return { ...state, route: { tab: 'contacts' } };
   }
   return state;
 }
@@ -769,8 +772,9 @@ function backFrom(state: AppState): AppState {
 export function tabBarVisible(state: AppState): boolean {
   const { route } = state;
   if (state.call.status !== 'idle') return false;
-  if (route.tab === 'chats' && (route.conversationId || route.contactDetail)) return false;
-  if (route.tab === 'me' && route.setting) return false;
+  if (route.tab === 'chats' && route.conversationId) return false;
+  if (route.tab === 'contacts' && route.contactDetail) return false;
+  if (route.tab === 'settings' && route.setting) return false;
   return true;
 }
 

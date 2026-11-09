@@ -78,17 +78,12 @@ function PressRow({ onClick, icon, label, description, control, ariaLabel }: {
   );
 }
 
-/* ── Chats (messages + contacts, desktop ChatRail parity) ─────────────── */
-type ChatPane = 'chats' | 'contacts';
+/* ── Chats (messages tab; contacts live in their own real tab) ────────── */
 
 export function ChatsScreen({ state, dispatch }: { state: AppState; dispatch: Dispatch }) {
   const { t } = useT();
-  // View-local scope, mirroring desktop's rail tab: the two segments live in
-  // ONE messages surface; contacts never get their own bottom tab.
-  const [pane, setPane] = useState<ChatPane>('chats');
-  // In-place rail search — the SAME local-filter grammar as the desktop
-  // ChatRail: the icon morphs into a field occupying this header row, the
-  // list filters live below, and closing restores the segmented. No page.
+  // In-place rail search — the icon morphs into a field occupying this header
+  // row, the list filters live below, and closing restores the title. No page.
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   // The + menu opens REAL flows (add contact / start group), never the search.
@@ -104,12 +99,6 @@ export function ChatsScreen({ state, dispatch }: { state: AppState; dispatch: Di
   const visibleSessions = q
     ? sortedSessions.filter(c => [c.name, c.preview].join(' ').toLowerCase().includes(q))
     : sortedSessions;
-  const visibleGroups = q
-    ? state.groups.filter(g => [g.name, ...g.memberTiles.map(m => m.name)].join(' ').toLowerCase().includes(q))
-    : state.groups;
-  const visiblePeople = q
-    ? state.people.filter(p => [p.name, p.role].join(' ').toLowerCase().includes(q))
-    : state.people;
 
   return (
     <div className="ma-page">
@@ -118,7 +107,7 @@ export function ChatsScreen({ state, dispatch }: { state: AppState; dispatch: Di
           <>
             <span className="ma-rail-search">
               <TextField density="compact" leading={<Icon iconId="search" size={14} />} autoFocus
-                aria-label={t('rail.search')} placeholder={pane === 'contacts' ? t('mobile.search.contacts') : t('mobile.search.chats')}
+                aria-label={t('rail.search')} placeholder={t('mobile.search.chats')}
                 value={query} onValueChange={setQuery}
                 onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }} />
             </span>
@@ -127,16 +116,7 @@ export function ChatsScreen({ state, dispatch }: { state: AppState; dispatch: Di
           </>
         ) : (
           <>
-            <div className="ma-rail-tabs">
-              <Segmented<ChatPane> className="ma-chat-subnav" aria-label={t('mobile.tabScope')}
-                density="compact"
-                value={pane}
-                options={[
-                  { value: 'chats', label: <span className="ma-subnav-label"><Icon iconId="message-circle" size={13} />{t('tab.chats')}</span> },
-                  { value: 'contacts', label: <span className="ma-subnav-label"><Icon iconId="users" size={13} />{t('tab.contacts')}</span> },
-                ]}
-                onValueChange={value => setPane(value ?? 'chats')} />
-            </div>
+            <h1 className="ma-rail-title">{t('tab.chats')}</h1>
             <IconButton actionId="ma.rail-search" iconId="search" iconSize={17}
               className="ma-rail-icon-tile" label={t('rail.search')} emphasis="quiet"
               onActivate={() => setSearchOpen(true)} />
@@ -153,20 +133,75 @@ export function ChatsScreen({ state, dispatch }: { state: AppState; dispatch: Di
         )}
       </header>
 
-      {pane === 'chats' ? (
-        <ul className="ma-conv-list" data-session-count={visibleSessions.length}>
-          {visibleSessions.map(c => (
-            <SessionRow key={c.id} conversation={c} dispatch={dispatch} onPick={closeSearch} />
-          ))}
-          {visibleSessions.length === 0 && <li className="ma-list-empty"><Empty description={t('session.empty')} /></li>}
-        </ul>
-      ) : (
-        <ContactsPane groups={visibleGroups} people={visiblePeople} dispatch={dispatch} />
-      )}
+      <ul className="ma-conv-list" data-session-count={visibleSessions.length}>
+        {visibleSessions.map(c => (
+          <SessionRow key={c.id} conversation={c} dispatch={dispatch} onPick={closeSearch} />
+        ))}
+        {visibleSessions.length === 0 && <li className="ma-list-empty"><Empty description={t('session.empty')} /></li>}
+      </ul>
 
       <AddContactSheet open={state.chatsSheet === 'add-contact'} state={state} dispatch={dispatch}
-        onClose={closeSheet}
-        onAdded={() => { closeSheet(); setPane('contacts'); }} />
+        onClose={closeSheet} onAdded={closeSheet} />
+      <StartGroupSheet open={state.chatsSheet === 'start-group'} state={state} dispatch={dispatch}
+        onClose={closeSheet} />
+    </div>
+  );
+}
+
+/** Contacts is its OWN bottom tab in the real mobile shell (ADR-4): groups and
+    friends with in-place search and the add-contact / create-group sheets. */
+export function ContactsScreen({ state, dispatch }: { state: AppState; dispatch: Dispatch }) {
+  const { t } = useT();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const closeSheet = () => dispatch({ type: 'chats/sheet', sheet: 'none' });
+  const q = query.trim().toLowerCase();
+  const closeSearch = () => { setSearchOpen(false); setQuery(''); };
+
+  const visibleGroups = q
+    ? state.groups.filter(g => [g.name, ...g.memberTiles.map(m => m.name)].join(' ').toLowerCase().includes(q))
+    : state.groups;
+  const visiblePeople = q
+    ? state.people.filter(p => [p.name, p.role].join(' ').toLowerCase().includes(q))
+    : state.people;
+
+  return (
+    <div className="ma-page">
+      <header className="ma-rail-header" data-rail-search={searchOpen ? 'active' : 'idle'}>
+        {searchOpen ? (
+          <>
+            <span className="ma-rail-search">
+              <TextField density="compact" leading={<Icon iconId="search" size={14} />} autoFocus
+                aria-label={t('rail.search')} placeholder={t('mobile.search.contacts')}
+                value={query} onValueChange={setQuery}
+                onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }} />
+            </span>
+            <Button actionId="ma.contacts-search-close" emphasis="quiet" density="compact"
+              className="ma-search-cancel" label={t('common.cancel')} onActivate={closeSearch} />
+          </>
+        ) : (
+          <>
+            <h1 className="ma-rail-title">{t('tab.contacts')}</h1>
+            <IconButton actionId="ma.contacts-search" iconId="search" iconSize={17}
+              className="ma-rail-icon-tile" label={t('rail.search')} emphasis="quiet"
+              onActivate={() => setSearchOpen(true)} />
+            <Menu placement="bottom" actions={[
+              { id: 'ma.contacts-new-person', label: t('mobile.newContact'), leading: <Icon iconId="user-plus" size={14} />,
+                onActivate: () => dispatch({ type: 'chats/sheet', sheet: 'add-contact' }) },
+              { id: 'ma.contacts-new-group', label: t('mobile.newGroup'), leading: <Icon iconId="users" size={14} />,
+                onActivate: () => dispatch({ type: 'chats/sheet', sheet: 'start-group' }) },
+            ]}>
+              <IconButton actionId="ma.contacts-new-menu" iconId="plus" iconSize={19}
+                className="ma-rail-icon-tile" label={t('mobile.newChatMenu')} emphasis="quiet" />
+            </Menu>
+          </>
+        )}
+      </header>
+
+      <ContactsPane groups={visibleGroups} people={visiblePeople} dispatch={dispatch} />
+
+      <AddContactSheet open={state.chatsSheet === 'add-contact'} state={state} dispatch={dispatch}
+        onClose={closeSheet} onAdded={closeSheet} />
       <StartGroupSheet open={state.chatsSheet === 'start-group'} state={state} dispatch={dispatch}
         onClose={closeSheet} />
     </div>
@@ -208,7 +243,7 @@ function AddContactSheet({ open, state, dispatch, onClose, onAdded }: {
             availability={blocked ? { kind: 'disabled', reason: blocked } : undefined}
             onActivate={() => {
               const id = build(); reset(); onClose();
-              dispatch({ type: 'navigate', route: { tab: 'chats', contactDetail: { kind: 'person', id } } });
+              dispatch({ type: 'navigate', route: { tab: 'contacts', contactDetail: { kind: 'person', id } } });
             }} />
           <Button actionId="contact.add.confirm" label={t('mobile.add')} emphasis="primary" density="compact"
             availability={blocked ? { kind: 'disabled', reason: blocked } : undefined}
@@ -332,7 +367,7 @@ function ContactsPane({ groups, people, dispatch }: {
           {groups.map(g => (
             <li key={g.id} className="ma-contact-group">
               <button type="button" className="ma-contact-row"
-                onClick={() => dispatch({ type: 'navigate', route: { tab: 'chats', contactDetail: { kind: 'group', id: g.id } } })}>
+                onClick={() => dispatch({ type: 'navigate', route: { tab: 'contacts', contactDetail: { kind: 'group', id: g.id } } })}>
                 <GroupAvatar name={g.name} members={g.memberTiles} size={42} />
                 <span className="ma-conv-meta">
                   <span className="ma-conv-name-line"><strong>{g.name}</strong></span>
@@ -349,7 +384,7 @@ function ContactsPane({ groups, people, dispatch }: {
           {people.map(p => (
             <li key={p.id} className="ma-contact-friend">
               <button type="button" className="ma-contact-row"
-                onClick={() => dispatch({ type: 'navigate', route: { tab: 'chats', contactDetail: { kind: 'person', id: p.id } } })}>
+                onClick={() => dispatch({ type: 'navigate', route: { tab: 'contacts', contactDetail: { kind: 'person', id: p.id } } })}>
                 <PersonAvatar name={p.name} size={42} tone={p.tone} online={p.online} />
                 <span className="ma-conv-meta">
                   <span className="ma-conv-name-line"><strong>{p.name}</strong></span>
@@ -1841,7 +1876,7 @@ export function GroupDetailScreen({ group, state, dispatch }: { group: Group; st
         <ul className="ma-flat-list">
           {previewMembers.map(p => (
             <li key={p.id}><PressRow ariaLabel={p.name}
-              onClick={() => dispatch({ type: 'navigate', route: { tab: 'chats', contactDetail: { kind: 'person', id: p.id } } })}
+              onClick={() => dispatch({ type: 'navigate', route: { tab: 'contacts', contactDetail: { kind: 'person', id: p.id } } })}
               icon={<PersonAvatar name={p.name} size={40} tone={p.tone} online={p.online} />}
               label={<span className="ma-row-title">{p.name}</span>}
               description={p.role}
@@ -1951,7 +1986,7 @@ export function MeScreen({ state, dispatch }: { state: AppState; dispatch: Dispa
       <ListSection inset className="ma-settings ma-credentials-entry" aria-label="账号与凭证">
         <NavRow label="账号与凭证" actionId="me.credentials"
           description={`${PROFILE.username} · ${station.name}`}
-          onActivate={() => dispatch({ type: 'navigate', route: { tab: 'me', setting: 'credentials' } })} />
+          onActivate={() => dispatch({ type: 'navigate', route: { tab: 'settings', setting: 'credentials' } })} />
       </ListSection>
 
       {/* Layer 3 — touch-consumption settings only. Producer/ops surfaces
@@ -1966,13 +2001,13 @@ export function MeScreen({ state, dispatch }: { state: AppState; dispatch: Dispa
       <ListSection inset className="ma-settings" data-section="network" title="网络">
         <NavRow label="当前站点"
           description={`${station.name} · ${station.online ? '已连接' : '离线'} · 可切换或添加站点`}
-          onActivate={() => dispatch({ type: 'navigate', route: { tab: 'me', setting: 'station' } })} />
+          onActivate={() => dispatch({ type: 'navigate', route: { tab: 'settings', setting: 'station' } })} />
         <ListRow label="端到端加密" control={<span className="ma-ok">已开启</span>} />
       </ListSection>
       <ListSection inset className="ma-settings" data-section="general" title="通用">
         <ListRow label={t('settings.language')} control={<Select appearance="ghost" aria-label={t('settings.language')} value={locale} onValueChange={v => setPrefs({ locale: v === 'en' ? 'en' : 'zh-CN' })}
           options={[{ value: 'zh-CN', label: t('settings.lang.zh') }, { value: 'en', label: t('settings.lang.en') }]} />} />
-        <NavRow label="关于 Peers Touch" onActivate={() => dispatch({ type: 'navigate', route: { tab: 'me', setting: 'about' } })} />
+        <NavRow label="关于 Peers Touch" onActivate={() => dispatch({ type: 'navigate', route: { tab: 'settings', setting: 'about' } })} />
       </ListSection>
 
       <div className="ma-settings ma-danger-zone" data-danger-zone>

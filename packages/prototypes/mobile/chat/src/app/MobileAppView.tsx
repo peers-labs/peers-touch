@@ -14,24 +14,31 @@ import type { AppState, ProductScenario, TabId } from './model';
 import { reducer, tabBarVisible, type Action } from './state';
 import { CallScreen } from './CallScreen';
 import {
-  AboutScreen, ChatsScreen, ContactDetailScreen, CredentialsScreen, GroupDetailScreen,
-  MeScreen, MomentsScreen, SignedOutScreen, StationScreen, ThreadScreen,
+  AboutScreen, ChatsScreen, ContactDetailScreen, ContactsScreen, CredentialsScreen,
+  GroupDetailScreen, MeScreen, MomentsScreen, SignedOutScreen, StationScreen, ThreadScreen,
 } from './screens';
 
-// Mirrors the desktop outer rail (DesignDirections RAIL_NAV): the two social
-// destinations then identity. The moments glyph is Sparkles on both surfaces.
-// Search is never a tab or page — each surface's header icon expands in place
-// into a local filter, exactly like the desktop rail.
+// Mirrors the REAL mobile shell (MobileShell TAB_ICON_MAP /
+// primaryTabDescriptors): messages → moments → contacts → me/settings.
+// Real functionality wins over the desktop rail fold (ADR-4). Search is never
+// a tab — each surface's header icon expands in place into a local filter.
 const TABS: { id: TabId; label: string; icon: IconId }[] = [
   { id: 'chats', label: '消息', icon: 'message-circle' },
   { id: 'moments', label: '动态', icon: 'sparkles' },
-  { id: 'me', label: '我的', icon: 'circle-user' },
+  { id: 'contacts', label: '联系人', icon: 'users' },
+  { id: 'settings', label: '我的', icon: 'circle-user' },
 ];
 
 function resolveScreen(state: AppState, dispatch: (a: Action) => void) {
   const { route } = state;
 
   if (route.tab === 'chats') {
+    const conv = route.conversationId ? resolveConversation(state, route.conversationId) : undefined;
+    if (conv) return <ThreadScreen state={state} dispatch={dispatch} conversation={conv} />;
+    return <ChatsScreen state={state} dispatch={dispatch} />;
+  }
+  if (route.tab === 'moments') return <MomentsScreen state={state} dispatch={dispatch} />;
+  if (route.tab === 'contacts') {
     // A pushed contact/group detail takes precedence over the catalog.
     if (route.contactDetail) {
       const { kind, id } = route.contactDetail;
@@ -43,12 +50,9 @@ function resolveScreen(state: AppState, dispatch: (a: Action) => void) {
         if (g) return <GroupDetailScreen group={g} state={state} dispatch={dispatch} />;
       }
     }
-    const conv = route.conversationId ? resolveConversation(state, route.conversationId) : undefined;
-    if (conv) return <ThreadScreen state={state} dispatch={dispatch} conversation={conv} />;
-    return <ChatsScreen state={state} dispatch={dispatch} />;
+    return <ContactsScreen state={state} dispatch={dispatch} />;
   }
-  if (route.tab === 'moments') return <MomentsScreen state={state} dispatch={dispatch} />;
-  if (route.tab === 'me') {
+  if (route.tab === 'settings') {
     if (route.setting === 'credentials') return <CredentialsScreen state={state} dispatch={dispatch} />;
     if (route.setting === 'station') return <StationScreen state={state} dispatch={dispatch} />;
     if (route.setting === 'about') return <AboutScreen state={state} dispatch={dispatch} />;
@@ -61,9 +65,9 @@ export function MobileAppView({ scenario = 'default' }: { scenario?: ProductScen
   const [state, dispatch] = useReducer(reducer, scenario, createInitialState);
   const unread = useMemo(() => state.conversations.reduce((sum, c) => sum + c.unread, 0), [state.conversations]);
   const activeTab: TabId = state.route.tab;
-  // Immersive cover belongs ONLY to the Me landing surface; pushed detail
+  // Immersive cover belongs ONLY to the settings landing surface; pushed detail
   // pages (credentials/station/about) keep their own nav bar + in-flow bar.
-  const immersive = state.route.tab === 'me' && !state.route.setting;
+  const immersive = state.route.tab === 'settings' && !state.route.setting;
   // A bottom sheet physically covers the tab-bar strip; suppress the bar
   // while either messages or moments sheet is open (no chrome ghosting
   // through the frosted material).

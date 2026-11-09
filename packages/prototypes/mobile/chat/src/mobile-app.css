@@ -14,16 +14,12 @@
 
 .ma-rail-header{flex-shrink:0;display:flex;align-items:center;gap:8px;height:52px;box-sizing:border-box;padding:10px 14px 6px}
 
-/* Rail header primary/secondary split: the nav segmented is the PRIMARY
-   group — it keeps its natural content width and NEVER shrinks/wraps; the
-   auto right margin is the elastic gap that pushes the fixed-width tool
-   tiles (search/＋) to the right edge. Same model as moments' scope-wrap
-   margin-left:auto (主在前，次靠右). */
-.ma-rail-tabs{flex:0 0 auto;min-width:0;margin-right:auto}
-.ma-chat-subnav.pt-segmented{width:auto;max-width:100%;white-space:nowrap}
-.ma-chat-subnav .pt-button{flex:0 0 auto}
-
-.ma-subnav-label{display:inline-flex;align-items:center;gap:5px}
+/* Rail header: the surface title is the PRIMARY group; the auto margin pushes
+   the fixed-width tool tiles (search/＋) to the right edge (主在前，次靠右).
+   Matches the real mobile page-header typography. */
+.ma-rail-title{flex:1 1 auto;min-width:0;margin:0;font-size:17px;font-weight:600;
+  letter-spacing:0;color:var(--pt-text);text-align:start;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
 
 .ma-rail-icon-tile,.ma-rail-icon-tile:hover,.ma-rail-icon-tile:active{border-color:transparent;background:transparent}
 
