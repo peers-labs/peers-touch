@@ -1,7 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Typography } from 'antd';
-import { LoaderCircle, RotateCcw, X } from 'lucide-react';
+import { Button, Icon, Spin } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { isAccessGranted } from '../../features/auth/authSession';
@@ -15,8 +14,6 @@ import {
   createMomentMediaGateway,
 } from '../../services/gateways/momentMediaGateway';
 import { readableErrorMessage } from '../../utils/errorMessage';
-
-const { Text } = Typography;
 
 export type MomentMediaSelection =
   | {
@@ -149,7 +146,7 @@ export function MomentMediaOverlay({
         onClick={onClose}
         aria-label={t('common.action.close')}
       >
-        <X size={22} />
+        <Icon iconId="close" size={22} />
       </button>
       <div
         className="moments-media-overlay-content"
@@ -157,16 +154,18 @@ export function MomentMediaOverlay({
       >
         {state.status === 'loading' && (
           <div className="moments-media-overlay-state" role="status">
-            <LoaderCircle size={28} />
-            <Text>{t('common.state.loading')}</Text>
+            <Spin active />
+            <span>{t('common.state.loading')}</span>
           </div>
         )}
         {state.status === 'failed' && (
           <div className="moments-media-overlay-state" role="alert">
-            <Text type="danger">{t('mobile.moments.media.previewFailed')}</Text>
+            <span className="moments-media-overlay-error">{t('mobile.moments.media.previewFailed')}</span>
             <Button
-              icon={<RotateCcw size={16} />}
-              onClick={() => setAttempt((current) => current + 1)}
+              actionId="moments.media.retry"
+              tone="danger"
+              leading={<Icon iconId="rotate-ccw" size={16} />}
+              onActivate={() => setAttempt((current) => current + 1)}
             >
               {t('common.action.retry')}
             </Button>
