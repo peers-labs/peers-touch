@@ -30,6 +30,14 @@ registration or slot. The command and its post-lock validation carry that same
 target. Workspace capabilities, reviewed topology, exact deployment identity,
 stable protection and current source remain mandatory.
 
+Parent-owned Station outage capabilities use the same read-only Machine Dev
+operation-target check with `station.deploy`, the exact reviewed deployment
+file and current source. They reject stable Profiles and missing capabilities
+before constructing the remote transport. A legacy environment boolean cannot
+grant or block this authority. The original Suite keeps its Profile and source
+leases; stop/start still verify the same container and source, and parent
+cleanup restores a fresh process in that container.
+
 Equipment must complete before the Suite retains its remote source lease.
 Canonical source-sync takes that lease itself. Holding it in the parent first
 would deadlock nested deployment. After equipment, the Suite acquires its

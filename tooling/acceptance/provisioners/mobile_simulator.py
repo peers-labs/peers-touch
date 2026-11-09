@@ -59,6 +59,7 @@ from tooling.acceptance.core.attestation import (
 )
 from tooling.acceptance.core.provisioner import (
     load_env_file,
+    resolve_deployment_environment_path,
     resolve_machine_profile_environment,
     resolve_reviewed_profile_environment,
 )
@@ -5233,16 +5234,7 @@ class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
         deployment_environment: str,
         expected_commit: str,
     ) -> None:
-        if os.environ.get(
-            "PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART"
-        ) != "1":
-            raise BlockedError(
-                reason=(
-                    "PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART=1 is "
-                    "required for the authorized Mobile Station outage"
-                ),
-                resource="mobile.station-outage:authorization",
-            )
+        self._require_restart_authority(deployment_environment, expected_commit)
         self._config = PosixServiceRuntimeConfig.load(
             deployment_environment,
             expected_role="station",
@@ -5253,6 +5245,60 @@ class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
         self._container_id = ""
         self._stopped = False
         self._closed = False
+
+    @staticmethod
+    def _require_restart_authority(
+        deployment_environment: str, expected_commit: str,
+    ) -> None:
+        # The parent retains the Profile and remote-source leases throughout
+        # this capability. Resolve its operation target without rebinding them.
+        target_file = resolve_deployment_environment_path(deployment_environment)
+        target_profile = target_file.parent.parent.name
+        resource = "mobile.station-outage:authorization"
+        try:
+            checked = subprocess.run(
+                ["node", str(REPO_ROOT / "tooling/scripts/local-dev/machine-dev.mjs"),
+                 "check", "--workspace-root", str(REPO_ROOT),
+                 "--target-profile", target_profile,
+                 "--capabilities", "station.deploy"],
+                cwd=REPO_ROOT, capture_output=True, text=True,
+                timeout=30, check=False,
+            )
+            if checked.returncode != 0:
+                detail = redact_text(checked.stderr.strip() or checked.stdout.strip())
+                raise BlockedError(
+                    reason="Station outage Machine Dev check failed"
+                    + (f": {detail[-1000:]}" if detail else ""),
+                    resource=resource,
+                )
+            authority = json.loads(checked.stdout)
+            binding, profile, source = (
+                authority["binding"], authority["profile"], authority["source"],
+            )
+            allowed = binding["allowedCapabilities"]
+            authorized = (
+                authority["authority"] == "machine-control-plane"
+                and Path(binding["canonicalRoot"]).resolve() == REPO_ROOT.resolve()
+                and isinstance(allowed, list) and "station.deploy" in allowed
+                and profile["profile"] == target_profile
+                and profile["resetPolicy"] == "agent-resettable"
+                and profile["sourceState"] == "tracked-clean"
+                and profile["stationMode"] == "remote"
+                and profile["stationDeployEnvironment"] == deployment_environment
+                and Path(profile["stationDeployFile"]).resolve() == target_file.resolve()
+                and GIT_COMMIT_PATTERN.fullmatch(source["head"]) is not None
+                and commits_match(source["head"], expected_commit)
+            )
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
+            raise BlockedError(
+                reason=f"Station outage Machine Dev authority is unavailable or invalid: {type(error).__name__}",
+                resource=resource,
+            ) from error
+        if not authorized:
+            raise BlockedError(
+                reason="Station outage requires the current source and an exact reviewed non-stable deployment capability",
+                resource=resource,
+            )
 
     @property
     def allowed_operations(self) -> tuple[str, ...]:

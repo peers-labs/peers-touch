@@ -7,6 +7,7 @@ import base64
 import dataclasses
 import hashlib
 import json
+import subprocess
 import tempfile
 import threading
 import time
@@ -1057,10 +1058,21 @@ class MobileSimulatorContractTests(unittest.TestCase):
             environment_name="profile-three",
             transport=lambda: transport,
         )
+        authority, target_file = self._station_outage_authority()
         with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_deployment_environment_path",
+                return_value=target_file,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator.subprocess.run",
+                return_value=SimpleNamespace(
+                    returncode=0, stdout=json.dumps(authority), stderr="",
+                ),
+            ) as checked,
             patch.dict(
-                "os.environ",
-                {"PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART": "1"},
+                "os.environ", {"PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART": "0"},
             ),
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
@@ -1087,6 +1099,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
 
         self.assertTrue(stopped["stopped"])
         self.assertTrue(cleanup.closed)
+        command = checked.call_args.args[0]
+        self.assertEqual(command[-4:], ["--target-profile", "three", "--capabilities", "station.deploy"])
+        self.assertNotIn("select", command)
+        self.assertNotIn("register", command)
         self.assertEqual(
             transport.run_argv.call_args_list[0].args[0],
             ["docker", "stop", "--time", "10", "station-container"],
@@ -1095,6 +1111,107 @@ class MobileSimulatorContractTests(unittest.TestCase):
             transport.run_argv.call_args_list[1].args[0],
             ["docker", "start", "station-container"],
         )
+
+    @staticmethod
+    def _station_outage_authority() -> tuple[dict[str, Any], Path]:
+        target_file = Path("/reviewed-env/peers-touch/three/deploy/profile-three.env.example")
+        return {
+            "authority": "machine-control-plane",
+            "binding": {
+                "profile": "other-active-profile", "slot": 6,
+                "canonicalRoot": str(mobile_simulator_module.REPO_ROOT),
+                "allowedCapabilities": ["station.connect", "station.deploy"],
+            },
+            "profile": {
+                "profile": "three", "resetPolicy": "agent-resettable",
+                "sourceState": "tracked-clean", "stationMode": "remote",
+                "stationDeployEnvironment": "profile-three",
+                "stationDeployFile": str(target_file),
+            },
+            "source": {"head": "a" * 40},
+        }, target_file
+
+    def test_station_outage_rejects_invalid_authority_before_transport(self) -> None:
+        cases = (
+            ("authority", "authority", "caller"),
+            ("binding", "canonicalRoot", "/other-worktree"),
+            ("binding", "allowedCapabilities", ["station.connect", "station.reset"]),
+            ("binding", "allowedCapabilities", "station.deploy"),
+            ("profile", "profile", "other-profile"),
+            ("profile", "resetPolicy", "stable-protected"),
+            ("profile", "sourceState", "tracked-dirty"),
+            ("profile", "stationMode", "local"),
+            ("profile", "stationDeployEnvironment", "other-station"),
+            ("profile", "stationDeployFile", "/other-target.env.example"),
+            ("source", "head", "b" * 40),
+            ("source", "head", "a" * 7),
+        )
+        for section, key, value in cases:
+            with self.subTest(section=section, key=key, value=value):
+                authority, target_file = self._station_outage_authority()
+                if section == "authority":
+                    authority[key] = value
+                else:
+                    authority[section][key] = value
+                with (
+                    patch.dict(
+                        "os.environ", {"PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART": "1"},
+                    ),
+                    patch(
+                        "tooling.acceptance.provisioners.mobile_simulator."
+                        "resolve_deployment_environment_path",
+                        return_value=target_file,
+                    ),
+                    patch(
+                        "tooling.acceptance.provisioners.mobile_simulator.subprocess.run",
+                        return_value=SimpleNamespace(
+                            returncode=0, stdout=json.dumps(authority), stderr="",
+                        ),
+                    ),
+                    patch(
+                        "tooling.acceptance.provisioners.mobile_simulator."
+                        "PosixServiceRuntimeConfig.load",
+                    ) as config,
+                    self.assertRaises(BlockedError),
+                ):
+                    MobileStationOutageCapabilityHandler(
+                        deployment_environment="profile-three", expected_commit="a" * 40,
+                    )
+                config.assert_not_called()
+
+    def test_station_outage_rejects_missing_or_failed_machine_check(self) -> None:
+        _, target_file = self._station_outage_authority()
+        failures = (
+            SimpleNamespace(returncode=1, stdout="", stderr="WORKSPACE_CAPABILITY_MISSING"),
+            SimpleNamespace(returncode=0, stdout="{}", stderr=""),
+            SimpleNamespace(returncode=0, stdout="not-json", stderr=""),
+            FileNotFoundError("node"),
+            subprocess.TimeoutExpired("machine-dev", 30),
+        )
+        for failure in failures:
+            with self.subTest(failure=failure):
+                with (
+                    patch(
+                        "tooling.acceptance.provisioners.mobile_simulator."
+                        "resolve_deployment_environment_path",
+                        return_value=target_file,
+                    ),
+                    patch(
+                        "tooling.acceptance.provisioners.mobile_simulator.subprocess.run",
+                        **({"side_effect": failure} if isinstance(failure, Exception)
+                           else {"return_value": failure}),
+                    ),
+                    patch(
+                        "tooling.acceptance.provisioners.mobile_simulator."
+                        "PosixServiceRuntimeConfig.load",
+                    ) as config,
+                    self.assertRaises(BlockedError),
+                ):
+                    MobileStationOutageCapabilityHandler(
+                        deployment_environment="profile-three", expected_commit="a" * 40,
+                    )
+                config.assert_not_called()
+
     def test_mobile_social_ios_gate_uses_reset_isolated_environment(
         self,
     ) -> None:
