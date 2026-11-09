@@ -76,10 +76,10 @@ class PreparedSocialNativeTest(unittest.TestCase):
             "tooling.acceptance.gates.chat.native_support.logout_native_client",
         ))
 
-    def prepared(self):
+    def prepared(self, **options):
         return module.PreparedSocialNativeRuntime(
             SimpleNamespace(manifest=self.manifest, actor_manifest=self.actors, binding=self.binding),
-            repo_root=self.root,
+            repo_root=self.root, **options,
         )
 
     def test_prepared_binding_uses_workspace_slot_and_original_lifecycle(self) -> None:
@@ -186,6 +186,51 @@ class PreparedSocialNativeTest(unittest.TestCase):
         self.logout.assert_called_once()
         self.sessions[0].stop.assert_called_once()
         self.binding.finalize_cleanup.assert_called_once()
+
+    def test_original_gate_exports_redacted_logs_before_final_cleanup(self) -> None:
+        from tooling.acceptance.core.evidence import new_report
+        from tooling.acceptance.core.gate import AcceptanceGate
+        report = new_report(module.GATE_ID)
+        gate = SimpleNamespace(report=report, evidence_dir=self.root / "evidence")
+        prepared = self.prepared(save_app_log=lambda session, name: AcceptanceGate.save_app_log(
+            gate, session, name,
+        ))
+        alice = prepared.client("alice")
+        alice.start()
+        source_log = self.root / "alice.log"
+        source_log.write_text(
+            "PRIVATE_MEDIA_STAGING_FAILED\nAuthorization: Bearer fixture-access-token-value\n",
+            encoding="utf-8",
+        )
+        alice.session.log_path = source_log
+        prepared.client("bob")  # Unstarted clients cannot supply log evidence.
+
+        def finalize(sessions, specs):
+            self.assertFalse(alice.session.is_alive())
+            self.assertEqual({"alice-app-log"}, set(report.evidence))
+            captured = Path(report.evidence["alice-app-log"]).read_text()
+            self.assertIn("PRIVATE_MEDIA_STAGING_FAILED", captured)
+            self.assertNotIn("fixture-access-token-value", captured)
+            source_log.unlink()
+            return {"portsReleased": True, "processesReleased": True,
+                    "storageReleased": True, "logsReleased": True, "cleanupErrors": []}
+
+        self.binding.finalize_cleanup.side_effect = finalize
+        prepared.cleanup()
+        prepared.cleanup()
+        self.binding.finalize_cleanup.assert_called_once()
+        self.assertFalse(source_log.exists())
+
+    def test_log_export_failure_does_not_skip_owned_cleanup(self) -> None:
+        capture = mock.Mock(side_effect=OSError("capture unavailable"))
+        prepared = self.prepared(save_app_log=capture)
+        prepared.client("alice").start()
+        for _ in range(2):
+            with self.assertRaisesRegex(GateError, "capture unavailable"):
+                prepared.cleanup()
+        capture.assert_called_once()
+        self.binding.finalize_cleanup.assert_called_once()
+        self.sessions[0].stop.assert_called_once()
 
     def suite_context(self, prepared):
         from tooling.development.secure_content.runtime_owner import W7RuntimeOwner

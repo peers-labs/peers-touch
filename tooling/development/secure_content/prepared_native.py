@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -96,10 +96,12 @@ class PreparedSocialNativeClient:
 class PreparedSocialNativeRuntime:
     """Validate business topology and delegate all physical lifetime ownership."""
 
-    def __init__(self, selected: SelectedNativeRuntime, *, repo_root: Path) -> None:
+    def __init__(self, selected: SelectedNativeRuntime, *, repo_root: Path,
+                 save_app_log: Callable[[Any, str], Any] | None = None) -> None:
         self.manifest = selected.manifest
         self.binding = selected.binding
         self.repo_root = repo_root.resolve()
+        self.save_app_log = save_app_log
         manifest, actors = self.manifest, selected.actor_manifest
         verify_runtime_fixture_ready(manifest, actors)
         if (
@@ -259,6 +261,15 @@ class PreparedSocialNativeRuntime:
         if self.cleanup_result is None:
             failures = self.lifecycle.release_all()
             sessions = [client.session for client in self.clients.values() if client.session is not None]
+            if self.save_app_log is not None:
+                for client_id, client in self.clients.items():
+                    if client.session is None:
+                        continue
+                    try:
+                        if not self.save_app_log(client.session, client_id):
+                            raise GateError("Native client log was not exported")
+                    except Exception as error:
+                        failures.append({"resource": f"log:{client_id}", "error": str(error)})
             result = self.binding.finalize_cleanup(sessions, self.client_specs)
             failures.extend(result.get("cleanupErrors", []))
             if not all(result.get(field) is True for field in (

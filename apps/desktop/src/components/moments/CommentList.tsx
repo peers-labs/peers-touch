@@ -255,20 +255,24 @@ export function CommentList({
     focusCaretAfterCommit(result.caret);
   };
 
-  const submit = async () => {
+  const activateComposer = async () => {
     // Defensive recheck against the freshest disabled conditions:
     // keyboard/click events can race a deadline transition or a
     // parent-unavailable projection arriving between render and the
     // event handler.
-    if (composerDisabled) return;
+    if (composerActionDisabled) return;
     const trimmed = text.trim();
-    if (!trimmed || submitInFlight.current) return;
+    if ((composerAction === 'submit' && !trimmed) || submitInFlight.current) return;
     const normalized = normalizeMentions(text, mentions);
     submitInFlight.current = true;
     setSubmitting(true);
     setSubmitError(null);
     setPublicSubmitError(false);
     try {
+      if (composerAction !== 'submit' && onRetry) {
+        await onRetry();
+        return;
+      }
       await onSubmit(trimmed, replyRootId, normalized);
       setText('');
       setMentions([]);
@@ -312,7 +316,7 @@ export function CommentList({
       }
       if (event.shiftKey) return; // newline
       event.preventDefault();
-      void submit();
+      void activateComposer();
     }
   };
 
@@ -344,6 +348,9 @@ export function CommentList({
     || nativePending
     || committedPending
     || (retryDeadlinePending && withinRetryDeadline);
+  const composerActionDisabled = composerAction === 'submit'
+    ? composerDisabled
+    : parentUnavailable || nativePending || withinRetryDeadline;
   const retrySeconds = composerRetryAfterSeconds ?? 0;
 
   const row = (comment: MomentCommentItem, depth = 0, replies?: React.ReactNode) => (
@@ -419,15 +426,15 @@ export function CommentList({
           {composerAction !== 'submit' && onRetry ? (
             <Button actionId={`comments.retry.${postId}`} emphasis="primary" density="compact"
               execution={submitting || nativePending ? 'pending' : 'idle'}
-              availability={withinRetryDeadline ? { kind: 'disabled', reason: t('moments.comment.retryIn', { count: retrySeconds }) } : undefined}
+              availability={composerActionDisabled ? { kind: 'disabled', reason: t('moments.comment.retryIn', { count: retrySeconds }) } : undefined}
               label={t('moments.comment.confirmResult')}
-              onActivate={() => void onRetry().catch(() => setSubmitError(t('moments.private.state.PUBLISH_FAILED.description')))} />
+              onActivate={() => void activateComposer()} />
           ) : (
             <IconButton actionId={`comments.send.${postId}`} iconId="send"
               emphasis="primary" density="compact" label={t('moments.comment.publish')}
               data-acceptance-id="social-comment-send"
               availability={composerDisabled || !text.trim() ? { kind: 'disabled', reason: t('moments.comment.placeholder') } : undefined}
-              execution={submitting || nativePending ? 'pending' : 'idle'} onActivate={() => void submit()} />
+              execution={submitting || nativePending ? 'pending' : 'idle'} onActivate={() => void activateComposer()} />
           )}
       </MomentCommentComposer>
     </div>;

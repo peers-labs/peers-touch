@@ -36,7 +36,9 @@ class Gate(AcceptanceGate):
         selected = selected_native_runtime(self.gate_id)
         if selected is None:
             raise ValueError("private Social requires Runner preparation")
-        prepared = PreparedSocialNativeRuntime(selected, repo_root=REPO_ROOT)
+        prepared = PreparedSocialNativeRuntime(
+            selected, repo_root=REPO_ROOT, save_app_log=self.save_app_log,
+        )
         root = current_run_directory(repo_root=REPO_ROOT)
         self.report.manifest = selected.manifest
         try:
