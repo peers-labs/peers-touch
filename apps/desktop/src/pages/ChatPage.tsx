@@ -17,6 +17,7 @@ import { ChatInput } from '../components/ChatInput';
 import { MessageList } from '../components/MessageList';
 import { TurnQueueTray } from '../components/chat/TurnQueueTray';
 import { DocumentArtifactPanel } from '../components/agent/workbench/DocumentArtifactPanel';
+import { WorkbenchAddMenu } from '../components/agent/workbench/WorkbenchAddMenu';
 import { conversationContentWidth, CONVERSATION_DOCK_WIDTH } from './conversationLayout';
 import { resolveI18nValue } from '../i18n';
 import { useAgentStore } from '../store/agent';
@@ -153,6 +154,7 @@ export function ChatPage({ narrow }: { onOpenProfile?: () => void; narrow?: bool
         >
           {topicTitle}
         </strong>
+        <WorkbenchAddMenu />
         {searchOpen ? (
           <div
             role="search"
