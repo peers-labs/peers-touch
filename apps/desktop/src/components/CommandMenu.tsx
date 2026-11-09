@@ -217,7 +217,7 @@ export function CommandMenu({ navigateTo, navigateToAgentSurface, navigateToSett
             {t('agent.commandMenu.select')}
           </span>
           <span className="pt-command-foot">
-            <kbd>esc</kbd>
+            <kbd>{t('agent.commandMenu.escapeKey')}</kbd>
             {t('agent.commandMenu.close')}
           </span>
         </div>
