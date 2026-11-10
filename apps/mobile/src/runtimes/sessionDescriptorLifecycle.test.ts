@@ -236,4 +236,30 @@ describe('Session descriptor revalidates the restored session on resume', () => 
     await Promise.resolve();
     expect(mocks.kernelReconcile).not.toHaveBeenCalled();
   });
+
+  it('cancels the deferred probe when suspension wins the resume macrotask', async () => {
+    vi.useFakeTimers();
+    try {
+      const commands: string[] = [];
+      await bootWithInvoke(async (command) => {
+        commands.push(command);
+        if (command === 'oauth_session_projection') return activeSession();
+        if (command === 'oauth_session_refresh') {
+          throw new Error('mobile.auth.sessionCredentialRejected:401');
+        }
+        if (command === 'oauth_logout_purge') return completePurge();
+        throw new Error(`unexpected command ${command}`);
+      });
+
+      await descriptor.resume({} as never);
+      await descriptor.suspend();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(commands).not.toContain('oauth_session_refresh');
+      expect(commands).not.toContain('oauth_logout_purge');
+      expect(mocks.kernelReconcile).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

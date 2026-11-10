@@ -721,6 +721,13 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
   let releaseMutationAdmission: (() => void) | null = null;
   let lifecycleEpoch = 0;
   let running = false;
+  let resumeRevalidationTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearResumeRevalidation = () => {
+    if (resumeRevalidationTimer === null) return;
+    clearTimeout(resumeRevalidationTimer);
+    resumeRevalidationTimer = null;
+  };
 
   const observeOAuth = async () => {
     const observed = lifecycleEpoch;
@@ -781,6 +788,20 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
     }
   };
 
+  // Run the probe only after the kernel resume cascade settles. A terminal
+  // revocation flips session admission and nulls the projection; doing that
+  // while dependent runtimes are still resuming makes their resume operations
+  // fail and surfaces as lifecycle.resumeIncomplete. A macrotask therefore
+  // defers the work until the graph is ACTIVE, the same steady-state regime in
+  // which a scheduled refresh is allowed to revoke a dead session.
+  const scheduleResumeRevalidation = (observed: number): void => {
+    clearResumeRevalidation();
+    resumeRevalidationTimer = setTimeout(() => {
+      resumeRevalidationTimer = null;
+      void revalidateResumedSession(observed);
+    }, 0);
+  };
+
   return {
     id: 'session',
     title: 'Session Runtime',
@@ -816,6 +837,7 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
     async suspend(): Promise<void> {
       running = false;
       lifecycleEpoch += 1;
+      clearResumeRevalidation();
       sessionRuntime.suspend();
     },
 
@@ -824,16 +846,17 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
       const observed = ++lifecycleEpoch;
       await restoreOwnedSession();
       if (!running || observed !== lifecycleEpoch) return;
-      // Do not block the kernel resume budget on the Station round trip; the
-      // kernel enforces a short per-descriptor resume timeout and foreground
-      // resume must survive a slow or unreachable Station.
-      void revalidateResumedSession(observed);
+      // The Station probe is deferred past the kernel resume budget and the
+      // dependent-runtime cascade; foreground resume must neither block on the
+      // network nor mutate session admission while other runtimes are resuming.
+      scheduleResumeRevalidation(observed);
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
       const start = performance.now();
       running = false;
       lifecycleEpoch += 1;
+      clearResumeRevalidation();
       unsubscribeAuth?.();
       unsubscribeAuth = null;
       releaseMutationAdmission?.();
