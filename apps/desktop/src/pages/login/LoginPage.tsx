@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Icon } from '@peers-touch/ui';
+import { Button, Card, Icon } from '@peers-touch/ui';
 import { feedbackChannel, notifyError } from '../../ui/feedback';
 import { BRANDING } from '../../branding';
 import { LanguageSwitcher } from '../../components/common/LanguageSwitcher';
@@ -815,6 +815,7 @@ export function LoginPage({
                 <span style={{ fontSize: 12 }}>{t('auth.pin.recovery.cancel')}</span>
               </>
             }
+            backInHeader={showHeaderBack}
             title={t('auth.pin.recovery.authenticating')}
           />
         );
@@ -861,21 +862,60 @@ export function LoginPage({
             onTabChange={handleTabChange}
             gateState={gateStateProp}
             backContent={backButtonContent}
+            backInHeader={showHeaderBack}
           />
         );
     }
   };
 
+  // The back control lives in the card header, symmetric with the language
+  // switcher. The form views render their own back only when embedded or when
+  // the current state has no header back.
+  const isRecoveryAuth = loginState === 'pin_recovery_auth';
+  const showHeaderBack =
+    !embedded
+    && (isRecoveryAuth
+      || (loginState === 'logged_out'
+        && (hasSignedInUser || hasMultipleAccounts)
+        && !connectProvider));
+  const headerBackContent = isRecoveryAuth ? (
+    <>
+      <Icon iconId="arrow-left" size={14} />
+      <span style={{ fontSize: 12 }}>{t('auth.pin.recovery.cancel')}</span>
+    </>
+  ) : (
+    backButtonContent
+  );
+
+  // Header: back (lead slot, always rendered to keep the language switcher
+  // symmetric on the right) and language switcher.
   const cardHead = (
     <div className="pt-auth-head">
-      <span className="pt-auth-brand">
-        <img
-          className="pt-auth-brand-wordmark"
-          src={BRANDING.logos.wordmark}
-          alt={BRANDING.appName}
-        />
-      </span>
+      <div className="pt-auth-head__lead">
+        {showHeaderBack && (
+          <Button
+            actionId="auth.back"
+            emphasis="quiet"
+            density="compact"
+            onActivate={isRecoveryAuth ? handleRecoveryCancel : handleBackToWelcome}
+          >
+            {headerBackContent}
+          </Button>
+        )}
+      </div>
       {!embedded && <LanguageSwitcher />}
+    </div>
+  );
+
+  // Centered brand hero. The app icon is a square white tile with transparent
+  // rounded corners, so the tinted card shows through around it for depth.
+  const brandHero = embedded ? null : (
+    <div className="pt-auth-brand-hero">
+      <img
+        className="pt-auth-brand-logo"
+        src={BRANDING.logos.appIcon}
+        alt={BRANDING.appName}
+      />
     </div>
   );
 
@@ -890,6 +930,7 @@ export function LoginPage({
       )}
     >
       {cardHead}
+      {brandHero}
       {renderCardContent()}
     </Card>
   );

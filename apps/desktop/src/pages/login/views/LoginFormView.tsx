@@ -50,6 +50,11 @@ export interface LoginFormViewProps {
   gateState?: GateState | null;
   backContent?: React.ReactNode;
   title?: string;
+  /**
+   * The back control is promoted into the card header (symmetric with the
+   * language switcher); the form body then renders no inline back row.
+   */
+  backInHeader?: boolean;
 }
 
 export const LoginFormView = memo(function LoginFormView({
@@ -69,6 +74,7 @@ export const LoginFormView = memo(function LoginFormView({
   gateState,
   backContent,
   title: titleOverride,
+  backInHeader = false,
 }: LoginFormViewProps) {
   const { t } = useTranslation('auth');
 
@@ -147,7 +153,7 @@ export const LoginFormView = memo(function LoginFormView({
 
   return (
     <div className="pt-auth-form">
-      {hasBackButton && (
+      {hasBackButton && !backInHeader && (
         <div className="pt-auth-back">
           <Button
             actionId="auth.back"

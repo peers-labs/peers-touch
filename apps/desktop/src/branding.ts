@@ -1,4 +1,5 @@
 import peersWordmark from './assets/peers-logo.png';
+import peersAppIcon from './assets/peers-app-icon.png';
 
 /**
  * 品牌资源统一配置
@@ -14,6 +15,12 @@ export const BRANDING = {
   logos: {
     /** Peers 字形标（官网 public/peers-logo.png 同源） */
     wordmark: peersWordmark,
+    /**
+     * 应用图标（白色圆角方块内嵌字形，圆角外透明）。前端副本取自 Tauri
+     * 图标母版 src-tauri/icons/icon.png，仅用于登录面品牌 hero；原生图标
+     * 管线的真源仍在 src-tauri/icons，禁止在此修改图形。
+     */
+    appIcon: peersAppIcon,
   },
 
   /** 主题色配置（north-star：近墨动作色 + 松绿品牌强调，仅作单一真源） */

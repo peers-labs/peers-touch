@@ -1,8 +1,10 @@
 // Source-contract: the auth surface has two layout grammars. Wide windows keep
-// the calm centered card; at the 480px phone floor the card flattens into the
-// paper canvas and top-anchors, so the 360x480 startup window does not float a
-// narrow card inside large bands of empty canvas. The desktop package has no
-// DOM test environment, so these assertions pin the stylesheet contract.
+// a centered floating card with a light pine tint; at the 480px phone floor the
+// card itself becomes the surface and fills the window edge to edge. A centered
+// brand hero carries the horizontal wordmark (height-only sizing preserves its
+// aspect), and the back control shares the header row with the language
+// switcher. The desktop package has no DOM test environment, so these
+// assertions pin the stylesheet and component-source contract.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -10,8 +12,16 @@ const stylesheet = readFileSync(
   new URL('../../index.css', import.meta.url),
   'utf8',
 );
+const brandingSource = readFileSync(
+  new URL('../../branding.ts', import.meta.url),
+  'utf8',
+);
 const pageSource = readFileSync(
   new URL('./LoginPage.tsx', import.meta.url),
+  'utf8',
+);
+const formSource = readFileSync(
+  new URL('./views/LoginFormView.tsx', import.meta.url),
   'utf8',
 );
 const switcherSource = readFileSync(
@@ -20,40 +30,57 @@ const switcherSource = readFileSync(
 );
 
 // Narrow block only: slice from the phone media query so base rules above it
-// cannot satisfy the flattening assertions by accident.
+// cannot satisfy the fill assertions by accident.
 const narrowBlock = stylesheet.slice(stylesheet.lastIndexOf('@media (max-width: 480px)'));
 
-describe('auth desktop card grammar', () => {
-  it('keeps the centered floating card above the phone breakpoint', () => {
-    expect(stylesheet).toContain('.pt-auth-shell {');
-    expect(stylesheet).toMatch(/\.pt-auth-shell\s*\{[^}]*padding: 24px/);
-    expect(stylesheet).toContain('width: var(--pt-auth-card-width, 352px);');
+describe('auth tinted card grammar', () => {
+  it('tints the card with pine and keeps a wider centered floating card', () => {
+    expect(stylesheet).toContain('width: var(--pt-auth-card-width, 384px);');
+    expect(stylesheet).toContain(
+      'color-mix(in srgb, var(--pt-accent) 8%, var(--pt-surface))',
+    );
     // Mid-range windows (481-760px) still center the card vertically.
     expect(stylesheet).toMatch(/@media \(max-width: 760px\)[\s\S]*?margin-block: auto/);
   });
 });
 
-describe('auth phone-narrow page grammar', () => {
-  it('flattens card chrome into the paper canvas at <=480px', () => {
+describe('auth phone-narrow fill grammar', () => {
+  it('lets the card fill the window without an outer canvas band at <=480px', () => {
     expect(narrowBlock).toContain('@media (max-width: 480px)');
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?background: transparent/);
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?border: 0/);
+    expect(narrowBlock).toMatch(/\.pt-auth-shell\s*\{[\s\S]*?padding: 0/);
+    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?min-height: 100%/);
+    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?border-radius: 0/);
     expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?box-shadow: none/);
   });
+});
 
-  it('top-anchors content with compact shell insets instead of centering', () => {
-    expect(narrowBlock).toMatch(/\.pt-auth-shell\s*\{[\s\S]*?padding: 12px 16px/);
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?margin-block: 0/);
-    expect(narrowBlock).toContain('.pt-auth-region {');
-    expect(narrowBlock).toContain('min-height: 0;');
+describe('auth centered brand hero', () => {
+  it('uses the square app icon tile centered with equal width and height', () => {
+    expect(pageSource).toContain('className="pt-auth-brand-hero"');
+    expect(pageSource).toContain('className="pt-auth-brand-logo"');
+    expect(pageSource).toContain('src={BRANDING.logos.appIcon}');
+    // The hero consumes the app-icon asset registered in branding, never the
+    // horizontal wordmark or a fabricated graphic.
+    expect(brandingSource).toContain("import peersAppIcon from './assets/peers-app-icon.png'");
+    expect(brandingSource).toContain('appIcon: peersAppIcon');
+    expect(pageSource).not.toContain('BRANDING.logos.wordmark');
+    expect(stylesheet).toMatch(/\.pt-auth-brand-logo\s*\{[\s\S]*?width: 96px/);
+    expect(stylesheet).toMatch(/\.pt-auth-brand-logo\s*\{[\s\S]*?height: 96px/);
+    // The old corner wordmark slot must not linger.
+    expect(pageSource).not.toContain('pt-auth-brand-wordmark');
+    expect(stylesheet).not.toContain('.pt-auth-brand ');
   });
+});
 
-  it('tightens the internal vertical rhythm', () => {
-    expect(narrowBlock).toContain('padding: 8px 4px 10px;');
-    expect(narrowBlock).toContain('gap: 10px;');
-    expect(narrowBlock).toContain('padding: 0 4px 12px;');
-    expect(narrowBlock).toMatch(/\.pt-auth-back\s*\{[\s\S]*?margin: 0/);
-    expect(narrowBlock).toContain('margin-top: 8px;');
+describe('auth symmetric header back control', () => {
+  it('places back in the head lead slot, symmetric with the language switcher', () => {
+    expect(stylesheet).toContain('.pt-auth-head__lead');
+    expect(pageSource).toContain('actionId="auth.back"');
+    expect(pageSource).toContain('<LanguageSwitcher />');
+    // The form suppresses its inline back once promoted to the header.
+    expect(formSource).toContain('backInHeader = false');
+    expect(formSource).toContain('hasBackButton && !backInHeader');
+    expect(pageSource).toContain('backInHeader={showHeaderBack}');
   });
 });
 
@@ -61,7 +88,7 @@ describe('auth surface structural hooks', () => {
   it('keeps the login card marker and footer Station switcher', () => {
     expect(pageSource).toContain('data-pt-login-card');
     expect(pageSource).toContain('<StationSwitcher />');
-    // The switcher stays a popover trigger; the narrow redesign is CSS-only.
+    // The switcher stays a popover trigger; the redesign is structural/CSS only.
     expect(switcherSource).toContain('actionId="auth.station.switch"');
     expect(switcherSource).toContain('className="pt-auth-station-trigger"');
   });
