@@ -63,6 +63,54 @@ describe('auth tinted card grammar', () => {
     expect(stylesheet).toContain('width: var(--pt-auth-card-width, 384px);');
     expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?width: 100%/);
   });
+
+  it('softens the card hairline against the tinted surface', () => {
+    // Derive a lighter hairline from the shared border token, not a new color.
+    expect(stylesheet).toContain(
+      'border-color: color-mix(in srgb, var(--pt-border) 55%, transparent)',
+    );
+  });
+});
+
+describe('auth re-authentication identity tile', () => {
+  it('renders the expired account as an interactive button, not a static div', () => {
+    // The tile must be a real control with a stable action + data hook.
+    expect(formSource).toContain('actionId="auth.reauth.identity"');
+    expect(formSource).toContain('data-login-reauth-account={expiredAccount.accountId}');
+    expect(formSource).toContain('onActivate={() => onReauthIdentity?.()}');
+    // The old non-interactive strip must be gone.
+    expect(formSource).not.toMatch(/<div className="pt-auth-reauth">/);
+    // Its own border/background moved to button chrome; the class is layout-only.
+    expect(stylesheet).toMatch(/\.pt-auth-reauth\.pt-button\s*\{/);
+    expect(stylesheet).not.toMatch(/\.pt-auth-reauth\s*\{[^}]*background: var\(--pt-subtle\)/);
+  });
+
+  it('routes the tile click to the provider sign-in method in LoginPage', () => {
+    expect(pageSource).toContain('const handleReauthIdentity = useCallback');
+    expect(pageSource).toContain("provider === 'password' || provider === '' || provider === 'email'");
+    // Password accounts route to the email tab and focus the password field.
+    expect(pageSource).toMatch(/setTab\('email'\)[\s\S]*?setReauthFocusPassword\(true\)/);
+    // OAuth accounts route to the quick tab.
+    expect(pageSource).toMatch(/setTab\('quick'\)[\s\S]*?setReauthFocusPassword\(false\)/);
+    expect(formSource).toContain('autoFocus={reauthFocusPassword}');
+    // Wired on both LoginFormView instances.
+    const wiredCount = pageSource.split('onReauthIdentity={handleReauthIdentity}').length - 1;
+    expect(wiredCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it('localizes the tile accessibility label in both shipped languages', () => {
+    const en = readFileSync(
+      new URL('../../../../../packages/locales/en/auth.json', import.meta.url),
+      'utf8',
+    );
+    const zh = readFileSync(
+      new URL('../../../../../packages/locales/zh-CN/auth.json', import.meta.url),
+      'utf8',
+    );
+    expect(en).toContain('"auth.login.reauthIdentity"');
+    expect(zh).toContain('"auth.login.reauthIdentity"');
+    expect(formSource).toContain("t('auth.login.reauthIdentity', { name: expiredAccount.name })");
+  });
 });
 
 describe('auth phone-narrow fill grammar', () => {

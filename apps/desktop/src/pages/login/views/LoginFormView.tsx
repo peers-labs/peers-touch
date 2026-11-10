@@ -55,6 +55,14 @@ export interface LoginFormViewProps {
    * language switcher); the form body then renders no inline back row.
    */
   backInHeader?: boolean;
+  /**
+   * Activates the re-authentication identity tile. Routes the user to the
+   * sign-in method that matches the expired account's provider. When omitted
+   * the identity tile is not rendered interactive.
+   */
+  onReauthIdentity?: () => void;
+  /** Focus the password field once the email tab is shown via the identity tile. */
+  reauthFocusPassword?: boolean;
 }
 
 export const LoginFormView = memo(function LoginFormView({
@@ -75,6 +83,8 @@ export const LoginFormView = memo(function LoginFormView({
   backContent,
   title: titleOverride,
   backInHeader = false,
+  onReauthIdentity,
+  reauthFocusPassword = false,
 }: LoginFormViewProps) {
   const { t } = useTranslation('auth');
 
@@ -174,20 +184,37 @@ export const LoginFormView = memo(function LoginFormView({
             : t('auth.login.title')}
       </h2>
       {expiredAccount && (
-        <div className="pt-auth-reauth">
-          <UserSquareAvatar
-            remoteUrl={expiredAccount.avatar}
-            name={expiredAccount.name}
-            size={30}
-            radius={7}
-          />
+        <Button
+          actionId="auth.reauth.identity"
+          fullWidth
+          emphasis="secondary"
+          className="pt-auth-reauth"
+          data-login-reauth-account={expiredAccount.accountId}
+          aria-label={t('auth.login.reauthIdentity', { name: expiredAccount.name })}
+          availability={
+            oauthFlowLocked
+              ? { kind: 'disabled', reason: t('auth.login.waiting') }
+              : undefined
+          }
+          leading={
+            <UserSquareAvatar
+              remoteUrl={expiredAccount.avatar}
+              avatarLocalPath={expiredAccount.avatarLocalPath}
+              name={expiredAccount.name}
+              size={30}
+              radius={7}
+            />
+          }
+          trailing={<Icon iconId="chevron-right" size={15} />}
+          onActivate={() => onReauthIdentity?.()}
+        >
           <span className="pt-auth-reauth-meta">
             <span className="pt-auth-reauth-name">{expiredAccount.name}</span>
             {expiredAccount.email && (
               <span className="pt-auth-reauth-handle">{expiredAccount.email}</span>
             )}
           </span>
-        </div>
+        </Button>
       )}
 
       <Segmented<LoginTab>
@@ -373,6 +400,7 @@ export const LoginFormView = memo(function LoginFormView({
             <TextField
               data-login-password
               required
+              autoFocus={reauthFocusPassword}
               type={showPassword ? 'text' : 'password'}
               aria-label={t('auth.login.password.placeholder')}
               placeholder={t('auth.login.password.placeholder')}

@@ -142,6 +142,9 @@ input, textarea, [contenteditable="true"] {
   /* Light pine tint so the dark wordmark and white controls read as layered
      surfaces instead of blending into an all-white card. */
   background: color-mix(in srgb, var(--pt-accent) 8%, var(--pt-surface));
+  /* The shared .pt-card hairline reads heavy against the tint; derive a softer
+     hairline from the same border token instead of introducing a new color. */
+  border-color: color-mix(in srgb, var(--pt-border) 55%, transparent);
 }
 
 .pt-auth-card .pt-card-body {
@@ -196,21 +199,21 @@ input, textarea, [contenteditable="true"] {
   text-align: center;
 }
 
-/* Re-authentication identity strip: neutral surface, no semantic alert hue. */
-.pt-auth-reauth {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--pt-radius-md);
-  background: var(--pt-subtle);
-  border: 1px solid var(--pt-border);
+/* Re-authentication identity tile: an interactive secondary button whose
+   chrome (surface, hairline, hover) comes from .pt-button. This rule only owns
+   layout — left-aligned avatar + meta, chevron pinned at the trailing edge. */
+.pt-auth-reauth.pt-button {
+  justify-content: flex-start;
+  width: 100%;
+  padding-block: 9px;
 }
 
 .pt-auth-reauth-meta {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
 }
 
 .pt-auth-reauth-name {

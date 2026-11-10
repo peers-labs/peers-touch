@@ -134,6 +134,9 @@ export function LoginPage({
   // ── Email login error (inline on the login card) ──
   const [emailError, setEmailError] = useState('');
 
+  // ── Re-auth identity tile: focus the password field after routing to email ──
+  const [reauthFocusPassword, setReauthFocusPassword] = useState(false);
+
   // ── Refs for email login (needed for gate chain) ──
   const emailRef = useRef('');
   const passwordRef = useRef('');
@@ -279,6 +282,26 @@ export function LoginPage({
     }
     setLoginState('logged_out');
   }, [markAccountSessionless]);
+
+  // ── Re-auth identity tile ──
+  // The expired-account tile is a real control, not a static strip: clicking it
+  // routes to the sign-in method matching that account's provider so the flow
+  // has no dead-end. Password accounts land on the email tab with the password
+  // field focused (email is prefilled from the expired account); OAuth accounts
+  // land on the quick tab where their provider button is the primary action.
+  const handleReauthIdentity = useCallback(() => {
+    const account = expiredAccount;
+    if (!account) return;
+    const provider = (account.provider || '').toLowerCase();
+    const isPasswordProvider = provider === 'password' || provider === '' || provider === 'email';
+    if (isPasswordProvider) {
+      setTab('email');
+      setReauthFocusPassword(true);
+    } else {
+      setTab('quick');
+      setReauthFocusPassword(false);
+    }
+  }, [expiredAccount]);
 
   // ── Event handlers ──
 
@@ -707,6 +730,7 @@ export function LoginPage({
 
   const handleTabChange = useCallback((newTab: LoginTab) => {
     setTab(newTab);
+    setReauthFocusPassword(false);
     if (newTab === 'email') {
       resetOAuthAction();
     }
@@ -817,6 +841,8 @@ export function LoginPage({
             }
             backInHeader={showHeaderBack}
             title={t('auth.pin.recovery.authenticating')}
+            onReauthIdentity={handleReauthIdentity}
+            reauthFocusPassword={reauthFocusPassword}
           />
         );
 
@@ -863,6 +889,8 @@ export function LoginPage({
             gateState={gateStateProp}
             backContent={backButtonContent}
             backInHeader={showHeaderBack}
+            onReauthIdentity={handleReauthIdentity}
+            reauthFocusPassword={reauthFocusPassword}
           />
         );
     }
