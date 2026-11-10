@@ -268,8 +268,34 @@ const VETTED_CONSUMERS: Record<string, string[]> = {
 const GAPS: Array<[CategoryId, CapabilityKind, string, string, string, string?]> = [
   ['data', 'primitive', 'ActivityHeatmap', '活跃热力图（统计分区）', SETTINGS],
   ['advanced', 'primitive', 'VoiceRecorder', '语音录制与波形（富输入）', CHAT],
-  ['navigation', 'composition', 'CommandSurface', '封闭域命令浮层（搜索/命令面板）', CHAT],
   ['data', 'composition', 'ConversationRow', '会话行（头像/摘要/未读/置顶/静音）', CHAT],
+];
+
+/**
+ * Composite capabilities owned by @peers-touch/ui-composite. These are
+ * multi-slot product-level surfaces shared by BOTH the north-star prototype
+ * and the Desktop production host through one implementation. A composite
+ * reaches 'vetted' once both hosts import the same package component and the
+ * gate/suite selectors are statically preserved.
+ */
+interface CompositeRecord {
+  id: string;
+  title: string;
+  category: CategoryId;
+  status: CapabilityStatus;
+  consumedBy: string[];
+  note?: string;
+}
+
+const COMPOSITE: CompositeRecord[] = [
+  {
+    id: 'ui.comp.search-surface',
+    title: 'GlobalSearchSurface 全局搜索命令浮层（复合件）',
+    category: 'navigation',
+    status: 'vetted',
+    consumedBy: [CHAT, '桌面生产 · SearchOverlay'],
+    note: '原型 GlobalSearchOverlay 与生产 SearchOverlay 共用 @peers-touch/ui-composite；取代原 CommandSurface GAP',
+  },
 ];
 
 function build(): CapabilityRecord[] {
@@ -281,6 +307,17 @@ function build(): CapabilityRecord[] {
       ...(consumedBy ? { consumedBy } : {}),
     };
   });
+  for (const composite of COMPOSITE) {
+    records.push({
+      id: composite.id,
+      title: composite.title,
+      category: composite.category,
+      kind: 'composition',
+      status: composite.status,
+      consumedBy: composite.consumedBy,
+      ...(composite.note ? { note: composite.note } : {}),
+    });
+  }
   for (const [category, kind, id, title, neededBy, note] of GAPS) {
     records.push({ id, title, category, kind, status: 'gap', neededBy, note });
   }

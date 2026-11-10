@@ -5581,5 +5581,39 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "geometryAndMotion": "label/help/control/status共享track；窄屏按同意图堆叠；pending占status槽不挤label。",
     "extremeData": "长说明、复合地址、disabled、未知远端值、立即设置和大表单并存。",
     "publicContractFields": "settingId/label/help/commitPolicy/controlContract/availability/saveView/recoveryActions"
+  },
+  {
+    "id": "ui.comp.search-surface",
+    "title": "GlobalSearchSurface 全局搜索命令浮层（复合件）",
+    "category": "navigation",
+    "owner": "Client Platform / UI System",
+    "specRef": "docs/architecture/platform/client/ui-system/composite-promotion/data-model.md#2-globalsearchsurface",
+    "exports": ["GlobalSearchSurface"],
+    "implementationRefs": [
+      "packages/ui/composite/src/search/GlobalSearchSurface.tsx",
+      "packages/ui/composite/src/search/search.types.ts",
+      "packages/prototypes/shared/ui-system/search/GlobalSearchOverlay.tsx",
+      "apps/desktop/src/components/search/SearchOverlay.tsx"
+    ],
+    "specimenRef": null,
+    "platformSupport": [
+      { "renderer": "web", "status": "implemented" },
+      { "renderer": "lynx", "status": "unsupported", "reason": "Composite pilot scopes web hosts (prototype + Desktop); Lynx reuse unassessed" }
+    ],
+    "evidenceStatus": "SOURCE_CHECK",
+    "implementationStatus": "EXISTING_CONSUMER_CUTOVER",
+    "ownerBoundary": "复合件只管 UI 瞬时态（roving/IME/进出相位）与纯渲染；宿主经 SearchSurfaceModel 供数据、经 SearchSurfaceIntents 回传副作用，store/runtime/seed 不进包。",
+    "anatomy": "overlay/scrim/panel/field/input/intents/body/group/row/footer 具名区域；SurfaceHooks 注入宿主 legacy 类名与 data 钩子；infoPopoverSlot 承载宿主 coverage Popover。",
+    "statePolicy": "status=idle/loading/ready/error 判别联合；isProgressive/opening/pendingSources 由宿主收敛成普通字段；组件不持业务 Promise。",
+    "invalidCombinations": "把 store/runtime 实例传入 model、组件内发请求、app 层重绘 .ptc-*、包内 import antd/zustand/react-i18next/lucide。",
+    "lifecycleAndCleanup": "open/close 相位与 opener 焦点还原由组件管理；查询缓存/请求取消归宿主 searchRuntime，组件卸载不冒充取消。",
+    "accessibility": "searchbox + listbox roving（↑↓/Enter/Esc/IME keyCode229 守卫）；aria-expanded/aria-busy/aria-selected；data-search-* 与 pt-search-* 选择器静态保全。",
+    "variantAxes": [
+      "宿主=prototype(sk-* 注入)/desktop(pt-search-* 注入)，同一 ptc-* 组件实现",
+      "空查询=recent/quick；非空=分组结果；functions 模式独立分组"
+    ],
+    "geometryAndMotion": "panel 720px/r12/160ms 与生产逐值对齐（CMP-D04 resolved-deferred：北星 660/r18/200ms 不在试点收敛）；全部值引用 --pt-* token。",
+    "extremeData": "零结果空态、错误重试、progressive pending、超长 query 256 scalar 边界、IME 合成态、窄面板横向省略。",
+    "publicContractFields": "open/model(SearchSurfaceModel)/intents(SearchSurfaceIntents)/t(CompositeTranslate)/hooks(SurfaceHooks)/infoPopoverSlot"
   }
 ];

@@ -101,6 +101,14 @@ PT_BRIDGE 换肤；生产宿主用默认主题。搬迁以「不改已接受像�
 **Consequences**：生产搜索浮层可能出现一次规格级像素微调（需用户确认）；
 原型侧删除对应 sk CSS 后 import-guard baseline 与 craft 断言需同步更新。
 
+**Resolution（2026-11-10 试点实现期，P1-7 评审门落档）**：组件一落地采用
+**保持生产现规格**方案——复合包 `search.css` 的 panel 宽 720px、圆角 12px、
+入场 160ms 与生产 `SearchOverlay.css` 逐值对齐，保证生产侧零像素回归。
+北星规格（660px / r18 / 200ms）属本计划 §nonGoals 明确排除的「视觉重设计与
+新像素创新」，**不在试点内收敛**，登记为后续独立视觉决策项，需用户显式
+签署后另开变更。状态：**resolved-deferred（延后决议）**，验收门以「生产
+DOM 视觉与改造前一致」为通过口径，而非北星 660 规格。
+
 ## CMP-D05: i18n 注入 `CompositeTranslate`，包内无词典
 
 **Context**：生产用 react-i18next + `packages/locales`，`check:locales`
