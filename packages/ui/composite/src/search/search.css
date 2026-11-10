@@ -1,0 +1,384 @@
+/**
+ * GlobalSearchSurface styles.
+ *
+ * All values MUST reference `--pt-*` tokens only (dark mode inherits
+ * automatically through the token layer). No hardcoded hex values.
+ *
+ * CMP-D04 visual-convergence items (pending explicit confirmation):
+ *   - Panel width / border-radius / entrance animation curve
+ *   - Search field focus ring, row hover/active states
+ *   - Filter-tab pill contrast
+ *   These values currently mirror the production SearchOverlay.css defaults.
+ *   Do NOT finalize pixels until the review gate for P1-7.
+ */
+
+/* ── Overlay shell ─────────────────────────────────────────────── */
+
+.ptc-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--pt-z-overlay, 30);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: var(--pt-space-xl, 48px);
+  pointer-events: none;
+}
+
+.ptc-search-overlay[data-closing='true'] {
+  opacity: 0;
+  transition: opacity 110ms ease-out;
+}
+
+.ptc-search-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--pt-scrim, rgba(0, 0, 0, 0.32));
+  pointer-events: auto;
+}
+
+.ptc-search-panel {
+  position: relative;
+  width: 720px;          /* CMP-D04: review vs north-star 660px */
+  max-height: 70vh;
+  border-radius: var(--pt-radius-lg, 12px);
+  background: var(--pt-surface-elevated, #ffffff);
+  border: 1px solid var(--pt-border-subtle, rgba(0, 0, 0, 0.06));
+  box-shadow: var(--pt-shadow-elevated, 0 8px 32px rgba(0, 0, 0, 0.18));
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* ── Field ──────────────────────────────────────────────────────── */
+
+.ptc-search-field-area {
+  padding: 16px 16px 12px;
+}
+
+.ptc-search-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--pt-radius-md, 8px);
+  background: var(--pt-input-bg, rgba(0, 0, 0, 0.04));
+}
+
+.ptc-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  color: var(--pt-text-primary, #000000);
+  caret-color: var(--pt-accent, #2f6a50);
+}
+
+.ptc-search-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--pt-radius-sm, 4px);
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.6));
+}
+
+.ptc-search-close:hover {
+  background: var(--pt-hover, rgba(0, 0, 0, 0.06));
+}
+
+.ptc-search-status {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--pt-border, rgba(0, 0, 0, 0.12));
+  border-top-color: var(--pt-accent, #2f6a50);
+  border-radius: 50%;
+  animation: ptc-search-spin 0.8s linear infinite;
+}
+
+@keyframes ptc-search-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Filter tabs ────────────────────────────────────────────────── */
+
+.ptc-search-intents {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px 8px;
+  border-bottom: 1px solid var(--pt-border-subtle, rgba(0, 0, 0, 0.06));
+}
+
+.ptc-search-intents button {
+  background: none;
+  border: none;
+  padding: 6px 12px;
+  border-radius: var(--pt-radius-sm, 6px);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.6));
+  transition: background 120ms, color 120ms;
+}
+
+.ptc-search-intents button:hover {
+  background: var(--pt-hover, rgba(0, 0, 0, 0.04));
+}
+
+.ptc-search-intents button.active {
+  background: var(--pt-accent, #2f6a50);
+  color: #ffffff;
+}
+
+/* ── Body ────────────────────────────────────────────────────────── */
+
+.ptc-search-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px 8px;
+}
+
+.ptc-search-group {
+  padding: 4px 0;
+}
+
+.ptc-search-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.5));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 12px 4px;
+}
+
+.ptc-search-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* ── Row ────────────────────────────────────────────────────────── */
+
+.ptc-search-row {
+  position: relative;
+  padding: 2px 48px 2px 12px;
+}
+
+.ptc-search-row-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px;
+  border-radius: var(--pt-radius-sm, 6px);
+  cursor: pointer;
+}
+
+.ptc-search-row:hover .ptc-search-row-target {
+  background: var(--pt-hover, rgba(0, 0, 0, 0.04));
+}
+
+.ptc-search-row.is-active .ptc-search-row-target,
+.ptc-search-row-target:focus-visible {
+  background: var(--pt-accent-subtle, rgba(47, 106, 80, 0.08));
+  outline: 2px solid var(--pt-accent, #2f6a50);
+  outline-offset: -2px;
+}
+
+.ptc-search-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.6));
+  flex-shrink: 0;
+}
+
+.ptc-search-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.ptc-search-row-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--pt-text-primary, #000000);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptc-search-row-title mark {
+  background: var(--pt-accent-subtle, rgba(47, 106, 80, 0.12));
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.ptc-search-row-snippet {
+  font-size: 12px;
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.55));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptc-search-row-meta {
+  font-size: 11px;
+  color: var(--pt-text-muted, rgba(0, 0, 0, 0.4));
+}
+
+.ptc-search-row-zone {
+  font-size: 11px;
+  color: var(--pt-text-muted, rgba(0, 0, 0, 0.4));
+}
+
+.ptc-search-row-open {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.ptc-search-row:hover .ptc-search-row-open,
+.ptc-search-row.is-active .ptc-search-row-open {
+  opacity: 1;
+}
+
+.ptc-search-copy {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--pt-radius-sm, 4px);
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.5));
+}
+
+.ptc-search-copy:hover {
+  background: var(--pt-hover, rgba(0, 0, 0, 0.06));
+  color: var(--pt-text-primary, #000000);
+}
+
+/* ── Empty / Error / More ───────────────────────────────────────── */
+
+.ptc-search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.55));
+}
+
+.ptc-search-empty strong {
+  font-size: 14px;
+  color: var(--pt-text-primary, #000000);
+}
+
+.ptc-search-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--pt-error-subtle, rgba(220, 38, 38, 0.08));
+  border-radius: var(--pt-radius-md, 8px);
+  font-size: 13px;
+}
+
+.ptc-search-error button {
+  margin-left: auto;
+  background: var(--pt-accent, #2f6a50);
+  color: #ffffff;
+  border: none;
+  padding: 4px 12px;
+  border-radius: var(--pt-radius-sm, 4px);
+  cursor: pointer;
+}
+
+.ptc-search-more {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-top: 8px;
+  border: 1px solid var(--pt-border-subtle, rgba(0, 0, 0, 0.08));
+  border-radius: var(--pt-radius-md, 8px);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.6));
+  transition: background 120ms;
+}
+
+.ptc-search-more:hover:not(:disabled) {
+  background: var(--pt-hover, rgba(0, 0, 0, 0.04));
+}
+
+.ptc-search-more:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+
+.ptc-search-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid var(--pt-border-subtle, rgba(0, 0, 0, 0.06));
+  font-size: 11px;
+  color: var(--pt-text-muted, rgba(0, 0, 0, 0.4));
+}
+
+.ptc-search-statusline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ptc-search-status-chip {
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: var(--pt-accent-subtle, rgba(47, 106, 80, 0.08));
+  color: var(--pt-accent, #2f6a50);
+}
+
+.ptc-search-status-pending {
+  color: var(--pt-warning, #c27a0b);
+}
+
+.ptc-search-footer-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ptc-search-opening {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pt-text-secondary, rgba(0, 0, 0, 0.5));
+}
+
+.ptc-search-visuallyhidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
