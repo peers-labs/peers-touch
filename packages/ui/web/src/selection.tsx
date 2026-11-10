@@ -52,7 +52,7 @@ export function RadioGroup<T extends string | number>({ options, value, onValueC
   const name = useId();
   return <div className="pt-choice-group" role="radiogroup" aria-label={label} style={style}>
     {options.map(entry => { const option = typeof entry === 'object' ? entry : {value:entry,label:String(entry)};
-      return <Radio key={option.value} name={name} label={<>{option.leading}{option.label}</>} checked={value === option.value}
+      return <Radio key={option.value} name={name} value={String(option.value)} label={<>{option.leading}{option.label}</>} checked={value === option.value}
       disabled={disabled || option.availability?.kind === 'disabled'} onChange={() => onValueChange?.(option.value)} />; })}
   </div>;
 }
