@@ -4,10 +4,11 @@ import copy
 import unittest
 from collections.abc import Mapping
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import DriverError, GateError
 from tooling.acceptance.gates.mobile.messaging_journey import (
+    MOBILE_WRITE_REVOKED_ERROR_KEY,
     MobileMessagingJourney,
     MessagingActor,
 )
@@ -638,6 +639,183 @@ class MobileMessagingJourneyTests(unittest.TestCase):
                 "sender contact Direct write admission",
             )
         self.assertEqual(self.sender_session.contact_open_inputs, [])
+
+    def test_write_action_skips_reconcile_when_admission_holds(self) -> None:
+        session = Mock()
+        session.call_action.return_value = {"messageId": "m-1"}
+
+        result = self.journey._call_write_action(
+            session,
+            "sim-ios",
+            "messaging.send",
+            {"conversationId": "c1", "plaintext": "hi"},
+            "Direct send",
+        )
+
+        self.assertEqual(result["messageId"], "m-1")
+        session.call_action.assert_called_once_with(
+            "messaging.send",
+            {"conversationId": "c1", "plaintext": "hi"},
+        )
+
+    def test_write_action_retries_once_after_revoked_write_admission(self) -> None:
+        class ReconcileClock:
+            def __init__(self) -> None:
+                self.value = 0.0
+
+            def monotonic(self) -> float:
+                self.value += 2.0
+                return self.value
+
+            def sleep(self, _seconds: float) -> None:
+                return None
+
+        class RevokedThenOpenSession:
+            def __init__(self) -> None:
+                self.actions: list[str] = []
+                self.send_attempts = 0
+                self.reconcile_calls = 0
+
+            def call_action(self, action: str, body: Any = None) -> Any:
+                self.actions.append(action)
+                if action == "messaging.send":
+                    self.send_attempts += 1
+                    if self.send_attempts == 1:
+                        raise DriverError(
+                            "Mobile Acceptance action 'messaging.send' failed "
+                            f"with {MOBILE_WRITE_REVOKED_ERROR_KEY}"
+                        )
+                    return {"messageId": "m-2"}
+                if action == "social.reconcile":
+                    self.reconcile_calls += 1
+                    return {"reconciled": True}
+                if action == "recovery.snapshot":
+                    # First read is the closed initial snapshot; the poll loop
+                    # then observes stable-open admissions.
+                    if self.reconcile_calls == 0:
+                        return {
+                            "isWriteBlocked": True,
+                            "writeAdmission": {
+                                "open": False,
+                                "reason": "runtime_reconciling",
+                            },
+                            "states": [],
+                        }
+                    return {
+                        "isWriteBlocked": False,
+                        "writeAdmission": {"open": True, "reason": None},
+                        "states": [],
+                    }
+                raise AssertionError(f"unexpected action {action}")
+
+        clock = ReconcileClock()
+        journey = MobileMessagingJourney(
+            timeout_seconds=10,
+            poll_interval_seconds=0.01,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+        session = RevokedThenOpenSession()
+
+        result = journey._call_write_action(
+            session,
+            "sim-ios",
+            "messaging.send",
+            {"conversationId": "c1", "plaintext": "hi"},
+            "Direct send",
+        )
+
+        self.assertEqual(result["messageId"], "m-2")
+        self.assertEqual(session.send_attempts, 2)
+        self.assertEqual(session.reconcile_calls, 1)
+        self.assertIn("social.reconcile", session.actions)
+
+    def test_write_action_propagates_non_admission_driver_error(self) -> None:
+        session = Mock()
+        session.call_action.side_effect = DriverError(
+            "acceptance.mobile.actionUnavailable:messaging.send"
+        )
+
+        with self.assertRaises(DriverError):
+            self.journey._call_write_action(
+                session,
+                "sim-ios",
+                "messaging.send",
+                {"conversationId": "c1", "plaintext": "hi"},
+                "Direct send",
+            )
+
+        called_actions = [call.args[0] for call in session.call_action.call_args_list]
+        self.assertNotIn("social.reconcile", called_actions)
+        self.assertEqual(called_actions, ["messaging.send"])
+
+    def test_write_admission_wait_fails_closed_when_barrier_never_reopens(
+        self,
+    ) -> None:
+        class StalledClock:
+            def __init__(self) -> None:
+                self.value = 0.0
+
+            def monotonic(self) -> float:
+                self.value += 0.01
+                return self.value
+
+            def sleep(self, _seconds: float) -> None:
+                self.value += 0.01
+
+        session = Mock()
+        session.call_action.side_effect = lambda action, body=None: (
+            {"reconciled": True}
+            if action == "social.reconcile"
+            else {
+                "isWriteBlocked": True,
+                "writeAdmission": {
+                    "open": False,
+                    "reason": "runtime_reconciling",
+                },
+                "states": [],
+            }
+        )
+        clock = StalledClock()
+        journey = MobileMessagingJourney(
+            timeout_seconds=0.05,
+            poll_interval_seconds=0.01,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+
+        with self.assertRaisesRegex(
+            GateError, "write admission did not reopen before timeout"
+        ):
+            journey._wait_for_mobile_write_admission(
+                session, "sim-ios", force_reconcile=True
+            )
+
+    def test_write_admission_open_requires_no_pending_reconcile_state(self) -> None:
+        clean = {
+            "isWriteBlocked": False,
+            "writeAdmission": {"open": True, "reason": None},
+            "states": [],
+        }
+        pending = {
+            "isWriteBlocked": False,
+            "writeAdmission": {"open": True, "reason": None},
+            "states": [{"kind": "event-overflow-reconcile"}],
+        }
+        blocked = {
+            "isWriteBlocked": True,
+            "writeAdmission": {"open": False, "reason": "recovery_projection_blocked"},
+            "states": [],
+        }
+        self.assertTrue(
+            MobileMessagingJourney._write_admission_open(clean)
+        )
+        self.assertFalse(
+            MobileMessagingJourney._write_admission_open(pending)
+        )
+        self.assertFalse(
+            MobileMessagingJourney._write_admission_open(blocked)
+        )
 
     def test_authentication_resolves_canonical_station_account_reference(
         self,

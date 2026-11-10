@@ -18,6 +18,12 @@ ATTACHMENT_BYTES = b"peers-touch mobile acceptance attachment\n"
 STATION_ACCOUNT_REF_PREFIX = "station-account:"
 FRIEND_REQUEST_STATUS_ACCEPTED = 2
 TERMINAL_FAILURE_STATES = frozenset({"failed", "terminal", "superseded"})
+# Mirrors the canonical mobile write-admission handling in
+# gates/chat/mixed_native_runtime.py. The ingress closes write admission across
+# resync/cursor-repair until every data domain reconciles, so a rejected write
+# is a pre-mutation signal to re-synchronize rather than a failed mutation.
+MOBILE_WRITE_REVOKED_ERROR_KEY = "mobile.recovery.writeRevocation.body"
+MOBILE_WRITE_ADMISSION_STABLE_SECONDS = 1.25
 
 
 class MessagingJourneySession(Protocol):
@@ -144,14 +150,14 @@ class MobileMessagingJourney:
             f"{receiver.client_id} typing projection",
         )
         text = f"mobile-social-{journey_id}"
-        submitted = self._mapping(
-            sender_session.call_action(
-                "messaging.send",
-                {
-                    "conversationId": conversation_id,
-                    "plaintext": text,
-                },
-            ),
+        submitted = self._call_write_action(
+            sender_session,
+            sender.client_id,
+            "messaging.send",
+            {
+                "conversationId": conversation_id,
+                "plaintext": text,
+            },
             "Direct send",
         )
         message_id = self._text(submitted.get("messageId"), "Direct message ID")
@@ -580,6 +586,97 @@ class MobileMessagingJourney:
         except GateError as error:
             raise GateError(f"{error}; last reason: {last_reason}") from error
 
+    @staticmethod
+    def _write_admission_open(snapshot: Mapping[str, Any]) -> bool:
+        write_admission = snapshot.get("writeAdmission")
+        states = snapshot.get("states")
+        has_pending_reconcile = (
+            isinstance(states, list)
+            and any(
+                isinstance(state, Mapping)
+                and state.get("kind") == "event-overflow-reconcile"
+                for state in states
+            )
+        )
+        return (
+            snapshot.get("isWriteBlocked") is False
+            and isinstance(write_admission, Mapping)
+            and write_admission.get("open") is True
+            and not has_pending_reconcile
+        )
+
+    def _wait_for_mobile_write_admission(
+        self,
+        session: MessagingJourneySession,
+        client_id: str,
+        *,
+        force_reconcile: bool = False,
+    ) -> Mapping[str, Any]:
+        """Block until the ingress write barrier reopens and stays stable.
+
+        Mirrors the desktop mixed-runtime contract: trigger a social reconcile
+        when admission is closed, then require a stable-open window so a write
+        cannot race the next resync. A genuine reconciliation stall still fails
+        closed at the journey deadline instead of being retried forever.
+        """
+        initial = self._mapping(
+            session.call_action("recovery.snapshot"),
+            f"{client_id} recovery snapshot",
+        )
+        if self._write_admission_open(initial) and not force_reconcile:
+            return initial
+
+        session.call_action("social.reconcile", {})
+        deadline = self.monotonic() + self.timeout_seconds
+        stable_since: float | None = None
+        while self.monotonic() < deadline:
+            snapshot = session.call_action("recovery.snapshot")
+            if (
+                not isinstance(snapshot, Mapping)
+                or not self._write_admission_open(snapshot)
+            ):
+                stable_since = None
+            else:
+                now = self.monotonic()
+                if stable_since is None:
+                    stable_since = now
+                if now - stable_since >= MOBILE_WRITE_ADMISSION_STABLE_SECONDS:
+                    return self._mapping(
+                        snapshot, f"{client_id} settled write admission"
+                    )
+            self.sleep(self.poll_interval_seconds)
+        raise GateError(
+            f"{client_id} Mobile write admission did not reopen before timeout"
+        )
+
+    def _call_write_action(
+        self,
+        session: MessagingJourneySession,
+        client_id: str,
+        action: str,
+        payload: Mapping[str, Any],
+        label: str,
+    ) -> dict[str, Any]:
+        """Run a mutating action, re-synchronizing on a revoked write barrier.
+
+        A write-admission rejection happens before any mutation side effect, so
+        a single bounded retry after reconciliation is safe and cannot duplicate
+        a message. Any other DriverError propagates unchanged.
+        """
+        try:
+            return self._mapping(
+                session.call_action(action, dict(payload)), label
+            )
+        except DriverError as error:
+            if MOBILE_WRITE_REVOKED_ERROR_KEY not in str(error):
+                raise
+            self._wait_for_mobile_write_admission(
+                session, client_id, force_reconcile=True
+            )
+            return self._mapping(
+                session.call_action(action, dict(payload)), label
+            )
+
     def _run_attachment_and_interaction_path(
         self,
         *,
@@ -603,15 +700,15 @@ class MobileMessagingJourney:
             "Attachment stage",
         )
         stage_id = self._text(attachment.get("stageId"), "Attachment stage ID")
-        submitted = self._mapping(
-            sender_session.call_action(
-                "messaging.send",
-                {
-                    "conversationId": conversation_id,
-                    "plaintext": text,
-                    "attachmentStageIds": [stage_id],
-                },
-            ),
+        submitted = self._call_write_action(
+            sender_session,
+            sender.client_id,
+            "messaging.send",
+            {
+                "conversationId": conversation_id,
+                "plaintext": text,
+                "attachmentStageIds": [stage_id],
+            },
             "Attachment message send",
         )
         message_id = self._text(
