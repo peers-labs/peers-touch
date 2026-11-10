@@ -267,8 +267,8 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgba(31, 41, 55, 0.1);
   border-radius: 12px;
   background: #ffffff;
@@ -1066,6 +1066,11 @@ select {
   border-radius: 12px;
 }
 
+.auth-email-input,
+.auth-password-input {
+  min-height: 44px;
+}
+
 .auth-field-leading {
   color: var(--pt-muted);
 }
@@ -1094,6 +1099,11 @@ select {
 }
 
 .auth-actions.single {
+  display: flex;
+  justify-content: center;
+}
+
+.auth-actions:has(button:only-child) {
   display: flex;
   justify-content: center;
 }

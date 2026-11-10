@@ -1404,6 +1404,15 @@ function fixtureAccessDecision(
 function fixtureOAuthProjection(
   surfaceId: EntrySurfaceFixtureId | null,
 ): Partial<AuthRuntimeSnapshot> | null {
+  if (surfaceId === 'entry.access-oauth') {
+    // The OAuth Quick tab only renders once the Station provider directory is
+    // loaded with at least one usable provider. A fixture-driven surface must
+    // supply that directory, otherwise the empty simulator directory hides the
+    // very surface the inventory expects to observe.
+    return {
+      availableProviders: ['github', 'google'],
+    };
+  }
   if (surfaceId === 'entry.oauth-progress') {
     return {
       phase: 'awaiting_provider',

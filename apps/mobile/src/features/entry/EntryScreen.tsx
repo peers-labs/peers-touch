@@ -175,7 +175,11 @@ export function EntryScreen({
         ) : null}
 
         {handshake && !gate?.decision ? (
-          <div className="entry-handshake" role="status">
+          <div
+            className="entry-handshake"
+            role="status"
+            data-product-surface="entry.station-handshake"
+          >
             <Spin active size="small" />
             <span>{t('mobile.launch.validating')}</span>
           </div>
