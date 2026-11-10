@@ -1358,6 +1358,181 @@ class AcceptanceRunTest(unittest.TestCase):
             ],
         )
 
+    def test_context_gate_reprojects_reset_lease_only_for_parent_cleanup(
+        self,
+    ) -> None:
+        module = load_module()
+        lease_environment = {
+            "PT_MACHINE_LEASE_FD": "7",
+            "PT_MACHINE_LEASE_ID": "synthetic-lease",
+            "PT_MACHINE_LEASE_KIND": "station.reset",
+            "PT_MACHINE_LEASE_RESOURCE_ID": "synthetic-fixture",
+            "PT_MACHINE_LEASE_RESET_SCOPE": "synthetic-fixture",
+            "PT_MACHINE_LEASE_WORKSPACE_ID": "synthetic-workspace",
+            "PT_MACHINE_LEASE_SOURCE_BRANCH": "synthetic-branch",
+            "PT_MACHINE_LEASE_SOURCE_HEAD": "a" * 40,
+        }
+        cleanup_authority: dict[str, str] = {}
+
+        class SyntheticHandler(EphemeralCapabilityHandler):
+            @property
+            def allowed_operations(self) -> tuple[str, ...]:
+                return ("echo",)
+
+            @property
+            def sensitive_values(self) -> tuple[str, ...]:
+                return ()
+
+            def invoke(self, operation, payload, *, deadline_monotonic, cancellation):
+                return {"status": "OK", "result": {"operation": operation}}
+
+            def project_response(self, operation, response):
+                return response
+
+            def quarantine(self, reason, *, deadline_monotonic) -> bool:
+                return True
+
+            def close(self) -> EphemeralHandlerCleanup:
+                return EphemeralHandlerCleanup(
+                    closed=True,
+                    secrets_zeroized=True,
+                )
+
+        class RecordingContext(EphemeralGateLaunchContext):
+            def close(self):
+                return super().close()
+
+        class EnvironmentProvisioner:
+            environment_id = "synthetic-environment"
+            resolved_credential_values: tuple[str, ...] = ()
+            remote_source_environment: dict[str, str] = {}
+            remote_source_context = staticmethod(contextlib.nullcontext)
+
+            def bind_evidence_run(self, run: object) -> None:
+                self.evidence_run = run
+
+            def prepare_fixture_authority(self, **_kwargs) -> dict[str, str]:
+                return dict(lease_environment)
+
+            def prepare_credentials(
+                self,
+            ) -> tuple[tuple[str, ...], dict[str, str]]:
+                return (), {}
+
+            def create_gate_launch_context(self, **_kwargs):
+                context = RecordingContext(
+                    required_capabilities=("synthetic.echo",),
+                )
+                context.register_capability(
+                    "synthetic.echo",
+                    SyntheticHandler(),
+                )
+                return context
+
+            def cleanup(self) -> tuple[str, ...]:
+                cleanup_authority.update(
+                    {
+                        key: os.environ.get(key, "")
+                        for key in module.MACHINE_LEASE_ENV_KEYS
+                    }
+                )
+                return ("environment",)
+
+        environment_provisioner = EnvironmentProvisioner()
+
+        def run_gate(spec, binding, *, capture_output=None):
+            binding.close_parent_copy()
+            if capture_output is not None:
+                capture_output("", "")
+            return subprocess.CompletedProcess(
+                args=spec.argv,
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gates_path = root / "gates.json"
+            gates_path.write_text(
+                json.dumps(
+                    {
+                        "gates": {
+                            "synthetic-context-gate": {
+                                "argv": ["python3", "-c", "pass"],
+                                "ephemeralCapabilities": ["synthetic.echo"],
+                                "environment": "synthetic-environment",
+                                "provisioner": "synthetic-environment",
+                                "tier": "env-evidence",
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            plan_path = root / "plan.json"
+            plan_path.write_text(
+                json.dumps({"selected_gates": []}),
+                encoding="utf-8",
+            )
+            ambient_lease_keys = {
+                key: os.environ.pop(key)
+                for key in module.MACHINE_LEASE_ENV_KEYS
+                if key in os.environ
+            }
+            try:
+                with mock.patch.dict(
+                    os.environ,
+                    {"PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "artifacts")},
+                    clear=False,
+                ), mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "acceptance-run.py",
+                        "--plan",
+                        str(plan_path),
+                        "--gates",
+                        str(gates_path),
+                        "--gate",
+                        "synthetic-context-gate",
+                    ],
+                ), mock.patch(
+                    "tooling.acceptance.core.source_identity",
+                    return_value={
+                        "commit": "abc123",
+                        "workspaceDigest": "clean",
+                    },
+                ), mock.patch.object(
+                    module,
+                    "environment_provisioner",
+                    return_value=environment_provisioner,
+                ), mock.patch.object(
+                    module,
+                    "provision_environment",
+                    return_value=(
+                        environment_provisioner,
+                        {
+                            "state": "FIXTURE_READY",
+                            "runId": "provisioning-run",
+                        },
+                        None,
+                    ),
+                ), mock.patch(
+                    "tooling.acceptance.core.GateProcessLauncher"
+                ) as launcher:
+                    launcher.return_value.run.side_effect = run_gate
+                    module.main()
+            finally:
+                os.environ.update(ambient_lease_keys)
+
+        child_environment = launcher.call_args.kwargs["environment"]
+        for key in module.MACHINE_LEASE_ENV_KEYS:
+            self.assertNotIn(key, child_environment)
+        self.assertEqual(cleanup_authority, lease_environment)
+        for key in module.MACHINE_LEASE_ENV_KEYS:
+            self.assertNotIn(key, os.environ)
+
     def test_main_preserves_parent_blocked_context_result(self) -> None:
         module = load_module()
         provisioner = mock.Mock(
