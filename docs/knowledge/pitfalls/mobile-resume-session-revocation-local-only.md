@@ -137,3 +137,34 @@ station-secondary=chat-native-four`, ~10 minutes, 310s route-expiry wait).
 - `sessionRuntime.test.ts` distinguishes the contracts: `restore()` must
   stay read-only, while any new revalidation belongs in the runtime
   descriptor `resume()` path or the refresh scheduler, not inside `restore()`.
+
+## Cross-installation revocation scope (gate blocker, 2026-11)
+
+The two simulator clients do **not** share an OAuth `device_id`. The
+acceptance fixture only presets the shared crypto identity seed
+(`mobile-crypto-identity.*` via `acceptance_replace_identity_seed`); the OAuth
+installation id (`oauth.device.id`, read in
+`runtime/oauth/mod.rs::load_or_create_identity`) is generated randomly per
+install and is never seeded by the harness. Station-side replacement
+revocation (`RevokeReplacedDeviceSessions`,
+`frame/core/facility/session/db_store.rs`) is scoped to
+`user_id + station_peer_id + device_id` and "replaces only sessions bound to
+the same Station and installation".
+
+Consequence: a same-account login on the peer simulator (a distinct
+installation) does not mark the primary simulator's session `revoked`, so a
+resume-time `oauth_session_refresh` (rotate) returns success, not 401. The
+client-side revalidation implemented here is correct for the same-installation
+case (covered by the real-kernel integration test), but it cannot observe a
+cross-installation takeover while revocation remains per-device. Closing the
+two-simulator AS-04 gate therefore needs one of:
+
+1. Station: actor-wide (cross-device) invalidation of the actor's other
+   sessions on same-account login, or
+2. A server-pushed revocation channel the mobile client observes, or
+3. The harness provisioning a shared `oauth.device.id` if the intent is a
+   same-installation replacement.
+
+This is an architectural/provisioning decision, not something additional
+client polling can resolve.
+
