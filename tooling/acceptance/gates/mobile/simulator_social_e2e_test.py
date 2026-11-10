@@ -1674,6 +1674,13 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(result["routeGeneration"], 7)
         self.assertEqual(result["beforeRouteRevision"], 4)
         self.assertEqual(result["afterRouteRevision"], 5)
+        observations = result["routeObservations"]
+        self.assertTrue(observations)
+        self.assertEqual(observations[0]["routeRevision"], 4)
+        self.assertEqual(observations[-1]["routeRevision"], 5)
+        self.assertIn(
+            "attestationExpiresAtUnixMs", observations[0]
+        )
 
     def test_station_outage_restores_same_source_bound_container(
         self,

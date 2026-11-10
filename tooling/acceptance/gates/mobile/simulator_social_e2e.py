@@ -4419,6 +4419,37 @@ return {
         deadline = started + ROUTE_RENEWAL_TIMEOUT_SECONDS
         next_keepalive = started + 60.0
         latest = before
+        # Bounded trace of the route identity the gate actually observed. The
+        # renewal timer is lazy and expiry-driven, so a timeout without this
+        # evidence cannot distinguish a missing attestation expiry from a
+        # routeRevision that never advances. Record only state changes to keep
+        # the artifact compact across the long wait. This stays clock-free so
+        # it does not perturb the surrounding poll timing.
+        observations: list[dict[str, Any]] = []
+        observation_index = 0
+
+        def record(snapshot: Mapping[str, Any]) -> None:
+            nonlocal observation_index
+            point = {
+                "index": observation_index,
+                "routeRevision": snapshot["routeRevision"],
+                "attestationExpiresAtUnixMs": snapshot[
+                    "attestationExpiresAtUnixMs"
+                ],
+                "health": snapshot["health"],
+            }
+            observation_index += 1
+            previous = observations[-1] if observations else None
+            if (
+                previous is None
+                or previous["routeRevision"] != point["routeRevision"]
+                or previous["attestationExpiresAtUnixMs"]
+                != point["attestationExpiresAtUnixMs"]
+                or previous["health"] != point["health"]
+            ):
+                observations.append(point)
+
+        record(before)
         while time.monotonic() < deadline:
             if (
                 keepalive_session is not None
@@ -4440,6 +4471,7 @@ return {
             latest = self._active_route_identity(
                 session.call_action("station.route.snapshot"),
             )
+            record(latest)
             if (
                 latest["stationPeerId"] != before["stationPeerId"]
                 or latest["routeId"] != before["routeId"]
@@ -4467,10 +4499,12 @@ return {
                     ),
                     "elapsedMs": int((time.monotonic() - started) * 1000),
                     "crossedPriorExpiry": True,
+                    "routeObservations": list(observations),
                 }
             time.sleep(1)
         raise GateError(
-            "Station route attestation did not renew across its prior expiry"
+            "Station route attestation did not renew across its prior expiry; "
+            f"observed route states={json.dumps(observations, ensure_ascii=False)}"
         )
 
     @staticmethod
