@@ -1996,13 +1996,17 @@ return node.value === value;
         option_index: int,
         label: str,
     ) -> None:
-        element_ref = session.find_element("css selector", selector)
-        session.click_element(element_ref)
-
         def select() -> bool | None:
             selected = session.execute_script(
                 """
-const index = arguments[0];
+const root = document.querySelector(arguments[0]);
+if (!root) return null;
+const index = arguments[1];
+const trigger = root.querySelector('.pt-select-trigger');
+if (trigger && trigger.getAttribute('aria-expanded') !== 'true') {
+  trigger.click();
+  return null;
+}
 const dropdowns = Array.from(document.querySelectorAll(
   '.pt-select-options[role="listbox"]'
 ));
@@ -2015,6 +2019,7 @@ if (!option) return null;
 option.click();
 return true;
 """,
+                selector,
                 option_index,
             )
             return True if selected is True else None

@@ -133,8 +133,8 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
     def test_select_antd_option_opens_current_root_control(self) -> None:
         session = Mock()
-        session.find_element.return_value = "select-element"
-        session.execute_script.return_value = True
+        # First poll opens the trigger, second poll selects the option.
+        session.execute_script.side_effect = [None, True]
         gate = SimulatorSocialGate("ios-social-parity")
 
         gate._select_antd_option(
@@ -144,12 +144,16 @@ class SimulatorSocialGateTests(unittest.TestCase):
             "Federation",
         )
 
-        session.find_element.assert_called_once_with(
-            "css selector",
+        self.assertEqual(session.execute_script.call_count, 2)
+        first = session.execute_script.call_args_list[0]
+        self.assertEqual(
+            first.args[1],
             '[data-acceptance-id="picker"] .pt-select',
         )
-        session.click_element.assert_called_once_with("select-element")
-        self.assertEqual(session.execute_script.call_args.args[1], 3)
+        self.assertEqual(first.args[2], 3)
+        self.assertIn(".pt-select-trigger", first.args[0])
+        session.find_element.assert_not_called()
+        session.click_element.assert_not_called()
 
     def test_post_action_uses_webdriver_element_click(self) -> None:
         session = Mock()
