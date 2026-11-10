@@ -1643,7 +1643,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
             "entries": [{
                 "stationPeerId": "station-1",
                 "activeRouteId": "route-1",
-                "routeRevision": 5,
+                "routeRevision": 4,
                 "routes": [{
                     "routeId": "route-1",
                     "routeGeneration": 7,
@@ -1672,12 +1672,15 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         self.assertTrue(result["crossedPriorExpiry"])
         self.assertEqual(result["routeGeneration"], 7)
+        # Same-route renewal preserves routeRevision by contract; only the
+        # attestation expiry advances while route identity stays stable.
         self.assertEqual(result["beforeRouteRevision"], 4)
-        self.assertEqual(result["afterRouteRevision"], 5)
+        self.assertEqual(result["afterRouteRevision"], 4)
+        self.assertTrue(result["routeRevisionStable"])
         observations = result["routeObservations"]
         self.assertTrue(observations)
         self.assertEqual(observations[0]["routeRevision"], 4)
-        self.assertEqual(observations[-1]["routeRevision"], 5)
+        self.assertEqual(observations[-1]["routeRevision"], 4)
         self.assertIn(
             "attestationExpiresAtUnixMs", observations[0]
         )

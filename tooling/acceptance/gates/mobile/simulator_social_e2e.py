@@ -4484,15 +4484,21 @@ return {
             if (
                 now_ms > initial_expiry
                 and latest["attestationExpiresAtUnixMs"] > initial_expiry
-                and latest["routeRevision"] > before["routeRevision"]
                 and latest["health"] == "available"
             ):
+                # Same-route attestation renewal preserves routeRevision by
+                # contract (see station_route.rs renew_route_with); the
+                # revision only advances on failover/retirement. Renewal is
+                # proven by the fresh expiry while route identity stays stable.
                 return {
                     "stationPeerId": before["stationPeerId"],
                     "routeId": before["routeId"],
                     "routeGeneration": before["routeGeneration"],
                     "beforeRouteRevision": before["routeRevision"],
                     "afterRouteRevision": latest["routeRevision"],
+                    "routeRevisionStable": (
+                        latest["routeRevision"] == before["routeRevision"]
+                    ),
                     "beforeExpiresAtUnixMs": initial_expiry,
                     "afterExpiresAtUnixMs": (
                         latest["attestationExpiresAtUnixMs"]
