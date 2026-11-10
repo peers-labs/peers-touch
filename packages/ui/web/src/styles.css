@@ -257,10 +257,13 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 /* Switch: a dense 36x20 binary control, not the 44x26 iOS pill. On carries
    the neutral action ink (role token --pt-switch-on, overridable per skin);
    hue stays reserved for semantic meaning. The knob is a crisp white that
-   travels by transform with the surface-out easing. */
-.pt-switch{position:relative;align-self:flex-start;flex:0 0 auto;width:36px;height:20px;padding:0;border:0;border-radius:999px;background:var(--pt-borderStrong);cursor:pointer;transition:background var(--pt-motion-surface) var(--pt-motion-out)}
-.pt-switch:hover:not(:disabled){background:var(--pt-muted)}
-.pt-switch[aria-checked=true]{background:var(--pt-switch-on,var(--pt-primary))}
+   travels by transform with the surface-out easing. The button is the hit
+   target and stays transparent; the track span owns the compact visual pill
+   so coarse-pointer hit areas can grow to 44x44 without resizing it. */
+.pt-switch{position:relative;align-self:flex-start;flex:0 0 auto;width:36px;height:20px;padding:0;border:0;background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.pt-switch-track{position:relative;width:36px;height:20px;flex:0 0 auto;border-radius:999px;background:var(--pt-borderStrong);transition:background var(--pt-motion-surface) var(--pt-motion-out)}
+.pt-switch:hover:not(:disabled) .pt-switch-track{background:var(--pt-muted)}
+.pt-switch[aria-checked=true] .pt-switch-track{background:var(--pt-switch-on,var(--pt-primary))}
 .pt-switch[aria-checked=true]:hover:not(:disabled){filter:brightness(1.06)}
 .pt-switch-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;background:var(--pt-white);border-radius:50%;box-shadow:0 1px 2px rgba(0,0,0,.28);transition:transform var(--pt-motion-surface) var(--pt-motion-out)}
 .pt-switch[aria-checked=true] .pt-switch-thumb{transform:translateX(16px)}
@@ -487,4 +490,4 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-textarea-accessory-count{font-size:12px;line-height:16px;color:var(--pt-secondary);font-variant-numeric:tabular-nums}
 .pt-choice-actions{display:flex;flex-direction:column;gap:var(--pt-space-xs)}
 @media(prefers-reduced-motion:reduce){.pt-ui *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-@media(pointer:coarse){.pt-ui .pt-icon-button,.pt-ui .pt-select-option,.pt-ui .pt-check-label,.pt-ui .pt-button{min-height:var(--pt-control-comfortable)}.pt-ui .pt-icon-button,.pt-ui .pt-check-label{min-width:var(--pt-control-comfortable)}}
+@media(pointer:coarse){.pt-ui .pt-icon-button,.pt-ui .pt-select-option,.pt-ui .pt-check-label,.pt-ui .pt-button{min-height:var(--pt-control-comfortable)}.pt-ui .pt-icon-button,.pt-ui .pt-check-label{min-width:var(--pt-control-comfortable)}.pt-ui .pt-switch{width:var(--pt-control-comfortable);height:var(--pt-control-comfortable)}}

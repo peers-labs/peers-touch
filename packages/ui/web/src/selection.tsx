@@ -74,7 +74,9 @@ export function Switch({ checked: controlled, defaultChecked = false, onCheckedC
   const track = <button {...props} className={`pt-switch ${className}`} type="button" role="switch" aria-checked={checked}
     aria-label={accessibleName} disabled={isDisabled}
     onClick={event => { props.onClick?.(event); if (!event.defaultPrevented) { setLocal(!checked); onCheckedChange?.(!checked); } }}>
-    <span className="pt-switch-thumb" />
+    <span className="pt-switch-track">
+      <span className="pt-switch-thumb" />
+    </span>
   </button>;
   if (!text) return track;
   return <span className="pt-switch-row">

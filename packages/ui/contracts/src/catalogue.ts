@@ -501,7 +501,7 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
       "execution=idle/pending/failed；默认 idle。",
       "availability=editable/locked；默认 editable，locked有原因。"
     ],
-    "geometryAndMotion": "intrinsic 36×20 track / 16 thumb，在 stretch 父容器内保持尺寸不拉伸；on 用角色墨色 token（--pt-switch-on，皮肤可覆写，默认 primary 中性墨），色相只留给语义事实；surface-out 140ms thumb 位移，reduced 静态；触摸命中≥24。",
+    "geometryAndMotion": "intrinsic 36×20 track / 16 thumb，在 stretch 父容器内保持尺寸不拉伸；on 用角色墨色 token（--pt-switch-on，皮肤可覆写，默认 primary 中性墨），色相只留给语义事实；surface-out 140ms thumb 位移，reduced 静态；按钮为透明命中盒、track span 承载视觉 pill，coarse pointer 下命中盒放大到 44×44，视觉轨道几何不变。",
     "extremeData": "远端旧值、极慢保存、离线、连续点击、账号切换与受策略锁定。",
     "publicContractFields": "settingId/confirmedValue/desiredValue/execution/lockedReason/onToggle"
   },
