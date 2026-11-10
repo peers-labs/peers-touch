@@ -291,21 +291,6 @@ export function RecoveryOverlayHost({
     ],
   );
 
-  if (fixture.surfaceId === 'recovery.session-valid-restore') {
-    return (
-      <div
-        className="recovery-overlay-host"
-        data-launch-state={lifecycle.launchState}
-        data-tabbar-visible={tabBarVisible}
-      >
-        <SessionRestoreNotice
-          t={t}
-          onContinue={() => setRecoverySurfaceFixture(null)}
-        />
-      </div>
-    );
-  }
-
   const fixtureState = recoveryStateForFixture(fixture.surfaceId);
   const visibleStates = fixture.surfaceId
     ? (fixtureState ? [fixtureState] : [])
@@ -339,6 +324,23 @@ export function RecoveryOverlayHost({
       cancelled = true;
     };
   }, [actorIdentityRecoveryVisible, fixture.surfaceId]);
+
+  // Session restore is fixture-only and has no runtime recovery state, so it
+  // renders after every hook above has run unconditionally (Rules of Hooks).
+  if (fixture.surfaceId === 'recovery.session-valid-restore') {
+    return (
+      <div
+        className="recovery-overlay-host"
+        data-launch-state={lifecycle.launchState}
+        data-tabbar-visible={tabBarVisible}
+      >
+        <SessionRestoreNotice
+          t={t}
+          onContinue={() => setRecoverySurfaceFixture(null)}
+        />
+      </div>
+    );
+  }
 
   if (visibleStates.length === 0) return null;
 
