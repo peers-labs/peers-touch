@@ -77,14 +77,17 @@ class SimulatorSocialGateTests(unittest.TestCase):
             _label: str,
         ) -> int:
             nonlocal selected
-            self.assertIn("label.ant-radio-wrapper:has(", control_selector)
+            self.assertIn("label.pt-check-label:has(", control_selector)
             self.assertIn(f'value="{receiver.federation_id}"', selector)
-            self.assertIn(".ant-input-search-btn", enabled_selector)
+            self.assertIn(
+                '[data-action-id="social-search-run"]',
+                enabled_selector,
+            )
             selected = True
             return 7
 
         def click(_session: object, selector: str, _label: str) -> None:
-            if ".ant-input-search-btn" in selector:
+            if 'data-action-id="social-search-run"' in selector:
                 self.assertTrue(selected, "search cannot submit without a Federation")
 
         def set_value(
@@ -113,7 +116,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         index = SimulatorSocialGate._select_radio(
             session,
-            'label.ant-radio-wrapper:has(input[value="federation-1"])',
+            'label.pt-check-label:has(input[value="federation-1"])',
             'input[type="radio"][value="federation-1"]',
             ".search-submit",
             "Federation",
@@ -121,7 +124,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         session.find_element.assert_called_once_with(
             "css selector",
-            'label.ant-radio-wrapper:has(input[value="federation-1"])',
+            'label.pt-check-label:has(input[value="federation-1"])',
         )
         session.click_element.assert_called_once_with("radio-element")
         self.assertEqual(session.execute_script.call_count, 2)
@@ -138,14 +141,14 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         gate._select_antd_option(
             session,
-            '[data-acceptance-id="picker"] .ant-select',
+            '[data-acceptance-id="picker"] .pt-select',
             3,
             "Federation",
         )
 
         session.find_element.assert_called_once_with(
             "css selector",
-            '[data-acceptance-id="picker"] .ant-select',
+            '[data-acceptance-id="picker"] .pt-select',
         )
         session.click_element.assert_called_once_with("select-element")
         self.assertEqual(session.execute_script.call_args.args[1], 3)

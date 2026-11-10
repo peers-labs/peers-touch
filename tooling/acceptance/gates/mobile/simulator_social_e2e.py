@@ -1165,27 +1165,33 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         federation_control_selector = (
             '[data-acceptance-id="social-search-page"] '
-            "label.ant-radio-wrapper:has("
+            "label.pt-check-label:has("
             f'input[type="radio"][value="{receiver.federation_id}"])'
+        )
+        search_submit_selector = (
+            '[data-action-id="social-search-run"]'
+        )
+        self._wait_ui(
+            session,
+            federation_selector,
+            "Social Search Federation",
         )
         self._select_radio(
             session,
             federation_control_selector,
             federation_selector,
-            '[data-acceptance-id="social-search-input"] '
-            ".ant-input-search-btn",
+            search_submit_selector,
             "Social Search Federation",
         )
         self._set_ui_value(
             session,
-            '[data-acceptance-id="social-search-input"] input',
+            '[data-acceptance-id="social-search-input"]',
             receiver.role,
             "Social Search query",
         )
         self._click_ui(
             session,
-            '[data-acceptance-id="social-search-input"] '
-            ".ant-input-search-btn",
+            search_submit_selector,
             "Social Search submit",
         )
         result_selector = (
@@ -1281,20 +1287,19 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._select_antd_option(
             sender_session,
-            '[data-acceptance-id="social-circle-member-picker"] .ant-select',
+            '[data-acceptance-id="social-circle-member-picker"] .pt-select',
             0,
             "Circle member Federation",
         )
         self._set_ui_value(
             sender_session,
-            '[data-acceptance-id="social-circle-member-search"] input',
+            '[data-acceptance-id="social-circle-member-search"]',
             receiver.role,
             "Circle member search",
         )
         self._click_ui(
             sender_session,
-            '[data-acceptance-id="social-circle-member-search"] '
-            ".ant-input-search-btn",
+            '[data-action-id="social-circle-member-search-run"]',
             "Circle member search submit",
         )
         candidate_selector = (
@@ -1993,11 +1998,11 @@ return node.value === value;
                 """
 const index = arguments[0];
 const dropdowns = Array.from(document.querySelectorAll(
-  '.ant-select-dropdown:not(.ant-select-dropdown-hidden)'
+  '.pt-select-options[role="listbox"]'
 ));
 const dropdown = dropdowns.at(-1);
 const options = dropdown
-  ? Array.from(dropdown.querySelectorAll('.ant-select-item-option'))
+  ? Array.from(dropdown.querySelectorAll('.pt-select-option[role="option"]'))
   : [];
 const option = options[index];
 if (!option) return null;
