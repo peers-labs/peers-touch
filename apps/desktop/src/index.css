@@ -493,6 +493,53 @@ input, textarea, [contenteditable="true"] {
   }
 }
 
+/*
+ * Phone-narrow auth (window floor is 360x480): the 352px card has no room to
+ * float inside a <=480px window, so the centered-card grammar degrades into a
+ * page grammar — card chrome disappears into the paper canvas, content
+ * top-anchors with compact insets instead of centering inside split bands of
+ * empty canvas. Wide windows keep the calm centered card above untouched.
+ */
+@media (max-width: 480px) {
+  .pt-auth-shell {
+    padding: 12px 16px;
+    align-items: flex-start;
+  }
+
+  .pt-auth-region {
+    min-height: 0;
+  }
+
+  .pt-auth-card {
+    width: 100%;
+    margin-block: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .pt-auth-card .pt-card-body {
+    padding: 8px 4px 10px;
+    gap: 10px;
+  }
+
+  .pt-auth-card > footer {
+    padding: 0 4px 12px;
+  }
+
+  .pt-auth-back {
+    margin: 0;
+  }
+
+  .pt-auth-title {
+    margin: 0;
+  }
+
+  .pt-auth-station {
+    margin-top: 8px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-pt-agent-workbench],
   [data-pt-agent-workbench] *,
