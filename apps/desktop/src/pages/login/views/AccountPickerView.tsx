@@ -41,19 +41,31 @@ export const AccountPickerView = memo(function AccountPickerView({
               />
             }
             trailing={
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {!account.hasSession && (
-                  <Tag tone="warning">{t('auth.accountPicker.signInBadge')}</Tag>
-                )}
-                {account.hasPin && (
-                  <Icon
-                    iconId="shield-check"
-                    size={15}
-                    label={t('auth.accountPicker.signInRequired')}
-                    style={{ color: account.hasSession ? 'var(--pt-success)' : 'var(--pt-muted)' }}
-                  />
-                )}
-                <Icon iconId="chevron-right" size={15} />
+              <span className="pt-auth-account-trailing">
+                <span className="pt-auth-account-trailing__badge">
+                  {!account.hasSession && (
+                    <Tag tone="warning">{t('auth.accountPicker.signInBadge')}</Tag>
+                  )}
+                </span>
+                {/* Fixed-width PIN slot: reserves the same space whether or
+                    not the shield renders, so the badge and chevron stay
+                    vertically aligned across every row. */}
+                <span
+                  className="pt-auth-account-trailing__pin"
+                  aria-hidden={account.hasPin ? undefined : true}
+                >
+                  {account.hasPin && (
+                    <Icon
+                      iconId="shield-check"
+                      size={15}
+                      label={t('auth.accountPicker.signInRequired')}
+                      style={{ color: account.hasSession ? 'var(--pt-success)' : 'var(--pt-muted)' }}
+                    />
+                  )}
+                </span>
+                <span className="pt-auth-account-trailing__chevron" aria-hidden="true">
+                  <Icon iconId="chevron-right" size={15} />
+                </span>
               </span>
             }
             onActivate={() => onSelectAccount(account)}

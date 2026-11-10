@@ -38,8 +38,8 @@
   animation: pt-search-in 0.16s ease-out;
 }
 @keyframes pt-search-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .pt-search-field-area { flex: none; padding: 14px 16px 6px; }
 /* Field grammar mirrors the app .pt-field-frame: hairline border on a raised

@@ -89,10 +89,11 @@ export const LoginFormView = memo(function LoginFormView({
 }: LoginFormViewProps) {
   const { t } = useTranslation('auth');
 
-  // An expired/revoked saved session gets an explicit re-login notice so the
-  // routed sign-in form carries context instead of appearing as a silent
-  // dead-end. A plain "continue" re-auth shows no notice.
-  const showReauthNotice = !!expiredAccount && reauthReason === 'revoked' && !gateState;
+  // A revoked saved session is surfaced directly on the identity tile (dimmed
+  // identity + glass warning overlay) instead of a separate strip, so the
+  // reason reuses the tile's footprint without stealing vertical space. A
+  // plain "continue" re-auth keeps the normal tile.
+  const isRevokedSession = !!expiredAccount && reauthReason === 'revoked' && !gateState;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -194,9 +195,20 @@ export const LoginFormView = memo(function LoginFormView({
           actionId="auth.reauth.identity"
           fullWidth
           emphasis="secondary"
-          className="pt-auth-reauth"
+          className={
+            isRevokedSession
+              ? 'pt-auth-reauth pt-auth-reauth--expired'
+              : 'pt-auth-reauth'
+          }
           data-login-reauth-account={expiredAccount.accountId}
-          aria-label={t('auth.login.reauthIdentity', { name: expiredAccount.name })}
+          aria-label={
+            isRevokedSession
+              ? `${t('auth.login.expiredAlertTitle')} · ${t(
+                  'auth.login.reauthIdentity',
+                  { name: expiredAccount.name },
+                )}`
+              : t('auth.login.reauthIdentity', { name: expiredAccount.name })
+          }
           availability={
             oauthFlowLocked
               ? { kind: 'disabled', reason: t('auth.login.waiting') }
@@ -212,7 +224,12 @@ export const LoginFormView = memo(function LoginFormView({
             />
           }
           trailing={<Icon iconId="chevron-right" size={15} />}
-          onActivate={() => onReauthIdentity?.()}
+          onActivate={() => {
+            // Reuse the account's stored login identifier so the email field
+            // is pre-filled instead of forcing the user to retype it.
+            if (expiredAccount.email) setEmail(expiredAccount.email);
+            onReauthIdentity?.();
+          }}
         >
           <span className="pt-auth-reauth-meta">
             <span className="pt-auth-reauth-name">{expiredAccount.name}</span>
@@ -220,16 +237,13 @@ export const LoginFormView = memo(function LoginFormView({
               <span className="pt-auth-reauth-handle">{expiredAccount.email}</span>
             )}
           </span>
+          {isRevokedSession && (
+            <span className="pt-auth-reauth__expired" aria-hidden="true">
+              <Icon iconId="warning" size={14} />
+              <span>{t('auth.login.expiredAlertTitle')}</span>
+            </span>
+          )}
         </Button>
-      )}
-
-      {showReauthNotice && (
-        <Alert
-          tone="warning"
-          variant="inline"
-          data-login-reauth-notice
-          title={t('auth.login.expiredAlertTitle')}
-        />
       )}
 
       <Segmented<LoginTab>

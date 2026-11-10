@@ -53,12 +53,13 @@
   background: color-mix(in srgb, var(--pt-text) 7%, transparent);
 }
 /* Expanded in-rail search lives INSIDE the same band and takes over the tab
-   space: a soft fade + 6px slide, never an instant swap. */
+   space. It fades in place only — no translate, so the header band never
+   shifts (surface/route motion must not move geometry). */
 .sc-rail-search {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  animation: sc-rail-search-in 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: sc-rail-search-in 0.16s ease-out;
 }
 .sc-rail-search .sc-rail-search-field { flex: 1 1 auto; min-width: 0; }
 .sc-rail-search .pt-field-frame {
@@ -82,8 +83,8 @@
   flex-shrink: 0;
 }
 @keyframes sc-rail-search-in {
-  from { opacity: 0; transform: translateX(6px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sc-rail-search { animation: none; }
@@ -1492,7 +1493,8 @@
 /* Runtime reset confirm footer */
 .sc-reset-confirm__footer { display: flex; justify-content: flex-end; gap: 8px; }
 /* Small composer glyphs are 34px circular quiet buttons (prototype
-   sk-composer-tool parity); the send control below stays a squircle. */
+   sk-composer-tool parity); the send control below matches the same circular
+   footprint, distinguished only by its primary fill. */
 .sc-composer__tool.pt-button {
   width: 34px;
   height: 34px;
@@ -1508,14 +1510,16 @@
   background: color-mix(in srgb, var(--pt-danger) 10%, transparent);
 }
 /* Send is a peers-ui IconButton (emphasis=primary): the library owns the ink
-   capsule fill, hover lift and disabled wash. App CSS fixes the 36px squircle
-   footprint so it aligns with the composer tool rhythm (prototype parity). */
+   capsule fill, hover lift and disabled wash. App CSS pins it to the same
+   34px circular footprint as the composer tools so the row reads as one
+   consistent icon-button set; the primary fill still distinguishes the send
+   action from the quiet tools. */
 .sc-composer__send.pt-icon-button {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   min-height: 0;
   padding: 0;
-  border-radius: var(--pt-radius-md);
+  border-radius: 999px;
 }
 .sc-composer__uploading { font-size: 12px; color: var(--pt-secondary); }
 .chat-composer-spin { animation: chat-composer-spin 1s linear infinite; }
@@ -4278,6 +4282,12 @@
  * ───────────────────────────────────────────────────────────────────────── */
 .sc-chat-head__back { display: none; }
 
+/* Narrow pane swap is an INSTANT visibility flip, never a sliding page.
+   The desktop shell is a native-style persistent tree (keepAlive pages), so
+   a conversation is already mounted and hot; animating the whole pane with a
+   translateX(100%) sweep reads as an H5 full-page reload and makes the header,
+   scroll region and composer jitter. Surface/route transition rules:
+   docs/client/common/ui-identity/craft-quality.md §12. */
 @media (max-width: 720px) {
   .sc-chat[data-narrow='true'] { overflow-x: hidden; }
 
@@ -4333,5 +4343,30 @@
     width: 32px;
     height: 32px;
     min-height: 32px;
+  }
+}
+
+/* Phone-narrow composer: the single-row pill holds four tools + the input +
+   expand/send, which cannot share the ~300px conversation pane below 480px.
+   Wrap into a full-width input row above a tool/send row instead of squeezing
+   the textarea into a vertical letter strip. Every control stays mounted and
+   keyboard-reachable (chat-layout-contract §6/§7: narrow degrades toward the
+   mobile single-pane model, affordances are not hidden). */
+@media (max-width: 480px) {
+  .sc-composer__row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sc-composer__row .sc-composer__input-wrap {
+    flex: 1 1 100%;
+    order: -1;
+  }
+  .sc-composer__row .sc-composer__tools {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .sc-composer__row .sc-composer__send-group {
+    flex: 0 0 auto;
+    margin-left: auto;
   }
 }

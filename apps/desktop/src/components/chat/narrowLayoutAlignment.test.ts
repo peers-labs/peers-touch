@@ -110,6 +110,33 @@ describe('720px single-pane swap stylesheet contract', () => {
       /\.sc-chat\[data-narrow='true'\] \.sc-detail,[\s\S]*?\.sc-thread \{[\s\S]*?position: absolute/,
     );
   });
+
+  it('swaps panes instantly without a full-pane slide (native, not H5 reload)', () => {
+    const narrow = mediaBlockBodies(720, stylesheet);
+    // The conversation pane must NOT carry an enter animation: a mounted
+    // keepAlive surface flips visibility, so a translateX sweep would read as
+    // a web full-page reload and jitter the header/scroll/composer.
+    expect(stylesheet).not.toContain('sc-conversation-slide-in');
+    expect(narrow).not.toMatch(
+      /data-narrow-open='true'\] \.sc-conversation\s*\{[^}]*animation:/,
+    );
+    expect(stylesheet).not.toMatch(/@keyframes sc-conversation-slide-in/);
+    // No full-pane horizontal travel anywhere in the narrow swap block.
+    expect(narrow).not.toContain('translateX(100%)');
+  });
+
+  it('keeps in-rail search reveal to a pure fade, never a geometric shift', () => {
+    // Inline surface reveal may fade but must not translate (no layout shift).
+    expect(stylesheet).toMatch(
+      /@keyframes sc-rail-search-in\s*\{\s*from\s*\{\s*opacity:\s*0;\s*\}\s*to\s*\{\s*opacity:\s*1;\s*\}\s*\}/,
+    );
+    const railSearchBlock = stylesheet.slice(
+      stylesheet.indexOf('@keyframes sc-rail-search-in'),
+      stylesheet.indexOf('@keyframes sc-rail-search-in') + 200,
+    );
+    expect(railSearchBlock).not.toContain('translateX');
+    expect(railSearchBlock).not.toContain('translateY');
+  });
 });
 
 describe('480px phone compact contract', () => {
@@ -117,5 +144,51 @@ describe('480px phone compact contract', () => {
     expect(stylesheet).toContain('@media (max-width: 480px)');
     expect(stylesheet).toContain("[data-action-id='chat-call-video']");
     expect(stylesheet).toContain("[data-action-id='chat-open-detail']");
+  });
+});
+
+// Concatenate the bodies of every `@media (max-width: Npx)` block. Brace
+// matching is required because each media block nests several rule braces, so
+// a flat selector regex cannot tell an in-media rule from a base rule.
+function mediaBlockBodies(maxWidth: number, source: string): string {
+  const marker = `@media (max-width: ${maxWidth}px)`;
+  const bodies: string[] = [];
+  let from = 0;
+  let idx = source.indexOf(marker, from);
+  while (idx !== -1) {
+    const open = source.indexOf('{', idx);
+    let depth = 0;
+    let close = open;
+    for (; close < source.length; close += 1) {
+      if (source[close] === '{') depth += 1;
+      else if (source[close] === '}') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    bodies.push(source.slice(open + 1, close));
+    from = close + 1;
+    idx = source.indexOf(marker, from);
+  }
+  return bodies.join('\n');
+}
+
+describe('480px composer wrap contract', () => {
+  const narrow = mediaBlockBodies(480, stylesheet);
+
+  it('wraps the composer row and lifts the input to a full-width first row', () => {
+    expect(narrow).toMatch(/\.sc-composer__row\s*\{[^}]*flex-wrap: wrap/);
+    expect(narrow).toMatch(
+      /\.sc-composer__row \.sc-composer__input-wrap\s*\{[^}]*flex: 1 1 100%[^}]*order: -1/,
+    );
+  });
+
+  it('keeps every composer control mounted on a second tool/send row (no display:none)', () => {
+    expect(narrow).toMatch(/\.sc-composer__row \.sc-composer__tools\s*\{[^}]*flex: 1 1 auto/);
+    expect(narrow).toMatch(
+      /\.sc-composer__row \.sc-composer__send-group\s*\{[^}]*flex: 0 0 auto/,
+    );
+    const composerRules = narrow.match(/\.sc-composer[^{]*\{[^}]*\}/g) ?? [];
+    expect(composerRules.some((rule) => rule.includes('display: none'))).toBe(false);
   });
 });

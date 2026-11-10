@@ -1270,7 +1270,9 @@ export function ChatMessageArea({
               icon={<Icon iconId="message-circle" size={36} className="sc-conversation-empty__icon" />}
               description={
                 <span className="sc-conversation-empty__hint">
-                  {t('chat.social.messageArea.noMessages')}
+                  {isSelfDirect
+                    ? t('chat.social.contacts.savedMessagesHint')
+                    : t('chat.social.messageArea.noMessages')}
                 </span>
               }
             />

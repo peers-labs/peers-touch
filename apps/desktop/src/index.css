@@ -185,9 +185,9 @@ input, textarea, [contenteditable="true"] {
   align-items: center;
 }
 
-/* Centered brand hero: the square app icon keeps its white rounded tile; the
-   transparent corners let the tinted card read through. A physical 2mm frame
-   defines the edge, so no drop shadow is needed to separate the tile. */
+/* Centered brand hero: the square app icon already ships as a white rounded
+   tile with transparent corners, so it sits directly on the tinted card
+   without an extra border frame or drop shadow. */
 .pt-auth-brand-hero {
   display: flex;
   justify-content: center;
@@ -198,7 +198,6 @@ input, textarea, [contenteditable="true"] {
   width: 96px;
   height: 96px;
   object-fit: contain;
-  border: 2mm solid var(--pt-border);
   border-radius: var(--pt-radius-xl);
 }
 
@@ -212,11 +211,14 @@ input, textarea, [contenteditable="true"] {
 
 /* Re-authentication identity tile: an interactive secondary button whose
    chrome (surface, hairline, hover) comes from .pt-button. This rule only owns
-   layout — left-aligned avatar + meta, chevron pinned at the trailing edge. */
+   layout — left-aligned avatar + meta, chevron pinned at the trailing edge.
+   Position context anchors the expired-session glass overlay to the tile. */
 .pt-auth-reauth.pt-button {
   justify-content: flex-start;
   width: 100%;
   padding-block: 9px;
+  position: relative;
+  overflow: hidden;
 }
 
 /* The button content wrapper only hugs content by default; span the full row
@@ -246,6 +248,35 @@ input, textarea, [contenteditable="true"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Expired-session state: push the identity content down and present the reason
+   as a frosted glass layer over the same tile, so the warning reuses the tile's
+   footprint instead of a separate strip that wastes vertical space. The
+   identity pieces dim individually (never the button itself) so the warning
+   label on the overlay stays full contrast. */
+.pt-auth-reauth--expired .pt-button-content > :not(.pt-auth-reauth__expired) {
+  opacity: 0.45;
+}
+
+.pt-auth-reauth__expired {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pt-space-xs);
+  border-radius: inherit;
+  /* Blur and tint are separate knobs: low-alpha warning surface reads as
+     frosted glass, not a dark scrim. Never intercepts the tile's click. */
+  background: color-mix(in srgb, var(--pt-warningSubtle) 82%, transparent);
+  -webkit-backdrop-filter: blur(6px) saturate(1.15);
+  backdrop-filter: blur(6px) saturate(1.15);
+  color: var(--pt-warning);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 /* Login CTA carries the pine brand accent on this surface (scoped override of
@@ -370,6 +401,33 @@ input, textarea, [contenteditable="true"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Trailing cluster uses fixed-width slots so the sign-in badge, PIN shield and
+   chevron land on the same vertical edges in every row, even when a row has no
+   shield. Alignment comes from the slot geometry, never from nudging margins. */
+.pt-auth-account-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.pt-auth-account-trailing__badge {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Both icon slots reserve the icon box unconditionally. An empty slot keeps
+   the width so a missing shield cannot shift the badge or chevron. */
+.pt-auth-account-trailing__pin,
+.pt-auth-account-trailing__chevron {
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 15px;
 }
 
 .pt-auth-identity {
@@ -595,4 +653,17 @@ input, textarea, [contenteditable="true"] {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+/*
+ * Desktop feedback toasts float from the bottom-right. The shared peers-ui
+ * `.pt-toast-host` defaults to top-right; desktop overrides it here (scoped +
+ * higher specificity so it does not depend on stylesheet order and never
+ * touches other consumers of the shared package). Bottom-right keeps the
+ * notice beside the composer instead of covering the conversation header.
+ */
+body .pt-toast-host {
+  top: auto;
+  bottom: var(--pt-space-md);
+  right: var(--pt-space-md);
 }

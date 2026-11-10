@@ -42,12 +42,12 @@ describe('composer pill (north-star .sk-composer parity)', () => {
     expect(composerSource).not.toContain('0.18s ease');
   });
 
-  it('renders tool glyphs as 34px circles and send as a 36px squircle', () => {
+  it('renders tool glyphs and send as a matched set of 34px circles', () => {
     expect(rule('.sc-composer__tool.pt-button')).toContain('border-radius: 999px');
     const send = rule('.sc-composer__send.pt-icon-button');
-    expect(send).toContain('width: 36px');
-    expect(send).toContain('height: 36px');
-    expect(send).toContain('border-radius: var(--pt-radius-md)');
+    expect(send).toContain('width: 34px');
+    expect(send).toContain('height: 34px');
+    expect(send).toContain('border-radius: 999px');
   });
 });
 

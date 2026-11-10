@@ -119,11 +119,16 @@ export const mapChatError: ErrorMapper<ChatErrorContext> = (error, context) => {
     return presentedError('chat.conversationUnavailable', 'error.chat.conversationUnavailable');
   }
 
+  // Surface the underlying reason instead of a bare "failed" toast. Station
+  // failures prefer the structured reason; local/Rust failures fall back to
+  // their one-line error message so the user can tell what actually went wrong
+  // (e.g. an invalid conversation membership projection vs. a network error).
+  const detail = reason || message;
   return presentedError(
     `chat.${context?.operation ?? 'operation'}Failed`,
     operationFallback(context?.operation ?? 'send'),
     true,
     message,
-    context?.operation === 'createGroup' ? reason : undefined,
+    detail,
   );
 };

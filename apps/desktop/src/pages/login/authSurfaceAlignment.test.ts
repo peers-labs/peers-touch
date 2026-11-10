@@ -24,6 +24,10 @@ const formSource = readFileSync(
   new URL('./views/LoginFormView.tsx', import.meta.url),
   'utf8',
 );
+const pickerSource = readFileSync(
+  new URL('./views/AccountPickerView.tsx', import.meta.url),
+  'utf8',
+);
 const switcherSource = readFileSync(
   new URL('./StationSwitcher.tsx', import.meta.url),
   'utf8',
@@ -77,12 +81,20 @@ describe('auth re-authentication identity tile', () => {
     // The tile must be a real control with a stable action + data hook.
     expect(formSource).toContain('actionId="auth.reauth.identity"');
     expect(formSource).toContain('data-login-reauth-account={expiredAccount.accountId}');
-    expect(formSource).toContain('onActivate={() => onReauthIdentity?.()}');
+    expect(formSource).toMatch(/onActivate=\{\(\) => \{[\s\S]*?onReauthIdentity\?\.\(\);/);
     // The old non-interactive strip must be gone.
     expect(formSource).not.toMatch(/<div className="pt-auth-reauth">/);
     // Its own border/background moved to button chrome; the class is layout-only.
     expect(stylesheet).toMatch(/\.pt-auth-reauth\.pt-button\s*\{/);
     expect(stylesheet).not.toMatch(/\.pt-auth-reauth\s*\{[^}]*background: var\(--pt-subtle\)/);
+  });
+
+  it('pre-fills the stored login identifier when the tile is clicked', () => {
+    // Clicking the account pushes its stored email into the visible field so
+    // the user does not retype it, then routes through the provider sign-in.
+    expect(formSource).toMatch(
+      /if \(expiredAccount\.email\) setEmail\(expiredAccount\.email\);/,
+    );
   });
 
   it('routes the tile click to the provider sign-in method in LoginPage', () => {
@@ -144,19 +156,33 @@ describe('auth account-selection continuity', () => {
     expect(selectBlock).not.toContain('routeToProviderLogin(account, false)');
   });
 
-  it('renders a compact inline expired-session notice without stealing focus', () => {
-    // reauthReason is now consumed (it was a dead prop) and gates the Alert.
+  it('surfaces the expired-session reason as a glass overlay on the identity tile', () => {
+    // reauthReason is consumed to gate the revoked treatment (not a dead prop).
     expect(formSource).toContain('reauthReason,');
     expect(formSource).toContain(
-      "const showReauthNotice = !!expiredAccount && reauthReason === 'revoked' && !gateState;",
+      "const isRevokedSession = !!expiredAccount && reauthReason === 'revoked' && !gateState;",
     );
-    expect(formSource).toContain('data-login-reauth-notice');
-    // Inline rail (2px tone edge), title only — no bordered card, no subtitle
-    // paragraph — so the notice never competes with the primary sign-in actions.
-    expect(formSource).toMatch(/<Alert[\s\S]*?variant="inline"/);
+    // The old standalone alert strip and its hook are gone — the reason reuses
+    // the tile footprint instead of a separate row wasting vertical space.
+    expect(formSource).not.toContain('data-login-reauth-notice');
+    expect(formSource).toContain("'pt-auth-reauth pt-auth-reauth--expired'");
+    expect(formSource).toContain('pt-auth-reauth__expired');
     expect(formSource).toContain("t('auth.login.expiredAlertTitle')");
-    const alertBlock = formSource.slice(formSource.indexOf('data-login-reauth-notice') - 120);
-    expect(alertBlock).not.toContain('expiredSubtitle');
+    // The overlay floats over the tile, never intercepts the tile's click, and
+    // derives its glass/warning look from design tokens (no hardcoded colors).
+    expect(stylesheet).toMatch(
+      /\.pt-auth-reauth__expired\s*\{[\s\S]*?position:\s*absolute/,
+    );
+    expect(stylesheet).toMatch(
+      /\.pt-auth-reauth__expired\s*\{[\s\S]*?pointer-events:\s*none/,
+    );
+    expect(stylesheet).toMatch(/\.pt-auth-reauth__expired\s*\{[\s\S]*?backdrop-filter/);
+    expect(stylesheet).toContain('var(--pt-warningSubtle)');
+    expect(stylesheet).toContain('var(--pt-warning)');
+    // The identity pieces dim individually so the warning label stays crisp.
+    expect(stylesheet).toContain(
+      '.pt-auth-reauth--expired .pt-button-content > :not(.pt-auth-reauth__expired)',
+    );
     // The title copy exists in both shipped languages.
     const en = readFileSync(
       new URL('../../../../../packages/locales/en/auth.json', import.meta.url),
@@ -200,8 +226,9 @@ describe('auth centered brand hero', () => {
     expect(pageSource).not.toContain('BRANDING.logos.wordmark');
     expect(stylesheet).toMatch(/\.pt-auth-brand-logo\s*\{[\s\S]*?width: 96px/);
     expect(stylesheet).toMatch(/\.pt-auth-brand-logo\s*\{[\s\S]*?height: 96px/);
-    // The frame is a physical 2mm hairline-derived border, not a drop shadow.
-    expect(stylesheet).toMatch(/\.pt-auth-brand-logo\s*\{[^}]*border: 2mm solid/);
+    // The app icon is its own white rounded tile; no extra border frame or
+    // drop shadow surrounds it (the former 2mm frame read as a clunky box).
+    expect(stylesheet).not.toMatch(/\.pt-auth-brand-logo\s*\{[^}]*border:/);
     expect(stylesheet).not.toMatch(/\.pt-auth-brand-logo\s*\{[^}]*box-shadow/);
     // The old corner wordmark slot must not linger.
     expect(pageSource).not.toContain('pt-auth-brand-wordmark');
@@ -258,5 +285,27 @@ describe('auth surface structural hooks', () => {
     // The switcher stays a popover trigger; the redesign is structural/CSS only.
     expect(switcherSource).toContain('actionId="auth.station.switch"');
     expect(switcherSource).toContain('className="pt-auth-station-trigger"');
+  });
+});
+
+describe('account picker row trailing alignment', () => {
+  it('mounts fixed badge / PIN / chevron slots on every row', () => {
+    expect(pickerSource).toContain('className="pt-auth-account-trailing"');
+    expect(pickerSource).toContain('className="pt-auth-account-trailing__badge"');
+    expect(pickerSource).toContain('className="pt-auth-account-trailing__pin"');
+    expect(pickerSource).toContain('className="pt-auth-account-trailing__chevron"');
+    // The PIN slot is always present; the shield itself renders conditionally
+    // inside it, so a missing shield cannot change the row geometry.
+    expect(pickerSource).toMatch(/__pin"[\s\S]*?\{account\.hasPin &&/);
+  });
+
+  it('gives the PIN and chevron slots a fixed icon box in the stylesheet', () => {
+    expect(stylesheet).toMatch(
+      /\.pt-auth-account-trailing__pin,[\s\S]*?\.pt-auth-account-trailing__chevron\s*\{[\s\S]*?flex: 0 0 15px/,
+    );
+  });
+
+  it('does not lay the trailing cluster out with an inline flex style', () => {
+    expect(pickerSource).not.toMatch(/style=\{\{[^}]*display:\s*'inline-flex'/);
   });
 });

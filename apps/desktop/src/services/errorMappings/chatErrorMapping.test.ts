@@ -55,3 +55,33 @@ describe('mapChatError Group creation', () => {
     ).toContain('station-five');
   });
 });
+
+describe('mapChatError send fallback', () => {
+  it('appends the underlying reason so a send failure is not an opaque toast', () => {
+    const error = new Error(
+      'messaging Direct conversation membership projection is invalid',
+    );
+
+    const presentation = mapChatError(error, { operation: 'send' });
+    expect(presentation?.code).toBe('chat.sendFailed');
+    expect(presentation?.message).toContain('error.chat.sendFailed');
+    // The concrete Rust-level reason must survive into the user-visible copy.
+    expect(presentation?.message).toContain(
+      'membership projection is invalid',
+    );
+    expect(presentation?.debugMessage).toBe(error.message);
+  });
+
+  it('prefers the structured station reason when present', () => {
+    const error = new RustCommandException('messaging_send_message', {
+      code: 'INTERNAL_ERROR',
+      message: 'engine rejected send',
+      details: { reason: 'not a member of this conversation' },
+    });
+
+    const presentation = mapChatError(error, { operation: 'send' });
+    expect(presentation?.message).toContain(
+      'not a member of this conversation',
+    );
+  });
+});
