@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import dataclasses
 import hashlib
 import json
@@ -3206,6 +3207,13 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             self.assertTrue(reset_authorized)
             reset_calls.append((deployment, actors))
 
+        binding_entries: list[tuple[str, ...]] = []
+
+        @contextlib.contextmanager
+        def record_bound_profiles(profiles: object) -> object:
+            binding_entries.append(tuple(sorted(profiles)))  # type: ignore[arg-type]
+            yield
+
         services = {
             service_id: self._attestation(service_id)
             for service_id in ("station-primary", "station-secondary")
@@ -3224,6 +3232,11 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "require_station_reset_authority",
                 return_value={"validation": "current"},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "bound_reset_profiles",
+                side_effect=record_bound_profiles,
             ),
             patch.object(
                 provisioner,
@@ -3283,6 +3296,16 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
 
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertTrue(context_cleanup.succeeded)
+        # One binding context during fixture provision and one per reverse
+        # cleanup target; every entry must authorize both distinct Stations.
+        self.assertEqual(
+            binding_entries,
+            [
+                ("primary", "secondary"),
+                ("primary", "secondary"),
+                ("primary", "secondary"),
+            ],
+        )
         payload = manifest.to_dict()
         self.assertNotEqual(
             manifest.run_id,

@@ -22,8 +22,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -87,6 +88,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     prepare_local_friend_request_lifecycle,
     reset_fixture_follow_edges,
 )
+from tooling.acceptance.fixtures.chat_reset_targets import bound_reset_profiles
 from tooling.acceptance.gates.mobile.simulator_harness_contract import (
     CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS,
     CHAT_MIXED_NATIVE_GATE_IDS,
@@ -7431,6 +7433,16 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             profile_env=profile_env,
         )
 
+    @contextmanager
+    def _bound_reset_profiles(self) -> Iterator[None]:
+        # One live station.reset lease plus one registry-validated reviewed
+        # binding per distinct Station. The context revalidates the lease on
+        # entry and removes the binding on exit, so neither provision-time nor
+        # cleanup-time resets inherit a single active Profile that cannot
+        # authorize the secondary Station.
+        with bound_reset_profiles(self._required_station_profiles().values()):
+            yield
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -7743,42 +7755,43 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
         reset_scope = "mobile-station-lifecycle-alice"
         require_station_reset_authority(reset_scope)
         stations: dict[str, Any] = {}
-        for service_id in STATION_LIFECYCLE_SERVICES:
-            binding = service_bindings[service_id]
-            verify_reset_target(
-                binding.endpoint,
-                binding.deployment_environment,
-            )
-            reset_fixture(
-                binding.deployment_environment,
-                ("alice",),
-                reset_authorized=True,
-            )
-            self.register_cleanup(
-                f"actor-fixture:{service_id}",
-                partial(
-                    self._reset_actor_fixture_target,
+        with self._bound_reset_profiles():
+            for service_id in STATION_LIFECYCLE_SERVICES:
+                binding = service_bindings[service_id]
+                verify_reset_target(
                     binding.endpoint,
                     binding.deployment_environment,
-                    reset_scope,
-                ),
-            )
-            actor = resolve_actor_identity(
-                binding.endpoint,
-                binding.deployment_environment,
-                "alice",
-            )
-            stations[service_id] = {
-                "targetVerified": True,
-                "actors": [
-                    {
-                        "role": actor.role,
-                        "accountRef": actor.account_ref,
-                        "ptid": actor.ptid,
-                        "devicePolicy": actor.device_policy,
-                    }
-                ],
-            }
+                )
+                reset_fixture(
+                    binding.deployment_environment,
+                    ("alice",),
+                    reset_authorized=True,
+                )
+                self.register_cleanup(
+                    f"actor-fixture:{service_id}",
+                    partial(
+                        self._reset_actor_fixture_target,
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        reset_scope,
+                    ),
+                )
+                actor = resolve_actor_identity(
+                    binding.endpoint,
+                    binding.deployment_environment,
+                    "alice",
+                )
+                stations[service_id] = {
+                    "targetVerified": True,
+                    "actors": [
+                        {
+                            "role": actor.role,
+                            "accountRef": actor.account_ref,
+                            "ptid": actor.ptid,
+                            "devicePolicy": actor.device_policy,
+                        }
+                    ],
+                }
         payload = {
             "artifactKind": (
                 "mobile-station-lifecycle-simulator-actor-manifest"
@@ -7816,19 +7829,20 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             payload,
         ).to_dict()
 
-    @staticmethod
     def _reset_actor_fixture_target(
+        self,
         station_url: str,
         deployment_environment: str,
         reset_scope: str,
     ) -> None:
-        require_station_reset_authority(reset_scope)
-        verify_reset_target(station_url, deployment_environment)
-        reset_fixture(
-            deployment_environment,
-            ("alice",),
-            reset_authorized=True,
-        )
+        with self._bound_reset_profiles():
+            require_station_reset_authority(reset_scope)
+            verify_reset_target(station_url, deployment_environment)
+            reset_fixture(
+                deployment_environment,
+                ("alice",),
+                reset_authorized=True,
+            )
 
     @staticmethod
     def _public_simulator_resources(
