@@ -35,3 +35,17 @@ export type {
   IdentityMoment,
   IdentityRelation,
 } from './identity/identity.types';
+
+// ── P3: ConversationRail + ConversationRow ──────────────────────────────
+
+export { ConversationRail } from './conversation-rail/ConversationRail';
+export type {
+  ConversationRailProps,
+  ConversationRailModel,
+  ConversationRailIntents,
+  ConversationRailSlots,
+  ConversationRailRegionKey,
+  ConversationRowModel,
+  ConversationMenuAction,
+  ConversationQuickAction,
+} from './conversation-rail/conversation-rail.types';

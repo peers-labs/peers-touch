@@ -1,0 +1,174 @@
+/**
+ * ConversationRail + ConversationRow styles.
+ *
+ * Token-only (`--pt-*`); dark mode inherits through the token layer. Host
+ * legacy classes (sk-conv-* / sc-session-*) are injected through SurfaceHooks
+ * so host stylesheets keep exact pixel parity while the composite owns
+ * structure and the ptc-* baseline.
+ */
+
+.ptc-conv-rail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--pt-surface);
+  color: var(--pt-text);
+  font-family: inherit;
+}
+
+/* ── header ────────────────────────────────────────────────────────────── */
+.ptc-rail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--pt-border-subtle, rgba(0, 0, 0, 0.06));
+}
+.ptc-rail-tabs { flex: 1; min-width: 0; }
+.ptc-rail-search { flex: 1; min-width: 0; display: flex; }
+.ptc-rail-plus { display: inline-flex; }
+
+/* ── title + scroll ────────────────────────────────────────────────────── */
+.ptc-conv-title {
+  margin: 0;
+  padding: 10px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pt-muted);
+}
+.ptc-conv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ── row item ──────────────────────────────────────────────────────────── */
+.ptc-conv-item { position: relative; display: flex; align-items: center; }
+.ptc-conv-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--pt-radius-sm, 6px);
+  color: inherit;
+}
+.ptc-conv-row:hover { background: var(--pt-hover, rgba(0, 0, 0, 0.04)); }
+.ptc-conv-row.is-selected,
+.ptc-conv-row.is-selected:hover {
+  background: var(--pt-accent-subtle, rgba(47, 106, 80, 0.08));
+}
+.ptc-conv-row.is-pinned-row { position: relative; }
+
+.ptc-conv-avatar {
+  position: relative;
+  flex: 0 0 auto;
+  line-height: 0;
+}
+.ptc-presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--pt-surface);
+}
+.ptc-presence-dot.is-online { background: var(--pt-success); }
+.ptc-presence-dot.is-offline { background: var(--pt-muted); }
+
+.ptc-unread-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 100px;
+  background: var(--pt-primary);
+  color: var(--pt-surface);
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ptc-unread-badge.is-muted { background: var(--pt-muted); }
+.ptc-unread-badge.is-empty { visibility: hidden; }
+
+.ptc-conv-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ptc-conv-name-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.ptc-conv-name-line strong {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--pt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ptc-conv-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--pt-secondary);
+}
+.ptc-conv-last {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ptc-conv-preview time { flex: 0 0 auto; font-size: 11px; color: var(--pt-muted); }
+
+.ptc-conv-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.ptc-conv-item:hover .ptc-conv-actions,
+.ptc-conv-row.is-selected ~ .ptc-conv-actions { opacity: 1; }
+.ptc-conv-state { flex: 0 0 auto; }
+
+/* ── empty / error ─────────────────────────────────────────────────────── */
+.ptc-conv-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  color: var(--pt-secondary);
+}
+.ptc-conv-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--pt-warning);
+  background: var(--pt-error-subtle, rgba(220, 38, 38, 0.06));
+}
+.ptc-conv-error--stale { background: transparent; }
