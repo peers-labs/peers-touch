@@ -960,6 +960,57 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             SURFACE_AUDIT_SCRIPT,
         )
 
+    def test_proof_assertions_require_full_surface_and_cell_coverage(self) -> None:
+        inventory = load_surface_inventory()
+        entries = selected_surface_entries(inventory, "shell")
+        cells = inventory["viewportTextSizeCells"]
+
+        def passing_result() -> dict[str, Any]:
+            return {
+                "surfaceEvidence": {
+                    entry["id"]: {
+                        "status": "PASS",
+                        "cells": {
+                            cell_id: {"status": "PASS"} for cell_id in cells
+                        },
+                    }
+                    for entry in entries
+                },
+                "findings": [],
+                "foregroundEvidence": {
+                    "platform": "ios",
+                    "frontmost": True,
+                    "windowVisible": True,
+                },
+            }
+
+        gate = SimulatorWholeProductUsabilityGate()
+        gate._record_proof_assertions(inventory, "shell", passing_result())
+        recorded = gate.report.to_dict()["assertions"]
+        self.assertEqual(
+            [item["name"] for item in recorded],
+            [
+                "mwpu_surface_inventory_coverage",
+                "mwpu_viewport_cell_coverage",
+                "mwpu_zero_surface_quality_findings",
+                "mwpu_foreground_ios_observation",
+            ],
+        )
+        self.assertTrue(all(item["passed"] is True for item in recorded))
+
+        broken = passing_result()
+        broken["findings"] = [{"code": "GateError", "message": "occluded"}]
+        rejected = SimulatorWholeProductUsabilityGate()
+        with self.assertRaises(GateError):
+            rejected._record_proof_assertions(inventory, "shell", broken)
+        self.assertTrue(
+            any(
+                item["name"] == "mwpu_zero_surface_quality_findings"
+                and item["passed"] is False
+                for item in rejected.report.to_dict()["assertions"]
+            )
+        )
+
     def test_launch_notice_surfaces_use_page_wide_shell_controls(self) -> None:
         # These launch states render only a status/notice body inside their
         # marker; the usable controls live at entry-shell level, so a

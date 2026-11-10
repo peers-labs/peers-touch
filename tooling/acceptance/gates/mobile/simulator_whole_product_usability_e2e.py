@@ -1505,6 +1505,7 @@ class SimulatorWholeProductUsabilityGate(
                     require_manifest=False,
                     require_visual_review=False,
                 )
+                self._record_proof_assertions(inventory, surface_set, result)
                 status = "PASS"
                 completion_status = "DONE"
                 proof_status = "PROVEN"
@@ -1597,6 +1598,7 @@ class SimulatorWholeProductUsabilityGate(
                     "completionStatus": completion_status,
                     "proofStatus": proof_status,
                     "surfaceEvidence": surface_evidence_ref.to_dict(),
+                    "assertions": self.report.to_dict()["assertions"],
                 }
             )
             artifacts.write_json(
@@ -1617,6 +1619,53 @@ class SimulatorWholeProductUsabilityGate(
         stream = sys.stdout if exit_code == 0 else sys.stderr
         stream.write(f"{status}: {self.gate_id}\n")
         return exit_code
+
+    def _record_proof_assertions(
+        self,
+        inventory: Mapping[str, Any],
+        surface_set: str,
+        result: Mapping[str, Any],
+    ) -> None:
+        # The runner proof chain rejects PASS evidence without named passing
+        # assertions; each condition restates a fact already enforced by
+        # validate_surface_evidence, derived from the captured evidence itself.
+        entries = selected_surface_entries(inventory, surface_set)
+        evidence = result["surfaceEvidence"]
+        required_cells = set(inventory["viewportTextSizeCells"])
+        self.assert_condition(
+            "mwpu_surface_inventory_coverage",
+            isinstance(evidence, dict)
+            and set(evidence) == {entry["id"] for entry in entries},
+            f"captured {len(evidence) if isinstance(evidence, dict) else 0} "
+            f"of {len(entries)} declared surfaces",
+        )
+        self.assert_condition(
+            "mwpu_viewport_cell_coverage",
+            all(
+                isinstance(observed, dict)
+                and observed.get("status") == "PASS"
+                and set(observed.get("cells", {})) == required_cells
+                and all(
+                    isinstance(cell, dict) and cell.get("status") == "PASS"
+                    for cell in observed.get("cells", {}).values()
+                )
+                for observed in evidence.values()
+            ),
+            "every surface passes all declared viewport and text-size cells",
+        )
+        self.assert_condition(
+            "mwpu_zero_surface_quality_findings",
+            result.get("findings") == [],
+            "no unlabeled, undersized, clipped, or occluded controls",
+        )
+        foreground = result["foregroundEvidence"]
+        self.assert_condition(
+            "mwpu_foreground_ios_observation",
+            foreground.get("platform") == "ios"
+            and foreground.get("frontmost") is True
+            and foreground.get("windowVisible") is True,
+            "the app was frontmost and visible in the iOS simulator",
+        )
 
     @staticmethod
     def _result_report(status: str, surface_set: str) -> dict[str, Any]:
