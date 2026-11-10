@@ -7483,12 +7483,13 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                     deployment_environment,
                     owner,
                 )
-            for service_id in STATION_LIFECYCLE_SERVICES:
-                binding = service_bindings[service_id]
-                verify_reset_target(
-                    binding.endpoint,
-                    binding.deployment_environment,
-                )
+            with self._bound_reset_profiles():
+                for service_id in STATION_LIFECYCLE_SERVICES:
+                    binding = service_bindings[service_id]
+                    verify_reset_target(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                    )
             services = self._attest_services(
                 manifest.run_id,
                 service_bindings,

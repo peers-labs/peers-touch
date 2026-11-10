@@ -3081,6 +3081,11 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 "verify_reset_target",
                 side_effect=verify_target,
             ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "bound_reset_profiles",
+                side_effect=lambda _profiles: contextlib.nullcontext(),
+            ),
             patch.object(
                 provisioner,
                 "_attest_services",
@@ -3296,11 +3301,13 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
 
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertTrue(context_cleanup.succeeded)
-        # One binding context during fixture provision and one per reverse
-        # cleanup target; every entry must authorize both distinct Stations.
+        # One binding context during the provision pre-check, one during
+        # fixture preparation, and one per reverse cleanup target; every
+        # entry must authorize both distinct Stations.
         self.assertEqual(
             binding_entries,
             [
+                ("primary", "secondary"),
                 ("primary", "secondary"),
                 ("primary", "secondary"),
                 ("primary", "secondary"),
