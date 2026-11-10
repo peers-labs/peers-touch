@@ -39,6 +39,8 @@ React/现有公共UI承担渲染和生命周期，EDX承担完整Surface校验�
 
 ## 文档入口
 
+- [复合组件晋升试点（draft，待评审）](./composite-promotion/README.md)：原型-生产
+  同源复合层 `@peers-touch/ui-composite` 的端口契约、目录归属与三组件迁移计划
 - [整体职责、制作周期与组合规则](./design.md)
 - [决策](./decisions.md)
 - [核心对象形状、默认值与推导样例](./data-model.md)

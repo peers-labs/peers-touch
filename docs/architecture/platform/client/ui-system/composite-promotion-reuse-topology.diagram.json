@@ -1,0 +1,243 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "ui-system.composite-promotion.reuse-topology",
+  "module": "ui-system",
+  "viewpoint": "reuse-topology",
+  "layout": "composition",
+  "output": "composite-promotion-reuse-topology.svg",
+  "title": "UI Composite Promotion — Reuse Topology (pilot target state)",
+  "canvas": {
+    "width": 1440,
+    "height": 840
+  },
+  "edgeMeaning": "Position = dependency; hosts adapt data downward only.",
+  "scene": {
+    "rows": [
+      {
+        "id": "hosts",
+        "title": "HOSTS · DATA ASSEMBLY",
+        "y": 100,
+        "height": 150,
+        "tone": "muted",
+        "modules": [
+          {
+            "id": "proto-host",
+            "role": "module",
+            "x": 70,
+            "y": 156,
+            "width": 300,
+            "height": 78,
+            "title": "Prototype Host",
+            "caption": "seed + prefs + local sims",
+            "tone": "neutral"
+          },
+          {
+            "id": "desktop-host",
+            "role": "module",
+            "x": 388,
+            "y": 156,
+            "width": 300,
+            "height": 78,
+            "title": "Desktop Host",
+            "caption": "store projections + runtime intents",
+            "tone": "neutral"
+          },
+          {
+            "id": "host-adapters",
+            "role": "module",
+            "x": 706,
+            "y": 156,
+            "width": 300,
+            "height": 78,
+            "title": "Host Adapters",
+            "caption": "view models · t · legacy hooks",
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "id": "composite",
+        "title": "COMPOSITE LAYER (NEW)",
+        "y": 275,
+        "height": 150,
+        "tone": "primary",
+        "modules": [
+          {
+            "id": "search-surface",
+            "role": "module",
+            "x": 70,
+            "y": 331,
+            "width": 300,
+            "height": 78,
+            "title": "GlobalSearchSurface",
+            "caption": "roving focus · groups · slots",
+            "tone": "neutral"
+          },
+          {
+            "id": "identity-card",
+            "role": "module",
+            "x": 388,
+            "y": 331,
+            "width": 300,
+            "height": 78,
+            "title": "IdentityProfileCard",
+            "caption": "self / author / sheet",
+            "tone": "neutral"
+          },
+          {
+            "id": "conversation-rail",
+            "role": "module",
+            "x": 706,
+            "y": 331,
+            "width": 300,
+            "height": 78,
+            "title": "ConversationRail + Row",
+            "caption": "rail shell · row unit",
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "id": "primitives",
+        "title": "PRIMITIVE RUNTIME",
+        "y": 450,
+        "height": 150,
+        "tone": "secondary",
+        "modules": [
+          {
+            "id": "ui-web",
+            "role": "module",
+            "x": 70,
+            "y": 506,
+            "width": 300,
+            "height": 78,
+            "title": "@peers-touch/ui (web)",
+            "caption": "Button · Menu · Popover · Icon",
+            "tone": "neutral"
+          },
+          {
+            "id": "ui-semantics",
+            "role": "module",
+            "x": 388,
+            "y": 506,
+            "width": 300,
+            "height": 78,
+            "title": "ui-semantics",
+            "caption": "interaction resolution",
+            "tone": "neutral"
+          },
+          {
+            "id": "ui-provider",
+            "role": "module",
+            "x": 706,
+            "y": 506,
+            "width": 300,
+            "height": 78,
+            "title": "UIProvider / OverlayHost",
+            "caption": "tokens · floating layers",
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "id": "foundations",
+        "title": "FOUNDATIONS",
+        "y": 625,
+        "height": 150,
+        "tone": "external",
+        "modules": [
+          {
+            "id": "ui-tokens",
+            "role": "module",
+            "x": 70,
+            "y": 681,
+            "width": 300,
+            "height": 78,
+            "title": "ui-tokens",
+            "caption": "--pt-* values · dark mode",
+            "tone": "neutral"
+          },
+          {
+            "id": "ui-assets",
+            "role": "module",
+            "x": 388,
+            "y": 681,
+            "width": 300,
+            "height": 78,
+            "title": "ui-assets / contracts",
+            "caption": "icons · capability catalogue",
+            "tone": "neutral"
+          },
+          {
+            "id": "locales",
+            "role": "module",
+            "x": 706,
+            "y": 681,
+            "width": 300,
+            "height": 78,
+            "title": "Locale Packs",
+            "caption": "locales + prototype STRINGS",
+            "tone": "neutral"
+          }
+        ]
+      }
+    ],
+    "rail": {
+      "id": "evidence",
+      "title": "EVIDENCE & GUARDS",
+      "x": 1090,
+      "y": 100,
+      "width": 306,
+      "height": 675,
+      "tone": "muted",
+      "items": [
+        {
+          "id": "suite",
+          "role": "rail-item",
+          "x": 1120,
+          "y": 156,
+          "width": 246,
+          "height": 98,
+          "title": "north-star suite",
+          "caption": "specimen scenarios",
+          "tone": "neutral"
+        },
+        {
+          "id": "gates",
+          "role": "rail-item",
+          "x": 1120,
+          "y": 300,
+          "width": 246,
+          "height": 98,
+          "title": "Native Gate Hooks",
+          "caption": "gate selectors preserved",
+          "tone": "neutral"
+        },
+        {
+          "id": "composite-tests",
+          "role": "rail-item",
+          "x": 1120,
+          "y": 444,
+          "width": 246,
+          "height": 98,
+          "title": "Behavior Tests",
+          "caption": "vitest + jsdom tests",
+          "tone": "neutral"
+        },
+        {
+          "id": "guards",
+          "role": "rail-item",
+          "x": 1120,
+          "y": 588,
+          "width": 246,
+          "height": 98,
+          "title": "Layer Guards",
+          "caption": "import · layer guards",
+          "tone": "neutral"
+        }
+      ]
+    },
+    "relations": []
+  }
+}
