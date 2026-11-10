@@ -1171,11 +1171,31 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         search_submit_selector = (
             '[data-action-id="social-search-run"]'
         )
-        self._wait_ui(
-            session,
-            federation_selector,
-            "Social Search Federation",
-        )
+        try:
+            self._wait_ui(
+                session,
+                federation_selector,
+                "Social Search Federation",
+            )
+        except GateError:
+            diagnostic = session.execute_script(
+                """
+const page = document.querySelector(
+  '[data-acceptance-id="social-search-page"]'
+);
+return {
+  radios: Array.from(document.querySelectorAll(
+    '[data-acceptance-id="social-search-page"] input[type="radio"]'
+  )).map((input) => ({ value: input.value, checked: input.checked })),
+  fieldsetCount: page ? page.querySelectorAll('fieldset').length : -1,
+  pageText: page ? page.textContent?.slice(0, 400) : '',
+};
+""",
+            )
+            raise GateError(
+                "Social Search Federation radios absent: "
+                f"{json.dumps(diagnostic, sort_keys=True)}"
+            ) from None
         self._select_radio(
             session,
             federation_control_selector,
