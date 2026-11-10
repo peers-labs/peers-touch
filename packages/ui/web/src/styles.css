@@ -490,4 +490,4 @@ button.pt-link:hover:not(:disabled){background:var(--pt-subtle)}
 .pt-textarea-accessory-count{font-size:12px;line-height:16px;color:var(--pt-secondary);font-variant-numeric:tabular-nums}
 .pt-choice-actions{display:flex;flex-direction:column;gap:var(--pt-space-xs)}
 @media(prefers-reduced-motion:reduce){.pt-ui *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-@media(pointer:coarse){.pt-ui .pt-icon-button,.pt-ui .pt-select-option,.pt-ui .pt-check-label,.pt-ui .pt-button{min-height:var(--pt-control-comfortable)}.pt-ui .pt-icon-button,.pt-ui .pt-check-label{min-width:var(--pt-control-comfortable)}.pt-ui .pt-switch{width:var(--pt-control-comfortable);height:var(--pt-control-comfortable)}}
+@media(pointer:coarse){.pt-ui .pt-icon-button,.pt-ui .pt-select-option,.pt-ui .pt-check-label,.pt-ui .pt-button,.pt-ui .pt-field-frame{min-height:var(--pt-control-comfortable)}.pt-ui .pt-icon-button,.pt-ui .pt-check-label{min-width:var(--pt-control-comfortable)}.pt-ui .pt-switch{width:var(--pt-control-comfortable);height:var(--pt-control-comfortable)}}

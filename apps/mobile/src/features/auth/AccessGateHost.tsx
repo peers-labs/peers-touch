@@ -608,7 +608,6 @@ export function AccessGateHost({
                     </div>
                   ) : null}
                   <TextField
-                    className="auth-email-input"
                     value={email}
                     placeholder={t('mobile.auth.emailAddress')}
                     leading={<Icon iconId="mail" size={16} className="auth-field-leading" />}
@@ -620,7 +619,6 @@ export function AccessGateHost({
                   />
                   <TextField
                     type="password"
-                    className="auth-password-input"
                     value={password}
                     placeholder={t('mobile.auth.password')}
                     leading={<Icon iconId="lock" size={16} className="auth-field-leading" />}
