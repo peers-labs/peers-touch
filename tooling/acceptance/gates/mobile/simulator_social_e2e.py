@@ -1192,9 +1192,10 @@ return {
 };
 """,
             )
+            federation_probe = self._federation_context_probe(session)
             raise GateError(
                 "Social Search Federation radios absent: "
-                f"{json.dumps(diagnostic, sort_keys=True)}"
+                f"{json.dumps({'dom': diagnostic, 'federationProbe': federation_probe}, sort_keys=True)}"
             ) from None
         self._select_radio(
             session,
@@ -1945,6 +1946,47 @@ return {
         except DriverError as error:
             return {"diagnosticError": str(error)}
         return observed if isinstance(observed, dict) else {}
+
+    @staticmethod
+    def _federation_context_probe(session: Any) -> dict[str, Any]:
+        # The Search page reads Federation contexts once on mount, so an empty
+        # directory can be either a transient first-read race or a Station-side
+        # gap. A fresh gateway read through the product harness distinguishes
+        # them: data appearing on a second read proves a client-side timing
+        # window, while a persistent empty/error result points at the Station.
+        def read_once(label: str) -> dict[str, Any]:
+            try:
+                observed = session.call_action("federation.context.read")
+                federations = (
+                    observed.get("federations")
+                    if isinstance(observed, Mapping)
+                    else None
+                )
+                return {
+                    "probe": label,
+                    "ok": True,
+                    "count": (
+                        len(federations)
+                        if isinstance(federations, list)
+                        else -1
+                    ),
+                    "federations": federations,
+                }
+            except Exception as error:  # defensive: never mask the GateError
+                return {
+                    "probe": label,
+                    "ok": False,
+                    "errorType": type(error).__name__,
+                    "error": str(error),
+                }
+
+        immediate = read_once("immediate")
+        time.sleep(3.0)
+        delayed = read_once("after3s")
+        return {
+            "freshReadImmediate": immediate,
+            "freshReadAfter3s": delayed,
+        }
 
     @staticmethod
     def _click_ui_for_post(
