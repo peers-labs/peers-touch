@@ -774,6 +774,7 @@
   "provider.updateProvider.providerDescription": "提供商描述",
   "provider.updateProvider.providerDescPlaceholder": "提供商描述（可选）",
   "provider.updateProvider.providerLogo": "提供商 Logo",
+  "provider.updateProvider.providerLogoPlaceholder": "https://example.com/logo.png",
   "provider.lark.createBotTitle": "创建飞书机器人 · 飞书",
   "provider.lark.simulateTitle": "模拟登录 · 飞书",
   "provider.lark.createBotDesc": "使用飞书 App 扫码创建新机器人并获取 App ID/Secret。OAuth 模拟登录也将同时连接。",

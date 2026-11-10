@@ -774,6 +774,7 @@
   "provider.updateProvider.providerDescription": "Provider Description",
   "provider.updateProvider.providerDescPlaceholder": "Provider description (optional)",
   "provider.updateProvider.providerLogo": "Provider Logo",
+  "provider.updateProvider.providerLogoPlaceholder": "https://example.com/logo.png",
   "provider.lark.createBotTitle": "Create Lark Bot · Lark (飞书)",
   "provider.lark.simulateTitle": "Simulated Login · Lark (飞书)",
   "provider.lark.createBotDesc": "Scan with Lark (飞书) app to create a new bot and get App ID/Secret. OAuth simulate will also be connected.",

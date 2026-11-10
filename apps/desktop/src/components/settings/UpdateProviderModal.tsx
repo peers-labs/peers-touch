@@ -106,7 +106,7 @@ export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderMod
         </Field>
         <Field label={t('provider.updateProvider.providerLogo')}>
           <TextField
-            placeholder="https://example.com/logo.png"
+            placeholder={t('provider.updateProvider.providerLogoPlaceholder')}
             value={logo}
             onValueChange={setLogo}
           />

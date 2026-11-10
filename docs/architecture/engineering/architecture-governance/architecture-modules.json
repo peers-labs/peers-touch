@@ -739,7 +739,7 @@
         "SAL-D15"
       ],
       "governedPaths": [
-        "apps/desktop/src/components/common/StationPicker.tsx",
+        "apps/desktop/src/pages/login/StationSwitcher.tsx",
         "apps/desktop/src-tauri/src/application/station_binding",
         "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
         "apps/desktop/src/services/desktop_api.ts",
@@ -2021,6 +2021,51 @@
           "reuseLayer": "shared-ts-core"
         }
       ],
+      "externalCapabilityRegistries": []
+    },
+    {
+      "id": "runtime-secrets",
+      "root": "docs/architecture/platform/runtime/runtime-secrets",
+      "status": "active",
+      "owner": "Platform Team",
+      "characteristics": {
+        "protocol": false,
+        "stateMachine": false,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "RS-D01",
+        "RS-D02",
+        "RS-D03",
+        "RS-D04",
+        "RS-D05",
+        "RS-D06",
+        "RS-D07",
+        "RS-D08",
+        "RS-D09"
+      ],
+      "governedPaths": [
+        "docs/architecture/platform/runtime/runtime-secrets",
+        "tooling/scripts/deploy/secret-edit.sh",
+        "tooling/scripts/deploy/secret-reconcile.sh",
+        "tooling/scripts/deploy/deploy.sh",
+        "tooling/docker/entrypoint.sh",
+        "tooling/make/deploy.mk",
+        "apps/station/app/subserver/oauth/plugin.go"
+      ],
+      "capabilities": [],
       "externalCapabilityRegistries": []
     }
   ],
