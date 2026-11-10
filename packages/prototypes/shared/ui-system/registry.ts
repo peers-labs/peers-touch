@@ -296,6 +296,14 @@ const COMPOSITE: CompositeRecord[] = [
     consumedBy: [CHAT, '桌面生产 · SearchOverlay'],
     note: '原型 GlobalSearchOverlay 与生产 SearchOverlay 共用 @peers-touch/ui-composite；取代原 CommandSurface GAP',
   },
+  {
+    id: 'ui.comp.identity-profile-card',
+    title: 'IdentityProfileCard 身份名片三态复合件（self/author/sheet）',
+    category: 'identity',
+    status: 'vetted',
+    consumedBy: [CHAT, MOMENTS, '桌面生产 · PublicProfileCard'],
+    note: '原型 IdentityCard 与生产 PublicProfileCard 共用；头像/关系动作经插槽留宿主',
+  },
 ];
 
 function build(): CapabilityRecord[] {

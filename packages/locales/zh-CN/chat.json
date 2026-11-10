@@ -1265,5 +1265,7 @@
   "chat.memory.confirm": "确认",
   "chat.memory.reject": "拒绝",
   "chat.social.sessionList.recent": "最近对话",
-  "chat.social.contextMenu.moreActions": "更多操作"
+  "chat.social.contextMenu.moreActions": "更多操作",
+  "identity.moments.recent": "最近动态",
+  "identity.moments.tileAria": "{{name}} 的动态：{{text}}"
 }

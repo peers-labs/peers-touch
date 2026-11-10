@@ -21,3 +21,17 @@ export type {
   SearchStatus,
   GlobalSearchSurfaceProps,
 } from './search/search.types';
+
+// ── P2: IdentityProfileCard ─────────────────────────────────────────────
+
+export { IdentityProfileCard } from './identity/IdentityProfileCard';
+export type {
+  ProfileVariant,
+  IdentityProfileModel,
+  IdentityProfileIntents,
+  IdentityProfileCardProps,
+  IdentityRegionKey,
+  IdentityTechnicalDetail,
+  IdentityMoment,
+  IdentityRelation,
+} from './identity/identity.types';

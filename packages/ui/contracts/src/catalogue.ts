@@ -5615,5 +5615,39 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     "geometryAndMotion": "panel 720px/r12/160ms 与生产逐值对齐（CMP-D04 resolved-deferred：北星 660/r18/200ms 不在试点收敛）；全部值引用 --pt-* token。",
     "extremeData": "零结果空态、错误重试、progressive pending、超长 query 256 scalar 边界、IME 合成态、窄面板横向省略。",
     "publicContractFields": "open/model(SearchSurfaceModel)/intents(SearchSurfaceIntents)/t(CompositeTranslate)/hooks(SurfaceHooks)/infoPopoverSlot"
+  },
+  {
+    "id": "ui.comp.identity-profile-card",
+    "title": "IdentityProfileCard 身份名片三态复合件（self/author/sheet）",
+    "category": "identity",
+    "owner": "Client Platform / UI System",
+    "specRef": "docs/architecture/platform/client/ui-system/composite-promotion/data-model.md#3-identityprofilecard",
+    "exports": ["IdentityProfileCard"],
+    "implementationRefs": [
+      "packages/ui/composite/src/identity/IdentityProfileCard.tsx",
+      "packages/ui/composite/src/identity/identity.types.ts",
+      "packages/prototypes/shared/ui-system/identity/IdentityCard.tsx",
+      "apps/desktop/src/components/profile/PublicProfileCard.tsx"
+    ],
+    "specimenRef": null,
+    "platformSupport": [
+      { "renderer": "web", "status": "implemented" },
+      { "renderer": "lynx", "status": "unsupported", "reason": "Composite pilot scopes web hosts (prototype + Desktop); Lynx reuse unassessed" }
+    ],
+    "evidenceStatus": "SOURCE_CHECK",
+    "implementationStatus": "EXISTING_CONSUMER_CUTOVER",
+    "ownerBoundary": "复合件只管三态纯渲染与技术详情开合相位；native 头像经 avatarSlot、关系动作经 actionsSlot、剪贴板反馈经 onCopyTechnical 全部留宿主。",
+    "anatomy": "card/banner/avatar/handle/bio/relation/stats/links/actions/technicalDetails/moments 具名区域；SurfaceHooks 注入 pp-*/sk-author-* legacy 类与 data-author-* 钩子。",
+    "statePolicy": "无异步态；技术详情 disclosure 开合是唯一内部 UI 状态；复制/打开动态/打开主页均经 intents 外抛。",
+    "invalidCombinations": "包内 import antd/zustand/react-i18next/lucide、宿主把 store 实例传入 model、app 层重绘 .ptc-*、在卡内内嵌关系业务逻辑。",
+    "lifecycleAndCleanup": "无请求无定时器；disclosure 随卸载自然销毁；剪贴板 promise 与 toast 归宿主，组件不持有。",
+    "accessibility": "details/summary 原生披露；复制按钮带 aria-label 与 data-chat-profile-copy；moment tile 带拼接 aria-label；data-chat-profile-* 与 data-author-* 选择器静态保全。",
+    "variantAxes": [
+      "variant=self/author/sheet 三态语法；同一组件按 variant 切换 banner/hero/head 结构",
+      "宿主=prototype(sk-author-*)/desktop(pp-*)，同一 ptc-* 实现"
+    ],
+    "geometryAndMotion": "self 300px/92px banner/64-16 重叠头像；author 264px/44-12；sheet 72-18 居中 hero；全部 --pt-* token，与生产 profileCard.css 逐值对齐。",
+    "extremeData": "空 handle/bio/stats、超长名称省略、非 http 链接丢弃、无 technicalDetails 时不渲染披露、author 无 moments 时不渲染动态条。",
+    "publicContractFields": "variant/profile(IdentityProfileModel)/actionsSlot/intents(IdentityProfileIntents)/t(CompositeTranslate)/hooks(SurfaceHooks)"
   }
 ];

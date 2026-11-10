@@ -1767,6 +1767,20 @@ export const STRINGS = {
     'search.zone.device': '本机',
     'search.coverage.pending': '仍在检索…',
     'search.opening': '正在打开…',
+    // identity composite card
+    'identity.station.local': '本站',
+    'identity.stats.followers': '粉丝',
+    'identity.relation.mutual': '互相关注',
+    'identity.moments.recent': '最近动态',
+    'identity.moments.tileAria': '{name} 的动态：{text}',
+    'identity.action.follow': '关注',
+    'identity.action.following': '已关注',
+    'identity.action.message': '发消息',
+    'identity.action.block': '拉黑',
+    'identity.action.unblock': '取消拉黑',
+    'identity.action.openProfile': '查看主页',
+    'identity.action.openMyProfile': '查看我的主页',
+    'identity.popover.cardLabel': '{name} 的名片',
   },
   en: {
     // shell chrome
@@ -3411,6 +3425,20 @@ export const STRINGS = {
     'search.zone.device': 'Device',
     'search.coverage.pending': 'Still searching…',
     'search.opening': 'Opening…',
+    // identity composite card
+    'identity.station.local': 'Local station',
+    'identity.stats.followers': 'Followers',
+    'identity.relation.mutual': 'Mutual follows',
+    'identity.moments.recent': 'Recent moments',
+    'identity.moments.tileAria': "{name}'s moment: {text}",
+    'identity.action.follow': 'Follow',
+    'identity.action.following': 'Following',
+    'identity.action.message': 'Message',
+    'identity.action.block': 'Block',
+    'identity.action.unblock': 'Unblock',
+    'identity.action.openProfile': 'View profile',
+    'identity.action.openMyProfile': 'View my profile',
+    'identity.popover.cardLabel': "{name}'s card",
   },
 } as const;
 

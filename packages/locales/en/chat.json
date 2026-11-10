@@ -1265,5 +1265,7 @@
   "chat.memory.confirm": "Confirm",
   "chat.memory.reject": "Reject",
   "chat.social.sessionList.recent": "Recent",
-  "chat.social.contextMenu.moreActions": "More actions"
+  "chat.social.contextMenu.moreActions": "More actions",
+  "identity.moments.recent": "Recent moments",
+  "identity.moments.tileAria": "{{name}}'s moment: {{text}}"
 }
