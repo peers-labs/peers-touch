@@ -23,6 +23,7 @@ from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     SCENARIO_GATES,
     SimulatorSocialGate,
 )
+from tooling.acceptance.core.proof import assertions_pass
 from tooling.acceptance.gates.mobile.simulator_e2e import SimulatorGateBlocked
 from tooling.acceptance.gates.mobile.messaging_journey import MessagingActor
 from tooling.acceptance.provisioners.mobile_simulator import (
@@ -548,6 +549,136 @@ class SimulatorSocialGateTests(unittest.TestCase):
             result["unprovenScope"],
         )
 
+    @staticmethod
+    def _social_evidence(**overrides: object) -> dict[str, object]:
+        ref = {"path": "captured/path", "sha256": "0" * 64}
+        evidence: dict[str, object] = {
+            "source_identity": {
+                "commit": "a" * 40,
+                "workspaceDigest": "clean",
+                "canonicalWorktreeHash": "w" * 16,
+            },
+            "runtime_identity": {"appium": {"serverVersion": "verified"}},
+            "authentication": {
+                "sim-ios": {"ptid": "ptid:alice"},
+                "sim-ios-peer": {"ptid": "ptid:bob"},
+            },
+            "actor_identity_preparation": {
+                "sim-ios": {"scope": "station-peer|ptid:alice"},
+                "sim-ios-peer": {"scope": "station-peer|ptid:bob"},
+            },
+            "captures": {
+                "sim-ios": {
+                    "clientId": "sim-ios",
+                    "screenshot": dict(ref),
+                    "dom": dict(ref),
+                },
+                "sim-ios-peer": {
+                    "clientId": "sim-ios-peer",
+                    "screenshot": dict(ref),
+                    "dom": dict(ref),
+                },
+            },
+            "journey_result": {"conversationId": "conv-1"},
+        }
+        evidence.update(overrides)
+        return evidence
+
+    def test_social_evidence_assertions_satisfy_core_proof_contract(self) -> None:
+        gate = SimulatorSocialGate("chat-contacts")
+        evidence = self._social_evidence()
+        assertions = gate._assertions_from_social_evidence(
+            report_base=gate._result_base("PASS"),
+            source_identity=evidence["source_identity"],
+            runtime_identity=evidence["runtime_identity"],
+            authentication=evidence["authentication"],
+            actor_identity_preparation=evidence["actor_identity_preparation"],
+            captures=evidence["captures"],
+            journey_result=evidence["journey_result"],
+        )
+
+        self.assertTrue(assertions_pass(assertions))
+        self.assertTrue(assertions)
+        self.assertEqual(
+            len(assertions), len({item["name"] for item in assertions})
+        )
+        names = {item["name"] for item in assertions}
+        self.assertIn(
+            "chat-contacts:sim-ios:production-authentication-observed",
+            names,
+        )
+        self.assertIn(
+            "chat-contacts:sim-ios-peer:"
+            "dom-and-screenshot-captured-without-error-boundary",
+            names,
+        )
+
+    def test_social_convergence_emits_local_direct_scope_assertion(self) -> None:
+        gate = SimulatorSocialGate("social-convergence")
+
+        local = gate._assertions_from_social_evidence(
+            report_base=gate._result_base("PASS"),
+            **self._social_evidence(
+                journey_result={"directScope": "local"},
+            ),
+        )
+        scope_assertion = next(
+            item
+            for item in local
+            if item["name"] == "social-convergence:local-direct-scope-proven"
+        )
+        self.assertTrue(scope_assertion["passed"])
+        self.assertTrue(assertions_pass(local))
+
+        federated = gate._assertions_from_social_evidence(
+            report_base=gate._result_base("PASS"),
+            **self._social_evidence(
+                journey_result={"directScope": "federation"},
+            ),
+        )
+        self.assertFalse(assertions_pass(federated))
+
+    def test_social_evidence_assertions_fail_closed_on_missing_observation(
+        self,
+    ) -> None:
+        gate = SimulatorSocialGate("chat-contacts")
+
+        unknown_source = self._social_evidence(
+            source_identity={"commit": "unknown", "workspaceDigest": "unknown"},
+        )
+        source_assertions = gate._assertions_from_social_evidence(
+            report_base=gate._result_base("PASS"), **unknown_source
+        )
+        self.assertFalse(assertions_pass(source_assertions))
+
+        missing_auth = self._social_evidence(
+            authentication={"sim-ios": {"ptid": "ptid:alice"}},
+        )
+        auth_assertions = gate._assertions_from_social_evidence(
+            report_base=gate._result_base("PASS"), **missing_auth
+        )
+        failed_auth = next(
+            item
+            for item in auth_assertions
+            if item["name"]
+            == "chat-contacts:sim-ios-peer:production-authentication-observed"
+        )
+        self.assertFalse(failed_auth["passed"])
+
+        broken_capture = self._social_evidence()
+        broken_capture["captures"] = {
+            "sim-ios": {"clientId": "sim-ios", "screenshot": {"path": "x"}},
+            "sim-ios-peer": {
+                "clientId": "sim-ios-peer",
+                "screenshot": {"path": "x"},
+                "dom": {"path": "x"},
+            },
+        }
+        capture_assertions = gate._assertions_from_social_evidence(
+            report_base=gate._result_base("PASS"), **broken_capture
+        )
+        self.assertFalse(assertions_pass(capture_assertions))
+
     def test_cleanup_failure_does_not_hide_primary_failure(self) -> None:
         artifacts = Artifacts()
         gate = SimulatorSocialGate("social-convergence")
@@ -1000,7 +1131,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
             patch(
                 "tooling.acceptance.gates.mobile.simulator_social_e2e."
                 "_validate_source_identity",
-                return_value={"commit": "a" * 40},
+                return_value={
+                    "commit": "a" * 40,
+                    "workspaceDigest": "clean",
+                },
             ),
             patch(
                 "tooling.acceptance.gates.mobile.simulator_social_e2e."
@@ -1051,7 +1185,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
             patch.object(
                 gate,
                 "_capture_client",
-                return_value={"captured": True},
+                return_value={
+                    "screenshot": {"path": "screenshot.png"},
+                    "dom": {"path": "web-dom.html"},
+                },
             ),
         ):
             gate._run_social_journey(artifacts, manifest)
@@ -1079,7 +1216,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
             patch(
                 "tooling.acceptance.gates.mobile.simulator_social_e2e."
                 "_validate_source_identity",
-                return_value={"commit": "a" * 40},
+                return_value={
+                    "commit": "a" * 40,
+                    "workspaceDigest": "clean",
+                },
             ),
             patch(
                 "tooling.acceptance.gates.mobile.simulator_social_e2e."
@@ -1117,7 +1257,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
             patch.object(
                 gate,
                 "_capture_client",
-                return_value={"captured": True},
+                return_value={
+                    "screenshot": {"path": "screenshot.png"},
+                    "dom": {"path": "web-dom.html"},
+                },
             ),
         )
         manifest = {

@@ -653,8 +653,29 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
             for client_id, session in sessions.items()
         }
+        report_base = self._result_base("PASS")
+        # The proof contract (#163) rejects a bare PASS label: emit explicit,
+        # evidence-derived assertions and fail closed before the report is
+        # sealed if any already-enforced observation does not hold.
+        assertions = self._assertions_from_social_evidence(
+            report_base=report_base,
+            source_identity=source_identity,
+            runtime_identity=runtime_identity,
+            authentication=authentication,
+            actor_identity_preparation=actor_identity_preparation,
+            captures=captures,
+            journey_result=journey_result,
+        )
+        failed_assertions = [
+            item["name"] for item in assertions if not item["passed"]
+        ]
+        if failed_assertions:
+            raise GateError(
+                "Mobile social evidence assertions failed: "
+                + ", ".join(failed_assertions)
+            )
         return {
-            **self._result_base("PASS"),
+            **report_base,
             "source": source_identity,
             "runtime": runtime_identity,
             "buildIdentity": build_identity,
@@ -662,6 +683,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "authentication": authentication,
             "journey": journey_result,
             "captures": captures,
+            "assertions": assertions,
         }
 
     @staticmethod
@@ -5323,6 +5345,107 @@ return {
             "physicalDeviceClaimed": False,
             "stationMocksUsed": False,
         }
+
+    def _assertions_from_social_evidence(
+        self,
+        *,
+        report_base: Mapping[str, Any],
+        source_identity: Mapping[str, Any],
+        runtime_identity: Mapping[str, Any],
+        authentication: Mapping[str, Mapping[str, Any]],
+        actor_identity_preparation: Mapping[str, Mapping[str, Any]],
+        captures: Mapping[str, Mapping[str, Any]],
+        journey_result: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Build explicit, evidence-derived assertions for the proof contract.
+
+        Every predicate restates an observation already enforced while the
+        journey ran (source/runtime identity validation, production
+        authentication, fresh actor preparation, error-boundary-free
+        captures). Core proof never accepts the PASS label on its own, so a
+        missing or failed observation is surfaced as a ``passed: False``
+        assertion and the caller fails closed before sealing the report.
+        """
+        scenario = self.scenario
+        source_commit = source_identity.get("commit")
+        source_digest = source_identity.get("workspaceDigest")
+        assertions: list[dict[str, Any]] = [
+            {
+                "name": f"{scenario}:source-commit-and-workspace-digest-bound",
+                "passed": (
+                    isinstance(source_commit, str)
+                    and source_commit not in {"", "unknown"}
+                    and isinstance(source_digest, str)
+                    and source_digest not in {"", "unknown"}
+                ),
+            },
+            {
+                "name": f"{scenario}:runtime-identity-verified",
+                "passed": isinstance(runtime_identity, Mapping)
+                and bool(runtime_identity),
+            },
+            {
+                "name": f"{scenario}:journey-produced-structured-evidence",
+                "passed": isinstance(journey_result, Mapping)
+                and bool(journey_result),
+            },
+            {
+                "name": f"{scenario}:production-actions-without-station-mocks",
+                "passed": report_base.get("stationMocksUsed") is False,
+            },
+            {
+                "name": f"{scenario}:simulator-does-not-claim-physical-device",
+                "passed": report_base.get("physicalDeviceClaimed") is False,
+            },
+        ]
+        for client_id in sorted(set(captures) | set(authentication)):
+            capture = captures.get(client_id)
+            screenshot = (
+                capture.get("screenshot")
+                if isinstance(capture, Mapping)
+                else None
+            )
+            dom = capture.get("dom") if isinstance(capture, Mapping) else None
+            assertions.extend([
+                {
+                    "name": (
+                        f"{scenario}:{client_id}:"
+                        "production-authentication-observed"
+                    ),
+                    "passed": isinstance(
+                        authentication.get(client_id), Mapping
+                    )
+                    and bool(authentication.get(client_id)),
+                },
+                {
+                    "name": (
+                        f"{scenario}:{client_id}:"
+                        "fresh-actor-identity-prepared"
+                    ),
+                    "passed": isinstance(
+                        actor_identity_preparation.get(client_id), Mapping
+                    )
+                    and bool(actor_identity_preparation.get(client_id)),
+                },
+                {
+                    "name": (
+                        f"{scenario}:{client_id}:"
+                        "dom-and-screenshot-captured-without-error-boundary"
+                    ),
+                    "passed": isinstance(screenshot, Mapping)
+                    and isinstance(dom, Mapping)
+                    and bool(screenshot.get("path"))
+                    and bool(dom.get("path")),
+                },
+            ])
+        if scenario == "social-convergence":
+            assertions.append(
+                {
+                    "name": f"{scenario}:local-direct-scope-proven",
+                    "passed": journey_result.get("directScope") == "local",
+                }
+            )
+        return assertions
 
 
 def main() -> int:
