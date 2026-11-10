@@ -7,12 +7,13 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   observe: null as null | (() => void),
   kernelReconcile: vi.fn(),
+  kernelPhase: 'ACTIVE' as string,
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('./stationRuntime', () => ({ readStationRegistryProjection: mocks.registry }));
 vi.mock('../app/lifecycle/MobileLifecycleKernel', () => ({
   getMobileLifecycleKernel: () => ({
-    getState: () => ({ phase: 'ACTIVE' }),
+    getState: () => ({ phase: mocks.kernelPhase }),
     reconcileLaunchState: mocks.kernelReconcile,
   }),
 }));
@@ -131,6 +132,7 @@ describe('Session descriptor revalidates the restored session on resume', () => 
   beforeEach(async () => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    mocks.kernelPhase = 'ACTIVE';
     mocks.kernelReconcile.mockResolvedValue(undefined);
     mocks.registry.mockResolvedValue(registry);
     mocks.auth.mockReturnValue({
@@ -259,6 +261,37 @@ describe('Session descriptor revalidates the restored session on resume', () => 
       expect(commands).not.toContain('oauth_logout_purge');
       expect(mocks.kernelReconcile).not.toHaveBeenCalled();
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('defers the probe while the kernel resume graph is still RESUMING', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.kernelPhase = 'RESUMING';
+      const commands: string[] = [];
+      await bootWithInvoke(async (command) => {
+        commands.push(command);
+        if (command === 'oauth_session_projection') return activeSession();
+        if (command === 'oauth_session_refresh') {
+          return { ...activeSession(), sessionId: 'session-rotated' };
+        }
+        throw new Error(`unexpected command ${command}`);
+      });
+
+      await descriptor.resume({} as never);
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(commands).not.toContain('oauth_session_refresh');
+
+      mocks.kernelPhase = 'ACTIVE';
+      for (let tick = 0; tick < 5; tick += 1) {
+        await vi.advanceTimersByTimeAsync(1);
+      }
+      expect(commands).toContain('oauth_session_refresh');
+      expect(mocks.kernelReconcile).not.toHaveBeenCalled();
+    } finally {
+      mocks.kernelPhase = 'ACTIVE';
       vi.useRealTimers();
     }
   });

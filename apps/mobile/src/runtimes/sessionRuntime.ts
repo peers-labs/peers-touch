@@ -789,17 +789,26 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
   };
 
   // Run the probe only after the kernel resume cascade settles. A terminal
-  // revocation flips session admission and nulls the projection; doing that
-  // while dependent runtimes are still resuming makes their resume operations
-  // fail and surfaces as lifecycle.resumeIncomplete. A macrotask therefore
-  // defers the work until the graph is ACTIVE, the same steady-state regime in
-  // which a scheduled refresh is allowed to revoke a dead session.
+  // revocation flips session admission to `refreshing` and then nulls the
+  // projection; doing that while dependent runtimes are still resuming makes
+  // their resume operations fail and surfaces as lifecycle.resumeIncomplete.
+  // The resume cascade awaits native IPC and therefore crosses macrotask
+  // boundaries, so a single setTimeout cannot guarantee ordering. Instead keep
+  // deferring until the kernel phase is ACTIVE, which it only enters after every
+  // descriptor resume has succeeded; the revocation then happens in the same
+  // steady-state, subscription-driven regime as a scheduled refresh.
   const scheduleResumeRevalidation = (observed: number): void => {
     clearResumeRevalidation();
-    resumeRevalidationTimer = setTimeout(() => {
+    const runWhenGraphActive = () => {
       resumeRevalidationTimer = null;
+      if (!running || observed !== lifecycleEpoch) return;
+      if (getMobileLifecycleKernel().getState().phase !== 'ACTIVE') {
+        resumeRevalidationTimer = setTimeout(runWhenGraphActive, 0);
+        return;
+      }
       void revalidateResumedSession(observed);
-    }, 0);
+    };
+    resumeRevalidationTimer = setTimeout(runWhenGraphActive, 0);
   };
 
   return {
