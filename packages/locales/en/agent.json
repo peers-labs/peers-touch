@@ -1119,6 +1119,7 @@
   "agent.commandMenu.navigate": "navigate",
   "agent.commandMenu.select": "select",
   "agent.commandMenu.close": "close",
+  "agent.commandMenu.escapeKey": "esc",
   "agent.commandMenu.page.home": "Home",
   "agent.commandMenu.page.chat": "Chat",
   "agent.commandMenu.page.agent": "Agent",

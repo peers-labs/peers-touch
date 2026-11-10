@@ -6,7 +6,7 @@ owns:
   - apps/mobile/src/features/station/StationSelector.tsx
   - apps/mobile/src/features/auth/
   - apps/mobile/src/pages/SettingsPage.tsx
-  - apps/desktop/src/components/common/StationPicker.tsx
+  - apps/desktop/src/pages/login/StationSwitcher.tsx
   - apps/desktop/src/components/settings/
   - apps/desktop/src/pages/SettingsPage.tsx
   - apps/desktop/src/pages/LoginPage.tsx
@@ -39,9 +39,9 @@ This invariant forces AI agents and humans to model the user's intention first. 
 
 ## How to verify
 
-- `rg "<Select|Select\\b|Dropdown|Popover|Input|TextArea|Segmented" apps/mobile/src/features/station/StationSelector.tsx apps/mobile/src/features/auth apps/mobile/src/pages/SettingsPage.tsx apps/desktop/src/components/common/StationPicker.tsx apps/desktop/src/components/settings apps/desktop/src/pages/SettingsPage.tsx apps/desktop/src/pages/LoginPage.tsx` — review adjacent form controls and confirm one-intention groups use a shared parent frame.
-- `rg "border|borderRadius|boxShadow|focus|error|disabled|loading" apps/mobile/src/features/station/StationSelector.tsx apps/mobile/src/features/auth apps/mobile/src/pages/SettingsPage.tsx apps/desktop/src/components/common/StationPicker.tsx apps/desktop/src/components/settings apps/desktop/src/pages/SettingsPage.tsx apps/desktop/src/pages/LoginPage.tsx` — confirm visual states are owned by the composite parent where appropriate.
-- `rg "StatusDot|StatusSlot|StationTriggerStatus|colorTextQuaternary|colorSuccess|colorError|Loader2" apps/mobile/src/features/station/StationSelector.tsx apps/mobile/src/features/auth apps/mobile/src/pages/SettingsPage.tsx apps/desktop/src/components/common/StationPicker.tsx apps/desktop/src/components/settings apps/desktop/src/pages/LoginPage.tsx` — review compact status indicators and confirm unknown state is not exposed as an unexplained neutral dot.
+- `rg "<Select|Select\\b|Dropdown|Popover|Input|TextArea|Segmented" apps/mobile/src/features/station/StationSelector.tsx apps/mobile/src/features/auth apps/mobile/src/pages/SettingsPage.tsx apps/desktop/src/pages/login/StationSwitcher.tsx apps/desktop/src/components/settings apps/desktop/src/pages/SettingsPage.tsx apps/desktop/src/pages/LoginPage.tsx` — review adjacent form controls and confirm one-intention groups use a shared parent frame.
+- `rg "border|borderRadius|boxShadow|focus|error|disabled|loading" apps/mobile/src/features/station/StationSelector.tsx apps/mobile/src/features/auth apps/mobile/src/pages/SettingsPage.tsx apps/desktop/src/pages/login/StationSwitcher.tsx apps/desktop/src/components/settings apps/desktop/src/pages/SettingsPage.tsx apps/desktop/src/pages/LoginPage.tsx` — confirm visual states are owned by the composite parent where appropriate.
+- `rg "StatusDot|StatusSlot|StationTriggerStatus|colorTextQuaternary|colorSuccess|colorError|Loader2" apps/mobile/src/features/station/StationSelector.tsx apps/mobile/src/features/auth apps/mobile/src/pages/SettingsPage.tsx apps/desktop/src/pages/login/StationSwitcher.tsx apps/desktop/src/components/settings apps/desktop/src/pages/LoginPage.tsx` — review compact status indicators and confirm unknown state is not exposed as an unexplained neutral dot.
 - Manual acceptance: check default, focused, expanded, error, disabled, loading, and narrow-width states for every composite form control.
 - Manual acceptance: check compact trigger collapsed and expanded states for unknown, checking, online, and offline health. Known indicators must remain trailing and labelled; unknown must not create visual noise.
 

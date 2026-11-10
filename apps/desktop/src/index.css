@@ -166,10 +166,10 @@ input, textarea, [contenteditable="true"] {
   min-width: 0;
 }
 
-.pt-auth-brand img {
+.pt-auth-brand-mark {
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  flex: 0 0 auto;
 }
 
 .pt-auth-brand-name {
@@ -267,28 +267,37 @@ input, textarea, [contenteditable="true"] {
 .pt-auth-account-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 168px;
+  gap: 8px;
+  max-height: 220px;
   overflow-y: auto;
 }
 
-.pt-auth-account-row .pt-button-content {
+.pt-auth-account-row.pt-button {
   justify-content: flex-start;
-  gap: 10px;
+  min-height: 60px;
+  padding: 8px 12px;
+}
+
+.pt-auth-account-row .pt-button-content {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 12px;
 }
 
 .pt-auth-account-meta {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  justify-content: center;
+  gap: 2px;
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
 }
 
 .pt-auth-account-name {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.3;
   color: var(--pt-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -296,7 +305,8 @@ input, textarea, [contenteditable="true"] {
 }
 
 .pt-auth-account-handle {
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.3;
   color: var(--pt-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -411,7 +421,12 @@ input, textarea, [contenteditable="true"] {
   overflow-y: auto;
 }
 
+.pt-station-row.pt-button {
+  justify-content: flex-start;
+}
+
 .pt-station-row .pt-button-content {
+  width: 100%;
   justify-content: flex-start;
 }
 

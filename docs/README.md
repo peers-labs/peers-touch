@@ -247,6 +247,9 @@ Search 当前真源：[封闭域 Search](./architecture/domains/search/README.md
 - Node Connectivity：`architecture/platform/runtime/node-connectivity/README.md`
   （active；已评审的逻辑 Station/Node 身份、Frame 内置接入、libp2p Circuit v2、
   canonical HTTP/protobuf 与集群就绪目标；候选执行计划待批准，运行时未证明）
+- Runtime Secrets 配给：`architecture/platform/runtime/runtime-secrets/README.md`
+  （active；Class A/Class B 密钥权威分类、per-role git-crypt runtime.env、
+  部署期幂等对账与 fail-closed 预检；SSH stdin 传值、远端 0600 原子落盘）
 - Relay Attachment 生命周期：
   `architecture/platform/runtime/node-connectivity/relay-attachment/README.md`
   （active；定义 Relay Operator 永久邀请/撤销与 Station Operator

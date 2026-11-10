@@ -33,7 +33,8 @@ manifest="$role_dir/secret-manifest.env"
 
 mask() {
   # show only first/last char and length; never the value.
-  local v="$1" n=${#v}
+  local v="$1"
+  local n=${#v}
   if (( n == 0 )); then echo "-"; elif (( n <= 4 )); then echo "****($n)"; else printf '%s***%s(%d)\n' "${v:0:1}" "${v: -1}" "$n"; fi
 }
 
