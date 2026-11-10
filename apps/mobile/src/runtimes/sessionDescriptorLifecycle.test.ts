@@ -283,7 +283,11 @@ describe('Session descriptor revalidates the restored session on resume', () => 
     await descriptor.suspend();
     mocks.kernelPhase = 'ACTIVE';
     mocks.kernelListeners.forEach((listener) => {
-      listener({ kind: 'phase-changed', phase: 'ACTIVE' });
+      listener({
+        kind: 'phase-changed',
+        phase: 'ACTIVE',
+        previousPhase: 'RESUMING',
+      });
     });
     await Promise.resolve();
 
@@ -310,7 +314,11 @@ describe('Session descriptor revalidates the restored session on resume', () => 
 
     mocks.kernelPhase = 'ACTIVE';
     mocks.kernelListeners.forEach((listener) => {
-      listener({ kind: 'phase-changed', phase: 'ACTIVE' });
+      listener({
+        kind: 'phase-changed',
+        phase: 'ACTIVE',
+        previousPhase: 'RESUMING',
+      });
     });
     await vi.waitFor(() => expect(commands).toContain('oauth_session_refresh'));
     expect(mocks.kernelReconcile).not.toHaveBeenCalled();
