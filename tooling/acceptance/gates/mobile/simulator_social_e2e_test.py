@@ -125,7 +125,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
         script = session.execute_script.call_args_list[0].args[0]
         self.assertIn("input.click()", script)
         self.assertIn("input.checked !== true", script)
-        self.assertIn("enabled?.disabled !== false", script)
+        self.assertIn(
+            "getAttribute('aria-disabled') === 'true'",
+            script,
+        )
         self.assertEqual(index, 3)
 
     def test_select_antd_option_opens_current_root_control(self) -> None:

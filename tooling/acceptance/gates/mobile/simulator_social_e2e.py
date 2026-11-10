@@ -1859,7 +1859,9 @@ if (input.checked !== true) {
   input.click();
   return null;
 }
-if (enabled?.disabled !== false) return null;
+// Design-system Buttons stay focusable and expose availability through
+// aria-disabled rather than the native disabled attribute (B19).
+if (enabled?.getAttribute('aria-disabled') === 'true') return null;
 const inputs = Array.from(document.querySelectorAll(
   '[data-acceptance-id="social-search-page"] input[type="radio"]'
 ));
