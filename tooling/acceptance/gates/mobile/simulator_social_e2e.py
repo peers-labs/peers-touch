@@ -1874,11 +1874,57 @@ return index >= 0 ? {index} : null;
             )
             return value if isinstance(value, Mapping) else None
 
-        result = SimulatorSocialGate._wait_for_value(selected, label)
+        try:
+            result = SimulatorSocialGate._wait_for_value(selected, label)
+        except GateError:
+            diagnostic = SimulatorSocialGate._radio_convergence_diagnostic(
+                session,
+                '[data-acceptance-id="social-search-page"]',
+                enabled_selector,
+            )
+            raise GateError(
+                f"{label} did not converge: {json.dumps(diagnostic, sort_keys=True)}"
+            ) from None
         index = result.get("index") if isinstance(result, Mapping) else None
         if not isinstance(index, int) or isinstance(index, bool) or index < 0:
             raise GateError(f"{label} returned an invalid option index")
         return index
+
+    @staticmethod
+    def _radio_convergence_diagnostic(
+        session: Any,
+        page_selector: str,
+        enabled_selector: str,
+    ) -> dict[str, Any]:
+        try:
+            observed = session.execute_script(
+                """
+const page = document.querySelector(arguments[0]);
+const enabled = document.querySelector(arguments[1]);
+const radios = Array.from(document.querySelectorAll(
+  arguments[0] + ' input[type="radio"]'
+)).map((input) => ({
+  value: input.value,
+  checked: input.checked === true,
+  disabled: input.disabled === true,
+}));
+return {
+  pagePresent: page !== null,
+  radios,
+  enabledPresent: enabled !== null,
+  enabledAriaDisabled: enabled
+    ? enabled.getAttribute('aria-disabled')
+    : null,
+  enabledNativeDisabled: enabled ? enabled.disabled : null,
+  path: window.location.pathname,
+};
+""",
+                page_selector,
+                enabled_selector,
+            )
+        except DriverError as error:
+            return {"diagnosticError": str(error)}
+        return observed if isinstance(observed, dict) else {}
 
     @staticmethod
     def _click_ui_for_post(
