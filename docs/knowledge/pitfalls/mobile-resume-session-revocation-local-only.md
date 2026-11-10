@@ -52,16 +52,52 @@ This behavior predates the peers-ui landing (identical since the W3 lifecycle
 hard cut) and lives entirely in the native OAuth/session layer; no
 presentation or identity-projection change in the peers-ui work touches it.
 
-## Decision required
+## Resolution (implemented): revalidate on resume, keep restore local-only
 
-Closing AS-04 needs an explicit product/security choice, not a speculative
-edit:
+Option 1 below is the shipped contract. The revalidation lives in the Session
+runtime **descriptor** `resume()` path, never inside the controller
+`restore()` whose local-only unit contract is unchanged.
 
-1. **Revalidate on resume** — after local restore, issue a `refresh()` when a
-   session is active. Terminal 401 already revokes and clears the scope;
-   non-terminal network errors already keep the cached session, so offline
-   resume can remain non-destructive. This adds a Station round trip to every
-   foreground and changes the offline-first guarantee.
+`createSessionRuntimeDescriptor().resume()` first awaits the storage-only
+`restoreOwnedSession()`, then fires `revalidateResumedSession()` without
+blocking the kernel resume budget:
+
+1. If the restored projection is active, call
+   `sessionRuntime.refresh('scheduled')`, which goes through the native
+   `oauth_session_refresh` → `rotate_session` (`POST /actor/session/takeover`).
+   A replaced session returns `mobile.auth.sessionCredentialRejected:401`,
+   classified terminal by `isTerminalSessionRefreshError`, so the controller
+   purges native storage, reports the `session-expired` recovery flag, and
+   publishes a null session.
+2. Transient failures (`oauthTransportUnavailable`, `oauthResponseRead`,
+   `sessionCredentialRejected:408/429/5xx`) keep the cached projection, retain
+   shell admission, and arm the existing retry schedule, preserving offline
+   first resume.
+3. The Station round trip is intentionally not awaited inside `resume()`: the
+   kernel enforces a short per-descriptor resume timeout, and foreground resume
+   must survive a slow or unreachable Station.
+4. When the refresh settles with a null session and the descriptor epoch is
+   still current, the descriptor requests
+   `kernel.reconcileLaunchState('reliability-recovery')` so the launch state
+   leaves `shell` for the Access Gate instead of waiting on the scheduled
+   refresh window. A later `suspend()`/`teardown()` bumps `lifecycleEpoch`,
+   which fences both the revalidation and the reconciliation.
+
+The regression coverage is in
+`apps/mobile/src/runtimes/sessionDescriptorLifecycle.test.ts`: healthy rotate
+stays in shell, terminal 401 revokes and reconciles, transient transport
+failure retains the cached session, and suspension fences a late refresh.
+
+## Decision context
+
+Closing AS-04 needed an explicit product/security choice. The alternatives
+considered were:
+
+1. **Revalidate on resume (selected)** — after local restore, issue a
+   `refresh()` when a session is active. Terminal 401 already revokes and
+   clears the scope; non-terminal network errors already keep the cached
+   session, so offline resume remains non-destructive. This adds a Station
+   round trip to every foreground and changes the offline-first guarantee.
 2. **Keep local resume, tighten refresh timing** — leave `restore()` as-is and
    shorten or force the refresh window so replacement is detected promptly,
    preserving the explicit no-refresh-on-restore unit contract.
