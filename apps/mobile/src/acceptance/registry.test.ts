@@ -191,10 +191,13 @@ describe('Mobile Acceptance Harness', () => {
   it('projects only declared recovery surface fixtures', async () => {
     const harness = createMobileAcceptanceHarness();
 
+    // projection-stale was deliberately removed (9510e8588): projection
+    // reconciliation is runtime-internal and filtered from user-facing
+    // recovery surfaces. device-local remains a declared public fixture.
     await expect(harness['recovery.fixture']({
-      surfaceId: 'recovery.projection-stale',
+      surfaceId: 'recovery.device-local',
     })).resolves.toMatchObject({
-      surfaceId: 'recovery.projection-stale',
+      surfaceId: 'recovery.device-local',
     });
     await expect(harness['recovery.fixture']({
       surfaceId: 'recovery.not-real',

@@ -19,7 +19,6 @@ import {
   unblockSocialUser,
 } from '../../features/social/socialRuntime';
 import { useSocialStore } from '../../features/social/socialStore';
-import { actorDisplayName } from '../../features/social/socialProjection';
 import type { PeerProfile } from '../../features/social/socialTypes';
 import {
   ProfileUpdateOutcome,
@@ -1013,7 +1012,10 @@ export function blockedUserViews(
     const profile = peerProfiles[item.targetPtid];
     return {
       targetPtid: item.targetPtid,
-      displayName: actorDisplayName(profile?.displayName || profile?.username, item.targetPtid),
+      // Blocked users keep the canonical PTID as the visible fallback rather
+      // than a humanized handle, so an unresolved identity never looks like a
+      // confirmed display name.
+      displayName: profile?.displayName || profile?.acct || item.targetPtid,
       avatar: profile?.avatar ?? '',
       homeStationPeerId: item.targetHomeStationPeerId ?? '',
     };

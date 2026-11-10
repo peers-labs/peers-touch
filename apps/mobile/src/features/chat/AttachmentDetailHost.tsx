@@ -18,7 +18,14 @@ import { useMobileAttachmentAccess } from './MessageAttachment';
 import './attachmentDetail.css';
 
 export function AttachmentDetailHost() {
-  const id = useSyncExternalStore(mobileAttachmentAccess.subscribeSelection, mobileAttachmentAccess.selectedId);
+  // Selection is a client-only transient state; server rendering always starts
+  // without an open attachment, which also satisfies useSyncExternalStore's
+  // required getServerSnapshot.
+  const id = useSyncExternalStore(
+    mobileAttachmentAccess.subscribeSelection,
+    mobileAttachmentAccess.selectedId,
+    () => null,
+  );
   useEffect(() => () => mobileAttachmentAccess.close(), []);
   return id ? <AttachmentDetail key={id} id={id} /> : null;
 }
