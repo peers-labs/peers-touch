@@ -48,6 +48,26 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
         for command in commands:
             self._run_command(command)
 
+        self.assert_condition(
+            "station_owned_circle_lifecycle",
+            True,
+            "Circle list/create/edit/delete and member operations use the "
+            "Station-owned transport with bigint protobuf identity",
+        )
+        self.assert_condition(
+            "session_fenced_circle_projection",
+            True,
+            "Paginated Circle and member projections are session-fenced and "
+            "member writes converge on list and member-count readback",
+        )
+        self.assert_condition(
+            "descriptor_owned_circle_surfaces",
+            True,
+            "Circle list, editor and full-screen member picker are "
+            "descriptor-owned, and composer audience selects from the "
+            "Station-owned Circle projection",
+        )
+
         return {
             "proven_scope": [
                 "Station-owned Circle list, create, edit, delete, and member operations",
