@@ -42,6 +42,27 @@ describe('auth tinted card grammar', () => {
     // Mid-range windows (481-760px) still center the card vertically.
     expect(stylesheet).toMatch(/@media \(max-width: 760px\)[\s\S]*?margin-block: auto/);
   });
+
+  it('keeps the card as a content-sized block above the phone breakpoint', () => {
+    // No flex stretching at base level — wide cards hug content and center.
+    const baseCard = stylesheet.slice(
+      0,
+      stylesheet.indexOf('@media (max-width: 760px)'),
+    );
+    expect(baseCard).not.toMatch(/\.pt-auth-card\s*\{[^}]*display: flex/);
+  });
+
+  it('never stretches the card to fill the window above 480px', () => {
+    // The 481-760 band must not override the fixed width; only the <=480
+    // full-bleed block is allowed to set width:100% on the card.
+    const midBlock = stylesheet.slice(
+      stylesheet.indexOf('@media (max-width: 760px)'),
+      stylesheet.lastIndexOf('@media (max-width: 480px)'),
+    );
+    expect(midBlock).not.toMatch(/\.pt-auth-card\s*\{[^}]*width:\s*100%/);
+    expect(stylesheet).toContain('width: var(--pt-auth-card-width, 384px);');
+    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?width: 100%/);
+  });
 });
 
 describe('auth phone-narrow fill grammar', () => {
@@ -51,6 +72,13 @@ describe('auth phone-narrow fill grammar', () => {
     expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?min-height: 100%/);
     expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?border-radius: 0/);
     expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?box-shadow: none/);
+  });
+
+  it('turns the full-height card into a flex column and pins the Station footer', () => {
+    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?display: flex/);
+    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?flex-direction: column/);
+    expect(narrowBlock).toMatch(/\.pt-auth-card \.pt-card-body\s*\{[\s\S]*?flex: 1 1 auto/);
+    expect(narrowBlock).toMatch(/\.pt-auth-card > footer\s*\{[\s\S]*?margin-top: auto/);
   });
 });
 

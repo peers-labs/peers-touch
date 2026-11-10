@@ -502,8 +502,9 @@ input, textarea, [contenteditable="true"] {
     min-height: 100%;
   }
 
+  /* The card keeps its fixed --pt-auth-card-width and only centers; it must
+     not stretch to fill the window above the 480px full-bleed breakpoint. */
   .pt-auth-card {
-    width: 100%;
     margin-block: auto;
   }
 }
@@ -531,15 +532,20 @@ input, textarea, [contenteditable="true"] {
     border: 0;
     border-radius: 0;
     box-shadow: none;
+    display: flex;
+    flex-direction: column;
   }
 
   .pt-auth-card .pt-card-body {
-    flex: 1;
+    flex: 1 1 auto;
     padding: 12px 22px 16px;
     gap: 10px;
   }
 
+  /* Full-height card: absorb free space into the body and pin the Station
+     switcher footer to the window bottom. */
   .pt-auth-card > footer {
+    margin-top: auto;
     padding: 0 22px 16px;
   }
 
