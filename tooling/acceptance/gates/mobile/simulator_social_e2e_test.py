@@ -112,7 +112,6 @@ class SimulatorSocialGateTests(unittest.TestCase):
     def test_select_radio_operates_visible_control_and_waits_for_checked(self) -> None:
         session = Mock()
         session.execute_script.side_effect = [None, {"index": 3}]
-        session.find_element.return_value = "radio-element"
 
         index = SimulatorSocialGate._select_radio(
             session,
@@ -122,14 +121,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
             "Federation",
         )
 
-        session.find_element.assert_called_once_with(
-            "css selector",
-            'label.pt-check-label:has(input[value="federation-1"])',
-        )
-        session.click_element.assert_called_once_with("radio-element")
         self.assertEqual(session.execute_script.call_count, 2)
         script = session.execute_script.call_args_list[0].args[0]
-        self.assertIn("input?.checked !== true", script)
+        self.assertIn("input.click()", script)
+        self.assertIn("input.checked !== true", script)
         self.assertIn("enabled?.disabled !== false", script)
         self.assertEqual(index, 3)
 

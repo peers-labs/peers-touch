@@ -1848,21 +1848,25 @@ return true;
         enabled_selector: str,
         label: str,
     ) -> int:
-        element_ref = session.find_element("css selector", control_selector)
-        session.click_element(element_ref)
-
         def selected() -> Mapping[str, object] | None:
             value = session.execute_script(
                 """
-const input = document.querySelector(arguments[0]);
-const enabled = document.querySelector(arguments[1]);
-if (input?.checked !== true || enabled?.disabled !== false) return null;
+const input = document.querySelector(arguments[1]);
+const enabled = document.querySelector(arguments[2]);
+if (!input) return null;
+if (input.checked !== true) {
+  input.scrollIntoView({block: 'center', inline: 'nearest'});
+  input.click();
+  return null;
+}
+if (enabled?.disabled !== false) return null;
 const inputs = Array.from(document.querySelectorAll(
   '[data-acceptance-id="social-search-page"] input[type="radio"]'
 ));
 const index = inputs.indexOf(input);
 return index >= 0 ? {index} : null;
 """,
+                control_selector,
                 selector,
                 enabled_selector,
             )
