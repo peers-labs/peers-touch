@@ -6,6 +6,7 @@ import type {
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
 } from '../app/lifecycle/types';
+import { getMobileLifecycleKernel } from '../app/lifecycle/MobileLifecycleKernel';
 import {
   isAccessGranted,
   type AccessDecision,
@@ -751,6 +752,35 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
     await sessionRuntime.restore(station, state.accessDecision);
   };
 
+  // Foreground revalidation after a local-only restore. A same-account
+  // takeover replaces the server session while the cached projection still
+  // looks valid, so resume must probe the Station through the canonical rotate
+  // path instead of waiting for the scheduled refresh window. The controller
+  // retains the cached session on transient errors (offline-first) and only
+  // revokes on a terminal rejection.
+  const revalidateResumedSession = async (observed: number): Promise<void> => {
+    if (!running || observed !== lifecycleEpoch) return;
+    const projected = sessionRuntime.getSnapshot();
+    if (projected.phase !== 'active' || !projected.session) return;
+    try {
+      await sessionRuntime.refresh('scheduled');
+    } catch {
+      // The controller owns the typed outcome: terminal rejection already
+      // revoked and fenced the session, while a transient failure kept the
+      // cached projection and armed a retry.
+    }
+    if (!running || observed !== lifecycleEpoch) return;
+    if (sessionRuntime.getSnapshot().session) return;
+    const kernel = getMobileLifecycleKernel();
+    if (kernel.getState().phase !== 'ACTIVE') return;
+    try {
+      await kernel.reconcileLaunchState('reliability-recovery');
+    } catch {
+      // Reconciliation is advisory: the session-expired recovery flag and the
+      // fenced projection remain authoritative when the kernel cannot converge.
+    }
+  };
+
   return {
     id: 'session',
     title: 'Session Runtime',
@@ -791,8 +821,13 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
 
     async resume(): Promise<void> {
       running = true;
-      lifecycleEpoch += 1;
+      const observed = ++lifecycleEpoch;
       await restoreOwnedSession();
+      if (!running || observed !== lifecycleEpoch) return;
+      // Do not block the kernel resume budget on the Station round trip; the
+      // kernel enforces a short per-descriptor resume timeout and foreground
+      // resume must survive a slow or unreachable Station.
+      void revalidateResumedSession(observed);
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
