@@ -24,6 +24,18 @@ TERMINAL_FAILURE_STATES = frozenset({"failed", "terminal", "superseded"})
 # is a pre-mutation signal to re-synchronize rather than a failed mutation.
 MOBILE_WRITE_REVOKED_ERROR_KEY = "mobile.recovery.writeRevocation.body"
 MOBILE_WRITE_ADMISSION_STABLE_SECONDS = 1.25
+# Same admission-gated surface as gates/chat/mixed_native_runtime.py: every
+# mutation the app routes through requireMobileMutationAdmission. Keeping this in
+# sync ensures a revoked write barrier is retried for all gated actions, not
+# only messaging.send.
+MOBILE_WRITE_ACTIONS = frozenset({
+    "messaging.createDirect",
+    "messaging.createGroup",
+    "messaging.send",
+    "messaging.interact",
+    "messaging.read",
+    "messaging.typing",
+})
 
 
 class MessagingJourneySession(Protocol):
@@ -137,9 +149,12 @@ class MobileMessagingJourney:
             sender,
             receiver,
         )
-        sender_session.call_action(
+        self._call_write_action(
+            sender_session,
+            sender.client_id,
             "messaging.typing",
             {"conversationId": conversation_id, "isTyping": True},
+            "Direct typing",
         )
         typing_elapsed_ms = self._await_condition(
             lambda: self._typing_visible(
@@ -172,12 +187,15 @@ class MobileMessagingJourney:
             delivered.get("eventSequence"),
             "Direct event sequence",
         )
-        receiver_session.call_action(
+        self._call_write_action(
+            receiver_session,
+            receiver.client_id,
             "messaging.read",
             {
                 "conversationId": conversation_id,
                 "lastReadSequence": event_sequence,
             },
+            "Direct read receipt",
         )
         _, receipt_elapsed_ms = self._await_message(
             sender_session,
@@ -261,16 +279,16 @@ class MobileMessagingJourney:
         )
 
         group_id = f"mobile-group-{journey_id}"
-        created = self._mapping(
-            sender_session.call_action(
-                "messaging.createGroup",
-                {
-                    "conversationId": group_id,
-                    "name": f"Acceptance {journey_id}",
-                    "memberPtids": [sender.ptid, receiver.ptid],
-                    "federationId": sender.federation_id,
-                },
-            ),
+        created = self._call_write_action(
+            sender_session,
+            sender.client_id,
+            "messaging.createGroup",
+            {
+                "conversationId": group_id,
+                "name": f"Acceptance {journey_id}",
+                "memberPtids": [sender.ptid, receiver.ptid],
+                "federationId": sender.federation_id,
+            },
             "Group creation",
         )
         if created.get("conversationId") != group_id:
@@ -663,6 +681,10 @@ class MobileMessagingJourney:
         a single bounded retry after reconciliation is safe and cannot duplicate
         a message. Any other DriverError propagates unchanged.
         """
+        if action not in MOBILE_WRITE_ACTIONS:
+            raise GateError(
+                f"{action} is not a mobile write-admission-gated action"
+            )
         try:
             return self._mapping(
                 session.call_action(action, dict(payload)), label
@@ -743,7 +765,9 @@ class MobileMessagingJourney:
             "receiver attachment open",
         )
 
-        receiver_session.call_action(
+        self._call_write_action(
+            receiver_session,
+            receiver.client_id,
             "messaging.interact",
             {
                 "kind": "reaction",
@@ -752,6 +776,7 @@ class MobileMessagingJourney:
                 "reaction": "ack",
                 "remove": False,
             },
+            "Attachment reaction",
         )
         self._await_message(
             sender_session,
@@ -766,7 +791,9 @@ class MobileMessagingJourney:
             "sender reaction readback",
         )
         edited_text = f"{text}-edited"
-        sender_session.call_action(
+        self._call_write_action(
+            sender_session,
+            sender.client_id,
             "messaging.interact",
             {
                 "kind": "edit",
@@ -774,6 +801,7 @@ class MobileMessagingJourney:
                 "messageId": message_id,
                 "plaintext": edited_text,
             },
+            "Attachment edit",
         )
         edited, _ = self._await_message(
             receiver_session,
@@ -786,12 +814,15 @@ class MobileMessagingJourney:
             edited.get("eventSequence"),
             "Attachment message event sequence",
         )
-        receiver_session.call_action(
+        self._call_write_action(
+            receiver_session,
+            receiver.client_id,
             "messaging.read",
             {
                 "conversationId": conversation_id,
                 "lastReadSequence": event_sequence,
             },
+            "Attachment read receipt",
         )
         self._await_message(
             sender_session,

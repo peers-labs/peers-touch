@@ -817,6 +817,75 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             MobileMessagingJourney._write_admission_open(blocked)
         )
 
+    def test_read_write_action_retries_through_same_admission_guard(self) -> None:
+        session = Mock()
+        session.call_action.side_effect = [
+            DriverError(
+                "Mobile Acceptance action 'messaging.read' failed with "
+                f"{MOBILE_WRITE_REVOKED_ERROR_KEY}"
+            ),
+            {"submitted": True},
+        ]
+
+        with patch.object(
+            self.journey, "_wait_for_mobile_write_admission"
+        ) as wait_admission:
+            result = self.journey._call_write_action(
+                session,
+                "sim-ios-peer",
+                "messaging.read",
+                {"conversationId": "c1", "lastReadSequence": 3},
+                "read receipt",
+            )
+
+        wait_admission.assert_called_once_with(
+            session, "sim-ios-peer", force_reconcile=True
+        )
+        actions = [call.args[0] for call in session.call_action.call_args_list]
+        self.assertEqual(actions, ["messaging.read", "messaging.read"])
+        self.assertTrue(result["submitted"])
+
+    def test_interact_write_action_retries_without_duplicating_other_actions(
+        self,
+    ) -> None:
+        session = Mock()
+        session.call_action.side_effect = [
+            DriverError(
+                "Mobile Acceptance action 'messaging.interact' failed with "
+                f"{MOBILE_WRITE_REVOKED_ERROR_KEY}"
+            ),
+            {"interactionId": "i-1"},
+        ]
+
+        with patch.object(
+            self.journey, "_wait_for_mobile_write_admission"
+        ) as wait_admission:
+            result = self.journey._call_write_action(
+                session,
+                "sim-ios",
+                "messaging.interact",
+                {"kind": "reaction", "conversationId": "c1",
+                 "messageId": "m1", "reaction": "ack", "remove": False},
+                "reaction",
+            )
+
+        wait_admission.assert_called_once()
+        actions = [call.args[0] for call in session.call_action.call_args_list]
+        self.assertEqual(actions, ["messaging.interact", "messaging.interact"])
+        self.assertEqual(result["interactionId"], "i-1")
+
+    def test_call_write_action_rejects_non_gated_action(self) -> None:
+        with self.assertRaisesRegex(
+            GateError, "not a mobile write-admission-gated action"
+        ):
+            self.journey._call_write_action(
+                Mock(),
+                "sim-ios",
+                "social.people.search",
+                {"query": "bob"},
+                "people search",
+            )
+
     def test_authentication_resolves_canonical_station_account_reference(
         self,
     ) -> None:
