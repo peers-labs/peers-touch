@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Avatar } from '@lobehub/ui';
-import { theme } from 'antd';
-import { Flexbox } from 'react-layout-kit';
 
 import { useMentionStore } from '../../store/mentions';
 import { useAgentStore } from '../../store/agent';
@@ -22,9 +19,27 @@ interface MentionPopupProps {
   anchorLeft?: number;
 }
 
+function MentionAvatar({ agent }: { agent: Agent }) {
+  const name = agent.title || agent.name;
+  if (agent.avatar) {
+    return (
+      <span className="sc-mention__avatar">
+        <img src={agent.avatar} alt={name} />
+      </span>
+    );
+  }
+  return (
+    <span
+      className="sc-mention__avatar"
+      style={{ background: agent.backgroundColor || 'var(--pt-primary)' }}
+    >
+      {name.charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
 export function MentionPopup({ onSelect, anchorTop, anchorLeft }: MentionPopupProps) {
   const { t } = useTranslation('agent');
-  const { token } = theme.useToken();
   const [activeIndex, setActiveIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -48,6 +63,16 @@ export function MentionPopup({ onSelect, anchorTop, anchorLeft }: MentionPopupPr
       agent.title.toLowerCase().includes(query)
     );
   });
+
+  const selectAgent = useCallback(
+    (agent: Agent) => {
+      addMention(agent.id);
+      closePopup();
+      const insertText = `@${agent.title || agent.name} `;
+      onSelect(agent, insertText);
+    },
+    [addMention, closePopup, onSelect],
+  );
 
   // Reset active index when list changes.
   useEffect(() => {
@@ -78,7 +103,7 @@ export function MentionPopup({ onSelect, anchorTop, anchorLeft }: MentionPopupPr
         closePopup();
       }
     },
-    [showMentionPopup, filteredAgents, activeIndex, closePopup],
+    [showMentionPopup, filteredAgents, activeIndex, closePopup, selectAgent],
   );
 
   useEffect(() => {
@@ -93,86 +118,36 @@ export function MentionPopup({ onSelect, anchorTop, anchorLeft }: MentionPopupPr
     activeEl?.scrollIntoView({ block: 'nearest' });
   }, [activeIndex]);
 
-  const selectAgent = useCallback(
-    (agent: Agent) => {
-      addMention(agent.id);
-      closePopup();
-      const insertText = `@${agent.title || agent.name} `;
-      onSelect(agent, insertText);
-    },
-    [addMention, closePopup, onSelect],
-  );
-
   if (!showMentionPopup) return null;
 
   return (
-    <Flexbox
+    <div
+      className="sc-mention-popup"
       data-pt-agent-mention-popup
       ref={listRef}
-      style={{
-        position: 'absolute',
-        bottom: anchorTop ?? '100%',
-        left: anchorLeft ?? 0,
-        zIndex: token.zIndexPopupBase,
-        maxHeight: 240,
-        width: 260,
-        overflowY: 'auto',
-        background: token.colorBgElevated,
-        borderRadius: token.borderRadiusLG,
-        boxShadow: token.boxShadowSecondary,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        padding: token.paddingXS,
-      }}
+      style={{ bottom: anchorTop ?? '100%', left: anchorLeft ?? 0 }}
     >
       {filteredAgents.length === 0 ? (
-        <Flexbox
-          align="center"
-          justify="center"
-          style={{ padding: token.paddingSM, color: token.colorTextSecondary }}
-        >
+        <div className="sc-mention-popup__empty">
           {t('agent.mentions.noAgents')}
-        </Flexbox>
+        </div>
       ) : (
         filteredAgents.map((agent, index) => (
-          <Flexbox
+          <button
+            type="button"
+            className={`sc-mention-popup__option${index === activeIndex ? ' is-active' : ''}`}
             data-pt-agent-mention-option={agent.id}
             key={agent.id}
-            horizontal
-            align="center"
-            gap={token.marginXS}
             onClick={() => selectAgent(agent)}
             onMouseEnter={() => setActiveIndex(index)}
-            style={{
-              padding: `${token.paddingXS}px ${token.paddingSM}px`,
-              borderRadius: token.borderRadius,
-              cursor: 'pointer',
-              background: index === activeIndex ? token.colorFillSecondary : 'transparent',
-              transition: 'background 0.15s',
-            }}
           >
-            <Avatar
-              avatar={agent.avatar || undefined}
-              title={agent.title || agent.name}
-              size={24}
-              shape="circle"
-              background={agent.backgroundColor || token.colorPrimary}
-            />
-            <Flexbox style={{ flex: 1, minWidth: 0 }}>
-              <span
-                style={{
-                  fontSize: token.fontSize,
-                  color: token.colorText,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {agent.title || agent.name}
-              </span>
-            </Flexbox>
-          </Flexbox>
+            <MentionAvatar agent={agent} />
+            <span className="sc-mention-popup__option-name">
+              {agent.title || agent.name}
+            </span>
+          </button>
         ))
       )}
-    </Flexbox>
+    </div>
   );
 }

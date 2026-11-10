@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { Modal, Form } from 'antd';
-import { Input, TextArea, toast } from '@lobehub/ui';
+import { useEffect, useState } from 'react';
+import { Button, Dialog, Field, TextField, TextArea } from '@peers-touch/ui';
 import type { ProviderDetail } from '../../services/desktop_api';
 import { useTranslation } from 'react-i18next';
 import { useActiveProviderSlice } from './useActiveSettingsStores';
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
 interface UpdateProviderModalProps {
   open: boolean;
@@ -13,67 +13,105 @@ interface UpdateProviderModalProps {
 
 export function UpdateProviderModal({ open, detail, onClose }: UpdateProviderModalProps) {
   const { t } = useTranslation('provider');
-  const [form] = Form.useForm();
+  const [name, setName] = useState(detail.name);
+  const [description, setDescription] = useState(detail.description ?? '');
+  const [logo, setLogo] = useState(detail.logo || '');
   const [loading, setLoading] = useState(false);
   const { updateProvider } = useActiveProviderSlice((s) => ({
     updateProvider: s.updateProvider,
   }));
 
+  // Every open starts a clean form (antd destroyOnHidden parity).
+  useEffect(() => {
+    if (open) {
+      setName(detail.name);
+      setDescription(detail.description ?? '');
+      setLogo(detail.logo || '');
+    }
+  }, [open, detail]);
+
+  const nameMissing = name.trim().length === 0;
+
   const handleOk = async () => {
+    if (nameMissing) return;
     try {
-      const values = await form.validateFields();
       setLoading(true);
       // TODO: Add a dedicated update-profile endpoint for custom providers.
       // For now we call updateProvider which only updates api_key/base_url/enabled.
       await updateProvider(detail.id, detail.api_key, detail.base_url, detail.enabled);
-      void values; // future: send name/description/logo update
-      toast.success(t('provider.updateProvider.updated'));
+      // name/description/logo stay local until the profile endpoint ships.
+      void description;
+      void logo;
+      notifySuccess(t('provider.updateProvider.updated'));
       onClose();
     } catch (e: unknown) {
-      if (e instanceof Error) toast.error(e.message);
+      if (e instanceof Error) notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={t('provider.updateProvider.title')}
+    <Dialog
       open={open}
-      onCancel={onClose}
-      onOk={handleOk}
-      confirmLoading={loading}
-      okText={t('provider.updateProvider.okText')}
-      destroyOnHidden
+      onDismiss={onClose}
+      title={t('provider.updateProvider.title')}
+      width={480}
+      closeLabel={t('provider.detail.disableConfirm.cancel')}
+      footer={
+        <>
+          <Button
+            actionId="update-provider-cancel"
+            emphasis="quiet"
+            label={t('provider.detail.disableConfirm.cancel')}
+            onActivate={onClose}
+          />
+          <Button
+            actionId="update-provider-ok"
+            emphasis="primary"
+            execution={loading ? 'pending' : 'idle'}
+            label={t('provider.updateProvider.okText')}
+            availability={nameMissing
+              ? { kind: 'disabled', reason: t('provider.updateProvider.providerNameRequired') }
+              : undefined}
+            onActivate={() => void handleOk()}
+          />
+        </>
+      }
     >
-      <Form
-        form={form}
-        layout="vertical"
-        style={{ marginTop: 16 }}
-        initialValues={{
-          id: detail.id,
-          name: detail.name,
-          description: detail.description,
-          logo: detail.logo || '',
-        }}
-      >
-        <Form.Item label={t('provider.updateProvider.providerId')}>
-          <Input value={detail.id} disabled />
-        </Form.Item>
-        <Form.Item
-          name="name"
+      <div className="sc-provider-form" data-provider-update-form>
+        <Field label={t('provider.updateProvider.providerId')}>
+          <TextField value={detail.id} disabled />
+        </Field>
+        <Field
           label={t('provider.updateProvider.providerName')}
-          rules={[{ required: true, message: t('provider.updateProvider.providerNameRequired') }]}
+          required
+          validation={nameMissing
+            ? { state: 'invalid', message: t('provider.updateProvider.providerNameRequired') }
+            : undefined}
         >
-          <Input placeholder={t('provider.updateProvider.providerNamePlaceholder')} />
-        </Form.Item>
-        <Form.Item name="description" label={t('provider.updateProvider.providerDescription')}>
-          <TextArea placeholder={t('provider.updateProvider.providerDescPlaceholder')} rows={2} />
-        </Form.Item>
-        <Form.Item name="logo" label={t('provider.updateProvider.providerLogo')}>
-          <Input placeholder="https://example.com/logo.png" allowClear />
-        </Form.Item>
-      </Form>
-    </Modal>
+          <TextField
+            placeholder={t('provider.updateProvider.providerNamePlaceholder')}
+            value={name}
+            onValueChange={setName}
+          />
+        </Field>
+        <Field label={t('provider.updateProvider.providerDescription')}>
+          <TextArea
+            placeholder={t('provider.updateProvider.providerDescPlaceholder')}
+            rows={2}
+            value={description}
+            onValueChange={setDescription}
+          />
+        </Field>
+        <Field label={t('provider.updateProvider.providerLogo')}>
+          <TextField
+            placeholder={t('provider.updateProvider.providerLogoPlaceholder')}
+            value={logo}
+            onValueChange={setLogo}
+          />
+        </Field>
+      </div>
+    </Dialog>
   );
 }

@@ -1,7 +1,7 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-10-27
+updated: 2026-11-07
 review-cadence: quarterly
 next-review: 2027-01-27
 related:
@@ -30,8 +30,11 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 
 ## 3. Product Identity
 
-- [ ] The surface follows Structured Expressive Minimalism; recurring workflow
-  surfaces use Quiet Protocol Minimalism as the default expression.
+- [ ] The surface follows the north-star frame grammar (neutral paper, ink
+  action capsule, single pine connection accent) defined in
+  [north-star-frame.md](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md).
+- [ ] Pine `#2f6a50` appears only on identity/current-location and connection
+  points; it never fills canvas/cards or doubles as the success color.
 - [ ] The screen does not feel like mixed LobeUI, antd, and one-off CSS defaults.
 - [ ] Primary content reads before metadata and chrome.
 - [ ] Federation/trust state is visible where it affects interpretation or action.

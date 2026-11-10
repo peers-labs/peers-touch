@@ -7,11 +7,9 @@ import {
   useEffect,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { theme, Typography, Tooltip } from 'antd';
+import { Tooltip as PtTooltip } from '@peers-touch/ui';
 import {
   ExternalLink,
   FileAudio,
@@ -24,7 +22,6 @@ import {
   Pause,
   Play,
   RotateCcw,
-  Volume2,
 } from 'lucide-react';
 import {
   type ChatAttachmentLike,
@@ -37,8 +34,6 @@ import {
 import { formatMediaDurationSeconds } from '../../utils/mediaDisplay';
 import { useAttachmentAccess } from './useAttachmentAccess';
 import { messagingAttachmentAccess } from '../../messaging/attachmentAccess';
-
-const { Text } = Typography;
 
 type Attachment = ChatAttachmentLike;
 
@@ -72,79 +67,56 @@ interface Props {
   visibilityHint?: ChatAttachmentVisibilityHint;
 }
 
+type ChipTone = 'info' | 'primary' | 'neutral';
+
 interface VisibilityChip {
   icon: typeof Globe;
   label: string;
   tooltip: string;
-  /** Tag color in the bubble background tone (own vs received). */
-  bg: string;
-  fg: string;
+  tone: ChipTone;
 }
 
 function visibilityChip(
   hint: ChatAttachmentVisibilityHint | undefined,
   t: ReturnType<typeof useTranslation>['t'],
-  isOwn: boolean,
-  token: ReturnType<typeof theme.useToken>['token'],
 ): VisibilityChip | null {
   if (!hint) return null;
-  // Tone the chip down for own messages (which already sit on a
-  // colored bubble) and lift it slightly for received messages so
-  // it remains legible against the muted bubble background.
-  const ownBg = 'rgba(255,255,255,0.18)';
-  const ownFg = 'rgba(255,255,255,0.92)';
   switch (hint) {
     case 'public':
       return {
         icon: Globe,
         label: t('chat.social.messageArea.attachmentScopePublic'),
         tooltip: t('chat.social.messageArea.attachmentVisiblePublic'),
-        bg: isOwn ? ownBg : token.colorInfoBg,
-        fg: isOwn ? ownFg : token.colorInfoText,
+        tone: 'info',
       };
     case 'chat':
       return {
         icon: MessageSquare,
         label: t('chat.social.messageArea.attachmentScopeChat'),
         tooltip: t('chat.social.messageArea.attachmentVisibleChat'),
-        bg: isOwn ? ownBg : token.colorPrimaryBg,
-        fg: isOwn ? ownFg : token.colorPrimaryText,
+        tone: 'primary',
       };
     case 'private':
       return {
         icon: Lock,
         label: t('chat.social.messageArea.attachmentScopePrivate'),
         tooltip: t('chat.social.messageArea.attachmentVisiblePrivate'),
-        bg: isOwn ? ownBg : token.colorFillSecondary,
-        fg: isOwn ? ownFg : token.colorTextSecondary,
+        tone: 'neutral',
       };
   }
 }
 
-function VisibilityBadge({ chip }: { chip: VisibilityChip }) {
-  const Icon = chip.icon;
+function VisibilityBadge({ chip, isOwn }: { chip: VisibilityChip; isOwn: boolean }) {
+  const Glyph = chip.icon;
   return (
-    <Tooltip title={chip.tooltip}>
-      <Flexbox
-        horizontal
-        align="center"
-        gap={4}
-        style={{
-          alignSelf: 'flex-start',
-          padding: '1px 6px',
-          borderRadius: 10,
-          background: chip.bg,
-          color: chip.fg,
-          fontSize: 10,
-          lineHeight: 1.4,
-          cursor: 'default',
-          userSelect: 'none',
-        }}
+    <PtTooltip label={chip.tooltip}>
+      <span
+        className={`sc-attachment-chip sc-attachment-chip--${chip.tone}${isOwn ? ' is-own' : ''}`}
       >
-        <Icon size={10} />
+        <Glyph size={10} />
         <span>{chip.label}</span>
-      </Flexbox>
-    </Tooltip>
+      </span>
+    </PtTooltip>
   );
 }
 
@@ -161,30 +133,24 @@ function attachmentTypeLabel(
 }
 
 interface AttachmentDetailsProps {
-  actionLabel: string;
   actionVisible: boolean;
   kind: 'image' | 'video' | 'audio' | 'file';
   isOwn: boolean;
-  onOpen: () => void;
   openTitle: string;
   primaryLabel?: string;
   sizeLabel: string;
   src: string | null;
-  token: ReturnType<typeof theme.useToken>['token'];
   typeLabel: string;
 }
 
 function AttachmentDetails({
-  actionLabel,
   actionVisible,
   kind,
   isOwn,
-  onOpen,
   openTitle,
   primaryLabel,
   sizeLabel,
   src,
-  token,
   typeLabel,
 }: AttachmentDetailsProps) {
   const TypeIcon = kind === 'image'
@@ -194,82 +160,40 @@ function AttachmentDetails({
       : kind === 'audio'
         ? FileAudio
         : Paperclip;
-  const textColor = isOwn ? '#fff' : token.colorText;
-  const secondaryColor = isOwn ? 'rgba(255,255,255,0.72)' : token.colorTextSecondary;
 
   return (
-    <Flexbox horizontal align="center" gap={8} style={{ minWidth: 0, width: '100%' }}>
-      <Flexbox
-        align="center"
-        justify="center"
-        style={{
-          width: 30,
-          height: 30,
-          flex: '0 0 30px',
-          borderRadius: 8,
-          background: isOwn ? 'rgba(255,255,255,0.16)' : token.colorFillSecondary,
-          color: textColor,
-        }}
-      >
-        <TypeIcon size={15} />
-      </Flexbox>
-      <Flexbox gap={1} style={{ flex: 1, minWidth: 0 }}>
-        <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
-          <Text style={{ flex: '0 0 auto', fontSize: 10, fontWeight: 600, color: secondaryColor }}>
-            {typeLabel}
-          </Text>
+    <span className={`sc-attachment-details${isOwn ? ' is-own' : ''}`}>
+      <span className="sc-attachment-details__glyph">
+        <TypeIcon size={16} />
+      </span>
+      <span className="sc-attachment-details__body">
+        <span className="sc-attachment-details__line">
+          <span className="sc-attachment-details__type">{typeLabel}</span>
           {sizeLabel && (
-            <Text ellipsis style={{ minWidth: 0, fontSize: 10, color: secondaryColor }}>
-              {sizeLabel}
-            </Text>
+            <span className="sc-attachment-details__size">{sizeLabel}</span>
           )}
-        </Flexbox>
+        </span>
         {primaryLabel && (
-          <Text ellipsis style={{ fontSize: 12, fontWeight: 500, color: textColor }}>
-            {primaryLabel}
-          </Text>
+          <span className="sc-attachment-details__name">{primaryLabel}</span>
         )}
-      </Flexbox>
+      </span>
       {src && (
-        <Tooltip title={openTitle}>
-          <button
-            type="button"
-            data-chat-attachment-open
-            aria-label={openTitle}
-            onClick={(ev) => {
-              ev.stopPropagation();
-              onOpen();
-            }}
-            style={{
-              appearance: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '4px 7px',
-              border: `1px solid ${isOwn ? 'rgba(255,255,255,0.24)' : token.colorBorderSecondary}`,
-              borderRadius: 999,
-              background: isOwn ? 'rgba(255,255,255,0.14)' : token.colorBgContainer,
-              color: textColor,
-              cursor: 'pointer',
-              fontSize: 10,
-              lineHeight: 1,
-              opacity: actionVisible ? 1 : 0.72,
-              transition: 'opacity 120ms ease, background 120ms ease',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <ExternalLink size={11} />
-            <span>{actionLabel}</span>
-          </button>
-        </Tooltip>
+        <span
+          className="sc-attachment-details__open"
+          data-chat-attachment-open
+          data-action-visible={actionVisible ? 'true' : 'false'}
+          title={openTitle}
+          aria-hidden
+        >
+          <ExternalLink size={13} />
+        </span>
       )}
-    </Flexbox>
+    </span>
   );
 }
 
 export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [hovered, setHovered] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
@@ -290,7 +214,7 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     isImage || isVoiceNote,
   );
   const canOpen = Boolean(attachmentId);
-  const chip = visibilityChip(visibilityHint, t, isOwn, token);
+  const chip = visibilityChip(visibilityHint, t);
   const showHint = chip !== null;
   const filename = attachment.filename?.trim() || t('chat.social.messageArea.attachmentUnnamed');
   const typeLabel = attachmentTypeLabel(attachmentKind, attachment, t);
@@ -298,7 +222,6 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
   const persistedAudioDurationSeconds = chatAttachmentDurationMs(attachment) / 1000;
   const audioDuration = audioDurationSeconds || persistedAudioDurationSeconds;
   const audioDurationLabel = formatMediaDurationSeconds(audioDuration);
-  const actionLabel = t('chat.social.messageArea.attachmentOpen');
   const openTitle = t('chat.social.messageArea.attachmentOpenOrDownload');
   const transferStateLabel = openState === 'pending'
     ? t('chat.social.messageArea.attachmentStateDownloading')
@@ -310,14 +233,6 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
           ? t('chat.social.messageArea.attachmentStateFailed')
           : '';
   const canPreviewImage = Boolean(isImage && src && !previewFailed);
-  const cardBackground = isOwn
-    ? hovered
-      ? 'rgba(255,255,255,0.22)'
-      : 'rgba(255,255,255,0.15)'
-    : hovered
-      ? token.colorFillSecondary
-      : token.colorFillTertiary;
-  const cardBorder = isOwn ? 'rgba(255,255,255,0.22)' : token.colorBorderSecondary;
 
   useEffect(() => {
     setPreviewFailed(false);
@@ -331,144 +246,81 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
     setAudioTerminal(false);
   }, [attachment.cid, src]);
 
-  const handleKeyDown = (ev: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!canOpen) return;
-    if (ev.key === 'Enter' || ev.key === ' ') {
-      ev.preventDefault();
-      void openAttachment();
-    }
-  };
-
   if (isImage) {
     return (
-      <Flexbox
-        gap={3}
+      <div
+        className="sc-attachment sc-attachment--image"
         data-messaging-attachment-id={attachmentId || undefined}
         data-messaging-attachment-kind={attachmentKind}
         data-messaging-attachment-open-state={openState}
         data-messaging-attachment-state={availabilityState}
-        style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', width: 'fit-content', maxWidth: 'min(240px, 100%)' }}
       >
-        <Flexbox
-          role={canOpen ? 'button' : undefined}
-          tabIndex={canOpen ? 0 : undefined}
+        <button
+          type="button"
+          className={`sc-attachment__image${hovered ? ' is-hovered' : ''}`}
+          disabled={!canOpen}
           onClick={openAttachment}
-          onKeyDown={handleKeyDown}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          style={{
-            maxWidth: 'min(240px, 100%)',
-            overflow: 'hidden',
-            border: '0',
-            borderRadius: 6,
-            background: 'transparent',
-            boxShadow: hovered ? token.boxShadowTertiary : 'none',
-            cursor: canOpen ? 'pointer' : 'default',
-            transition: 'background 120ms ease, box-shadow 120ms ease',
-          }}
         >
           {canPreviewImage && src ? (
             <img
               src={`${src}?representation=preview`}
               alt={filename}
               loading="lazy"
-              style={{
-                display: 'block',
-                width: 'auto',
-                maxWidth: '100%',
-                maxHeight: 260,
-                objectFit: 'contain',
-                background: 'transparent',
-              }}
               onError={() => setPreviewFailed(true)}
             />
           ) : (
-            <Flexbox
-              align="center"
-              justify="center"
-              style={{
-                width: 160,
-                height: 96,
-                borderRadius: 8,
-                background: isOwn ? 'rgba(255,255,255,0.15)' : token.colorFillTertiary,
-                color: isOwn ? '#fff' : token.colorTextSecondary,
-              }}
-            >
+            <span className={`sc-attachment__image-fallback${isOwn ? ' is-own' : ''}`}>
               <FileImage size={22} />
-            </Flexbox>
+            </span>
           )}
-        </Flexbox>
-        <Flexbox gap={2} style={{ padding: '2px 6px', borderRadius: 4, background: token.colorBgContainer }}>
-          <Text ellipsis style={{ maxWidth: 228, fontSize: 12, color: token.colorText }}>
-            {filename}
-          </Text>
-          {sizeLabel && (
-            <Text style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', fontSize: 10, color: token.colorTextSecondary }}>
-              {sizeLabel}
-            </Text>
-          )}
-        </Flexbox>
-        {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
-        {showHint && chip && <VisibilityBadge chip={chip} />}
-      </Flexbox>
+        </button>
+        <div className="sc-attachment__image-caption">
+          <span className="sc-attachment__image-name">{filename}</span>
+          {sizeLabel && <span className="sc-attachment__image-size">{sizeLabel}</span>}
+        </div>
+        {transferStateLabel && <span className="sc-attachment__state">{transferStateLabel}</span>}
+        {showHint && chip && <VisibilityBadge chip={chip} isOwn={isOwn} />}
+      </div>
     );
   }
 
   if (src && isVideo) {
     return (
-      <Flexbox
-        gap={3}
+      <div
+        className="sc-attachment sc-attachment--video"
         data-messaging-attachment-id={attachmentId || undefined}
         data-messaging-attachment-kind={attachmentKind}
         data-messaging-attachment-open-state={openState}
         data-messaging-attachment-state={availabilityState}
-        style={{ maxWidth: '100%' }}
       >
-        <Flexbox
-          gap={6}
+        <div className={`sc-attachment__video${hovered ? ' is-hovered' : ''}${isOwn ? ' is-own' : ''}`}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          style={{
-            width: 'min(320px, 100%)',
-            maxWidth: '100%',
-            overflow: 'hidden',
-            border: `1px solid ${cardBorder}`,
-            borderRadius: 8,
-            background: cardBackground,
-            boxShadow: hovered ? token.boxShadowTertiary : 'none',
-            transition: 'background 120ms ease, box-shadow 120ms ease',
-          }}
         >
-          <video
-            src={src}
-            controls
-            preload="metadata"
-            style={{
-              display: 'block',
-              width: '100%',
-              maxHeight: 220,
-              background: token.colorBgSpotlight,
-            }}
-          />
-          <Flexbox style={{ padding: '0 8px 8px' }}>
+          <video src={src} controls preload="metadata" />
+          <button
+            type="button"
+            className="sc-attachment__video-details"
+            onClick={openAttachment}
+            title={openTitle}
+          >
             <AttachmentDetails
-              actionLabel={actionLabel}
               actionVisible={hovered}
               kind={attachmentKind}
               isOwn={isOwn}
-              onOpen={openAttachment}
               openTitle={openTitle}
               primaryLabel={filename}
               sizeLabel={sizeLabel}
               src={src}
-              token={token}
               typeLabel={typeLabel}
             />
-          </Flexbox>
-        </Flexbox>
-        {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
-        {showHint && chip && <VisibilityBadge chip={chip} />}
-      </Flexbox>
+          </button>
+        </div>
+        {transferStateLabel && <span className="sc-attachment__state">{transferStateLabel}</span>}
+        {showHint && chip && <VisibilityBadge chip={chip} isOwn={isOwn} />}
+      </div>
     );
   }
 
@@ -516,29 +368,19 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             : audioPositionSeconds > 0
               ? 'paused'
               : 'ready';
-    const voiceBubbleBackground = isOwn
-      ? hovered
-        ? '#8DEA90'
-        : '#95EC97'
-      : hovered
-        ? token.colorFillSecondary
-        : token.colorBgContainer;
-    const voiceTextColor = isOwn ? '#111827' : token.colorText;
-    const voiceSecondaryColor = isOwn ? 'rgba(17,24,39,0.72)' : token.colorTextSecondary;
 
     return (
-      <Flexbox
-        gap={3}
+      <div
+        className="sc-attachment sc-attachment--voice"
         data-messaging-attachment-id={attachmentId || undefined}
         data-messaging-attachment-kind={attachmentKind}
         data-messaging-attachment-open-state={openState}
         data-messaging-attachment-state={availabilityState}
-        data-chat-voice-note={isVoiceNote ? 'true' : undefined}
+        data-chat-voice-note="true"
         data-chat-voice-duration-ms={chatAttachmentDurationMs(attachment) || undefined}
         data-chat-voice-position-ms={Math.round(audioPositionSeconds * 1000)}
         data-chat-voice-playback-state={audioPlaybackState}
         data-chat-voice-terminal={audioFailed ? 'true' : 'false'}
-        style={{ alignSelf: isOwn ? 'flex-end' : 'flex-start', maxWidth: '100%' }}
       >
         {src && (
           <audio
@@ -578,152 +420,94 @@ export function AttachmentItem({ attachment, isOwn, visibilityHint }: Props) {
             }}
           />
         )}
-        <Flexbox
-          gap={8}
+        <div
+          className={`sc-voice${isOwn ? ' is-own' : ''}${hovered ? ' is-hovered' : ''}${src && !audioFailed ? '' : ' is-pending'}`}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          style={{
-            minWidth: 180,
-            width: 'min(260px, 100%)',
-            maxWidth: '100%',
-            padding: '10px 14px',
-            border: 0,
-            borderRadius: isOwn ? '10px 4px 10px 10px' : '4px 10px 10px 10px',
-            background: voiceBubbleBackground,
-            boxShadow: hovered ? token.boxShadowTertiary : 'none',
-            color: voiceTextColor,
-            opacity: src && !audioFailed ? 1 : 0.72,
-            transition: 'background 120ms ease, box-shadow 120ms ease',
-          }}
         >
-          <Flexbox horizontal align="center" gap={8}>
-            <Tooltip title={audioPlaying
-              ? t('chat.social.messageArea.voicePause')
-              : t('chat.social.messageArea.voicePlay')}>
-              <button
-                type="button"
-                disabled={!src || audioFailed}
-                aria-label={audioPlaying
-                  ? t('chat.social.messageArea.voicePause')
-                  : t('chat.social.messageArea.voicePlay')}
-                data-chat-voice-toggle
-                data-chat-voice-playing={audioPlaying ? 'true' : 'false'}
-                onClick={toggleAudioPlayback}
-                style={{
-                  width: 28,
-                  height: 28,
-                  border: 0,
-                  borderRadius: '50%',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: isOwn ? 'rgba(255,255,255,0.5)' : token.colorFillSecondary,
-                  color: voiceTextColor,
-                  cursor: src && !audioFailed ? 'pointer' : 'default',
-                }}
-              >
-                {audioPlaying ? <Pause size={16} /> : <Play size={16} />}
-              </button>
-            </Tooltip>
-            <input
-              type="range"
-              min={0}
-              max={Math.max(audioDuration, 1)}
-              step={0.1}
-              value={Math.min(audioPositionSeconds, Math.max(audioDuration, 1))}
+          <PtTooltip label={audioPlaying
+            ? t('chat.social.messageArea.voicePause')
+            : t('chat.social.messageArea.voicePlay')}>
+            <button
+              type="button"
+              className="sc-voice__toggle"
               disabled={!src || audioFailed}
-              aria-label={t('chat.social.messageArea.voiceSeek')}
-              data-chat-voice-seek
-              onChange={(event) => seekAudio(Number(event.currentTarget.value))}
-              style={{ flex: 1, minWidth: 72, accentColor: voiceTextColor }}
-            />
-            <Text style={{ color: voiceSecondaryColor, fontSize: 11, whiteSpace: 'nowrap' }}>
-              {formatMediaDurationSeconds(audioPositionSeconds) || '0:00'}
-              {' / '}
-              {audioDurationLabel || t('chat.social.messageArea.voiceDurationUnknown')}
-            </Text>
-            <Volume2 size={18} color={voiceSecondaryColor} />
-          </Flexbox>
+              aria-label={audioPlaying
+                ? t('chat.social.messageArea.voicePause')
+                : t('chat.social.messageArea.voicePlay')}
+              data-chat-voice-toggle
+              data-chat-voice-playing={audioPlaying ? 'true' : 'false'}
+              onClick={toggleAudioPlayback}
+            >
+              {audioPlaying ? <Pause size={15} /> : <Play size={15} />}
+            </button>
+          </PtTooltip>
+          <input
+            className="sc-voice__seek"
+            type="range"
+            min={0}
+            max={Math.max(audioDuration, 1)}
+            step={0.1}
+            value={Math.min(audioPositionSeconds, Math.max(audioDuration, 1))}
+            disabled={!src || audioFailed}
+            aria-label={t('chat.social.messageArea.voiceSeek')}
+            data-chat-voice-seek
+            onChange={(event) => seekAudio(Number(event.currentTarget.value))}
+          />
+          <span className="sc-voice__time">
+            {formatMediaDurationSeconds(audioPositionSeconds) || '0:00'}
+            {' / '}
+            {audioDurationLabel || t('chat.social.messageArea.voiceDurationUnknown')}
+          </span>
           {audioFailed && (
             <button
               type="button"
+              className="sc-voice__retry"
               aria-label={t('chat.social.messageArea.voiceRetry')}
               data-chat-voice-retry
               onClick={retryAudio}
-              style={{
-                alignSelf: 'flex-start',
-                border: 0,
-                background: 'transparent',
-                color: voiceTextColor,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: 0,
-                fontSize: 11,
-              }}
             >
               <RotateCcw size={12} />
               {t('chat.social.messageArea.voiceRetry')}
             </button>
           )}
-        </Flexbox>
-        {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
-        {showHint && chip && <VisibilityBadge chip={chip} />}
-      </Flexbox>
+        </div>
+        {transferStateLabel && <span className="sc-attachment__state">{transferStateLabel}</span>}
+        {showHint && chip && <VisibilityBadge chip={chip} isOwn={isOwn} />}
+      </div>
     );
   }
 
   return (
-    <Flexbox
-      gap={3}
+    <div
+      className="sc-attachment sc-attachment--file"
       data-messaging-attachment-id={attachmentId || undefined}
       data-messaging-attachment-kind={attachmentKind}
       data-messaging-attachment-open-state={openState}
       data-messaging-attachment-state={availabilityState}
-      role={canOpen ? 'button' : undefined}
-      tabIndex={canOpen ? 0 : undefined}
-      onClick={openAttachment}
-      onKeyDown={handleKeyDown}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        maxWidth: '100%',
-        cursor: canOpen ? 'pointer' : 'default',
-      }}
     >
-      <Flexbox
-        horizontal
-        align="center"
-        style={{
-          width: 'min(260px, 100%)',
-          maxWidth: '100%',
-          padding: '8px 9px',
-          border: `1px solid ${cardBorder}`,
-          borderRadius: 8,
-          background: cardBackground,
-          boxShadow: hovered ? token.boxShadowTertiary : 'none',
-          cursor: canOpen ? 'pointer' : 'default',
-          opacity: src ? 1 : 0.72,
-          transition: 'background 120ms ease, box-shadow 120ms ease',
-        }}
+      <button
+        type="button"
+        className={`sc-attachment__file${hovered ? ' is-hovered' : ''}${isOwn ? ' is-own' : ''}${src ? '' : ' is-pending'}`}
+        disabled={!canOpen}
+        onClick={openAttachment}
+        title={openTitle}
       >
         <AttachmentDetails
-          actionLabel={actionLabel}
           actionVisible={hovered}
           kind={attachmentKind}
           isOwn={isOwn}
-          onOpen={openAttachment}
           openTitle={openTitle}
           primaryLabel={filename}
           sizeLabel={sizeLabel}
           src={src}
-          token={token}
           typeLabel={typeLabel}
         />
-      </Flexbox>
-      {transferStateLabel && <Text type="secondary" style={{ fontSize: 10 }}>{transferStateLabel}</Text>}
-      {showHint && chip && <VisibilityBadge chip={chip} />}
-    </Flexbox>
+      </button>
+      {transferStateLabel && <span className="sc-attachment__state">{transferStateLabel}</span>}
+      {showHint && chip && <VisibilityBadge chip={chip} isOwn={isOwn} />}
+    </div>
   );
 }

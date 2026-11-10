@@ -59,11 +59,6 @@ input, textarea, [contenteditable="true"] {
   to { transform: rotate(360deg); }
 }
 
-@keyframes pt-onboarding-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -91,16 +86,16 @@ input, textarea, [contenteditable="true"] {
 }
 
 @keyframes search-highlight {
-  0% { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.6); }
-  25% { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2); }
-  50% { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.6); }
-  75% { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2); }
+  0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pt-primary) 60%, transparent); }
+  25% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pt-primary) 20%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pt-primary) 60%, transparent); }
+  75% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pt-primary) 20%, transparent); }
   100% { box-shadow: none; }
 }
 
 .search-highlight-flash {
   animation: search-highlight 2s ease-out;
-  border-color: #667eea !important;
+  border-color: var(--pt-primary) !important;
 }
 
 .applet-card {
@@ -111,352 +106,366 @@ input, textarea, [contenteditable="true"] {
   animation: spin 1s linear infinite;
 }
 
+.spin svg {
+  animation: spin 1s linear infinite;
+}
+
 /*
- * Login shell — Quiet Protocol Minimalism.
- * The federated mesh is a calm backdrop in the brand accent only; the auth card
- * is the dominant surface. No decorative multi-color glow, no swaying motion.
+ * Auth surface — Quiet Protocol Minimalism.
+ * One compact peers-ui card (sign-in + Station) centered on the calm pt
+ * canvas. No gradient, glow, or decorative motion.
  */
-.login-network-shell {
+.pt-auth-shell {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   width: 100%;
   height: 100%;
-  padding: clamp(28px, 6vw, 96px);
+  padding: 24px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 30% 32%, rgba(102, 126, 234, 0.08), transparent 46%),
-    linear-gradient(150deg, #fbfcff, #f5f7fd 60%, #eef1fb);
+  background: var(--pt-canvas);
 }
 
-.login-network-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  contain: layout style paint;
-  will-change: transform;
-  pointer-events: none;
-}
-
-.login-card-region {
+.pt-auth-region {
   position: relative;
   z-index: 1;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
+  width: 100%;
   min-width: 0;
 }
 
-.login-card-cluster {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: var(--login-card-width);
+.pt-auth-card {
+  width: var(--pt-auth-card-width, 352px);
   max-width: 100%;
 }
 
-.login-card {
-  flex: 0 0 var(--login-card-width);
+.pt-auth-card .pt-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-sm);
+  padding: 18px 20px 14px;
 }
 
-.login-oauth-action {
-  position: relative;
-  width: 100%;
-  height: 44px;
-  flex: 0 0 44px;
+.pt-auth-card > footer {
+  padding: 0 20px 16px;
 }
 
-.login-oauth-action__button {
-  position: absolute;
-  inset: 0;
-}
-
-.login-oauth-action__icon {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
+.pt-auth-head {
+  display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: var(--pt-space-sm);
 }
 
-.login-oauth-action__label {
+.pt-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+}
+
+.pt-auth-brand-mark {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+
+.pt-auth-brand-name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--pt-text);
+  letter-spacing: 0.2px;
+}
+
+.pt-auth-title {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--pt-text);
+  text-align: center;
+}
+
+.pt-auth-subtitle {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--pt-secondary);
+  text-align: center;
+}
+
+.pt-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-sm);
+  width: 100%;
+}
+
+.pt-auth-back {
+  align-self: flex-start;
+  margin: -4px 0 -2px;
+}
+
+.pt-auth-segmented {
+  width: 100%;
+}
+
+.pt-auth-segmented .pt-button {
+  flex: 1 1 0;
+}
+
+/* OAuth provider action keeps fixed geometry across opening/waiting/retry. */
+.pt-auth-oauth {
+  position: relative;
+}
+
+.pt-auth-oauth .pt-button[data-full-width='true'] {
+  min-height: 42px;
+}
+
+.pt-auth-oauth__cancel {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 1;
+}
+
+.pt-auth-credrow {
+  display: flex;
+  gap: var(--pt-space-xs);
+  align-items: center;
+}
+
+.pt-auth-credrow > .pt-field-frame {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pt-auth-credrow > .pt-button {
+  flex: 0 0 auto;
+}
+
+.pt-auth-gate-row {
+  display: flex;
+  gap: var(--pt-space-xs);
+  align-items: center;
+}
+
+.pt-auth-gate-row > .pt-field-frame {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pt-auth-inline-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--pt-danger);
+}
+
+/* Account rows */
+.pt-auth-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pt-auth-account-row.pt-button {
+  justify-content: flex-start;
+  min-height: 60px;
+  padding: 8px 12px;
+}
+
+.pt-auth-account-row .pt-button-content {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.pt-auth-account-meta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.pt-auth-account-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--pt-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.login-oauth-action__cancel {
-  position: absolute !important;
-  top: 6px;
-  right: 6px;
-  z-index: 1;
-  width: 32px !important;
-  min-width: 32px !important;
-  height: 32px !important;
-  padding: 0 !important;
-  border-radius: 8px !important;
-}
-
-.login-oauth-action__cancel:not(:hover):not(:focus-visible) {
-  background: transparent !important;
-}
-
-.pt-network-intro {
-  position: absolute;
-  inset: 0;
+.pt-auth-account-handle {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--pt-secondary);
   overflow: hidden;
-  background: transparent;
-  /* The opaque auth card already covers whatever sits behind it, so the field
-   * can extend across the full width; only a whisper-soft fade at the far edge. */
-  mask-image: linear-gradient(90deg, #000 90%, rgba(0, 0, 0, 0.7) 100%);
-  -webkit-mask-image: linear-gradient(90deg, #000 90%, rgba(0, 0, 0, 0.7) 100%);
-}
-
-.pt-network-intro__mesh {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  width: 100%;
-  height: 100%;
-}
-
-/* Soft ambient depth — barely-there bloom that gives the field a sense of space. */
-.pt-network-intro__bloom {
-  opacity: 0.8;
-}
-
-/*
- * Weak ties between people. Granovetter's weak ties are exactly what makes a
- * decentralized social graph cohere — quiet, thin, and equal everywhere.
- */
-.pt-network-intro__tie {
-  fill: none;
-  stroke: rgba(102, 126, 234, 0.10);
-  stroke-width: 1;
-  stroke-linecap: round;
-  transition: stroke 0.35s ease;
-}
-
-/* A tie touching the hovered person glows, so a hover reads as "this person
- * and the people they reach", not just an isolated dot. */
-.pt-network-intro__tie--lit {
-  stroke: rgba(102, 126, 234, 0.34);
-}
-
-/* Wide, invisible hover targets so a thin tie or a moving chip is still easy
- * to pick up. They carry the pointer events; nothing else in the mesh does. */
-.pt-network-intro__hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 28;
-  stroke-linecap: round;
-  cursor: pointer;
-}
-
-.pt-network-intro__hit-node {
-  fill: transparent;
-  cursor: pointer;
-}
-
-/*
- * Physical-layer reveal. Logically people connect peer-to-peer; physically the
- * payload hops through a relay. On hover we dim the logical link to a dashed
- * whisper and draw the real two-hop path through the relay node.
- */
-.pt-network-intro__relay-logical {
-  fill: none;
-  stroke: rgba(102, 126, 234, 0.16);
-  stroke-width: 1;
-  stroke-dasharray: 3 5;
-  stroke-linecap: round;
-}
-
-.pt-network-intro__relay-hop {
-  fill: none;
-  stroke: rgba(118, 90, 162, 0.42);
-  stroke-width: 1.4;
-  stroke-linecap: round;
-}
-
-.pt-network-intro__relay-halo {
-  fill: rgba(118, 90, 162, 0.14);
-  stroke: rgba(118, 90, 162, 0.34);
-  stroke-width: 1;
-}
-
-.pt-network-intro__relay-core {
-  fill: rgba(118, 90, 162, 0.9);
-}
-
-.pt-network-intro__relay-role {
-  fill: rgba(118, 90, 162, 0.92);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.pt-network-intro__relay-label {
-  fill: rgba(82, 64, 120, 0.7);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-/* The on-hover metadata card — a calm frosted chip that names a person or
- * describes a piece of content in motion. Restrained: identity, not telemetry. */
-.pt-network-intro__card {
-  position: absolute;
-  z-index: 3;
-  pointer-events: none;
-  padding: 9px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(102, 126, 234, 0.18);
-  box-shadow: 0 8px 24px rgba(60, 66, 110, 0.12);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1.35;
 }
 
-.pt-network-intro__card-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(40, 44, 78, 0.92);
+.pt-auth-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
-.pt-network-intro__card-addr {
+.pt-auth-identity-name {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--pt-text);
+}
+
+.pt-auth-identity-handle {
   font-size: 12px;
-  color: rgba(102, 126, 234, 0.9);
-  font-feature-settings: 'tnum';
+  color: var(--pt-secondary);
 }
 
-.pt-network-intro__card-kind {
+.pt-auth-pin-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-primarySubtle);
+  color: var(--pt-primary);
+}
+
+.pt-auth-pin-forgot {
+  align-self: center;
+}
+
+.pt-auth-actions-row {
+  display: flex;
+  gap: var(--pt-space-sm);
+}
+
+.pt-auth-actions-row > * {
+  flex: 1 1 0;
+}
+
+/* Station switcher inside the card footer */
+.pt-auth-station {
+  margin-top: 12px;
+}
+
+.pt-auth-station-trigger {
+  width: 100%;
+}
+
+.pt-auth-station-trigger .pt-button-content {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.pt-station-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pt-station-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 13px;
+}
+
+.pt-station-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: var(--pt-muted);
+}
+
+.pt-station-dot[data-status='online'] { background: var(--pt-accent); }
+.pt-station-dot[data-status='offline'] { background: var(--pt-danger); }
+.pt-station-dot[data-status='checking'] { background: var(--pt-primary); }
+
+.pt-station-panel {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-sm);
+}
+
+.pt-station-panel-title {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--pt-text);
+}
+
+.pt-station-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pt-station-row.pt-button {
+  justify-content: flex-start;
+}
+
+.pt-station-row .pt-button-content {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.pt-station-row-endpoint {
+  display: block;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(102, 126, 234, 0.85);
+  font-weight: 400;
+  color: var(--pt-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.pt-network-intro__card-route {
-  font-size: 14px;
-  font-weight: 500;
-  color: rgba(40, 44, 78, 0.92);
+.pt-station-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
-.pt-network-intro__card-arrow {
-  color: rgba(102, 126, 234, 0.6);
-  margin: 0 2px;
-}
-
-.pt-network-intro__card-via {
-  font-size: 12px;
-  color: rgba(82, 64, 120, 0.78);
-}
-
-/* A small role tag so the relay name in the route card reads as a relay,
- * not as another person the payload was sent to. */
-.pt-network-intro__card-relay-tag {
-  display: inline-block;
-  margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 5px;
-  background: rgba(118, 90, 162, 0.14);
-  color: rgba(82, 64, 120, 0.9);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  vertical-align: middle;
-}
-
-/* A person — a soft point of light, felt rather than labeled. No boxes, no text. */
-.pt-network-intro__halo {
-  /* fill comes from the radial gradient; animation handled inline */
-}
-
-.pt-network-intro__core {
-  fill: rgba(102, 126, 234, 0.9);
-}
-
-/* A person's name — quiet, legible, never shouting over the auth card. */
-.pt-network-intro__label {
-  fill: rgba(60, 66, 110, 0.62);
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-
-/* Content travelling between people — a message, photo, clip or file. The
- * payload itself is the federation in motion; we show what people share. */
-.pt-network-intro__chip-bg {
-  fill: rgba(102, 126, 234, 0.18);
-}
-
-/* The hovered payload sits still on its relay — slightly stronger so it reads
- * as a held, inspectable object rather than a fading pulse. */
-.pt-network-intro__flow--held .pt-network-intro__chip-bg {
-  fill: rgba(102, 126, 234, 0.28);
-}
-
-.pt-network-intro__flow--held .pt-network-intro__chip-disc {
-  stroke: rgba(102, 126, 234, 0.5);
-}
-
-.pt-network-intro__chip-disc {
-  fill: rgba(255, 255, 255, 0.92);
-  stroke: rgba(102, 126, 234, 0.28);
-  stroke-width: 1;
-}
-
-.pt-network-intro__glyph {
-  fill: none;
-  stroke: #667eea;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  color: #667eea;
-}
-
-@media (max-width: 980px) {
-  .login-network-shell {
-    justify-content: center;
-    padding: 24px;
-  }
-
-  .login-card-region {
-    justify-content: center;
-  }
-
-  /* On narrow windows the card dominates; fade the mesh further back. */
-  .pt-network-intro {
-    opacity: 0.5;
-  }
+.pt-station-add > .pt-field-frame {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 @media (max-width: 760px) {
-  .login-network-shell {
+  .pt-auth-shell {
     align-items: flex-start;
     overflow: auto;
   }
 
-  .login-card-region {
+  .pt-auth-region {
     align-items: center;
     width: 100%;
     min-height: 100%;
   }
 
-  .login-card-cluster {
-    width: min(var(--login-card-width), 100%);
+  .pt-auth-card {
+    width: 100%;
     margin-block: auto;
-  }
-
-  .login-card {
-    flex-basis: auto;
-    width: 100% !important;
   }
 }
 
@@ -468,18 +477,5 @@ input, textarea, [contenteditable="true"] {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
-  }
-
-  .pt-network-intro * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition: none !important;
-  }
-
-  /* Drop the moving light; the calm field of people remains. Hovering a
-   * person or a tie still reveals its card and relay — exploration is static,
-   * not animated. */
-  .pt-network-intro__flow {
-    display: none;
   }
 }

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal } from 'antd';
 import { useSessionStore } from '../store/session';
 import { onSessionRevoked } from '../services/desktop_api';
+import { acknowledgeRequest } from '../ui/feedback';
 import {
   CRITICAL_SESSION_RUNTIME_IDS,
   installAppRuntime,
@@ -115,14 +115,15 @@ function useSessionRevocationNotice(lifecycle: AppLifecycle): void {
       sessionEndedRef.current = true;
 
       const reason = payload?.reason || 'unknown';
-      Modal.warning({
+      void acknowledgeRequest({
+        tone: 'warning',
         title: reason === 'expired'
           ? t('desktop.auth.sessionExpiredTitle')
           : t('desktop.auth.sessionEndedTitle'),
-        content: reason === 'expired'
+        description: reason === 'expired'
           ? t('desktop.auth.sessionExpiredBody')
           : t('desktop.auth.sessionEndedBody'),
-        okText: t('common.action.confirm'),
+        confirmLabel: t('common.action.confirm'),
       });
     });
   }, [lifecycle.authenticated, t]);

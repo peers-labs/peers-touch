@@ -30,29 +30,17 @@
   --pt-list-heading-icon-display: none;
 }
 
-/* Level 1 — transparent text tabs, never SaaS pill chips. */
-.sk-settings-tabbar {
-  flex-shrink: 0; height: 48px;
-  display: flex; align-items: stretch; gap: 0;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--sk-card-border);
-  overflow-x: auto;
+/* Level-2 surface partition: one rhythm band identical to the moments and
+   chat sub-bars (8/14/10 insets) hosting the shared Segmented island. */
+.sk-settings-subbar {
+  flex-shrink: 0;
+  display: flex; align-items: center;
+  padding: 8px 14px 10px;
 }
-.sk-settings-tab {
-  position: relative;
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-  height: 48px; padding: 0 14px;
-  border: 0; background: transparent; cursor: pointer;
-  color: var(--sk-text-2);
-  font-family: inherit; font-size: 13px; font-weight: 500;
-  transition: color 160ms var(--sk-set-ease);
-}
-.sk-settings-tab:hover { color: var(--sk-text); }
-.sk-settings-tab.is-active { color: var(--sk-primary); font-weight: 650; }
-.sk-settings-tab-indicator {
-  position: absolute; left: 14px; right: 14px; bottom: 0; height: 2px;
-  border-radius: 2px 2px 0 0; background: var(--sk-primary);
-}
+/* The group island is the default-density Segmented, same geometry as
+   .sk-scope-island (44px island / 36px targets / 14px). It scrolls internally
+   if five groups ever outgrow the column instead of wrapping. */
+.sk-settings-groups { flex: 0 0 auto; }
 
 .sk-settings-body { flex: 1; min-height: 0; display: flex; }
 
@@ -328,11 +316,17 @@
 .sk-device-status { font-size: 13.5px; color: var(--sk-text-2); padding: 24px 0; }
 
 /* ── Security ────────────────────────────────────────────── */
-.sk-recovery-status { display: flex; flex-direction: column; gap: 10px; }
-.sk-recovery-head { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--sk-text); }
-.sk-recovery-head .is-ok { color: var(--sk-success); }
-.sk-recovery-head .is-warn { color: var(--sk-warning); }
-.sk-recovery-meta { font-size: 12px; color: var(--sk-text-3); }
+/* Quiet label/value status: one small dot + a single line of text. The
+   unbacked default is neutral gray (empty state, not a warning); backed is
+   pine. No triangle icon, no inset tone rail, no nested callout. */
+.sk-recovery-state {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; color: var(--sk-text-3); white-space: nowrap;
+}
+.sk-recovery-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sk-text-3); flex: 0 0 auto; }
+.sk-recovery-state.is-backed { color: var(--sk-text-2); }
+.sk-recovery-state.is-backed .sk-recovery-dot { background: var(--sk-accent); }
+[data-recovery-restored] .sk-settings-row-label { color: var(--sk-accent); }
 .sk-recovery-phrase { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .sk-recovery-phrase ol {
   list-style: none; margin: 0; padding: 12px; display: grid; width: 100%;
@@ -991,4 +985,80 @@
   .sk-wiz-grid, .sk-wiz-grid-3 { grid-template-columns: 1fr; }
   .sk-wiz-qr { grid-template-columns: 1fr; }
   .sk-wiz-qr-side { border-left: 0; border-top: 1px solid var(--sk-row-hairline); padding: 16px 4px 0; }
+}
+
+/* ── Five-group remap additions: agents, tool registry, my files ─────── */
+
+.sk-settings-note {
+  margin: 8px 2px 0;
+  font-size: 11px; line-height: 1.5; color: var(--sk-text-3);
+}
+
+/* Agent management */
+.sk-agent-list { display: flex; flex-direction: column; gap: 8px; }
+.sk-agent-card {
+  border: 1px solid var(--sk-card-border);
+  border-radius: var(--sk-radius-card, 12px);
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--sk-text) 3%, transparent);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.sk-agent-head { display: flex; align-items: center; gap: 8px; }
+.sk-agent-head strong { font-size: 13px; color: var(--sk-text); min-width: 0; }
+.sk-agent-tags { display: inline-flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+.sk-agent-desc { margin: 0; font-size: 12px; color: var(--sk-text-2); line-height: 1.5; }
+.sk-agent-edit { display: flex; flex-direction: column; gap: 8px; }
+.sk-agent-edit-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.sk-agent-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Read-only tool registry */
+.sk-tool-registry { display: flex; flex-direction: column; }
+.sk-tool-row {
+  display: grid; grid-template-columns: 1fr 96px 104px;
+  gap: 8px; align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--sk-row-hairline);
+  font-size: 12.5px; color: var(--sk-text-2);
+}
+.sk-tool-row:last-child { border-bottom: 0; }
+.sk-tool-head {
+  font-size: 11px; font-weight: 600; color: var(--sk-text-3);
+  text-transform: none; letter-spacing: 0;
+}
+.sk-tool-name code {
+  font-family: var(--sk-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px; color: var(--sk-text);
+}
+
+/* My Files (object storage inventory) */
+.sk-files-filters {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-bottom: 10px;
+}
+.sk-files-filters .sk-files-filter { min-width: 140px; flex: 1 1 140px; }
+.sk-files-include { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sk-text-2); }
+.sk-files-list { display: flex; flex-direction: column; }
+.sk-file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 72px 64px auto;
+  gap: 8px; align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--sk-row-hairline);
+  font-size: 12px; color: var(--sk-text-2);
+}
+.sk-file-row:last-child { border-bottom: 0; }
+.sk-file-row[data-file-state='deleted'] { opacity: .55; }
+.sk-file-id { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.sk-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sk-text); }
+.sk-file-size, .sk-file-state { font-variant-numeric: tabular-nums; }
+.sk-file-actions { display: inline-flex; justify-content: flex-end; }
+.sk-files-footer { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+
+@media (max-width: 760px) {
+  .sk-tool-row { grid-template-columns: 1fr 84px; }
+  .sk-tool-row > span:nth-child(3) { display: none; }
+  .sk-file-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .sk-file-row > span:nth-child(2),
+  .sk-file-row > .sk-file-size,
+  .sk-file-row > .sk-file-state { display: none; }
 }

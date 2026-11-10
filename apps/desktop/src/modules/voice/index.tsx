@@ -1,18 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Form, Select, Switch, Typography, theme } from 'antd';
+import { Select, Switch } from '@peers-touch/ui';
 import { Mic } from 'lucide-react';
 import { registerModule } from '../registry';
 import { api, type UserPreferences } from '../../services/desktop_api';
-import { SettingsContainer } from '../../components/settings/SettingsLayout';
-
-const { Title, Text } = Typography;
+import { SettingsContainer, SettingsSection, SettingsRow } from '../../components/settings/SettingsLayout';
 
 function getSttProviderOptions(t: (key: string) => string) {
   return [
-    { value: 'browser', label: t('stt.provider.browser') },
-    { value: 'openai', label: t('stt.provider.openaiWhisper') },
+    { value: 'browser' as const, label: t('stt.provider.browser') },
+    { value: 'openai' as const, label: t('stt.provider.openaiWhisper') },
   ];
 }
 
@@ -33,63 +30,77 @@ function getSttLanguageOptions(t: (key: string) => string) {
 // playback was a local fake (empty WAV / static voice list) and was removed;
 // synthesized voice has no Station authority in this release.
 function VoiceSettings() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('tts');
-  const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
-
-  const loadPrefs = useCallback(async () => {
-    try {
-      const prefs = await api.getPreferences();
-      form.setFieldsValue({
-        stt_provider: prefs.stt_provider ?? 'browser',
-        stt_language: prefs.stt_language ?? 'auto',
-        stt_auto_stop: prefs.stt_auto_stop ?? true,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [form]);
+  const [sttProvider, setSttProvider] = useState<'browser' | 'openai'>('browser');
+  const [sttLanguage, setSttLanguage] = useState('auto');
+  const [sttAutoStop, setSttAutoStop] = useState(true);
 
   useEffect(() => {
-    loadPrefs();
-  }, [loadPrefs]);
+    let mounted = true;
+    api.getPreferences()
+      .then((prefs) => {
+        if (!mounted) return;
+        setSttProvider(prefs.stt_provider ?? 'browser');
+        setSttLanguage(prefs.stt_language ?? 'auto');
+        setSttAutoStop(prefs.stt_auto_stop ?? true);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, []);
 
-  const handleValuesChange = useCallback(
-    (_changed: Partial<UserPreferences>, all: Partial<UserPreferences>) => {
-      const payload: Partial<UserPreferences> = {};
-      if (all.stt_provider !== undefined) payload.stt_provider = all.stt_provider;
-      if (all.stt_language !== undefined) payload.stt_language = all.stt_language;
-      if (all.stt_auto_stop !== undefined) payload.stt_auto_stop = all.stt_auto_stop;
-      if (Object.keys(payload).length > 0) {
-        api.setPreferences(payload).catch(() => {});
-      }
-    },
-    [],
-  );
+  const patch = useCallback((payload: Partial<UserPreferences>) => {
+    api.setPreferences(payload).catch(() => {});
+  }, []);
 
   return (
-    <SettingsContainer fullHeight tier="standard">
-      <Form form={form} layout="vertical" onValuesChange={handleValuesChange} disabled={loading}>
-        <Flexbox gap={4}>
-          <Title level={5} style={{ margin: 0 }}>
-            <Mic size={16} style={{ marginRight: 8, color: token.colorPrimary }} />
-            {t('stt.title')}
-          </Title>
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            {t('stt.description')}
-          </Text>
-        </Flexbox>
-        <Form.Item name="stt_provider" label={t('stt.provider.label')}>
-          <Select options={getSttProviderOptions(t)} />
-        </Form.Item>
-        <Form.Item name="stt_language" label={t('stt.language.label')}>
-          <Select options={getSttLanguageOptions(t)} />
-        </Form.Item>
-        <Form.Item name="stt_auto_stop" label={t('stt.autoStop.label')} valuePropName="checked">
-          <Switch />
-        </Form.Item>
-      </Form>
+    <SettingsContainer>
+      <SettingsSection icon={<Mic size={15} />} title={t('stt.title')} subtitle={t('stt.description')}>
+        <SettingsRow label={t('stt.provider.label')}>
+          <Select<'browser' | 'openai'>
+            appearance="ghost"
+            data-voice-provider
+            aria-label={t('stt.provider.label')}
+            disabled={loading}
+            options={getSttProviderOptions(t)}
+            value={sttProvider}
+            onValueChange={(value) => {
+              if (value !== 'browser' && value !== 'openai') return;
+              setSttProvider(value);
+              patch({ stt_provider: value });
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow label={t('stt.language.label')}>
+          <Select<string>
+            appearance="ghost"
+            data-voice-language
+            aria-label={t('stt.language.label')}
+            disabled={loading}
+            options={getSttLanguageOptions(t)}
+            value={sttLanguage}
+            onValueChange={(value) => {
+              if (typeof value !== 'string') return;
+              setSttLanguage(value);
+              patch({ stt_language: value });
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow label={t('stt.autoStop.label')}>
+          <Switch
+            checked={sttAutoStop}
+            disabled={loading}
+            data-voice-auto-stop
+            aria-label={t('stt.autoStop.label')}
+            onCheckedChange={(checked) => {
+              setSttAutoStop(checked);
+              patch({ stt_auto_stop: checked });
+            }}
+          />
+        </SettingsRow>
+      </SettingsSection>
     </SettingsContainer>
   );
 }

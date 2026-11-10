@@ -6,7 +6,7 @@ owns:
   - apps/desktop/src/pages/
   - apps/desktop/src/components/
   - apps/desktop/src/index.css
-  - apps/desktop/src/style.css
+  - apps/desktop/src/index.css
   - apps/desktop/src/App.tsx
   - apps/mobile/src/
   - packages/prototypes/

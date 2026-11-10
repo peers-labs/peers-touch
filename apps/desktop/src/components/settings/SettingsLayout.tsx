@@ -1,16 +1,19 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { Typography, theme } from 'antd';
 import {
   pageColumnWidth,
   type PageWidthTier,
 } from '../../layout/pageWidth';
 
-const { Text, Title } = Typography;
-
-const CONTAINER_PADDING = 24;
-const SECTION_PADDING = 24;
-const SECTION_BORDER_RADIUS = 12;
+/**
+ * North-star settings layout primitives.
+ *
+ * The shared settings skeleton owns no antd/lobehub chrome anymore: geometry
+ * and tonal steps come from @peers-touch/ui tokens via the sc-settings-*
+ * classes in ui/northstar.css, matching the prototype grouped-card grammar
+ * (white cards on the paper floor, plain-text titles, hairlines inside the
+ * card only). The exported prop contract is unchanged so section components
+ * migrate independently.
+ */
 
 interface SettingsContainerProps {
   children: ReactNode;
@@ -30,23 +33,17 @@ export function SettingsContainer({
   fullHeight,
 }: SettingsContainerProps) {
   return (
-    <Flexbox
-      gap={24}
+    <div
+      className="sc-settings-column"
       data-pt-settings-column={tier}
+      data-full-height={fullHeight ? 'true' : 'false'}
       style={{
-        padding: CONTAINER_PADDING,
         width: pageColumnWidth(tier),
-        maxWidth: '100%',
-        minWidth: 0,
-        marginInline: 'auto',
-        height: fullHeight ? '100%' : undefined,
-        overflow: fullHeight ? 'auto' : undefined,
-        boxSizing: 'border-box',
         ...style,
       }}
     >
       {children}
-    </Flexbox>
+    </div>
   );
 }
 
@@ -74,36 +71,24 @@ export function SettingsPanelHeader({
   extra,
   actions,
 }: SettingsPanelHeaderProps) {
-  const { token } = theme.useToken();
-
   return (
-    <Flexbox
-      horizontal
-      align="center"
-      justify="space-between"
-      gap={16}
-      style={{ flexWrap: 'wrap' }}
-    >
-      <Flexbox gap={4} style={{ flex: 1, minWidth: 0 }}>
-        <Flexbox horizontal align="center" gap={8}>
-          <span style={{ color: token.colorPrimary, display: 'flex' }}>{icon}</span>
-          <Title level={4} style={{ margin: 0 }}>{title}</Title>
+    <div className="sc-panel-header">
+      <div className="sc-panel-header__main">
+        <div className="sc-panel-header__title-row">
+          <span className="sc-panel-header__icon">{icon}</span>
+          <h4 className="sc-panel-header__title">{title}</h4>
           {extra}
-        </Flexbox>
+        </div>
         {subtitle && (
-          <Text type="secondary" style={{ fontSize: 13 }}>{subtitle}</Text>
+          <span className="sc-panel-header__subtitle">{subtitle}</span>
         )}
-      </Flexbox>
+      </div>
       {actions && (
-        <Flexbox
-          horizontal
-          gap={8}
-          style={{ flexShrink: 0, flexWrap: 'wrap' }}
-        >
+        <div className="sc-panel-header__actions">
           {actions}
-        </Flexbox>
+        </div>
       )}
-    </Flexbox>
+    </div>
   );
 }
 
@@ -115,39 +100,27 @@ export function SettingsSection({
   children,
   style,
 }: SettingsSectionProps) {
-  const { token } = theme.useToken();
-
   return (
-    <Flexbox
-      gap={16}
-      style={{
-        background: token.colorBgContainer,
-        borderRadius: SECTION_BORDER_RADIUS,
-        padding: SECTION_PADDING,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        ...style,
-      }}
-    >
-      <Flexbox horizontal align="center" justify="space-between">
-        <Flexbox gap={4}>
-          <Flexbox horizontal align="center" gap={8}>
-            {icon}
-            <Title level={5} style={{ margin: 0 }}>{title}</Title>
-          </Flexbox>
-          {subtitle && (
-            <Text type="secondary" style={{ fontSize: 13 }}>{subtitle}</Text>
-          )}
-        </Flexbox>
-        {extra}
-      </Flexbox>
-      {children}
-    </Flexbox>
+    <section className="sc-settings-section" style={style}>
+      <div className="sc-settings-section__head">
+        <div className="sc-settings-section__id">
+          <h2 className="sc-settings-section__title">
+            {icon ? <span className="sc-settings-section__icon">{icon}</span> : null}
+            {title}
+          </h2>
+          {subtitle && <p className="sc-settings-section__subtitle">{subtitle}</p>}
+        </div>
+        {extra && <div className="sc-settings-section__extra">{extra}</div>}
+      </div>
+      {/* One elevated card holds the related rows; hairlines live inside. */}
+      <div className="sc-settings-card">{children}</div>
+    </section>
   );
 }
 
 interface SettingsRowProps {
   label: ReactNode;
-  description?: string;
+  description?: ReactNode;
   children: ReactNode;
   vertical?: boolean;
   style?: CSSProperties;
@@ -162,50 +135,27 @@ export function SettingsRow({
 }: SettingsRowProps) {
   if (vertical) {
     return (
-      <Flexbox gap={8} style={style}>
-        <Flexbox gap={2}>
-          <Text strong style={{ fontSize: 13 }}>{label}</Text>
+      <div className="sc-settings-row sc-settings-row--vertical" style={style}>
+        <span className="sc-settings-row__label-group">
+          <span className="sc-settings-row__label">{label}</span>
           {description && (
-            <Text type="secondary" style={{ fontSize: 12 }}>{description}</Text>
+            <span className="sc-settings-row__description">{description}</span>
           )}
-        </Flexbox>
+        </span>
         {children}
-      </Flexbox>
+      </div>
     );
   }
 
   return (
-    <Flexbox horizontal align="center" justify="space-between" style={style}>
-      <Flexbox gap={2} style={{ flex: 1 }}>
-        <Text strong style={{ fontSize: 13 }}>{label}</Text>
+    <div className="sc-settings-row" style={style}>
+      <span className="sc-settings-row__label-group">
+        <span className="sc-settings-row__label">{label}</span>
         {description && (
-          <Text type="secondary" style={{ fontSize: 12 }}>{description}</Text>
+          <span className="sc-settings-row__description">{description}</span>
         )}
-      </Flexbox>
-      <Flexbox style={{ flexShrink: 0 }}>{children}</Flexbox>
-    </Flexbox>
-  );
-}
-
-interface SettingsItemCardProps {
-  children: ReactNode;
-  style?: CSSProperties;
-}
-
-export function SettingsItemCard({ children, style }: SettingsItemCardProps) {
-  const { token } = theme.useToken();
-
-  return (
-    <Flexbox
-      style={{
-        padding: 16,
-        borderRadius: 8,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorFillQuaternary,
-        ...style,
-      }}
-    >
-      {children}
-    </Flexbox>
+      </span>
+      <span className="sc-settings-row__control">{children}</span>
+    </div>
   );
 }

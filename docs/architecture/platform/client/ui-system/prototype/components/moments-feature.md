@@ -29,7 +29,8 @@
   「默认秩序」与「读者自选视角」：默认是 HOME→联邦的确定性时间序（created_at DESC），
   平台不默认按互动量加权；「最新 / 热门」`Segmented` 作为**浮动全局视角**存在——
   `position: sticky` 钉在滚动区右上、零行高（信息流顶部不留空行），以画布色**长方圆角
-  胶囊**（r=`--sk-radius-control`，非全圆）+ 投影浮于卡片之上，明确它控制的是整条流；
+  胶囊**（r=`--sk-radius-control`，非全圆）+ 收紧的投影浮于卡片**内侧**，明确它控制的是整条流；
+  胶囊右缘锚定卡片右缘内缩 14px（见下方横向合同），绝不压在卡片边界线上；
   「热门」仅在读者主动选择时按反应总数排序（对齐 proto `TimelineSort`），是用户自己的
   浏览视角，而非平台替谁分轻重。
   **排序仅在最顶可操作（角色变形合同）**：`scrollTop<=4` 时胶囊是「最新/热门」分段；
@@ -37,21 +38,25 @@
   点击平滑滚回最顶后自动变回排序胶囊——用户不能在半截流里改排序，平台也不在滚动中用
   排序控件干扰阅读。搜索时该浮动控件隐藏。
   变形几何有硬结构，不允许数值试错：胶囊是右缘锚定的宽度动画盒（sort=测量宽、top=36px，
-  `overflow:hidden` 裁剪）；两层共享一个 `width:max-content` 且 `flex:0 0 auto` 的**不可收缩
+  `overflow:hidden` 裁剪），变形全程右缘固定在卡片内缩 14px 处，绝不左右漂移；两层共享一个
+  `width:max-content` 且 `flex:0 0 auto` 的**不可收缩
   grid stage**——图层几何与动画宽度解耦，在已收缩的胶囊内测量永远不会反馈成被压窄换行的
   排序层；两层同格右对齐，右缘与垂直中心在任何一帧完全重合。显隐按角色分别声明：incoming
   层首帧即 visible 并淡入，outgoing 层保持绘制到淡出结束才 hidden（单一
   `visibility 0s linear .22s` 会把 incoming 一起延迟，留下约 150ms 空白胶囊，即被否决的
   「闪」方案）。`data-feed-mode=sort|top`，两层始终挂载、不卸载不回流。
-  **横向零溢出是结构属性，禁止数值试错与断点补丁（2026-11-06 硬化，对齐聊天面）**：从 `.sk-moments`、
+  **横向零溢出是结构属性，禁止数值试错与断点补丁（2026-11-06 硬化，对齐聊天面；同日修订浮层锚点）**：从 `.sk-moments`、
   `.sk-feed-pane`（及 active pane 的直接子项）、`.sk-moments-scroll`、`.sk-feed-sort-float`
   到 `.sk-post` 全链 `min-width:0`；滚动宿主 `.sk-moments-scroll` 显式
   `overflow-x:hidden; overflow-y:auto`——只允许纵向滚动，任何后代的 intrinsic 宽都无法把列
-  撑出 `.sk-shell` 圆角右缘。排序/回顶胶囊与卡片是同一滚动宿主的同级 flex 子项，二者右缘由
-  布局天然重合（不允许靠固定宽度/margin 对齐）；胶囊是 `width:max-content` 的 sticky 零高
+  撑出 `.sk-shell` 圆角右缘。排序/回顶胶囊与卡片是同一滚动宿主的同级 flex 子项；浮层锚行
+  `.sk-feed-sort-float` 以 `padding-right:14px` 把胶囊右缘钉在**卡片右缘内侧 14px**——滚动内容
+  盒右缘与卡片右缘天然重合，若胶囊 flush 对齐该线，本体就压在卡片 hairlines 上、投影晕进外壳
+  沟槽，读作「控件越过卡片」；内缩 14 与顶部 8 偏移对称，胶囊（含收紧为 `0 4px 12px` 的投影，
+  横向半幅约 6px）在任何状态都完整落在卡片内。胶囊是 `width:max-content` 的 sticky 零高
   overlay，`min-width:0` 保证它不向列反馈 min-content。自适应不得以挑几个宽度的媒体查询
   「验证」：`widthSweep` oracle 在 **700–2880 每 24px 一档**（顶部态 + 下滑 600px 回顶态）
-  连续断言胶囊/卡片右缘一致、滚动宿主零横溢、卡名单行——任意一档发散即红。
+  连续断言胶囊对卡片右缘内缩恒为 14px（`inset`）、滚动宿主零横溢、卡名单行——任意一档发散即红。
 - **就近搜索（信息就近规则）**：subbar 常驻一个带放大镜的 `TextField`（与其它搜索
   同一交互：即时过滤、可清除），**搜索域随当前范围切换**——动态过滤合并时间线
   （站点/作者/正文），圈友过滤分组（名称/描述/成员名）；搜索在当前时间序上就地过滤、
@@ -190,8 +195,8 @@ explore 搜「植物」→1 条联邦动态且搜索态无结尾标记；circles
 引导出现——同时锁死库级「Dialog 内 Select 可点」）、个人页返回、个人页 72 身份内容。
 1360 与 390 双宽度自动溢出；实测 0 console error、390 无横向溢出。
 `moments-never-overflows-under-squeeze` 锁死横向结构合同：两个 `widthSweep` 在 700–2880
-每 24px 连续扫描（顶部排序态 + 下滑 600px 的回顶态），断言排序/回顶胶囊右缘与首卡右缘
-逐像素一致（≤1px）、`.sk-moments-scroll` 零横溢、卡名单行——不是抽样视口，任何一档
+每 24px 连续扫描（顶部排序态 + 下滑 600px 的回顶态），断言排序/回顶胶囊右缘对首卡右缘
+内缩恒为 14px（`inset:14`，容差 ≤1px）、`.sk-moments-scroll` 零横溢、卡名单行——不是抽样视口，任何一档
 发散即红；不得对会纵向滚动的卡片用四边 containedIn（其底边随滚动内容超出可视区属正常）。
 轨身份 44 由 feed 场景的 computedStyle 断言固定。
 consumer/board/foundation 回归 OBSERVED（north-star 165 + boards 20），import-guard 裸元素债务持平 686，tsc 干净。

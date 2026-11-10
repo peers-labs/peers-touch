@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Popover, Spin } from 'antd';
+import { Popover, Spin } from '@peers-touch/ui';
 import { useSessionStore } from '../store/session';
 import { api, type AccountProfile } from '../services/desktop_api';
 import { PublicProfileCard, type PublicProfileModel } from './profile/PublicProfileCard';
@@ -46,28 +45,29 @@ export function UserProfilePopover({ children }: Props) {
   }, [currentUser, profile, t]);
 
   const content = (
-    <Flexbox style={{ width: 320 }}>
+    <div>
       {loading && !profile ? (
-        <Flexbox align="center" justify="center" style={{ height: 120 }}>
+        <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Spin size="small" />
-        </Flexbox>
+        </div>
       ) : (
         <PublicProfileCard
+          variant="self"
           profile={model}
           actions={currentUser?.actorPtid ? (
             <ProfilePrimaryAction actorPtid={currentUser.actorPtid} />
           ) : null}
         />
       )}
-    </Flexbox>
+    </div>
   );
 
   return (
     <Popover
       content={content}
-      trigger="click"
-      placement="rightBottom"
+      placement="right-bottom"
       open={open}
+      className="ds-self-popover"
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
         if (nextOpen) {
@@ -79,8 +79,6 @@ export function UserProfilePopover({ children }: Props) {
             .finally(() => setLoading(false));
         }
       }}
-      arrow={false}
-      styles={{ container: { padding: 0, overflow: 'hidden', borderRadius: 12 } }}
     >
       {children}
     </Popover>

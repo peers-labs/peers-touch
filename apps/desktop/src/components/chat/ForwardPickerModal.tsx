@@ -1,12 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal, Input, theme, Typography } from 'antd';
-import { Flexbox } from 'react-layout-kit';
+import { Dialog, Empty as PtEmpty, TextField as PtTextField } from '@peers-touch/ui';
 import { Search } from 'lucide-react';
 
 import type { DesktopIMConversationProjection } from '../../store/socialProjection';
-
-const { Text } = Typography;
 
 interface ForwardPickerModalProps {
   conversations: DesktopIMConversationProjection[];
@@ -22,7 +19,6 @@ export function ForwardPickerModal({
   open,
 }: ForwardPickerModalProps) {
   const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
   const [filter, setFilter] = useState('');
 
   const filtered = filter.trim()
@@ -32,88 +28,54 @@ export function ForwardPickerModal({
     : conversations;
 
   return (
-    <Modal
-      title={t('chat.social.messageArea.forwardTitle')}
+    <Dialog
       open={open}
-      onCancel={onCancel}
-      footer={null}
+      onDismiss={onCancel}
+      title={t('chat.social.messageArea.forwardTitle')}
       width={360}
-      destroyOnClose
+      closeLabel={t('chat.social.messageArea.cancel')}
     >
-      <Flexbox gap={12}>
-        <Input
-          prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
+      <div className="sc-forward">
+        <PtTextField
+          leading={<Search size={14} />}
+          clearable
+          onClear={() => setFilter('')}
           placeholder={t('chat.social.messageArea.forwardTitle')}
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          allowClear
+          onValueChange={setFilter}
+          aria-label={t('chat.social.messageArea.forwardTitle')}
+          data-forward-search
         />
-        <Flexbox
-          gap={2}
-          style={{
-            maxHeight: 320,
-            overflowY: 'auto',
-          }}
-        >
+        <div className="sc-forward__list">
           {filtered.length === 0 ? (
-            <Text type="secondary" style={{ textAlign: 'center', padding: 16 }}>
-              —
-            </Text>
+            <PtEmpty
+              description={t('chat.social.messageArea.forwardEmpty')}
+            />
           ) : (
             filtered.map((conv) => (
-              <Flexbox
+              <button
+                type="button"
                 key={conv.id}
-                horizontal
-                align="center"
-                gap={10}
+                className="sc-forward__row"
                 onClick={() => onSelect(conv)}
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  transition: 'background 0.12s',
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = token.colorFillTertiary;
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = 'transparent';
-                }}
+                data-forward-conversation={conv.id}
               >
-                <span
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    background: token.colorFillSecondary,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: token.colorTextSecondary,
-                    flexShrink: 0,
-                  }}
-                >
+                <span className="sc-forward__avatar">
                   {conv.title.charAt(0).toUpperCase()}
                 </span>
-                <Flexbox style={{ minWidth: 0 }}>
-                  <Text ellipsis style={{ fontSize: 13, fontWeight: 500 }}>
-                    {conv.title}
-                  </Text>
-                  <Text
-                    type="secondary"
-                    ellipsis
-                    style={{ fontSize: 11 }}
-                  >
-                    {conv.kind === 'group' ? `Group · ${conv.memberCount ?? 0}` : 'Direct'}
-                  </Text>
-                </Flexbox>
-              </Flexbox>
+                <span className="sc-forward__body">
+                  <strong>{conv.title}</strong>
+                  <span>
+                    {conv.kind === 'group'
+                      ? t('chat.social.messageArea.forwardKindGroup', { count: conv.memberCount ?? 0 })
+                      : t('chat.social.messageArea.forwardKindDirect')}
+                  </span>
+                </span>
+              </button>
             ))
           )}
-        </Flexbox>
-      </Flexbox>
-    </Modal>
+        </div>
+      </div>
+    </Dialog>
   );
 }

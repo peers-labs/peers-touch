@@ -871,7 +871,7 @@ export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationR
             {/* Spatial-rotation contract: the scope group is a single-line
                 scrollable island; under squeeze the search and compose
                 controls collapse in place to icons, peers never rewrap. */}
-            <Segmented<MomentsTab> label="动态范围" options={TAB_OPTIONS} scrollable className="sk-scope-island"
+            <Segmented<MomentsTab> label="动态范围" density="compact" options={TAB_OPTIONS} scrollable className="sk-scope-island"
               value={tab} onValueChange={value => switchTab(value ?? 'feed')} />
             <div className="sk-scope-wrap"
               onClick={event => {

@@ -1,10 +1,12 @@
 import { type ComponentType, lazy, Suspense } from 'react';
+import { FeedbackHost } from '@peers-touch/ui';
 import { useAppLifecycle } from './hooks/useAppLifecycle';
 import { useAppRuntime } from './hooks/useAppRuntime';
 import { OnboardingView } from './views/OnboardingView';
 import { ResumingView } from './views/ResumingView';
 import { ReadyView } from './views/ReadyView';
 import './services/identityHandlers';
+import { feedbackChannel } from './ui/feedback';
 import type { AppState, AppLifecycle } from './types/navigation';
 
 const DevOverlayProvider = import.meta.env.DEV
@@ -33,6 +35,7 @@ function App() {
   return (
     <>
       <View lifecycle={lifecycle} />
+      <FeedbackHost channel={feedbackChannel} />
       {DevOverlayProvider && <Suspense fallback={null}><DevOverlayProvider /></Suspense>}
     </>
   );

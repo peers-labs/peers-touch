@@ -18,9 +18,6 @@
 // inside flex / grid rows without surprises.
 
 import type { CSSProperties, ReactElement } from 'react';
-import { Typography, theme } from 'antd';
-
-const { Text } = Typography;
 
 export interface FederatedHandleProps {
   /** Bare username — no "@" prefix. May be empty during loading. */
@@ -39,7 +36,6 @@ export function FederatedHandle({
   fontSize = 12,
   style,
 }: FederatedHandleProps): ReactElement | null {
-  const { token } = theme.useToken();
   const trimmedLocal = localPart?.trim() ?? '';
   if (!trimmedLocal) return null;
   const trimmedHome = home?.trim();
@@ -47,17 +43,17 @@ export function FederatedHandle({
     ? `@${trimmedLocal}@${trimmedHome}`
     : `@${trimmedLocal}`;
   return (
-    <Text
-      type="secondary"
+    <span
+      className="pt-federated-handle"
+      title={text}
       style={{
         fontSize,
         lineHeight: 1.2,
-        color: token.colorTextSecondary,
+        color: 'var(--pt-secondary)',
         ...style,
       }}
-      ellipsis={{ tooltip: text }}
     >
       {text}
-    </Text>
+    </span>
   );
 }

@@ -4,6 +4,7 @@
   "layout.nav.agent": "Agent",
   "layout.nav.contacts": "Contacts",
   "layout.nav.settings": "Settings",
+  "layout.nav.primary": "Primary navigation",
 
   "layout.online.tooltip": "{{count}} visitor(s) online in the last 5 minutes",
 
@@ -21,6 +22,7 @@
   "layout.splash.peers": "Peers",
 
   "layout.user.defaultName": "User",
+  "layout.user.viewProfile": "View my profile",
   "layout.user.posts": "posts",
   "layout.user.following": "following",
   "layout.user.followers": "followers",

@@ -57,7 +57,9 @@ describe('LoginPage OAuth lifecycle contract', () => {
     expect(globalStyles).toContain('border-color: transparent !important');
     expect(globalStyles).not.toContain('--pt-focus-ring-color');
     expect(globalStyles).not.toContain('outline: 2px solid');
-    expect(mainSource).toContain("colorPrimaryBorder: '#6f87f5'");
+    // Transitional antd chrome uses the neutral ink border; peers-ui
+    // primitives own the canonical --pt-* tokens.
+    expect(mainSource).toContain("colorPrimaryBorder: 'rgba(26,29,32,0.15)'");
     expect(mainSource).toContain('lineWidthFocus: 0');
   });
 });

@@ -148,6 +148,9 @@ importers:
       '@peers-touch/sdk-ts':
         specifier: workspace:*
         version: link:../../packages/sdk/ts
+      '@peers-touch/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui/web
       '@peers-touch/ui-desktop':
         specifier: workspace:*
         version: link:../../packages/ui/desktop

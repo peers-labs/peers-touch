@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Button } from '@lobehub/ui';
+import { Button, Dialog, IconButton, Select, TextArea } from '@peers-touch/ui';
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,7 +18,6 @@ import {
   ShieldCheck,
   Trash2,
   UserRound,
-  X,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
@@ -111,10 +110,14 @@ function Collection({
         <CircleAlert size={24} />
         <h2>{t('channels.v2.loadError.title')}</h2>
         <p>{errorMessage}</p>
-        <Button type="primary" onClick={onRetry}>
-          <RefreshCw size={15} />
-          {t('channels.v2.loadError.retry')}
-        </Button>
+        <Button
+          actionId="channel-load-retry"
+          emphasis="primary"
+          density="compact"
+          leading={<RefreshCw size={15} />}
+          label={t('channels.v2.loadError.retry')}
+          onActivate={onRetry}
+        />
       </main>
     );
   }
@@ -125,12 +128,13 @@ function Collection({
         <h2>{t('channels.v2.empty.title')}</h2>
         <p>{t('channels.v2.empty.description')}</p>
         <Button
-          type="primary"
-          onClick={(event) => onCreate(event.currentTarget)}
-        >
-          {t('channels.v2.empty.action')}
-          <ArrowRight size={16} />
-        </Button>
+          actionId="channel-create"
+          emphasis="primary"
+          density="compact"
+          trailing={<ArrowRight size={16} />}
+          label={t('channels.v2.empty.action')}
+          onActivate={(event) => onCreate(event.currentTarget)}
+        />
         {error ? <p className="pt-channel-error" role="alert">{errorMessage}</p> : null}
       </main>
     );
@@ -198,24 +202,31 @@ function ConfirmDeleteDialog({
 }) {
   const { t } = useTranslation('channels');
   const [busy, setBusy] = useState(false);
-  const cancelRef = useRef<HTMLButtonElement>(null);
   return (
-    <div className="pt-channel-dialog-backdrop" role="presentation">
-      <div
-        className="pt-channel-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="channel-delete-title"
-      >
-        <span><Trash2 size={22} /></span>
-        <h3 id="channel-delete-title">{t('channels.v2.delete.title')}</h3>
-        <p>{t('channels.v2.delete.description', { name: binding.name })}</p>
-        <div>
-          <Button ref={cancelRef} onClick={onCancel}>{t('channels.v2.cancel')}</Button>
+    <Dialog
+      open
+      onDismiss={() => {
+        if (!busy) onCancel();
+      }}
+      title={t('channels.v2.delete.title')}
+      description={t('channels.v2.delete.description', { name: binding.name })}
+      width={440}
+      closeLabel={t('channels.v2.cancel')}
+      footer={
+        <>
           <Button
-            danger
-            loading={busy}
-            onClick={async () => {
+            actionId="channel-delete-cancel"
+            density="compact"
+            label={t('channels.v2.cancel')}
+            onActivate={onCancel}
+          />
+          <Button
+            actionId="channel-delete-confirm"
+            tone="danger"
+            density="compact"
+            execution={busy ? 'pending' : 'idle'}
+            label={t('channels.v2.delete.action')}
+            onActivate={async () => {
               setBusy(true);
               try {
                 await channelActions.deleteBinding(binding.bindingId);
@@ -224,14 +235,16 @@ function ConfirmDeleteDialog({
                 setBusy(false);
               }
             }}
-          >
-            {t('channels.v2.delete.action')}
-          </Button>
-        </div>
-      </div>
-    </div>
+          />
+        </>
+      }
+    />
   );
 }
+
+// Peers Select forwards the id prop to its trigger button, which keeps the
+// recovery action's focus hand-off working without a native-select ref.
+const AGENT_SELECT_CONTROL_ID = 'channel-agent-select-control';
 
 function Detail({
   binding,
@@ -259,7 +272,6 @@ function Detail({
   const [delivery, setDelivery] = useState<ChannelMessageDelivery | null>(null);
   const [sending, setSending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const agentSelectRef = useRef<HTMLSelectElement>(null);
   const chats = detail?.chats ?? [];
   const effectiveTarget = targetChatId || chats[0]?.chatId || '';
   const pendingMembers = detail?.memberAccess.filter((member) =>
@@ -306,32 +318,42 @@ function Detail({
   return (
     <main className="pt-channel-main">
       <div className="pt-channel-detail-nav">
-        <button type="button" onClick={onBack}>
-          <ArrowLeft size={16} />
-          {t('channels.v2.detail.all')}
-        </button>
+        <Button
+          actionId="channel-detail-back"
+          emphasis="quiet"
+          density="compact"
+          leading={<ArrowLeft size={16} />}
+          label={t('channels.v2.detail.all')}
+          onActivate={onBack}
+        />
         <div>
           {!binding.isDefault ? (
-            <button
-              type="button"
-              onClick={async () => {
-                await channelActions.setDefaultBinding(binding.bindingId);
-                setNotice(t('channels.v2.notice.defaultChanged'));
+            <Button
+              actionId="channel-detail-make-default"
+              emphasis="quiet"
+              density="compact"
+              label={t('channels.v2.detail.makeDefault')}
+              onActivate={() => {
+                void (async () => {
+                  await channelActions.setDefaultBinding(binding.bindingId);
+                  setNotice(t('channels.v2.notice.defaultChanged'));
+                })();
               }}
-            >
-              {t('channels.v2.detail.makeDefault')}
-            </button>
+            />
           ) : <span>{t('channels.v2.detail.default')}</span>}
-          <button
-            type="button"
-            onClick={async () => {
-              if (binding.enabled) await channelActions.stopBinding(binding.bindingId);
-              else await channelActions.startBinding(binding.bindingId);
+          <Button
+            actionId="channel-detail-toggle"
+            emphasis="quiet"
+            density="compact"
+            leading={binding.enabled ? <Pause size={15} /> : <Play size={15} />}
+            label={binding.enabled ? t('channels.v2.pause') : t('channels.v2.resume')}
+            onActivate={() => {
+              void (async () => {
+                if (binding.enabled) await channelActions.stopBinding(binding.bindingId);
+                else await channelActions.startBinding(binding.bindingId);
+              })();
             }}
-          >
-            {binding.enabled ? <Pause size={15} /> : <Play size={15} />}
-            {binding.enabled ? t('channels.v2.pause') : t('channels.v2.resume')}
-          </button>
+          />
         </div>
       </div>
 
@@ -351,14 +373,20 @@ function Detail({
           </div>
           <div className="pt-channel-workspace__status">
             <ChannelStatus binding={binding} />
-            <Button size="small" onClick={() => onPanelChange('activity')}>
-              <HeartPulse size={14} />
-              {t('channels.v2.activity.title')}
-            </Button>
-            <Button size="small" onClick={() => onPanelChange('health')}>
-              <ShieldCheck size={14} />
-              {t('channels.v2.health.title')}
-            </Button>
+            <Button
+              actionId="channel-activity"
+              density="compact"
+              leading={<HeartPulse size={14} />}
+              label={t('channels.v2.activity.title')}
+              onActivate={() => onPanelChange('activity')}
+            />
+            <Button
+              actionId="channel-health"
+              density="compact"
+              leading={<ShieldCheck size={14} />}
+              label={t('channels.v2.health.title')}
+              onActivate={() => onPanelChange('health')}
+            />
           </div>
         </header>
 
@@ -366,9 +394,14 @@ function Detail({
           <div className="pt-channel-notice" role="status">
             <Check size={16} />
             <span>{notice}</span>
-            <button type="button" onClick={() => setNotice('')} aria-label={t('channels.v2.dismiss')}>
-              <X size={15} />
-            </button>
+            <IconButton
+              actionId="channel-notice-dismiss"
+              iconId="close"
+              iconSize={15}
+              density="compact"
+              label={t('channels.v2.dismiss')}
+              onActivate={() => setNotice('')}
+            />
           </div>
         ) : null}
 
@@ -384,19 +417,20 @@ function Detail({
                 : binding.lastError || t('channels.v2.recovery.description')}</p>
             </div>
             <Button
-              type="primary"
-              onClick={() => {
+              actionId="channel-recovery"
+              emphasis="primary"
+              density="compact"
+              label={agentRequired
+                ? t('channels.v2.responderRequired.action')
+                : t('channels.v2.recovery.action')}
+              onActivate={() => {
                 if (agentRequired) {
-                  agentSelectRef.current?.focus();
+                  document.getElementById(AGENT_SELECT_CONTROL_ID)?.focus();
                 } else {
                   onPanelChange('health');
                 }
               }}
-            >
-              {agentRequired
-                ? t('channels.v2.responderRequired.action')
-                : t('channels.v2.recovery.action')}
-            </Button>
+            />
           </div>
         ) : null}
 
@@ -412,21 +446,24 @@ function Detail({
                     : t('channels.v2.detail.noAgent')}</b>
                 </span>
               </div>
-              <select
-                ref={agentSelectRef}
-                value={binding.agentId}
-                onChange={async (event) => {
-                  await channelActions.updateBinding(binding.bindingId, {
-                    agentId: event.target.value,
-                  });
-                  setNotice(t('channels.v2.notice.agentChanged'));
+              <Select<string>
+                id={AGENT_SELECT_CONTROL_ID}
+                value={binding.agentId || undefined}
+                clearable
+                placeholder={t('channels.v2.detail.noAgent')}
+                options={agents.map((agent) => ({
+                  value: agent.id,
+                  label: agent.title || agent.name,
+                }))}
+                onValueChange={(next) => {
+                  void (async () => {
+                    await channelActions.updateBinding(binding.bindingId, {
+                      agentId: typeof next === 'string' ? next : '',
+                    });
+                    setNotice(t('channels.v2.notice.agentChanged'));
+                  })();
                 }}
-              >
-                <option value="">{t('channels.v2.detail.noAgent')}</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>{agent.title || agent.name}</option>
-                ))}
-              </select>
+              />
             </div>
 
             <div className="pt-channel-facts">
@@ -507,24 +544,26 @@ function Detail({
             <div className="pt-channel-test-form">
               <label>
                 <span>{t('channels.v2.test.target')}</span>
-                <select
-                  value={effectiveTarget}
-                  onChange={(event) => setTargetChatId(event.target.value)}
-                >
-                  <option value="">{t('channels.v2.test.selectTarget')}</option>
-                  {chats.map((chat) => (
-                    <option key={chat.chatId} value={chat.chatId}>
-                      {chat.name || chat.lastSenderName || chat.chatId}
-                    </option>
-                  ))}
-                </select>
+                <Select<string>
+                  value={effectiveTarget || undefined}
+                  clearable
+                  placeholder={t('channels.v2.test.selectTarget')}
+                  options={chats.map((chat) => ({
+                    value: chat.chatId,
+                    label: chat.name || chat.lastSenderName || chat.chatId,
+                  }))}
+                  onValueChange={(next) => setTargetChatId(
+                    typeof next === 'string' ? next : '',
+                  )}
+                />
               </label>
               <label>
                 <span>{t('channels.v2.test.message')}</span>
-                <textarea
-                  rows={3}
+                <TextArea
+                  aria-label={t('channels.v2.test.message')}
+                  minimumRows={3}
                   value={messageText}
-                  onChange={(event) => setMessageText(event.target.value)}
+                  onValueChange={setMessageText}
                 />
               </label>
               {delivery ? (
@@ -546,16 +585,17 @@ function Detail({
                 </div>
               ) : (
                 <Button
-                  type="primary"
-                  size="large"
-                  block
-                  loading={sending}
-                  disabled={!binding.enabled || !effectiveTarget || !messageText.trim()}
-                  onClick={sendTest}
-                >
-                  {t('channels.v2.test.send')}
-                  <ArrowRight size={15} />
-                </Button>
+                  actionId="channel-test-send"
+                  className="pt-channel-block-button"
+                  emphasis="primary"
+                  trailing={<ArrowRight size={15} />}
+                  label={t('channels.v2.test.send')}
+                  execution={sending ? 'pending' : 'idle'}
+                  availability={(!binding.enabled || !effectiveTarget || !messageText.trim())
+                    ? { kind: 'disabled', reason: t('channels.v2.test.send') }
+                    : undefined}
+                  onActivate={sendTest}
+                />
               )}
             </div>
           </aside>
@@ -578,14 +618,15 @@ function Detail({
                 : t('channels.v2.app.description')}
               onClick={() => onPanelChange('app')}
             />
-            <button
-              type="button"
+            <Button
+              actionId="channel-detail-disconnect"
               className="pt-channel-disconnect"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <Trash2 size={16} />
-              {t('channels.v2.delete.action')}
-            </button>
+              tone="danger"
+              density="compact"
+              leading={<Trash2 size={16} />}
+              label={t('channels.v2.delete.action')}
+              onActivate={() => setDeleteOpen(true)}
+            />
           </div>
         </details>
       </section>
@@ -646,12 +687,13 @@ export function LarkChannelsSettings() {
         </div>
         {!creating && bindings.length > 0 ? (
           <Button
-            type="primary"
-            icon={Plus}
-            onClick={(event) => openCreate(event.currentTarget)}
-          >
-            {t('channels.v2.page.add')}
-          </Button>
+            actionId="channel-add"
+            emphasis="primary"
+            density="compact"
+            leading={<Plus size={14} />}
+            label={t('channels.v2.page.add')}
+            onActivate={(event) => openCreate(event.currentTarget)}
+          />
         ) : null}
       </header>
 

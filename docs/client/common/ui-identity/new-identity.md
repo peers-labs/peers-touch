@@ -1,11 +1,19 @@
 ---
-status: active
+status: superseded-by:../../../architecture/platform/client/ui-system/design.md
 owner: Client Platform Team
-updated: 2026-06-24
+updated: 2026-11-07
 review-cadence: on-change
 ---
 
 # Peers Touch 新 UI Identity
+
+> **Superseded（2026-11-07）。** 本文的「Structured Expressive Minimalism /
+> Quiet Protocol Minimalism」已被新的 Peers UI System 取代：总纲见
+> [design.md](../../../architecture/platform/client/ui-system/design.md)，
+> 生效视觉语法见
+> [north-star-frame.md](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md)
+> （中性纸面 + 近墨动作胶囊 `#1a1d20` + 松绿连接标点 `#2f6a50`）。
+> 本文仅作历史留存，不得作为实现依据。
 
 ## 1. Document Scope
 

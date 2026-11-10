@@ -20,12 +20,22 @@ describe('Provider settings product contract', () => {
     expect(menuSource).not.toContain('<Tabs');
   });
 
+  it('makes provider list rows keyboard-operable with explicit button semantics', () => {
+    // The row nests an IconButton, so it cannot itself be a <button>; the
+    // established role=button row pattern must carry full keyboard support.
+    expect(menuSource).toContain('className={`sc-provider-menu-row');
+    expect(menuSource).toContain('role="button"');
+    expect(menuSource).toContain('tabIndex={0}');
+    expect(menuSource).toMatch(/onKeyDown=\{\(event\) => \{[\s\S]*?event\.preventDefault\(\)[\s\S]*?selectProvider/);
+    expect(menuSource).toContain('aria-current={isSelected}');
+  });
+
   it('chooses Direct or CLI only inside Add Provider', () => {
-    expect(menuSource).toContain("Form.useWatch<'direct' | 'cli'>");
-    expect(menuSource).toContain('<Radio value="direct" className="pt-provider-kind-direct">');
-    expect(menuSource).toContain('<Radio value="cli" className="pt-provider-kind-cli">');
+    expect(menuSource).toContain("useState<ProviderKind>('direct')");
+    expect(menuSource).toContain('<Radio\n              name="provider-kind"\n              value="direct"\n              className="pt-provider-kind-direct"');
+    expect(menuSource).toContain('<Radio\n              name="provider-kind"\n              value="cli"\n              className="pt-provider-kind-cli"');
     expect(menuSource).toContain('className="pt-provider-cli-adapter-select"');
-    expect(menuSource).toContain("className: 'pt-provider-cli-adapter-option'");
+    expect(menuSource).toContain("attributes: { className: 'pt-provider-cli-adapter-option' }");
     expect(menuSource).toContain('provider.runtime_kind === \'cli\'');
   });
 

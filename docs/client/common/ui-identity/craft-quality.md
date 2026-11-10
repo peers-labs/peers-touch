@@ -1,7 +1,7 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-10-11
+updated: 2026-11-07
 review-cadence: quarterly
 next-review: 2027-01-27
 ---
@@ -21,22 +21,16 @@ self-assigned score.
 
 ## 2. Identity Position
 
-**Structured Expressive Minimalism** is the product-level north star.
+The operative identity is the **north-star desktop frame** (Peers UI System):
+neutral paper surfaces, a near-ink action capsule (`#1a1d20`), and a single
+pine connection accent (`#2f6a50`) used only for identity/current-location and
+connection points. See
+[design.md](../../../architecture/platform/client/ui-system/design.md) and
+[north-star-frame.md](../../../architecture/platform/client/ui-system/prototype/north-star-frame.md).
 
-**Quiet Protocol Minimalism** is its default expression for dense, recurring
-workflow surfaces such as Chat, Social, Settings, and operator tools.
-
-The relationship is:
-
-```text
-Structured Expressive Minimalism
-  -> stable structure and Peers-owned signature
-  -> expression strength selected by surface type
-  -> Quiet Protocol Minimalism for recurring workflows
-  -> stronger but still purposeful expression for entry and milestone states
-```
-
-This is one system, not two visual identities.
+The earlier "Structured Expressive Minimalism / Quiet Protocol Minimalism"
+phrasing is **superseded** (`foundations.md`, `new-identity.md`); craft
+standards in this file still apply on top of the north-star grammar.
 
 ## 3. External Calibration
 

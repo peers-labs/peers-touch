@@ -244,7 +244,6 @@ const VETTED_CONSUMERS: Record<string, string[]> = {
 
 /** Registered gaps — hand-rolled in prototypes today, awaiting promotion. */
 const GAPS: Array<[CategoryId, CapabilityKind, string, string, string, string?]> = [
-  ['navigation', 'primitive', 'UnderlineTabs', '下划线标签页（设置一级导航形态）', SETTINGS],
   ['data', 'primitive', 'ActivityHeatmap', '活跃热力图（统计分区）', SETTINGS],
   ['advanced', 'primitive', 'VoiceRecorder', '语音录制与波形（富输入）', CHAT],
   ['navigation', 'composition', 'CommandSurface', '封闭域命令浮层（搜索/命令面板）', CHAT],

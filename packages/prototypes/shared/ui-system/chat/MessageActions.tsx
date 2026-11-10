@@ -219,7 +219,7 @@ export function ReportDialog({ open, onCancel, onSubmit }: {
           <Button actionId="report.submit" emphasis="primary" label={t('report.submit')}
             availability={reason
               ? { kind: 'enabled' }
-              : { kind: 'disabled', reason: t('report.body') }}
+              : { kind: 'disabled', reason: t('report.submitDisabled') }}
             onActivate={() => reason && onSubmit(reason)} />
         </>
       }>

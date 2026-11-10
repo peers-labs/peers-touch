@@ -1,10 +1,6 @@
 @import '@peers-touch/client-chat-core/src/attachmentPreview.css';
 
 .chat-file-modal { max-width: calc(100vw - 32px); padding-bottom: 0; }
-.chat-file-modal .ant-modal-container { overflow: hidden; }
-.chat-file-modal .ant-modal-header { margin-bottom: 4px; }
-.chat-file-modal .ant-modal-title { padding-right: 36px; text-align: start; width: 100%; }
-.chat-file-modal .ant-modal-body { padding-top: 0; }
 
 /* Single compact Quick Look style header: title left, icon actions right. */
 .chat-file-header {
@@ -61,16 +57,16 @@
   cursor: default;
 }
 .chat-file-header-icon-primary {
-  color: #fff;
-  background: var(--chat-preview-accent, #1677ff);
+  color: var(--pt-onPrimary);
+  background: var(--chat-preview-accent);
 }
 .chat-file-header-icon-primary:hover:not(:disabled) {
-  background: var(--chat-preview-accent, #1677ff);
+  background: var(--chat-preview-accent);
   filter: brightness(1.08);
 }
 .chat-file-header-icon-primary:disabled {
-  color: #fff;
-  background: var(--chat-preview-accent, #1677ff);
+  color: var(--pt-onPrimary);
+  background: var(--chat-preview-accent);
 }
 .chat-file-state {
   font-size: 12px;
@@ -78,7 +74,7 @@
   white-space: nowrap;
 }
 .chat-file-state[data-chat-file-state="ready"] { display: none; }
-.chat-file-state[data-chat-file-state="failed"] { color: #cf1322; }
+.chat-file-state[data-chat-file-state="failed"] { color: var(--pt-danger); }
 .chat-file-progress-status {
   display: inline-flex;
   align-items: center;
@@ -91,7 +87,7 @@
 @keyframes chat-file-spin { to { transform: rotate(360deg); } }
 
 .chat-file-detail { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.chat-file-error { font-size: 12px; color: #cf1322; }
+.chat-file-error { font-size: 12px; color: var(--pt-danger); }
 .chat-file-feedback { font-size: 12px; color: var(--chat-preview-secondary); }
 .chat-file-transfer { height: 3px; border-radius: 2px; overflow: hidden; background: var(--chat-preview-hover); }
 .chat-file-transfer progress {
@@ -126,6 +122,26 @@
   color: var(--chat-preview-secondary);
 }
 @media (max-width: 600px) {
-  .chat-file-modal .ant-modal-body { padding-inline: 12px !important; }
   .chat-file-subtitle { display: none; }
+}
+
+/* North-star token bridge (peers Dialog replaces antd Modal). */
+.chat-file-modal {
+  --chat-preview-text: var(--pt-text);
+  --chat-preview-secondary: var(--pt-secondary);
+  --chat-preview-border: var(--pt-border);
+  --chat-preview-surface: var(--pt-surface);
+  --chat-preview-canvas: var(--pt-subtle);
+  --chat-preview-hover: var(--pt-subtle);
+  --chat-preview-accent: var(--pt-primary);
+}
+.chat-file-modal .pt-dialog-header { padding: 10px 12px 8px; }
+.chat-file-modal .pt-dialog-header h2 { flex: 1; text-align: left; }
+.chat-file-modal .pt-dialog-body {
+  max-height: none;
+  overflow: hidden;
+  padding: 0 16px 16px;
+}
+@media (max-width: 600px) {
+  .chat-file-modal .pt-dialog-body { padding-inline: 12px; }
 }

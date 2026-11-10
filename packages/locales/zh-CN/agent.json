@@ -1117,6 +1117,7 @@
   "agent.commandMenu.navigate": "导航",
   "agent.commandMenu.select": "选择",
   "agent.commandMenu.close": "关闭",
+  "agent.commandMenu.escapeKey": "esc",
   "agent.commandMenu.page.home": "首页",
   "agent.commandMenu.page.chat": "对话",
   "agent.commandMenu.page.agent": "智能体",
