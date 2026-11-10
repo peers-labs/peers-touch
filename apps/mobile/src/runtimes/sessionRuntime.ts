@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSyncExternalStore } from 'react';
 
 import type {
+  LifecycleEventListener,
   MobileRuntimeContext,
   MobileRuntimeDescriptor,
   RuntimeOperationResult,
@@ -718,16 +719,11 @@ export async function purgeAllNativeSessionState(): Promise<NativeSessionRevocat
 
 export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
   let unsubscribeAuth: (() => void) | null = null;
+  let unsubscribeKernelEvents: (() => void) | null = null;
   let releaseMutationAdmission: (() => void) | null = null;
   let lifecycleEpoch = 0;
   let running = false;
-  let resumeRevalidationTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const clearResumeRevalidation = () => {
-    if (resumeRevalidationTimer === null) return;
-    clearTimeout(resumeRevalidationTimer);
-    resumeRevalidationTimer = null;
-  };
+  let pendingRevalidationEpoch: number | null = null;
 
   const observeOAuth = async () => {
     const observed = lifecycleEpoch;
@@ -792,23 +788,27 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
   // revocation flips session admission to `refreshing` and then nulls the
   // projection; doing that while dependent runtimes are still resuming makes
   // their resume operations fail and surfaces as lifecycle.resumeIncomplete.
-  // The resume cascade awaits native IPC and therefore crosses macrotask
-  // boundaries, so a single setTimeout cannot guarantee ordering. Instead keep
-  // deferring until the kernel phase is ACTIVE, which it only enters after every
-  // descriptor resume has succeeded; the revocation then happens in the same
-  // steady-state, subscription-driven regime as a scheduled refresh.
+  // The kernel emits `phase-changed: ACTIVE` only after every descriptor resume
+  // has succeeded, so subscribing to that event places the revocation in the
+  // same steady-state, subscription-driven regime as a scheduled refresh and
+  // avoids depending on WebView timer ordering across native IPC boundaries.
+  const handleKernelEvent: LifecycleEventListener = (event) => {
+    if (event.kind !== 'phase-changed' || event.phase !== 'ACTIVE') return;
+    if (pendingRevalidationEpoch === null) return;
+    const observed = pendingRevalidationEpoch;
+    pendingRevalidationEpoch = null;
+    if (!running || observed !== lifecycleEpoch) return;
+    void revalidateResumedSession(observed);
+  };
+
   const scheduleResumeRevalidation = (observed: number): void => {
-    clearResumeRevalidation();
-    const runWhenGraphActive = () => {
-      resumeRevalidationTimer = null;
-      if (!running || observed !== lifecycleEpoch) return;
-      if (getMobileLifecycleKernel().getState().phase !== 'ACTIVE') {
-        resumeRevalidationTimer = setTimeout(runWhenGraphActive, 0);
-        return;
-      }
+    pendingRevalidationEpoch = observed;
+    // Safety net for a resume that resolves while the graph is already ACTIVE:
+    // no further phase-changed event would arrive, so probe immediately.
+    if (getMobileLifecycleKernel().getState().phase === 'ACTIVE') {
+      pendingRevalidationEpoch = null;
       void revalidateResumedSession(observed);
-    };
-    resumeRevalidationTimer = setTimeout(runWhenGraphActive, 0);
+    }
   };
 
   return {
@@ -841,12 +841,15 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
       unsubscribeAuth = subscribeAuthRuntimeSnapshot(() => {
         void observeOAuth();
       });
+      unsubscribeKernelEvents = getMobileLifecycleKernel().onEvent(
+        handleKernelEvent,
+      );
     },
 
     async suspend(): Promise<void> {
       running = false;
       lifecycleEpoch += 1;
-      clearResumeRevalidation();
+      pendingRevalidationEpoch = null;
       sessionRuntime.suspend();
     },
 
@@ -855,9 +858,9 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
       const observed = ++lifecycleEpoch;
       await restoreOwnedSession();
       if (!running || observed !== lifecycleEpoch) return;
-      // The Station probe is deferred past the kernel resume budget and the
-      // dependent-runtime cascade; foreground resume must neither block on the
-      // network nor mutate session admission while other runtimes are resuming.
+      // The Station probe waits for the kernel to reach ACTIVE after the resume
+      // cascade so foreground resume never mutates admission while dependent
+      // runtimes are still resuming, and never blocks on the network.
       scheduleResumeRevalidation(observed);
     },
 
@@ -865,7 +868,9 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
       const start = performance.now();
       running = false;
       lifecycleEpoch += 1;
-      clearResumeRevalidation();
+      pendingRevalidationEpoch = null;
+      unsubscribeKernelEvents?.();
+      unsubscribeKernelEvents = null;
       unsubscribeAuth?.();
       unsubscribeAuth = null;
       releaseMutationAdmission?.();

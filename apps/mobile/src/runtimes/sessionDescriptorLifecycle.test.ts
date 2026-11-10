@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   observe: null as null | (() => void),
   kernelReconcile: vi.fn(),
   kernelPhase: 'ACTIVE' as string,
+  kernelListeners: [] as Array<(event: unknown) => void>,
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('./stationRuntime', () => ({ readStationRegistryProjection: mocks.registry }));
@@ -15,6 +16,10 @@ vi.mock('../app/lifecycle/MobileLifecycleKernel', () => ({
   getMobileLifecycleKernel: () => ({
     getState: () => ({ phase: mocks.kernelPhase }),
     reconcileLaunchState: mocks.kernelReconcile,
+    onEvent: (listener: (event: unknown) => void) => {
+      mocks.kernelListeners.push(listener);
+      return () => {};
+    },
   }),
 }));
 vi.mock('./authRuntime', () => ({
@@ -132,6 +137,7 @@ describe('Session descriptor revalidates the restored session on resume', () => 
   beforeEach(async () => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    mocks.kernelListeners.length = 0;
     mocks.kernelPhase = 'ACTIVE';
     mocks.kernelReconcile.mockResolvedValue(undefined);
     mocks.registry.mockResolvedValue(registry);
@@ -239,60 +245,53 @@ describe('Session descriptor revalidates the restored session on resume', () => 
     expect(mocks.kernelReconcile).not.toHaveBeenCalled();
   });
 
-  it('cancels the deferred probe when suspension wins the resume macrotask', async () => {
-    vi.useFakeTimers();
-    try {
-      const commands: string[] = [];
-      await bootWithInvoke(async (command) => {
-        commands.push(command);
-        if (command === 'oauth_session_projection') return activeSession();
-        if (command === 'oauth_session_refresh') {
-          throw new Error('mobile.auth.sessionCredentialRejected:401');
-        }
-        if (command === 'oauth_logout_purge') return completePurge();
-        throw new Error(`unexpected command ${command}`);
-      });
+  it('cancels the pending probe when suspension precedes the ACTIVE event', async () => {
+    mocks.kernelPhase = 'RESUMING';
+    const commands: string[] = [];
+    await bootWithInvoke(async (command) => {
+      commands.push(command);
+      if (command === 'oauth_session_projection') return activeSession();
+      if (command === 'oauth_session_refresh') {
+        throw new Error('mobile.auth.sessionCredentialRejected:401');
+      }
+      if (command === 'oauth_logout_purge') return completePurge();
+      throw new Error(`unexpected command ${command}`);
+    });
 
-      await descriptor.resume({} as never);
-      await descriptor.suspend();
-      await vi.advanceTimersByTimeAsync(0);
+    await descriptor.resume({} as never);
+    await descriptor.suspend();
+    mocks.kernelPhase = 'ACTIVE';
+    mocks.kernelListeners.forEach((listener) => {
+      listener({ kind: 'phase-changed', phase: 'ACTIVE' });
+    });
+    await Promise.resolve();
 
-      expect(commands).not.toContain('oauth_session_refresh');
-      expect(commands).not.toContain('oauth_logout_purge');
-      expect(mocks.kernelReconcile).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(commands).not.toContain('oauth_session_refresh');
+    expect(commands).not.toContain('oauth_logout_purge');
+    expect(mocks.kernelReconcile).not.toHaveBeenCalled();
   });
 
-  it('defers the probe while the kernel resume graph is still RESUMING', async () => {
-    vi.useFakeTimers();
-    try {
-      mocks.kernelPhase = 'RESUMING';
-      const commands: string[] = [];
-      await bootWithInvoke(async (command) => {
-        commands.push(command);
-        if (command === 'oauth_session_projection') return activeSession();
-        if (command === 'oauth_session_refresh') {
-          return { ...activeSession(), sessionId: 'session-rotated' };
-        }
-        throw new Error(`unexpected command ${command}`);
-      });
-
-      await descriptor.resume({} as never);
-      await vi.advanceTimersByTimeAsync(1);
-      await vi.advanceTimersByTimeAsync(1);
-      expect(commands).not.toContain('oauth_session_refresh');
-
-      mocks.kernelPhase = 'ACTIVE';
-      for (let tick = 0; tick < 5; tick += 1) {
-        await vi.advanceTimersByTimeAsync(1);
+  it('defers the probe until the kernel emits phase-changed ACTIVE', async () => {
+    mocks.kernelPhase = 'RESUMING';
+    const commands: string[] = [];
+    await bootWithInvoke(async (command) => {
+      commands.push(command);
+      if (command === 'oauth_session_projection') return activeSession();
+      if (command === 'oauth_session_refresh') {
+        return { ...activeSession(), sessionId: 'session-rotated' };
       }
-      expect(commands).toContain('oauth_session_refresh');
-      expect(mocks.kernelReconcile).not.toHaveBeenCalled();
-    } finally {
-      mocks.kernelPhase = 'ACTIVE';
-      vi.useRealTimers();
-    }
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    await descriptor.resume({} as never);
+    await Promise.resolve();
+    expect(commands).not.toContain('oauth_session_refresh');
+
+    mocks.kernelPhase = 'ACTIVE';
+    mocks.kernelListeners.forEach((listener) => {
+      listener({ kind: 'phase-changed', phase: 'ACTIVE' });
+    });
+    await vi.waitFor(() => expect(commands).toContain('oauth_session_refresh'));
+    expect(mocks.kernelReconcile).not.toHaveBeenCalled();
   });
 });

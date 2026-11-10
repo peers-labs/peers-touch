@@ -76,21 +76,22 @@ blocking the kernel resume budget:
 3. The Station round trip is intentionally not awaited inside `resume()`: the
    kernel enforces a short per-descriptor resume timeout, and foreground resume
    must survive a slow or unreachable Station.
-4. The probe is gated on the kernel phase, not merely deferred by one
-   macrotask. A terminal revocation flips session admission to `refreshing`
-   and then nulls the projection; doing that while dependent runtimes
+4. The probe is triggered by a kernel `phase-changed` event, not a timer. A
+   terminal revocation flips session admission to `refreshing` and then nulls
+   the projection; doing that while dependent runtimes
    (messaging, social, command, chat-storage, private-social,
    recovery-projection) are still inside the kernel resume cascade makes their
    `resume()` operations fail and surfaces as
    `mobile.lifecycle.resumeIncomplete:...`. The cascade `await`s native IPC and
-   therefore crosses macrotask boundaries, so a single `setTimeout(0)` can still
-   interleave. The scheduler keeps re-deferring on a zero timer until
-   `kernel.getState().phase === 'ACTIVE'`, which is only entered after every
-   descriptor resume succeeds; revocation then runs in the same
-   steady-state, subscription-driven regime as a scheduled refresh.
-   `suspend()`/`teardown()` clear the pending timer, and the descriptor
-   `lifecycleEpoch` guard additionally neutralizes a probe that is already in
-   flight.
+   therefore crosses macrotask boundaries, so neither an inline call nor a
+   `setTimeout(0)` poll can reliably order after it. `resume()` instead records
+   a pending revalidation epoch, and a kernel event listener registered in
+   `bootstrap()` fires the probe only when the graph emits
+   `phase-changed: ACTIVE`, which happens after every descriptor resume
+   succeeds; revocation then runs in the same steady-state,
+   subscription-driven regime as a scheduled refresh. `suspend()`/`teardown()`
+   clear the pending epoch and the listener, and the descriptor
+   `lifecycleEpoch` guard neutralizes stale work.
 5. When the refresh settles with a null session and the descriptor epoch is
    still current, the descriptor requests
    `kernel.reconcileLaunchState('reliability-recovery')` so the launch state
@@ -98,11 +99,12 @@ blocking the kernel resume budget:
    refresh window.
 
 The regression coverage is in
-`apps/mobile/src/runtimes/sessionDescriptorLifecycle.test.ts`: healthy rotate
-stays in shell, terminal 401 revokes and reconciles, transient transport
-failure retains the cached session, suspension fences a late refresh,
-suspension before the macrotask cancels the probe entirely, and a RESUMING
-graph keeps deferring the probe until the kernel reaches ACTIVE.
+`apps/mobile/src/runtimes/sessionDescriptorLifecycle.test.ts` (mocked kernel)
+and `sessionDescriptorResumeKernel.test.ts` (real kernel): healthy rotate stays
+in shell, terminal 401 revokes and reconciles, transient transport failure
+retains the cached session, suspension cancels a pending probe, and the probe
+waits for the `phase-changed: ACTIVE` event rather than firing while the graph
+is RESUMING.
 
 ## Decision context
 
