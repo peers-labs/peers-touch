@@ -28,7 +28,13 @@ export interface SearchResultRow {
   /** Plain text only; highlight is computed by the component against `query`. */
   title: string;
   snippet?: string;
-  meta?: string;
+  /** Plain text OR host-rendered meta content (e.g. <SearchResultMeta> rich span). */
+  meta?: ReactNode;
+  /** Optional per-row zone label key (e.g. 'search.zone.station'). Falls back
+   *  to model.coverage[0] detail key when absent. */
+  zoneKey?: string;
+  /** Host-rendered icon (e.g. Lucide node). Composite never imports icon libs. */
+  icon?: ReactNode;
   /** Optional resource identity gate hooks (passed through to data attributes). */
   resource?: { id?: string; sourceId?: string; kind?: string };
 }

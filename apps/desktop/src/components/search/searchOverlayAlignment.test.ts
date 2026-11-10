@@ -14,7 +14,7 @@ const stylesheet = readFileSync(
   'utf8',
 );
 
-describe('search command palette alignment (prototype bespoke shell over peers)', () => {
+describe('search command palette alignment (composite-promotion adapter)', () => {
   it('does not depend on antd or @lobehub/ui anywhere in the search surface', () => {
     for (const source of [overlaySource, returnBarSource]) {
       expect(source).not.toMatch(/from 'antd'/);
@@ -24,19 +24,20 @@ describe('search command palette alignment (prototype bespoke shell over peers)'
     }
   });
 
-  it('builds the command palette as a bespoke scrim + panel, like the prototype', () => {
-    // The prototype shell uses its own backdrop/panel (peers has no
-    // command-palette primitive); the interior listbox stays native.
-    // Rendered inline (fixed), not portaled to body, so .pt-ui tokens apply.
+  it('delegates DOM rendering to GlobalSearchSurface from @peers-touch/ui-composite', () => {
+    // The adapter is a thin port-conversion layer; the composite owns all
+    // DOM. Verify the wiring points are intact.
     expect(overlaySource).not.toContain('createPortal');
-    expect(overlaySource).toContain('className="pt-search-overlay"');
-    expect(overlaySource).toContain('className="pt-search-scrim"');
-    expect(overlaySource).toContain('className="pt-search-panel"');
     expect(overlaySource).not.toMatch(/<Modal/);
-    // Interior ARIA hooks (roving listbox / tabs / searchbox) are preserved.
-    expect(overlaySource).toContain('role="searchbox"');
-    expect(overlaySource).toContain('data-search-filter');
-    expect(overlaySource).toContain('id={`pt-search-row-${index}`}');
+    expect(overlaySource).toContain("import { GlobalSearchSurface } from '@peers-touch/ui-composite'");
+    expect(overlaySource).toContain('<GlobalSearchSurface');
+    // SurfaceHooks injects legacy pt-search-* classes onto composite regions.
+    expect(overlaySource).toContain("'pt-search-overlay'");
+    expect(overlaySource).toContain("'pt-search-scrim'");
+    expect(overlaySource).toContain("'pt-search-panel'");
+    // ARIA hooks are delivered through composite; adapter confirms its slot.
+    expect(overlaySource).toContain('infoPopoverSlot');
+    expect(overlaySource).toContain('SearchResultMeta');
   });
 
   it('uses the peers Popover for the coverage info affordance', () => {

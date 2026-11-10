@@ -151,6 +151,9 @@ importers:
       '@peers-touch/ui':
         specifier: workspace:*
         version: link:../../packages/ui/web
+      '@peers-touch/ui-composite':
+        specifier: workspace:*
+        version: link:../../packages/ui/composite
       '@peers-touch/ui-desktop':
         specifier: workspace:*
         version: link:../../packages/ui/desktop
@@ -1157,6 +1160,9 @@ importers:
       '@peers-touch/ui-assets':
         specifier: workspace:*
         version: link:../../../ui/assets
+      '@peers-touch/ui-composite':
+        specifier: workspace:*
+        version: link:../../../ui/composite
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.8)

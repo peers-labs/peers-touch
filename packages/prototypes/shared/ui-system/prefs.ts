@@ -1751,6 +1751,22 @@ export const STRINGS = {
     'agent.ai.cron.status.running': '运行中',
     'agent.ai.cron.status.never': '未运行',
     'agent.ai.cron.consecErrors': '连续失败 {count} 次',
+    // GlobalSearchSurface (composite package) hardcoded fallback keys
+    // Translations sourced from production packages/locales/zh-CN/search.json
+    'search.label': '搜索 Peers 内容',
+    'search.input.placeholder': '搜索消息、动态、评论或功能…',
+    'search.close': '关闭搜索 (Esc)',
+    'search.loading': '正在检索可读内容…',
+    'search.range': '搜索范围',
+    'search.results': '检索结果',
+    'search.empty.title': '没有找到「{query}」',
+    'search.empty.detail': '换个关键词，或检查所选内容类型与来源覆盖范围。',
+    'search.retry': '重新检索',
+    'search.more': '更多结果',
+    'search.copy.label': '复制标题与摘要',
+    'search.zone.device': '本机',
+    'search.coverage.pending': '仍在检索…',
+    'search.opening': '正在打开…',
   },
   en: {
     // shell chrome
@@ -3379,6 +3395,22 @@ export const STRINGS = {
     'agent.ai.cron.status.running': 'Running',
     'agent.ai.cron.status.never': 'Never run',
     'agent.ai.cron.consecErrors': '{count} consecutive failures',
+    // GlobalSearchSurface (composite package) hardcoded fallback keys
+    // Translations sourced from production packages/locales/en/search.json
+    'search.label': 'Search Peers content',
+    'search.input.placeholder': 'Search messages, posts, comments or functions…',
+    'search.close': 'Close search (Esc)',
+    'search.loading': 'Searching readable content…',
+    'search.range': 'Search range',
+    'search.results': 'Search results',
+    'search.empty.title': 'No results for “{query}”',
+    'search.empty.detail': 'Try another keyword or check the selected content types and source coverage.',
+    'search.retry': 'Search again',
+    'search.more': 'More results',
+    'search.copy.label': 'Copy title and snippet',
+    'search.zone.device': 'Device',
+    'search.coverage.pending': 'Still searching…',
+    'search.opening': 'Opening…',
   },
 } as const;
 

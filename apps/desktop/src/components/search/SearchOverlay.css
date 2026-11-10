@@ -35,7 +35,12 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: var(--pt-search-entrance, none);
+}
+.pt-search-panel[data-search-entering='true'] {
+  animation: pt-search-in 0.16s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pt-search-panel[data-search-entering='true'] { animation: none; }
 }
 @keyframes pt-search-in {
   from { opacity: 0; }

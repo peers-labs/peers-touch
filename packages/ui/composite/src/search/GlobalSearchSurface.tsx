@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import type { GlobalSearchSurfaceProps, SearchRegionKey, SearchResultRow, SearchGroup } from './search.types';
 import './search.css';
 
@@ -92,6 +92,7 @@ const CLICK_DRAG_PX = 4;
 export function GlobalSearchSurface({ open, model, intents, t, hooks, infoPopoverSlot }: GlobalSearchSurfaceProps) {
   // ── UI-transient state only (CMP-D02) ──────────────────────────────────
   const [closing, setClosing] = useState(false);
+  const [entering, setEntering] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<Element | null>(null);
@@ -102,6 +103,19 @@ export function GlobalSearchSurface({ open, model, intents, t, hooks, infoPopove
   const [cursor, setCursor] = useState<number | null>(null);
 
   const flatRows = flattenGroups(model.groups);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    setEntering(document.visibilityState === 'visible'
+      && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+    // WKWebView can suspend an opacity animation while the window is hidden.
+    // Do not re-arm it when the window becomes visible again.
+    const settleHiddenEntrance = () => {
+      if (document.visibilityState !== 'visible') setEntering(false);
+    };
+    document.addEventListener('visibilitychange', settleHiddenEntrance);
+    return () => document.removeEventListener('visibilitychange', settleHiddenEntrance);
+  }, [open]);
 
   // Presence lifecycle: enter mounts immediately, exit lingers the soft fade-out.
   useEffect(() => {
@@ -229,6 +243,7 @@ export function GlobalSearchSurface({ open, model, intents, t, hooks, infoPopove
       <li
         key={row.rowKey}
         role="listitem"
+        data-search-result={row.kind}
         className={regionClass(`ptc-search-row${selected ? ' is-active' : ''}`, hooks, 'row')}
         aria-selected={selected}
         {...mergeData('row', {
@@ -248,7 +263,7 @@ export function GlobalSearchSurface({ open, model, intents, t, hooks, infoPopove
           onClick={event => onRowClick(row.rowKey, event)}
         >
           <span className={regionClass('ptc-search-row-icon', hooks, 'rowIcon')} {...regionData(hooks, 'rowIcon')}>
-            {/* Host decides what icon to render via row.kind — composite passes iconId through if given */}
+            {row.icon}
           </span>
           <span className="ptc-search-main">
             <span id={titleId} className={regionClass('ptc-search-row-title', hooks, 'rowTitle')} {...regionData(hooks, 'rowTitle')}>
@@ -259,9 +274,11 @@ export function GlobalSearchSurface({ open, model, intents, t, hooks, infoPopove
             )}
             {row.meta && <span className={regionClass('ptc-search-row-meta', hooks, 'rowSnippet')}>{row.meta}</span>}
           </span>
-          <span className={regionClass('ptc-search-row-zone', hooks, 'rowZone')} {...regionData(hooks, 'rowZone')}>
-            {model.coverage.length > 0 ? t(model.coverage[0].detailKey ?? 'search.zone.device') : null}
-          </span>
+          {(row.zoneKey ?? model.coverage.length > 0) && (
+            <span className={regionClass('ptc-search-row-zone', hooks, 'rowZone')} {...regionData(hooks, 'rowZone')}>
+              {t(row.zoneKey ?? model.coverage[0].detailKey ?? 'search.zone.device')}
+            </span>
+          )}
           <span className={regionClass('ptc-search-row-open', hooks, 'rowOpen')} {...regionData(hooks, 'rowOpen')} />
         </div>
         {intents.onCopyRow && (
@@ -280,7 +297,8 @@ export function GlobalSearchSurface({ open, model, intents, t, hooks, infoPopove
 
   function renderGroup(group: SearchGroup, startIndex: number) {
     return (
-      <div key={group.key} className={regionClass('ptc-search-group', hooks, 'group')} {...regionData(hooks, 'group')}>
+      <div key={group.key} className={regionClass('ptc-search-group', hooks, 'group')}
+        data-search-group={group.key} {...regionData(hooks, 'group')}>
         <div className="ptc-search-group-title">
           {t(group.labelKey)} · {group.rows.length}
         </div>
@@ -325,7 +343,14 @@ export function GlobalSearchSurface({ open, model, intents, t, hooks, infoPopove
         onClick={intents.onClose}
         {...regionData(hooks, 'scrim')}
       />
-      <div className={regionClass('ptc-search-panel', hooks, 'panel')} {...regionData(hooks, 'panel')}>
+      <div
+        className={regionClass('ptc-search-panel', hooks, 'panel')}
+        {...regionData(hooks, 'panel')}
+        data-search-entering={open && entering ? 'true' : undefined}
+        onAnimationEnd={event => {
+          if (event.target === event.currentTarget) setEntering(false);
+        }}
+      >
         {/* Field area */}
         <div className="ptc-search-field-area">
           <div className={regionClass('ptc-search-field', hooks, 'field')} data-focus-boundary {...regionData(hooks, 'field')}>
@@ -412,6 +437,7 @@ export function GlobalSearchSurface({ open, model, intents, t, hooks, infoPopove
                 {model.quickFunctions.map(row => (
                   <li key={row.rowKey} role="listitem">
                     <button type="button" className="ptc-search-quick" onClick={() => intents.onOpenRow(row.rowKey)}>
+                      <span className="ptc-search-row-icon">{row.icon}</span>
                       <span className="ptc-search-row-main">
                         <span className="ptc-search-row-title">{row.title}</span>
                         {row.meta && <span className="ptc-search-row-meta">{row.meta}</span>}
