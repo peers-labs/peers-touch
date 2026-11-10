@@ -24,6 +24,7 @@ from tooling.acceptance.core import (
 from tooling.acceptance.gates.mobile.simulator_whole_product_usability_e2e import (
     AUTHENTICATED_SURFACE_SETS,
     CONTRACT_ID,
+    ENTRY_PAGE_CONTROL_SURFACES,
     GATE_ID,
     SURFACE_AUDIT_SCRIPT,
     TEXT_SIZE_SCRIPT,
@@ -941,6 +942,26 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertNotIn(
             "document.querySelector('.launch-hero-logo')",
             SURFACE_AUDIT_SCRIPT,
+        )
+
+    def test_launch_notice_surfaces_use_page_wide_shell_controls(self) -> None:
+        # These launch states render only a status/notice body inside their
+        # marker; the usable controls live at entry-shell level, so a
+        # root-scoped audit would emit an empty interaction artifact.
+        self.assertEqual(
+            ENTRY_PAGE_CONTROL_SURFACES
+            & {
+                "entry.station-handshake",
+                "entry.oauth-progress",
+                "entry.oauth-failed",
+                "entry.access-unavailable",
+            },
+            {
+                "entry.station-handshake",
+                "entry.oauth-progress",
+                "entry.oauth-failed",
+                "entry.access-unavailable",
+            },
         )
 
     def test_interaction_artifact_requires_captured_station_layout(self) -> None:

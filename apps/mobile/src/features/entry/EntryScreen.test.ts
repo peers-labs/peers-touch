@@ -29,4 +29,11 @@ describe('Mobile Entry surface inventory contracts', () => {
   it('lets a single auth action size to its label instead of clipping it', () => {
     expect(styles).toContain('.auth-actions:has(button:only-child)');
   });
+
+  it('keeps the change-station control at the minimum 44px touch target', () => {
+    const rule = styles.match(
+      /\.entry-change-station\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(rule).toContain('height: 44px');
+  });
 });

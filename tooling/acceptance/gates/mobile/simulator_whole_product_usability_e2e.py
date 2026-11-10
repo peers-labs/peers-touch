@@ -118,12 +118,19 @@ SURFACE_SET_ROUTES = {
     "moments": "tab:moments",
     "settings": "tab:settings",
 }
+# Launch-state surfaces whose own marker wraps only a status or notice body;
+# their usable controls live at the entry-shell level (scan, language, change
+# station, debug), so the audit scans document.body instead of the marker root.
 ENTRY_PAGE_CONTROL_SURFACES = {
     "entry.station-empty",
     "entry.station-address",
     "entry.station-address-invalid",
     "entry.station-verifying",
     "entry.station-unavailable",
+    "entry.station-handshake",
+    "entry.oauth-progress",
+    "entry.oauth-failed",
+    "entry.access-unavailable",
 }
 RECOVERY_PAGE_CONTROL_SURFACES = {
     "recovery.capacity",
