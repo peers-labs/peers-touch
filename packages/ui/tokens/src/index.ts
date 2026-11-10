@@ -61,6 +61,8 @@ const light = {
   primary: ink.light.solid, primaryHover: ink.light.hover, onPrimary: ink.light.onSolid,
   primarySubtle: ink.light.subtle,
   border: 'rgba(22,26,24,0.10)', borderStrong: 'rgba(22,26,24,0.18)',
+  // Brand accent follows the confirmed north-star pine skin. The success
+  // foreground still clears AA 4.5 on surface and subtle wells (#1f7d52).
   accent: pine.light.solid, accentHover: pine.light.hover, onAccent: pine.light.on, accentSubtle: pine.light.subtle,
   success: '#1f7d52', warning: '#9a5f00', danger: '#c0392f', info: '#2469a8',
   successSubtle: '#eaf7ef', warningSubtle: '#fff5e1', dangerSubtle: '#fceeee', infoSubtle: '#eaf3fc', white: '#ffffff',

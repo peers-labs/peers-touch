@@ -43,12 +43,6 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
   const kind = useProfileRelationship(actorPtid);
 
   const peerProfile = useSocialChatStore((state) => state.peerProfiles[actorPtid]);
-  // Subscribe to the stable getter reference, never its result:
-  // getIMConversations() rebuilds the projection array on every call, so
-  // invoking it inside a selector makes useSyncExternalStore see a new
-  // snapshot each render and loop until "Maximum update depth exceeded"
-  // (this component mounts only when the self profile popover opens).
-  const getIMConversations = useSocialChatStore((state) => state.getIMConversations);
   const federations = useFederationStore((state) => state.federations);
   const friendRequests = useSocialChatStore((state) => state.friendRequests);
   const currentUserPtid = useSessionStore((state) => state.currentUser?.actorPtid ?? null);
@@ -135,10 +129,16 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
           if (onMessage) {
             onMessage();
           } else {
-            const existing = getIMConversations().find(
-              (conversation) => conversation.kind === 'friend'
-                && conversation.peerPtid === actorPtid,
-            );
+            // Read the projected conversations at click time. Selecting
+            // getIMConversations() reactively is unsafe because it builds a
+            // new array on every call, which React reads as an endlessly
+            // changing store snapshot (Maximum update depth exceeded).
+            const existing = useSocialChatStore.getState()
+              .getIMConversations()
+              .find(
+                (conversation) => conversation.kind === 'friend'
+                  && conversation.peerPtid === actorPtid,
+              );
             if (existing) selectSession(existing.id);
           }
           close();
@@ -154,9 +154,12 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
         ? friendRequest.senderHomeStationPeerId
         : friendRequest?.receiverHomeStationPeerId)
       || '';
-    const existingConversation = getIMConversations().find(
-      (conversation) => conversation.kind === 'friend' && conversation.peerPtid === actorPtid,
-    );
+    const existingConversation = useSocialChatStore.getState()
+      .getIMConversations()
+      .find(
+        (conversation) => conversation.kind === 'friend'
+          && conversation.peerPtid === actorPtid,
+      );
     const federationId = friendRequest?.federationId
       || existingConversation?.federationId
       || singleFederationId(federations);
