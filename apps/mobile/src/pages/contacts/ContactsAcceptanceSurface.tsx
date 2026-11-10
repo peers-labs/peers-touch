@@ -596,7 +596,11 @@ function ContactsFixtureGroup({
             <Text strong>{FIXTURE_CONTACTS.alexandria.name}</Text>
             <Text tone="secondary">{FIXTURE_CONTACTS.alexandria.handle}</Text>
           </span>
-          <Checkbox checked disabled={pending || denied} />
+          <Checkbox
+            aria-label={FIXTURE_CONTACTS.alexandria.name}
+            checked
+            disabled={pending || denied}
+          />
         </div>
         <div className="contacts-fixture-member">
           <span className="contacts-fixture-avatar">{FIXTURE_CONTACTS.morgan.avatar}</span>
@@ -604,7 +608,11 @@ function ContactsFixtureGroup({
             <Text strong>{FIXTURE_CONTACTS.morgan.name}</Text>
             <Text tone="secondary">{FIXTURE_CONTACTS.morgan.handle}</Text>
           </span>
-          <Checkbox checked disabled={pending || denied} />
+          <Checkbox
+            aria-label={FIXTURE_CONTACTS.morgan.name}
+            checked
+            disabled={pending || denied}
+          />
         </div>
         <div className="contacts-fixture-sheet-actions">
           <Button actionId="contacts.fixture.group-cancel" fullWidth>

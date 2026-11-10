@@ -30,4 +30,21 @@ describe('ContactsAcceptanceSurface', () => {
       expect(html).not.toContain('mobile.contacts.didPlaceholder');
     },
   );
+
+  it('gives every create-group member checkbox an accessible name', () => {
+    // The whole-product audit flags any interactive control whose
+    // aria-label/placeholder/title/textContent is empty. Member names live in
+    // a sibling row, so each checkbox must carry its own aria-label, matching
+    // the production ContactsPage group member picker.
+    const html = renderToStaticMarkup(
+      <ContactsAcceptanceSurface surfaceId="contacts.create-group" />,
+    );
+    const checkboxInputs = html.match(/<input[^>]*type="checkbox"[^>]*>/g)
+      ?? [];
+
+    expect(checkboxInputs).toHaveLength(2);
+    for (const input of checkboxInputs) {
+      expect(input).toMatch(/aria-label="[^"]+"/);
+    }
+  });
 });
