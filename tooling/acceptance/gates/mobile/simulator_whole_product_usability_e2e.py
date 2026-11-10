@@ -265,8 +265,22 @@ const controls = interactive.map((element) => {
     },
   };
 }).filter(({value}) => value.inViewport);
+// The debug toggle exists only in acceptance harness builds
+// (VITE_ACCEPTANCE_HARNESS) and floats above every surface; it is test
+// infrastructure rather than product chrome, so hit-testing must look through
+// it instead of reporting the controls underneath as occluded.
+const debugToggles = Array.from(
+  document.querySelectorAll('[data-acceptance-debug-toggle]'),
+);
+const savedDebugPointerEvents = debugToggles.map(
+  (element) => element.style.pointerEvents,
+);
+debugToggles.forEach((element) => {
+  element.style.pointerEvents = 'none';
+});
 const occlusions = controls.flatMap(({element, value}) => {
   if (element.matches('.chat-action-sheet-backdrop')) return [];
+  if (element.matches('[data-acceptance-debug-toggle]')) return [];
   const rect = element.getBoundingClientRect();
   const x = Math.min(window.innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
   const y = Math.min(window.innerHeight - 1, Math.max(0, rect.top + rect.height / 2));
@@ -274,6 +288,9 @@ const occlusions = controls.flatMap(({element, value}) => {
   return top && (element.contains(top) || top.contains(element))
     ? []
     : [value.label || element.tagName.toLowerCase()];
+});
+debugToggles.forEach((element, index) => {
+  element.style.pointerEvents = savedDebugPointerEvents[index];
 });
 const clippedText = Array.from(root.querySelectorAll('*'))
   .filter(visible)

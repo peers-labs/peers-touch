@@ -944,6 +944,22 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             SURFACE_AUDIT_SCRIPT,
         )
 
+    def test_occlusion_hit_testing_ignores_harness_debug_toggle(self) -> None:
+        # The fixed acceptance-only debug pill floats over product controls;
+        # it must not be counted as an occluder or as an occluded control.
+        self.assertIn(
+            "querySelectorAll('[data-acceptance-debug-toggle]')",
+            SURFACE_AUDIT_SCRIPT,
+        )
+        self.assertIn(
+            "element.style.pointerEvents = 'none'",
+            SURFACE_AUDIT_SCRIPT,
+        )
+        self.assertIn(
+            "if (element.matches('[data-acceptance-debug-toggle]')) return [];",
+            SURFACE_AUDIT_SCRIPT,
+        )
+
     def test_launch_notice_surfaces_use_page_wide_shell_controls(self) -> None:
         # These launch states render only a status/notice body inside their
         # marker; the usable controls live at entry-shell level, so a
