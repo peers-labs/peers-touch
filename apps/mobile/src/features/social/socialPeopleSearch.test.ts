@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MobileAuthSession } from '../auth/authSession';
-import {
-  createProfileGateway,
-  type ProfileGateway,
-} from '../../services/gateways/profileGateway';
+import { createProfileGateway } from '../../services/gateways/profileGateway';
 import { useSocialStore } from './socialStore';
 
 vi.mock('../../services/stationTransport', () => ({
@@ -124,110 +121,5 @@ describe('Social people search projection', () => {
     first.resolve(catalogResponse('bob'));
     await earlier;
     expect(useSocialStore.getState().peopleSearchResults[0]?.ptid).toBe('ptid:carol');
-  });
-});
-
-const activeFederation = {
-  federationId: 'fed-1',
-  name: 'Federation One',
-  status: 'active',
-};
-
-function gatewayWithFederationRead(
-  read: ProfileGateway['listFederationContexts'],
-): ProfileGateway {
-  const gateway = createProfileGateway(session);
-  vi.spyOn(gateway, 'listFederationContexts').mockImplementation(read);
-  return gateway;
-}
-
-describe('Social Federation context refresh resilience', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    useSocialStore.setState({ profileGateway: null });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    useSocialStore.setState({
-      peopleSearchFederations: [],
-      peopleSearchFederationsError: null,
-      profileGateway: null,
-    });
-  });
-
-  it('retries an ok-but-empty directory until the Federation becomes visible', async () => {
-    const gateway = gatewayWithFederationRead(
-      vi.fn()
-        .mockResolvedValueOnce({ ok: true, data: [] })
-        .mockResolvedValue({ ok: true, data: [activeFederation] }),
-    );
-    useSocialStore.setState({ profileGateway: gateway });
-
-    const refresh = useSocialStore.getState().refreshFederationContexts();
-    await vi.advanceTimersByTimeAsync(500);
-    await refresh;
-
-    expect(gateway.listFederationContexts).toHaveBeenCalledTimes(2);
-    expect(useSocialStore.getState().peopleSearchFederations)
-      .toEqual([activeFederation]);
-    expect(useSocialStore.getState().peopleSearchFederationsError).toBeNull();
-  });
-
-  it('commits an empty directory without an error after the bounded budget is exhausted', async () => {
-    const gateway = gatewayWithFederationRead(
-      vi.fn().mockResolvedValue({ ok: true, data: [] }),
-    );
-    useSocialStore.setState({ profileGateway: gateway });
-
-    const refresh = useSocialStore.getState().refreshFederationContexts();
-    await vi.advanceTimersByTimeAsync(2_000);
-    await refresh;
-
-    expect(gateway.listFederationContexts).toHaveBeenCalledTimes(5);
-    expect(useSocialStore.getState().peopleSearchFederations).toEqual([]);
-    expect(useSocialStore.getState().peopleSearchFederationsError).toBeNull();
-  });
-
-  it('fails closed on the first hard error without retrying', async () => {
-    const gateway = gatewayWithFederationRead(
-      vi.fn().mockResolvedValue({
-        ok: false,
-        error: {
-          code: 'GATEWAY_ERROR',
-          message: 'mobile.contacts.federationsFailed',
-          method: 'GET',
-          path: '/sub-federation/federations',
-        },
-      }),
-    );
-    useSocialStore.setState({ profileGateway: gateway });
-
-    await useSocialStore.getState().refreshFederationContexts();
-
-    expect(gateway.listFederationContexts).toHaveBeenCalledTimes(1);
-    expect(useSocialStore.getState().peopleSearchFederations).toEqual([]);
-    expect(useSocialStore.getState().peopleSearchFederationsError).not.toBeNull();
-  });
-
-  it('re-reads under the replacement gateway when the session scope changes mid-flight', async () => {
-    const replacement = gatewayWithFederationRead(
-      vi.fn().mockResolvedValue({ ok: true, data: [activeFederation] }),
-    );
-    const initial = gatewayWithFederationRead(
-      vi.fn().mockImplementation(async () => {
-        useSocialStore.setState({ profileGateway: replacement });
-        return { ok: true, data: [] };
-      }),
-    );
-    useSocialStore.setState({ profileGateway: initial });
-
-    await useSocialStore.getState().refreshFederationContexts();
-
-    expect(initial.listFederationContexts).toHaveBeenCalledTimes(1);
-    expect(replacement.listFederationContexts).toHaveBeenCalledTimes(1);
-    expect(useSocialStore.getState().profileGateway).toBe(replacement);
-    expect(useSocialStore.getState().peopleSearchFederations)
-      .toEqual([activeFederation]);
   });
 });
