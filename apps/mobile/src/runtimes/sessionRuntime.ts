@@ -984,8 +984,22 @@ function assertSessionAdmission(
   assertReadableSession(snapshot, now);
 }
 
+function mobileAuthErrorText(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  // Tauri command rejections can surface as plain { code, message } objects
+  // rather than Error instances; String(error) would otherwise collapse them
+  // to "[object Object]" and hide the mobile.auth.* terminal marker.
+  if (error && typeof error === 'object') {
+    const record = error as { code?: unknown; message?: unknown };
+    return [record.code, record.message]
+      .filter((part): part is string => typeof part === 'string')
+      .join(' ');
+  }
+  return String(error);
+}
+
 function isTerminalSessionRefreshError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = mobileAuthErrorText(error);
   if (
     /oauthTransportUnavailable|oauthResponseRead|sessionCredentialRejected:(408|429|5\d\d)/.test(
       message,
@@ -1007,7 +1021,7 @@ function nativeStorageIsEmpty(
 }
 
 function sessionErrorKey(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = mobileAuthErrorText(error);
   return message.match(/mobile\.auth\.[A-Za-z0-9]+/)?.[0]
     ?? 'mobile.auth.sessionFailed';
 }

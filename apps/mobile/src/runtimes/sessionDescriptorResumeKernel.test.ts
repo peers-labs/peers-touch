@@ -148,4 +148,53 @@ describe('Session resume revalidation against the real lifecycle kernel', () => 
       expect.anything(),
     );
   });
+
+  it('still detects takeover revocation after a graph restart and second resume', async () => {
+    const kernel = getMobileLifecycleKernel();
+
+    // First (warm) resume: rotation succeeds, session stays valid.
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === 'oauth_session_projection') return activeSession();
+      if (command === 'oauth_session_refresh') {
+        return { ...activeSession(), sessionId: 'session-rotated' };
+      }
+      if (command === 'oauth_logout_purge') return completePurge();
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    await kernel.suspend('app-background');
+    await kernel.resume('app-resume');
+    await vi.waitFor(() => {
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        'oauth_session_refresh',
+        expect.anything(),
+      );
+    });
+    expect(readSessionRuntimeSnapshot().session).not.toBeNull();
+    expect(kernel.getState().launchState).toBe('shell');
+
+    // Full graph restart (the gate's lifecycle.restart) rebuilds descriptors.
+    await kernel.restartRuntimeGraph('acceptance-restart');
+    expect(kernel.getState().phase).toBe('ACTIVE');
+
+    // Peer takeover now revokes the session: rotation returns 401.
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === 'oauth_session_projection') return activeSession();
+      if (command === 'oauth_session_refresh') {
+        throw new Error('mobile.auth.sessionCredentialRejected:401');
+      }
+      if (command === 'oauth_logout_purge') return completePurge();
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    await kernel.suspend('app-background');
+    await kernel.resume('app-resume');
+
+    await vi.waitFor(() => {
+      expect(readSessionRuntimeSnapshot().session).toBeNull();
+    });
+    await vi.waitFor(() => {
+      expect(kernel.getState().launchState).toBe('access-gate-chain');
+    });
+  });
 });

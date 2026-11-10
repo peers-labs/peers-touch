@@ -203,6 +203,27 @@ describe('Session descriptor revalidates the restored session on resume', () => 
     expect(readSessionRuntimeSnapshot().session).toBeNull();
   });
 
+  it('classifies a plain-object Tauri 401 rejection as terminal', async () => {
+    const commands: string[] = [];
+    await bootWithInvoke(async (command) => {
+      commands.push(command);
+      if (command === 'oauth_session_projection') return activeSession();
+      if (command === 'oauth_session_refresh') {
+        // Tauri v2 can reject with a serialized object rather than an Error.
+        throw {
+          code: 'MOBILE_OAUTH',
+          message: 'mobile.auth.sessionCredentialRejected:401',
+        };
+      }
+      if (command === 'oauth_logout_purge') return completePurge();
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    await descriptor.resume({} as never);
+    await vi.waitFor(() => expect(commands).toContain('oauth_logout_purge'));
+    expect(readSessionRuntimeSnapshot().session).toBeNull();
+  });
+
   it('retains the cached session and stays in shell when the Station is unreachable', async () => {
     const commands: string[] = [];
     await bootWithInvoke(async (command) => {
