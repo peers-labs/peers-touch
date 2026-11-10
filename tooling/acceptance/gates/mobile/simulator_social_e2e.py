@@ -4103,14 +4103,9 @@ return {
         station_restart = self._restart_source_bound_station(
             during_outage=observe_outage,
         )
-        retry_element = self._wait_for_value(
-            lambda: self._find_element_or_none(
-                sender_session,
-                '[data-acceptance-id="mobile-route-retry"]',
-            ),
-            "Mobile route Retry control",
-        )
-        sender_session.click_element(retry_element)
+        retry_element = self._find_route_retry_after_outage(sender_session)
+        if retry_element is not None:
+            sender_session.click_element(retry_element)
         journey.wait_for_authenticated_runtime(
             sender_session,
             sender,
@@ -4632,6 +4627,46 @@ return {
             f"runtimeStatus={last.get('runtimeStatus')}, "
             f"phase={phase}, "
             f"runtimes={','.join(runtime_states) or '<none>'}"
+        )
+
+    def _find_route_retry_after_outage(
+        self,
+        session: Any,
+    ) -> str | None:
+        """Return the route Retry control, or None when the app auto-recovered.
+
+        The MobileRouteBoundary only renders the Retry control while a runtime
+        stays failed/suspended. Once the Station is reachable again the client
+        can reconnect on its own, which legitimately dismisses the control. We
+        therefore accept a missing control only after positively confirming the
+        runtime graph recovered; a still-failed runtime remains a convergence
+        failure instead of silently skipping the manual retry.
+        """
+        selector = '[data-acceptance-id="mobile-route-retry"]'
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            element = self._find_element_or_none(session, selector)
+            if element is not None:
+                return element
+            time.sleep(0.25)
+        readiness = self._mapping(
+            session.call_action(
+                "lifecycle.waitReady",
+                {"includeDiagnostics": True},
+            ),
+            "Station outage post-restart readiness",
+        )
+        recovered = readiness.get("phase") == "ACTIVE" and all(
+            isinstance(runtime, Mapping)
+            and runtime.get("status") == "ready"
+            for runtime in readiness.get("runtimes", [])
+            if isinstance(runtime, Mapping)
+        )
+        if recovered:
+            return None
+        raise GateError(
+            "Mobile route Retry control did not converge and the client did "
+            f"not auto-recover: phase={readiness.get('phase')}"
         )
 
     @staticmethod

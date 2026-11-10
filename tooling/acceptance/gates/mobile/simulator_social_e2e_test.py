@@ -1685,6 +1685,77 @@ class SimulatorSocialGateTests(unittest.TestCase):
             "attestationExpiresAtUnixMs", observations[0]
         )
 
+    def test_route_retry_after_outage_returns_control_when_present(self) -> None:
+        gate = SimulatorSocialGate("recovery")
+        session = Mock()
+        with (
+            patch.object(
+                gate,
+                "_find_element_or_none",
+                return_value="retry-element",
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e.time.sleep"
+            ),
+        ):
+            element = gate._find_route_retry_after_outage(session)
+        self.assertEqual(element, "retry-element")
+        session.call_action.assert_not_called()
+
+    def test_route_retry_after_outage_accepts_auto_recovery(self) -> None:
+        gate = SimulatorSocialGate("recovery")
+        session = Mock()
+        session.call_action.return_value = {
+            "phase": "ACTIVE",
+            "runtimes": [
+                {"id": "station", "status": "ready"},
+                {"id": "messaging", "status": "ready"},
+            ],
+        }
+        monotonic = iter([0.0, 31.0])
+        with (
+            patch.object(
+                gate, "_find_element_or_none", return_value=None
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "time.monotonic",
+                side_effect=lambda: next(monotonic),
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e.time.sleep"
+            ),
+        ):
+            self.assertIsNone(
+                gate._find_route_retry_after_outage(session)
+            )
+
+    def test_route_retry_after_outage_fails_when_not_recovered(self) -> None:
+        gate = SimulatorSocialGate("recovery")
+        session = Mock()
+        session.call_action.return_value = {
+            "phase": "ACTIVE",
+            "runtimes": [
+                {"id": "station", "status": "failed"},
+            ],
+        }
+        monotonic = iter([0.0, 31.0])
+        with (
+            patch.object(
+                gate, "_find_element_or_none", return_value=None
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "time.monotonic",
+                side_effect=lambda: next(monotonic),
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e.time.sleep"
+            ),
+            self.assertRaises(GateError),
+        ):
+            gate._find_route_retry_after_outage(session)
+
     def test_station_outage_restores_same_source_bound_container(
         self,
     ) -> None:
