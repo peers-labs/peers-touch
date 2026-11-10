@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from tooling.acceptance.core import ArtifactRef
+from tooling.acceptance.core.proof import assertions_pass
 from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
     MobileSimulatorBindingActivation,
 )
@@ -241,6 +242,74 @@ class SimulatorSettingsGateTests(unittest.TestCase):
         self.assertIsNotNone(artifacts.result)
         assert artifacts.result is not None
         self.assertEqual(artifacts.result["observedScope"], list(PROVEN_SCOPE))
+
+    @staticmethod
+    def _valid_settings_journey() -> dict[str, object]:
+        return {
+            "scenario": "settings",
+            "actorPtid": "ptid:alice",
+            "profileUpdate": {"profile": {"actorPtid": "ptid:alice"}},
+            "profileReadback": {
+                "actorPtid": "ptid:alice",
+                "displayName": "Acceptance journey",
+            },
+            "notificationUpdate": {
+                "snapshot": {"preferences": [{"category": 1}]}
+            },
+            "notificationReadback": {
+                "preferences": [{"category": 1, "enabled": False}]
+            },
+            "deviceReadback": {
+                "theme": "dark",
+                "fontSize": "large",
+                "compactMode": True,
+                "mediaAutoDownload": False,
+            },
+            "deviceIsolation": True,
+            "sessionReplacementObserved": True,
+            "bindingProofs": {
+                IOS_CLIENT: {"station-primary": _proof(IOS_CLIENT, "sp")},
+                PEER_IOS_CLIENT: {
+                    "station-primary": _proof(PEER_IOS_CLIENT, "sp")
+                },
+            },
+        }
+
+    def test_settings_assertions_satisfy_core_proof_contract(self) -> None:
+        gate = SimulatorSettingsGate(binding_factory=lambda: _Binding())  # type: ignore[arg-type]
+        assertions = gate._assertions_from_settings_evidence(
+            self._valid_settings_journey(), gate._result_base("PASS")
+        )
+
+        self.assertTrue(assertions_pass(assertions))
+        self.assertEqual(
+            len(assertions), len({item["name"] for item in assertions})
+        )
+        names = {item["name"] for item in assertions}
+        self.assertIn(
+            "settings:device-settings-survive-ios-restart", names
+        )
+        self.assertIn(
+            "settings:both-clients-closed-runtime-binding-proofs", names
+        )
+
+    def test_settings_assertions_fail_closed_on_missing_observation(
+        self,
+    ) -> None:
+        gate = SimulatorSettingsGate(binding_factory=lambda: _Binding())  # type: ignore[arg-type]
+        broken = self._valid_settings_journey()
+        broken["deviceIsolation"] = False
+        broken["bindingProofs"] = {IOS_CLIENT: {"station-primary": {}}}
+
+        assertions = gate._assertions_from_settings_evidence(
+            broken, gate._result_base("PASS")
+        )
+        self.assertFalse(assertions_pass(assertions))
+        failed = {item["name"] for item in assertions if not item["passed"]}
+        self.assertIn("settings:device-settings-stay-local-per-client", failed)
+        self.assertIn(
+            "settings:both-clients-closed-runtime-binding-proofs", failed
+        )
 
     def test_closed_write_admission_reconciles_before_settings_write(
         self,

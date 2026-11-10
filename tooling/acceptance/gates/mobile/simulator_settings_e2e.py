@@ -96,7 +96,24 @@ class SimulatorSettingsGate(AcceptanceGate):
             binding: MobileSimulatorRuntimeBinding | None = None
             try:
                 binding = self.binding_factory()
-                result.update(self._run_journey(binding, artifacts.run_id[-12:]))
+                journey = self._run_journey(
+                    binding, artifacts.run_id[-12:]
+                )
+                result.update(journey)
+                assertions = self._assertions_from_settings_evidence(
+                    journey, result
+                )
+                failed_assertions = [
+                    item["name"]
+                    for item in assertions
+                    if not item["passed"]
+                ]
+                if failed_assertions:
+                    raise GateError(
+                        "Mobile settings evidence assertions failed: "
+                        + ", ".join(failed_assertions)
+                    )
+                result["assertions"] = assertions
                 status = "PASS"
                 completion_status = "DONE"
                 proof_status = "PROVEN"
@@ -791,6 +808,74 @@ class SimulatorSettingsGate(AcceptanceGate):
                 **details,
             }
         )
+
+    def _assertions_from_settings_evidence(
+        self,
+        journey: Mapping[str, Any],
+        report_base: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Build explicit, evidence-derived assertions for the proof contract.
+
+        Each predicate restates an observation already enforced while the
+        settings journey ran (same-actor convergence, owner profile and
+        notification readback, restart persistence, device isolation, closed
+        runtime binding proofs). Core proof never accepts the PASS label alone,
+        so a missing observation surfaces as ``passed: False`` and the caller
+        fails closed before sealing the report.
+        """
+        binding_proofs = journey.get("bindingProofs")
+        assertions: list[dict[str, Any]] = [
+            {
+                "name": "settings:same-actor-converges-on-both-simulators",
+                "passed": isinstance(journey.get("actorPtid"), str)
+                and journey.get("actorPtid", "").startswith("ptid:"),
+            },
+            {
+                "name": "settings:profile-owner-update-and-readback-observed",
+                "passed": isinstance(journey.get("profileUpdate"), Mapping)
+                and isinstance(journey.get("profileReadback"), Mapping)
+                and bool(journey.get("profileReadback")),
+            },
+            {
+                "name": "settings:notification-update-and-readback-observed",
+                "passed": isinstance(
+                    journey.get("notificationUpdate"), Mapping
+                )
+                and isinstance(journey.get("notificationReadback"), Mapping)
+                and bool(journey.get("notificationReadback")),
+            },
+            {
+                "name": "settings:device-settings-survive-ios-restart",
+                "passed": isinstance(journey.get("deviceReadback"), Mapping)
+                and bool(journey.get("deviceReadback")),
+            },
+            {
+                "name": "settings:device-settings-stay-local-per-client",
+                "passed": journey.get("deviceIsolation") is True,
+            },
+            {
+                "name": "settings:session-replacement-observed",
+                "passed": journey.get("sessionReplacementObserved") is True,
+            },
+            {
+                "name": "settings:both-clients-closed-runtime-binding-proofs",
+                "passed": isinstance(binding_proofs, Mapping)
+                and all(
+                    isinstance(binding_proofs.get(client_id), Mapping)
+                    and bool(binding_proofs.get(client_id))
+                    for client_id in (IOS_CLIENT, PEER_IOS_CLIENT)
+                ),
+            },
+            {
+                "name": "settings:production-actions-without-station-mocks",
+                "passed": report_base.get("stationMocksUsed") is False,
+            },
+            {
+                "name": "settings:simulator-does-not-claim-physical-device",
+                "passed": report_base.get("physicalDeviceClaimed") is False,
+            },
+        ]
+        return assertions
 
     def _result_base(self, status: str) -> dict[str, Any]:
         return {
