@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -282,6 +283,21 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             PEER_IOS_CLIENT,
             generation=int(peer_primary.scope["generation"]),
         )
+
+        # TEMPORARY AS-04 DIAGNOSTIC: capture each client's native device id and
+        # full scope so cross/same-installation revocation can be verified.
+        for diag_client in (IOS_CLIENT, PEER_IOS_CLIENT):
+            diag_scope = binding.call_action(
+                diag_client, "lifecycle.scope.read"
+            )
+            self._record(
+                "diagnostic-scope-after-takeover",
+                diag_client,
+                deviceId=diag_scope.get("deviceId"),
+                launchState=diag_scope.get("launchState"),
+                activeActorPtid=diag_scope.get("activeActorPtid"),
+                runtimeStationPeerId=diag_scope.get("runtimeStationPeerId"),
+            )
 
         binding.call_action(IOS_CLIENT, "lifecycle.suspend")
         binding.call_action(IOS_CLIENT, "lifecycle.resume")
@@ -677,7 +693,8 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             time.sleep(0.25)
         raise GateError(
             f"{client_id} lifecycle scope did not converge: "
-            f"launchState={latest.get('launchState') if latest else None!r}"
+            f"launchState={latest.get('launchState') if latest else None!r} "
+            f"scope={json.dumps(latest, sort_keys=True, default=str) if latest else None}"
         )
 
     def _wait_for_authenticated_scope(
