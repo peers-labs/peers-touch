@@ -724,7 +724,7 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
   let releaseMutationAdmission: (() => void) | null = null;
   let lifecycleEpoch = 0;
   let running = false;
-  let lastRevalidatedEpoch: number | null = null;
+  let pendingRevalidationEpoch: number | null = null;
 
   const observeOAuth = async () => {
     const observed = lifecycleEpoch;
@@ -785,15 +785,13 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
     }
   };
 
-  // Revalidate whenever the graph completes a resume (RESUMING -> ACTIVE).
-  // Subscribing to the transition itself, rather than to a flag set inside the
-  // descriptor's resume() method, keeps detection working even when a native
-  // foreground event resumes the kernel before the harness resume action runs
-  // (the action then early-returns because the graph is already ACTIVE). The
-  // epoch guard ensures at most one probe per resume cycle and drops stale work
-  // after suspend/teardown. Revocation runs in the steady-state regime, after
-  // every descriptor resume has succeeded, so dependent runtimes are not
-  // destabilized.
+  // Fire the probe on the kernel RESUMING -> ACTIVE transition, but only after
+  // this descriptor's own resume() armed a pending revalidation. Gating on the
+  // pending epoch avoids probing during unrelated resumes (for example kernel
+  // resumes inside the OAuth authentication flow), which would destabilize the
+  // runtime readiness gate. The transition itself runs after every descriptor
+  // resume succeeds, so revocation happens in the steady-state regime and
+  // dependent runtimes are not mutated mid-cascade.
   const handleKernelEvent: LifecycleEventListener = (event) => {
     if (
       event.kind !== 'phase-changed'
@@ -802,21 +800,19 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
     ) {
       return;
     }
-    if (!running) return;
-    const observed = lifecycleEpoch;
-    if (observed === lastRevalidatedEpoch) return;
-    lastRevalidatedEpoch = observed;
+    if (pendingRevalidationEpoch === null) return;
+    const observed = pendingRevalidationEpoch;
+    pendingRevalidationEpoch = null;
+    if (!running || observed !== lifecycleEpoch) return;
     void revalidateResumedSession(observed);
   };
 
   const scheduleResumeRevalidation = (observed: number): void => {
+    pendingRevalidationEpoch = observed;
     // Safety net for a resume that resolves while the graph is already ACTIVE:
     // no RESUMING -> ACTIVE event is emitted in that case, so probe once here.
-    if (
-      getMobileLifecycleKernel().getState().phase === 'ACTIVE'
-      && lastRevalidatedEpoch !== observed
-    ) {
-      lastRevalidatedEpoch = observed;
+    if (getMobileLifecycleKernel().getState().phase === 'ACTIVE') {
+      pendingRevalidationEpoch = null;
       void revalidateResumedSession(observed);
     }
   };
@@ -859,6 +855,7 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
     async suspend(): Promise<void> {
       running = false;
       lifecycleEpoch += 1;
+      pendingRevalidationEpoch = null;
       sessionRuntime.suspend();
     },
 
@@ -877,7 +874,7 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
       const start = performance.now();
       running = false;
       lifecycleEpoch += 1;
-      lastRevalidatedEpoch = null;
+      pendingRevalidationEpoch = null;
       unsubscribeKernelEvents?.();
       unsubscribeKernelEvents = null;
       unsubscribeAuth?.();
