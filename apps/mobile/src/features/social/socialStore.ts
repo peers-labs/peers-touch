@@ -316,6 +316,20 @@ const profileCacheWriteTails = new WeakMap<
   Map<string, Promise<void>>
 >();
 
+// On a cold social-surface mount the Federation directory read can race the
+// first session bind: the gateway is healthy but the Station-side membership
+// is not observable yet, so a single read commits an empty directory and the
+// page never recovers. Retry only the ok-but-empty window, through the current
+// gateway, inside a bounded budget. Hard errors stay fail-closed on first read.
+const FEDERATION_REFRESH_MAX_ATTEMPTS = 5;
+const FEDERATION_REFRESH_RETRY_DELAY_MS = 500;
+
+function waitForFederationRetry(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, FEDERATION_REFRESH_RETRY_DELAY_MS);
+  });
+}
+
 export const useSocialStore = create<SocialState>((set, get) => ({
   sessionKey: null,
   authSession: null,
@@ -1963,17 +1977,38 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 
   refreshFederationContexts: async () => {
-    const profileGw = get().profileGateway;
-    if (!profileGw) {
-      set({ peopleSearchFederations: [], peopleSearchFederationsError: null });
-      return;
+    for (let attempt = 0; attempt < FEDERATION_REFRESH_MAX_ATTEMPTS; attempt += 1) {
+      const profileGw = get().profileGateway;
+      if (!profileGw) {
+        set({ peopleSearchFederations: [], peopleSearchFederationsError: null });
+        return;
+      }
+      const result = await profileGw.listFederationContexts();
+      const currentGateway = get().profileGateway;
+      if (!currentGateway) return;
+      // The session scope was replaced mid-flight; never publish the old
+      // gateway's data into the new scope. Re-read under the live gateway.
+      if (currentGateway !== profileGw) continue;
+      if (!result.ok) {
+        set({
+          peopleSearchFederations: [],
+          peopleSearchFederationsError: new SocialApiError(result.error),
+        });
+        return;
+      }
+      if (result.data.length > 0) {
+        set({
+          peopleSearchFederations: result.data,
+          peopleSearchFederationsError: null,
+        });
+        return;
+      }
+      if (attempt < FEDERATION_REFRESH_MAX_ATTEMPTS - 1) {
+        await waitForFederationRetry();
+      }
     }
-    const result = await profileGw.listFederationContexts();
-    if (get().profileGateway !== profileGw) return;
-    set({
-      peopleSearchFederations: result.ok ? result.data : [],
-      peopleSearchFederationsError: result.ok ? null : new SocialApiError(result.error),
-    });
+    // Every bounded read returned a healthy but empty directory.
+    set({ peopleSearchFederations: [], peopleSearchFederationsError: null });
   },
 
   searchPeople: async (query, federationId) => {
