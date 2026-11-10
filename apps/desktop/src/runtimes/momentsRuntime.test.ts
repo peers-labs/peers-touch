@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => {
     postsById: {},
     activateActor: vi.fn(),
     deactivate: vi.fn(),
+    teardownNativeActor: vi.fn<() => Promise<void>>(),
     bootstrap: vi.fn<() => Promise<void>>(),
     reconcile: vi.fn<() => Promise<void>>(),
     admitMoment: vi.fn<(_intent: unknown) => Promise<{

@@ -52,7 +52,7 @@ export function MomentsFeedView({ viewerActorPtid, onOpenPost, onAuthorClick, qu
         hot: t('moments.tab.hot'), top: t('moments.action.backToTop') }} />}
     {posts.length === 0 && (loading ? <Spin label={t('moments.follow.loading')} />
       : <Empty description={q ? t('moments.search.noMatch', { query }) : t('moments.placeholder.feedEmpty')} />)}
-    {posts.map(post => <MomentCard key={post.publicFeedRef || post.id} post={post}
+    {posts.map(post => <MomentCard key={post.id} post={post}
       reactions={reactions[post.id]} explanation={explanations[post.id]} viewerActorPtid={viewerActorPtid}
       surface={home.postIds.includes(post.id) ? 'home' : 'federated'}
       onOpen={onOpenPost} onAuthorClick={onAuthorClick} onReact={reactToPost}

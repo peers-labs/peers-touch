@@ -865,7 +865,20 @@ function reconcileAuthenticatedRuntime(_reason = 'session'): Promise<void> {
   const desired = desiredScope();
   if (!desired) {
     pendingScopeKey = null;
-    if (activeScope) invalidateScope();
+    if (activeScope) {
+      // Genuine deauthentication only. The window is leaving this actor, so
+      // explicitly fence its native Secure Content runtime. Same-actor
+      // generation churn and cross-actor switches never reach this branch:
+      // those are reconciled by re-activation and native identity transitions,
+      // and tearing the native runtime down mid-switch would orphan the live
+      // lease the new scope is about to use.
+      const detachedActorPtid = activeScope.actorPtid;
+      const detachedGeneration = activeScope.generation;
+      invalidateScope();
+      void usePrivateMomentsStore
+        .getState()
+        .teardownNativeActor(detachedActorPtid, detachedGeneration);
+    }
     return projectionQueue;
   }
 

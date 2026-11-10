@@ -202,6 +202,9 @@ describe('session authentication convergence', () => {
     ).rejects.toThrow('station binding failed');
 
     expect(mocks.authLogout).toHaveBeenCalledOnce();
+    // The rollback logout is scoped to the identity this login produced, so a
+    // late failure after a newer unlock cannot tear the superseding session.
+    expect(mocks.authLogout).toHaveBeenCalledWith('ptid:person:new');
     expect(useSessionStore.getState().authenticated).toBe(false);
   });
 

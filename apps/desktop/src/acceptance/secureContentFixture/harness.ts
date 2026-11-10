@@ -185,11 +185,32 @@ async function maintainRecoveryPreKeys(expectedEpoch: number): Promise<number> {
   return recoveryPreKeyAvailable;
 }
 
-async function accountStorageIdentitySha256(): Promise<string> {
-  const actorPtid = requireCurrentActor();
-  // Authentication completes before the long-lived Moments projection queue.
-  // Let its original owner finish the new account's activation before asking
-  // Native to attest that account's lease.
+// After an account switch the Station identity can settle a few beats after
+// the session is unlocked. Each late identity event advances the Moments
+// renderer generation, and the new generation's native Secure Content lease
+// activates asynchronously. Capturing the lease against a generation whose
+// lease is still activating transiently returns AUTHENTICATION_REQUIRED.
+// Retry with a fresh bootstrap + the latest scope generation until the
+// projection converges and the native lease attests.
+const NATIVE_IDENTITY_SETTLE_TIMEOUT_MS = 30_000;
+const NATIVE_IDENTITY_SETTLE_INTERVAL_MS = 400;
+
+// Refusals that mean "the lease for the current generation is not ready yet"
+// rather than a permanent identity/integrity failure.
+const TRANSIENT_IDENTITY_STATES = new Set([
+  'AUTHENTICATION_REQUIRED',
+  'PRIVATE_RUNTIME_INACTIVE',
+]);
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => { window.setTimeout(resolve, ms); });
+}
+
+async function captureNativeRuntimeIdentity(
+  actorPtid: string,
+): Promise<NativeRuntimeIdentityResult> {
+  // Re-bootstrap on every attempt so a late Station identity advances the
+  // projection queue and the read uses the settled generation, not a stale one.
   await momentsRuntime.bootstrap(actorPtid);
   const { actorPtid: projectedActorPtid, rendererGeneration } =
     usePrivateMomentsStore.getState().scope;
@@ -197,7 +218,7 @@ async function accountStorageIdentitySha256(): Promise<string> {
     || !Number.isSafeInteger(rendererGeneration) || rendererGeneration < 1) {
     throw new Error('secureContentFixture.accountStorageScopeMismatch');
   }
-  const result = await invoke<NativeRuntimeIdentityResult>(
+  return invoke<NativeRuntimeIdentityResult>(
     'social_private_moments_acceptance_runtime_identity',
     {
       input: {
@@ -206,6 +227,39 @@ async function accountStorageIdentitySha256(): Promise<string> {
       },
     },
   );
+}
+
+function identityResultState(result: NativeRuntimeIdentityResult): string | undefined {
+  const raw = result.error?.details?.state;
+  return typeof raw === 'string' ? raw : undefined;
+}
+
+async function accountStorageIdentitySha256(): Promise<string> {
+  return captureAccountStorageIdentitySha256(false);
+}
+
+// After switching back to the primary account the Station identity can settle
+// a few beats after unlock and advance the Moments renderer generation while
+// the new generation's native lease activates asynchronously. The restore
+// proof waits for that convergence; first-time captures (before any switch)
+// must fail immediately on a real supervisor/integrity refusal.
+async function restoredAccountStorageIdentitySha256(): Promise<string> {
+  return captureAccountStorageIdentitySha256(true);
+}
+
+async function captureAccountStorageIdentitySha256(allowSettle: boolean): Promise<string> {
+  const actorPtid = requireCurrentActor();
+  const deadline = performance.now() + NATIVE_IDENTITY_SETTLE_TIMEOUT_MS;
+  let result = await captureNativeRuntimeIdentity(actorPtid);
+  while (
+    allowSettle
+    && result.ok !== true
+    && TRANSIENT_IDENTITY_STATES.has(identityResultState(result) ?? '')
+    && performance.now() < deadline
+  ) {
+    await delay(NATIVE_IDENTITY_SETTLE_INTERVAL_MS);
+    result = await captureNativeRuntimeIdentity(actorPtid);
+  }
   if (result.ok !== true) {
     const code = result.error?.details?.native_error_code;
     const state = result.error?.details?.state;
@@ -311,7 +365,7 @@ export function installAcceptanceHarness(): void {
         if (requireCurrentActor() !== primaryActorPtid) {
           throw new Error('secureContentFixture.primaryAccountRestoreFailed');
         }
-        if (await accountStorageIdentitySha256() !== primaryStorageIdentitySha256) {
+        if (await restoredAccountStorageIdentitySha256() !== primaryStorageIdentitySha256) {
           throw new Error('secureContentFixture.primaryStorageRestoreFailed');
         }
       } catch (restoreFailure) {

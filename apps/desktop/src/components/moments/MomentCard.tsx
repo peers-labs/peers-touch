@@ -121,6 +121,13 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
   };
   return <PeerMomentCard postId={post.id} text={text} embedded={embedded}
     data-moments-comments-region={post.id}
+    data-author-ptid={authorPtid}
+    data-self={isSelf ? 'true' : 'false'}
+    data-self-ptid={identity.currentUserPtid ?? ''}
+    data-session-ptid={identity.sessionActorPtid ?? ''}
+    data-social-chat-ptid={identity.socialChatUserPtid ?? ''}
+    data-viewer-ptid={viewerActorPtid ?? ''}
+    data-can-edit={canEdit ? 'true' : 'false'}
     copy={{ more: t('moments.action.more'), expand: t('moments.action.showMore'), collapse: t('moments.action.showLess') }}
     author={<MomentAuthorTrigger actorPtid={authorPtid} onOpenProfile={onAuthorClick} onOpenMoment={onOpen}>
       <MomentAuthor name={name} time={relativeTime(post.createdAt?.seconds, t)}

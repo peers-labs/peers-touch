@@ -721,7 +721,10 @@ pub fn social_private_moments_teardown(
         session_generation = lease.session.key.session_generation,
         "Secure Content renderer teardown requested"
     );
-    if let Err(error) = state.secure_content.teardown_actor(&input.actor_ptid) {
+    if let Err(error) = state
+        .secure_content
+        .teardown_actor_with_source(&input.actor_ptid, "renderer-private-moments-teardown")
+    {
         return native_failure(error, "PRIVATE_UNSUPPORTED_ON_DEVICE");
     }
     AppResult::success(json!({ "ok": true }))

@@ -415,7 +415,10 @@ pub fn messaging_recovery_restore_latest(
         }
     };
     drop(engine);
-    if let Err(error) = state.secure_content.teardown_actor(&session.actor_ptid) {
+    if let Err(error) = state
+        .secure_content
+        .teardown_actor_with_source(&session.actor_ptid, "identity-recovery:pre-fence")
+    {
         return AppResult::fail(
             ErrorCode::InternalError,
             format!("failed to fence Secure Content before identity recovery: {error}"),
@@ -463,7 +466,10 @@ pub fn messaging_recovery_restore_latest(
             return AppResult::fail(ErrorCode::InternalError, error, None);
         }
     };
-    if let Err(error) = state.secure_content.teardown_actor(&session.actor_ptid) {
+    if let Err(error) = state
+        .secure_content
+        .teardown_actor_with_source(&session.actor_ptid, "identity-recovery:post-fence")
+    {
         return AppResult::fail(
             ErrorCode::InternalError,
             format!("failed to fence Secure Content after identity recovery: {error}"),

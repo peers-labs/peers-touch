@@ -69,7 +69,7 @@ export function CircleManageView({ query = '', createOpen = false, onCloseCreate
   return <div className="moments-circles" aria-busy={circlesLoading}>
     {!circlesLoading && visible.length === 0 && <Empty description={q
       ? t('moments.search.noMatch', { query }) : t('moments.placeholder.circleEmpty')} />}
-    <ul className="sk-circle-list">{visible.map(circle => {
+    <ul className="pt-mom-circle-list">{visible.map(circle => {
       const id = String(circle.id);
       const members = (circleMembers[id] ?? []).map(member => person(member.actorPtid, 28));
       return <li key={id}><MomentCircleCard id={id} name={circle.name} description={circle.description}

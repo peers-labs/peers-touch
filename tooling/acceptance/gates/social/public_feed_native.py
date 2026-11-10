@@ -183,7 +183,46 @@ class Gate(DeviceSearchGate):
         return None
 
     def click(self, actor: str, selector: str) -> None:
-        element = wait_until(lambda: self.visible_element(actor, selector), selector, timeout=120)
+        def locate() -> Any:
+            element = self.visible_element(actor, selector)
+            if element is not None:
+                # Feed accumulates many cards; bring the target into the
+                # viewport before interacting instead of relying on it staying
+                # on screen after later scenarios appended content.
+                self.clients[actor].execute_script(
+                    "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
+                    element,
+                )
+            return element
+        try:
+            element = wait_until(locate, selector, timeout=120)
+        except GateError:
+            # Rich diagnostics: distinguish "card present but author menu
+            # absent" (a product permission projection) from "card missing".
+            diagnostic = self.clients[actor].execute_script("""
+                const s = arguments[0];
+                const postMatch = s.match(/\\[data-post-id="([^"]+)"\\]/);
+                const pid = postMatch ? postMatch[1] : null;
+                const card = pid
+                  ? document.querySelector(`[data-post-id="${pid}"][data-acceptance-id="social-moment-card"]`)
+                  : null;
+                return {
+                  selector: s,
+                  postId: pid,
+                  cardInDom: !!card,
+                  authorPtid: card?.getAttribute('data-author-ptid') ?? null,
+                  self: card?.getAttribute('data-self') ?? null,
+                  selfPtid: card?.getAttribute('data-self-ptid') ?? null,
+                  sessionPtid: card?.getAttribute('data-session-ptid') ?? null,
+                  socialChatPtid: card?.getAttribute('data-social-chat-ptid') ?? null,
+                  viewerPtid: card?.getAttribute('data-viewer-ptid') ?? null,
+                  canEdit: card?.getAttribute('data-can-edit') ?? null,
+                  menusInDom: document.querySelectorAll('[data-acceptance-id="social-moment-menu"]').length,
+                  matchingCards: pid ? document.querySelectorAll(`[data-post-id="${pid}"]`).length : 0,
+                  scrollY: window.scrollY,
+                };
+            """, selector)
+            raise GateError(f"timed out waiting for {selector} ({diagnostic})")
         element.click()
 
     def open_comments(self, actor: str, post_selector: str) -> None:

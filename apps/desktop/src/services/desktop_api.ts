@@ -4900,8 +4900,11 @@ export const api = {
   accessCancel: (attemptId: string) =>
     invokeAccessCommand<AccessDecisionInput>('access_cancel', { attempt_id: attemptId }),
 
-  authLogout: () =>
-    invokeAuthCommand<void>('auth_logout'),
+  authLogout: (expectedActorPtid?: string) =>
+    invokeAuthCommand<{ expected_actor_ptid: string }>(
+      'auth_logout',
+      expectedActorPtid ? { expected_actor_ptid: expectedActorPtid } : undefined,
+    ),
 
   acceptanceLogoutWindowSession: (expectedActorPtid: string) =>
     invokeAuthCommand<{ expected_actor_ptid: string }>(

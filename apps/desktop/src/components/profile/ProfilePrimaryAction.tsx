@@ -78,7 +78,7 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
           window.location.hash = '#/settings';
           eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'settings', id: 'account' });
         }}
-        label={t('layout.user.manageAccount')}
+        label={t('layout:layout.user.manageAccount')}
       />
     );
   }

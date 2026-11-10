@@ -897,7 +897,7 @@ export function MomentComposer({ initialAudience, onPublished, onDismiss }: Mome
     }))}
     onRemoveImage={handleRemoveImage}
     copy={{ removeImage: t('moments.compose.imageRemove'), retryImage: t('moments.compose.imageRetry') }}
-    editor={<TextArea className="sk-compose-input" aria-label={t('moments.compose.title')}
+    editor={<TextArea className="pt-mom-compose-input" aria-label={t('moments.compose.title')}
       data-moments-composer-input framing="embedded" minimumRows={4} maximumRows={8}
       value={text} disabled={busy} onValueChange={next => {
         setText(next); persistDraft(next, audience, pending, 'trailing');

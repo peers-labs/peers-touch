@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Dialog, MomentScopeBar } from '@peers-touch/ui';
 import { publicFeedErrorKey } from '../../services/publicFeedNative';
@@ -12,6 +12,7 @@ import { useActiveDiscoverySlice, useActiveMomentsSlice } from '../../components
 import { useMomentsNavigationStore, type MomentsTab } from '../../store/momentsNavigation';
 import { useSessionStore } from '../../store/session';
 import './moments-layout.css';
+import './moments-glass.css';
 
 /** Page owns navigation and transient dialogs; original Runtime owns all reads. */
 export function MomentsApp() {
@@ -47,14 +48,22 @@ function MomentsSessionView() {
   const goBack = useCallback(() => setView(previous => previous.kind === 'tab' ? previous
     : { kind: 'tab', tab: previous.from }), [setView]);
   const closeCreate = useCallback(() => setCircleCreateOpen(false), []);
-  return <div className="moments-app" data-social-scope={activeTab}>
+  // Portaled dialogs/menus/popovers render in the app-level overlay host,
+  // outside .moments-app. Mark that host only while Social is mounted so the
+  // glass skin tokens reach overlays without leaking into other modules.
+  useEffect(() => {
+    const host = document.querySelector('.pt-overlay-host');
+    host?.setAttribute('data-social-glass', '');
+    return () => host?.removeAttribute('data-social-glass');
+  }, []);
+  return <div className="moments-app" data-social-glass="" data-social-scope={activeTab}>
     {view.kind === 'tab' && <MomentScopeBar value={activeTab}
       options={[{ value: 'feed', label: t('moments.tab.feed') }, { value: 'circles', label: t('moments.tab.circle') }]}
       onChange={goTab} query={query} onQueryChange={setQuery}
       copy={{ scope: t('moments.scope.label'), search: t('moments.scope.search'),
         action: t(activeTab === 'feed' ? 'moments.action.compose' : 'moments.circle.create') }}
       actionId={activeTab === 'feed' ? 'moments.compose' : 'circle.open-create'}
-      actionClassName={activeTab === 'feed' ? 'sk-compose-open' : 'sk-circle-open'}
+      actionClassName={activeTab === 'feed' ? 'pt-mom-compose-open' : 'pt-mom-circle-open'}
       actionAcceptanceId={activeTab === 'feed' ? 'social-composer-open' : 'social-circle-create-open'}
       onAction={() => activeTab === 'feed' ? setComposerOpen(true) : setCircleCreateOpen(true)} />}
     <div className="moments-scroll" ref={scrollerRef} data-moments-scroller>

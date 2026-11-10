@@ -857,7 +857,16 @@ impl SecureContentSupervisor {
         Ok((bytes, grant.media_type.clone()))
     }
 
-    pub fn teardown_actor(&self, actor_ptid: &str) -> Result<(), String> {
+    /// Tear down every window runtime owned by `actor_ptid`. `source` identifies
+    /// the owning lifecycle transition (logout, account switch, device revoke,
+    /// renderer teardown, ...) so actor-wide detach — which is intentionally
+    /// cross-window and cannot be reconstructed from a single call stack — is
+    /// auditable after the fact in production logs.
+    pub fn teardown_actor_with_source(
+        &self,
+        actor_ptid: &str,
+        source: &'static str,
+    ) -> Result<(), String> {
         let previous = {
             let mut active = self
                 .active
@@ -873,6 +882,7 @@ impl SecureContentSupervisor {
             for label in &labels {
                 if let Some(runtime) = active.get(label) {
                     tracing::info!(
+                        source,
                         renderer_generation = runtime.lease.renderer_generation,
                         session_generation = runtime.lease.session.key.session_generation,
                         lifecycle_epoch = self.lifecycle_epoch(),
@@ -899,6 +909,11 @@ impl SecureContentSupervisor {
             return Err(errors.join("; "));
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn teardown_actor(&self, actor_ptid: &str) -> Result<(), String> {
+        self.teardown_actor_with_source(actor_ptid, "test")
     }
 
     pub fn shutdown(&self) -> Result<(), String> {

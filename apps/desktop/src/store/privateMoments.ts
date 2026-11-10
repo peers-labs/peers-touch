@@ -53,6 +53,11 @@ interface PrivateMomentsState {
 
   activateActor: (actorPtid: string, rendererGeneration: number) => void;
   deactivate: (rendererGeneration: number) => void;
+  // Explicitly destroy the native Secure Content runtime for an actor the
+  // window has genuinely stopped authenticating. Never driven by projection
+  // generation churn — same-actor re-bootstraps must leave the live lease
+  // intact. Best-effort: a missing runtime is already the desired state.
+  teardownNativeActor: (actorPtid: string, rendererGeneration: number) => Promise<void>;
   bootstrap: (rendererGeneration: number) => Promise<void>;
   reconcile: (
     postIds: string[],
@@ -810,26 +815,32 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         });
       },
 
+      // Projection-only reset. It MUST NOT tear down the native Secure Content
+      // runtime: deactivate also runs on every same-actor renderer-generation
+      // churn (session/station identity resolving late), and an actor-wide
+      // native teardown there would destroy the lease the runtime is about to
+      // re-activate. Native runtime lifetime is owned by native identity
+      // transitions and by explicit teardownNativeActor on deauthentication.
       deactivate: (rendererGeneration) => {
         publishOperationSequence += 1;
         reactionMutationVersion += 1;
         reactionMutationVersionByTarget.clear();
         reactionFlights.clear();
         revocationReasonByPost.clear();
-        const previous = get().scope;
         set({
           ...initialData(),
           platform: resolvePrivateMomentsPlatform(),
           scope: emptyScope(rendererGeneration),
         });
-        if (previous.actorPtid) {
-          void privateMomentsNative.teardown({
-            actorPtid: previous.actorPtid,
-            rendererGeneration: previous.rendererGeneration,
-          }).catch((error) => {
-            log.warn(TAG, 'Native private Moments teardown failed', {
-              error: String(error),
-            });
+      },
+
+      teardownNativeActor: async (actorPtid, rendererGeneration) => {
+        if (!actorPtid) return;
+        try {
+          await privateMomentsNative.teardown({ actorPtid, rendererGeneration });
+        } catch (error) {
+          log.warn(TAG, 'Native private Moments teardown failed', {
+            error: String(error),
           });
         }
       },

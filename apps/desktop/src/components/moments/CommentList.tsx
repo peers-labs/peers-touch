@@ -393,19 +393,19 @@ export function CommentList({
     {committedPending && <span>{t('moments.comment.readbackPending')}</span>}
     {retryDeadlinePending && withinRetryDeadline && <span>{t('moments.comment.retryIn', { count: retrySeconds })}</span>}
   </>;
-  return <div data-moments-comment-thread={postId} className="sk-comment-list">
-      {comments.length === 0 && !loading && <span className="sk-comment-status">{t('moments.comment.empty')}</span>}
+  return <div data-moments-comment-thread={postId} className="pt-mom-comment-list">
+      {comments.length === 0 && !loading && <span className="pt-mom-comment-status">{t('moments.comment.empty')}</span>}
       {loading && <Spin label={t('moments.follow.loading')} />}
-      <ul className="sk-comment-list">
+      <ul className="pt-mom-comment-list">
         {threads.map(thread => row(thread.comment, 0,
           thread.replies.length > 0 ? thread.replies.map(reply => row(reply, 1)) : undefined))}
       </ul>
       {hasMore && !loading && <Button actionId={`comments.more.${postId}`} emphasis="quiet"
-        className="sk-comment-pager" label={t('moments.action.loadMore')} onActivate={onLoadMore} />}
-      {replyTarget && <div className="sk-comment-meta">
+        className="pt-mom-comment-pager" label={t('moments.action.loadMore')} onActivate={onLoadMore} />}
+      {replyTarget && <div className="pt-mom-comment-meta">
         <span>{t('moments.comment.replyingTo')}</span><MomentCommentAuthorName actorPtid={replyTarget.authorPtid} />
         <Button actionId={`comments.reply.cancel.${postId}`} emphasis="quiet" density="compact"
-          className="sk-comment-action" label={t('moments.action.cancel')} onActivate={() => {
+          className="pt-mom-comment-action" label={t('moments.action.cancel')} onActivate={() => {
             setReplyTargetId(''); setStoredDraft(draftKey, { text, mentions });
           }} />
       </div>}
@@ -510,21 +510,21 @@ function MomentCommentRow({
     time={date === undefined ? undefined : <time dateTime={new Date(date).toISOString()}>{new Date(date).toLocaleString()}</time>}
     avatar={<MomentAuthorTrigger actorPtid={comment.authorPtid} onOpenProfile={onAuthorClick}>
       <Button actionId={`comment.avatar.${comment.id}`} emphasis="quiet" density="compact"
-        className="sk-comment-avatar" aria-label={t('moments.identity.cardLabel', { name })}>
+        className="pt-mom-comment-avatar" aria-label={t('moments.identity.cardLabel', { name })}>
         <UserSquareAvatar actorPtid={comment.authorPtid} remoteUrl={identity.avatarUrl || undefined}
           name={name} size={depth ? 24 : 30} radius={depth ? 7 : 9} />
       </Button>
     </MomentAuthorTrigger>}
     author={<MomentAuthorTrigger actorPtid={comment.authorPtid} onOpenProfile={onAuthorClick}>
       <Button actionId={`comment.author.${comment.id}`} emphasis="quiet" density="compact"
-        className="sk-comment-author" aria-label={t('moments.identity.cardLabel', { name })}>{name}</Button>
+        className="pt-mom-comment-author" aria-label={t('moments.identity.cardLabel', { name })}>{name}</Button>
     </MomentAuthorTrigger>}
     actions={<>
       <Button actionId={`comment.reply.${comment.id}`} emphasis="quiet" density="compact"
-        className="sk-comment-action" data-moments-comment-reply={comment.id}
+        className="pt-mom-comment-action" data-moments-comment-reply={comment.id}
         label={t('moments.comment.reply')} onActivate={() => onReply(comment)} />
       {canModerate && onDelete && <Button actionId={`comment.delete.${comment.id}`} emphasis="quiet" density="compact"
-        tone="danger" className="sk-comment-action is-danger" data-comment-delete
+        tone="danger" className="pt-mom-comment-action is-danger" data-comment-delete
         label={t('moments.comment.delete')} execution={deleting ? 'pending' : 'idle'}
         onActivate={() => setConfirmOpen(true)} />}
       <Dialog open={confirmOpen} onDismiss={() => { if (!deleting) setConfirmOpen(false); }}

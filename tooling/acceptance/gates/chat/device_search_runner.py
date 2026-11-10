@@ -43,12 +43,12 @@ REQUIRED_ASSERTIONS = UI_ASSERTIONS | {
     "native_runtime", "source_build_runtime_identity", "actor_isolation",
     "search_geometry_stability",
     "forged_authority_denied", "stale_content_denied", "hidden_reference_denied",
-    "previous_session_cursor_denied", "sender_session_revoked", "resources_released",
+    "previous_session_cursor_denied", "sender_session_preserved", "resources_released",
 }
 REQUIRED_STEPS = {
     "station.identity", "fixture.reset", "client.authenticated",
     "runtime.source_identity", "search.surface_ready",
-    "conversation.open", "message.seed", "search.sender_session_revoked",
+    "conversation.open", "message.seed", "search.sender_session_preserved",
     "search.account_scope_seed", "search.account_scope_result",
 } | {f"search.{name}" for name in UI_ASSERTIONS}
 
@@ -746,30 +746,37 @@ class DeviceSearchGate(NativeTwoClientGate):
             }, timeout=45)
             identity = async_harness(client, "hydrateActiveActor", {}, timeout=45)
 
-            def observe_sender_revocation() -> None:
-                def revoked_identity() -> dict[str, Any] | None:
+            def observe_sender_coexistence() -> None:
+                # Product semantics: signing the same account in on another
+                # installation must NOT revoke an existing installation.
+                # CreateWithKick replaces only the same
+                # Station+Actor+installation binding; other devices stay
+                # active. Prove the original Bob installation is still the
+                # same authenticated actor instead of expecting a kick.
+                def surviving_identity() -> dict[str, Any] | None:
                     state = async_harness(sender, "identityState", {})
                     return state if (
-                        state.get("authenticated") is False
-                        and state.get("phase") in {"revoked", "accountGate"}
-                        and state.get("reason") == "revoked"
-                        and state.get("actorPtid") == ""
+                        state.get("authenticated") is True
+                        and state.get("actorPtid") == self.ptids["bob"]
                     ) else None
 
-                revoked = wait_until(
-                    revoked_identity, "original Bob native session revocation", timeout=30,
+                surviving = wait_until(
+                    surviving_identity,
+                    "original Bob native session survives same-account login",
+                    timeout=30,
                 )
-                self.report.runtime["search"]["sessionHandoff"] = {
+                self.report.runtime["search"]["sessionCoexistence"] = {
                     "actor": "bob", "actorPtid": self.ptids["bob"],
-                    "before": sender_before, "after": revoked,
+                    "before": sender_before, "after": surviving,
                 }
-                self.assert_condition("sender_session_revoked", (
+                self.assert_condition("sender_session_preserved", (
                     sender_before.get("authenticated") is True
                     and sender_before.get("actorPtid") == self.ptids["bob"]
+                    and surviving.get("authenticated") is True
+                    and surviving.get("actorPtid") == self.ptids["bob"]
                 ))
-                self.client_lifecycles.mark_auth_revoked(sender)
 
-            self.step("search.sender_session_revoked", observe_sender_revocation, "bob")
+            self.step("search.sender_session_preserved", observe_sender_coexistence, "bob")
             self.open_search()
             empty_query = self.field().get_attribute("value") == ""
             after = async_harness(client, "deviceSearchState", {})

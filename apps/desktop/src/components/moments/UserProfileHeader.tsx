@@ -28,7 +28,7 @@ export function UserProfileHeader({ actor, viewerActorPtid, followerCount, follo
     avatar={onAvatarClick ? <Button actionId={`moments.profile.avatar.${id}`} emphasis="quiet"
       data-moments-avatar-link onActivate={onAvatarClick}
       aria-label={avatarActionLabel || t('moments.identity.cardLabel', { name })}
-      className="sk-post-author">{avatar}</Button> : avatar}
+      className="pt-mom-post-author">{avatar}</Button> : avatar}
     statistics={[
       { id: 'posts', label: t('moments.stats.posts'), value: postCount },
       { id: 'followers', label: t('moments.stats.followers'), value: followerCount },

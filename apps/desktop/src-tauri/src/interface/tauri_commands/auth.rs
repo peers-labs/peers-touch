@@ -66,7 +66,9 @@ fn bind_window_session(
             session.window_label != window.label() && session.actor.ptid == actor_ptid
         });
     if replaces_window_session || takes_over_actor {
-        state.secure_content.teardown_actor(&actor_ptid)?;
+        state
+            .secure_content
+            .teardown_actor_with_source(&actor_ptid, "auth-bind:replace-or-takeover")?;
     }
     if let Err(error) =
         auth_service::activate_messaging_profile(state, &account_id, &actor_ptid, &token)
@@ -134,6 +136,16 @@ fn bind_after(
     };
     if !result.ok {
         if is_session_revoked(&result) {
+            let result_actor = result.data.as_ref().and_then(|d| d.actor_ptid.clone());
+            let window_actor = state
+                .sessions
+                .get(window.label())
+                .map(|session| session.actor.ptid.clone());
+            tracing::warn!(
+                result_actor = result_actor.as_deref().unwrap_or("-"),
+                window_actor = window_actor.as_deref().unwrap_or("-"),
+                "auth response revoked: detaching window session (bind_after)"
+            );
             if let Err(error) = unbind_for_logout(state, window) {
                 return secure_content_teardown_failure(error);
             }
@@ -160,7 +172,9 @@ fn is_session_revoked(result: &AppResult<AuthSessionPayload>) -> bool {
 
 fn unbind_for_logout(state: &Arc<AppState>, window: &Window) -> Result<(), String> {
     if let Some(session) = state.sessions.unbind(window.label()) {
-        let teardown = state.secure_content.teardown_actor(&session.actor.ptid);
+        let teardown = state
+            .secure_content
+            .teardown_actor_with_source(&session.actor.ptid, "logout");
         state.event_streams.stop(&session.actor.ptid)?;
         teardown?;
     }
@@ -250,8 +264,17 @@ pub fn access_submit_login(
     result
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ScopedLogoutInput {
+    /// Actor the caller intends to log out. When present, the command is a
+    /// rollback for one specific identity transition and MUST NOT tear down a
+    /// newer window session that already superseded it.
+    pub expected_actor_ptid: String,
+}
+
 #[tauri::command]
 pub fn auth_logout(
+    input: Option<ScopedLogoutInput>,
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
     window: Window,
@@ -266,6 +289,34 @@ pub fn auth_logout(
             )
         }
     };
+    // A binding-rollback logout is scoped to the login attempt that failed.
+    // Under rapid account switching a late/stale rollback can arrive after a
+    // newer unlock already rebound the window to another actor; tearing that
+    // session down would destroy the live Secure Content runtime for the
+    // current identity. Skip the destructive transition and report success so
+    // the superseding session survives.
+    if let Some(scope) = input.as_ref() {
+        if let Some(current) = state.sessions.get(window.label()) {
+            if current.actor.ptid != scope.expected_actor_ptid {
+                tracing::info!(
+                    expected_actor_ptid = %scope.expected_actor_ptid,
+                    current_actor_ptid = %current.actor.ptid,
+                    "scoped logout skipped: window session was superseded"
+                );
+                return AppResult::success(AuthSessionPayload {
+                    command: "auth_logout".to_string(),
+                    status: "session_superseded".to_string(),
+                    actor_ptid: Some(current.actor.ptid.clone()),
+                    session_token: None,
+                    name: None,
+                    email: None,
+                    avatar_url: None,
+                    avatar_local_path: None,
+                    login_method: None,
+                });
+            }
+        }
+    }
     run_logout_transition(
         || unbind_for_logout(state.inner(), &window),
         || auth_service::auth_logout(state.inner()),
@@ -327,7 +378,7 @@ pub fn acceptance_logout_window_session(
             })),
         );
     }
-    auth_logout(state, app, window)
+    auth_logout(None, state, app, window)
 }
 
 #[cfg(feature = "acceptance-webdriver")]
