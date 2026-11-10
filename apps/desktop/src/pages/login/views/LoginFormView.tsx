@@ -226,9 +226,9 @@ export const LoginFormView = memo(function LoginFormView({
       {showReauthNotice && (
         <Alert
           tone="warning"
+          variant="inline"
           data-login-reauth-notice
           title={t('auth.login.expiredAlertTitle')}
-          description={t('auth.login.expiredSubtitle')}
         />
       )}
 

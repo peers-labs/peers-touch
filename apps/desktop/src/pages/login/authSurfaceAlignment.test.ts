@@ -144,16 +144,20 @@ describe('auth account-selection continuity', () => {
     expect(selectBlock).not.toContain('routeToProviderLogin(account, false)');
   });
 
-  it('renders an explicit expired-session notice on the routed sign-in form', () => {
+  it('renders a compact inline expired-session notice without stealing focus', () => {
     // reauthReason is now consumed (it was a dead prop) and gates the Alert.
     expect(formSource).toContain('reauthReason,');
     expect(formSource).toContain(
       "const showReauthNotice = !!expiredAccount && reauthReason === 'revoked' && !gateState;",
     );
     expect(formSource).toContain('data-login-reauth-notice');
+    // Inline rail (2px tone edge), title only — no bordered card, no subtitle
+    // paragraph — so the notice never competes with the primary sign-in actions.
+    expect(formSource).toMatch(/<Alert[\s\S]*?variant="inline"/);
     expect(formSource).toContain("t('auth.login.expiredAlertTitle')");
-    expect(formSource).toContain("t('auth.login.expiredSubtitle')");
-    // The notice copy exists in both shipped languages.
+    const alertBlock = formSource.slice(formSource.indexOf('data-login-reauth-notice') - 120);
+    expect(alertBlock).not.toContain('expiredSubtitle');
+    // The title copy exists in both shipped languages.
     const en = readFileSync(
       new URL('../../../../../packages/locales/en/auth.json', import.meta.url),
       'utf8',
@@ -196,9 +200,42 @@ describe('auth centered brand hero', () => {
     expect(pageSource).not.toContain('BRANDING.logos.wordmark');
     expect(stylesheet).toMatch(/\.pt-auth-brand-logo\s*\{[\s\S]*?width: 96px/);
     expect(stylesheet).toMatch(/\.pt-auth-brand-logo\s*\{[\s\S]*?height: 96px/);
+    // The frame is a physical 2mm hairline-derived border, not a drop shadow.
+    expect(stylesheet).toMatch(/\.pt-auth-brand-logo\s*\{[^}]*border: 2mm solid/);
+    expect(stylesheet).not.toMatch(/\.pt-auth-brand-logo\s*\{[^}]*box-shadow/);
     // The old corner wordmark slot must not linger.
     expect(pageSource).not.toContain('pt-auth-brand-wordmark');
     expect(stylesheet).not.toContain('.pt-auth-brand ');
+  });
+});
+
+describe('auth surface polish', () => {
+  it('never shows a visible scrollbar on the auth shell while keeping it scrollable', () => {
+    expect(stylesheet).toMatch(/\.pt-auth-shell\s*\{[\s\S]*?scrollbar-width: none/);
+    expect(stylesheet).toContain('.pt-auth-shell::-webkit-scrollbar');
+    expect(stylesheet).toMatch(/\.pt-auth-shell::-webkit-scrollbar\s*\{[\s\S]*?display: none/);
+  });
+
+  it('pins the reauth tile chevron to the far-right edge', () => {
+    // The button content wrapper must span the full row so meta can grow.
+    expect(stylesheet).toMatch(
+      /\.pt-auth-reauth \.pt-button-content\s*\{[\s\S]*?width: 100%/,
+    );
+    expect(stylesheet).toMatch(/\.pt-auth-reauth-meta\s*\{[\s\S]*?flex: 1 1 auto/);
+  });
+
+  it('repositions the macOS traffic-light cluster toward the left edge', () => {
+    const mainRs = readFileSync(
+      new URL('../../../src-tauri/src/main.rs', import.meta.url),
+      'utf8',
+    );
+    expect(mainRs).toContain('fn configure_window_traffic_lights');
+    expect(mainRs).toContain('NSWindowButton::CloseButton');
+    expect(mainRs).toContain('NSWindowButton::MiniaturizeButton');
+    expect(mainRs).toContain('TRAFFIC_LIGHT_LEFT_SHIFT');
+    expect(mainRs).toContain('setFrame(CGRect::new(');
+    // The zoom light stays removed in the same routine.
+    expect(mainRs).toContain('NSWindowButton::ZoomButton');
   });
 });
 

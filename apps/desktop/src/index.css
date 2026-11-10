@@ -125,6 +125,17 @@ input, textarea, [contenteditable="true"] {
   padding: 24px;
   overflow: hidden;
   background: var(--pt-canvas);
+  /* The auth card must never show a system scrollbar: on short windows the
+     <=760 block enables scroll, but the bar itself is suppressed (scoped to
+     this surface only) while wheel/trackpad scrolling keeps working. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.pt-auth-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .pt-auth-region {
@@ -175,8 +186,8 @@ input, textarea, [contenteditable="true"] {
 }
 
 /* Centered brand hero: the square app icon keeps its white rounded tile; the
-   transparent corners let the tinted card read through, and a soft shadow
-   lifts the tile as its own layer. */
+   transparent corners let the tinted card read through. A physical 2mm frame
+   defines the edge, so no drop shadow is needed to separate the tile. */
 .pt-auth-brand-hero {
   display: flex;
   justify-content: center;
@@ -187,8 +198,8 @@ input, textarea, [contenteditable="true"] {
   width: 96px;
   height: 96px;
   object-fit: contain;
+  border: 2mm solid var(--pt-border);
   border-radius: var(--pt-radius-xl);
-  box-shadow: var(--pt-shadow-soft);
 }
 
 .pt-auth-title {
@@ -206,6 +217,12 @@ input, textarea, [contenteditable="true"] {
   justify-content: flex-start;
   width: 100%;
   padding-block: 9px;
+}
+
+/* The button content wrapper only hugs content by default; span the full row
+   so the meta block can grow and pin the chevron to the far-right edge. */
+.pt-auth-reauth .pt-button-content {
+  width: 100%;
 }
 
 .pt-auth-reauth-meta {
