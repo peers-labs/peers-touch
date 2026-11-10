@@ -21,7 +21,6 @@ export const AccountPickerView = memo(function AccountPickerView({
   return (
     <div className="pt-auth-form">
       <h2 className="pt-auth-title">{t('auth.accountPicker.title')}</h2>
-      <p className="pt-auth-subtitle">{t('auth.accountPicker.subtitle')}</p>
 
       <div className="pt-auth-account-list">
         {accounts.map((account) => (

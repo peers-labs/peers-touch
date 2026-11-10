@@ -21,7 +21,7 @@ import {
   type AccessDecision,
 } from '../../services/accessGate';
 import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
-import { BrandMark } from '../../components/common/BrandMark';
+
 import { StationSwitcher } from './StationSwitcher';
 import { AccountPickerView } from './views/AccountPickerView';
 import { PinEntryView } from './views/PinEntryView';
@@ -869,8 +869,11 @@ export function LoginPage({
   const cardHead = (
     <div className="pt-auth-head">
       <span className="pt-auth-brand">
-        <BrandMark size={22} className="pt-auth-brand-mark" />
-        <span className="pt-auth-brand-name">{BRANDING.appName}</span>
+        <img
+          className="pt-auth-brand-wordmark"
+          src={BRANDING.logos.wordmark}
+          alt={BRANDING.appName}
+        />
       </span>
       {!embedded && <LanguageSwitcher />}
     </div>

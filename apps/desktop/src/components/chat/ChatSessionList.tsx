@@ -143,9 +143,6 @@ interface ChatSessionListProps {
   renderContacts?: (query: string) => ReactNode;
 }
 
-// Rail width is one fixed catalog column (prototype sk-conv-rail parity).
-const CHAT_RAIL_WIDTH = 300;
-
 export function ChatSessionList({
   onConversationSelected,
   onOpenDirect,
@@ -513,7 +510,6 @@ export function ChatSessionList({
         data-chat-conversation-pane
         data-rail-tab={tab}
         data-rail-search={searchOpen ? 'active' : 'idle'}
-        style={{ width: CHAT_RAIL_WIDTH, minWidth: CHAT_RAIL_WIDTH, maxWidth: CHAT_RAIL_WIDTH }}
       >
         {/* Rail header — one fixed 52px band. The search tile expands and
             TAKES OVER the band (prototype sk-rail-header parity): while open

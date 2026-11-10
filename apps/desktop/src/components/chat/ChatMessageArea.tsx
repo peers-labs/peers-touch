@@ -18,7 +18,7 @@ import {
   Tooltip as PtTooltip,
 } from '@peers-touch/ui';
 import {
-  Server, RefreshCw,
+  Server,
   Lock, ShieldAlert, Bot, Pencil,
 } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
@@ -39,7 +39,7 @@ import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
-import { presentError, type PresentedError } from '../../services/errorPresenter';
+import { presentError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
 import { TypingIndicator } from './message/TypingIndicator';
 import {
@@ -63,7 +63,6 @@ import {
 } from './message/messageReactionState';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
 import { ForwardPickerModal } from './ForwardPickerModal';
-import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { useOssAttachmentUrl } from '../shared/oss/useOssAttachmentUrl';
 import type { DirectConversationOpenIntent } from './contactSelection';
 import { resolveFederationStationName } from '../../store/federation';
@@ -79,12 +78,16 @@ const EMPTY_PROJECTED_MESSAGES: ChatMessage[] = [];
 
 interface ChatMessageAreaProps {
   directOpenIntent: DirectConversationOpenIntent | null;
-  onRetryDirectOpen: () => void;
+  /** True below the 720px narrow breakpoint; enables the header back control. */
+  narrow?: boolean;
+  /** Return from the single-pane conversation view to the catalog rail. */
+  onNarrowBack?: () => void;
 }
 
 export function ChatMessageArea({
   directOpenIntent,
-  onRetryDirectOpen,
+  narrow = false,
+  onNarrowBack,
 }: ChatMessageAreaProps) {
   const { t } = useTranslation('chat');
   const {
@@ -189,7 +192,6 @@ export function ChatMessageArea({
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<ChatMessage | null>(null);
-  const [composerError, setComposerError] = useState<PresentedError | null>(null);
   const [reactionMutations, setReactionMutations] = useState<Record<string, MessageReactionMutation>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -442,7 +444,6 @@ export function ChatMessageArea({
     setReplyToUlid(null);
     setDeleteTarget(null);
     setDeletingMessage(false);
-    setComposerError(null);
     setEditingGroupName(false);
     setGroupNameDraft('');
     setGroupNameHovered(false);
@@ -670,7 +671,6 @@ export function ChatMessageArea({
     // The composer clears its own text after success; these resets only
     // flip reply/edit UI state. On failure the composer keeps its text
     // and reply target.
-    setComposerError(null);
     setSending(true);
     // Sending implies "stopped composing" — flip the bubble for the
     // peer immediately rather than waiting on the 4s idle timer.
@@ -733,12 +733,13 @@ export function ChatMessageArea({
       return true;
     } catch (err) {
       log.error('chat', 'composer send failed', err);
-      const presentedError = presentError(err, {
+      // All send failures surface through the shell-wide floating toast;
+      // the conversation pane never swaps to an inline error state.
+      presentError(err, {
         mode: 'toast',
         mapper: mapChatError,
         context: { operation: 'send' },
       });
-      setComposerError(presentedError);
       setSending(false);
       // Keep composer text + reply target; the composer does not clear
       // because onSend resolved false.
@@ -983,6 +984,22 @@ export function ChatMessageArea({
     file: t('chat.social.messageArea.attachmentTypeFile'),
   });
 
+  // Narrow single-pane swap: the back tile returns to the catalog rail.
+  // CSS hides it above the 720px breakpoint (prototype sk-chat-back parity).
+  const narrowBack = narrow ? (
+    <PtIconButton
+      actionId="chat-back-to-list"
+      className="sc-chat-head__back"
+      data-chat-narrow-back
+      iconId="arrow-left"
+      iconSize={18}
+      emphasis="quiet"
+      density="compact"
+      label={t('chat.social.messageArea.backToList')}
+      onActivate={() => onNarrowBack?.()}
+    />
+  ) : null;
+
   if (!activeUlid && directOpenIntent) {
     return (
       <div
@@ -991,6 +1008,7 @@ export function ChatMessageArea({
         data-chat-conversation-intent-state={directOpenIntent.phase}
       >
         <header className="sc-chat-head">
+          {narrowBack}
           <div className="sc-chat-head-id">
             <div className="sc-chat-head-name">
               <strong>{directOpenIntent.displayName}</strong>
@@ -998,26 +1016,21 @@ export function ChatMessageArea({
           </div>
         </header>
 
+        {/* The pane always stays open: creation failures are reported through
+            the shell-wide floating toast, never as a content-replacing inline
+            error. Re-open by selecting the contact again. */}
         <div className="sc-conversation__center" aria-live="polite">
           {directOpenIntent.phase === 'creating' ? (
             <PtSpin size="small" label={t('common.state.loading', { ns: 'common' })} />
           ) : (
-            <div
-              className="sc-conversation__intent-error"
-              data-chat-conversation-intent-error={directOpenIntent.error.code}
-            >
-              <PresentedErrorAlert error={directOpenIntent.error} />
-              {directOpenIntent.error.recoverable && (
-                <PtButton
-                  actionId="conversation-intent-retry"
-                  data-chat-conversation-intent-retry
-                  leading={<RefreshCw size={14} />}
-                  onActivate={onRetryDirectOpen}
-                >
-                  {t('chat.message.action.retry')}
-                </PtButton>
-              )}
-            </div>
+            <PtEmpty
+              icon={<Icon iconId="message-circle" size={36} className="sc-conversation-empty__icon" />}
+              description={
+                <span className="sc-conversation-empty__hint">
+                  {t('chat.social.messageArea.noMessages')}
+                </span>
+              }
+            />
           )}
         </div>
 
@@ -1096,6 +1109,7 @@ export function ChatMessageArea({
       />
 
       <header className="sc-chat-head">
+        {narrowBack}
         <div className="sc-chat-head-id">
           <div className="sc-chat-head-name">
             {activeTab === 'group' && editingGroupName ? (
@@ -1305,15 +1319,6 @@ export function ChatMessageArea({
           data-chat-message-bottom-sentinel
         />
       </div>
-
-      {composerError && (
-        <div
-          className="sc-conversation__error"
-          data-chat-error={composerError.code || composerError.severity}
-        >
-          <PresentedErrorAlert error={composerError} onClose={() => setComposerError(null)} />
-        </div>
-      )}
 
       {isAutomatedConversation ? (
         <div

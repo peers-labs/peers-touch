@@ -21,12 +21,8 @@ import {
   remoteProfileHandle,
 } from '../../store/socialProfileProjection';
 import type { FriendRequestData } from '../../store/socialNormalizers';
-import {
-  presentError,
-  type PresentedError,
-} from '../../services/errorPresenter';
+import { presentError } from '../../services/errorPresenter';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { log } from '../../utils/logger';
 import {
   useActiveChatFederationSlice,
@@ -112,7 +108,6 @@ export function ChatContactsPanel({
   }));
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
-  const [requestActionErrors, setRequestActionErrors] = useState<Record<string, PresentedError>>({});
   const [collapsed, setCollapsed] = useState<ContactSectionKey[]>(
     Object.entries(SECTION_COLLAPSED_DEFAULT)
       .filter(([, isCollapsed]) => isCollapsed)
@@ -284,12 +279,6 @@ export function ChatContactsPanel({
     action: 'accept' | 'reject',
   ) => {
     setBusyAction({ id: request.id, kind: action });
-    setRequestActionErrors((current) => {
-      if (!(request.id in current)) return current;
-      const next = { ...current };
-      delete next[request.id];
-      return next;
-    });
     try {
       if (action === 'accept') {
         await acceptFriendRequest(request);
@@ -298,13 +287,10 @@ export function ChatContactsPanel({
       }
     } catch (error) {
       log.error('contacts', `${action}FriendRequest failed`, error);
-      setRequestActionErrors((current) => ({
-        ...current,
-        [request.id]: presentError(error, {
-          mode: 'inline',
-          fallbackKey: 'error.chat.conversationActionFailed',
-        }),
-      }));
+      // Unified floating toast; the request row stays interactive.
+      presentError(error, {
+        fallbackKey: 'error.chat.conversationActionFailed',
+      });
     } finally {
       setBusyAction(null);
     }
@@ -351,7 +337,6 @@ export function ChatContactsPanel({
     const isPendingIncoming = direction === 'incoming' && request.status === 1;
     const isOutgoing = direction === 'outgoing';
     const isSettled = request.status !== 1;
-    const actionError = requestActionErrors[request.id];
     const isSelected = Boolean(
       selectedContact
       && selectedContact.kind !== 'group'
@@ -461,20 +446,6 @@ export function ChatContactsPanel({
             </span>
           ) : request.message ? (
             <span className="sc-request-card__greeting">{request.message}</span>
-          ) : null}
-          {actionError ? (
-            <div data-chat-friend-request-error={request.id}>
-              <PresentedErrorAlert
-                error={actionError}
-                onClose={() => {
-                  setRequestActionErrors((current) => {
-                    const next = { ...current };
-                    delete next[request.id];
-                    return next;
-                  });
-                }}
-              />
-            </div>
           ) : null}
         </div>
       </div>

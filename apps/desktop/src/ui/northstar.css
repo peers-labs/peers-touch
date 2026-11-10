@@ -767,6 +767,14 @@
 @media (max-width: 720px) {
   .sk-form-grid { grid-template-columns: 1fr; }
   .sk-identity-joined { margin-left: 0; }
+  /* The device-link QR is a fixed 340px tile; keep it square but never let
+     it overflow the narrow stage (60px rail leaves ~300px at a 360px window). */
+  .sc-device-link-qr {
+    width: 100%;
+    max-width: 340px;
+    height: auto;
+    aspect-ratio: 1;
+  }
 }
 
 /* Real Tauri upload surfaces adopt the prototype identity geometry. The

@@ -166,17 +166,11 @@ input, textarea, [contenteditable="true"] {
   min-width: 0;
 }
 
-.pt-auth-brand-mark {
-  width: 22px;
-  height: 22px;
+.pt-auth-brand-wordmark {
+  display: block;
+  height: 18px;
+  width: auto;
   flex: 0 0 auto;
-}
-
-.pt-auth-brand-name {
-  font-size: 14px;
-  font-weight: 650;
-  color: var(--pt-text);
-  letter-spacing: 0.2px;
 }
 
 .pt-auth-title {
@@ -185,6 +179,51 @@ input, textarea, [contenteditable="true"] {
   font-weight: 650;
   color: var(--pt-text);
   text-align: center;
+}
+
+/* Re-authentication identity strip: neutral surface, no semantic alert hue. */
+.pt-auth-reauth {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+  border: 1px solid var(--pt-border);
+}
+
+.pt-auth-reauth-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pt-auth-reauth-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pt-text);
+  line-height: 1.35;
+}
+
+.pt-auth-reauth-handle {
+  font-size: 12px;
+  color: var(--pt-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Login CTA carries the pine brand accent on this surface (scoped override of
+   the ink primary button; do not repaint the global --pt-primary token). */
+.pt-auth-submit.pt-button[data-emphasis='primary'] {
+  background: var(--pt-accent);
+  border-color: var(--pt-accent);
+  color: var(--pt-onAccent);
+}
+
+.pt-auth-submit.pt-button[data-emphasis='primary']:hover:not([aria-disabled='true']) {
+  background: var(--pt-accentHover);
+  border-color: var(--pt-accentHover);
 }
 
 .pt-auth-subtitle {
@@ -229,21 +268,6 @@ input, textarea, [contenteditable="true"] {
   top: 5px;
   right: 5px;
   z-index: 1;
-}
-
-.pt-auth-credrow {
-  display: flex;
-  gap: var(--pt-space-xs);
-  align-items: center;
-}
-
-.pt-auth-credrow > .pt-field-frame {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.pt-auth-credrow > .pt-button {
-  flex: 0 0 auto;
 }
 
 .pt-auth-gate-row {

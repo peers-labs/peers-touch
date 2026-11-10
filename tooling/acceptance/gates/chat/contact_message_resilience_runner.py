@@ -289,33 +289,47 @@ class ContactMessageResilienceGate(AcceptanceGate):
         except Exception:
             return ""
 
-    def _conversation_intent_error_visible(self, peer_ptid: str) -> bool:
+    def _failure_toast_visible(self) -> bool:
         if not self.client:
             return False
         try:
-            error = self.client.driver.find_element(
+            toast = self.client.driver.find_element(
                 By.CSS_SELECTOR,
-                (
-                    f'[data-chat-conversation-intent="{peer_ptid}"] '
-                    '[data-chat-conversation-intent-error]'
-                ),
+                '.pt-toast-host .pt-toast[data-tone="danger"]',
             )
-            return error.is_displayed()
+            return toast.is_displayed()
         except Exception:
             return False
 
-    def _conversation_intent_retry_visible(self, peer_ptid: str) -> bool:
+    def _inline_intent_error_absent(self, peer_ptid: str) -> bool:
+        if not self.client:
+            return False
+        driver = self.client.driver
+        pane = driver.find_elements(
+            By.CSS_SELECTOR,
+            f'[data-chat-conversation-intent="{peer_ptid}"]',
+        )
+        if not pane or not pane[0].is_displayed():
+            return False
+        return driver.find_elements(
+            By.CSS_SELECTOR,
+            (
+                f'[data-chat-conversation-intent="{peer_ptid}"] '
+                '[data-chat-conversation-intent-error], '
+                f'[data-chat-conversation-intent="{peer_ptid}"] '
+                '[data-chat-conversation-intent-retry]'
+            ),
+        ) == []
+
+    def _conversation_pane_open(self) -> bool:
         if not self.client:
             return False
         try:
-            retry = self.client.driver.find_element(
+            pane = self.client.driver.find_element(
                 By.CSS_SELECTOR,
-                (
-                    f'[data-chat-conversation-intent="{peer_ptid}"] '
-                    '[data-chat-conversation-intent-retry]'
-                ),
+                '[data-chat-conversation-pane]',
             )
-            return retry.is_displayed() and retry.is_enabled()
+            return pane.is_displayed()
         except Exception:
             return False
 
@@ -560,15 +574,13 @@ class ContactMessageResilienceGate(AcceptanceGate):
 
             steps.append({"step": "error.presented", "status": "start"})
             try:
-                error_visible = wait_until(
+                toast_visible = wait_until(
                     lambda: (
                         self._conversation_intent_state(self.bob_ptid)
                         == "failed"
-                        and self._conversation_intent_error_visible(
-                            self.bob_ptid
-                        )
+                        and self._failure_toast_visible()
                     ),
-                    "peer-bound inline error after createDirect failure",
+                    "floating danger toast after createDirect failure",
                     8,
                 )
             except GateError:
@@ -578,15 +590,16 @@ class ContactMessageResilienceGate(AcceptanceGate):
                     steps.append({"step": "proxy.evidence", "status": "info", "evidence": proxy_ev})
                 raise
             self.assert_condition(
-                "error_displayed_in_peer_bound_view",
-                bool(error_visible),
-                "createDirect failure must remain inside the peer-bound "
-                "conversation intent pane",
+                "failure_toast_displayed",
+                bool(toast_visible),
+                "createDirect failure must surface through the unified "
+                "floating feedback toast",
             )
             self.assert_condition(
-                "conversation_retry_visible",
-                self._conversation_intent_retry_visible(self.bob_ptid),
-                "failed conversation intent must expose an enabled retry action",
+                "conversation_pane_stays_open_without_inline_error",
+                self._inline_intent_error_absent(self.bob_ptid),
+                "the peer-bound conversation pane must stay open without "
+                "an inline error block or retry action",
             )
             self.save_screenshot(self.client, "peer-bound-intent-failure")
             steps.append({"step": "error.presented", "status": "pass"})
@@ -607,6 +620,24 @@ class ContactMessageResilienceGate(AcceptanceGate):
                 > failure_evidence["forwardedConnections"],
                 f"restored Direct proxy must forward the read-only route probe: {evidence}",
             )
+
+            steps.append({"step": "conversation.reopen", "status": "start"})
+            # Retry is the ordinary contact selection again — the pane never
+            # offered an inline retry. A successful open flips the stage from
+            # the peer-bound intent to the normal conversation pane.
+            self._click_message_button()
+            reopened = wait_until(
+                self._conversation_pane_open,
+                "conversation pane did not reopen after Direct route recovery",
+                10,
+            )
+            self.assert_condition(
+                "conversation_reopens_after_recovery",
+                bool(reopened),
+                "re-selecting the contact after route recovery must open "
+                "the conversation pane",
+            )
+            steps.append({"step": "conversation.reopen", "status": "pass"})
 
             result = {
                 "runtimeCell": (

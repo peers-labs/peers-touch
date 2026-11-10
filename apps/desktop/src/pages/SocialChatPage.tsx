@@ -22,6 +22,7 @@ import { presentError } from '../services/errorPresenter';
 import { imServiceV1 } from '../services/im-service';
 import { scheduleIdle } from '../kernel/boot';
 import { useActiveSocialChatSlice } from '../components/chat/useActiveSocialChatStore';
+import { NARROW_MEDIA_QUERY, useMediaQuery } from '../hooks/useMediaQuery';
 import { currentAuthenticatedActorPtid } from '../store/session';
 import { log } from '../utils/logger';
 import { readFeatureFlags } from '../modules/settings/featureFlags';
@@ -113,6 +114,17 @@ export function SocialChatPage() {
     setDirectOpenIntent(null);
   }, []);
 
+  // Narrow single-pane swap (prototype sk-narrow-open parity): below 720px
+  // the catalog rail owns the screen until a conversation opens; the header
+  // back control returns to the rail. The swap itself is CSS-driven via
+  // data-narrow-open, this state only decides which pane is active.
+  const isNarrow = useMediaQuery(NARROW_MEDIA_QUERY);
+  const narrowOpen = isNarrow && (!!activeSessionUlid || !!directOpenIntent);
+  const backToCatalog = useCallback(() => {
+    cancelDirectOpenIntent();
+    selectSession('');
+  }, [cancelDirectOpenIntent, selectSession]);
+
   const openDirectConversation = useCallback((contact: FriendContactSelection) => {
     const requestGeneration = ++directOpenGenerationRef.current;
     const existing = findContactConversation(contact, getIMConversations());
@@ -144,8 +156,9 @@ export function SocialChatPage() {
       });
     }).catch((error) => {
       if (directOpenGenerationRef.current !== requestGeneration) return;
+      // Floating toast only: the peer-bound pane stays open instead of being
+      // replaced by an inline error block. Re-selecting the contact retries.
       const presentation = presentError(error, {
-        mode: 'inline',
         mapper: mapChatError,
         context: { operation: 'conversationAction' },
       });
@@ -255,6 +268,8 @@ export function SocialChatPage() {
     <div
       className="sc-chat"
       data-social-chat-layout
+      data-narrow={isNarrow ? 'true' : 'false'}
+      data-narrow-open={narrowOpen ? 'true' : 'false'}
       data-chat-active-peer-ptid={activePeerDid ?? ''}
       data-chat-side-panel-open={openThreadRootUlid || showDetail ? 'true' : 'false'}
     >
@@ -290,22 +305,8 @@ export function SocialChatPage() {
       <AttachmentDetailHost />
       <ChatMessageArea
         directOpenIntent={directOpenIntent}
-        onRetryDirectOpen={() => {
-          if (!directOpenIntent) return;
-          openDirectConversation({
-            kind: 'friend',
-            peerPtid: directOpenIntent.peerPtid,
-            federationId: directOpenIntent.federationId,
-            federationName: directOpenIntent.federationName,
-            displayName: directOpenIntent.displayName,
-            avatar: directOpenIntent.avatar,
-            username: directOpenIntent.username,
-            federatedHandle: directOpenIntent.federatedHandle,
-            homeStationDomain: directOpenIntent.homeStationDomain,
-            homeStationPeerId: directOpenIntent.homeStationPeerId,
-            homeStationName: directOpenIntent.homeStationName,
-          });
-        }}
+        narrow={isNarrow}
+        onNarrowBack={backToCatalog}
       />
       {openThreadRootUlid ? <ChatThreadPanel /> : showDetail && <ChatDetailPanel />}
 

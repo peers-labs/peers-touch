@@ -655,6 +655,7 @@
   "chat.social.call.resultMediaFailed": "Could not access microphone or camera",
   "chat.social.call.resultNetworkFailed": "Network connection failed, call ended",
   "chat.social.messageArea.selectConversation": "Select a conversation to start chatting",
+  "chat.social.messageArea.backToList": "Back to chats",
   "chat.social.messageArea.noMessages": "No messages yet",
   "chat.social.messageArea.typing": "Typing…",
   "chat.social.messageArea.replyingTo": "Replying to",

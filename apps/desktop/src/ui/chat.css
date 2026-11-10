@@ -97,6 +97,13 @@
     > [data-chat-conversation-pane] {
     display: none !important;
   }
+  /* The detail/thread panel owns the full width once its sibling panes hide;
+     its fixed 320/360px catalog width would leave an empty stage. */
+  .sc-chat[data-chat-side-panel-open='true'] > .sc-detail,
+  .sc-chat[data-chat-side-panel-open='true'] > .sc-thread {
+    flex: 1 1 auto;
+    width: auto;
+  }
 }
 
 /* ── Messaging continuity recovery gate ─────────────────────────────────── */
@@ -144,8 +151,11 @@
 
 /* ── Conversation session list ──────────────────────────────────────────── */
 .sc-sessions {
-  /* Width is owned inline (one fixed 300px catalog column). */
-  flex-shrink: 0;
+  /* One fixed 300px catalog column at desktop widths. The narrow breakpoint
+     below takes ownership below 720px (single-pane swap); width must stay in
+     CSS, not inline styles, so the media query can override it. */
+  width: 300px;
+  flex: 0 0 300px;
   align-self: stretch;
   height: 100%;
   display: flex;
@@ -3313,13 +3323,6 @@
   color: var(--pt-secondary);
   font-size: 13px;
 }
-/* Direct-open intent failure column: capped error card with the retry action. */
-.sc-conversation__intent-error {
-  width: min(420px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 /* Scroll anchor: fixed 1px flex item so the stream keeps a stable bottom. */
 .sc-conversation__bottom-sentinel {
   flex: 0 0 1px;
@@ -3342,7 +3345,6 @@
 }
 .sc-conversation > .sc-chat-head,
 .sc-conversation > .sc-conversation__stream,
-.sc-conversation > .sc-conversation__error,
 .sc-conversation > .sc-conversation__bot-bar,
 .sc-conversation > .sc-composer,
 .sc-conversation > .sc-thread {
@@ -3578,7 +3580,6 @@
   border-radius: 999px;
 }
 .sc-conversation__stream::-webkit-scrollbar-track { background: transparent; }
-.sc-conversation__error { padding: 0 16px 12px; }
 .sc-conversation__bot-bar {
   display: flex;
   align-items: center;
@@ -4266,3 +4267,71 @@
 .sc-list-error__text { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--pt-secondary); }
 .sc-list-error--block .sc-list-error__text { flex: none; font-weight: 600; color: var(--pt-text); }
 
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Narrow single-pane swap (prototype sk-narrow-open / WeChat parity).
+ * Override blocks live at the end of the stylesheet, after every base rule,
+ * so first-match source-contract tests still resolve the desktop grammar.
+ * The 60px material rail stays visible; inside the stage the catalog rail
+ * and the conversation never share the row below 720px — data-narrow-open
+ * decides which pane owns the screen, the header back tile returns.
+ * ───────────────────────────────────────────────────────────────────────── */
+.sc-chat-head__back { display: none; }
+
+@media (max-width: 720px) {
+  .sc-chat[data-narrow='true'] { overflow-x: hidden; }
+
+  .sc-chat[data-narrow='true'] .sc-sessions {
+    width: 100%;
+    flex-basis: 100%;
+    border-right: 0;
+  }
+  .sc-chat[data-narrow='true'] .sc-conversation { display: none; }
+
+  .sc-chat[data-narrow='true'][data-narrow-open='true'] .sc-sessions { display: none; }
+  .sc-chat[data-narrow='true'][data-narrow-open='true'] .sc-conversation {
+    display: flex;
+    flex: 1 1 100%;
+  }
+
+  .sc-chat[data-narrow='true'] .sc-chat-head__back { display: inline-flex; }
+  .sc-chat[data-narrow='true'] .sc-chat-head {
+    padding-left: 10px;
+    padding-right: 10px;
+    gap: 6px;
+  }
+  .sc-chat[data-narrow='true'] .sc-conversation__stream {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  /* Detail and thread panels become full-stage overlays instead of squeezed
+     flex columns. .sc-chat is the positioning context. */
+  .sc-chat[data-narrow='true'] .sc-detail,
+  .sc-chat[data-narrow='true'] .sc-thread {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    width: 100%;
+    border-left: 0;
+  }
+}
+
+/* Phone-narrow compact insets; bubbles are width-driven already (inline
+   maxWidth calc), so only chrome tightens here. */
+@media (max-width: 480px) {
+  .sc-chat[data-narrow='true'] .sc-conversation__stream {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .sc-chat[data-narrow='true'] .sc-chat-head-actions [data-action-id='chat-call-video'],
+  .sc-chat[data-narrow='true'] .sc-chat-head-actions [data-action-id='chat-open-detail'] {
+    display: none;
+  }
+  .sc-chat[data-narrow='true'] .sc-chat-head-actions { gap: 2px; }
+  .sc-chat[data-narrow='true'] .sc-chat-head-actions .sc-head-action {
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+  }
+}

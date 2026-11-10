@@ -81,6 +81,33 @@ fn configure_acceptance_window_level(_window: &tauri::WebviewWindow) -> std::io:
     Ok(())
 }
 
+/// Product window chrome keeps only close and minimize: remove the green zoom
+/// (maximize) traffic light. Runs on the AppKit main queue once the window's
+/// button cluster exists.
+#[cfg(target_os = "macos")]
+fn hide_window_zoom_button(window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    use dispatch2::DispatchQueue;
+    use objc2_app_kit::{NSWindow, NSWindowButton};
+
+    let ns_window = window.ns_window().map_err(|error| {
+        std::io::Error::other(format!("native window lookup failed for zoom button: {error}"))
+    })? as usize;
+    DispatchQueue::main().exec_async(move || {
+        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+        if let Some(zoom_button) =
+            ns_window.standardWindowButton(NSWindowButton::ZoomButton)
+        {
+            unsafe { zoom_button.setHidden(true) };
+        }
+    });
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hide_window_zoom_button(_window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    Ok(())
+}
+
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 #[tauri::command]
 fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::Value> {
@@ -622,6 +649,12 @@ fn main() {
             app.state::<Arc<state::AppState>>()
                 .secure_content
                 .bind_app_handle(app.handle().clone());
+            {
+                let main_window = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| std::io::Error::other("main window is missing"))?;
+                hide_window_zoom_button(&main_window)?;
+            }
             #[cfg(feature = "acceptance-webdriver")]
             if std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some() {
                 let minimum_window_width = app

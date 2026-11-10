@@ -55,7 +55,6 @@ export interface LoginFormViewProps {
 export const LoginFormView = memo(function LoginFormView({
   tab,
   expiredAccount,
-  reauthReason,
   hasBackButton,
   oauth2Providers,
   oauthActionProviderId,
@@ -168,47 +167,21 @@ export const LoginFormView = memo(function LoginFormView({
             ? t('auth.login.welcomeBackTitle', { defaultValue: 'Welcome back' })
             : t('auth.login.title')}
       </h2>
-      <p className="pt-auth-subtitle">
-        {expiredAccount
-          ? reauthReason === 'revoked'
-            ? t('auth.login.expiredSubtitle', {
-                defaultValue: 'Sign in again to continue where you left off.',
-              })
-            : t('auth.login.continueSubtitle', {
-                defaultValue: 'Sign in to continue.',
-              })
-          : t('auth.login.subtitle')}
-      </p>
-
       {expiredAccount && (
-        <Alert
-          tone={reauthReason === 'revoked' ? 'warning' : 'info'}
-          title={
-            reauthReason === 'revoked'
-              ? t('auth.login.expiredAlertTitle', { defaultValue: 'Session expired' })
-              : t('auth.login.continueAlertTitle', { defaultValue: 'Sign in required' })
-          }
-          description={
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <UserSquareAvatar
-                remoteUrl={expiredAccount.avatar}
-                name={expiredAccount.name}
-                size={24}
-                radius={6}
-              />
-              <span
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {expiredAccount.name}
-                {expiredAccount.email ? ` · ${expiredAccount.email}` : ''}
-              </span>
-            </span>
-          }
-        />
+        <div className="pt-auth-reauth">
+          <UserSquareAvatar
+            remoteUrl={expiredAccount.avatar}
+            name={expiredAccount.name}
+            size={30}
+            radius={7}
+          />
+          <span className="pt-auth-reauth-meta">
+            <span className="pt-auth-reauth-name">{expiredAccount.name}</span>
+            {expiredAccount.email && (
+              <span className="pt-auth-reauth-handle">{expiredAccount.email}</span>
+            )}
+          </span>
+        </div>
       )}
 
       <Segmented<LoginTab>
@@ -391,41 +364,41 @@ export const LoginFormView = memo(function LoginFormView({
               leading={<Icon iconId="mail" size={16} />}
               onValueChange={setEmail}
             />
-            <div className="pt-auth-credrow">
-              <TextField
-                data-login-password
-                required
-                type={showPassword ? 'text' : 'password'}
-                aria-label={t('auth.login.password.placeholder')}
-                placeholder={t('auth.login.password.placeholder')}
-                value={password}
-                leading={<Icon iconId="lock" size={16} />}
-                trailing={
-                  <IconButton
-                    actionId="auth.password.reveal"
-                    iconId={showPassword ? 'eye-off' : 'eye'}
-                    label={showPassword
-                      ? t('auth.login.password.hide', { defaultValue: 'Hide password' })
-                      : t('auth.login.password.show', { defaultValue: 'Show password' })}
-                    emphasis="quiet"
-                    density="compact"
-                    onActivate={() => setShowPassword((value) => !value)}
-                  />
-                }
-                onValueChange={setPassword}
-                onEnter={() => void handleEmailSubmit()}
-              />
-              <IconButton
-                actionId="auth.login.submit"
-                iconId={loading ? 'refresh-cw' : 'check'}
-                label={t('auth.login.submit', { defaultValue: 'Sign in' })}
-                emphasis="primary"
-                data-login-submit
-                className={loading ? 'spin' : undefined}
-                availability={loading ? { kind: 'disabled', reason: t('auth.login.waiting') } : undefined}
-                onActivate={() => void handleEmailSubmit()}
-              />
-            </div>
+            <TextField
+              data-login-password
+              required
+              type={showPassword ? 'text' : 'password'}
+              aria-label={t('auth.login.password.placeholder')}
+              placeholder={t('auth.login.password.placeholder')}
+              value={password}
+              leading={<Icon iconId="lock" size={16} />}
+              trailing={
+                <IconButton
+                  actionId="auth.password.reveal"
+                  iconId={showPassword ? 'eye-off' : 'eye'}
+                  label={showPassword
+                    ? t('auth.login.password.hide', { defaultValue: 'Hide password' })
+                    : t('auth.login.password.show', { defaultValue: 'Show password' })}
+                  emphasis="quiet"
+                  density="compact"
+                  onActivate={() => setShowPassword((value) => !value)}
+                />
+              }
+              onValueChange={setPassword}
+              onEnter={() => void handleEmailSubmit()}
+            />
+            <Button
+              actionId="auth.login.submit"
+              fullWidth
+              emphasis="primary"
+              className="pt-auth-submit"
+              data-login-submit
+              execution={loading ? 'pending' : 'idle'}
+              availability={loading ? { kind: 'disabled', reason: t('auth.login.waiting') } : undefined}
+              onActivate={() => void handleEmailSubmit()}
+            >
+              {t('auth.login.submit', { defaultValue: 'Sign in' })}
+            </Button>
           </div>
         </form>
       )}
