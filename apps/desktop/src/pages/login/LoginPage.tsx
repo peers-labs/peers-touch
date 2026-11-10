@@ -303,6 +303,28 @@ export function LoginPage({
     }
   }, [expiredAccount]);
 
+  // ── Post-switch continuation ──
+  // Shared by direct account selection and the welcome-back Continue button:
+  // once a live session is switched in, a PIN-protected account asks for the
+  // PIN; every other account moves to the skippable first-time PIN setup. This
+  // keeps "pick an already-signed-in account" flowing straight into the app
+  // instead of parking on an intermediate dead-end screen.
+  const continueWithSwitchedAccount = useCallback(async () => {
+    try {
+      const active = await api.accountGetActive();
+      if (active?.has_pin) {
+        const user = accountIdentityToSessionUser(active);
+        setSelectedAccount(user);
+        setPinError('');
+        setLoginState('pin_entry');
+        return;
+      }
+    } catch {
+      // Fall through to first-time PIN prompt.
+    }
+    setLoginState('set_pin');
+  }, []);
+
   // ── Event handlers ──
 
   const handleSwitchAccount = useCallback(() => {
@@ -339,11 +361,15 @@ export function LoginPage({
     setPinError('');
     setExpiredAccount(null);
 
+    // PIN-protected live session: the PIN is the unlock gate, go straight in.
     if (account.hasPin && account.hasSession) {
       setLoginState('pin_entry');
       return;
     }
 
+    // Live session without a PIN prompt: switch the active identity and
+    // continue immediately (PIN entry/setup only when the account requires it),
+    // so a saved account never parks on an intermediate welcome screen.
     if (account.hasSession && account.accountId) {
       try {
         await onSwitchAccount(account.accountId);
@@ -352,8 +378,10 @@ export function LoginPage({
           routeToProviderLogin(account, true);
           return;
         }
-        setLoginState('welcome_back');
+        await continueWithSwitchedAccount();
       } catch {
+        // The stored session is no longer valid despite the optimistic flag:
+        // drop it and fall through to an explicit re-login with a notice.
         if (account.accountId) {
           try { await api.accountClearSession(account.accountId); } catch { /* noop */ }
           markAccountSessionless(account.accountId);
@@ -363,8 +391,16 @@ export function LoginPage({
       return;
     }
 
-    routeToProviderLogin(account, false);
-  }, [onSwitchAccount, routeToProviderLogin, markAccountSessionless]);
+    // No live session: the account is signed out/expired. Route to its own
+    // sign-in method (password -> email tab, OAuth -> quick tab) and surface a
+    // re-login notice instead of opening a silent, context-less login form.
+    routeToProviderLogin(account, true);
+  }, [
+    onSwitchAccount,
+    routeToProviderLogin,
+    markAccountSessionless,
+    continueWithSwitchedAccount,
+  ]);
 
   // ── PIN entry ──
 
@@ -529,21 +565,10 @@ export function LoginPage({
 
   // ── Welcome back continue ──
 
-  const handleWelcomeContinue = useCallback(async () => {
-    try {
-      const active = await api.accountGetActive();
-      if (active?.has_pin) {
-        const user = accountIdentityToSessionUser(active);
-        setSelectedAccount(user);
-        setPinError('');
-        setLoginState('pin_entry');
-        return;
-      }
-    } catch {
-      // Fall through to set_pin
-    }
-    setLoginState('set_pin');
-  }, []);
+  const handleWelcomeContinue = useCallback(
+    () => continueWithSwitchedAccount(),
+    [continueWithSwitchedAccount],
+  );
 
   // ── OAuth handlers ──
 

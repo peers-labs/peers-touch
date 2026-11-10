@@ -68,6 +68,7 @@ export interface LoginFormViewProps {
 export const LoginFormView = memo(function LoginFormView({
   tab,
   expiredAccount,
+  reauthReason,
   hasBackButton,
   oauth2Providers,
   oauthActionProviderId,
@@ -87,6 +88,11 @@ export const LoginFormView = memo(function LoginFormView({
   reauthFocusPassword = false,
 }: LoginFormViewProps) {
   const { t } = useTranslation('auth');
+
+  // An expired/revoked saved session gets an explicit re-login notice so the
+  // routed sign-in form carries context instead of appearing as a silent
+  // dead-end. A plain "continue" re-auth shows no notice.
+  const showReauthNotice = !!expiredAccount && reauthReason === 'revoked' && !gateState;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -215,6 +221,15 @@ export const LoginFormView = memo(function LoginFormView({
             )}
           </span>
         </Button>
+      )}
+
+      {showReauthNotice && (
+        <Alert
+          tone="warning"
+          data-login-reauth-notice
+          title={t('auth.login.expiredAlertTitle')}
+          description={t('auth.login.expiredSubtitle')}
+        />
       )}
 
       <Segmented<LoginTab>

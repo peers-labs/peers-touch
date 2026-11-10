@@ -113,6 +113,60 @@ describe('auth re-authentication identity tile', () => {
   });
 });
 
+describe('auth account-selection continuity', () => {
+  it('continues a live session directly instead of parking on welcome_back', () => {
+    // The shared continuation is the single post-switch path.
+    expect(pageSource).toContain('const continueWithSwitchedAccount = useCallback');
+    expect(pageSource).toContain("setLoginState('pin_entry')");
+    expect(pageSource).toContain("setLoginState('set_pin')");
+    // handleSelectAccount drives a live session through the continuation.
+    const selectBlock = pageSource.slice(
+      pageSource.indexOf('const handleSelectAccount'),
+      pageSource.indexOf('// ── PIN entry ──'),
+    );
+    expect(selectBlock).toContain('await continueWithSwitchedAccount()');
+    // A picked live account must not land on the intermediate welcome screen.
+    expect(selectBlock).not.toContain("setLoginState('welcome_back')");
+    // The welcome-back Continue button reuses the same continuation (no dup logic).
+    expect(pageSource).toContain('() => continueWithSwitchedAccount()');
+  });
+
+  it('routes an expired/sessionless account to re-login with the revoked notice signal', () => {
+    const selectBlock = pageSource.slice(
+      pageSource.indexOf('const handleSelectAccount'),
+      pageSource.indexOf('// ── PIN entry ──'),
+    );
+    // Both the no-session branch and a failed switch route as expired (true),
+    // which sets reauthReason "revoked" inside routeToProviderLogin.
+    const expiredRoutes = selectBlock.match(/routeToProviderLogin\(account, true\)/g) ?? [];
+    expect(expiredRoutes.length).toBeGreaterThanOrEqual(2);
+    // The old silent no-context route must be gone.
+    expect(selectBlock).not.toContain('routeToProviderLogin(account, false)');
+  });
+
+  it('renders an explicit expired-session notice on the routed sign-in form', () => {
+    // reauthReason is now consumed (it was a dead prop) and gates the Alert.
+    expect(formSource).toContain('reauthReason,');
+    expect(formSource).toContain(
+      "const showReauthNotice = !!expiredAccount && reauthReason === 'revoked' && !gateState;",
+    );
+    expect(formSource).toContain('data-login-reauth-notice');
+    expect(formSource).toContain("t('auth.login.expiredAlertTitle')");
+    expect(formSource).toContain("t('auth.login.expiredSubtitle')");
+    // The notice copy exists in both shipped languages.
+    const en = readFileSync(
+      new URL('../../../../../packages/locales/en/auth.json', import.meta.url),
+      'utf8',
+    );
+    const zh = readFileSync(
+      new URL('../../../../../packages/locales/zh-CN/auth.json', import.meta.url),
+      'utf8',
+    );
+    expect(en).toContain('"auth.login.expiredAlertTitle"');
+    expect(zh).toContain('"auth.login.expiredAlertTitle"');
+  });
+});
+
 describe('auth phone-narrow fill grammar', () => {
   it('lets the card fill the window without an outer canvas band at <=480px', () => {
     expect(narrowBlock).toContain('@media (max-width: 480px)');
