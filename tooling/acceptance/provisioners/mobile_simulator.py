@@ -9103,7 +9103,7 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 self.register_cleanup(
                     f"social-follow-fixture:{service_id}",
                     partial(
-                        reset_fixture_follow_edges,
+                        self._reset_follow_edges_target,
                         binding.endpoint,
                         binding.deployment_environment,
                         actor_ptids,
@@ -9256,6 +9256,19 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                 deployment_environment,
                 roles,
                 reset_authorized=True,
+            )
+
+    def _reset_follow_edges_target(
+        self,
+        station_url: str,
+        deployment_environment: str,
+        actor_ptids: tuple[str, ...],
+    ) -> None:
+        with self._bound_reset_profiles():
+            reset_fixture_follow_edges(
+                station_url,
+                deployment_environment,
+                actor_ptids,
             )
 
     def _reset_scope(self) -> str:
