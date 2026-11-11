@@ -1258,7 +1258,6 @@ export interface CleanupOutput {
 export interface PrepareActorIdentityInput {
   storageKey: string;
   seedBase64: string;
-  pinInstallation?: boolean;
 }
 
 export interface MobileAcceptanceActionContract extends MobileSearchAcceptanceContracts, MobileSocialSearchAcceptanceContracts {

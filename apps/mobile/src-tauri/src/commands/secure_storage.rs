@@ -48,22 +48,6 @@ pub fn secure_storage_acceptance_seed_identity(
     )
 }
 
-/// Acceptance-only: pin a deterministic OAuth installation id from a preset
-/// actor identity seed so same-account simulator clients share one device
-/// boundary for per-device replacement revocation. Production never registers
-/// this command.
-#[cfg(feature = "acceptance-harness")]
-#[tauri::command]
-pub fn secure_storage_acceptance_pin_installation(
-    storage: State<'_, SecureStorage>,
-    seed_base64: String,
-) -> MobileResult<()> {
-    crate::runtime::oauth::acceptance_pin_installation_identity(
-        storage.inner(),
-        &seed_base64,
-    )
-}
-
 fn validate_key(key: &str) -> MobileResult<()> {
     if key.trim().is_empty() {
         return Err(crate::error::MobileError::invalid_input(

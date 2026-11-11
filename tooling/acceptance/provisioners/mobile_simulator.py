@@ -5857,7 +5857,6 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
         ) = None,
         sensitive_values: Sequence[str] = (),
         verifier_source_digest: str | None = None,
-        pin_installation_identity: bool = False,
     ) -> None:
         self._manifest = json.loads(json.dumps(dict(manifest)))
         self._artifact_writer = artifact_writer
@@ -5880,7 +5879,6 @@ class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
             else None
         )
         self._actor_identity_seed_provider = actor_identity_seed_provider
-        self._pin_installation_identity = pin_installation_identity
         self._sensitive_values = tuple(
             dict.fromkeys(value for value in sensitive_values if value)
         )
@@ -6927,7 +6925,6 @@ return {
                 {
                     "storageKey": storage_key,
                     "seedBase64": seed_base64,
-                    "pinInstallation": self._pin_installation_identity,
                 },
             )
         finally:
@@ -7659,7 +7656,6 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
             harness_result_projector=self._project_lifecycle_harness_result,
             actor_manifest=self._actor_manifest_payload,
             sensitive_values=self._raw_authority_values(),
-            pin_installation_identity=True,
         )
         context = EphemeralGateLaunchContext(
             required_capabilities=required_capabilities,
