@@ -651,6 +651,7 @@ class SimulatorSettingsGate(AcceptanceGate):
         deadline = time.monotonic() + timeout_seconds
         stable_since: float | None = None
         last_snapshot = initial
+        seen_handler_errors: set[str] = set()
         while time.monotonic() < deadline:
             snapshot = self._mapping(
                 binding.call_action(client_id, "recovery.snapshot"),
@@ -670,6 +671,14 @@ class SimulatorSettingsGate(AcceptanceGate):
                     return snapshot
             else:
                 stable_since = None
+                handler_error = self._write_revocation_handler_error(snapshot)
+                if handler_error and handler_error not in seen_handler_errors:
+                    seen_handler_errors.add(handler_error)
+                    self._record(
+                        "write-admission-runtime-diagnostics",
+                        client_id,
+                        ingressHandlerError=handler_error,
+                    )
             time.sleep(POLL_INTERVAL_SECONDS)
         admission = last_snapshot.get("writeAdmission")
         reason = (
@@ -701,6 +710,18 @@ class SimulatorSettingsGate(AcceptanceGate):
                 f"{type(error).__name__}: {error}{detail}"
             ) from error
 
+    @staticmethod
+    def _write_revocation_handler_error(snapshot: Mapping[str, Any]) -> str | None:
+        for state in snapshot.get("states", []):
+            if not (isinstance(state, Mapping) and state.get("kind") == "write-revocation"):
+                continue
+            detail = state.get("detail")
+            if isinstance(detail, Mapping):
+                handler_error = detail.get("handlerError")
+                if isinstance(handler_error, str) and handler_error:
+                    return handler_error
+        return None
+
     def _runtime_diagnostic_detail(
         self,
         binding: MobileSimulatorRuntimeBinding,
@@ -712,18 +733,9 @@ class SimulatorSettingsGate(AcceptanceGate):
                 binding.call_action(client_id, "recovery.snapshot"),
                 f"{client_id} recovery snapshot diagnostics",
             )
-            for state in snapshot.get("states", []):
-                if (
-                    isinstance(state, Mapping)
-                    and state.get("kind") == "write-revocation"
-                ):
-                    state_detail = state.get("detail")
-                    if isinstance(state_detail, Mapping):
-                        handler_error = state_detail.get("handlerError")
-                        if handler_error:
-                            details.append(
-                                f"ingressHandlerError={handler_error}"
-                            )
+            handler_error = self._write_revocation_handler_error(snapshot)
+            if handler_error:
+                details.append(f"ingressHandlerError={handler_error}")
         except Exception as diagnostic_error:  # pragma: no cover - diagnostic only
             details.append(
                 f"recovery-diagnostics-unavailable:"
