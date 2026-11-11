@@ -202,6 +202,7 @@ func (s *subServer) handlePreparePrivateMoment(
 	}
 	response, err := s.privateContentSvc.PreparePrivateMoment(ctx, author, req)
 	if err != nil {
+		logger.Errorf(ctx, "DIAG prepare-private cause: %v", err)
 		return nil, privateContentHandlerError(err)
 	}
 	return response, nil
