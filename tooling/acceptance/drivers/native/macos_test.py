@@ -428,10 +428,21 @@ class MacOSStatusItemAdapterTests(unittest.TestCase):
         self.assertIn("def select_file_via_search(", probe)
         # The semantic fallback commits through the Search field and rows.
         self.assertIn('"AXIdentifier") == "Search"', probe)
-        self.assertIn('perform_action(search[-1], "AXConfirm")', probe)
+        self.assertIn('perform_action(search_element, "AXConfirm")', probe)
         self.assertIn('"AXSelectedRows"', probe)
         # Ambiguous search results remain unsupported, never arbitrary.
         self.assertIn('"search-multiple-matches"', probe)
+        compile(probe, "_FILE_CHOOSER_SELECTION_PROBE", "exec")
+
+    def test_chooser_probe_search_commit_falls_back_to_return_key(self) -> None:
+        # When the Search field rejects AXConfirm with kAXErrorCannotComplete
+        # (-25204), the probe posts the equivalent Return key instead of
+        # hard-failing; every other AX error must still propagate.
+        probe = _FILE_CHOOSER_SELECTION_PROBE
+        self.assertIn("def commit_search_field(", probe)
+        self.assertIn('if "AX error -25204" not in str(error):', probe)
+        self.assertIn("graphics.CGEventPost(0, event)", probe)
+        self.assertIn("key_code = 0x24", probe)
         compile(probe, "_FILE_CHOOSER_SELECTION_PROBE", "exec")
 
     def test_search_unavailability_sentinels_fall_back_without_faking(self) -> None:
