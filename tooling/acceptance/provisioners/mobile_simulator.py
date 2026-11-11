@@ -8307,14 +8307,15 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
                     deployment_environment,
                     owner,
                 )
-            for binding in service_bindings.values():
-                if binding.kind != "station":
-                    continue
-                if self.requires_actor_reset:
-                    verify_reset_target(
-                        binding.endpoint,
-                        binding.deployment_environment,
-                    )
+            with self._bound_reset_profiles():
+                for binding in service_bindings.values():
+                    if binding.kind != "station":
+                        continue
+                    if self.requires_actor_reset:
+                        verify_reset_target(
+                            binding.endpoint,
+                            binding.deployment_environment,
+                        )
             services = self._attest_services(
                 manifest.run_id,
                 service_bindings,
@@ -8757,6 +8758,20 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             require_distinct=self.require_distinct_station_profiles,
         )
 
+    @contextmanager
+    def _bound_reset_profiles(self) -> Iterator[None]:
+        # Bind one registry-validated reviewed Profile per distinct Station for
+        # the duration of fixture mutation, mirroring the Station lifecycle
+        # provisioner. Without this, two-Station resets fall back to the single
+        # active/lease Profile and the fail-closed target guard rejects the
+        # secondary Station. Non-reset provisioners never touch Station data, so
+        # they keep their existing authority and skip the lease requirement.
+        if not self.requires_actor_reset:
+            yield
+            return
+        with bound_reset_profiles(self._required_station_profiles().values()):
+            yield
+
     def _required_service_profiles(self) -> dict[str, str]:
         self._service_profiles = resolve_service_profiles(
             self.contract, self._service_profiles,
@@ -8966,15 +8981,16 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             binding = service_bindings[service_id]
             if self.requires_actor_reset:
                 assert reset_scope is not None
-                verify_reset_target(
-                    binding.endpoint,
-                    binding.deployment_environment,
-                )
-                reset_fixture(
-                    binding.deployment_environment,
-                    fixture_roles,
-                    reset_authorized=True,
-                )
+                with self._bound_reset_profiles():
+                    verify_reset_target(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                    )
+                    reset_fixture(
+                        binding.deployment_environment,
+                        fixture_roles,
+                        reset_authorized=True,
+                    )
                 self.register_cleanup(
                     f"actor-fixture:{service_id}",
                     lambda binding=binding, roles=fixture_roles: (
@@ -9059,11 +9075,12 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             }))
             for service_id in station_service_ids:
                 binding = service_bindings[service_id]
-                reset_fixture_follow_edges(
-                    binding.endpoint,
-                    binding.deployment_environment,
-                    actor_ptids,
-                )
+                with self._bound_reset_profiles():
+                    reset_fixture_follow_edges(
+                        binding.endpoint,
+                        binding.deployment_environment,
+                        actor_ptids,
+                    )
                 self.register_cleanup(
                     f"social-follow-fixture:{service_id}",
                     partial(
@@ -9206,20 +9223,21 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             payload,
         ).to_dict()
 
-    @staticmethod
     def _reset_actor_fixture_target(
+        self,
         station_url: str,
         deployment_environment: str,
         roles: tuple[str, ...],
         reset_scope: str,
     ) -> None:
-        require_station_reset_authority(reset_scope)
-        verify_reset_target(station_url, deployment_environment)
-        reset_fixture(
-            deployment_environment,
-            roles,
-            reset_authorized=True,
-        )
+        with self._bound_reset_profiles():
+            require_station_reset_authority(reset_scope)
+            verify_reset_target(station_url, deployment_environment)
+            reset_fixture(
+                deployment_environment,
+                roles,
+                reset_authorized=True,
+            )
 
     def _reset_scope(self) -> str:
         if len(self.contract.fixtures) != 1:

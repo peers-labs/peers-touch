@@ -649,6 +649,15 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.station_equipment = equipment.start()
         self.addCleanup(equipment.stop)
+        # Unit tests never hold a live station.reset lease; the per-Station
+        # reset binding is asserted separately in a dedicated regression test.
+        bound = patch(
+            "tooling.acceptance.provisioners.mobile_simulator."
+            "bound_reset_profiles",
+            side_effect=lambda _profiles: contextlib.nullcontext(),
+        )
+        self.bound_reset_profiles = bound.start()
+        self.addCleanup(bound.stop)
 
     def _station_access_fixture(
         self,
@@ -1911,6 +1920,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         provisioner = MobileSocialSimulatorProvisioner(
             contract,
             overlay_path=path,
+            station_profiles={
+                "station-primary": "profile-primary",
+                "station-secondary": "profile-secondary",
+            },
         )
         evidence = FakeEvidenceRun()
         provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
@@ -2031,6 +2044,102 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.assertTrue(actors[0]["federationId"])
         prepare_federation.assert_called_once()
 
+    def test_two_actor_fixture_reset_binds_every_station_profile(
+        self,
+    ) -> None:
+        # Regression: a two-Station provisioner must publish one reviewed
+        # Profile binding per Station before any fixture reset, otherwise the
+        # secondary Station reset falls back to the single active Profile and
+        # the fail-closed target guard rejects it.
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        provisioner = MobileSocialSimulatorProvisioner(
+            contract,
+            overlay_path=path,
+            station_profiles={
+                "station-primary": "profile-primary",
+                "station-secondary": "profile-secondary",
+            },
+        )
+        evidence = FakeEvidenceRun()
+        provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
+        bindings = resolve_mobile_service_bindings(
+            contract,
+            path,
+            environment={
+                "PT_MOBILE_STATION_PRIMARY_URL": (
+                    "https://station-primary.example"
+                ),
+                "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "deploy-primary",
+                "PT_MOBILE_STATION_SECONDARY_URL": (
+                    "https://station-secondary.example"
+                ),
+                "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
+                "PT_RELAY_URL": "https://relay.example",
+                "PT_RELAY_DEPLOY_ENV": "deploy-relay",
+                "PT_RELAY_HEALTH_URL": (
+                    "https://relay.example/sub-oss/healthz"
+                ),
+            },
+        )
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+                return_value={"validation": "current"},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "verify_reset_target",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "reset_fixture",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_actor_identity",
+                side_effect=lambda endpoint, _deployment, role: SimpleNamespace(
+                    role=role,
+                    account_ref=f"station-account:{role}@p.t",
+                    ptid=f"ptid:{role}",
+                    device_policy="single-active-session",
+                    display_name=f"Canonical {role.title()}",
+                    federated_handle=f"@{role}@station.example",
+                    home_station_peer_id=(
+                        "station-primary"
+                        if "primary" in endpoint
+                        else "station-secondary"
+                    ),
+                ),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_federation_contexts",
+                return_value=(
+                    "fed_chat_"
+                    + hashlib.sha256(
+                        b"station-primary\x00station-secondary"
+                    ).hexdigest()[:20]
+                ),
+            ),
+        ):
+            provisioner._prepare_actor_fixture(
+                "mobile-simulator-social-convergence-e2e",
+                bindings,
+                provisioner._load_overlay(),
+            )
+
+        bound_profiles = {
+            profile
+            for call_args in self.bound_reset_profiles.call_args_list
+            for profile in call_args.args[0]
+        }
+        self.assertEqual(
+            bound_profiles,
+            {"profile-primary", "profile-secondary"},
+        )
+
     def test_session_class_fixture_omits_unbound_federation_target(
         self,
     ) -> None:
@@ -2039,6 +2148,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         provisioner = ChatMixedNativeProvisioner(
             contract,
             overlay_path=path,
+            station_profiles={
+                "station-primary": "profile-primary",
+                "station-secondary": "profile-secondary",
+            },
         )
         evidence = FakeEvidenceRun()
         provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
