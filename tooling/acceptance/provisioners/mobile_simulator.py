@@ -10007,6 +10007,30 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
             self._appium_cleanup_registered = True
         return context
 
+    # Desktop bootstrap uses PT_PROFILE as a single storage path segment and
+    # rejects ids past this length; mirror the Rust boundary
+    # active_profile::MAX_PROFILE_LEN in
+    # apps/desktop/src-tauri/src/infrastructure/storage/active_profile.rs so
+    # every provisioned profile starts instead of panicking in bootstrap.
+    DESKTOP_PROFILE_ID_MAX_LEN = 64
+
+    @classmethod
+    def _desktop_profile_id(
+        cls, environment_id: str, run_id: str, client_id: str
+    ) -> str:
+        # The run id and client id already make the profile unique inside one
+        # sandboxed storage root, so when the environment prefix would
+        # overflow the native path-segment limit, bound the prefix and keep
+        # the identifying suffix intact. Ids that fit are returned unchanged.
+        suffix = f"-{run_id}-{client_id}"
+        prefix_budget = cls.DESKTOP_PROFILE_ID_MAX_LEN - len(suffix)
+        if prefix_budget <= 0:
+            raise ValueError(
+                "Desktop profile suffix alone exceeds the native "
+                f"{cls.DESKTOP_PROFILE_ID_MAX_LEN}-character limit: {suffix!r}"
+            )
+        return f"{environment_id[:prefix_budget]}{suffix}"
+
     def _desktop_clients(
         self,
         run_id: str,
@@ -10062,7 +10086,9 @@ class ChatMixedNativeProvisioner(_MobileTwoActorSimulatorProvisioner):
                 gateway_port=available_port(),
                 renderer_port=available_port(),
                 webdriver_port=available_port(),
-                profile=f"{self.environment_id}-{run_id}-{client.id}",
+                profile=self._desktop_profile_id(
+                    self.environment_id, run_id, client.id
+                ),
                 storage_root=str(runtime_root / client.id),
                 required_service_roles=client.required_service_roles,
                 service_bindings=client.service_bindings,

@@ -2848,6 +2848,67 @@ class MobileSimulatorContractTests(unittest.TestCase):
         self.assertFalse(hasattr(mobile_simulator_module, "_manifest_object"))
         self.assertFalse(hasattr(mobile_simulator_module, "AppiumSession"))
 
+    def test_desktop_profile_id_bounds_long_cross_station_environment(self) -> None:
+        # Regression: the 35-char cross-station environment id plus a 16-hex
+        # run id and the desktop client id produced a 66-char profile that
+        # native bootstrap rejected (active_profile::MAX_PROFILE_LEN = 64).
+        environment_id = (
+            mobile_simulator_module.SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID
+        )
+        run_id = "0a94dfce3b01c1df"
+        profile = mobile_simulator_module.ChatMixedNativeProvisioner._desktop_profile_id(
+            environment_id, run_id, "desktop-alice"
+        )
+
+        # Only the environment prefix is bounded; the run id and client id
+        # carry per-run uniqueness and survive whole.
+        self.assertEqual(
+            profile,
+            "social-cross-station-mobile-deskt"
+            "-0a94dfce3b01c1df-desktop-alice",
+        )
+        self.assertEqual(
+            len(profile),
+            mobile_simulator_module.ChatMixedNativeProvisioner.DESKTOP_PROFILE_ID_MAX_LEN,
+        )
+        self.assertTrue(
+            all(char.isalnum() or char in "-_." for char in profile),
+            profile,
+        )
+        self.assertTrue(profile.endswith(f"-{run_id}-desktop-alice"))
+
+    def test_desktop_profile_id_is_unchanged_when_it_fits(self) -> None:
+        profile = mobile_simulator_module.ChatMixedNativeProvisioner._desktop_profile_id(
+            "chat-mixed-native", "0a94dfce3b01c1df", "desktop-bob"
+        )
+        self.assertEqual(
+            profile, "chat-mixed-native-0a94dfce3b01c1df-desktop-bob"
+        )
+        self.assertLessEqual(
+            len(profile),
+            mobile_simulator_module.ChatMixedNativeProvisioner.DESKTOP_PROFILE_ID_MAX_LEN,
+        )
+
+    def test_desktop_profile_id_remains_distinct_per_client(self) -> None:
+        environment_id = (
+            mobile_simulator_module.SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID
+        )
+        run_id = "0a94dfce3b01c1df"
+        builder = mobile_simulator_module.ChatMixedNativeProvisioner._desktop_profile_id
+        profiles = {
+            builder(environment_id, run_id, client_id)
+            for client_id in ("desktop-alice", "desktop-bob")
+        }
+        self.assertEqual(len(profiles), 2)
+
+    def test_desktop_profile_id_rejects_suffix_that_overflows_limit(self) -> None:
+        # A 60-char run id makes the suffix alone longer than the 64-char
+        # boundary, so no prefix truncation can produce a valid profile.
+        with self.assertRaises(ValueError):
+            mobile_simulator_module.ChatMixedNativeProvisioner._desktop_profile_id(
+                "env", "a" * 60, "desktop-alice"
+            )
+
 
 class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
     def test_lifecycle_projector_keeps_scope_and_digests_nested_device_ids(
