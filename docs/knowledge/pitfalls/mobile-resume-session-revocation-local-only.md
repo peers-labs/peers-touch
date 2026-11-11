@@ -1,6 +1,6 @@
 ---
 kind: pitfall
-title: Resume restores the session locally and cannot detect same-account replacement without a refresh
+title: AS-04 cross-installation revocation assertion conflicts with the SAL-D12 per-device session contract
 status: active
 owns:
   - apps/mobile/src/runtimes/sessionRuntime.ts
@@ -14,12 +14,44 @@ related:
 detected: 2026-11-11
 ---
 
-# Resume restores the session locally and cannot detect same-account replacement without a refresh
+# AS-04 cross-installation revocation assertion conflicts with the SAL-D12 per-device session contract
+
+## Executive summary
+
+The Gate failure is not a client or Station bug. It is a contract mismatch
+between an acceptance Gate written before the per-device session decision and
+the architecture that is now accepted and implemented:
+
+- **Accepted architecture (SAL-D12, 2026-10-27):** the Station session slot is
+  `(station_peer_id, actor, device_id)`. Re-authenticating on the **same
+  installation** atomically revokes only that installation's prior session;
+  **other installations stay active**, including multiple Mobile clients.
+  Actor-wide revocation on login is an explicitly rejected alternative.
+- **The Gate (`simulator_station_lifecycle_e2e.py`, logic last changed
+  2026-10-22):** launches two distinct simulator installations (different
+  `device_id`) and expects the peer's same-account login to revoke the primary
+  session. Under SAL-D12 that must not happen, so the primary correctly stays
+  in `shell` and `_wait_for_scope(_scope_is_cleared)` times out.
+
+Neither production workaround attempted earlier is valid:
+
+1. Actor-wide revocation on login is rejected by SAL-D12 because it breaks
+   Desktop+Mobile coexistence.
+2. Sharing one OAuth `device_id` across the two installs violates the
+   installation identity (`device_id` binds Messaging/OAuth/lifecycle) and
+   empirically crashes the peer `messaging` runtime with a forbidden key
+   rotation, failing the run before AS-04. That pin and the temporary Gate
+   diagnostics have been reverted.
+
+The correct closure is to **realign the AS-04 Gate to SAL-D12**, not to change
+Station revocation semantics. See
+[Resolution: realign the Gate to SAL-D12](#resolution-realign-the-gate-to-sal-d12).
 
 ## Symptom
 
 `mobile-simulator-station-lifecycle-e2e` fails consistently at the AS-04
-same-account revocation step after the peer simulator replaces the session:
+same-account revocation step after the peer simulator authenticates as the
+same actor:
 
 ```
 sim-ios lifecycle scope did not converge: launchState='shell'
@@ -30,6 +62,22 @@ and exposing the Access Gate it stays in the authenticated `shell` launch
 state past the 30s convergence timeout.
 
 ## Root cause
+
+There are two distinct layers. Only the second is the reason the two-simulator
+Gate cannot pass, and it is an acceptance-contract mismatch, not a code defect.
+
+1. **Resume was local-only (client layer, already fixed).** Even when a
+   session really is revoked, a suspended/resumed app would not notice without
+   a Station round trip. The resume revalidation described below closes this
+   layer for the legitimate same-device `kicked` case.
+2. **The Gate expects cross-installation revocation that SAL-D12 forbids
+   (contract layer, still open).** The peer simulator is a different
+   installation with a different `device_id`; per SAL-D12 its login must not
+   revoke the primary. No amount of client revalidation can observe a
+   revocation the Station is contractually required not to emit. This is the
+   blocker and needs a Gate realignment, not a production change.
+
+### Layer 1 — the local-only resume chain
 
 The resume chain is deliberately local-only:
 
@@ -54,9 +102,9 @@ presentation or identity-projection change in the peers-ui work touches it.
 
 ## Resolution (implemented): revalidate on resume, keep restore local-only
 
-Option 1 below is the shipped contract. The revalidation lives in the Session
-runtime **descriptor** `resume()` path, never inside the controller
-`restore()` whose local-only unit contract is unchanged.
+The revalidation lives in the Session runtime **descriptor** `resume()` path,
+never inside the controller `restore()` whose local-only unit contract is
+unchanged.
 
 `createSessionRuntimeDescriptor().resume()` first awaits the storage-only
 `restoreOwnedSession()`, then fires `revalidateResumedSession()` without
@@ -108,8 +156,8 @@ is RESUMING.
 
 ## Decision context
 
-Closing AS-04 needed an explicit product/security choice. The alternatives
-considered were:
+The resume-time revalidation was an explicit product/security choice. The
+alternatives considered were:
 
 1. **Revalidate on resume (selected)** — after local restore, issue a
    `refresh()` when a session is active. Terminal 401 already revokes and
@@ -138,33 +186,90 @@ station-secondary=chat-native-four`, ~10 minutes, 310s route-expiry wait).
   stay read-only, while any new revalidation belongs in the runtime
   descriptor `resume()` path or the refresh scheduler, not inside `restore()`.
 
-## Cross-installation revocation scope (gate blocker, 2026-11)
+## Layer 2 — the Gate contradicts SAL-D12 (the real blocker)
 
-The two simulator clients do **not** share an OAuth `device_id`. The
-acceptance fixture only presets the shared crypto identity seed
-(`mobile-crypto-identity.*` via `acceptance_replace_identity_seed`); the OAuth
-installation id (`oauth.device.id`, read in
-`runtime/oauth/mod.rs::load_or_create_identity`) is generated randomly per
-install and is never seeded by the harness. Station-side replacement
-revocation (`RevokeReplacedDeviceSessions`,
-`frame/core/facility/session/db_store.rs`) is scoped to
-`user_id + station_peer_id + device_id` and "replaces only sessions bound to
-the same Station and installation".
+### Authoritative contract
 
-Consequence: a same-account login on the peer simulator (a distinct
-installation) does not mark the primary simulator's session `revoked`, so a
-resume-time `oauth_session_refresh` (rotate) returns success, not 401. The
-client-side revalidation implemented here is correct for the same-installation
-case (covered by the real-kernel integration test), but it cannot observe a
-cross-installation takeover while revocation remains per-device. Closing the
-two-simulator AS-04 gate therefore needs one of:
+SAL-D12 ("按 Station、Actor 与设备原子替换 Session", accepted 2026-10-27,
+`docs/architecture/platform/station/access/decisions.md`) defines the session
+concurrency slot as `station_peer_id + actor + device_id`:
 
-1. Station: actor-wide (cross-device) invalidation of the actor's other
-   sessions on same-account login, or
-2. A server-pushed revocation channel the mobile client observes, or
-3. The harness provisioning a shared `oauth.device.id` if the intent is a
-   same-installation replacement.
+- Same-device re-authentication or rotation atomically revokes only that
+  device's prior session (`revoked_reason = "kicked"`).
+- Other installations are excluded from the revoke set and stay active,
+  including multiple Mobile clients (`design.md §8 Device Session Slot`,
+  `data-model.md §7`, `acceptance-matrix.md` SAL-G08: "不同 device 可并存").
+- "每次登录撤销 actor 全部 Session" is an explicitly **rejected** alternative
+  because it breaks Desktop+Mobile coexistence. Any future device-count limit
+  must arrive through explicit policy, a device list and a revocation
+  confirmation (the SAL-D12 Reversal Trigger), never by reviving an implicit
+  unique index or widening the revoke set.
 
-This is an architectural/provisioning decision, not something additional
-client polling can resolve.
+The implementation matches the decision everywhere and is pinned by Go tests:
 
+- `session.RevokeReplacedDeviceSessions` and the locked helper revoke only rows
+  matching `user_id + station_peer_id + device_id`
+  (`frame/core/facility/session/db_store.go`).
+- `Takeover` preserves the previous session's `device_id` and then runs the same
+  per-device replacement; the Access Gate finalizer does likewise
+  (`frame/touch/accessgate/session_finalizer.go`). There is no actor-wide revoke
+  path.
+- `TestRevokeReplacedAccessGateSessionsRevokesSameDeviceAndPreservesOtherDevices`
+  asserts another device's session for the same actor is preserved.
+
+### Why the Gate fails
+
+The Gate was last substantively changed on 2026-10-22, before SAL-D12. It
+authenticates the same actor on a second simulator installation and records
+`same-account-session-replaced`, then suspends/resumes the primary and expects
+`revoked-session-cleared`. Because the two installs present different
+`device_id` values, SAL-D12 requires the primary to remain valid. Empirical
+runs confirm this:
+
+- Pre-pin run: primary `device_id` `4wHyfXJe…`, peer `4pzhOoxl…`; after peer
+  login both read `launchState = shell`, so `_wait_for_scope(_scope_is_cleared)`
+  times out. This is correct Station behavior.
+- All 18 historical PROVEN runs predate SAL-D12 (newest 2026-10-12), so they
+  encode the older per-class mutual-exclusion contract, not the current
+  per-device slot.
+
+### Why both attempted workarounds are invalid
+
+1. **Actor-wide revocation on login** — rejected by SAL-D12 and would break the
+   multi-device product contract and its Go tests. Not available without a new,
+   explicitly accepted policy decision.
+2. **Sharing one OAuth `device_id` across installs** — `device_id` identifies
+   the installation and binds the Messaging signing enrollment, OAuth and
+   lifecycle. The Messaging engine enforces one enrollment per
+   `(actor_ptid, device_id)` and forbids key rotation
+   (`apps/mobile/src-tauri/src/messaging/engine.rs`). A pinned shared id made the
+   peer `messaging` runtime fail (`mobile.lifecycle.runtimeFailed:messaging` and
+   dependents) before AS-04 ran. The acceptance pin and the temporary Gate
+   diagnostics were reverted; production keeps random per-install ids.
+
+## Resolution: realign the Gate to SAL-D12
+
+The Station and client behavior already conform to the accepted architecture,
+so no production revocation change is warranted. The AS-04 Gate must be
+realigned to prove the per-device contract instead of cross-device eviction:
+
+1. **Multi-device coexistence.** After the peer (a different `device_id`) logs
+   in as the same actor, assert the primary remains authenticated
+   (`launchState = shell`, same actor/Station) rather than expecting it to be
+   cleared. This mirrors SAL-G08 and the Go preservation test.
+2. **Same-device replacement.** Prove the `kicked` path using one installation
+   slot: re-authenticate the same client (same `device_id`), which atomically
+   revokes that installation's prior session; then suspend/resume and confirm
+   the resume revalidation gets a terminal 401, clears the scope and reaches the
+   Access Gate. This is exactly the behavior the shipped resume revalidation
+   already implements and tests. No cross-install id sharing is involved.
+3. **Independent revocation.** Keep the existing Station-switch and logout
+   assertions, which revoke only the acting device's session.
+
+This changes what the acceptance Gate proves and therefore requires an explicit
+product/acceptance decision before the Gate assertions and its proof-scope
+strings (`gates/mobile/README.md §9.4`, `gates.yaml`,
+`environments/mobile-station-lifecycle-simulator.yaml`,
+`provisioners/mobile_simulator.py`) are edited. The client resume revalidation
+work is retained regardless, because same-device `kicked` detection is still a
+real requirement.
