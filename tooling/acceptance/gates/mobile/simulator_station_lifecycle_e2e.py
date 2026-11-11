@@ -99,6 +99,21 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             try:
                 binding = self.binding_factory()
                 journey_result = self._run_journey(binding)
+                assertions = self._assertions_from_lifecycle_evidence(
+                    journey_result,
+                    result,
+                )
+                failed_assertions = [
+                    item["name"]
+                    for item in assertions
+                    if not item["passed"]
+                ]
+                if failed_assertions:
+                    raise GateError(
+                        "Mobile lifecycle evidence assertions failed: "
+                        + ", ".join(failed_assertions)
+                    )
+                journey_result["assertions"] = assertions
                 status = "PASS"
                 if self.route_expiry_wait_seconds:
                     completion_status = "DONE"
@@ -859,6 +874,146 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 }
             )
         return "; ".join(failures) if failures else None
+
+    def _assertions_from_lifecycle_evidence(
+        self,
+        journey: Mapping[str, Any],
+        report_base: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Build explicit, evidence-derived assertions for the proof contract.
+
+        Each predicate restates an observation already enforced while the
+        lifecycle journey ran (valid-session restore, SAL-D12 multi-device
+        coexistence on distinct device ids, resume revalidation preserving the
+        primary, confirmed device-scoped revocation on every Station switch with
+        monotonic generations, logout teardown, closed binding proofs). Core
+        proof never accepts the PASS label alone, so a missing observation
+        surfaces as ``passed: False`` and the caller fails closed before sealing
+        the report.
+        """
+        events_by_name: dict[str, list[dict[str, Any]]] = {}
+        for event in self.events:
+            events_by_name.setdefault(
+                str(event.get("event")),
+                [],
+            ).append(event)
+
+        def has_event(name: str) -> bool:
+            return bool(events_by_name.get(name))
+
+        coexistence_events = events_by_name.get(
+            "same-account-multi-device-coexistence",
+            [],
+        )
+        coexistence = (
+            coexistence_events[0] if coexistence_events else {}
+        )
+        distinct_device_ids = (
+            isinstance(coexistence.get("primaryDeviceId"), str)
+            and isinstance(coexistence.get("peerDeviceId"), str)
+            and bool(coexistence.get("primaryDeviceId"))
+            and coexistence.get("primaryDeviceId")
+            != coexistence.get("peerDeviceId")
+        )
+
+        switch_events = events_by_name.get("binding-selected", [])[
+            -SWITCH_COUNT:
+        ]
+        switch_generations = [
+            int(event["lifecycleGeneration"])
+            for event in switch_events
+            if isinstance(event.get("lifecycleGeneration"), int)
+        ]
+        monotonic_generations = (
+            len(switch_generations) == SWITCH_COUNT
+            and all(
+                later > earlier
+                for earlier, later in zip(
+                    switch_generations,
+                    switch_generations[1:],
+                )
+            )
+        )
+        switches = journey.get("switches")
+        binding_proofs_closed = (
+            isinstance(switches, list)
+            and len(switches) == SWITCH_COUNT
+            and all(
+                isinstance(item, Mapping)
+                and isinstance(item.get("bindingProof"), Mapping)
+                and bool(item.get("bindingProof"))
+                and item.get("remoteRevocation") == "confirmed"
+                for item in switches
+            )
+        )
+
+        assertions: list[dict[str, Any]] = [
+            {
+                "name": "lifecycle:valid-session-restored-after-restart",
+                "passed": has_event("valid-session-restored"),
+            },
+            {
+                "name": (
+                    "lifecycle:same-account-multi-device-coexistence-"
+                    "distinct-device-ids"
+                ),
+                "passed": has_event(
+                    "same-account-multi-device-coexistence"
+                )
+                and distinct_device_ids,
+            },
+            {
+                "name": (
+                    "lifecycle:primary-session-preserved-through-resume-"
+                    "revalidation"
+                ),
+                "passed": has_event(
+                    "same-account-session-preserved-after-resume"
+                ),
+            },
+            {
+                "name": (
+                    "lifecycle:station-switch-remote-revocation-confirmed"
+                ),
+                "passed": len(switch_events) == SWITCH_COUNT
+                and all(
+                    event.get("remoteRevocation") == "confirmed"
+                    for event in switch_events
+                ),
+            },
+            {
+                "name": "lifecycle:switch-generations-strictly-monotonic",
+                "passed": monotonic_generations,
+            },
+            {
+                "name": "lifecycle:binding-proof-closure-on-every-switch",
+                "passed": binding_proofs_closed,
+            },
+            {
+                "name": "lifecycle:logout-cleared-session-and-scope",
+                "passed": has_event("logout-cleared"),
+            },
+            {
+                "name": "lifecycle:production-actions-without-station-mocks",
+                "passed": report_base.get("stationMocksUsed") is False,
+            },
+            {
+                "name": "lifecycle:simulator-does-not-claim-physical-device",
+                "passed": report_base.get("physicalDeviceClaimed") is False,
+            },
+        ]
+        if self.route_expiry_wait_seconds:
+            assertions.append(
+                {
+                    "name": (
+                        "lifecycle:expired-route-same-session-resumed"
+                    ),
+                    "passed": has_event(
+                        "expired-route-resumed-with-same-session"
+                    ),
+                }
+            )
+        return assertions
 
     def _result_base(self, status: str) -> dict[str, Any]:
         observed_scope = list(PROVEN_SCOPE)
