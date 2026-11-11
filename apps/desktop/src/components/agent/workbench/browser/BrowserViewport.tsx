@@ -1,5 +1,4 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type WheelEvent as ReactWheelEvent } from 'react';
-import { theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import { useBrowserSessionsStore, type BrowserFrameView } from '../../../../store/browserSessions';
@@ -49,7 +48,6 @@ interface BrowserViewportProps {
 // Live view of the remote Page: screencast frame + raw input bridge. This is
 // intentionally browser-chrome-free — tab strip and navigation live above.
 export function BrowserViewport({ sessionId, tabId, frame }: BrowserViewportProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const containerRef = useRef<HTMLDivElement>(null);
   const startStream = useBrowserSessionsStore((state) => state.startStream);
@@ -170,7 +168,7 @@ export function BrowserViewport({ sessionId, tabId, frame }: BrowserViewportProp
         minHeight: 0,
         position: 'relative',
         overflow: 'hidden',
-        background: token.colorBgContainer,
+        background: 'var(--pt-surface)',
         cursor: 'default',
         outline: 'none',
       }}
@@ -190,17 +188,7 @@ export function BrowserViewport({ sessionId, tabId, frame }: BrowserViewportProp
           style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }}
         />
       ) : (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: token.colorTextTertiary,
-            fontSize: 12,
-          }}
-        >
+        <div className="wb-browser__connecting">
           {t('chat.browser.connecting')}
         </div>
       )}

@@ -4,8 +4,8 @@
  *
  *  0. Activate a local project directory; opening the tab auto-starts an
  *     interactive shell pinned inside that root (zero-form entry).
- *  1. Start a long-running service inside the same root via the "+" custom
- *     command entry.
+ *  1. Run a long-running service inside that same shell by typing into the
+ *     terminal like a normal console (there is no custom-command launch form).
  *  2. Reach it over HTTP from the cell.
  *  3. Close the workbench viewer; the process stays alive.
  *  4. Reopen and reattach: the same session tab is still running.
@@ -90,26 +90,6 @@ const poll = async <T>(page: TauriPage, fn: string, timeoutMs = 120_000, tickMs 
   throw new Error(`poll timeout (${timeoutMs}ms) ${fn.slice(0, 160)} last=${last}`);
 };
 
-async function setValue(page: TauriPage, selector: string, value: string) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await page.evaluate(`(() => {
-          const el = document.querySelector(${JSON.stringify(selector)});
-          if (!el) throw new Error('missing ' + ${JSON.stringify(selector)});
-          const proto = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value');
-          if (proto && proto.set) proto.set.call(el, ${JSON.stringify(value)});
-          else el.value = ${JSON.stringify(value)};
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        })()`);
-      return;
-    } catch (error) {
-      if (attempt === 2) throw error;
-      await sleep(10_000);
-    }
-  }
-}
-
 test('shell tabs stay alive when the viewer closes; closing a tab tears the process down', async ({ tauriPage: page }) => {
   for (let i = 0; i < 30; i += 1) {
     if ((await page.evaluate(`document.querySelectorAll('[data-pt-primary-nav]').length`)) as number > 0) break;
@@ -190,30 +170,18 @@ test('shell tabs stay alive when the viewer closes; closing a tab tears the proc
   const marker = `d5${Date.now().toString(36).slice(-6)}`;
   const url = `http://127.0.0.1:${port}/`;
 
-  // Custom commands live behind the tab-strip "+" menu.
-  await page.click('[data-pt-terminal-add]');
-  await poll(page, `!!document.querySelector('[data-pt-terminal-custom-toggle]')`, 5_000);
-  await page.click('[data-pt-terminal-custom-toggle]');
-  await poll(page, `!!document.querySelector('[data-pt-terminal-command]')`, 5_000);
-  await setValue(page, '[data-pt-terminal-command]', 'sh');
-  await setValue(
-    page,
-    '[data-pt-terminal-args]',
-    `-c "mkdir -p ${marker} && cd ${marker} && echo ${url} && exec python3 -m http.server ${port}"`,
+  // Zero-form surface: the service is typed straight into the auto-started
+  // shell, the same way a human runs a command. There is no launch form or
+  // second session, so the service replaces the shell inside the same tab.
+  const sessionId = autoShellId;
+  await page.click('[data-pt-terminal-xterm]');
+  await page.keyboard.type(
+    `mkdir -p ${marker} && cd ${marker} && echo ${url} && exec python3 -m http.server ${port}`,
+    { delay: 5 },
   );
-  await page.click('[data-pt-terminal-start]');
+  await page.keyboard.press('Enter');
 
-  // ── The service gets its own shell tab, distinct from the auto shell ──
-  const sessionId = await poll(
-    page,
-    `(() => {
-      const tabs = Array.from(document.querySelectorAll('[data-pt-terminal-session][data-pt-terminal-status="running"]'));
-      const next = tabs.find((tab) => tab.getAttribute('data-pt-terminal-session') !== ${JSON.stringify(autoShellId)});
-      return next ? next.getAttribute('data-pt-terminal-session') : null;
-    })()`,
-    30_000,
-  ) as string;
-
+  // The service now owns the auto-started session tab.
   // ── The service really serves from the device, pinned to the project ──
   const httpStatus = await nodePoll(
     () => {
@@ -282,7 +250,7 @@ test('shell tabs stay alive when the viewer closes; closing a tab tears the proc
   const conversationBound = await psql(
     `SELECT count(*) FROM agent_terminal_sessions s
        JOIN agent_conversations c ON c.id = s.conversation_id
-      WHERE s.id='${sessionId}' AND s.command='sh'`,
+      WHERE s.id='${sessionId}'`,
   );
   expect(conversationBound).toBe('1');
 
@@ -309,21 +277,6 @@ test('shell tabs stay alive when the viewer closes; closing a tab tears the proc
   expect(serviceDown).toBe(true);
   const removed = await psql(`SELECT count(*) FROM agent_terminal_sessions WHERE id='${sessionId}'`);
   expect(removed).toBe('0');
-
-  // ── Close the auto-started shell tab so the cell keeps no stray PTY ───
-  await page.evaluate(`(() => {
-      const close = document.querySelector('[data-pt-terminal-close="${autoShellId}"]');
-      if (close) (close.closest('button') || close).click();
-    })()`);
-  await poll(
-    page,
-    `!document.querySelector('[data-pt-terminal-session="${autoShellId}"]')`,
-    15_000,
-  );
-  const autoRemoved = await psql(
-    `SELECT count(*) FROM agent_terminal_sessions WHERE id='${autoShellId}'`,
-  );
-  expect(autoRemoved).toBe('0');
 
   // ── Restore the task workspace to the remote-sandbox default ──────────
   await page.evaluate(`(() => window.__TAURI_INTERNALS__.invoke('agent_workspace_activate', { input: { locator: null } }))()`);

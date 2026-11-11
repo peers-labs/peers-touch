@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X } from 'lucide-react';
-import { Dropdown, Input, theme } from 'antd';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { useTranslation } from 'react-i18next';
+import { Button, IconButton } from '@peers-touch/ui';
 import '@xterm/xterm/css/xterm.css';
 
 import { api } from '../../../../services/desktop_api';
@@ -15,36 +14,10 @@ import {
   type TerminalPlacementInfo,
   type TerminalSessionView,
 } from '../../../../store/terminalSessions';
+import { DARK_TERMINAL_THEME, TERMINAL_FONT_FAMILY } from './terminalTheme';
+import './terminal.css';
 
 const EMPTY_SESSIONS: TerminalSessionView[] = [];
-
-// Minimal shell-style tokenizer: honors single/double quoted segments so
-// `sh -c "echo URL; exec python3 -m http.server 8080"` keeps one -c argument.
-function tokenizeArgs(input: string): string[] {
-  const tokens: string[] = [];
-  let current = '';
-  let quote: '' | '"' | "'" = '';
-  for (const char of input) {
-    if (quote) {
-      if (char === quote) {
-        quote = '';
-      } else {
-        current += char;
-      }
-    } else if (char === '"' || char === "'") {
-      quote = char;
-    } else if (/\s/.test(char)) {
-      if (current) {
-        tokens.push(current);
-        current = '';
-      }
-    } else {
-      current += char;
-    }
-  }
-  if (current) tokens.push(current);
-  return tokens;
-}
 
 function shellLabel(command: string): string {
   const base = command.split('/').filter(Boolean).pop() ?? command;
@@ -52,7 +25,6 @@ function shellLabel(command: string): string {
 }
 
 function TerminalViewer({ session }: { session: TerminalSessionView }) {
-  const { token } = theme.useToken();
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const attachOutput = useTerminalSessionsStore((state) => state.attachOutput);
@@ -65,11 +37,15 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
+    // The shell is a console surface: it always renders the dark terminal
+    // palette instead of inheriting the app's light surface tokens.
     const xterm = new Terminal({
-      fontSize: 12,
+      fontSize: 13,
       scrollback: 5000,
       convertEol: true,
-      theme: { background: token.colorBgSpotlight },
+      cursorBlink: true,
+      fontFamily: TERMINAL_FONT_FAMILY,
+      theme: DARK_TERMINAL_THEME,
     });
     const fit = new FitAddon();
     xterm.loadAddon(fit);
@@ -123,15 +99,15 @@ function TerminalViewer({ session }: { session: TerminalSessionView }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
 
-  return <div ref={containerRef} data-pt-terminal-xterm style={{ flex: 1, minHeight: 0, borderRadius: 6, overflow: 'hidden' }} />;
+  return <div ref={containerRef} data-pt-terminal-xterm className="wb-term__xterm" />;
 }
 
-// Trae-style work surface: a shell tab strip plus the live shell. Placement
-// (local project vs remote sandbox) is decided by the task workspace and is
-// only surfaced as a tooltip, never as a management console.
-export function TerminalPanel() {
+// Zero-form work surface: opening the Terminal tab auto-starts one
+// interactive shell inside the task's resolved workspace (project grant or
+// sandbox). The strip only switches/closes live shells; starting a custom
+// command is just typing into the shell, so no launch form is offered.
+export function TerminalPanel({ autoError = '' }: { autoError?: string }) {
   const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
   const conversationId = useChatStore((state) => state.currentSessionKey);
   const sessions = useTerminalSessionsStore((state) =>
     conversationId ? state.sessionsByConversation[conversationId] ?? EMPTY_SESSIONS : EMPTY_SESSIONS,
@@ -142,18 +118,8 @@ export function TerminalPanel() {
   const selectSession = useTerminalSessionsStore((state) => state.selectSession);
   const killSession = useTerminalSessionsStore((state) => state.killSession);
   const removeSession = useTerminalSessionsStore((state) => state.removeSession);
-  const openShell = useTerminalSessionsStore((state) => state.openShell);
   const creating = useTerminalSessionsStore((state) => state.creating);
-  const [deviceId, setDeviceId] = useState('');
   const [placement, setPlacement] = useState<TerminalPlacementInfo | null>(null);
-  const [showCustom, setShowCustom] = useState(false);
-  const [command, setCommand] = useState('');
-  const [args, setArgs] = useState('');
-  const [openError, setOpenError] = useState('');
-
-  useEffect(() => {
-    void api.accountGetDeviceId().then(({ device_id }) => setDeviceId(device_id));
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -183,31 +149,6 @@ export function TerminalPanel() {
 
   if (!conversationId) return null;
 
-  const startShell = async () => {
-    setOpenError('');
-    try {
-      await openShell(conversationId, deviceId);
-    } catch (error) {
-      setOpenError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const startCustom = async () => {
-    if (!command.trim()) return;
-    setOpenError('');
-    try {
-      await openShell(conversationId, deviceId, {
-        command: command.trim(),
-        args: tokenizeArgs(args),
-      });
-      setCommand('');
-      setArgs('');
-      setShowCustom(false);
-    } catch (error) {
-      setOpenError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
   const closeTab = async (session: TerminalSessionView, event: React.MouseEvent) => {
     event.stopPropagation();
     if (session.status === 'running') {
@@ -220,173 +161,56 @@ export function TerminalPanel() {
     ? `${placement.placement === 'desktop' ? t('chat.terminal.placement.desktop') : t('chat.terminal.placement.remote')} · ${placement.root || '—'}`
     : '';
 
-  const addMenuItems = [
-    {
-      key: 'new-shell',
-      label: (
-        <span data-pt-terminal-new-shell onClick={() => void startShell()}>
-          {t('chat.terminal.newShell')}
-        </span>
-      ),
-    },
-    {
-      key: 'custom',
-      label: (
-        <span data-pt-terminal-custom-toggle onClick={() => setShowCustom((value) => !value)}>
-          {t('chat.terminal.customCommand')}
-        </span>
-      ),
-    },
-  ];
-
   return (
-    <div
-      data-pt-terminal-panel
-      style={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        background: token.colorBgSpotlight,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          padding: '4px 6px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          flexShrink: 0,
-        }}
-      >
+    <div data-pt-terminal-panel className="wb-term">
+      <div className="wb-term__tabs">
         {tabs.map((session) => {
           const selected = session.sessionId === activeSessionId;
           const dead = session.status !== 'running';
           return (
             <div
               key={session.sessionId}
+              className="wb-term__tab"
               data-pt-terminal-session={session.sessionId}
               data-pt-terminal-status={session.status}
+              data-selected={selected}
               title={placementTitle}
-              onClick={() => selectSession(conversationId, session.sessionId)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '3px 8px',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontSize: 12,
-                color: selected ? token.colorText : token.colorTextSecondary,
-                background: selected ? token.colorFillTertiary : 'transparent',
-              }}
             >
-              <span data-pt-terminal-tab-name>{shellLabel(session.command)}</span>
-              {dead ? <span data-pt-terminal-exit-mark>×</span> : null}
-              <X
-                size={12}
+              <Button
+                actionId={`wb.terminal.select.${session.sessionId}`}
+                emphasis="quiet"
+                density="compact"
+                aria-current={selected ? 'page' : undefined}
+                onActivate={() => selectSession(conversationId, session.sessionId)}
+              >
+                <span data-pt-terminal-tab-name>{shellLabel(session.command)}</span>
+                {dead ? <span data-pt-terminal-exit-mark>×</span> : null}
+              </Button>
+              <IconButton
+                actionId={`wb.terminal.close.${session.sessionId}`}
+                iconId="close"
+                iconSize={12}
+                label={t('chat.terminal.panel.close')}
+                emphasis="quiet"
+                density="compact"
                 data-pt-terminal-close={session.sessionId}
-                onClick={(event) => void closeTab(session, event)}
-                style={{ opacity: 0.55 }}
+                onActivate={(event) => void closeTab(session, event)}
               />
             </div>
           );
         })}
-        <Dropdown menu={{ items: addMenuItems }} trigger={['click']} placement="bottomLeft">
-          <button
-            type="button"
-            aria-label={t('chat.terminal.newShell')}
-            data-pt-terminal-add
-            disabled={!deviceId || creating}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 24,
-              height: 24,
-              border: 'none',
-              borderRadius: 6,
-              background: 'transparent',
-              color: token.colorTextSecondary,
-              cursor: 'pointer',
-            }}
-          >
-            <Plus size={14} />
-          </button>
-        </Dropdown>
       </div>
-
-      {showCustom && (
-        <div
-          data-pt-terminal-start-form
-          style={{
-            display: 'flex',
-            gap: 6,
-            padding: '6px 8px',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            flexShrink: 0,
-          }}
-        >
-          <Input
-            size="small"
-            aria-label={t('chat.terminal.command')}
-            data-pt-terminal-command
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
-            style={{ width: 120 }}
-            placeholder={t('chat.terminal.command')}
-          />
-          <Input
-            size="small"
-            aria-label={t('chat.terminal.args')}
-            data-pt-terminal-args
-            value={args}
-            onChange={(event) => setArgs(event.target.value)}
-            style={{ flex: 1, minWidth: 0 }}
-            placeholder={t('chat.terminal.args')}
-          />
-          <button
-            type="button"
-            data-pt-terminal-start
-            disabled={!command.trim() || !deviceId}
-            onClick={() => void startCustom()}
-            style={{
-              border: 'none',
-              borderRadius: 6,
-              padding: '0 12px',
-              background: token.colorPrimary,
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: 12,
-            }}
-          >
-            {t('chat.terminal.start')}
-          </button>
-        </div>
-      )}
-
-      {openError && (
-        <div role="alert" data-pt-terminal-error style={{ color: token.colorErrorText, fontSize: 12, padding: '6px 10px' }}>
-          {t('chat.terminal.startFailed')}: {openError}
-        </div>
-      )}
 
       {activeSession ? (
         <TerminalViewer key={activeSession.sessionId} session={activeSession} />
       ) : (
-        <div
-          data-pt-terminal-empty
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: token.colorTextTertiary,
-            fontSize: 12,
-          }}
-        >
+        <div data-pt-terminal-empty className="wb-term__empty">
           {creating ? <span data-pt-terminal-starting>{t('chat.terminal.starting')}</span> : null}
+          {!creating && autoError ? (
+            <span role="alert" data-pt-terminal-error className="wb-term__error">
+              {t('chat.terminal.startFailed')}: {autoError}
+            </span>
+          ) : null}
         </div>
       )}
     </div>

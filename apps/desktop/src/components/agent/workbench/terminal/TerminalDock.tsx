@@ -15,6 +15,7 @@ export function TerminalDock() {
   const ensureAutoShell = useTerminalSessionsStore((state) => state.ensureAutoShell);
   const conversationId = useChatStore((state) => state.currentSessionKey);
   const [deviceId, setDeviceId] = useState('');
+  const [autoError, setAutoError] = useState('');
 
   useEffect(() => {
     void api.accountGetDeviceId().then(({ device_id }) => setDeviceId(device_id));
@@ -27,9 +28,16 @@ export function TerminalDock() {
     // has no terminal do we auto-open an interactive shell in its resolved
     // workspace (project grant or private sandbox).
     void (async () => {
+      setAutoError('');
       await initConversation(conversationId, deviceId).catch(() => undefined);
       if (cancelled) return;
-      await ensureAutoShell(conversationId, deviceId).catch(() => undefined);
+      try {
+        await ensureAutoShell(conversationId, deviceId);
+      } catch (error) {
+        if (!cancelled) {
+          setAutoError(error instanceof Error ? error.message : String(error));
+        }
+      }
     })();
     return () => {
       cancelled = true;
@@ -37,5 +45,5 @@ export function TerminalDock() {
   }, [active, conversationId, deviceId, ensureAutoShell, initConversation]);
 
   if (!conversationId || !active) return null;
-  return <TerminalPanel />;
+  return <TerminalPanel autoError={autoError} />;
 }

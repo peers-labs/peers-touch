@@ -146,6 +146,17 @@
   overflow-y: auto;
 }
 
+/* full-width rows would center the icon+label group and leave a hollow icon
+   column on the left; pin content to the start so the icon sits at the row's
+   left padding with the label immediately after its gap (menu-row parity). */
+.wb-shell-addmenu__list .pt-button {
+  justify-content: flex-start;
+}
+
+.wb-shell-addmenu__list .pt-button-content {
+  justify-content: flex-start;
+}
+
 .wb-shell-addmenu__empty {
   padding: var(--pt-space-sm);
   font-size: 12px;

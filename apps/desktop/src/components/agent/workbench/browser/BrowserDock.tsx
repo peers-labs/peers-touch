@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, Globe, Plus, RotateCw, X } from 'lucide-react';
-import { Input, theme } from 'antd';
+import { Button, Icon, IconButton, TextField } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 
 import { useChatStore } from '../../../../store/chat';
 import { resolveBrowserDeviceId, useBrowserSessionsStore } from '../../../../store/browserSessions';
 import { useWorkbenchTabsStore } from '../../../../store/workbenchTabs';
 import { BrowserViewport } from './BrowserViewport';
+import './browser.css';
 
 // TW-D6: entry for device-held browser sessions. The browser is a separate
 // real CDP host, never the HTML artifact reader. When no host binary is
@@ -60,6 +60,119 @@ function withScheme(url: string): string {
   return `http://${url}`;
 }
 
+// Conventional-browser navigation toolbar: back / forward / reload on the
+// left, the address field fills the remaining width, then Go. The same chrome
+// serves the start surface and live tabs, so the address bar never drops into
+// a centered modal form.
+function BrowserToolbar({
+  address,
+  placeholder,
+  goLabel,
+  addressAttr,
+  goAttr,
+  canNavigate,
+  canGoBack,
+  canGoForward,
+  onBack,
+  onForward,
+  onReload,
+  onSubmit,
+}: {
+  address: string;
+  placeholder: string;
+  goLabel: string;
+  addressAttr: string;
+  goAttr: string;
+  canNavigate: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onBack: () => void;
+  onForward: () => void;
+  onReload: () => void;
+  onSubmit: (value: string) => void;
+}) {
+  const { t } = useTranslation('chat');
+  const [draft, setDraft] = useState(address);
+  const [focused, setFocused] = useState(false);
+
+  // Keep the field in sync with the live tab url whenever the user is not
+  // editing it; while focused the draft owns the input.
+  useEffect(() => {
+    if (!focused) setDraft(address);
+  }, [address, focused]);
+
+  const submit = () => {
+    const target = draft.trim();
+    if (!target || target === 'https://') return;
+    onSubmit(target);
+    setFocused(false);
+  };
+
+  return (
+    <div className="wb-browser__toolbar">
+      <div className="wb-browser__nav">
+        <IconButton
+          actionId="wb.browser.back"
+          iconId="arrow-left"
+          iconSize={16}
+          label={t('chat.browser.back')}
+          emphasis="quiet"
+          data-pt-browser-back
+          availability={canGoBack ? undefined : { kind: 'disabled', reason: t('chat.browser.back') }}
+          onActivate={onBack}
+        />
+        <IconButton
+          actionId="wb.browser.forward"
+          iconId="arrow-right"
+          iconSize={16}
+          label={t('chat.browser.forward')}
+          emphasis="quiet"
+          data-pt-browser-forward
+          availability={canGoForward ? undefined : { kind: 'disabled', reason: t('chat.browser.forward') }}
+          onActivate={onForward}
+        />
+        <IconButton
+          actionId="wb.browser.reload"
+          iconId="refresh-cw"
+          iconSize={15}
+          label={t('chat.browser.reload')}
+          emphasis="quiet"
+          data-pt-browser-reload
+          availability={canNavigate ? undefined : { kind: 'disabled', reason: t('chat.browser.reload') }}
+          onActivate={onReload}
+        />
+      </div>
+      <TextField
+        className="wb-browser__address"
+        value={focused ? draft : address}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        {...{ [addressAttr]: '' }}
+        onFocus={() => {
+          setDraft(address);
+          setFocused(true);
+        }}
+        onBlur={() => {
+          setFocused(false);
+          setDraft(address);
+        }}
+        onValueChange={setDraft}
+        onEnter={submit}
+      />
+      <Button
+        actionId="wb.browser.go"
+        className="wb-browser__go"
+        emphasis="primary"
+        availability={canNavigate ? undefined : { kind: 'disabled', reason: goLabel }}
+        {...{ [goAttr]: '' }}
+        onActivate={submit}
+      >
+        {goLabel}
+      </Button>
+    </div>
+  );
+}
+
 export function BrowserPanel({
   conversationId,
   deviceId,
@@ -67,7 +180,6 @@ export function BrowserPanel({
   conversationId: string;
   deviceId: string;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const host = useBrowserSessionsStore((state) => state.host);
   const sessions = useBrowserSessionsStore((state) => state.sessionsByConversation[conversationId] ?? EMPTY_SESSIONS);
@@ -82,9 +194,6 @@ export function BrowserPanel({
   const history = useBrowserSessionsStore((state) => state.history);
   const frameByTab = useBrowserSessionsStore((state) => state.frameByTab);
 
-  const [startUrl, setStartUrl] = useState('https://');
-  const [addressDraft, setAddressDraft] = useState('');
-  const [addressFocused, setAddressFocused] = useState(false);
   const [error, setError] = useState('');
 
   const session = sessions.find((candidate) => candidate.sessionId === activeSessionId) ?? null;
@@ -93,7 +202,6 @@ export function BrowserPanel({
     ?? null;
   const frame = tab ? frameByTab[tab.tabId] ?? null : null;
   const isDraft = conversationId.startsWith('draft:');
-  const addressValue = addressFocused ? addressDraft : (tab?.url ?? '');
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setError('');
@@ -104,276 +212,126 @@ export function BrowserPanel({
     }
   };
 
-  const iconButtonStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 28,
-    height: 28,
-    border: 'none',
-    borderRadius: 6,
-    background: 'transparent',
-    color: token.colorTextSecondary,
-    cursor: 'pointer',
-    flexShrink: 0,
-  };
+  if (!host?.available) {
+    return (
+      <div data-pt-browser-panel className="wb-browser">
+        <div data-pt-browser-unavailable className="wb-browser__unavailable">
+          <Icon iconId="globe" size={28} className="wb-browser__unavailable-icon" />
+          <div className="wb-browser__unavailable-text">{t('chat.browser.unavailable')}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
-      data-pt-browser-panel
-      style={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        background: token.colorBgLayout,
-      }}
-    >
-      {!host?.available ? (
-        <div
-          data-pt-browser-unavailable
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 10,
-            padding: 24,
-            textAlign: 'center',
-          }}
-        >
-          <Globe size={28} strokeWidth={1.5} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
-          <div style={{ fontSize: 12, lineHeight: 1.6, color: token.colorTextTertiary, maxWidth: 240 }}>
-            {t('chat.browser.unavailable')}
-          </div>
-        </div>
-      ) : !session ? (
-        <div
-          data-pt-browser-start-form
-          style={{
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 24,
-          }}
-        >
-          <Input
-            data-pt-browser-start-url
-            size="large"
-            value={startUrl}
-            onChange={(event) => setStartUrl(event.target.value)}
-            placeholder="https://"
-            disabled={isDraft}
-            onPressEnter={() => {
-              if (!startUrl.trim() || startUrl === 'https://') return;
-              void run('start', async () => {
-                await createSession({
-                  conversationId,
-                  deviceId,
-                  initialUrl: withScheme(startUrl.trim()),
-                });
-              });
-            }}
+    <div data-pt-browser-panel className="wb-browser">
+      {session ? (
+        <div className="wb-browser__tabstrip">
+          {session.tabs.map((candidate) => {
+            const selected = candidate.tabId === tab?.tabId;
+            return (
+              <div
+                key={candidate.tabId}
+                className="wb-browser__tab"
+                data-pt-browser-tab={candidate.tabId}
+                data-selected={selected}
+                title={candidate.url}
+                onClick={() => selectTab(conversationId, candidate.tabId)}
+              >
+                <span className="wb-browser__tab-label">{tabLabel(candidate.url, candidate.title)}</span>
+                <IconButton
+                  actionId={`wb.browser.tab-close.${candidate.tabId}`}
+                  iconId="close"
+                  iconSize={12}
+                  label={`${tabLabel(candidate.url, candidate.title)} ×`}
+                  emphasis="quiet"
+                  density="compact"
+                  {...{ 'data-pt-browser-tab-close': candidate.tabId }}
+                  onActivate={(event) => {
+                    event.stopPropagation();
+                    void run('close-tab', async () => {
+                      const wasLast = session.tabs.length === 1;
+                      await closeTab(conversationId, candidate.tabId);
+                      if (wasLast) await removeSession(conversationId);
+                    });
+                  }}
+                />
+              </div>
+            );
+          })}
+          <IconButton
+            actionId="wb.browser.new-tab"
+            iconId="plus"
+            iconSize={14}
+            label={t('chat.browser.newTab')}
+            emphasis="quiet"
+            density="compact"
+            data-pt-browser-new-tab
+            onActivate={() => void run('new-tab', () => openTab(conversationId))}
           />
-          <button
-            type="button"
-            data-pt-browser-start
-            disabled={isDraft || !startUrl.trim() || startUrl === 'https://'}
-            onClick={() =>
+        </div>
+      ) : null}
+
+      {session && tab ? (
+        <BrowserToolbar
+          address={tab.url ?? ''}
+          placeholder={t('chat.browser.urlPlaceholder')}
+          goLabel={t('chat.browser.go')}
+          addressAttr="data-pt-browser-url"
+          goAttr="data-pt-browser-go"
+          canNavigate
+          canGoBack
+          canGoForward
+          onBack={() => void run('back', () => history(conversationId, tab.tabId, 'back'))}
+          onForward={() => void run('forward', () => history(conversationId, tab.tabId, 'forward'))}
+          onReload={() => void run('reload', () => history(conversationId, tab.tabId, 'reload'))}
+          onSubmit={(target) => void run('navigate', () => navigate(conversationId, tab.tabId, withScheme(target)))}
+        />
+      ) : (
+        <div data-pt-browser-start-form>
+          <BrowserToolbar
+            address="https://"
+            placeholder="https://"
+            goLabel={t('chat.browser.start')}
+            addressAttr="data-pt-browser-start-url"
+            goAttr="data-pt-browser-start"
+            canNavigate={!isDraft}
+            canGoBack={false}
+            canGoForward={false}
+            onBack={() => undefined}
+            onForward={() => undefined}
+            onReload={() => undefined}
+            onSubmit={(target) =>
               void run('start', async () => {
                 await createSession({
                   conversationId,
                   deviceId,
-                  initialUrl: withScheme(startUrl.trim()),
+                  initialUrl: withScheme(target),
                 });
               })
             }
-            style={{
-              border: 'none',
-              borderRadius: 8,
-              padding: '8px 24px',
-              background: token.colorPrimary,
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: 13,
-            }}
-          >
-            {t('chat.browser.start')}
-          </button>
+          />
+        </div>
+      )}
+
+      {error ? (
+        <div data-pt-browser-error className="wb-browser__error">
+          {error}
+        </div>
+      ) : null}
+
+      {session && tab ? (
+        <div className="wb-browser__viewport">
+          <BrowserViewport key={tab.tabId} sessionId={session.sessionId} tabId={tab.tabId} frame={frame} />
+        </div>
+      ) : (
+        <div className="wb-browser__start">
           {isDraft ? (
-            <div data-pt-browser-start-hint style={{ fontSize: 11, color: token.colorTextTertiary }}>
+            <div data-pt-browser-start-hint className="wb-browser__start-hint">
               {t('chat.browser.start.draftHint')}
             </div>
           ) : null}
         </div>
-      ) : (
-        <>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 2,
-              padding: '4px 6px 0',
-              flexShrink: 0,
-            }}
-          >
-            {session.tabs.map((candidate) => {
-              const selected = candidate.tabId === tab?.tabId;
-              return (
-                <div
-                  key={candidate.tabId}
-                  data-pt-browser-tab={candidate.tabId}
-                  onClick={() => selectTab(conversationId, candidate.tabId)}
-                  title={candidate.url}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    maxWidth: 180,
-                    padding: '4px 8px',
-                    borderRadius: '8px 8px 0 0',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                    color: selected ? token.colorText : token.colorTextSecondary,
-                    background: selected ? token.colorBgContainer : 'transparent',
-                  }}
-                >
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {tabLabel(candidate.url, candidate.title)}
-                  </span>
-                  <X
-                    size={12}
-                    data-pt-browser-tab-close={candidate.tabId}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void run('close-tab', async () => {
-                        const wasLast = session.tabs.length === 1;
-                        await closeTab(conversationId, candidate.tabId);
-                        if (wasLast) await removeSession(conversationId);
-                      });
-                    }}
-                    style={{ opacity: 0.55, flexShrink: 0 }}
-                  />
-                </div>
-              );
-            })}
-            <button
-              type="button"
-              aria-label={t('chat.browser.newTab')}
-              data-pt-browser-new-tab
-              onClick={() => void run('new-tab', () => openTab(conversationId))}
-              style={{ ...iconButtonStyle, width: 26, height: 26 }}
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '6px 8px',
-              background: token.colorBgContainer,
-              flexShrink: 0,
-            }}
-          >
-            <button
-              type="button"
-              aria-label={t('chat.browser.back')}
-              data-pt-browser-back
-              style={iconButtonStyle}
-              onClick={() => tab && void run('back', () => history(conversationId, tab.tabId, 'back'))}
-            >
-              <ArrowLeft size={16} />
-            </button>
-            <button
-              type="button"
-              aria-label={t('chat.browser.forward')}
-              data-pt-browser-forward
-              style={iconButtonStyle}
-              onClick={() => tab && void run('forward', () => history(conversationId, tab.tabId, 'forward'))}
-            >
-              <ArrowRight size={16} />
-            </button>
-            <button
-              type="button"
-              aria-label={t('chat.browser.reload')}
-              data-pt-browser-reload
-              style={iconButtonStyle}
-              onClick={() => tab && void run('reload', () => history(conversationId, tab.tabId, 'reload'))}
-            >
-              <RotateCw size={15} />
-            </button>
-            <Input
-              data-pt-browser-url
-              value={addressValue}
-              onChange={(event) => setAddressDraft(event.target.value)}
-              onFocus={(event) => {
-                setAddressFocused(true);
-                setAddressDraft(event.target.value);
-              }}
-              onBlur={() => {
-                setAddressFocused(false);
-                setAddressDraft('');
-              }}
-              placeholder={t('chat.browser.urlPlaceholder')}
-              onPressEnter={(event) => {
-                const target = (event.target as HTMLInputElement).value.trim();
-                if (!tab || !target) return;
-                void run('navigate', async () => {
-                  await navigate(conversationId, tab.tabId, withScheme(target));
-                  setAddressFocused(false);
-                  setAddressDraft('');
-                });
-              }}
-            />
-            <button
-              type="button"
-              data-pt-browser-go
-              style={{
-                border: 'none',
-                borderRadius: 6,
-                padding: '0 14px',
-                height: 28,
-                background: token.colorPrimary,
-                color: '#fff',
-                cursor: 'pointer',
-                fontSize: 12,
-                flexShrink: 0,
-              }}
-              onClick={() => {
-                if (!tab) return;
-                const target = (addressDraft || tab.url || '').trim();
-                if (!target) return;
-                void run('navigate', () => navigate(conversationId, tab.tabId, withScheme(target)));
-              }}
-            >
-              {t('chat.browser.go')}
-            </button>
-          </div>
-
-          {error ? (
-            <div data-pt-browser-error style={{ fontSize: 12, color: token.colorError, padding: '4px 10px', flexShrink: 0 }}>
-              {error}
-            </div>
-          ) : null}
-
-          {tab ? (
-            <BrowserViewport key={tab.tabId} sessionId={session.sessionId} tabId={tab.tabId} frame={frame} />
-          ) : null}
-        </>
       )}
     </div>
   );

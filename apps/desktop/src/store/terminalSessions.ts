@@ -694,11 +694,13 @@ export const useTerminalSessionsStore = create<TerminalSessionState>()((set, get
       if (hasLiveShell(get().sessionsByConversation[conversationId])) return;
       await get().openShell(conversationId, deviceId);
     } catch (error) {
-      // The panel surfaces the placement failure explicitly.
+      // Keep the log for diagnostics, then rethrow so the panel can surface
+      // the concrete reason instead of failing silently on an empty surface.
       log.warn('terminal', 'auto shell provision failed', {
         conversationId,
         error: error instanceof Error ? error.message : String(error),
       });
+      throw error;
     } finally {
       autoShellInFlight.delete(conversationId);
     }
