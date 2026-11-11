@@ -62,15 +62,35 @@ export async function describeTerminalPlacement(): Promise<TerminalPlacementInfo
       available: true,
     };
   }
-  const sandboxes = await terminalResolveActiveSandboxes();
-  const usable = sandboxes.find((item) => item.usable);
+  // A Station-provisioned remote sandbox wins when one is actually usable.
+  try {
+    const sandboxes = await terminalResolveActiveSandboxes();
+    const usable = sandboxes.find((item) => item.usable);
+    if (usable) {
+      return {
+        placement: 'sandbox',
+        root: usable.workspaceRoot,
+        shellAccess: 'standard',
+        sandboxRef: usable.sandboxRef,
+        sandboxState: usable.state,
+        available: true,
+      };
+    }
+  } catch {
+    // Station sandbox service unreachable — fall through to the local device
+    // PTY instead of failing terminal creation.
+  }
+  // Local fallback: the device PTY worker provisions a private workspace dir
+  // under application data when no project is selected (Rust
+  // resolve_terminal_workspace), so a missing Station sandbox must not block
+  // an interactive shell on a desktop device.
   return {
-    placement: 'sandbox',
-    root: usable?.workspaceRoot ?? '',
-    shellAccess: 'standard',
-    sandboxRef: usable?.sandboxRef ?? '',
-    sandboxState: usable?.state ?? '',
-    available: Boolean(usable),
+    placement: 'desktop',
+    root: '',
+    shellAccess: workspace.shellAccess,
+    sandboxRef: '',
+    sandboxState: '',
+    available: true,
   };
 }
 
@@ -78,7 +98,9 @@ export async function resolveTerminalPlacement(): Promise<TerminalPlacementTarge
   const info = await describeTerminalPlacement();
   if (info.placement === 'desktop') return { placement: 'desktop' };
   if (!info.available || !info.sandboxRef) {
-    throw new Error('no usable workspace sandbox is allocated for this actor');
+    // No usable remote sandbox: run the shell through the local device PTY
+    // worker rather than failing the whole terminal surface.
+    return { placement: 'desktop' };
   }
   return { placement: 'sandbox', sandboxRef: info.sandboxRef };
 }
