@@ -8955,6 +8955,27 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
         *,
         clients: Sequence[EnvironmentClient] | None = None,
     ) -> dict[str, Any]:
+        # Every fixture operation that resolves a Station target (reset,
+        # canonical PTID resolution, friendship and Federation preparation)
+        # must run with one reviewed Profile binding per Station, otherwise a
+        # two-Station Suite falls back to the single active Profile and the
+        # fail-closed target guard rejects the secondary Station.
+        with self._bound_reset_profiles():
+            return self._prepare_actor_fixture_impl(
+                gate_id,
+                service_bindings,
+                overlay,
+                clients=clients,
+            )
+
+    def _prepare_actor_fixture_impl(
+        self,
+        gate_id: str,
+        service_bindings: Mapping[str, MobileServiceBinding],
+        overlay: Mapping[str, Any],
+        *,
+        clients: Sequence[EnvironmentClient] | None = None,
+    ) -> dict[str, Any]:
         environment_clients = tuple(clients or self.contract.clients)
         if self.requires_actor_reset:
             reset_scope = self._reset_scope()
@@ -8981,16 +9002,15 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             binding = service_bindings[service_id]
             if self.requires_actor_reset:
                 assert reset_scope is not None
-                with self._bound_reset_profiles():
-                    verify_reset_target(
-                        binding.endpoint,
-                        binding.deployment_environment,
-                    )
-                    reset_fixture(
-                        binding.deployment_environment,
-                        fixture_roles,
-                        reset_authorized=True,
-                    )
+                verify_reset_target(
+                    binding.endpoint,
+                    binding.deployment_environment,
+                )
+                reset_fixture(
+                    binding.deployment_environment,
+                    fixture_roles,
+                    reset_authorized=True,
+                )
                 self.register_cleanup(
                     f"actor-fixture:{service_id}",
                     lambda binding=binding, roles=fixture_roles: (
@@ -9075,12 +9095,11 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             }))
             for service_id in station_service_ids:
                 binding = service_bindings[service_id]
-                with self._bound_reset_profiles():
-                    reset_fixture_follow_edges(
-                        binding.endpoint,
-                        binding.deployment_environment,
-                        actor_ptids,
-                    )
+                reset_fixture_follow_edges(
+                    binding.endpoint,
+                    binding.deployment_environment,
+                    actor_ptids,
+                )
                 self.register_cleanup(
                     f"social-follow-fixture:{service_id}",
                     partial(
