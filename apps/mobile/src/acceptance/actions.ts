@@ -1954,6 +1954,9 @@ function publicRecoveryState(state: RecoveryState): PublicRecoveryState {
           : {
               reason: state.admission.reason,
               closedAt: state.admission.closedAt,
+              ...(state.admission.detail
+                ? { handlerError: state.admission.detail }
+                : {}),
             },
       };
     case 'session-mismatch':

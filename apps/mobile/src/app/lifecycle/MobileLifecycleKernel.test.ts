@@ -278,6 +278,33 @@ describe('MobileLifecycleKernel runtime ownership', () => {
     }]);
   });
 
+  it('surfaces the native error wrapped as a cause in runtime diagnostics', async () => {
+    const calls: string[] = [];
+    const nativeError = 'MOBILE_MESSAGING_ENGINE_RECONCILE_FAILED: enrollment mismatch';
+    const kernel = configuredKernel(
+      () => [{
+        ...descriptor('messaging', [], calls),
+        bootstrap: async () => {
+          throw new Error('mobile.lifecycle.runtimeFailed', {
+            cause: new Error(nativeError),
+          });
+        },
+      }],
+      { current: 1 },
+      calls,
+    );
+
+    await kernel.startRuntimeGraph();
+
+    expect(kernel.getDiagnosticRuntimeErrors()).toEqual([{
+      runtimeId: 'messaging',
+      error: expect.stringContaining(nativeError),
+    }]);
+    expect(kernel.getDiagnosticRuntimeErrors()[0]?.error).toContain(
+      'caused by:',
+    );
+  });
+
   it('blocks resume rebootstrap when failed runtime cleanup is incomplete', async () => {
     const calls: string[] = [];
     const kernel = configuredKernel(

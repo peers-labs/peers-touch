@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 from collections.abc import Callable, Mapping
@@ -287,7 +288,8 @@ class SimulatorSettingsGate(AcceptanceGate):
         )
         self._wait_for_mobile_write_admission(binding, IOS_CLIENT)
         notification_update = self._mapping(
-            binding.call_action(
+            self._call_with_admission_diagnostics(
+                binding,
                 IOS_CLIENT,
                 "settings.notifications.update",
                 changed_notification,
@@ -676,8 +678,84 @@ class SimulatorSettingsGate(AcceptanceGate):
             else "invalid-snapshot"
         )
         raise GateError(
-            f"{client_id} Mobile write admission remained closed: {reason}"
+            f"{client_id} Mobile write admission remained closed: "
+            f"{reason}{self._runtime_diagnostic_detail(binding, client_id)}"
         )
+
+    def _call_with_admission_diagnostics(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+        client_id: str,
+        action: str,
+        payload: Mapping[str, Any],
+    ) -> Any:
+        try:
+            return binding.call_action(client_id, action, payload)
+        except Exception as error:
+            # The write fence can re-close between the admission wait and the
+            # mutation when an upstream Messaging worker-cycle fails. Attach the
+            # kernel's native diagnostics so the originating error is evidenced.
+            detail = self._runtime_diagnostic_detail(binding, client_id)
+            raise GateError(
+                f"{client_id} {action} failed after write admission closed: "
+                f"{type(error).__name__}: {error}{detail}"
+            ) from error
+
+    def _runtime_diagnostic_detail(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+        client_id: str,
+    ) -> str:
+        details: list[str] = []
+        try:
+            snapshot = self._mapping(
+                binding.call_action(client_id, "recovery.snapshot"),
+                f"{client_id} recovery snapshot diagnostics",
+            )
+            for state in snapshot.get("states", []):
+                if (
+                    isinstance(state, Mapping)
+                    and state.get("kind") == "write-revocation"
+                ):
+                    state_detail = state.get("detail")
+                    if isinstance(state_detail, Mapping):
+                        handler_error = state_detail.get("handlerError")
+                        if handler_error:
+                            details.append(
+                                f"ingressHandlerError={handler_error}"
+                            )
+        except Exception as diagnostic_error:  # pragma: no cover - diagnostic only
+            details.append(
+                f"recovery-diagnostics-unavailable:"
+                f"{type(diagnostic_error).__name__}"
+            )
+        try:
+            readiness = self._mapping(
+                binding.call_action(
+                    client_id,
+                    "lifecycle.waitReady",
+                    {"includeDiagnostics": True},
+                ),
+                f"{client_id} lifecycle readiness diagnostics",
+            )
+            runtime_errors = readiness.get("runtimeErrors")
+            if isinstance(runtime_errors, list) and runtime_errors:
+                self._record(
+                    "write-admission-runtime-diagnostics",
+                    client_id,
+                    runtimeErrors=runtime_errors,
+                )
+                details.append("runtimeErrors=" + json.dumps(
+                    runtime_errors,
+                    sort_keys=True,
+                    default=str,
+                ))
+        except Exception as diagnostic_error:  # pragma: no cover - diagnostic only
+            details.append(
+                "kernel-diagnostics-unavailable: "
+                f"{type(diagnostic_error).__name__}"
+            )
+        return " | " + " | ".join(details) if details else ""
 
     @staticmethod
     def _mobile_write_admission_open(snapshot: Mapping[str, Any]) -> bool:

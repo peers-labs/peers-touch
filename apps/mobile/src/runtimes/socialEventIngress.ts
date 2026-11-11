@@ -11,6 +11,8 @@
  * - Module failure renders unavailable state, never fabricated empty data.
  */
 
+import { readableErrorMessage } from '../utils/errorMessage';
+
 // ---------------------------------------------------------------------------
 // Domain event discriminated union
 // ---------------------------------------------------------------------------
@@ -132,7 +134,13 @@ export type ProjectionStaleness =
 
 export type WriteAdmission =
   | { readonly open: true }
-  | { readonly open: false; readonly reason: string; readonly closedAt: number };
+  | {
+      readonly open: false;
+      readonly reason: string;
+      readonly closedAt: number;
+      /** Underlying handler error that forced the fence closed, when known. */
+      readonly detail?: string;
+    };
 
 export interface IngressState {
   readonly cursors: Readonly<Record<SocialIngressDomain, DomainCursorState>>;
@@ -330,9 +338,19 @@ export function createSocialEventIngress(
     }
   }
 
-  function closeWriteAdmission(reason: string): void {
+  function closeWriteAdmission(reason: string, detail?: unknown): void {
     if (!writeAdmission.open) return;
-    writeAdmission = { open: false, reason, closedAt: Date.now() };
+    const next: WriteAdmission = {
+      open: false,
+      reason,
+      closedAt: Date.now(),
+    };
+    const detailMessage =
+      detail === undefined ? undefined : readableErrorMessage(detail);
+    writeAdmission =
+      detailMessage && detailMessage !== reason
+        ? { ...next, detail: detailMessage }
+        : next;
     handlers.onAdmissionChange?.(writeAdmission);
   }
 
@@ -365,7 +383,7 @@ export function createSocialEventIngress(
       } catch (error) {
         handlers.onHandlerError?.(event, error);
         if (event.domain === 'control') {
-          closeWriteAdmission('control_event_handler_failed');
+          closeWriteAdmission('control_event_handler_failed', error);
           handlers.onSessionRevalidationRequired?.('control_event_handler_failed');
           requestReconcile(DATA_DOMAINS, 'control_event_handler_failed', event.cursor);
         } else {

@@ -150,6 +150,28 @@ describe('social event ingress', () => {
     await ingress.drain();
   });
 
+  it('retains the underlying handler error when a control event closes admission', async () => {
+    const nativeError = new Error('MOBILE_MESSAGING_NATIVE_FAILURE: cycle rejected');
+    const ingress = createSocialEventIngress({
+      onEvent: () => Promise.reject(nativeError),
+    });
+
+    ingress.ingestControlEvent({
+      domain: 'control',
+      kind: 'messaging-wake',
+      payload: {},
+      cursor: 'cursor-1',
+      timestampMs: 1,
+    });
+    await ingress.drain();
+
+    expect(ingress.state().writeAdmission).toMatchObject({
+      open: false,
+      reason: 'control_event_handler_failed',
+      detail: 'MOBILE_MESSAGING_NATIVE_FAILURE: cycle rejected',
+    });
+  });
+
   it('rejects queued work after teardown', async () => {
     const handler = vi.fn();
     const ingress = createSocialEventIngress({ onEvent: handler });
