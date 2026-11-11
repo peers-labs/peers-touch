@@ -1276,12 +1276,11 @@ pub(crate) fn acceptance_pin_installation_identity<S: SecretStore>(
     storage: &S,
     seed_b64: &str,
 ) -> MobileResult<()> {
+    // Only the installation id is pinned; the auth generation is left to
+    // initialize naturally via `load_or_create_identity` on first use.
     let device_id = sha256_url_safe(seed_b64);
     storage
         .set_secret(DEVICE_ID_KEY, &device_id)
-        .map_err(MobileError::from)?;
-    storage
-        .set_secret(AUTH_GENERATION_KEY, "1")
         .map_err(MobileError::from)?;
     Ok(())
 }
