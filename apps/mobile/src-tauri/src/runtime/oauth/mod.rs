@@ -1265,6 +1265,27 @@ pub(crate) fn load_or_create_identity<S: SecretStore>(storage: &S) -> MobileResu
     })
 }
 
+/// Acceptance-only: pin a deterministic OAuth installation id derived from the
+/// preset actor identity seed. Two simulators seeded with the same actor
+/// identity then present the same `device_id`, so the Station's per-device
+/// replacement revocation treats the same-account peer login as an installation
+/// takeover. Production builds never call this; ordinary installs keep a random
+/// per-installation id from `load_or_create_identity`.
+#[cfg(feature = "acceptance-harness")]
+pub(crate) fn acceptance_pin_installation_identity<S: SecretStore>(
+    storage: &S,
+    seed_b64: &str,
+) -> MobileResult<()> {
+    let device_id = sha256_url_safe(seed_b64);
+    storage
+        .set_secret(DEVICE_ID_KEY, &device_id)
+        .map_err(MobileError::from)?;
+    storage
+        .set_secret(AUTH_GENERATION_KEY, "1")
+        .map_err(MobileError::from)?;
+    Ok(())
+}
+
 fn load_existing_identity<S: SecretStore>(storage: &S) -> MobileResult<PersistedIdentity> {
     let device_id = storage
         .get_secret(DEVICE_ID_KEY)?
@@ -2363,6 +2384,34 @@ mod tests {
             .set_secret(AUTH_GENERATION_KEY, "8")
             .expect("advance generation");
         assert!(ensure_scope_matches(&storage, &attempt, &scope).is_err());
+    }
+
+    #[cfg(feature = "acceptance-harness")]
+    #[test]
+    fn acceptance_pinned_installation_is_deterministic_and_shared() {
+        let seed = "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=";
+        let expected_device_id = sha256_url_safe(seed);
+
+        let first = MemoryStore::default();
+        acceptance_pin_installation_identity(&first, seed).expect("pin first");
+        let identity = load_or_create_identity(&first).expect("read pinned identity");
+        assert_eq!(identity.device_id, expected_device_id);
+        assert_eq!(identity.generation, 1);
+
+        // A second install pinned from the same seed presents the same device id.
+        let second = MemoryStore::default();
+        acceptance_pin_installation_identity(&second, seed).expect("pin second");
+        let second_identity =
+            load_or_create_identity(&second).expect("read second pinned identity");
+        assert_eq!(second_identity.device_id, identity.device_id);
+
+        // A different seed yields a distinct deterministic device id.
+        let other_seed = "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYWI=";
+        let third = MemoryStore::default();
+        acceptance_pin_installation_identity(&third, other_seed).expect("pin third");
+        let third_identity =
+            load_or_create_identity(&third).expect("read third pinned identity");
+        assert_ne!(third_identity.device_id, identity.device_id);
     }
 
     #[test]

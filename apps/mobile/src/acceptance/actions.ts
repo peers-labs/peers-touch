@@ -268,6 +268,13 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       key: storageKey,
       seedBase64,
     });
+    // Optional: make same-account simulator clients share one OAuth
+    // installation boundary so per-device replacement revocation crosses them.
+    if (input?.pinInstallation === true) {
+      await invoke('secure_storage_acceptance_pin_installation', {
+        seedBase64,
+      });
+    }
     return { prepared: true };
   },
 
