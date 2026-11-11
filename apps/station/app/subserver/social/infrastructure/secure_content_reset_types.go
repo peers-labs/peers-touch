@@ -581,6 +581,10 @@ func expectedResetTarget(profileID string) (string, string, bool) {
 		return "station-five-arm", "station-five-arm-social-private", true
 	case "corpdebug":
 		return "corpdebug-station", "corpdebug-station-social-private", true
+	case "fedlab-a":
+		return "station-fedlab-a", "station-fedlab-a-social-private", true
+	case "fedlab-b":
+		return "station-fedlab-b", "station-fedlab-b-social-private", true
 	default:
 		return "", "", false
 	}

@@ -44,6 +44,20 @@ RUNTIME_TARGETS = {
         "corpdebug-station",
         "corpdebug-station-social-private",
     ),
+    # Federation lab trust domains. Each is an independently reviewed,
+    # agent-resettable remote Profile with its own disposable Station database.
+    "fedlab-a": RuntimeSchemaTarget(
+        "fedlab-a",
+        "station-fedlab-a",
+        "station-fedlab-a",
+        "station-fedlab-a-social-private",
+    ),
+    "fedlab-b": RuntimeSchemaTarget(
+        "fedlab-b",
+        "station-fedlab-b",
+        "station-fedlab-b",
+        "station-fedlab-b-social-private",
+    ),
 }
 
 # Station's local Go replacements include Note's service. Model owns generated
