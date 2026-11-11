@@ -2159,7 +2159,7 @@ def load_mobile_station_lifecycle_simulator_spec(
         f"{STATION_LIFECYCLE_ENVIRONMENT_ID}:proof-scope",
     )
     required_proven = {
-        "AS-04 simulator valid-session restore and same-account revocation",
+        "AS-04 simulator valid-session restore and same-account multi-device coexistence",
         (
             "AS-10 simulator Station switching, generation fencing, "
             "old-scope absence, and logout"

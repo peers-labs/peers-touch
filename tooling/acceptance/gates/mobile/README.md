@@ -496,11 +496,13 @@ Fixture account lookup and credential submission are likewise parent-owned;
 the child Gate requests authentication by client ID and receives only
 sanitized decision, session, lifecycle, and proof projections.
 
-The Gate proves valid-session restore, same-device-type takeover followed by
-revocation recovery, ten Station switches, logout, monotonic generation, and
-old-scope absence for AS-04 and AS-10. Physical background/foreground,
-Keychain/Keystore deletion failure, W4 persistence, and W5 event-ingress
-reconciliation remain outside this Gate.
+The Gate proves valid-session restore, same-account multi-device coexistence
+across two distinct installations (a second device login must not evict the
+first, per SAL-D12), device-scoped revocation recovery on Station switch, ten
+Station switches, logout, monotonic generation, and old-scope absence for
+AS-04 and AS-10. Physical background/foreground, Keychain/Keystore deletion
+failure, W4 persistence, and W5 event-ingress reconciliation remain outside
+this Gate.
 
 The Settings Gate uses the same parent-owned bindings sequentially: the primary
 iOS client writes Profile, Notification, and device settings; the peer iOS

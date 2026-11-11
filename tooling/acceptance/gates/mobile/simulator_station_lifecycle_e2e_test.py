@@ -59,7 +59,6 @@ class FakeBinding:
         self.calls: list[tuple[str, str, object]] = []
         self.clients: dict[str, dict[str, Any]] = {}
         self.launch_generations: dict[str, int] = {}
-        self.ios_revoked = False
         self.closed = False
 
     def create_bound_session(
@@ -160,8 +159,6 @@ class FakeBinding:
                 else ALICE_PTIDS[PRIMARY_BINDING]
             )
             state["launchState"] = "shell"
-            if client_id == PEER_IOS_CLIENT:
-                self.ios_revoked = True
             return {
                 "decision": {"state": "ACCESS_DECISION_STATE_GRANTED"},
                 "session": {
@@ -175,11 +172,10 @@ class FakeBinding:
         if action == "lifecycle.suspend":
             return {"snapshot": self._scope(client_id)}
         if action == "lifecycle.resume":
+            # SAL-D12: a different installation's login never revokes this
+            # client, so resume keeps the authenticated shell and advances
+            # only the local lifecycle generation.
             state["generation"] += 1
-            if client_id == IOS_CLIENT and self.ios_revoked:
-                state["actor"] = None
-                state["launchState"] = "station-selection"
-                self.ios_revoked = False
             return {"snapshot": self._scope(client_id)}
         if action == "lifecycle.scope.read":
             return self._scope(client_id)
@@ -413,6 +409,40 @@ class SimulatorStationLifecycleGateTests(unittest.TestCase):
             ][-SWITCH_COUNT:],
             ["confirmed"] * SWITCH_COUNT,
         )
+        # SAL-D12: the peer is a distinct installation and must coexist with
+        # the primary session instead of evicting it.
+        coexistence = result["coexistence"]
+        self.assertEqual(coexistence["primaryClientId"], IOS_CLIENT)
+        self.assertEqual(coexistence["peerClientId"], PEER_IOS_CLIENT)
+        self.assertTrue(coexistence["distinctDeviceIds"])
+        self.assertTrue(coexistence["primaryRemainedAuthenticated"])
+        self.assertTrue(coexistence["peerRemainedAuthenticated"])
+        coexistence_events = [
+            event["event"]
+            for event in gate.events
+            if event["event"]
+            in {
+                "same-account-multi-device-coexistence",
+                "same-account-session-preserved-after-resume",
+            }
+        ]
+        self.assertEqual(
+            coexistence_events,
+            [
+                "same-account-multi-device-coexistence",
+                "same-account-session-preserved-after-resume",
+            ],
+        )
+        distinct_event = next(
+            event
+            for event in gate.events
+            if event["event"] == "same-account-multi-device-coexistence"
+        )
+        self.assertNotEqual(
+            distinct_event["primaryDeviceId"],
+            distinct_event["peerDeviceId"],
+        )
+        self.assertNotIn("revocation", result)
         self.assertIn(
             ("lifecycle.restart", IOS_CLIENT, {}),
             binding.calls,

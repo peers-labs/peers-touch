@@ -35,7 +35,7 @@ SWITCH_COUNT = 10
 MIN_ROUTE_EXPIRY_WAIT_SECONDS = 310
 MAX_ROUTE_EXPIRY_WAIT_SECONDS = 360
 PROVEN_SCOPE = (
-    "AS-04 simulator valid-session restore and same-account revocation",
+    "AS-04 simulator valid-session restore and same-account multi-device coexistence",
     (
         "AS-10 simulator Station switching, generation fencing, "
         "old-scope absence, and logout"
@@ -277,42 +277,62 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             raise GateError(
                 "same-account peer iOS login resolved a different Alice PTID"
             )
-        self._record(
-            "same-account-session-replaced",
-            PEER_IOS_CLIENT,
-            generation=int(peer_primary.scope["generation"]),
+        # SAL-D12: the peer is a distinct installation. A same-account login on
+        # another device occupies its own (Station, Actor, device_id) slot and
+        # must coexist with the primary session rather than evict it.
+        primary_station_peer_id = str(
+            ios_primary.scope["activeStationPeerId"]
         )
-
-        binding.call_action(IOS_CLIENT, "lifecycle.suspend")
-        binding.call_action(IOS_CLIENT, "lifecycle.resume")
-        revoked_scope = self._wait_for_scope(
+        primary_coexistence_scope = self._wait_for_authenticated_scope(
             binding,
             IOS_CLIENT,
-            self._scope_is_cleared,
+            expected_station_peer_id=primary_station_peer_id,
+            expected_actor_ptid=alice_ptid,
         )
-        if revoked_scope["launchState"] == "station-selection":
-            access = binding.begin_access_gate(IOS_CLIENT)
-            revoked_scope = _mapping(
-                access.get("scope"),
-                "revoked primary iOS access-gate scope",
-            )
-        self._assert_cleared_scope(
-            revoked_scope,
-            expected_station_peer_id=str(
-                ios_primary.scope["activeStationPeerId"]
-            ),
-            require_access_gate=True,
+        peer_coexistence_scope = self._wait_for_authenticated_scope(
+            binding,
+            PEER_IOS_CLIENT,
+            expected_station_peer_id=primary_station_peer_id,
+            expected_actor_ptid=peer_alice_ptid,
         )
-        if int(revoked_scope["generation"]) <= int(
-            restored_scope["generation"]
+        primary_device_id = primary_coexistence_scope.get("deviceId")
+        peer_device_id = peer_coexistence_scope.get("deviceId")
+        if (
+            not isinstance(primary_device_id, str)
+            or not isinstance(peer_device_id, str)
+            or primary_device_id == peer_device_id
         ):
             raise GateError(
-                "revoked primary iOS resume did not advance the lifecycle generation"
+                "same-account simulator clients must present distinct device ids"
             )
         self._record(
-            "revoked-session-cleared",
+            "same-account-multi-device-coexistence",
+            PEER_IOS_CLIENT,
+            primaryDeviceId=primary_device_id,
+            peerDeviceId=peer_device_id,
+        )
+
+        # Foreground suspend/resume revalidates the primary session. The peer
+        # login did not revoke it, so the primary must remain authenticated
+        # instead of being cleared to the Access Gate, and the peer stays live.
+        binding.call_action(IOS_CLIENT, "lifecycle.suspend")
+        binding.call_action(IOS_CLIENT, "lifecycle.resume")
+        resumed_primary_scope = self._wait_for_authenticated_scope(
+            binding,
             IOS_CLIENT,
-            generation=int(revoked_scope["generation"]),
+            expected_station_peer_id=primary_station_peer_id,
+            expected_actor_ptid=alice_ptid,
+        )
+        self._wait_for_authenticated_scope(
+            binding,
+            PEER_IOS_CLIENT,
+            expected_station_peer_id=primary_station_peer_id,
+            expected_actor_ptid=peer_alice_ptid,
+        )
+        self._record(
+            "same-account-session-preserved-after-resume",
+            IOS_CLIENT,
+            generation=int(resumed_primary_scope["generation"]),
         )
 
         ios_secondary = self._select(
@@ -320,9 +340,9 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             IOS_CLIENT,
             SECONDARY_BINDING,
         )
-        if ios_secondary.remote_revocation != "not-required":
+        if ios_secondary.remote_revocation != "confirmed":
             raise GateError(
-                "revoked session switch unexpectedly retained revocation work"
+                "active primary session switch did not confirm remote revocation"
             )
         self._assert_cleared_scope(
             ios_secondary.scope,
@@ -331,7 +351,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             ),
         )
         if int(ios_secondary.scope["generation"]) <= int(
-            revoked_scope["generation"]
+            resumed_primary_scope["generation"]
         ):
             raise GateError(
                 "secondary Station binding did not advance generation"
@@ -509,12 +529,12 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 "accessGateVisible": True,
                 "oldScopeAbsent": True,
             },
-            "revocation": {
-                "revokedClientId": IOS_CLIENT,
-                "replacementClientId": PEER_IOS_CLIENT,
-                "authCleared": True,
-                "accessGateVisible": True,
-                "oldScopeAbsent": True,
+            "coexistence": {
+                "primaryClientId": IOS_CLIENT,
+                "peerClientId": PEER_IOS_CLIENT,
+                "distinctDeviceIds": True,
+                "primaryRemainedAuthenticated": True,
+                "peerRemainedAuthenticated": True,
                 "bindingProof": peer_primary.binding_proofs[
                     PRIMARY_BINDING
                 ].to_dict(),

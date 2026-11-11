@@ -2818,7 +2818,7 @@
       "environment": "mobile-station-lifecycle-simulator",
       "provisioner": "mobile-station-lifecycle-simulator",
       "tier": "env-evidence",
-      "description": "Prove expired-route same-session resume and secondary Station selection, valid-session restore, same-device-type takeover and revocation recovery, ten Station switches, logout, generation fencing, old-scope absence, source binding, and cleanup on pinned simulator cells."
+      "description": "Prove expired-route same-session resume and secondary Station selection, valid-session restore, same-account multi-device coexistence across distinct installations and device-scoped revocation recovery, ten Station switches, logout, generation fencing, old-scope absence, source binding, and cleanup on pinned simulator cells."
     },
     "mobile-ios-simulator-layout-accessibility-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_layout_accessibility_e2e",

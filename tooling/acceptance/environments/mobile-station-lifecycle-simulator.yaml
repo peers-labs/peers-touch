@@ -111,7 +111,7 @@
   },
   "proof_scope": {
     "proves": [
-      "AS-04 simulator valid-session restore and same-account revocation",
+      "AS-04 simulator valid-session restore and same-account multi-device coexistence",
       "AS-10 simulator Station switching, generation fencing, old-scope absence, and logout",
       "MS-J06 independent second-iOS-simulator Profile and Notification convergence with device-local settings isolation"
     ],
