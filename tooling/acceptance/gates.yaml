@@ -1733,6 +1733,9 @@
       "ephemeralCapabilities": [
         "mobile.simulator.appium-session"
       ],
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
       "timeout_seconds": 10800,
       "environment": "social-cross-station-mobile-desktop",
       "provisioner": "social-cross-station-mobile-desktop",
