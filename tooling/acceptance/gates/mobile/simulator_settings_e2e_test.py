@@ -380,6 +380,80 @@ class SimulatorSettingsGateTests(unittest.TestCase):
             },
         )
 
+    def test_write_admission_re_reconciles_while_fence_stays_closed(
+        self,
+    ) -> None:
+        closed_snapshot = {
+            "hasActiveRecovery": True,
+            "isWriteBlocked": True,
+            "writeAdmission": {
+                "open": False,
+                "reason": "control_event_handler_failed",
+            },
+            "states": [{
+                "kind": "write-revocation",
+                "detail": {
+                    "reason": "control_event_handler_failed",
+                    "handlerError": "MOBILE_MESSAGING_NATIVE_FAILURE",
+                },
+            }],
+        }
+        open_snapshot = {
+            "hasActiveRecovery": False,
+            "isWriteBlocked": False,
+            "writeAdmission": {"open": True, "reason": None},
+            "states": [],
+        }
+
+        class RetryAdmissionBinding(_Binding):
+            def __init__(self) -> None:
+                super().__init__()
+                self.snapshots = [
+                    dict(closed_snapshot),
+                    dict(closed_snapshot),
+                    dict(closed_snapshot),
+                    dict(open_snapshot),
+                ]
+
+            def call_action(
+                self,
+                client_id: str,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                if action == "recovery.snapshot":
+                    self.calls.append((client_id, action, payload))
+                    if len(self.snapshots) > 1:
+                        return self.snapshots.pop(0)
+                    return dict(self.snapshots[0])
+                return super().call_action(client_id, action, payload)
+
+        binding = RetryAdmissionBinding()
+        gate = SimulatorSettingsGate(binding_factory=lambda: binding)  # type: ignore[arg-type]
+
+        snapshot = gate._wait_for_mobile_write_admission(  # type: ignore[arg-type]
+            binding,
+            IOS_CLIENT,
+            timeout_seconds=2,
+            stable_seconds=0,
+            reconcile_retry_seconds=0,
+        )
+
+        self.assertTrue(snapshot["writeAdmission"]["open"])
+        reconcile_calls = [
+            call
+            for call in binding.calls
+            if call[1] == "social.reconcile"
+        ]
+        # One explicit reconcile plus one retry per still-closed poll.
+        self.assertEqual(len(reconcile_calls), 3)
+        self.assertTrue(
+            any(
+                event.get("event") == "write-admission-runtime-diagnostics"
+                for event in gate.events
+            )
+        )
+
     def test_authentication_restarts_one_failed_runtime_generation(self) -> None:
         class RetryBinding(_Binding):
             wait_attempts = 0

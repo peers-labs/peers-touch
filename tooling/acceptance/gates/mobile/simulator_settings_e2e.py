@@ -32,6 +32,10 @@ PRIMARY_BINDING = "station-primary"
 POLL_INTERVAL_SECONDS = 0.25
 WRITE_ADMISSION_STABLE_SECONDS = 1.25
 WRITE_ADMISSION_TIMEOUT_SECONDS = 60.0
+# Mirrors the product foreground periodic repair (30s) but at a tighter,
+# deterministic cadence so one transient Messaging wake failure cannot consume
+# the whole wait budget without another recovery attempt.
+RECONCILE_RETRY_INTERVAL_SECONDS = 5.0
 PROFILE_FIELDS = (
     "displayName",
     "note",
@@ -638,6 +642,7 @@ class SimulatorSettingsGate(AcceptanceGate):
         *,
         timeout_seconds: float = WRITE_ADMISSION_TIMEOUT_SECONDS,
         stable_seconds: float = WRITE_ADMISSION_STABLE_SECONDS,
+        reconcile_retry_seconds: float = RECONCILE_RETRY_INTERVAL_SECONDS,
     ) -> dict[str, Any]:
         initial = self._mapping(
             binding.call_action(client_id, "recovery.snapshot"),
@@ -648,18 +653,20 @@ class SimulatorSettingsGate(AcceptanceGate):
             return initial
 
         binding.call_action(client_id, "social.reconcile")
-        deadline = time.monotonic() + timeout_seconds
+        start = time.monotonic()
+        last_reconcile_at = start
+        deadline = start + timeout_seconds
         stable_since: float | None = None
         last_snapshot = initial
         seen_handler_errors: set[str] = set()
         while time.monotonic() < deadline:
+            now = time.monotonic()
             snapshot = self._mapping(
                 binding.call_action(client_id, "recovery.snapshot"),
                 f"{client_id} recovery snapshot",
             )
             last_snapshot = snapshot
             if self._mobile_write_admission_open(snapshot):
-                now = time.monotonic()
                 if stable_since is None:
                     stable_since = now
                 if now - stable_since >= stable_seconds:
@@ -679,6 +686,19 @@ class SimulatorSettingsGate(AcceptanceGate):
                         client_id,
                         ingressHandlerError=handler_error,
                     )
+                # Re-drive the canonical recovery path while still fenced, so a
+                # single transient Messaging wake failure gets bounded retries
+                # (the product foreground timer does the same).
+                if now - last_reconcile_at >= reconcile_retry_seconds:
+                    try:
+                        binding.call_action(client_id, "social.reconcile")
+                    except Exception as reconcile_error:
+                        self._record(
+                            "write-admission-reconcile-retry-error",
+                            client_id,
+                            error=redact_text(str(reconcile_error)),
+                        )
+                    last_reconcile_at = now
             time.sleep(POLL_INTERVAL_SECONDS)
         admission = last_snapshot.get("writeAdmission")
         reason = (
