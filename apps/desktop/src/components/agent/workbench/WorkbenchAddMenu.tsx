@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Search } from 'lucide-react';
-import { Dropdown, Input, theme } from 'antd';
+import { Button, Icon, IconButton, Popover, TextField } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 
 import { useWorkbenchTabsStore } from '../../../store/workbenchTabs';
@@ -8,9 +7,9 @@ import { WORKBENCH_TOOLS } from './workbenchTools';
 
 // Compact "+" menu shown inside an open work area (tab strip / launcher
 // header): search box + icon/name rows, no descriptions. Mirrors Trae's
-// add menu once a tab already exists.
+// add menu once a tab already exists. State stays local; the real store is
+// only touched when a tool is opened.
 export function WorkbenchAddMenu({ blockSize = 30 }: { blockSize?: number }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const openTool = useWorkbenchTabsStore((state) => state.openTool);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -27,105 +26,57 @@ export function WorkbenchAddMenu({ blockSize = 30 }: { blockSize?: number }) {
   }, [query, t]);
 
   const menu = (
-    <div
-      data-pt-workbench-add-menu
-      style={{
-        width: 264,
-        background: token.colorBgElevated,
-        borderRadius: 12,
-        boxShadow: token.boxShadowSecondary,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        padding: 8,
-      }}
-    >
-      <Input
+    <div className="wb-shell-addmenu" data-pt-workbench-add-menu>
+      <TextField
         autoFocus
-        allowClear
-        prefix={<Search size={13} color={token.colorTextTertiary} />}
-        placeholder={t('chat.workbench.searchPlaceholder')}
+        clearable
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        variant="borderless"
-        style={{ marginBottom: 4 }}
+        aria-label={t('chat.workbench.searchPlaceholder')}
+        placeholder={t('chat.workbench.searchPlaceholder')}
+        onClear={() => setQuery('')}
+        onValueChange={setQuery}
       />
-      <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div role="list" className="wb-shell-addmenu__list">
         {filteredTools.map((tool) => (
-          <button
+          <Button
             key={tool.id}
-            type="button"
-            role="listitem"
+            actionId={`wb.add.${tool.id}`}
+            emphasis="quiet"
+            fullWidth
+            label={t(tool.labelKey)}
+            leading={<Icon iconId={tool.iconId} size={14} />}
             data-pt-workbench-add={tool.id}
-            onClick={() => {
+            onActivate={() => {
               openTool(tool.id);
               setMenuOpen(false);
               setQuery('');
             }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              width: '100%',
-              textAlign: 'left',
-              border: 'none',
-              background: 'transparent',
-              borderRadius: 8,
-              padding: '8px 10px',
-              cursor: 'pointer',
-              color: token.colorText,
-              fontSize: 13,
-            }}
-            onMouseEnter={(event) => {
-              event.currentTarget.style.background = token.colorFillQuaternary;
-            }}
-            onMouseLeave={(event) => {
-              event.currentTarget.style.background = 'transparent';
-            }}
-          >
-            <span style={{ color: token.colorTextSecondary, display: 'inline-flex' }}>
-              {tool.icon}
-            </span>
-            {t(tool.labelKey)}
-          </button>
+          />
         ))}
         {filteredTools.length === 0 && (
-          <div style={{ padding: 12, fontSize: 12, color: token.colorTextTertiary }}>
-            {t('chat.workbench.searchEmpty')}
-          </div>
+          <span className="wb-shell-addmenu__empty">{t('chat.workbench.searchEmpty')}</span>
         )}
       </div>
     </div>
   );
 
   return (
-    <Dropdown
-      trigger={['click']}
+    <Popover
       open={menuOpen}
       onOpenChange={setMenuOpen}
-      dropdownRender={() => menu}
-      placement="bottomLeft"
+      placement="bottom"
+      label={t('chat.workbench.add')}
+      content={menu}
     >
-      <button
-        type="button"
+      <IconButton
+        actionId="wb.add-toggle"
+        iconId="plus"
+        iconSize={17}
+        label={t('chat.workbench.add')}
+        emphasis="quiet"
         data-pt-workbench-add-toggle
-        aria-label={t('chat.workbench.add')}
-        title={t('chat.workbench.add')}
-        style={{
-          width: blockSize,
-          height: blockSize,
-          flexShrink: 0,
-          border: 'none',
-          borderRadius: 8,
-          background: 'transparent',
-          color: token.colorTextSecondary,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          padding: 0,
-        }}
-      >
-        <Plus size={17} strokeWidth={1.85} />
-      </button>
-    </Dropdown>
+        style={{ width: blockSize, height: blockSize, flexShrink: 0 }}
+      />
+    </Popover>
   );
 }

@@ -1,0 +1,152 @@
+/*
+ * Workbench shell chrome (floating rail, tab strip, launcher, add menu).
+ * Layout-only styles over --pt-* design tokens; peers-ui primitives own the
+ * interactive states (hover/pressed/disabled), so no raw colors live here.
+ */
+
+.wb-shell-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pt-surface);
+  border-left: 1px solid var(--pt-border);
+}
+
+/* Closed state: floating vertical icon rail. */
+.wb-shell-rail {
+  position: absolute;
+  top: 50%;
+  right: var(--pt-space-sm);
+  transform: translateY(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--pt-space-xxs) 4px;
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-lg);
+  background: var(--pt-surface);
+  box-shadow: var(--pt-shadow-soft);
+}
+
+/* Open-state header. Height matches the sibling ChatPage conversation
+   header (52px) so their bottom hairlines form one continuous rule across
+   the conversation + work area seam. */
+.wb-shell-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-xs);
+  height: 52px;
+  padding: 0 var(--pt-space-xs) 0 var(--pt-space-sm);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.wb-shell-tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wb-shell-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.wb-shell-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 4px 0 6px;
+  border-radius: var(--pt-radius-md);
+}
+
+.wb-shell-tab[data-selected='true'] {
+  background: var(--pt-primarySubtle);
+}
+
+.wb-shell-tab .pt-button {
+  font-size: 12px;
+}
+
+.wb-shell-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Launcher (open, no active tab). */
+.wb-shell-launcher {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--pt-space-lg) var(--pt-space-xl);
+}
+
+.wb-shell-launcher__hint {
+  display: block;
+  margin-bottom: var(--pt-space-md);
+  font-size: 13px;
+}
+
+.wb-shell-launcher__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wb-shell-launcher__row.pt-button {
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 9px 8px;
+}
+
+.wb-shell-launcher__icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--pt-muted);
+}
+
+.wb-shell-launcher__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wb-shell-launcher__name {
+  font-size: 14px;
+}
+
+.wb-shell-launcher__desc {
+  font-size: 12px;
+}
+
+/* Add-tool popover content. */
+.wb-shell-addmenu {
+  width: 264px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-xs);
+}
+
+.wb-shell-addmenu__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.wb-shell-addmenu__empty {
+  padding: var(--pt-space-sm);
+  font-size: 12px;
+}

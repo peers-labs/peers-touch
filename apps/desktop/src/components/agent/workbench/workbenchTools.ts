@@ -1,18 +1,20 @@
-import type { ReactNode } from 'react';
-import {
-  ListChecks,
-  FileText,
-  Globe,
-  TerminalSquare,
-  Brain,
-  GitFork,
-} from 'lucide-react';
+import type { ComponentProps } from 'react';
+import { Icon } from '@peers-touch/ui';
 
 import type { WorkbenchToolId } from '../../../store/workbenchTabs';
 
+// Derive the glyph id union from peers-ui itself so this package needs no
+// direct dependency on @peers-touch/ui-assets (same pattern as
+// messages/TurnAttribution).
+type WorkbenchIconId = ComponentProps<typeof Icon>['iconId'];
+
 export interface WorkbenchToolMeta {
   id: WorkbenchToolId;
-  icon: ReactNode;
+  /**
+   * peers-ui glyph id. Resolves to the same lucide 0.577 icon set through
+   * @peers-touch/ui-assets, so the workbench chrome needs no lucide import.
+   */
+  iconId: WorkbenchIconId;
   labelKey: string;
   descKey: string;
   /** Attribute emitted on the tab close button for tool-specific e2e gates. */
@@ -26,38 +28,38 @@ export interface WorkbenchToolMeta {
 export const WORKBENCH_TOOLS: WorkbenchToolMeta[] = [
   {
     id: 'summary',
-    icon: <ListChecks size={16} />,
+    iconId: 'list-checks',
     labelKey: 'chat.workbench.tab.summary',
     descKey: 'chat.workbench.desc.summary',
   },
   {
     id: 'file',
-    icon: <FileText size={16} />,
+    iconId: 'folder-tree',
     labelKey: 'chat.workbench.tab.file',
     descKey: 'chat.workbench.desc.file',
   },
   {
     id: 'browser',
-    icon: <Globe size={16} />,
+    iconId: 'globe',
     labelKey: 'chat.workbench.tab.browser',
     descKey: 'chat.workbench.desc.browser',
   },
   {
     id: 'terminal',
-    icon: <TerminalSquare size={16} />,
+    iconId: 'terminal',
     labelKey: 'chat.workbench.tab.terminal',
     descKey: 'chat.workbench.desc.terminal',
     closeAttr: 'data-pt-terminal-close',
   },
   {
     id: 'memory',
-    icon: <Brain size={16} />,
+    iconId: 'brain',
     labelKey: 'chat.workbench.tab.memory',
     descKey: 'chat.workbench.desc.memory',
   },
   {
     id: 'branches',
-    icon: <GitFork size={16} />,
+    iconId: 'git-branch',
     labelKey: 'chat.workbench.tab.branches',
     descKey: 'chat.workbench.desc.branches',
   },

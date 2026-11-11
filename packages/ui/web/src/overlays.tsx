@@ -231,7 +231,7 @@ export function Menu({ actions, ...props }: MenuProps) {
   const focus = (index: number) => { setActive(index); menu.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[index]?.focus(); };
   useEffect(() => { if (open) setActive(nextEnabledIndex(-1, 1, commands.length, i => commands[i].availability?.kind === 'disabled')); }, [open, actions]);
   return <>{trigger}<OverlayLayer open={open} kind="menu" anchor={anchor} inputMode={inputMode}
-    placement={props.placement} anchorPoint={props.anchorPoint} label={props.label} onDismiss={reason => close(reason !== 'outside')}>
+    placement={props.placement} anchorPoint={props.anchorPoint} label={props.label} className={props.className} onDismiss={reason => close(reason !== 'outside')}>
     {(() => {const content=<div ref={menu} onKeyDown={event => {
       let index = active;
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp')

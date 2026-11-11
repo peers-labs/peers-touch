@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { X } from 'lucide-react';
-import { theme } from 'antd';
+import { Button, Icon, IconButton, Text } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 
 import { MIN_PANEL_WIDTH, useWorkbenchTabsStore } from '../../../store/workbenchTabs';
@@ -15,13 +14,13 @@ import { WorkbenchFoldButton } from './WorkbenchFoldButton';
 import { WorkbenchRail } from './WorkbenchRail';
 import { WorkbenchResizeHandle } from './WorkbenchResizeHandle';
 import { WORKBENCH_TOOLS } from './workbenchTools';
+import './workbench.css';
 
 // Trae-style unified right work area.
 // - closed: floating vertical icon rail with direct entries
 // - open, no active tab: "Start here" launcher list (icon + name + purpose)
 // - open with tabs: tab strip + compact "+" menu, fold hides the panel
 export function WorkbenchPanel() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const panelOpen = useWorkbenchTabsStore((s) => s.panelOpen);
   const panelWidth = useWorkbenchTabsStore((s) => s.panelWidth);
@@ -69,88 +68,54 @@ export function WorkbenchPanel() {
     <aside
       ref={asideRef}
       data-pt-workbench-panel
+      className="wb-shell-panel"
       style={{
         flex: `0 0 ${panelWidth}px`,
         width: panelWidth,
         minWidth: MIN_PANEL_WIDTH,
-        height: '100%',
-        minHeight: 0,
         position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        background: token.colorBgContainer,
-        borderLeft: `1px solid ${token.colorBorderSecondary}`,
       }}
     >
       <WorkbenchResizeHandle />
-      <header
-        style={{
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          height: 42,
-          padding: '0 8px 0 10px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        }}
-      >
+      <header className="wb-shell-header">
         {active === null ? (
-          <div style={{ flex: 1 }} />
+          <span style={{ flex: 1 }} />
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2, overflowX: 'auto', flex: 1, minWidth: 0 }}>
+            <div className="wb-shell-tabs">
               {tabs.map((toolId) => {
                 const meta = metaById.get(toolId);
                 if (!meta) return null;
                 const isActive = active === toolId;
                 return (
-                  <div
+                  <span
                     key={toolId}
+                    className="wb-shell-tab"
                     data-pt-workbench-tab={toolId}
-                    onClick={() => setActive(toolId)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      height: 30,
-                      padding: '0 6px 0 10px',
-                      borderRadius: 8,
-                      flexShrink: 0,
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      fontWeight: isActive ? 600 : 400,
-                      color: isActive ? token.colorPrimaryText : token.colorTextSecondary,
-                      background: isActive ? token.colorPrimaryBg : 'transparent',
-                    }}
+                    data-selected={isActive}
                   >
-                    {meta.icon}
-                    <span>{t(meta.labelKey)}</span>
-                    <button
-                      type="button"
+                    <Button
+                      actionId={`wb.tab.${toolId}`}
+                      emphasis="quiet"
+                      density="compact"
+                      aria-current={isActive ? 'page' : undefined}
+                      onActivate={() => setActive(toolId)}
+                    >
+                      <Icon iconId={meta.iconId} size={13} />
+                      <span>{t(meta.labelKey)}</span>
+                    </Button>
+                    <IconButton
+                      actionId={`wb.tab-close.${toolId}`}
+                      iconId="close"
+                      iconSize={12}
+                      label={`${t(meta.labelKey)} ×`}
+                      emphasis="quiet"
+                      density="compact"
                       {...(meta.closeAttr ? { [meta.closeAttr]: '' } : {})}
                       data-pt-workbench-close={toolId}
-                      aria-label={`${t(meta.labelKey)} ×`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        closeTool(toolId);
-                      }}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        border: 'none',
-                        borderRadius: 5,
-                        background: 'transparent',
-                        color: 'inherit',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        padding: 0,
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
+                      onActivate={() => closeTool(toolId)}
+                    />
+                  </span>
                 );
               })}
             </div>
@@ -161,73 +126,37 @@ export function WorkbenchPanel() {
       </header>
 
       {active === null ? (
-        <div
-          data-pt-workbench-launcher
-          style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '24px 28px' }}
-        >
-          <div
-            style={{
-              fontSize: 13,
-              color: token.colorTextTertiary,
-              marginBottom: 18,
-            }}
-          >
+        <div className="wb-shell-launcher" data-pt-workbench-launcher>
+          <Text tone="muted" className="wb-shell-launcher__hint">
             {t('chat.workbench.startHere')}
-          </div>
-          <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          </Text>
+          <div role="list" className="wb-shell-launcher__list">
             {WORKBENCH_TOOLS.map((tool) => (
-              <button
+              <Button
                 key={tool.id}
-                type="button"
                 role="listitem"
+                actionId={`wb.launcher.${tool.id}`}
+                emphasis="quiet"
+                fullWidth
                 data-pt-workbench-add={tool.id}
-                onClick={() => openTool(tool.id)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  width: '100%',
-                  textAlign: 'left',
-                  border: 'none',
-                  background: 'transparent',
-                  borderRadius: 8,
-                  padding: '9px 8px',
-                  cursor: 'pointer',
-                  color: token.colorText,
-                }}
-                onMouseEnter={(event) => {
-                  event.currentTarget.style.background = token.colorFillQuaternary;
-                }}
-                onMouseLeave={(event) => {
-                  event.currentTarget.style.background = 'transparent';
-                }}
+                onActivate={() => openTool(tool.id)}
+                className="wb-shell-launcher__row"
               >
-                <span
-                  style={{
-                    width: 24,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    color: token.colorTextTertiary,
-                  }}
-                >
-                  {tool.icon}
-                </span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>
+                <Icon iconId={tool.iconId} size={16} className="wb-shell-launcher__icon" />
+                <span className="wb-shell-launcher__text">
+                  <Text strong className="wb-shell-launcher__name">
                     {t(tool.labelKey)}
-                  </span>
-                  <span style={{ display: 'block', fontSize: 12, color: token.colorTextTertiary, marginTop: 1 }}>
+                  </Text>
+                  <Text tone="muted" className="wb-shell-launcher__desc">
                     {t(tool.descKey)}
-                  </span>
+                  </Text>
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="wb-shell-body">
           <TaskSummaryDock />
           <FileDock />
           <TerminalDock />

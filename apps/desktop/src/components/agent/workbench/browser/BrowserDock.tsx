@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, Plus, RotateCw, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Globe, Plus, RotateCw, X } from 'lucide-react';
 import { Input, theme } from 'antd';
 import { useTranslation } from 'react-i18next';
 
@@ -130,8 +130,24 @@ export function BrowserPanel({
       }}
     >
       {!host?.available ? (
-        <div data-pt-browser-unavailable style={{ color: token.colorTextSecondary, fontSize: 12, padding: 12 }}>
-          {t('chat.browser.unavailable')}
+        <div
+          data-pt-browser-unavailable
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            padding: 24,
+            textAlign: 'center',
+          }}
+        >
+          <Globe size={28} strokeWidth={1.5} style={{ color: token.colorTextTertiary, flexShrink: 0 }} />
+          <div style={{ fontSize: 12, lineHeight: 1.6, color: token.colorTextTertiary, maxWidth: 240 }}>
+            {t('chat.browser.unavailable')}
+          </div>
         </div>
       ) : !session ? (
         <div
