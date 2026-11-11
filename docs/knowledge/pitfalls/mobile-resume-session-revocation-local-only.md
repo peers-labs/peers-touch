@@ -266,10 +266,46 @@ realigned to prove the per-device contract instead of cross-device eviction:
 3. **Independent revocation.** Keep the existing Station-switch and logout
    assertions, which revoke only the acting device's session.
 
-This changes what the acceptance Gate proves and therefore requires an explicit
-product/acceptance decision before the Gate assertions and its proof-scope
-strings (`gates/mobile/README.md §9.4`, `gates.yaml`,
-`environments/mobile-station-lifecycle-simulator.yaml`,
-`provisioners/mobile_simulator.py`) are edited. The client resume revalidation
-work is retained regardless, because same-device `kicked` detection is still a
-real requirement.
+This changes what the acceptance Gate proves, so the realignment was made only
+after an explicit product/acceptance decision. The proof-scope string was synced
+across `gates/mobile/README.md §9.4`, `gates.yaml`,
+`environments/mobile-station-lifecycle-simulator.yaml` and
+`provisioners/mobile_simulator.py` (the provisioner enforces an exact-set
+match). The client resume revalidation work is retained regardless, because
+same-device `kicked` detection is still a real requirement.
+
+## Implemented and verified (2026-11-11)
+
+The Gate was realigned to the three points above and now records
+`same-account-multi-device-coexistence` (asserting distinct `device_id`s) and
+`same-account-session-preserved-after-resume` instead of the old
+cross-installation `revoked-session-cleared` expectation. The first secondary
+Station switch now asserts `remoteRevocation = confirmed`, because the primary
+session is still live at that point (`station.select` on a different Station
+runs a real `station-replace` revoke; `not-required` only applies to a
+same-Station select or an absent session).
+
+A second, previously masked blocker then surfaced. Once the journey passed,
+`acceptance-run` rejected the sealed report with
+`"<gate>: source report is unproven"`. `core/proof.py::require_report_proof`
+requires a non-empty list of named, passing `assertions` on the evidence
+report; this lifecycle Gate emitted none. Every earlier run had failed during
+the journey itself, so the missing-assertions rule was never reached. The fix
+adds a fail-closed `_assertions_from_lifecycle_evidence` builder that derives
+each predicate from the recorded events and journey result (restore,
+distinct-device coexistence, resume preservation, confirmed per-switch
+revocation with strictly monotonic generations, binding-proof closure, logout,
+no mocks, no physical-device claim, plus the expired-route assertion only in
+formal mode). A missing observation flips `passed: False` and fails the run
+before the report is sealed; unit tests call `require_report_proof` directly to
+lock the contract.
+
+Current-source evidence (commit `f616d2214`, clean workspace digest):
+`mobile-simulator-station-lifecycle-e2e` run
+`20261111T014554749354Z-88f580d355c22999e56d640cea0bc92f` sealed
+`PASS / DONE / PROVEN`, aggregate `failed=0, unproven=0`, all ten named
+assertions passing, with live distinct device ids and the primary session
+preserved through resume revalidation. Same-device slot replacement stays
+covered by the Station Go tests, the switch-loop re-authentications and the
+real-kernel terminal-401 resume test rather than by any cross-install id
+sharing.
