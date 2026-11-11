@@ -666,7 +666,10 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 for runtime in runtimes
             )
         ):
-            raise GateError(f"{client_id} runtime graph is not ready")
+            raise GateError(
+                f"{client_id} runtime graph is not ready "
+                f"readiness={json.dumps(readiness, sort_keys=True, default=str)}"
+            )
 
     def _wait_for_scope(
         self,
