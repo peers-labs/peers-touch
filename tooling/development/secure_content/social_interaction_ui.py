@@ -6,6 +6,8 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from selenium.common.exceptions import StaleElementReferenceException
+
 from tooling.acceptance import search_capture
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationRuntimeClient,
@@ -15,6 +17,29 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def action_enabled(element: Any) -> bool:
+    """Whether a UI-kit action control can be activated.
+
+    The design-system Button/IconButton never sets the native ``disabled``
+    attribute: it stays focusable and signals unavailability through
+    ``aria-disabled`` while intercepting the click. Checking only the native
+    attribute therefore always reports "enabled" and silently clicks a blocked
+    control, so both signals must agree before treating the control as live.
+    """
+    if element is None:
+        return False
+    if element.get_attribute("disabled") is not None:
+        return False
+    return element.get_attribute("aria-disabled") != "true"
+
+
+# A successful click immediately triggers a React repaint (submit/toggle), so
+# the resolved node can be replaced within the same call. Re-resolve a live
+# node a bounded number of times instead of failing the whole Journey on one
+# repaint race.
+_STALE_CLICK_ATTEMPTS = 3
 
 
 class SocialCommentUI:
@@ -46,25 +71,82 @@ class SocialCommentUI:
                 return element
         return None
 
+    def attribute(self, selector: str, name: str, action: str) -> str:
+        """Read an element attribute, re-resolving across repaint races.
+
+        A painted comment/control node can be replaced between the locating
+        wait and the read. ``wait_until`` already retries predicate failures,
+        so a stale read is reported as "not ready" instead of aborting the
+        Journey. Only use for attributes whose expected value is a non-empty
+        string (never a legitimate ``None`` such as ``disabled``).
+        """
+
+        def read() -> str | None:
+            element = self.visible(selector)
+            if element is None:
+                return None
+            try:
+                value = element.get_attribute(name)
+            except StaleElementReferenceException:
+                return None
+            return value or None
+
+        return wait_until(read, f"{self.actor} {action}", timeout=30)
+
+    def attributes(self, selector: str, names: tuple[str, ...], action: str) -> dict[str, str]:
+        """Read several attributes from one live node with stale retry."""
+
+        def read() -> dict[str, str] | None:
+            element = self.visible(selector)
+            if element is None:
+                return None
+            try:
+                values = {name: element.get_attribute(name) for name in names}
+                tag_name = element.tag_name
+            except StaleElementReferenceException:
+                return None
+            values["tag"] = tag_name
+            return values
+
+        return wait_until(read, f"{self.actor} {action}", timeout=30)
+
     def click(self, selector: str, action: str) -> Any:
-        element = wait_until(
-            lambda: self.visible(selector),
-            f"{self.actor} {action}",
-            timeout=90,
+        last_error: StaleElementReferenceException | None = None
+        for _ in range(_STALE_CLICK_ATTEMPTS):
+            element = wait_until(
+                lambda: self.visible(selector),
+                f"{self.actor} {action}",
+                timeout=90,
+            )
+            try:
+                # Read identity before activating: a successful submit/toggle
+                # repaints and detaches the node right after click(), so any
+                # post-click read would report staleness even though the
+                # intended action already landed.
+                tag_name = element.tag_name
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
+                    element,
+                )
+                element.click()
+            except StaleElementReferenceException as error:
+                # The node was replaced before or during an unconfirmed click;
+                # re-resolve a live node and retry. A click that returns has
+                # already been delivered and is never retried, so submit and
+                # toggle actions cannot be duplicated by this recovery path.
+                last_error = error
+                continue
+            self.actions.append({
+                "actor": self.actor,
+                "action": action,
+                "selectorSha256": _digest(selector),
+                "tag": tag_name,
+                "automationSessionId": str(self.driver.session_id),
+            })
+            return element
+        raise last_error or RuntimeError(
+            f"{self.actor} {action} click did not resolve a stable element"
         )
-        self.driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
-            element,
-        )
-        element.click()
-        self.actions.append({
-            "actor": self.actor,
-            "action": action,
-            "selectorSha256": _digest(selector),
-            "tag": element.tag_name,
-            "automationSessionId": str(self.driver.session_id),
-        })
-        return element
 
     @staticmethod
     def post_selector(post_id: str) -> str:
@@ -81,19 +163,19 @@ class SocialCommentUI:
         )
         post = self.post_selector(post_id)
         toggle = f'{post} [data-acceptance-id="social-open-comments"]'
-        control = wait_until(
-            lambda: self.visible(toggle),
+        wait_until(
+            lambda: self.visible(toggle) is not None,
             f"{self.actor} private parent card",
             timeout=120,
         )
-        expanded = control.get_attribute("aria-expanded")
+        expanded = self.attribute(toggle, "aria-expanded", "comment thread expansion")
         if expanded not in ("true", "false"):
             raise RuntimeError("Social comment control has no expansion state")
         if expanded == "false":
             self.click(toggle, "open-comment-thread")
         wait_until(
-            lambda: (current := self.visible(toggle)) is not None
-            and current.get_attribute("aria-expanded") == "true",
+            lambda: self.attribute(toggle, "aria-expanded", "comment thread expanded")
+            == "true",
             f"{self.actor} expanded private thread",
             timeout=30,
         )
@@ -149,15 +231,14 @@ class SocialCommentUI:
         )
         send = f'{post} [data-acceptance-id="social-comment-send"]'
         wait_until(
-            lambda: (control := self.visible(send)) is not None
-            and control.get_attribute("disabled") is None,
+            lambda: action_enabled(self.visible(send)),
             f"{self.actor} enabled comment submit",
             timeout=30,
         )
         self.click(send, "submit-reply" if reply_to else "submit-root-comment")
         depth = 1 if reply_to else 0
         row = self.row(post_id, text, depth)
-        return self.visible(row).get_attribute("data-comment-id")
+        return self.attribute(row, "data-comment-id", "submitted comment identity")
 
     def assert_like(
         self, post_id: str, text: str, depth: int, count: int, liked: bool, phase: str
@@ -168,10 +249,9 @@ class SocialCommentUI:
         def settled() -> Any:
             control = self.visible(selector)
             if (
-                control is not None
+                action_enabled(control)
                 and control.get_attribute("data-comment-like-count") == str(count)
                 and control.get_attribute("aria-pressed") == str(liked).lower()
-                and control.get_attribute("disabled") is None
             ):
                 return control
             return None
@@ -203,6 +283,14 @@ class SocialCommentUI:
         dom.write_text(self.driver.page_source, encoding="utf-8")
         if painted() is None:
             raise RuntimeError("Private comment changed during Native painted capture")
+        live_control = self.attributes(
+            selector,
+            ("data-comment-like-count", "aria-pressed"),
+            f"{self.actor} {phase} painted LIKE state",
+        )
+        comment_id = self.attribute(
+            row, "data-comment-id", f"{self.actor} {phase} comment identity"
+        )
         self.artifacts.extend((screenshot, dom))
         self.assertions.append({
             "actor": self.actor,
@@ -210,10 +298,10 @@ class SocialCommentUI:
             "depth": depth,
             "postIdSha256": _digest(post_id),
             "commentTextSha256": _digest(text),
-            "commentIdSha256": _digest(self.visible(row).get_attribute("data-comment-id")),
-            "count": int(control.get_attribute("data-comment-like-count")),
-            "liked": control.get_attribute("aria-pressed") == "true",
-            "tag": control.tag_name,
+            "commentIdSha256": _digest(comment_id),
+            "count": int(live_control["data-comment-like-count"]),
+            "liked": live_control["aria-pressed"] == "true",
+            "tag": live_control["tag"],
             "automationSessionId": str(self.driver.session_id),
             "paintFrames": 2,
             "screenshot": {"path": str(screenshot), "sha256": hashlib.sha256(screenshot.read_bytes()).hexdigest()},
@@ -309,9 +397,7 @@ class SocialPollUI:
         self.select(post_id, choices)
         selector = f'{self.post_selector(post_id)} [data-acceptance-id="social-poll-submit"]'
         wait_until(
-            lambda: (control := self.visible(selector)) is not None
-            and control.get_attribute("disabled") is None
-            and control.get_attribute("aria-disabled") != "true",
+            lambda: action_enabled(self.visible(selector)),
             f"{self.actor} enabled ballot submit",
             timeout=30,
         )
