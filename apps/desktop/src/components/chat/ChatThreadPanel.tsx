@@ -137,6 +137,7 @@ function ThreadMessageItem({
       >
         <UserSquareAvatar
           remoteUrl={senderProfile.avatar}
+          actorPtid={message.senderPtid}
           name={senderName}
           size={root ? 30 : 28}
         />
@@ -491,6 +492,7 @@ export function ChatThreadPanel() {
             {threadLoadError && (
               <PtAlert tone="warning" title={t('chat.social.thread.loadFailed')} description={threadLoadError} />
             )}
+            <div className="sc-thread__card">
             <div className="sc-thread__section">
               <span className="sc-thread__section-label">{t('chat.social.thread.rootMessage')}</span>
               <ThreadMessageItem
@@ -548,6 +550,7 @@ export function ChatThreadPanel() {
                   {t('chat.social.thread.loadMoreReplies')}
                 </PtButton>
               )}
+            </div>
             </div>
           </div>
 

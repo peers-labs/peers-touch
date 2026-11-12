@@ -52,6 +52,17 @@ describe('search command palette alignment (prototype bespoke shell over peers)'
     expect(stylesheet).toContain('.pt-search-panel');
   });
 
+  it('expresses focus as a hairline + soft ring, never an offset square outline', () => {
+    // north-star global-search spec §6: the embedded input's square outline
+    // is suppressed; focus is a hairline color change plus a subtle ring so
+    // the field does not paint a heavy double frame.
+    expect(stylesheet).toContain('.pt-search-field:focus-within');
+    expect(stylesheet).toContain('border-color: var(--pt-focus)');
+    expect(stylesheet).toContain('box-shadow: 0 0 0 2px var(--pt-primarySubtle)');
+    expect(stylesheet).not.toMatch(/\.pt-search-field:focus-within\s*\{[^}]*outline-offset/);
+    expect(stylesheet).toContain('.pt-search-field input:focus-visible { outline: none; }');
+  });
+
   it('renders the return bar actions as peers Buttons', () => {
     expect(returnBarSource).toMatch(/import \{ Button \} from '@peers-touch\/ui'/);
     expect(returnBarSource).toContain('actionId="search-return-back"');

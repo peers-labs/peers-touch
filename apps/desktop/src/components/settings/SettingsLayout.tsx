@@ -1,8 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import {
-  pageColumnWidth,
-  type PageWidthTier,
-} from '../../layout/pageWidth';
+import type { PageWidthTier } from '../../layout/pageWidth';
 
 /**
  * North-star settings layout primitives.
@@ -18,8 +15,9 @@ import {
 interface SettingsContainerProps {
   children: ReactNode;
   /**
-   * Responsive width tier. Forms default to `narrow`; management consoles use
-   * `standard`/`wide`. The column is always centered with edge gutters.
+   * Responsive width tier. Retained as a stable data attribute for selectors;
+   * geometry now fills the content region (the 8px scroll gutter owns the edge
+   * inset), so tiers no longer cap the column width.
    */
   tier?: PageWidthTier;
   style?: CSSProperties;
@@ -37,10 +35,7 @@ export function SettingsContainer({
       className="sc-settings-column"
       data-pt-settings-column={tier}
       data-full-height={fullHeight ? 'true' : 'false'}
-      style={{
-        width: pageColumnWidth(tier),
-        ...style,
-      }}
+      style={style}
     >
       {children}
     </div>

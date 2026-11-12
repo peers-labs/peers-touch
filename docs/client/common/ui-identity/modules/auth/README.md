@@ -57,6 +57,14 @@ developer console or a game.
 
 Auth uses **one dominant card over one calm backdrop**.
 
+> **Desktop exception:** the desktop client renders a **full-bleed surface**
+> instead of a floating card — the card fills the window content with no outer
+> canvas band, and inner content keeps a fixed 384px reading measure centered.
+> The federated mesh/backdrop layer is not rendered on desktop today. See
+> [desktop.md §2](./desktop.md#2-desktop-auth-layout) for the binding desktop
+> contract. The rules below describe the cross-surface model that still
+> applies wherever a floating-card form factor is used.
+
 Rules:
 
 - The auth card is the only foreground surface. It owns radius, shadow, and the

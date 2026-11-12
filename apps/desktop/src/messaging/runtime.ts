@@ -20,7 +20,10 @@ import {
 import { log } from '../utils/logger';
 import { messagingAttachmentAccess } from './attachmentAccess';
 
-const RECONCILE_INTERVAL_MS = 30_000;
+// Safety-net scope reconciliation; live message/realtime events drive the
+// actual projections. Halved from 30s to cut idle bridge traffic while still
+// bounding drift to a minute.
+export const RECONCILE_INTERVAL_MS = 60_000;
 
 export interface MessagingRuntimeScope {
   actorPtid: string;

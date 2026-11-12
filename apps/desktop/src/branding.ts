@@ -1,11 +1,27 @@
+import peersWordmark from './assets/peers-logo.png';
+import peersAppIcon from './assets/peers-app-icon.png';
+
 /**
  * 品牌资源统一配置
- * 品牌名称、主题色等非矢量品牌配置在这里统一管理。品牌图形标识的唯一真源是
- * components/common/BrandMark.tsx 的矢量 P-mark（与 macOS tray 资产同源）。
+ * 品牌名称、主题色等非矢量品牌配置在这里统一管理。品牌字形标识（藏青 Peers +
+ * 绿色 r 肩）与官网共用同一位图母版 apps/desktop/src/assets/peers-logo.png；
+ * 仓库内不存在该字形标的矢量真源，禁止自行推导替代图形。
  */
 export const BRANDING = {
   /** 应用名称 */
   appName: 'Peers',
+
+  /** 品牌图形标识 */
+  logos: {
+    /** Peers 字形标（官网 public/peers-logo.png 同源） */
+    wordmark: peersWordmark,
+    /**
+     * 应用图标（白色圆角方块内嵌字形，圆角外透明）。前端副本取自 Tauri
+     * 图标母版 src-tauri/icons/icon.png，仅用于登录面品牌 hero；原生图标
+     * 管线的真源仍在 src-tauri/icons，禁止在此修改图形。
+     */
+    appIcon: peersAppIcon,
+  },
 
   /** 主题色配置（north-star：近墨动作色 + 松绿品牌强调，仅作单一真源） */
   colors: {

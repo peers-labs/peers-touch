@@ -1,13 +1,30 @@
+use std::sync::Arc;
+
 use serde::Deserialize;
 use serde_json::json;
+use tauri::Manager;
 
 use crate::application::native_surface::{self, NativeNotificationRoute};
+use crate::application::traffic_lights::{TrafficLightMode, TrafficLightState};
+use crate::application::window_sizing::WindowSizingState;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
 
 const MAX_TITLE_CHARS: usize = 200;
 const MAX_BODY_CHARS: usize = 1_000;
 const MAX_ID_CHARS: usize = 128;
+
+/// Keep the native title-bar chrome in step with the auth / ready surface:
+/// one close light on login, the full three-light cluster in the ready shell.
+/// Inert under the acceptance build, where harness window placement and the
+/// setup-time auth chrome stay authoritative.
+fn apply_traffic_light_mode(window: &tauri::Window, mode: TrafficLightMode) {
+    if cfg!(feature = "acceptance-webdriver") {
+        return;
+    }
+    let state = window.state::<Arc<TrafficLightState>>().inner().clone();
+    TrafficLightState::apply(window, state, mode);
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +42,66 @@ pub fn native_dock_set_badge(input: DockBadgeInput) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
         command: "native_dock_set_badge".to_string(),
         status: json!({ "applied": true, "unreadConversationCount": count }).to_string(),
+    })
+}
+
+/// Shrink the main window to the compact auth surface (400x720). No-op under
+/// the acceptance build, where harness window placement stays authoritative.
+#[tauri::command]
+pub fn native_window_apply_auth_surface(
+    window: tauri::Window,
+) -> AppResult<StubPayload> {
+    let state = window.state::<Arc<WindowSizingState>>().inner().clone();
+    let geometry = match WindowSizingState::apply_auth_surface(&window, &state) {
+        Ok(geometry) => geometry,
+        Err(message) => {
+            tracing::error!(error = %message, "native auth window surface failed");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "native window surface failed",
+                None,
+            );
+        }
+    };
+    apply_traffic_light_mode(&window, TrafficLightMode::Auth);
+    AppResult::success(StubPayload {
+        command: "native_window_apply_auth_surface".to_string(),
+        status: json!({
+            "surface": "auth",
+            "width": geometry.width(),
+            "height": geometry.height(),
+        })
+        .to_string(),
+    })
+}
+
+/// Expand the main window to the remembered ready size, centering it. No-op
+/// under the acceptance build.
+#[tauri::command]
+pub fn native_window_apply_ready_surface(
+    window: tauri::Window,
+) -> AppResult<StubPayload> {
+    let state = window.state::<Arc<WindowSizingState>>().inner().clone();
+    let geometry = match WindowSizingState::apply_ready_surface(&window, &state) {
+        Ok(geometry) => geometry,
+        Err(message) => {
+            tracing::error!(error = %message, "native ready window surface failed");
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "native window surface failed",
+                None,
+            );
+        }
+    };
+    apply_traffic_light_mode(&window, TrafficLightMode::Ready);
+    AppResult::success(StubPayload {
+        command: "native_window_apply_ready_surface".to_string(),
+        status: json!({
+            "surface": "ready",
+            "width": geometry.width(),
+            "height": geometry.height(),
+        })
+        .to_string(),
     })
 }
 

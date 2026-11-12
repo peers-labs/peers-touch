@@ -1525,8 +1525,17 @@ impl MessagingStore {
 
     pub fn persist_direct_send(&self, input: &DirectSendCommit<'_>) -> Result<(), String> {
         validate_pending_sender_projection(&input.projection)?;
-        if input.command_bytes.is_empty() || input.advanced_sessions.is_empty() {
-            return Err("messaging Direct send requires command bytes and sessions".to_string());
+        if input.command_bytes.is_empty() {
+            return Err("messaging Direct send requires command bytes".to_string());
+        }
+        // Mirror `persist_direct_outbound_send`: a single-device self-direct
+        // carries only the sender's public event and legitimately has no peer
+        // sessions. Plans with recipient devices still reject empty sessions.
+        if input.advanced_sessions.is_empty() && input.projection.required_device_count != 0 {
+            return Err(
+                "messaging Direct send requires session advances for planned recipients"
+                    .to_string(),
+            );
         }
         let mut session_ids = HashSet::with_capacity(input.advanced_sessions.len());
         for session in input.advanced_sessions {
@@ -12055,8 +12064,19 @@ impl DirectOutboundRepository for MessagingStore {
     ) -> Result<(), String> {
         let projection = desktop_pending_projection(&commit.projection);
         validate_pending_sender_projection(&projection)?;
-        if commit.command_bytes.is_empty() || commit.session_advances.is_empty() {
-            return Err("messaging Direct send requires command bytes and sessions".to_string());
+        if commit.command_bytes.is_empty() {
+            return Err("messaging Direct send requires command bytes".to_string());
+        }
+        // A single-device self-direct (Saved Messages) has no peer endpoint:
+        // its only delivery is the sender's own public event derived
+        // server-side, so a zero-session fan-out is the valid shape. Any plan
+        // with recipient devices still requires a session advance per peer.
+        // See docs/architecture/domains/chat/lifecycle/self-direct.md §4.4.
+        if commit.session_advances.is_empty() && projection.required_device_count != 0 {
+            return Err(
+                "messaging Direct send requires session advances for planned recipients"
+                    .to_string(),
+            );
         }
         let mut connection = self.connection()?;
         let transaction = connection
@@ -13084,19 +13104,15 @@ fn validate_conversation_projection(
     }
     match kind {
         ConversationKind::Direct => {
-            // Two shapes are valid: a two-actor Direct with the owner first,
-            // and a self-direct (Saved Messages) whose sole member is the
-            // owner. Every Direct member carries the plain Member role.
-            let membership_valid = match projection.members.len() {
-                2 => {
-                    projection.members[0].ptid == projection.owner_ptid
-                        && projection.members[0].ptid.as_str()
-                            < projection.members[1].ptid.as_str()
-                }
-                1 => projection.members[0].ptid == projection.owner_ptid,
-                _ => false,
-            };
-            if !membership_valid
+            // Station allows a one-member self-direct (Saved Messages) whose
+            // sole participant is the owner; peer Directs still require
+            // exactly two members. Both shapes keep the owner at index 0,
+            // all-Member roles, and the strict ordering checked above, so the
+            // only relaxed condition here is the permitted member count.
+            let is_self_direct = projection.members.len() == 1;
+            let valid_member_count = projection.members.len() == 2 || is_self_direct;
+            if !valid_member_count
+                || projection.members[0].ptid != projection.owner_ptid
                 || projection
                     .members
                     .iter()
@@ -17749,6 +17765,70 @@ mod tests {
     }
 
     #[test]
+    fn self_direct_conversation_projection_with_one_member_is_valid() {
+        // Station's Saved Messages self-direct carries a single member (the
+        // owner); the desktop store must accept it instead of rejecting every
+        // Direct that is not a two-member peer conversation.
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = ConversationProjection {
+            conversation_id: "direct-self".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: String::new(),
+            kind: ConversationKind::Direct as i32,
+            name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![ConversationMemberProjection {
+                ptid: "ptid:alice".to_string(),
+                role: MemberRole::Member as i32,
+                ..Default::default()
+            }],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 100,
+        };
+
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
+        assert_eq!(
+            store.conversation_projections().unwrap()[0].members.len(),
+            1
+        );
+    }
+
+    #[test]
+    fn self_direct_projection_rejects_sole_member_that_is_not_owner() {
+        let store = MessagingStore::in_memory().unwrap();
+        let projection = ConversationProjection {
+            conversation_id: "direct-self-bad".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: String::new(),
+            kind: ConversationKind::Direct as i32,
+            name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![ConversationMemberProjection {
+                // Sole member differs from the owner: must stay invalid.
+                ptid: "ptid:bob".to_string(),
+                role: MemberRole::Member as i32,
+                ..Default::default()
+            }],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 100,
+        };
+
+        assert!(store
+            .bootstrap_conversation_projection(&projection)
+            .is_err());
+    }
+
+    #[test]
     fn direct_authority_checkpoint_is_atomic_idempotent_and_projection_bound() {
         let store = MessagingStore::in_memory().unwrap();
         let projection = direct_conversation_projection();
@@ -20726,6 +20806,146 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 0, "table {table}");
         }
+    }
+
+    #[test]
+    fn self_direct_outbound_send_with_zero_sessions_is_persisted() {
+        let store = MessagingStore::in_memory().unwrap();
+        let private_content =
+            crate::messaging::encode_message_private_content("note to self", &[]).unwrap();
+        let plan_sha = [7u8; 32];
+        let result = store.persist_direct_outbound_send(&DirectOutboundSendCommit {
+            command_bytes: b"self-direct public-event command",
+            expected_authority_sequence: 0,
+            expected_authority_hash: &[],
+            session_advances: &[],
+            projection: CorePendingSenderProjection {
+                command_id: "command-self",
+                conversation_id: "direct-self-abcdef0123456789",
+                conversation_kind: 1,
+                message_id: "message-self",
+                sender_ptid: "ptid:alice",
+                sender_device_id: "alice-device",
+                plaintext: "note to self",
+                reply_to_message_id: "",
+                thread_root_message_id: "",
+                attachments: &[],
+                private_content: &private_content,
+                delivery_plan_sha256: &plan_sha,
+                created_at_unix_ms: 10,
+                required_device_count: 0,
+            },
+        });
+        assert!(result.is_ok(), "self-direct send should persist: {result:?}");
+
+        {
+            let connection = store.connection().unwrap();
+            for table in [
+                "messaging_local_commands",
+                "messaging_command_outbox",
+                "messaging_pending_messages",
+                "messaging_command_attempts",
+            ] {
+                let count: i64 = connection
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap();
+                assert_eq!(count, 1, "table {table}");
+            }
+            // Public-event-only delivery must not create a peer session row.
+            let session_count: i64 = connection
+                .query_row("SELECT COUNT(*) FROM direct_sessions", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(session_count, 0);
+            // The prepared command promotes the logical message to pending.
+            let pending_state: String = connection
+                .query_row(
+                    "SELECT state FROM messaging_pending_messages WHERE message_id = ?1",
+                    params!["message-self"],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(pending_state, "pending");
+        }
+    }
+
+    #[test]
+    fn peer_direct_outbound_send_without_session_advances_is_rejected() {
+        let store = MessagingStore::in_memory().unwrap();
+        let private_content =
+            crate::messaging::encode_message_private_content("hello bob", &[]).unwrap();
+        let plan_sha = [7u8; 32];
+        let result = store.persist_direct_outbound_send(&DirectOutboundSendCommit {
+            command_bytes: b"peer command missing sessions",
+            expected_authority_sequence: 0,
+            expected_authority_hash: &[],
+            session_advances: &[],
+            projection: CorePendingSenderProjection {
+                command_id: "command-peer",
+                conversation_id: "direct-pair",
+                conversation_kind: 1,
+                message_id: "message-peer",
+                sender_ptid: "ptid:alice",
+                sender_device_id: "alice-device",
+                plaintext: "hello bob",
+                reply_to_message_id: "",
+                thread_root_message_id: "",
+                attachments: &[],
+                private_content: &private_content,
+                delivery_plan_sha256: &plan_sha,
+                created_at_unix_ms: 10,
+                required_device_count: 1,
+            },
+        });
+        let error = result.unwrap_err();
+        assert!(
+            error.contains("session advances for planned recipients"),
+            "unexpected error: {error}"
+        );
+        let connection = store.connection().unwrap();
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_local_commands",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0, "rejected send must roll back");
+    }
+
+    #[test]
+    fn self_direct_outbound_send_without_command_bytes_is_rejected() {
+        let store = MessagingStore::in_memory().unwrap();
+        let private_content =
+            crate::messaging::encode_message_private_content("note to self", &[]).unwrap();
+        let plan_sha = [7u8; 32];
+        let result = store.persist_direct_outbound_send(&DirectOutboundSendCommit {
+            command_bytes: &[],
+            expected_authority_sequence: 0,
+            expected_authority_hash: &[],
+            session_advances: &[],
+            projection: CorePendingSenderProjection {
+                command_id: "command-empty",
+                conversation_id: "direct-self-abcdef0123456789",
+                conversation_kind: 1,
+                message_id: "message-empty",
+                sender_ptid: "ptid:alice",
+                sender_device_id: "alice-device",
+                plaintext: "note to self",
+                reply_to_message_id: "",
+                thread_root_message_id: "",
+                attachments: &[],
+                private_content: &private_content,
+                delivery_plan_sha256: &plan_sha,
+                created_at_unix_ms: 10,
+                required_device_count: 0,
+            },
+        });
+        let error = result.unwrap_err();
+        assert!(error.contains("requires command bytes"), "unexpected error: {error}");
     }
 
     #[test]

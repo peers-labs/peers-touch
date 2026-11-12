@@ -35,7 +35,14 @@ import { log } from '../utils/logger';
  * so timer throttling or one missed pulse cannot expire an active runtime.
  */
 export const PRESENCE_HEARTBEAT_INTERVAL_MS = 30 * 1000;
-const SESSION_VALIDATION_INTERVAL = 5 * 1000;
+/**
+ * Liveness-probe backstop only. Actual revocation is event-driven: any IPC
+ * 401 `session_revoked` publishes AUTH_SESSION_REVOKED immediately, and
+ * refocusing the window validates on the spot. A 5s probe meant ~12 bridge
+ * calls/min at idle for no safety gain; 60s keeps the backstop without the
+ * churn.
+ */
+const SESSION_VALIDATION_INTERVAL = 60 * 1000;
 
 /**
  * Coalesce burst-y DOM events: foreground/background often fire twice

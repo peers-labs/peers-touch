@@ -1,13 +1,15 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert as PtAlert,
   Button,
+  ContextMenu,
   Empty as PtEmpty,
   Icon,
   IconButton,
   Spin as PtSpin,
   Tag as PtTag,
+  type MenuAction,
   type Tone,
 } from '@peers-touch/ui';
 import { currentAuthenticatedActorPtid } from '../../store/session';
@@ -21,12 +23,9 @@ import {
   remoteProfileHandle,
 } from '../../store/socialProfileProjection';
 import type { FriendRequestData } from '../../store/socialNormalizers';
-import {
-  presentError,
-  type PresentedError,
-} from '../../services/errorPresenter';
+import { useDismissedFriendRequestsStore } from '../../store/dismissedFriendRequests';
+import { presentError } from '../../services/errorPresenter';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { log } from '../../utils/logger';
 import {
   useActiveChatFederationSlice,
@@ -112,7 +111,6 @@ export function ChatContactsPanel({
   }));
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
-  const [requestActionErrors, setRequestActionErrors] = useState<Record<string, PresentedError>>({});
   const [collapsed, setCollapsed] = useState<ContactSectionKey[]>(
     Object.entries(SECTION_COLLAPSED_DEFAULT)
       .filter(([, isCollapsed]) => isCollapsed)
@@ -125,6 +123,20 @@ export function ChatContactsPanel({
   };
 
   const myDid = currentUserPtid || currentAuthenticatedActorPtid() || '';
+  const dismissedPeers = useDismissedFriendRequestsStore((state) => state.dismissedPeers);
+  const loadDismissedForActor = useDismissedFriendRequestsStore(
+    (state) => state.loadForActor,
+  );
+  const dismissFriendRequestPeer = useDismissedFriendRequestsStore(
+    (state) => state.dismissPeer,
+  );
+
+  // History dismissal is local-only and actor-scoped; re-hydrate whenever the
+  // authenticated actor changes so accounts never share hidden rows.
+  useEffect(() => {
+    if (myDid) loadDismissedForActor(myDid);
+  }, [myDid, loadDismissedForActor]);
+
   const conversations = useMemo(
     () => {
       // getIMConversations reads the store imperatively. Referencing its
@@ -230,9 +242,12 @@ export function ChatContactsPanel({
     [requestPeers],
   );
   // Settled (accepted/rejected) requests are an archive, not a todo queue.
+  // Locally dismissed peers stay hidden until a new request re-surfaces them.
   const historyRequests = useMemo(
-    () => requestPeers.filter((peer) => peer.request.status !== 1),
-    [requestPeers],
+    () => requestPeers.filter(
+      (peer) => peer.request.status !== 1 && !dismissedPeers.includes(peer.peerPtid),
+    ),
+    [requestPeers, dismissedPeers],
   );
 
   function statusTag(status: number) {
@@ -284,12 +299,6 @@ export function ChatContactsPanel({
     action: 'accept' | 'reject',
   ) => {
     setBusyAction({ id: request.id, kind: action });
-    setRequestActionErrors((current) => {
-      if (!(request.id in current)) return current;
-      const next = { ...current };
-      delete next[request.id];
-      return next;
-    });
     try {
       if (action === 'accept') {
         await acceptFriendRequest(request);
@@ -298,13 +307,10 @@ export function ChatContactsPanel({
       }
     } catch (error) {
       log.error('contacts', `${action}FriendRequest failed`, error);
-      setRequestActionErrors((current) => ({
-        ...current,
-        [request.id]: presentError(error, {
-          mode: 'inline',
-          fallbackKey: 'error.chat.conversationActionFailed',
-        }),
-      }));
+      // Unified floating toast; the request row stays interactive.
+      presentError(error, {
+        fallbackKey: 'error.chat.conversationActionFailed',
+      });
     } finally {
       setBusyAction(null);
     }
@@ -351,7 +357,6 @@ export function ChatContactsPanel({
     const isPendingIncoming = direction === 'incoming' && request.status === 1;
     const isOutgoing = direction === 'outgoing';
     const isSettled = request.status !== 1;
-    const actionError = requestActionErrors[request.id];
     const isSelected = Boolean(
       selectedContact
       && selectedContact.kind !== 'group'
@@ -379,9 +384,21 @@ export function ChatContactsPanel({
       onSelectContact(selection);
     };
     const directionTone: Tone = isOutgoing ? 'neutral' : 'info';
-    return (
+    // Settled history rows compress to one line: the repeated-attempt count is
+    // secondary metadata and moves into the hover tooltip instead of wrapping
+    // into a third tag row that would outgrow the 40px avatar.
+    const attemptsLabel = attemptCount > 1
+      ? t('chat.social.contacts.requestAttempts', { count: attemptCount })
+      : '';
+    const cardTitle = isSettled && attemptsLabel
+      ? t('chat.social.contacts.historyRowTitle', {
+        peer: peerLabel,
+        attempts: attemptsLabel,
+      })
+      : peerLabel;
+
+    const card = (
       <div
-        key={peerPtid}
         className={[
           'sc-request-card',
           isOutgoing ? 'is-outgoing' : '',
@@ -393,7 +410,8 @@ export function ChatContactsPanel({
         data-chat-friend-request-direction={direction}
         data-chat-friend-request-status={request.status}
         data-chat-friend-request-attempt-count={attemptCount}
-        title={peerLabel}
+        {...(isSettled ? { 'data-chat-friend-request-history-card': true } : {})}
+        title={cardTitle}
         role="button"
         tabIndex={0}
         onClick={selectRequestActor}
@@ -412,12 +430,8 @@ export function ChatContactsPanel({
                 {t(`chat.social.contacts.direction.${direction}`)}
               </PtTag>
               {statusTag(request.status)}
-              {attemptCount > 1 ? (
-                <PtTag>
-                  {t('chat.social.contacts.requestAttempts', {
-                    count: attemptCount,
-                  })}
-                </PtTag>
+              {!isSettled && attemptsLabel ? (
+                <PtTag>{attemptsLabel}</PtTag>
               ) : null}
             </span>
             {isPendingIncoming ? (
@@ -455,29 +469,40 @@ export function ChatContactsPanel({
               </span>
             ) : null}
           </div>
-          {isOutgoing && request.status === 1 ? (
+          {!isSettled && isOutgoing && request.status === 1 ? (
             <span className="sc-request-card__greeting is-sent">
               {t('chat.social.contacts.outgoingPendingHint')}
             </span>
-          ) : request.message ? (
+          ) : !isSettled && request.message ? (
             <span className="sc-request-card__greeting">{request.message}</span>
-          ) : null}
-          {actionError ? (
-            <div data-chat-friend-request-error={request.id}>
-              <PresentedErrorAlert
-                error={actionError}
-                onClose={() => {
-                  setRequestActionErrors((current) => {
-                    const next = { ...current };
-                    delete next[request.id];
-                    return next;
-                  });
-                }}
-              />
-            </div>
           ) : null}
         </div>
       </div>
+    );
+
+    // Only settled archive rows are dismissible; pending queues keep their
+    // accept/reject decision actions and cannot be removed from the list.
+    if (!isSettled) {
+      return card;
+    }
+    const historyActions: MenuAction[] = [
+      {
+        id: `friend-request-history-delete-${request.id}`,
+        // Registered Peers glyph key; the lucide source name "trash-2" is not
+        // a valid IconId and throws inside <Icon> at render time.
+        iconId: 'delete',
+        label: t('chat.social.contacts.deleteHistory'),
+        onActivate: () => dismissFriendRequestPeer(peerPtid),
+      },
+    ];
+    return (
+      <ContextMenu
+        key={peerPtid}
+        actions={historyActions}
+        label={t('chat.social.contacts.historyContextMenu')}
+      >
+        {card}
+      </ContextMenu>
     );
   };
 
@@ -698,7 +723,11 @@ export function ChatContactsPanel({
               <div className="sc-contacts__self">{selfRow}</div>
             ) : null}
 
-            {!friendshipReady || friendRequestsLoading ? (
+            {/* Show the spinner only for the very first load. Once data has
+                loaded once (friendshipReady), background reconciles must keep
+                the list mounted and swap data silently instead of flashing a
+                spinner / unmounting the rows. */}
+            {!friendshipReady && friendRequestsLoading ? (
               <div className="sc-contacts__status"><PtSpin size="small" /></div>
             ) : (
               <>

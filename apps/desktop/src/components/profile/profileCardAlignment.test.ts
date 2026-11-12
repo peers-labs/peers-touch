@@ -177,4 +177,21 @@ describe('call sites pick the matching grammar', () => {
       expect(actionSource).toContain(hook);
     }
   });
+
+  it('never invokes an unstable projection getter inside a reactive selector', () => {
+    // getIMConversations() rebuilds the projection array per call; calling it
+    // inside a zustand selector makes useSyncExternalStore loop to the
+    // "Maximum update depth exceeded" crash when the popover mounts. The
+    // component must not bind it reactively at all — it reads the projection
+    // non-reactively via getState() at event-handler time instead.
+    expect(actionSource).not.toMatch(
+      /useSocialChatStore\(\(state\)\s*=>\s*state\.getIMConversations(\(\))?\)/,
+    );
+    expect(actionSource).toContain(
+      'useSocialChatStore.getState()',
+    );
+    expect(actionSource).toMatch(
+      /useSocialChatStore\.getState\(\)\s*\n?\s*\.getIMConversations\(\)/,
+    );
+  });
 });

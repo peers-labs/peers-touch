@@ -69,6 +69,39 @@ export function singleFederationId(
   return ids.length === 1 ? ids[0] : '';
 }
 
+/**
+ * The Station's federation-context endpoint returns only federations the local
+ * Station actively participates in. When several exist there is no single
+ * default, but a same-Station friend command never crosses a federation
+ * boundary — the Station only requires a non-empty local federation
+ * identifier. The first active context is therefore a deterministic, valid
+ * fallback for a local actor. Returns '' when no context exists so callers
+ * keep the identity-incomplete guard for genuinely federated targets.
+ */
+export function localFederationFallback(
+  federations: readonly { federationId: string }[],
+): string {
+  for (const federation of federations) {
+    const id = federation.federationId.trim();
+    if (id) return id;
+  }
+  return '';
+}
+
+/**
+ * A local actor shares the viewer's Home Station. Same-Station friend requests
+ * route inside the Station and may use any local federation context; a
+ * federated actor instead keeps requiring its explicit Federation scope.
+ */
+export function isSameStationActor(input: {
+  selfHomeStationPeerId?: string | null;
+  targetHomeStationPeerId: string;
+}): boolean {
+  const self = input.selfHomeStationPeerId?.trim() ?? '';
+  const target = input.targetHomeStationPeerId.trim();
+  return Boolean(self && target && self === target);
+}
+
 export function projectMutualFriends(
   followers: readonly Follower[],
   following: readonly Following[],

@@ -667,20 +667,30 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "federationId: contact.federationId",
             page[create_direct_pos:create_direct_end],
         )
-        self.assertIn("mode: 'inline'", page)
+        # Failures route to the unified floating toast; the conversation
+        # pane must never be replaced by an inline error block.
+        self.assertNotIn("mode: 'inline'", page)
         self.assertIn("failDirectConversationOpen", page)
 
         for selector in (
             "data-chat-conversation-intent=",
             "data-chat-conversation-intent-state=",
-            "data-chat-conversation-intent-error=",
-            "data-chat-conversation-intent-retry",
         ):
             self.assertIn(selector, area)
+        for removed_selector in (
+            "data-chat-conversation-intent-error=",
+            "data-chat-conversation-intent-retry",
+            "onRetryDirectOpen",
+        ):
+            self.assertNotIn(removed_selector, area)
 
         self.assertIn("peer_bound_conversation_intent_visible", runner)
-        self.assertIn("error_displayed_in_peer_bound_view", runner)
-        self.assertIn("conversation_retry_visible", runner)
+        self.assertIn("failure_toast_displayed", runner)
+        self.assertIn(
+            "conversation_pane_stays_open_without_inline_error",
+            runner,
+        )
+        self.assertIn("conversation_reopens_after_recovery", runner)
         self.assertNotIn(
             "self._chats_subpage_active() or self._chat_area_visible()",
             runner,

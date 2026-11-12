@@ -359,12 +359,14 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             "data-chat-friend-request-id",
             'data-chat-friend-request-action="accept"',
             'data-chat-friend-request-action="reject"',
-            "data-chat-friend-request-error",
             "data-chat-friend-request-attempt-count",
             "personContactSelection",
             "error.chat.conversationActionFailed",
         ):
             self.assertIn(marker, source)
+        # Action failures surface through the unified floating toast; no
+        # per-row inline error hook may be reintroduced.
+        self.assertNotIn("data-chat-friend-request-error", source)
         detail_source = (
             REPO_ROOT
             / "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx"

@@ -615,13 +615,45 @@ fn main() {
         ))
         .manage(presence_supervisor)
         .manage(application::window_lifecycle::TrayResidency::default())
+        .manage(Arc::new(
+            application::window_sizing::WindowSizingState::default(),
+        ))
+        .manage(Arc::new(
+            application::traffic_lights::TrafficLightState::default(),
+        ))
         .on_window_event(|window, event| {
             application::window_lifecycle::handle_window_event(window, event);
+            if let Some(sizing) = window
+                .try_state::<Arc<application::window_sizing::WindowSizingState>>()
+            {
+                application::window_sizing::handle_window_event(
+                    window,
+                    event,
+                    sizing.inner(),
+                );
+            }
         })
         .setup(move |app| {
             app.state::<Arc<state::AppState>>()
                 .secure_content
                 .bind_app_handle(app.handle().clone());
+            {
+                // The window opens on the auth surface; apply the single-close
+                // traffic-light chrome until the ready surface restores all
+                // three lights through the native surface commands.
+                let main_window = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| std::io::Error::other("main window is missing"))?;
+                let traffic_light_state = app
+                    .state::<Arc<application::traffic_lights::TrafficLightState>>()
+                    .inner()
+                    .clone();
+                application::traffic_lights::TrafficLightState::apply(
+                    &main_window,
+                    traffic_light_state,
+                    application::traffic_lights::TrafficLightMode::Auth,
+                );
+            }
             #[cfg(feature = "acceptance-webdriver")]
             if std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some() {
                 let minimum_window_width = app
@@ -1273,6 +1305,8 @@ fn main() {
             station::acceptance_station_direct_route_override,
             native_surface::native_dock_set_badge,
             native_surface::native_notification_show,
+            native_surface::native_window_apply_auth_surface,
+            native_surface::native_window_apply_ready_surface,
             station::station_list,
             station::station_set_active,
             station::station_binding_complete,

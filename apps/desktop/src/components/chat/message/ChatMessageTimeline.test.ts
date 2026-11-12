@@ -14,7 +14,7 @@ import {
 import {
   resolveChatMessageThreadStats,
 } from './chatMessageThreadStats';
-import type { ChatMessage } from './chatMessageModel';
+import { isOwnMessage, type ChatMessage } from './chatMessageModel';
 
 describe('chat message timeline virtualization policy', () => {
   it('keeps short conversations in normal document flow', () => {
@@ -194,5 +194,22 @@ describe('ChatMessageTimeline layout', () => {
       position: 'relative',
       flex: '0 0 auto',
     });
+  });
+});
+
+describe('thread reply sender attribution', () => {
+  const bobTwoPtid = 'ptid:peer:bob-two';
+  const alicePtid = 'ptid:peer:alice';
+  const replyFromBobTwo = { ulid: 'reply', senderPtid: bobTwoPtid } as ChatMessage;
+
+  it('labels a reply as own only for its actual sender viewer', () => {
+    // bob_two's own client sees the reply as "You"; alice's client must keep it
+    // attributed to bob_two. Attribution is purely senderPtid vs viewer PTID.
+    expect(isOwnMessage(replyFromBobTwo, bobTwoPtid)).toBe(true);
+    expect(isOwnMessage(replyFromBobTwo, alicePtid)).toBe(false);
+  });
+
+  it('never treats a reply as own when the viewer identity is unknown', () => {
+    expect(isOwnMessage(replyFromBobTwo, null)).toBe(false);
   });
 });

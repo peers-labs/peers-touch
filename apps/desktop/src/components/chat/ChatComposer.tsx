@@ -123,6 +123,16 @@ interface ChatComposerProps {
   visualSurface?: DesktopChatVisualSurface;
   editPreview?: string;
   sending: boolean;
+  /** Inline, human-readable send failure shown above the input (not a toast). */
+  sendError?: string | null;
+  /** Dismiss the inline send-error banner. */
+  onDismissSendError?: () => void;
+  /**
+   * Fired after the input auto-grow/expand effect writes a new textarea
+   * height. The parent uses it to re-anchor the message stream to the tail so
+   * a taller composer pushes the last message up instead of covering it.
+   */
+  onComposerGeometryChange?: () => void;
 }
 
 interface RecordedVoiceDraft {
@@ -175,9 +185,18 @@ export function ChatComposer({
   visualSurface = 'desktop-main',
   editPreview,
   sending,
+  sendError = null,
+  onDismissSendError,
+  onComposerGeometryChange,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Keep the geometry callback in a ref so the auto-grow layout effect does
+  // not re-run when the parent passes a fresh function identity each render.
+  const onGeometryChangeRef = useRef(onComposerGeometryChange);
+  useEffect(() => {
+    onGeometryChangeRef.current = onComposerGeometryChange;
+  }, [onComposerGeometryChange]);
   const composingRef = useRef(false);
   const lastCompositionEndRef = useRef(0);
   // Text state lives inside the composer so each keystroke re-renders only
@@ -508,10 +527,6 @@ export function ChatComposer({
     };
   };
 
-  const handleToggleInputExpanded = () => {
-    setInputExpanded((expanded) => !expanded);
-  };
-
   const banner = useMemo(() => {
     if (editing) {
       return {
@@ -529,10 +544,22 @@ export function ChatComposer({
     }
     return null;
   }, [editPreview, editing, onCancelEdit, onCancelReply, replyPreview, replyPreviewKey, t, value]);
+  const handleToggleInputExpanded = () => {
+    setInputExpanded((expanded) => !expanded);
+  };
+
+  // Expanded surfaces are policy CSS length strings such as 'min(120px, 22vh)';
+  // collapsed values are plain numbers. Only numbers take a px suffix —
+  // appending px to a min() expression yields invalid CSS, which silently
+  // dropped the min/max-height contract and made the expand toggle a no-op.
   const inputMinHeight = inputExpanded
     ? visualLayout.composerInputExpandedMinHeight
     : visualLayout.composerInputMinHeight;
-  const inputMaxHeight = inputExpanded ? visualLayout.composerInputExpandedMaxHeight : 180;
+  const inputMaxHeight = inputExpanded
+    ? visualLayout.composerInputExpandedMaxHeight
+    : 180;
+  const cssLength = (length: number | string): string =>
+    (typeof length === 'number' ? `${length}px` : length);
 
   // North-star composer auto-grow (prototype sk-composer parity): the native
   // rows=1 box never grows on its own, so clamp its explicit height between the
@@ -546,8 +573,15 @@ export function ChatComposer({
     const maxHeight = Number.parseFloat(computed.maxHeight) || Number.POSITIVE_INFINITY;
     element.style.height = 'auto';
     const nextHeight = Math.min(Math.max(element.scrollHeight, minHeight), maxHeight);
+    const previousHeight = Number.parseFloat(element.dataset.composerHeight ?? '0') || 0;
     element.style.height = `${nextHeight}px`;
     element.style.overflowY = element.scrollHeight > maxHeight + 1 ? 'auto' : 'hidden';
+    element.dataset.composerHeight = String(nextHeight);
+    // Only notify on a real geometry change; the parent re-anchors the stream
+    // tail so the growing input pushes messages up rather than covering them.
+    if (nextHeight !== previousHeight) {
+      onGeometryChangeRef.current?.();
+    }
   }, [value, inputExpanded, editing]);
 
   const toolUnavailable = (reason: string) => ({ kind: 'disabled' as const, reason });
@@ -571,12 +605,38 @@ export function ChatComposer({
         ...(visualSurface === 'desktop-thread'
           ? null
           : { padding: visualLayout.composerOuterPadding }),
-        background: surfaceBackground ?? 'var(--pt-canvas)',
+        // Prototype .sk-composer-zone paints no background of its own: the
+        // conversation wallpaper/surface shows through around the grey pill.
+        // Only explicit surfaces (empty-state, thread sheet) pass a fill; the
+        // main composer stays transparent so it never forms a solid white band.
+        background: surfaceBackground ?? 'transparent',
       }}
     >
       {dragging && (
         <div className="sc-composer__drop" data-chat-composer-drop>
           {t('chat.social.composer.dropHint')}
+        </div>
+      )}
+
+      {sendError && (
+        <div className="sc-composer__banner sc-composer__banner--error" role="alert" data-chat-composer-error>
+          <div className="sc-composer__banner-body">
+            <div className="sc-composer__banner-label">
+              {t('chat.social.messageArea.sendFailedShort')}
+            </div>
+            <div className="sc-composer__banner-text">{sendError}</div>
+          </div>
+          {onDismissSendError && (
+            <PtButton
+              actionId="composer-dismiss-send-error"
+              className="sc-composer__banner-cancel"
+              emphasis="quiet"
+              density="compact"
+              leading={<X size={14} />}
+              aria-label={t('chat.social.messageArea.cancel')}
+              onActivate={onDismissSendError}
+            />
+          )}
         </div>
       )}
 
@@ -758,7 +818,55 @@ export function ChatComposer({
           boxShadow: visualLayout.composerShellShadow,
         }}
       >
-        <div className="sc-composer__row">
+        {/* WeChat composer grammar: the textarea owns the full top region and
+            fills the editable area; the tool/send controls live in a separate
+            footer row so expanding grows the input, not an empty box. The whole
+            region is click-to-focus: tapping any empty area of the pill focuses
+            the textarea instead of doing nothing (IM parity). */}
+        <div
+          className="sc-composer__input-wrap"
+          onMouseDown={(event) => {
+            // Only steer focus when the press lands outside the textarea
+            // itself; native textarea clicks must keep their own caret placement.
+            if (event.target === textareaRef.current) return;
+            event.preventDefault();
+            textareaRef.current?.focus();
+          }}
+        >
+          <TextArea
+            ref={textareaRef}
+            framing="embedded"
+            className="sc-composer__input"
+            data-pt-text-input="chat-composer"
+            value={value}
+            disabled={disabled || sending || recording || voiceSending || Boolean(recordedVoice)}
+            rows={1}
+            onInput={handleTextInputObserved}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => commitValue(event.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+              lastCompositionEndRef.current = Date.now();
+            }}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onBlur={onBlurInput}
+            placeholder={placeholder ?? t('chat.social.messageArea.placeholder')}
+            style={{
+              // Consumed by the embedded frame + native textarea CSS so the
+              // auto-grow effect (which writes height on the native element)
+              // keeps the same min/max contract as the former raw textarea.
+              // Auto-grow is instant, matching the prototype composer.
+              // cssLength keeps min() strings intact instead of appending px.
+              '--sc-composer-input-min-height': cssLength(inputMinHeight),
+              '--sc-composer-input-max-height': cssLength(inputMaxHeight),
+            } as CSSProperties}
+          />
+        </div>
+
+        <div className="sc-composer__footer">
           <span className="sc-composer__tools">
             {activeCapabilities.emoji && (
               <PtPopover
@@ -842,39 +950,6 @@ export function ChatComposer({
             )}
           </span>
 
-          <div className="sc-composer__input-wrap">
-            <TextArea
-              ref={textareaRef}
-              framing="embedded"
-              className="sc-composer__input"
-              data-pt-text-input="chat-composer"
-              value={value}
-              disabled={disabled || sending || recording || voiceSending || Boolean(recordedVoice)}
-              rows={1}
-              onInput={handleTextInputObserved}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => commitValue(event.target.value)}
-              onCompositionStart={() => {
-                composingRef.current = true;
-              }}
-              onCompositionEnd={() => {
-                composingRef.current = false;
-                lastCompositionEndRef.current = Date.now();
-              }}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              onBlur={onBlurInput}
-              placeholder={placeholder ?? t('chat.social.messageArea.placeholder')}
-              style={{
-                // Consumed by the embedded frame + native textarea CSS so the
-                // auto-grow effect (which writes height on the native element)
-                // keeps the same min/max contract as the former raw textarea.
-                // Auto-grow is instant, matching the prototype composer.
-                '--sc-composer-input-min-height': `${inputMinHeight}px`,
-                '--sc-composer-input-max-height': `${inputMaxHeight}px`,
-              } as CSSProperties}
-            />
-          </div>
-
           <span className="sc-composer__send-group">
             <PtTooltip label={inputExpanded ? t('chat.social.composer.collapseInput') : t('chat.social.composer.expandInput')}>
               <PtButton
@@ -894,8 +969,8 @@ export function ChatComposer({
               className="sc-composer__send"
               data-chat-send
               iconId="send"
-              iconSize={16}
-              emphasis="primary"
+              iconSize={18}
+              emphasis="quiet"
               label={t('chat.composer.send')}
               availability={canSend
                 ? { kind: 'enabled' }

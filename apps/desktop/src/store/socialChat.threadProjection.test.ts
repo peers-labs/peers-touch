@@ -5,6 +5,7 @@ import { imServiceV1 } from '../services/im-service';
 import type { MessagingProjection } from '../services/im-service-contract';
 import { useSessionStore } from './session';
 import { useSocialChatStore } from './socialChat';
+import type { SocialMessage } from './socialProjection';
 
 function message(messageId: string, threadRootMessageId?: string): MessagingProjection {
   return {
@@ -94,12 +95,51 @@ describe('social chat open Thread freshness', () => {
   it.each([
     { activeTab: 'friend' as const, activeSessionUlid: 'other', openThreadRootUlid: 'root' },
     { activeTab: 'group' as const, activeGroupUlid: 'conversation', openThreadRootUlid: 'root' },
-    { activeTab: 'friend' as const, activeSessionUlid: 'conversation', openThreadRootUlid: null },
   ])('does not fetch a Thread outside the active conversation/kind', async (selection) => {
     useSocialChatStore.setState(selection);
     await useSocialChatStore.getState().loadMessages('conversation', 'friend');
     expect(imServiceV1.messaging.listThreadMessages).not.toHaveBeenCalled();
     expect(useSocialChatStore.getState().threadMessages).toEqual({});
+  });
+
+  it('prefetches inline Thread previews without opening the standalone panel', async () => {
+    useSocialChatStore.setState({
+      activeTab: 'friend',
+      activeSessionUlid: 'conversation',
+      activeGroupUlid: null,
+      openThreadRootUlid: null,
+    });
+
+    await useSocialChatStore.getState().loadMessages('conversation', 'friend');
+
+    const state = useSocialChatStore.getState();
+    // The reply slice is hydrated for the inline preview ...
+    expect(imServiceV1.messaging.listThreadMessages).toHaveBeenCalledWith('conversation', 'root');
+    expect(state.threadMessages['friend:conversation:root'].map((value) => value.ulid))
+      .toEqual(['root', 'reply']);
+    // ... but the panel stays closed because no root was explicitly opened.
+    expect(state.openThreadRootUlid).toBeNull();
+  });
+
+  it('does not prefetch a Thread whose slice is already loaded', async () => {
+    useSocialChatStore.setState({
+      activeTab: 'friend',
+      activeSessionUlid: 'conversation',
+      activeGroupUlid: null,
+      openThreadRootUlid: null,
+      threadMessages: {
+        'friend:conversation:root': [
+          message('root'),
+          message('reply', 'root'),
+        ] as unknown as SocialMessage[],
+      },
+    });
+
+    await useSocialChatStore.getState().loadMessages('conversation', 'friend');
+
+    // refreshThreadCounts still reports one reply, but the existing slice makes
+    // the prefetch a no-op (no duplicate request).
+    expect(imServiceV1.messaging.listThreadMessages).not.toHaveBeenCalled();
   });
 
   it('does not repopulate messages after the Messaging scope resets during a read', async () => {

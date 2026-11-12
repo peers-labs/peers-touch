@@ -73,16 +73,15 @@ export const mapChatError: ErrorMapper<ChatErrorContext> = (error, context) => {
     );
   }
 
-  if (
-    context?.operation === 'createGroup'
-    && stationCode === 'CONVERSATION_FEDERATION_STATION_INACTIVE'
-  ) {
+  // Federation inactivity can block a direct send, a group create, or any
+  // conversation action. Map it for every operation to a readable, actionable
+  // message instead of leaking the raw station code into a generic toast.
+  if (stationCode === 'CONVERSATION_FEDERATION_STATION_INACTIVE') {
     return presentedError(
       stationCode,
-      'error.chat.groupFederationInactive',
+      'error.chat.federationInactive',
       true,
       message,
-      reason,
     );
   }
 
@@ -119,11 +118,16 @@ export const mapChatError: ErrorMapper<ChatErrorContext> = (error, context) => {
     return presentedError('chat.conversationUnavailable', 'error.chat.conversationUnavailable');
   }
 
+  // Surface the underlying reason instead of a bare "failed" toast. Station
+  // failures prefer the structured reason; local/Rust failures fall back to
+  // their one-line error message so the user can tell what actually went wrong
+  // (e.g. an invalid conversation membership projection vs. a network error).
+  const detail = reason || message;
   return presentedError(
     `chat.${context?.operation ?? 'operation'}Failed`,
     operationFallback(context?.operation ?? 'send'),
     true,
     message,
-    context?.operation === 'createGroup' ? reason : undefined,
+    detail,
   );
 };

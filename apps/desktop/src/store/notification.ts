@@ -11,13 +11,27 @@ import { isDocumentHidden, onDocumentForeground } from '../kernel/documentVisibi
 import { currentAuthenticatedActorPtid } from './session';
 import { log } from '../utils/logger';
 
-const POLL_INTERVAL = 15_000;
+// Unread counts are also pushed by the realtime channel; the poll is only a
+// safety net, so 60s is enough. At 15s this timer alone produced ~4 bridge
+// calls/min and woke every badge subscriber even when nothing changed.
+const POLL_INTERVAL = 60_000;
 const MAX_ITEMS = 200;
 const NOTIFICATION_STATUS_UNREAD = 1;
 const NOTIFICATION_STATUS_READ = 2;
 
 // Lifetime matches polling: skip background-tab polls and catch up on return.
 let foregroundUnlisten: (() => void) | null = null;
+
+/** Shallow equality for the small per-category unread map (keys are numeric). */
+function shallowCategoryEqual(
+  a: Record<number, number>,
+  b: Record<number, number>,
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => a[Number(key)] === b[Number(key)]);
+}
 
 interface NotificationStore {
   notifications: NotificationData[];
@@ -130,9 +144,21 @@ export const useNotificationStore = createDesktopStore<NotificationStore>('notif
       const resp: NotificationUnreadCountsResponse = await api.notificationUnreadCounts();
       if (currentAuthenticatedActorPtid() !== actorPtid) return;
 
+      const nextTotal = resp.total || 0;
+      const nextByCategory = resp.byCategory || {};
+      const prev = get();
+      // Skip the store write entirely when nothing changed: an unconditional
+      // set() notifies every badge subscriber on every poll, turning an idle
+      // safety-net poll into a periodic re-render.
+      if (
+        prev.unreadTotal === nextTotal
+        && shallowCategoryEqual(prev.unreadByCategory, nextByCategory)
+      ) {
+        return;
+      }
       set({
-        unreadTotal: resp.total || 0,
-        unreadByCategory: resp.byCategory || {},
+        unreadTotal: nextTotal,
+        unreadByCategory: nextByCategory,
       });
     } catch (err) {
       if (currentAuthenticatedActorPtid() !== actorPtid) return;

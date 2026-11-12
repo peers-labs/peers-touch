@@ -743,9 +743,6 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
                   '[data-chat-friend-request-action="reject"]'
                 )
               ),
-              errorVisible: Boolean(
-                row.querySelector('[data-chat-friend-request-error]')
-              ),
               visibleText: row.textContent?.trim() || '',
             };
             """,

@@ -77,6 +77,7 @@ import {
   messagingCommands,
   messagingConversations,
   messagingDomainRuntime,
+  RECONCILE_INTERVAL_MS,
 } from './runtime';
 import { EVENT, eventBus } from '../kernel/events';
 
@@ -126,7 +127,7 @@ describe('DesktopMessagingDomainRuntime', () => {
       expect.objectContaining({ actorPtid: 'ptid:actor:alice' }),
     );
 
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(RECONCILE_INTERVAL_MS);
     expect(lifecycle.reconcile).toHaveBeenCalledWith(
       'runtime:reconcile:periodic',
       expect.objectContaining({ actorPtid: 'ptid:actor:alice' }),
@@ -213,7 +214,7 @@ describe('DesktopMessagingDomainRuntime', () => {
     mocks.accountGetDeviceId.mockRejectedValueOnce(new Error('recovery required'));
     await expect(messagingDomainRuntime.bootstrap(mocks.actorPtid)).rejects.toThrow();
     mocks.accountGetDeviceId.mockResolvedValue({ device_id: 'device-recovered' });
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(RECONCILE_INTERVAL_MS);
     expect(messagingDomainRuntime.captureScope()).toMatchObject({ endpointId: 'device-recovered' });
   });
 

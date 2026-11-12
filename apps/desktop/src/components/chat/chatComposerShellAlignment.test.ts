@@ -1,8 +1,8 @@
-// Source-contract: the main composer pill follows prototype .sk-composer:
-// one bottom-aligned row, 8px symmetric padding, 10px gaps, the embedded
-// textarea at 13.5px / 1.55 with the primitive's 4px 12px padding, instant
-// auto-grow, a 36px squircle send, and circle tool glyphs. The emoji popover
-// is the prototype 312px / 10-column grid.
+// Source-contract: the main composer follows WeChat grammar — a vertical
+// shell with the textarea filling the full top region (the large editable
+// area) and a separate footer row holding borderless tool glyphs left and the
+// expand/send controls right. 13.5px / 1.55 type, instant auto-grow, 34px
+// circular quiet tools, and a borderless paper-plane send (no black chip).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -23,31 +23,118 @@ function rule(selector: string): string {
   return '';
 }
 
-describe('composer pill (north-star .sk-composer parity)', () => {
-  it('bottom-aligns tools/input/send with 8px padding and 10px gaps', () => {
-    const row = rule('.sc-composer__row');
-    expect(row).toContain('align-items: flex-end');
-    expect(row).toContain('gap: 10px');
-    expect(row).toContain('padding: 8px');
+describe('composer vertical shell (WeChat grammar)', () => {
+  it('lays the textarea above a footer row instead of one bottom-aligned row', () => {
+    expect(composerSource).toContain('sc-composer__input-wrap');
+    expect(composerSource).toContain('sc-composer__footer');
+    const footer = rule('.sc-composer__footer');
+    expect(footer).toContain('display: flex');
+    expect(footer).toContain('justify-content: space-between');
+    expect(footer).toContain('align-items: center');
   });
 
-  it('uses the prototype 13.5px / 1.55 textarea with primitive 4px 12px padding', () => {
+  it('uses the 13.5px / 1.55 textarea that fills the full shell width', () => {
     const input = rule('.sc-composer__input');
-    expect(input).toContain('padding: 4px 12px');
+    expect(input).toContain('width: 100%');
     expect(input).toContain('font-size: 13.5px');
     expect(input).toContain('line-height: 1.55');
+    expect(input).toContain('min-height: var(--sc-composer-input-min-height, 34px)');
+    const wrap = rule('.sc-composer__input-wrap');
+    expect(wrap).toContain('flex: 1 1 auto');
   });
 
   it('does not animate auto-grow heights (prototype grows instantly)', () => {
     expect(composerSource).not.toContain('0.18s ease');
   });
 
-  it('renders tool glyphs as 34px circles and send as a 36px squircle', () => {
+  it('renders tool glyphs and send as a matched set of 34px circles', () => {
     expect(rule('.sc-composer__tool.pt-button')).toContain('border-radius: 999px');
     const send = rule('.sc-composer__send.pt-icon-button');
-    expect(send).toContain('width: 36px');
-    expect(send).toContain('height: 36px');
-    expect(send).toContain('border-radius: var(--pt-radius-md)');
+    expect(send).toContain('width: 34px');
+    expect(send).toContain('height: 34px');
+    expect(send).toContain('border-radius: 999px');
+  });
+
+  it('keeps the send control borderless in every state (no black filled chip)', () => {
+    // WeChat parity: the paper-plane is a quiet glyph — transparent fill/ring
+    // at rest, accent ink only when a draft is sendable.
+    const send = rule('.sc-composer__send.pt-icon-button');
+    expect(send).toContain('background: transparent');
+    expect(send).toContain('border-color: transparent');
+    expect(rule(".sc-composer__send.pt-icon-button[aria-disabled='true']")).toContain(
+      'background: transparent',
+    );
+    expect(rule('.sc-composer__send.pt-icon-button:not([aria-disabled])')).toContain(
+      'color: var(--pt-accent)',
+    );
+    // The send button must not use the primary filled emphasis — its IconButton
+    // is quiet so the paper-plane stays a borderless glyph in both states.
+    expect(composerSource).toContain('actionId="chat-send-message"');
+    const sendButtonBlock =
+      composerSource.match(
+        /<IconButton\s+actionId="chat-send-message"[\s\S]*?\/>/,
+      )?.[0] ?? '';
+    expect(sendButtonBlock).toContain('emphasis="quiet"');
+    expect(sendButtonBlock).not.toContain('emphasis="primary"');
+  });
+});
+
+describe('composer expand toggle and frame inset', () => {
+  it('renders the expand/collapse control wired to the input size state', () => {
+    expect(composerSource).toContain('actionId="composer-expand"');
+    expect(composerSource).toContain('handleToggleInputExpanded');
+    expect(composerSource).toContain('inputExpanded');
+  });
+
+  it('emits expanded min()/max() CSS lengths without appending an invalid px suffix', () => {
+    // Regression guard: expanded policy values are strings like
+    // 'min(120px, 22vh)'. Template-appending px produced an invalid declaration
+    // that silently disabled min/max-height. Numbers still get px via cssLength.
+    expect(composerSource).toContain('const cssLength = (length: number | string): string =>');
+    expect(composerSource).toContain("typeof length === 'number' ? `${length}px` : length");
+    expect(composerSource).toContain("'--sc-composer-input-min-height': cssLength(inputMinHeight)");
+    expect(composerSource).toContain("'--sc-composer-input-max-height': cssLength(inputMaxHeight)");
+    expect(composerSource).not.toContain('`${inputMinHeight}px`');
+    expect(composerSource).not.toContain('`${inputMaxHeight}px`');
+  });
+
+  it('frames the main composer with the tight 12px WeChat column inset', () => {
+    const policySource = readFileSync(
+      new URL('./chatPresentationPolicy.ts', import.meta.url),
+      'utf8',
+    );
+    expect(policySource).toContain("composerOuterPadding: '4px 12px 10px'");
+  });
+
+  it('makes the whole input region click-to-focus, not only the textarea itself', () => {
+    // IM parity: tapping empty pill area must focus the textarea. A plain
+    // FieldFrame div would otherwise swallow the click with no focus change.
+    expect(composerSource).toContain('className="sc-composer__input-wrap"');
+    expect(composerSource).toContain('onMouseDown');
+    expect(composerSource).toContain('textareaRef.current?.focus()');
+    // Native textarea clicks keep their own caret placement (early return).
+    expect(composerSource).toContain(
+      'if (event.target === textareaRef.current) return;',
+    );
+  });
+
+  it('notifies the parent only when the textarea height actually changes', () => {
+    // The parent re-anchors the stream tail on this signal so a growing
+    // composer pushes the last message up instead of covering it.
+    expect(composerSource).toContain('onComposerGeometryChange?: () => void');
+    expect(composerSource).toContain('dataset.composerHeight');
+    expect(composerSource).toContain('onGeometryChangeRef.current?.()');
+  });
+
+  it('keeps the main composer frame transparent so no solid white band is painted', () => {
+    // The grey shell is the only visible surface. The outer composer zone must
+    // default to transparent, letting the conversation surface show through.
+    expect(composerSource).toContain(
+      "background: surfaceBackground ?? 'transparent'",
+    );
+    expect(composerSource).not.toContain(
+      "background: surfaceBackground ?? 'var(--pt-canvas)'",
+    );
   });
 });
 

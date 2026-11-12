@@ -50,6 +50,19 @@ export interface LoginFormViewProps {
   gateState?: GateState | null;
   backContent?: React.ReactNode;
   title?: string;
+  /**
+   * The back control is promoted into the card header (symmetric with the
+   * language switcher); the form body then renders no inline back row.
+   */
+  backInHeader?: boolean;
+  /**
+   * Activates the re-authentication identity tile. Routes the user to the
+   * sign-in method that matches the expired account's provider. When omitted
+   * the identity tile is not rendered interactive.
+   */
+  onReauthIdentity?: () => void;
+  /** Focus the password field once the email tab is shown via the identity tile. */
+  reauthFocusPassword?: boolean;
 }
 
 export const LoginFormView = memo(function LoginFormView({
@@ -70,8 +83,17 @@ export const LoginFormView = memo(function LoginFormView({
   gateState,
   backContent,
   title: titleOverride,
+  backInHeader = false,
+  onReauthIdentity,
+  reauthFocusPassword = false,
 }: LoginFormViewProps) {
   const { t } = useTranslation('auth');
+
+  // A revoked saved session is surfaced directly on the identity tile (dimmed
+  // identity + glass warning overlay) instead of a separate strip, so the
+  // reason reuses the tile's footprint without stealing vertical space. A
+  // plain "continue" re-auth keeps the normal tile.
+  const isRevokedSession = !!expiredAccount && reauthReason === 'revoked' && !gateState;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -148,7 +170,7 @@ export const LoginFormView = memo(function LoginFormView({
 
   return (
     <div className="pt-auth-form">
-      {hasBackButton && (
+      {hasBackButton && !backInHeader && (
         <div className="pt-auth-back">
           <Button
             actionId="auth.back"
@@ -168,47 +190,60 @@ export const LoginFormView = memo(function LoginFormView({
             ? t('auth.login.welcomeBackTitle', { defaultValue: 'Welcome back' })
             : t('auth.login.title')}
       </h2>
-      <p className="pt-auth-subtitle">
-        {expiredAccount
-          ? reauthReason === 'revoked'
-            ? t('auth.login.expiredSubtitle', {
-                defaultValue: 'Sign in again to continue where you left off.',
-              })
-            : t('auth.login.continueSubtitle', {
-                defaultValue: 'Sign in to continue.',
-              })
-          : t('auth.login.subtitle')}
-      </p>
-
       {expiredAccount && (
-        <Alert
-          tone={reauthReason === 'revoked' ? 'warning' : 'info'}
-          title={
-            reauthReason === 'revoked'
-              ? t('auth.login.expiredAlertTitle', { defaultValue: 'Session expired' })
-              : t('auth.login.continueAlertTitle', { defaultValue: 'Sign in required' })
+        <Button
+          actionId="auth.reauth.identity"
+          fullWidth
+          emphasis="secondary"
+          className={
+            isRevokedSession
+              ? 'pt-auth-reauth pt-auth-reauth--expired'
+              : 'pt-auth-reauth'
           }
-          description={
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <UserSquareAvatar
-                remoteUrl={expiredAccount.avatar}
-                name={expiredAccount.name}
-                size={24}
-                radius={6}
-              />
-              <span
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {expiredAccount.name}
-                {expiredAccount.email ? ` · ${expiredAccount.email}` : ''}
-              </span>
+          data-login-reauth-account={expiredAccount.accountId}
+          aria-label={
+            isRevokedSession
+              ? `${t('auth.login.expiredAlertTitle')} · ${t(
+                  'auth.login.reauthIdentity',
+                  { name: expiredAccount.name },
+                )}`
+              : t('auth.login.reauthIdentity', { name: expiredAccount.name })
+          }
+          availability={
+            oauthFlowLocked
+              ? { kind: 'disabled', reason: t('auth.login.waiting') }
+              : undefined
+          }
+          leading={
+            <UserSquareAvatar
+              remoteUrl={expiredAccount.avatar}
+              avatarLocalPath={expiredAccount.avatarLocalPath}
+              name={expiredAccount.name}
+              size={30}
+              radius={7}
+            />
+          }
+          trailing={<Icon iconId="chevron-right" size={15} />}
+          onActivate={() => {
+            // Reuse the account's stored login identifier so the email field
+            // is pre-filled instead of forcing the user to retype it.
+            if (expiredAccount.email) setEmail(expiredAccount.email);
+            onReauthIdentity?.();
+          }}
+        >
+          <span className="pt-auth-reauth-meta">
+            <span className="pt-auth-reauth-name">{expiredAccount.name}</span>
+            {expiredAccount.email && (
+              <span className="pt-auth-reauth-handle">{expiredAccount.email}</span>
+            )}
+          </span>
+          {isRevokedSession && (
+            <span className="pt-auth-reauth__expired" aria-hidden="true">
+              <Icon iconId="warning" size={14} />
+              <span>{t('auth.login.expiredAlertTitle')}</span>
             </span>
-          }
-        />
+          )}
+        </Button>
       )}
 
       <Segmented<LoginTab>
@@ -391,41 +426,42 @@ export const LoginFormView = memo(function LoginFormView({
               leading={<Icon iconId="mail" size={16} />}
               onValueChange={setEmail}
             />
-            <div className="pt-auth-credrow">
-              <TextField
-                data-login-password
-                required
-                type={showPassword ? 'text' : 'password'}
-                aria-label={t('auth.login.password.placeholder')}
-                placeholder={t('auth.login.password.placeholder')}
-                value={password}
-                leading={<Icon iconId="lock" size={16} />}
-                trailing={
-                  <IconButton
-                    actionId="auth.password.reveal"
-                    iconId={showPassword ? 'eye-off' : 'eye'}
-                    label={showPassword
-                      ? t('auth.login.password.hide', { defaultValue: 'Hide password' })
-                      : t('auth.login.password.show', { defaultValue: 'Show password' })}
-                    emphasis="quiet"
-                    density="compact"
-                    onActivate={() => setShowPassword((value) => !value)}
-                  />
-                }
-                onValueChange={setPassword}
-                onEnter={() => void handleEmailSubmit()}
-              />
-              <IconButton
-                actionId="auth.login.submit"
-                iconId={loading ? 'refresh-cw' : 'check'}
-                label={t('auth.login.submit', { defaultValue: 'Sign in' })}
-                emphasis="primary"
-                data-login-submit
-                className={loading ? 'spin' : undefined}
-                availability={loading ? { kind: 'disabled', reason: t('auth.login.waiting') } : undefined}
-                onActivate={() => void handleEmailSubmit()}
-              />
-            </div>
+            <TextField
+              data-login-password
+              required
+              autoFocus={reauthFocusPassword}
+              type={showPassword ? 'text' : 'password'}
+              aria-label={t('auth.login.password.placeholder')}
+              placeholder={t('auth.login.password.placeholder')}
+              value={password}
+              leading={<Icon iconId="lock" size={16} />}
+              trailing={
+                <IconButton
+                  actionId="auth.password.reveal"
+                  iconId={showPassword ? 'eye-off' : 'eye'}
+                  label={showPassword
+                    ? t('auth.login.password.hide', { defaultValue: 'Hide password' })
+                    : t('auth.login.password.show', { defaultValue: 'Show password' })}
+                  emphasis="quiet"
+                  density="compact"
+                  onActivate={() => setShowPassword((value) => !value)}
+                />
+              }
+              onValueChange={setPassword}
+              onEnter={() => void handleEmailSubmit()}
+            />
+            <Button
+              actionId="auth.login.submit"
+              fullWidth
+              emphasis="primary"
+              className="pt-auth-submit"
+              data-login-submit
+              execution={loading ? 'pending' : 'idle'}
+              availability={loading ? { kind: 'disabled', reason: t('auth.login.waiting') } : undefined}
+              onActivate={() => void handleEmailSubmit()}
+            >
+              {t('auth.login.submit', { defaultValue: 'Sign in' })}
+            </Button>
           </div>
         </form>
       )}

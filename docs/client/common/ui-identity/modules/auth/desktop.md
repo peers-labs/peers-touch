@@ -1,7 +1,7 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-06-20
+updated: 2026-11-11
 review-cadence: semiannual
 next-review: 2027-04-27
 ---
@@ -17,19 +17,65 @@ and motion constraints for implementing it.
 
 ## 2. Desktop Auth Layout
 
-Desktop Auth uses **a floating card over a full-window backdrop**.
+Desktop Auth uses **one full-bleed surface that is the window content**. There
+is no outer app canvas band and no floating card: outside the surface only the
+OS window chrome remains — the traffic-light cluster and a transparent title
+bar. The title text and the title-bar divider are hidden (see §2.1); the
+traffic lights and native dragging remain.
+
+### 2.1 Native window geometry and title bar
+
+The login surface is a compact, phone-like native window, not a full-size app
+window with empty space. Geometry is owned by the native shell
+(`src-tauri/src/application/window_sizing.rs`), never by CSS.
+
+- The window opens at **360×640** (declared in `tauri.conf.json` so first paint
+  is already compact) and stays compact across `onboarding` and `resuming`.
+- On entering the ready shell it expands to the **last user-adjusted ready
+  size**, persisted in logical pixels under config storage
+  (`window/geometry.json`); with no saved value it falls back to **1200×800**.
+  Every programmatic resize re-centers the window.
+- Only user-driven resizes while in the ready surface are remembered, and they
+  are debounced to a single final write. Programmatic auth/ready resizes are
+  flagged and never persisted, so the compact size cannot overwrite the
+  remembered ready size. Logging out shrinks the window back to 360×640.
+- The hard window floor stays 320×440; persisted geometry below it or outside a
+  sane maximum is discarded in favor of the default.
+- The feature is inert under the `acceptance-webdriver` build, where harness
+  window placement remains the single authority.
+- macOS chrome uses `titleBarStyle: "Overlay"` with `hiddenTitle: true` and
+  decorations retained. The web content fills the title bar, so the in-window
+  headers rise into that band instead of leaving an empty strip. Geometry is
+  split into two tokens: `--pt-titlebar-inset` (8px on macOS, 0 elsewhere) is
+  the small top clearance for the list/chat/auth columns whose header sits
+  beside the lights, while `--pt-rail-top` (28px) is the larger offset for the
+  icon rail, the only column whose avatar sits under the lights. Each header is
+  a slim 48px band marked `data-tauri-drag-region`. All three traffic lights
+  (close/minimize/zoom — none hidden) shift as one cluster toward the left edge
+  and down 2pt to center on that band, matching the macOS WeChat convention.
+  `maximizable` stays `true` so the green zoom light is enabled rather than
+  greyed out; it only affects user zoom, not the configured/remembered size.
+  The platform flag is set synchronously in `kernel/hostPolicy` before first
+  paint, so there is no layout flash.
 
 Rules:
 
-- The window is one continuous surface. The card floats; the backdrop fills.
-- The card sits in a stable, consistent position (right-aligned on wide windows)
-  and keeps the shared card radius and shadow tokens.
-- The federated mesh occupies the backdrop layer behind the card at a lower
-  z-index and must not receive pointer events.
+- The auth card fills the shell edge to edge at every size — no padding band,
+  no card radius/border/shadow separating it from a backdrop. It is the
+  surface, not a tile floating on one.
+- The surface carries the light pine tint; the shell uses the same tint so
+  overscroll never reveals a second background.
+- Inner content (header, brand hero, form, Station footer) keeps a fixed
+  reading measure (`--pt-auth-card-width`, 336px) and centers, so wide windows
+  do not stretch the controls even though the surface itself is full-bleed.
+  Header controls sit on a tight 12px horizontal inset so they hug the window
+  edges instead of floating in wide gutters.
+- The Station footer pins to the window bottom via a flex column
+  (`margin-top: auto`); the body absorbs the free space.
+- Short windows scroll within the shell (no visible scrollbar) instead of
+  clipping; the layout is size-independent and has no auth width breakpoints.
 - Do not split the window into two equally-weighted halves. A side-by-side
   "illustration panel + form panel" reads as two products and is forbidden.
-- The backdrop must mask or fade near the card edge so no node sits under the
-  card.
 
 ## 3. The Auth Card
 
@@ -44,19 +90,22 @@ Rules:
 - Popovers and arrows attached to the card must not cover account rows or the
   primary action.
 
-## 4. The Federation Backdrop
+## 4. Surface Treatment
+
+The full-bleed model removes the separate backdrop/mesh layer; the surface is
+the only background.
 
 Rules:
 
 - Single brand accent only. No cyan/green/amber/rose decorative set, no glow,
   no drop shadow on edges or nodes.
-- Nodes are confined to the side of the window away from the card; the mesh
-  fades out before reaching the card.
-- Node labels are friendly names (Alice, Station, Relay, Service, Agent,
-  Storage) and the selected station's friendly name. Never an IP, host, port,
-  internal id, or raw i18n key.
-- The header chip ("human mesh" or equivalent) is quiet metadata weight, not a
-  badge that competes with the card title.
+- The pine tint is the calm background; decoration is confined to the centered
+  content measure, never spread across the full window.
+- Any identity/network metadata uses friendly names (Alice, Station, Relay,
+  Service, Agent, Storage) and the selected station's friendly name. Never an
+  IP, host, port, internal id, or raw i18n key.
+- A header chip or status label is quiet metadata weight, not a badge that
+  competes with the card title.
 
 ## 5. Motion
 
@@ -113,22 +162,24 @@ Every Desktop Auth implementation must capture or manually verify:
 - Sign-in form (email and OAuth entry points).
 - PIN entry and PIN set/relink.
 - Expired-session re-auth banner.
-- Active station selected (friendly name shown in the mesh).
+- Active station selected (friendly name shown in the Station switcher).
 - Active station with no label (friendly placeholder, not an IP/host).
 - Long account name and long station name.
-- Narrow desktop window (card dominates; mesh recedes further).
+- Narrow desktop window (full-bleed surface holds; content stays centered at the reading measure).
 - Reduced-motion enabled.
 - OAuth idle, waiting/cancellable, failure/retry, initializing, and success
   states with identical auth-card and provider-action geometry.
 
 ## 9. AI Agent Checklist
 
-- [ ] Is there one floating card over one backdrop, not two side-by-side panels?
-- [ ] Does the card dominate and use the brand accent; is the mesh single-accent and quiet?
-- [ ] Does the backdrop fade so no node sits under the card?
+- [ ] Is the auth surface full-bleed (the window content), with no outer canvas band or floating card and no side-by-side panels?
+- [ ] Does the window open compact at 360×640 and only expand on entering the ready shell, restoring the remembered size without persisting any programmatic resize?
+- [ ] Is the title bar an overlay with the title/divider hidden, traffic lights aligned to the slim header row, and each column header reserving the inset and acting as a drag region?
+- [ ] Does the centered content keep the fixed reading measure and use the brand accent only at full strength on the surface?
+- [ ] Is the pine tint the single calm background with no separate backdrop/mesh layer or decoration outside the content measure?
 - [ ] Are all labels friendly names, never raw IP/host/port/keys?
 - [ ] Is motion limited to data flow and the station-swap transition?
 - [ ] Does reduced-motion stop the data flow?
-- [ ] Does every auth state stay on the same calm backdrop with one primary action?
+- [ ] Does every auth state stay on the same full-bleed surface with one primary action?
 - [ ] Does OAuth progress remain inside the original fixed-size provider action?
 - [ ] Do state transitions avoid card growth, provider-action resizing, and page shift?
