@@ -1,10 +1,24 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Button, Tooltip, toast } from '@lobehub/ui';
-import { Empty, Input, Spin, theme, Typography } from 'antd';
 import {
-  Inbox, Phone, Server, RefreshCw, Video, MoreHorizontal,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  Button as PtButton,
+  Empty as PtEmpty,
+  Icon,
+  IconButton as PtIconButton,
+  Spin as PtSpin,
+  TextField as PtTextField,
+  Tooltip as PtTooltip,
+} from '@peers-touch/ui';
+import {
+  Server, RefreshCw,
   Lock, ShieldAlert, Bot, Pencil,
 } from 'lucide-react';
 import { useSocialChatStore } from '../../store/socialChat';
@@ -27,6 +41,7 @@ import { newSendIntentId } from '../../utils/messagingSendIntent';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import { TypingIndicator } from './message/TypingIndicator';
 import {
   DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN,
 } from './chatPresentationPolicy';
@@ -37,9 +52,9 @@ import {
 } from './message/chatMessageModel';
 import { ChatMessageTimeline } from './message/ChatMessageTimeline';
 import {
+  chatMessageTailScrollOptions,
   chatMessageTailScrollTop,
   isChatMessageTailPinned,
-  reconcileTailScrollOnResize,
 } from './message/chatMessageTimelinePolicy';
 import {
   beginMessageReactionMutation,
@@ -56,8 +71,8 @@ import {
   resolveConversationStationChip,
   useLocalStationConnection,
 } from '../../store/stationConnection';
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
-const { Text } = Typography;
 const REACTION_PROJECTION_TIMEOUT_MS = 8_000;
 const EMPTY_RAW_MESSAGES: SocialMessage[] = [];
 const EMPTY_PROJECTED_MESSAGES: ChatMessage[] = [];
@@ -67,36 +82,10 @@ interface ChatMessageAreaProps {
   onRetryDirectOpen: () => void;
 }
 
-function chatBackgroundCss(
-  background: string | undefined,
-  layoutColor: string,
-  containerColor: string,
-  imageUrl?: string,
-): string {
-  if (imageUrl) {
-    return `linear-gradient(rgba(255,255,255,0.72), rgba(255,255,255,0.72)), url("${imageUrl}") center / cover fixed`;
-  }
-  switch (background) {
-    case 'paper':
-      return 'linear-gradient(180deg, rgba(255,251,235,0.9), rgba(254,243,199,0.52))';
-    case 'mint':
-      return 'linear-gradient(180deg, rgba(236,253,245,0.9), rgba(209,250,229,0.52))';
-    case 'dusk':
-      return 'linear-gradient(180deg, rgba(238,242,255,0.9), rgba(224,231,255,0.52))';
-    case 'calm':
-      return 'linear-gradient(180deg, rgba(239,246,255,0.9), rgba(219,234,254,0.52))';
-    case 'graphite':
-      return 'linear-gradient(180deg, rgba(51,65,85,0.12), rgba(15,23,42,0.08))';
-    default:
-      return `linear-gradient(180deg, ${layoutColor} 0%, ${containerColor} 100%)`;
-  }
-}
-
 export function ChatMessageArea({
   directOpenIntent,
   onRetryDirectOpen,
 }: ChatMessageAreaProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
@@ -226,6 +215,7 @@ export function ChatMessageArea({
   const isAutomatedConversation = useSocialChatStore((s) => (
     activeTab === 'friend' && activeUlid ? s.isAutomatedConversation(activeUlid) : false
   ));
+  const detailOpen = useSocialChatStore((s) => s.showDetail);
   const directSecurityState = useCryptoStore((state) => (
     activeUlid ? state.conversationSecurity[activeUlid]?.aggregateLevel ?? 'idle' : 'idle'
   ));
@@ -371,28 +361,15 @@ export function ChatMessageArea({
     const online = known ? peerOnline[activePeerDid] : null;
     const state = online === null ? 'unknown' : online ? 'online' : 'offline';
     const label = t(`chat.social.presence.${state}`);
-    const bg = online ? token.colorSuccessBg : token.colorFillSecondary;
-    const color = online ? token.colorSuccess : token.colorTextQuaternary;
     return (
       <span
+        className="sc-presence-tag"
         data-chat-presence-tag={state}
         data-chat-presence-source="station"
+        data-online={online ? '1' : '0'}
         aria-label={label}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          fontSize: 10,
-          fontWeight: 500,
-          color,
-          background: bg,
-          padding: '1px 6px',
-          borderRadius: 4,
-          lineHeight: '16px',
-          flexShrink: 0,
-        }}
       >
-        <span style={{ width: 5, height: 5, borderRadius: '50%', background: color }} />
+        <span className="sc-presence-tag__dot" />
         {label}
       </span>
     );
@@ -412,15 +389,10 @@ export function ChatMessageArea({
   }, [activeTab, activeUlid, loadGroupMembers]);
 
   const scrollToMessageTail = useCallback(() => {
+    bottomRef.current?.scrollIntoView(chatMessageTailScrollOptions());
     const container = scrollContainerRef.current;
-    if (!container) return;
-    // Pin the scroll port directly. scrollIntoView on a sentinel also moves
-    // ancestor scrollers and produces the visible entry jump; the direct
-    // assignment is the single tail-pin mechanism (search anchors use their
-    // own viewport math in ChatMessageTimeline).
-    const target = chatMessageTailScrollTop(container);
-    if (Math.abs(container.scrollTop - target) > 1) {
-      container.scrollTop = target;
+    if (container) {
+      container.scrollTop = chatMessageTailScrollTop(container);
     }
   }, []);
 
@@ -440,36 +412,19 @@ export function ChatMessageArea({
     tailReconcilePendingRef.current = true;
     tailPinnedRef.current = true;
     scrollToMessageTail();
-    // activeUlid forces a fresh tail pin on conversation switch even when the
-    // new conversation renders the same number of messages as the old one.
-  }, [activeUlid, mainTimelineMessages.length, scrollToMessageTail]);
+  }, [mainTimelineMessages.length, scrollToMessageTail]);
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || typeof ResizeObserver === 'undefined') return;
-    // Re-pin while tail-pinned when the scroll port OR its content resizes.
-    // Observing only the container misses growth that happens after the pin:
-    // async image preview loads (the <img> reserves no intrinsic box),
-    // late delivery-status rows and reaction rows all grow the timeline
-    // without resizing the viewport, leaving the last message under the
-    // composer. Observe the timeline content wrapper as well as the port.
     const observer = new ResizeObserver(() => {
-      if (!tailPinnedRef.current) return;
-      const next = reconcileTailScrollOnResize(
-        {
-          clientHeight: container.clientHeight,
-          scrollHeight: container.scrollHeight,
-          scrollTop: container.scrollTop,
-        },
-        tailPinnedRef.current,
-      );
-      if (next !== null) container.scrollTop = next;
+      if (tailPinnedRef.current) {
+        scrollToMessageTail();
+      }
     });
     observer.observe(container);
-    const content = container.querySelector<HTMLElement>('[data-chat-message-timeline]');
-    if (content) observer.observe(content);
     return () => observer.disconnect();
-  }, [scrollToMessageTail, activeUlid, mainTimelineMessages.length]);
+  }, [scrollToMessageTail]);
 
   const handleTimelineMeasured = useCallback(() => {
     if (!tailReconcilePendingRef.current && !tailPinnedRef.current) return;
@@ -735,7 +690,7 @@ export function ChatMessageArea({
           }
         } catch (err) {
           log.error('chat', 'edit message failed', err);
-          toast.error(t('chat.social.messageArea.editFailed'));
+          notifyError(t('chat.social.messageArea.editFailed'));
           // Keep the editor open with its text on failure.
           setSending(false);
           return false;
@@ -771,7 +726,6 @@ export function ChatMessageArea({
           draft.attachments.length > 0 ? draft.attachments : undefined,
           undefined,
           sendIntentId,
-          draft.mentions,
         );
       }
       setReplyToUlid(null);
@@ -813,7 +767,7 @@ export function ChatMessageArea({
       await callP2p.startCall(currentUserPtid, activePeerDid, kind);
     } catch (err) {
       log.error('chat', 'startCall failed', err);
-      toast.error(t('chat.social.call.mediaDenied'));
+      notifyError(t('chat.social.call.mediaDenied'));
     }
   };
 
@@ -828,7 +782,7 @@ export function ChatMessageArea({
       }
     } catch (err) {
       log.error('chat', 'recall message failed', err);
-      toast.error(t('chat.social.messageArea.recallFailed'));
+      notifyError(t('chat.social.messageArea.recallFailed'));
     }
   }, [recallFriendMessage, recallGroupMessage, t]);
 
@@ -944,28 +898,14 @@ export function ChatMessageArea({
     const conversationId = activeUlidRef.current;
     if (!conversationId) return;
     try {
-      const outcome = await retryMessage(conversationId, message.ulid, activeKindRef.current);
-      // The authority already holds this command; nothing can be re-sent
-      // without duplicating it. The native side only re-drives delivery
-      // reconciliation, so tell the user what is happening instead of
-      // implying a new send attempt succeeded.
-      if (outcome?.state === 'redriving') {
-        toast.info(t('chat.social.messageArea.retryRedriving'));
-      }
+      await retryMessage(conversationId, message.ulid, activeKindRef.current);
     } catch (error) {
       log.error('chat', 'message retry failed', {
         conversationId,
         messageId: message.ulid,
         error,
       });
-      const detail = error instanceof Error && error.message
-        ? error.message.trim()
-        : '';
-      toast.error(
-        detail
-          ? `${t('chat.social.messageArea.retryFailed')}: ${detail}`
-          : t('chat.social.messageArea.retryFailed'),
-      );
+      notifyError(t('chat.social.messageArea.retryFailed'));
     }
   }, [retryMessage, t]);
 
@@ -997,7 +937,7 @@ export function ChatMessageArea({
       setDeleteTarget(null);
     } catch (e) {
       log.error('chat', 'deleteMessage failed', e);
-      toast.error(t('chat.social.messageArea.deleteFailed'));
+      notifyError(t('chat.social.messageArea.deleteFailed'));
     } finally {
       setDeletingMessage(false);
     }
@@ -1020,10 +960,10 @@ export function ChatMessageArea({
       } else {
         await sendGroupMessage(conv.id, content, undefined, undefined, undefined);
       }
-      toast.success(t('chat.social.messageArea.forwardSent'));
+      notifySuccess(t('chat.social.messageArea.forwardSent'));
     } catch (err) {
       log.error('chat', 'forward message failed', err);
-      toast.error(t('chat.social.messageArea.forwardFailed'));
+      notifyError(t('chat.social.messageArea.forwardFailed'));
     }
   };
 
@@ -1045,73 +985,48 @@ export function ChatMessageArea({
 
   if (!activeUlid && directOpenIntent) {
     return (
-      <Flexbox
+      <div
+        className="sc-conversation"
         data-chat-conversation-intent={directOpenIntent.peerPtid}
         data-chat-conversation-intent-state={directOpenIntent.phase}
-        flex={1}
-        style={{
-          height: '100%',
-          minWidth: 0,
-          background: token.colorBgLayout,
-        }}
       >
-        <Flexbox
-          horizontal
-          align="center"
-          style={{
-            height: 64,
-            padding: '0 18px',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            background: token.colorBgContainer,
-            flexShrink: 0,
-          }}
-        >
-          <Text strong style={{ fontSize: 14 }}>
-            {directOpenIntent.displayName}
-          </Text>
-        </Flexbox>
+        <header className="sc-chat-head">
+          <div className="sc-chat-head-id">
+            <div className="sc-chat-head-name">
+              <strong>{directOpenIntent.displayName}</strong>
+            </div>
+          </div>
+        </header>
 
-        <Flexbox
-          flex={1}
-          align="center"
-          justify="center"
-          gap={12}
-          aria-live="polite"
-          style={{ padding: 24 }}
-        >
+        <div className="sc-conversation__center" aria-live="polite">
           {directOpenIntent.phase === 'creating' ? (
-            <>
-              <Spin size="small" />
-              <Text type="secondary">
-                {t('common.state.loading', { ns: 'common' })}
-              </Text>
-            </>
+            <PtSpin size="small" label={t('common.state.loading', { ns: 'common' })} />
           ) : (
-            <Flexbox
+            <div
+              className="sc-conversation__intent-error"
               data-chat-conversation-intent-error={directOpenIntent.error.code}
-              gap={10}
-              style={{ width: 'min(420px, 100%)' }}
             >
               <PresentedErrorAlert error={directOpenIntent.error} />
               {directOpenIntent.error.recoverable && (
-                <Button
+                <PtButton
+                  actionId="conversation-intent-retry"
                   data-chat-conversation-intent-retry
-                  icon={<RefreshCw size={14} />}
-                  onClick={onRetryDirectOpen}
+                  leading={<RefreshCw size={14} />}
+                  onActivate={onRetryDirectOpen}
                 >
                   {t('chat.message.action.retry')}
-                </Button>
+                </PtButton>
               )}
-            </Flexbox>
+            </div>
           )}
-        </Flexbox>
+        </div>
 
         <ChatComposer
           key="chat-composer:disabled"
           activeConversationId=""
           disabled
           editing={false}
-          surfaceBackground={token.colorBgContainer}
+          surfaceBackground="var(--pt-surface)"
           onBlurInput={stopTypingPulse}
           onCancelEdit={cancelEdit}
           onCancelReply={cancelReply}
@@ -1121,25 +1036,29 @@ export function ChatMessageArea({
           sending={false}
           capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN}
         />
-      </Flexbox>
+      </div>
     );
   }
 
   if (!activeUlid) {
     return (
-      <Flexbox flex={1} align="center" justify="center" gap={12} style={{ background: token.colorBgContainer }}>
-        <Inbox size={48} style={{ color: token.colorTextQuaternary }} />
-        <Text type="secondary">{t('chat.social.messageArea.selectConversation')}</Text>
-      </Flexbox>
+      <div className="sc-conversation sc-conversation--empty">
+        <PtEmpty
+          icon={<Icon iconId="inbox" size={40} className="sc-conversation-empty__icon" />}
+          description={
+            <span className="sc-conversation-empty__hint">
+              {t('chat.social.messageArea.selectConversation')}
+            </span>
+          }
+        />
+      </div>
     );
   }
 
-  const conversationSurfaceBackground = chatBackgroundCss(
-    activeBackground,
-    token.colorBgLayout,
-    token.colorBgContainer,
-    activeBackgroundPreview || activeBackgroundImageUrl || undefined,
-  );
+  // Wallpaper is a full-bleed CSS layer keyed off data-chat-background on the
+  // root pane (north-star ::before grammar). Only an uploaded image needs an
+  // inline custom property; preset gradients live entirely in chat.css.
+  const wallpaperImageUrl = activeBackgroundPreview || activeBackgroundImageUrl || undefined;
   const headerSubtitle = activeTab === 'friend'
     ? directSecurityState === 'establishing'
       ? t('chat.social.encryption.establishing')
@@ -1154,8 +1073,10 @@ export function ChatMessageArea({
   const conversationEncrypted = activeTab === 'friend'
     ? directSecurityState === 'ready'
     : groupSecurityState[activeUlid] === 'ready';
+  const unsupportedCallReason = t('chat.social.call.unsupported');
   return (
-    <Flexbox
+    <div
+      className="sc-conversation"
       data-chat-conversation-pane={activeUlid}
       data-session-security={activeTab === 'friend' ? directSecurityState : undefined}
       data-group-security={activeTab === 'group' ? groupSecurityState[activeUlid] || 'unknown' : undefined}
@@ -1163,35 +1084,10 @@ export function ChatMessageArea({
       data-chat-background={activeBackground || 'default'}
       data-chat-background-image={activeLocalState?.backgroundImage || ''}
       data-chat-background-preview={activeBackgroundPreview ? 'local' : 'durable'}
-      flex={1}
-      gap={0}
-      style={{
-        height: '100%',
-        minWidth: 0,
-        background: token.colorBgLayout,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
+      style={wallpaperImageUrl
+        ? { '--sc-chat-bg-image': `url("${wallpaperImageUrl}")` } as CSSProperties
+        : undefined}
     >
-      <style>
-        {`
-          .chat-message-scroll {
-            scrollbar-width: thin;
-            scrollbar-color: ${token.colorFillSecondary} transparent;
-          }
-          .chat-message-scroll::-webkit-scrollbar {
-            width: 6px;
-            height: 0;
-          }
-          .chat-message-scroll::-webkit-scrollbar-thumb {
-            background: ${token.colorFillSecondary};
-            border-radius: 999px;
-          }
-          .chat-message-scroll::-webkit-scrollbar-track {
-            background: transparent;
-          }
-        `}
-      </style>
       <SearchMessagesModal
         open={showSearch}
         onClose={() => setShowSearch(false)}
@@ -1199,237 +1095,172 @@ export function ChatMessageArea({
         conversationId={activeUlid ?? undefined}
       />
 
-      <Flexbox
-        horizontal
-        align="center"
-        justify="space-between"
-        style={{
-          height: 64,
-          padding: '0 18px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer,
-          flexShrink: 0,
-        }}
-      >
-        <Flexbox horizontal align="center" gap={10}>
-          <Flexbox horizontal align="center" gap={6}>
-            <Flexbox>
-              <Flexbox horizontal align="center" gap={6}>
-                {activeTab === 'group' && editingGroupName ? (
-                  <Input
-                    autoFocus
-                    size="small"
-                    variant="borderless"
-                    value={groupNameDraft}
-                    disabled={groupNameSaving}
-                    aria-label={t('chat.social.detail.groupName')}
-                    onChange={(event) => setGroupNameDraft(event.target.value)}
-                    onPressEnter={() => void saveGroupRename()}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') cancelGroupRename();
-                    }}
-                    onBlur={() => void saveGroupRename()}
-                    style={{
-                      width: 220,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      lineHeight: 1.4,
-                      padding: '0 2px 1px',
-                      background: 'transparent',
-                      borderRadius: 0,
-                      borderBottom: `1px solid ${token.colorPrimary}`,
-                    }}
-                    data-chat-group-name-editor
-                  />
-                ) : (
-                  <Flexbox
-                    horizontal
-                    align="center"
-                    gap={3}
-                    onMouseEnter={() => setGroupNameHovered(true)}
-                    onMouseLeave={() => setGroupNameHovered(false)}
-                  >
-                    <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
-                    {canRenameGroup && (
-                      <Tooltip title={t('chat.social.detail.editGroupName')}>
-                        <Button
-                          type="text"
-                          size="small"
-                          aria-label={t('chat.social.detail.editGroupName')}
-                          data-chat-group-rename
-                          icon={<Pencil size={12} />}
-                          onClick={startGroupRename}
-                          style={{
-                            width: 20,
-                            height: 20,
-                            padding: 0,
-                            opacity: groupNameHovered ? 1 : 0,
-                            transition: 'opacity 0.12s',
-                          }}
-                        />
-                      </Tooltip>
-                    )}
-                  </Flexbox>
-                )}
-                {!isAutomatedConversation && !isSelfDirect && peerOnlineIndicator}
-                {isAutomatedConversation ? (
-                  <Tooltip title={t('chat.automation.stationManagedTip', {
-                    defaultValue: 'Automated service · Station-resident, not end-to-end encrypted',
-                  })}>
-                    <ShieldAlert
-                      size={13}
-                      style={{ color: token.colorWarning, marginLeft: 2 }}
+      <header className="sc-chat-head">
+        <div className="sc-chat-head-id">
+          <div className="sc-chat-head-name">
+            {activeTab === 'group' && editingGroupName ? (
+              <PtTextField
+                autoFocus
+                value={groupNameDraft}
+                disabled={groupNameSaving}
+                aria-label={t('chat.social.detail.groupName')}
+                onValueChange={setGroupNameDraft}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void saveGroupRename();
+                  if (event.key === 'Escape') cancelGroupRename();
+                }}
+                onBlur={() => void saveGroupRename()}
+                className="sc-chat-head__rename"
+                data-chat-group-name-editor
+              />
+            ) : (
+              <div
+                className="sc-chat-head__title"
+                onMouseEnter={() => setGroupNameHovered(true)}
+                onMouseLeave={() => setGroupNameHovered(false)}
+              >
+                <strong>{currentName}</strong>
+                {canRenameGroup && (
+                  <PtTooltip label={t('chat.social.detail.editGroupName')}>
+                    <PtButton
+                      actionId="chat-rename-group"
+                      className="sc-chat-head__rename-btn"
+                      data-chat-group-rename
+                      emphasis="quiet"
+                      density="compact"
+                      leading={<Pencil size={12} />}
+                      aria-label={t('chat.social.detail.editGroupName')}
+                      onActivate={startGroupRename}
+                      data-hovered={groupNameHovered || undefined}
                     />
-                  </Tooltip>
-                ) : (
-                  encryptionEnabled && conversationEncrypted && (
-                    <Tooltip title={t('chat.social.encryption.enabled')}>
-                      <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
-                    </Tooltip>
-                  )
+                  </PtTooltip>
                 )}
-                {/* Station chip: local groups bind to the user's own Station
-                    with live realtime connectivity; federated chats show the
-                    peer authority name only when known. Unknown renders
-                    nothing — never a fake "unavailable" badge. Automated
-                    conversations already express Station residency via the
-                    amber shield + subtitle. */}
-                {stationChip && (
-                <span
-                  data-chat-station={activeTab === 'group' ? 'local' : 'authority'}
-                  data-chat-station-id={stationChip.stationId}
-                  data-chat-station-name={stationChip.label}
-                  data-chat-station-state={stationChip.state}
-                  title={stationChip.state === 'connected'
-                    ? t('chat.social.detail.stationConnected', { station: stationChip.label })
-                    : stationChip.state === 'disconnected'
-                      ? t('chat.social.detail.stationDisconnected', { station: stationChip.label })
-                      : stationChip.label}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    minWidth: 0,
-                    maxWidth: 'min(180px, 24vw)',
-                    padding: '1px 6px',
-                    borderRadius: 999,
-                    background: token.colorFillQuaternary,
-                    color: token.colorTextTertiary,
-                    fontSize: 10,
-                    lineHeight: '16px',
-                    flexShrink: 1,
-                  }}
-                >
-                  {stationChip.state === 'neutral' ? (
-                    <Server aria-hidden="true" size={11} style={{ flexShrink: 0 }} />
-                  ) : (
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 999,
-                        flexShrink: 0,
-                        background: stationChip.state === 'connected'
-                          ? token.colorSuccess
-                          : token.colorTextQuaternary,
-                      }}
-                    />
-                  )}
-                  <span
-                    style={{
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {activeTab === 'group'
-                      ? stationChip.label
-                      : `${t('chat.social.findPeople.scopeStation')} · ${stationChip.label}`}
-                  </span>
+              </div>
+            )}
+            {!isAutomatedConversation && !isSelfDirect && peerOnlineIndicator}
+            {isAutomatedConversation ? (
+              <PtTooltip label={t('chat.automation.stationManagedTip', {
+                defaultValue: 'Automated service · Station-resident, not end-to-end encrypted',
+              })}>
+                <ShieldAlert size={13} className="sc-chat-head__shield" aria-label={t('chat.automation.stationManaged')} />
+              </PtTooltip>
+            ) : (
+              encryptionEnabled && conversationEncrypted && (
+                <PtTooltip label={t('chat.social.encryption.enabled')}>
+                  <Lock size={13} className="sc-chat-head__lock" />
+                </PtTooltip>
+              )
+            )}
+            {/* Station chip: local groups bind to the user's own Station
+                with live realtime connectivity; federated chats show the
+                peer authority name only when known. Unknown renders
+                nothing — never a fake "unavailable" badge. Automated
+                conversations already express Station residency via the
+                amber shield + subtitle. */}
+            {stationChip && (
+              <span
+                className="sc-chat-head__station"
+                data-chat-station={activeTab === 'group' ? 'local' : 'authority'}
+                data-chat-station-id={stationChip.stationId}
+                data-chat-station-name={stationChip.label}
+                data-chat-station-state={stationChip.state}
+                title={stationChip.state === 'connected'
+                  ? t('chat.social.detail.stationConnected', { station: stationChip.label })
+                  : stationChip.state === 'disconnected'
+                    ? t('chat.social.detail.stationDisconnected', { station: stationChip.label })
+                    : stationChip.label}
+              >
+                {stationChip.state === 'neutral' ? (
+                  <Server aria-hidden="true" size={11} style={{ flexShrink: 0 }} />
+                ) : (
+                  <span aria-hidden="true" className="sc-chat-head__station-dot" />
+                )}
+                <span className="sc-chat-head__station-label">
+                  {activeTab === 'group'
+                    ? stationChip.label
+                    : `${t('chat.social.findPeople.scopeStation')} · ${stationChip.label}`}
                 </span>
-                )}
-              </Flexbox>
-              {(headerSubtitle || isAutomatedConversation) && (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {isAutomatedConversation
-                    ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
-                    : headerSubtitle}
-                </Text>
-              )}
-            </Flexbox>
-          </Flexbox>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={4}>
+              </span>
+            )}
+            {(headerSubtitle || isAutomatedConversation) && (
+              <span className="sc-chat-head__subtitle">
+                {isAutomatedConversation
+                  ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
+                  : headerSubtitle}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="sc-chat-head-actions">
           {/* Automated conversations are one-way publishing channels and
               self-direct has no peer: no calls. */}
           {!isAutomatedConversation && !isSelfDirect && (
-          <Tooltip
-            title={
-              callAvailable
-                ? t('chat.social.call.startAudio')
-                : t('chat.social.call.unsupported')
-            }
-          >
-            <Button
-              type="text"
-              icon={<Phone size={16} />}
-              disabled={!callAvailable}
-              style={{ width: 32, height: 32 }}
-              onClick={() => handleStartCall('audio')}
-            />
-          </Tooltip>
+            <PtTooltip
+              label={callAvailable ? t('chat.social.call.startAudio') : unsupportedCallReason}
+            >
+              <PtIconButton
+                actionId="chat-call-audio"
+                className="sc-head-action"
+                iconId="phone"
+                iconSize={19}
+                emphasis="quiet"
+                label={callAvailable ? t('chat.social.call.startAudio') : unsupportedCallReason}
+                availability={callAvailable ? undefined : { kind: 'disabled', reason: unsupportedCallReason }}
+                onClick={() => handleStartCall('audio')}
+              />
+            </PtTooltip>
           )}
           {!isAutomatedConversation && !isSelfDirect && (
-          <Tooltip
-            title={
-              callAvailable
-                ? t('chat.social.call.startVideo')
-                : t('chat.social.call.unsupported')
-            }
-          >
-            <Button
-              type="text"
-              icon={<Video size={16} />}
-              disabled={!callAvailable}
-              style={{ width: 32, height: 32 }}
-              onClick={() => handleStartCall('video')}
-            />
-          </Tooltip>
+            <PtTooltip
+              label={callAvailable ? t('chat.social.call.startVideo') : unsupportedCallReason}
+            >
+              <PtIconButton
+                actionId="chat-call-video"
+                className="sc-head-action"
+                iconId="video"
+                iconSize={19}
+                emphasis="quiet"
+                label={callAvailable ? t('chat.social.call.startVideo') : unsupportedCallReason}
+                availability={callAvailable ? undefined : { kind: 'disabled', reason: unsupportedCallReason }}
+                onClick={() => handleStartCall('video')}
+              />
+            </PtTooltip>
           )}
-          <Button
+          <PtIconButton
+            actionId="chat-open-detail"
             data-chat-detail-toggle
-            type="text"
-            icon={<MoreHorizontal size={16} />}
-            style={{ width: 32, height: 32, borderRadius: 10 }}
+            className="sc-head-action"
+            iconId="info"
+            iconSize={19}
+            emphasis="quiet"
+            label={t('chat.social.detail.title')}
+            aria-expanded={detailOpen}
             onClick={toggleDetail}
           />
-        </Flexbox>
-      </Flexbox>
+        </div>
+      </header>
 
-      <Flexbox
-        className="chat-message-scroll"
-        flex={1}
+      <div
+        className="chat-message-scroll sc-conversation__stream"
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        style={{
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '18px 20px 18px',
-          background: conversationSurfaceBackground,
-        }}
-        gap={10}
       >
         {activeUlid && messageLoadingMore[activeUlid] && (
-          <Flexbox align="center" justify="center" style={{ paddingBottom: 8 }}>
-            <Spin size="small" />
-          </Flexbox>
+          <div className="sc-conversation__loading-more">
+            <PtSpin size="small" />
+          </div>
         )}
         {mainTimelineMessages.length === 0 ? (
-          <Flexbox align="center" justify="center" flex={1}>
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.messageArea.noMessages')} />
-          </Flexbox>
+          <div className="sc-conversation__center">
+            <PtEmpty
+              icon={<Icon iconId="message-circle" size={36} className="sc-conversation-empty__icon" />}
+              description={
+                <span className="sc-conversation-empty__hint">
+                  {t('chat.social.messageArea.noMessages')}
+                </span>
+              }
+            />
+          </div>
         ) : (
           <ChatMessageTimeline
             actionOverlayHostRef={actionOverlayHostRef}
@@ -1461,49 +1292,47 @@ export function ChatMessageArea({
             threadCounts={threadCounts}
           />
         )}
+        {peerIsTyping && !isAutomatedConversation && (
+          <TypingIndicator
+            kind={activeKind}
+            avatarUrl={activeConversation?.avatar}
+            name={currentName}
+          />
+        )}
         <div
           ref={bottomRef}
+          className="sc-conversation__bottom-sentinel"
           data-chat-message-bottom-sentinel
-          style={{ flex: '0 0 1px', height: 1 }}
         />
-      </Flexbox>
+      </div>
 
       {composerError && (
-        <Flexbox
+        <div
+          className="sc-conversation__error"
           data-chat-error={composerError.code || composerError.severity}
-          style={{ padding: '0 16px 12px', background: conversationSurfaceBackground }}
         >
           <PresentedErrorAlert error={composerError} onClose={() => setComposerError(null)} />
-        </Flexbox>
+        </div>
       )}
 
       {isAutomatedConversation ? (
-        <Flexbox
-          horizontal
-          align="center"
-          justify="center"
-          gap={6}
+        <div
+          className="sc-conversation__bot-bar"
           data-bot-oneway-composer="true"
-          style={{
-            padding: '12px 16px',
-            borderTop: `1px solid ${token.colorBorderSecondary}`,
-            background: conversationSurfaceBackground,
-          }}
         >
-          <Bot size={14} style={{ color: token.colorTextTertiary }} />
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Bot size={14} />
+          <span>
             {t('chat.automation.oneWayComposer', {
               defaultValue: 'One-way publishing channel — replies are not supported',
             })}
-          </Text>
-        </Flexbox>
+          </span>
+        </div>
       ) : (
       <ChatComposer
         key={`chat-composer:${activeUlid}:${editingUlid ?? 'new'}`}
         activeConversationId={activeUlid}
         disabled={!activeUlid}
         editing={Boolean(editingUlid)}
-        surfaceBackground={conversationSurfaceBackground}
         initialValue={editingUlid
           ? currentMessages.find((m) => m.ulid === editingUlid)?.content ?? ''
           : undefined}
@@ -1518,7 +1347,6 @@ export function ChatMessageArea({
         editPreview={editingUlid ? currentMessages.find((m) => m.ulid === editingUlid)?.content || '' : undefined}
         sending={sending}
         capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN}
-        mentionsEnabled={activeTab === 'group'}
       />
       )}
 
@@ -1541,14 +1369,8 @@ export function ChatMessageArea({
         ref={actionOverlayHostRef}
         data-message-action-overlay-host
         aria-hidden={!activeUlid}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          overflow: 'hidden',
-          pointerEvents: 'none',
-          zIndex: 20,
-        }}
+        className="sc-conversation__overlay-host"
       />
-    </Flexbox>
+    </div>
   );
 }

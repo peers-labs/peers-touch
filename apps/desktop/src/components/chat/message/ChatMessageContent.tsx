@@ -1,11 +1,10 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { theme, Typography } from 'antd';
 import { Lock, RotateCcw } from 'lucide-react';
 
 import { AttachmentItem } from '../AttachmentItem';
 import {
+  isBareEmojiOnlyMessage,
   isEncryptedPlaceholder,
   isRecalledMessage,
   normalizeAttachmentVisibility,
@@ -17,20 +16,12 @@ import type { ServiceEventAggregation } from './serviceEventAggregation';
 import { ChatMentionText } from './ChatMentionText';
 import { useSocialChatStore } from '../../../store/socialChat';
 
-const { Text } = Typography;
-
-const EMOJI_REGEX = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\s]+$/u;
-
-function isEmojiOnly(text: string): boolean {
-  const trimmed = text.trim();
-  return trimmed.length > 0 && trimmed.length <= 24 && EMOJI_REGEX.test(trimmed);
-}
-
 interface ChatMessageContentProps {
   message: ChatMessage;
   isOwn: boolean;
   replyBlock?: ReactNode;
-  attachmentGap?: number;
+  /** Compact thread surface keeps its tighter attachment rhythm. */
+  thread?: boolean;
   serviceAggregation?: ServiceEventAggregation;
   onToggleServiceAggregation?: (key: string) => void;
 }
@@ -39,17 +30,17 @@ export function ChatMessageContent({
   message,
   isOwn,
   replyBlock,
-  attachmentGap = 6,
+  thread = false,
   serviceAggregation,
   onToggleServiceAggregation,
 }: ChatMessageContentProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const currentUserPtid = useSocialChatStore((state) => state.currentUserPtid);
   const isRecalled = isRecalledMessage(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);
   const serviceMessage = message.serviceMessage;
   const attachments = message.attachments || [];
+  const hasTextContent = message.content.trim().length > 0;
   const urls =
     !isRecalled && !encryptedPlaceholder && !serviceMessage ? extractUrls(message.content) : [];
 
@@ -57,21 +48,19 @@ export function ChatMessageContent({
     <>
       {replyBlock}
       {isRecalled ? (
-        <Flexbox horizontal align="center" gap={4}>
-          <RotateCcw size={12} style={{ color: token.colorTextQuaternary }} />
-          <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>
-            {isOwn
-              ? t('chat.social.messageArea.recalledByYou')
-              : t('chat.social.messageArea.recalledByPeer')}
-          </Text>
-        </Flexbox>
+        <span className="sc-recalled-tombstone" data-recalled>
+          <RotateCcw size={11} className="sc-recalled-tombstone__glyph" />
+          {isOwn
+            ? t('chat.social.messageArea.recalledByYou')
+            : t('chat.social.messageArea.recalledByPeer')}
+        </span>
       ) : encryptedPlaceholder ? (
-        <Flexbox horizontal align="center" gap={4}>
-          <Lock size={12} style={{ color: token.colorTextQuaternary }} />
-          <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>
+        <span className="sc-msg-content-inline">
+          <Lock size={12} className="sc-msg-placeholder__glyph" />
+          <span className="sc-msg-placeholder">
             {t('chat.social.encryption.encryptedMessage')}
-          </Text>
-        </Flexbox>
+          </span>
+        </span>
       ) : serviceMessage ? (
         <ServiceMessageCard
           service={serviceMessage}
@@ -81,7 +70,8 @@ export function ChatMessageContent({
       ) : (
         <span
           data-message-text={message.ulid}
-          style={isEmojiOnly(message.content) ? { fontSize: 32, lineHeight: '40px' } : undefined}
+          className={isBareEmojiOnlyMessage(message) ? 'sc-emoji-only-bubble' : undefined}
+          data-emoji-only={isBareEmojiOnlyMessage(message) || undefined}
         >
           <ChatMentionText
             text={message.content}
@@ -94,17 +84,15 @@ export function ChatMessageContent({
         </span>
       )}
       {urls.length > 0 && (
-        <Flexbox gap={4}>
+        <span className="sc-msg-link-stack">
           {urls.slice(0, 3).map((url) => (
-            <LinkPreviewCard key={url} url={url} isOwn={isOwn} />
+            <LinkPreviewCard key={url} url={url} />
           ))}
-        </Flexbox>
+        </span>
       )}
       {!isRecalled && attachments.length > 0 && (
-        <Flexbox
-          align={isOwn ? 'flex-end' : 'flex-start'}
-          gap={attachmentGap}
-          style={{ marginTop: message.content ? 8 : 0 }}
+        <span
+          className={`sc-msg-attachments${thread ? ' sc-msg-attachments--thread' : ''}${hasTextContent ? '' : ' sc-msg-attachments--media-only'}`}
         >
           {attachments.map((attachment, index) => (
             <AttachmentItem
@@ -117,7 +105,7 @@ export function ChatMessageContent({
               }
             />
           ))}
-        </Flexbox>
+        </span>
       )}
     </>
   );

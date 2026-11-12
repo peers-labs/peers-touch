@@ -1057,12 +1057,12 @@
         {
           "id": "last-is-mine",
           "type": "exists",
-          "target": ".sk-msg-me:last-child"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me"
         },
         {
           "id": "last-text",
           "type": "textContains",
-          "target": ".sk-msg-me:last-child .sk-msg-bubble p",
+          "target": ".sk-msg-stream > div:last-child .sk-msg-bubble p",
           "contains": "七点"
         },
         {
@@ -5353,7 +5353,7 @@
           "scope": "global",
           "target": "[data-action-id='hide']",
           "prop": "color",
-          "equals": "rgb(198, 57, 57)"
+          "equals": "rgb(192, 57, 47)"
         }
       ],
       "finalizers": [
@@ -5654,12 +5654,12 @@
         {
           "id": "new-quoted",
           "type": "exists",
-          "target": ".sk-msg-me:last-child [data-reply-to]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-reply-to]"
         },
         {
           "id": "quoted-text",
           "type": "textContains",
-          "target": ".sk-msg-me:last-child .sk-reply-quote",
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me .sk-reply-quote",
           "contains": "书架"
         }
       ],
@@ -5815,7 +5815,7 @@
         {
           "id": "emoji-sent",
           "type": "textContains",
-          "target": ".sk-msg-me:last-child",
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me",
           "contains": "😀"
         }
       ],
@@ -5861,7 +5861,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-attach-file]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-attach-file]"
         },
         {
           "op": "wait",
@@ -5872,7 +5872,7 @@
         {
           "id": "file-chip",
           "type": "exists",
-          "target": ".sk-msg-me:last-child [data-attach-file]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-attach-file]"
         },
         {
           "id": "file-detail",
@@ -5928,7 +5928,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-attach-file]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-attach-file]"
         },
         {
           "op": "wait",
@@ -6027,7 +6027,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-attach-file]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-attach-file]"
         },
         {
           "op": "wait",
@@ -6129,7 +6129,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-attach-file]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-attach-file]"
         },
         {
           "op": "wait",
@@ -6215,7 +6215,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-attach-image]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-attach-image]"
         },
         {
           "op": "wait",
@@ -6226,7 +6226,7 @@
         {
           "id": "image-bubble",
           "type": "exists",
-          "target": ".sk-msg-me:last-child [data-attach-image]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-attach-image]"
         },
         {
           "id": "image-lightbox",
@@ -6347,7 +6347,7 @@
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-voice-toggle]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-voice-toggle]"
         },
         {
           "op": "wait",
@@ -6358,14 +6358,14 @@
         {
           "id": "voice-bubble",
           "type": "attr",
-          "target": ".sk-msg-me:last-child [data-voice]",
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-voice]",
           "attr": "data-voice-available",
           "equals": "true"
         },
         {
           "id": "voice-playing",
           "type": "attr",
-          "target": ".sk-msg-me:last-child [data-voice]",
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-voice]",
           "attr": "data-voice-playing",
           "equals": "true"
         },
@@ -6377,7 +6377,7 @@
       "finalizers": [
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-voice-toggle]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-voice-toggle]"
         }
       ]
     },
@@ -6635,11 +6635,11 @@
         },
         {
           "op": "hover",
-          "target": ".sk-msg-me:last-child"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me"
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-action='more']"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-action='more']"
         },
         {
           "op": "clickGlobal",
@@ -6669,13 +6669,13 @@
         {
           "id": "edited-text",
           "type": "textContains",
-          "target": ".sk-msg-me:last-child .sk-msg-bubble",
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me .sk-msg-bubble",
           "contains": "修改后的内容"
         },
         {
           "id": "edited-marker",
           "type": "exists",
-          "target": ".sk-msg-me:last-child [data-msg-edited]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-msg-edited]"
         },
         {
           "id": "composer-back",
@@ -6715,11 +6715,11 @@
         },
         {
           "op": "hover",
-          "target": ".sk-msg-me:last-child"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me"
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-action='more']"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-action='more']"
         },
         {
           "op": "clickGlobal",
@@ -6734,7 +6734,7 @@
         {
           "id": "tombstone",
           "type": "exists",
-          "target": ".sk-msg-me:last-child [data-recalled]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-recalled]"
         }
       ],
       "finalizers": []
@@ -6767,11 +6767,11 @@
         },
         {
           "op": "hover",
-          "target": ".sk-msg-me:last-child"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me"
         },
         {
           "op": "click",
-          "target": ".sk-msg-me:last-child [data-action='more']"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-action='more']"
         },
         {
           "op": "clickGlobal",
@@ -6786,7 +6786,7 @@
         {
           "id": "pinned-chip",
           "type": "exists",
-          "target": ".sk-msg-me:last-child [data-msg-pinned]"
+          "target": ".sk-msg-stream > div:last-child .sk-msg-me [data-msg-pinned]"
         }
       ],
       "finalizers": []
@@ -9252,7 +9252,7 @@
     },
     {
       "id": "ui.prototype.north-star.settings-frame",
-      "title": "齿轮进入设置——二级分区 Segmented 岛（与动态/聊天同构）、5 组、通用组 4 分区、默认账号身份卡；三级为朴素分区侧栏",
+      "title": "齿轮进入设置——二级分区 Segmented 岛（与动态/聊天同构）、5 组、通用组 5 分区、默认账号身份卡；三级为朴素分区侧栏",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -9302,11 +9302,11 @@
           "equals": "36px"
         },
         {
-          "id": "general-four-sides",
+          "id": "general-five-sides",
           "type": "count",
           "scope": "global",
           "target": ".sk-settings-sidebar [data-settings-section]",
-          "equals": 4
+          "equals": 5
         },
         {
           "id": "general-labels",
@@ -9335,7 +9335,7 @@
     },
     {
       "id": "ui.prototype.north-star.settings-groups",
-      "title": "增量23：五个分组的二级分区数量与真身 IA 一致（4/3/7/2/5）",
+      "title": "增量23：五个分组的二级分区数量与真身 IA 一致（5/3/8/2/7）",
       "level": "L3_DYNAMIC",
       "operations": [
         {
@@ -9381,11 +9381,11 @@
       ],
       "oracles": [
         {
-          "id": "general-four",
+          "id": "advanced-seven",
           "type": "count",
           "scope": "global",
           "target": ".sk-settings-sidebar [data-settings-section]",
-          "equals": 5
+          "equals": 7
         },
         {
           "id": "advanced-labels",

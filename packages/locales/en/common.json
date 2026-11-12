@@ -1430,5 +1430,9 @@
   "xConfig.unsavedChanges": "{{count}} unsaved changes",
   "xConfig.validate": "Validate draft",
   "xConfig.validationFailed": "{{count}} validation issues",
-  "xConfig.version": "Version"
+  "xConfig.version": "Version",
+  "common.stationPicker.addSuccess": "Station added and selected",
+  "common.stationPicker.addAlreadyPresent": "Station already here — selected it",
+  "common.stationPicker.addFailed": "Could not reach that Station. Check the URL and that it is running.",
+  "common.stationPicker.addFailedWithReason": "Could not add Station: {{reason}}"
 }

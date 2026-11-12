@@ -867,5 +867,15 @@
   "provider.menu.retry": "重试",
   "provider.detail.loadFailed": "暂时无法加载该服务商的模型。",
   "provider.modelService.defaultLoadFailed": "暂时无法读取你的默认模型，请重试后再选择。",
-  "provider.modelService.saving": "正在保存默认模型…"
+  "provider.modelService.saving": "正在保存默认模型…",
+  "provider.logs.clear": "清空",
+  "provider.logs.colTime": "时间",
+  "provider.logs.colSource": "来源",
+  "provider.logs.colLevel": "级别",
+  "provider.logs.colMessage": "消息",
+  "provider.account.identity.changeAvatar": "更换头像",
+  "provider.updateProvider.providerLogoPlaceholder": "https://example.com/logo.png",
+  "provider.detail.enabled": "启用",
+  "provider.detail.enabledDesc": "将该服务商纳入模型发现与路由。",
+  "provider.detail.checking": "检测中…"
 }

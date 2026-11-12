@@ -1,48 +1,26 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Alert, Button, Input, Tooltip, Typography, theme } from 'antd';
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Eye,
-  EyeOff,
-  Github,
-  Loader2,
-  Lock,
-  Mail,
-  RotateCcw,
-  ShieldCheck,
-  X,
-} from 'lucide-react';
+  Alert,
+  BrandMark,
+  Button,
+  Icon,
+  IconButton,
+  Segmented,
+  TextField,
+} from '@peers-touch/ui';
 import { UserSquareAvatar } from '../../../components/common/UserSquareAvatar';
-import { BRANDING } from '../../../branding';
 import {
   currentGate,
   parseGateFields,
   type AccessDecision,
 } from '../../../services/accessGate';
-import { LOGIN_FORM_LAYOUT } from '../constants';
 import type {
   AuthState,
   SessionUser,
   LoginTab,
   OAuth2ProviderSummary,
 } from '../types';
-
-const { Text } = Typography;
-
-// Google icon SVG inline component
-const GoogleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24">
-    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-  </svg>
-);
 
 export interface GateState {
   decision: AccessDecision;
@@ -75,7 +53,6 @@ export interface LoginFormViewProps {
 }
 
 export const LoginFormView = memo(function LoginFormView({
-  embedded,
   tab,
   expiredAccount,
   reauthReason,
@@ -94,7 +71,6 @@ export const LoginFormView = memo(function LoginFormView({
   backContent,
   title: titleOverride,
 }: LoginFormViewProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('auth');
 
   const [email, setEmail] = useState('');
@@ -106,11 +82,8 @@ export const LoginFormView = memo(function LoginFormView({
   const oauthCancelRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const previousOAuthProviderRef = React.useRef<string | null>(null);
 
-  // Keep internal email in sync when expiredAccount changes
   React.useEffect(() => {
-    if (expiredAccount?.email) {
-      setEmail(expiredAccount.email);
-    }
+    if (expiredAccount?.email) setEmail(expiredAccount.email);
   }, [expiredAccount]);
 
   React.useEffect(() => {
@@ -140,8 +113,8 @@ export const LoginFormView = memo(function LoginFormView({
     return () => window.cancelAnimationFrame(frame);
   }, [oauthActionProviderId, oauthActionState]);
 
-  const handleEmailSubmit = useCallback(async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleEmailSubmit = useCallback(async (event?: React.FormEvent) => {
+    if (event) event.preventDefault();
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
     try {
@@ -156,109 +129,46 @@ export const LoginFormView = memo(function LoginFormView({
     await gateState.onSubmitCode(inviteCode.trim());
   }, [gateState, inviteCode]);
 
-  const handleCancelGate = useCallback(() => {
-    setInviteCode('');
-    gateState?.onCancel();
-  }, [gateState]);
-
   const oauthFlowLocked = !!oauthActionProviderId
     && ['opening', 'waiting', 'initializing', 'success'].includes(oauthActionState);
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    padding: '8px 0',
-    fontSize: 13,
-    fontWeight: 500,
-    borderRadius: 8,
-    border: 'none',
-    cursor: oauthFlowLocked ? 'default' : 'pointer',
-    opacity: oauthFlowLocked ? 0.62 : 1,
-    transition: 'all 0.2s ease',
-    background: active ? token.colorBgContainer : 'transparent',
-    color: active ? token.colorText : token.colorTextSecondary,
-    boxShadow: active ? token.boxShadowTertiary : 'none',
-  });
-
-  const oauthButtonStyle: React.CSSProperties = {
-    width: '100%',
-    height: 44,
-    borderRadius: 12,
-    display: 'grid',
-    gridTemplateColumns: '24px minmax(0, 1fr) 24px',
-    alignItems: 'center',
-    gap: 8,
-    padding: '0 12px',
-    fontSize: 14,
-    fontWeight: 500,
-  };
-
   const oauth2AccountProviders = useMemo(
-    () => oauth2Providers.filter(p => p.id === 'github' || p.id === 'google'),
+    () => oauth2Providers.filter((provider) => provider.id === 'github' || provider.id === 'google'),
     [oauth2Providers],
   );
 
+  const providerIcon = (provider: OAuth2ProviderSummary, state: AuthState) => {
+    if (state === 'opening' || state === 'waiting' || state === 'initializing') {
+      return <Icon iconId="refresh-cw" size={18} className="spin" />;
+    }
+    if (state === 'success') return <Icon iconId="check" size={18} />;
+    if (state === 'error') return <Icon iconId="refresh-ccw" size={18} />;
+    return <BrandMark brandId={provider.id === 'google' ? 'google' : 'github'} size={18} />;
+  };
+
   return (
-    <>
+    <div className="pt-auth-form">
       {hasBackButton && (
-        <button
-          onClick={onBack}
-          style={{
-            position: 'absolute',
-            top: 16,
-            left: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'none',
-            border: `1px solid ${token.colorBorderSecondary}`,
-            borderRadius: 20,
-            padding: '4px 10px 4px 4px',
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = token.colorFillQuaternary;
-            e.currentTarget.style.borderColor = token.colorBorder;
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'none';
-            e.currentTarget.style.borderColor = token.colorBorderSecondary;
-          }}
-        >
-          {backContent}
-        </button>
+        <div className="pt-auth-back">
+          <Button
+            actionId="auth.back"
+            emphasis="quiet"
+            density="compact"
+            onActivate={onBack}
+          >
+            {backContent}
+          </Button>
+        </div>
       )}
 
-      {!embedded && (
-        <img
-          src={BRANDING.logos.desktop}
-          alt={BRANDING.appName}
-          style={{
-            width: LOGIN_FORM_LAYOUT.logoSize,
-            height: LOGIN_FORM_LAYOUT.logoSize,
-            borderRadius: LOGIN_FORM_LAYOUT.logoRadius,
-            marginBottom: LOGIN_FORM_LAYOUT.logoBottom,
-          }}
-        />
-      )}
-
-      <h2 style={{ fontSize: 22, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
+      <h2 className="pt-auth-title">
         {titleOverride
           ? titleOverride
           : expiredAccount
             ? t('auth.login.welcomeBackTitle', { defaultValue: 'Welcome back' })
             : t('auth.login.title')}
       </h2>
-      <Text
-        type="secondary"
-        style={{
-          fontSize: 13,
-          marginBottom: expiredAccount
-            ? LOGIN_FORM_LAYOUT.reauthSubtitleBottom
-            : LOGIN_FORM_LAYOUT.subtitleBottom,
-          textAlign: 'center',
-        }}
-      >
+      <p className="pt-auth-subtitle">
         {expiredAccount
           ? reauthReason === 'revoked'
             ? t('auth.login.expiredSubtitle', {
@@ -268,330 +178,257 @@ export const LoginFormView = memo(function LoginFormView({
                 defaultValue: 'Sign in to continue.',
               })
           : t('auth.login.subtitle')}
-      </Text>
+      </p>
 
-      {expiredAccount && (() => {
-        const isRevoked = reauthReason === 'revoked';
-        const accentColor = isRevoked ? token.colorWarningText : token.colorPrimary;
-        const accentBg = isRevoked ? token.colorWarningBg : token.colorPrimaryBg;
-        const borderColor = isRevoked ? token.colorWarningBorder : token.colorPrimaryBorder;
-        const IconComp = isRevoked ? AlertTriangle : Lock;
-        return (
-          <div
-            style={{
-              width: '100%',
-              marginBottom: LOGIN_FORM_LAYOUT.reauthAlertBottom,
-              borderRadius: 10,
-              border: `1px solid ${borderColor}`,
-              background: accentBg,
-              padding: '10px 12px',
-            }}
-          >
-            <Flexbox horizontal gap={8} align="center">
-              <IconComp size={16} style={{ color: accentColor, flexShrink: 0 }} />
-              <Text strong style={{ fontSize: 13, color: accentColor, lineHeight: 1 }}>
-                {isRevoked
-                  ? t('auth.login.expiredAlertTitle', { defaultValue: 'Session expired' })
-                  : t('auth.login.continueAlertTitle', { defaultValue: 'Sign in required' })}
-              </Text>
-            </Flexbox>
-            <Flexbox horizontal gap={8} align="center" style={{ marginTop: 8, paddingLeft: 24 }}>
+      {expiredAccount && (
+        <Alert
+          tone={reauthReason === 'revoked' ? 'warning' : 'info'}
+          title={
+            reauthReason === 'revoked'
+              ? t('auth.login.expiredAlertTitle', { defaultValue: 'Session expired' })
+              : t('auth.login.continueAlertTitle', { defaultValue: 'Sign in required' })
+          }
+          description={
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <UserSquareAvatar
                 remoteUrl={expiredAccount.avatar}
                 name={expiredAccount.name}
-                size={28}
+                size={24}
                 radius={6}
               />
-              <Flexbox gap={0} style={{ flex: 1, minWidth: 0 }}>
-                <Text strong style={{ fontSize: 13, lineHeight: 1.2 }}>{expiredAccount.name}</Text>
-                {expiredAccount.email && (
-                  <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {expiredAccount.email}
-                  </Text>
-                )}
-              </Flexbox>
-            </Flexbox>
-          </div>
-        );
-      })()}
-
-      <div
-        style={{
-          width: '100%',
-          background: token.colorFillQuaternary,
-          padding: 4,
-          borderRadius: 10,
-          display: 'flex',
-          marginBottom: LOGIN_FORM_LAYOUT.tabBottom,
-          border: `1px solid ${token.colorBorderSecondary}`,
-        }}
-      >
-        <button
-          data-login-tab="quick"
-          disabled={oauthFlowLocked}
-          onClick={() => onTabChange('quick')}
-          style={tabStyle(tab === 'quick')}
-        >
-          {t('auth.login.tab.quick')}
-        </button>
-        <button
-          data-login-tab="email"
-          disabled={oauthFlowLocked}
-          onClick={() => onTabChange('email')}
-          style={tabStyle(tab === 'email')}
-        >
-          {t('auth.login.tab.email')}
-        </button>
-      </div>
-
-      <div style={{ width: '100%' }}>
-        {tab === 'quick' ? (
-          <Flexbox gap={10}>
-            {oauth2AccountProviders.map(provider => {
-              const active = oauthActionProviderId === provider.id;
-              const actionState = active ? oauthActionState : 'idle';
-              const anotherProviderActive = !!oauthActionProviderId && !active;
-              const actionPending = ['opening', 'waiting', 'initializing', 'success'].includes(actionState);
-              const cancellable = active && ['opening', 'waiting', 'error'].includes(actionState);
-              const isExpiredProvider =
-                expiredAccount?.provider?.toLowerCase() === provider.id.toLowerCase();
-              const highlight = active || isExpiredProvider;
-              const label = actionState === 'opening'
-                ? t('auth.login.openingBrowser', { provider: provider.name })
-                : actionState === 'waiting'
-                  ? t('auth.login.waiting')
-                  : actionState === 'initializing'
-                    ? t('auth.login.initializing')
-                    : actionState === 'success'
-                      ? t('auth.login.success')
-                      : actionState === 'error'
-                        ? t('auth.login.retryWith', { provider: provider.name })
-                        : t('auth.login.continueWith', { provider: provider.name });
-              const icon = actionState === 'opening'
-                || actionState === 'waiting'
-                || actionState === 'initializing'
-                ? <Loader2 className="spin" size={18} />
-                : actionState === 'success'
-                  ? <Check size={18} />
-                  : actionState === 'error'
-                    ? <RotateCcw size={18} />
-                    : provider.id === 'github'
-                      ? <Github size={18} />
-                      : <GoogleIcon />;
-              return (
-                <div
-                  aria-live={active ? 'polite' : undefined}
-                  className="login-oauth-action"
-                  data-pt-login-oauth-action={provider.id}
-                  key={provider.id}
-                  ref={(element) => { oauthActionRefs.current[provider.id] = element; }}
-                  role={active ? 'status' : undefined}
-                  tabIndex={active ? -1 : undefined}
-                >
-                  <Button
-                    aria-label={actionState === 'error' && oauthActionError
-                      ? `${label}. ${oauthActionError}`
-                      : label}
-                    className="login-oauth-action__button"
-                    data-pt-login-oauth-provider={provider.id}
-                    data-pt-login-oauth-state={actionState}
-                    disabled={anotherProviderActive || actionPending}
-                    onClick={() => onOAuthLogin(provider)}
-                    style={{
-                      ...oauthButtonStyle,
-                      ...(highlight
-                        ? {
-                            borderColor: actionState === 'error'
-                              ? token.colorError
-                              : actionState === 'success'
-                                ? token.colorSuccess
-                                : provider.color || token.colorPrimary,
-                            color: actionState === 'error'
-                              ? token.colorError
-                              : actionState === 'success'
-                                ? token.colorSuccess
-                                : provider.color || token.colorPrimary,
-                          }
-                        : {}),
-                    }}
-                    title={actionState === 'error' ? oauthActionError : undefined}
-                  >
-                    <span className="login-oauth-action__icon">{icon}</span>
-                    <span className="login-oauth-action__label">{label}</span>
-                    <span aria-hidden="true" />
-                  </Button>
-                  {cancellable && (
-                    <Tooltip title={t('auth.login.cancelAction')}>
-                      <Button
-                        aria-label={t('auth.login.cancelAction')}
-                        className="login-oauth-action__cancel"
-                        data-pt-login-oauth-cancel={provider.id}
-                        icon={<X size={15} />}
-                        onClick={onOAuthCancel}
-                        ref={(element) => { oauthCancelRefs.current[provider.id] = element; }}
-                        size="small"
-                        type="text"
-                      />
-                    </Tooltip>
-                  )}
-                </div>
-              );
-            })}
-            {oauth2AccountProviders.length === 0 && (
-              <>
-                <Button
-                  data-pt-login-oauth-provider="github"
-                  style={{ ...oauthButtonStyle, display: 'flex', justifyContent: 'center' }}
-                  icon={<Github size={18} />}
-                  disabled
-                >
-                  {t('auth.login.continueWith', { provider: 'GitHub' })}
-                </Button>
-                <Button
-                  data-pt-login-oauth-provider="google"
-                  style={{ ...oauthButtonStyle, display: 'flex', justifyContent: 'center' }}
-                  icon={<GoogleIcon />}
-                  disabled
-                >
-                  {t('auth.login.continueWith', { provider: 'Google' })}
-                </Button>
-              </>
-            )}
-          </Flexbox>
-        ) : gateState ? (
-          <Flexbox gap={10}>
-            <Alert
-              type="info"
-              showIcon
-              icon={<ShieldCheck size={18} style={{ color: token.colorInfoText }} />}
-              style={{ width: '100%', borderRadius: 12, padding: '10px 12px' }}
-              message={
-                <Text strong style={{ fontSize: 13, color: token.colorInfoText }}>
-                  {currentGate(gateState.decision)?.title || t('auth.gate.inviteCode.title')}
-                </Text>
-              }
-              description={
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {currentGate(gateState.decision)?.description || t('auth.gate.inviteCode.subtitle')}
-                </Text>
-              }
-            />
-            <Flexbox horizontal gap={8} align="center">
-              <Input
-                size="large"
-                autoFocus
-                prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
-                placeholder={
-                  parseGateFields(currentGate(gateState.decision))[0]?.placeholder
-                    || parseGateFields(currentGate(gateState.decision))[0]?.label
-                    || t('auth.gate.inviteCode.placeholder')
-                }
-                value={inviteCode}
-                onChange={e => setInviteCode(e.target.value)}
-                onPressEnter={handleInviteSubmit}
-                style={{ borderRadius: 12, height: 44, flex: 1 }}
-              />
-              <Button
-                type="primary"
-                loading={gateState.loading}
-                disabled={!inviteCode.trim() || gateState.loading}
-                onClick={handleInviteSubmit}
+              <span
                 style={{
-                  height: 44,
-                  borderRadius: 12,
-                  fontWeight: 500,
-                  padding: '0 16px',
-                  flexShrink: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}
-                icon={!gateState.loading ? <ArrowRight size={16} /> : undefined}
-                iconPosition="end"
               >
-                {t('auth.gate.inviteCode.submit')}
-              </Button>
-            </Flexbox>
-            {gateState.error && (
-              <Text type="danger" style={{ fontSize: 12 }}>{gateState.error}</Text>
-            )}
-            <Button
-              type="text"
-              size="small"
-              icon={<ArrowLeft size={14} />}
-              onClick={handleCancelGate}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              {t('auth.gate.inviteCode.back')}
-            </Button>
-          </Flexbox>
-        ) : (
-          <form onSubmit={handleEmailSubmit}>
-            <Flexbox gap={10}>
-              {emailError && (
-                <Alert
-                  data-login-error
-                  type="error"
-                  showIcon
-                  style={{ borderRadius: 12, padding: '8px 12px' }}
-                  message={
-                    <Text type="danger" style={{ fontSize: 12 }}>
-                      {emailError}
-                    </Text>
-                  }
-                />
-              )}
-              <Input
-                data-login-email
-                size="large"
-                prefix={<Mail size={16} style={{ color: token.colorTextQuaternary }} />}
-                placeholder={t('auth.login.email.placeholder')}
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                style={{ borderRadius: 12, height: 44 }}
-                required
-              />
-              <Flexbox horizontal gap={8} align="center">
-                <Input
-                  data-login-password
-                  size="large"
-                  prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />}
-                  suffix={
-                    <span
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{ cursor: 'pointer', color: token.colorTextQuaternary, display: 'flex' }}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </span>
-                  }
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder={t('auth.login.password.placeholder')}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  style={{ borderRadius: 12, height: 44, flex: 1 }}
-                  required
-                />
+                {expiredAccount.name}
+                {expiredAccount.email ? ` · ${expiredAccount.email}` : ''}
+              </span>
+            </span>
+          }
+        />
+      )}
+
+      <Segmented<LoginTab>
+        className="pt-auth-segmented"
+        value={tab}
+        disabled={oauthFlowLocked}
+        onValueChange={onTabChange}
+        options={[
+          { value: 'quick', label: t('auth.login.tab.quick') },
+          { value: 'email', label: t('auth.login.tab.email') },
+        ]}
+      />
+
+      {tab === 'quick' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {oauth2AccountProviders.map((provider) => {
+            const active = oauthActionProviderId === provider.id;
+            const actionState = active ? oauthActionState : 'idle';
+            const anotherProviderActive = !!oauthActionProviderId && !active;
+            const actionPending = ['opening', 'waiting', 'initializing', 'success'].includes(actionState);
+            const cancellable = active && ['opening', 'waiting', 'error'].includes(actionState);
+            const label = actionState === 'opening'
+              ? t('auth.login.openingBrowser', { provider: provider.name })
+              : actionState === 'waiting'
+                ? t('auth.login.waiting')
+                : actionState === 'initializing'
+                  ? t('auth.login.initializing')
+                  : actionState === 'success'
+                    ? t('auth.login.success')
+                    : actionState === 'error'
+                      ? t('auth.login.retryWith', { provider: provider.name })
+                      : t('auth.login.continueWith', { provider: provider.name });
+            return (
+              <div
+                aria-live={active ? 'polite' : undefined}
+                className="pt-auth-oauth"
+                data-pt-login-oauth-action={provider.id}
+                key={provider.id}
+                ref={(element) => { oauthActionRefs.current[provider.id] = element; }}
+                role={active ? 'status' : undefined}
+                tabIndex={active ? -1 : undefined}
+              >
                 <Button
-                  data-login-submit
-                  type="primary"
-                  htmlType="submit"
-                  disabled={loading}
-                  style={{
-                    height: 44,
-                    width: 44,
-                    borderRadius: 12,
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                  icon={loading
-                    ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                    : <Check size={18} />}
-                />
-              </Flexbox>
-            </Flexbox>
-          </form>
-        )}
-      </div>
-    </>
+                  actionId={`auth.oauth.${provider.id}`}
+                  fullWidth
+                  emphasis="secondary"
+                  tone={actionState === 'error' ? 'danger' : 'neutral'}
+                  className="login-oauth-action__button"
+                  data-pt-login-oauth-provider={provider.id}
+                  data-pt-login-oauth-state={actionState}
+                  availability={
+                    anotherProviderActive || actionPending
+                      ? { kind: 'disabled', reason: t('auth.login.waiting') }
+                      : undefined
+                  }
+                  aria-label={
+                    actionState === 'error' && oauthActionError
+                      ? `${label}. ${oauthActionError}`
+                      : label
+                  }
+                  title={actionState === 'error' ? oauthActionError : undefined}
+                  leading={providerIcon(provider, actionState)}
+                  onActivate={() => onOAuthLogin(provider)}
+                >
+                  {label}
+                </Button>
+                {cancellable && (
+                  <span className="pt-auth-oauth__cancel">
+                    <IconButton
+                      actionId={`auth.oauth.cancel.${provider.id}`}
+                      iconId="close"
+                      label={t('auth.login.cancelAction')}
+                      density="compact"
+                      emphasis="quiet"
+                      data-pt-login-oauth-cancel={provider.id}
+                      ref={(element) => { oauthCancelRefs.current[provider.id] = element; }}
+                      onActivate={onOAuthCancel}
+                    />
+                  </span>
+                )}
+              </div>
+            );
+          })}
+          {oauth2AccountProviders.length === 0 && (
+            <>
+              <Button
+                actionId="auth.oauth.github.placeholder"
+                fullWidth
+                emphasis="secondary"
+                data-pt-login-oauth-provider="github"
+                availability={{ kind: 'disabled', reason: t('auth.login.providersUnavailable') }}
+                leading={<BrandMark brandId="github" size={18} />}
+              >
+                {t('auth.login.continueWith', { provider: 'GitHub' })}
+              </Button>
+              <Button
+                actionId="auth.oauth.google.placeholder"
+                fullWidth
+                emphasis="secondary"
+                data-pt-login-oauth-provider="google"
+                availability={{ kind: 'disabled', reason: t('auth.login.providersUnavailable') }}
+                leading={<BrandMark brandId="google" size={18} />}
+              >
+                {t('auth.login.continueWith', { provider: 'Google' })}
+              </Button>
+            </>
+          )}
+        </div>
+      ) : gateState ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Alert
+            tone="info"
+            title={
+              currentGate(gateState.decision)?.title
+              || t('auth.gate.inviteCode.title')
+            }
+            description={
+              currentGate(gateState.decision)?.description
+              || t('auth.gate.inviteCode.subtitle')
+            }
+          />
+          <div className="pt-auth-gate-row">
+            <TextField
+              autoFocus
+              aria-label={t('auth.gate.inviteCode.placeholder')}
+              placeholder={
+                parseGateFields(currentGate(gateState.decision))[0]?.placeholder
+                  || parseGateFields(currentGate(gateState.decision))[0]?.label
+                  || t('auth.gate.inviteCode.placeholder')
+              }
+              value={inviteCode}
+              leading={<Icon iconId="lock" size={16} />}
+              onValueChange={setInviteCode}
+              onEnter={handleInviteSubmit}
+            />
+            <Button
+              actionId="auth.gate.submit"
+              emphasis="primary"
+              trailing={<Icon iconId="arrow-right" size={16} />}
+              availability={
+                !inviteCode.trim() || gateState.loading
+                  ? {
+                      kind: 'disabled',
+                      reason: gateState.loading
+                        ? t('auth.login.waiting')
+                        : t('auth.gate.inviteCode.placeholder'),
+                    }
+                  : undefined
+              }
+              execution={gateState.loading ? 'pending' : 'idle'}
+              onActivate={() => void handleInviteSubmit()}
+            >
+              {t('auth.gate.inviteCode.submit')}
+            </Button>
+          </div>
+          {gateState.error && <p className="pt-auth-inline-error">{gateState.error}</p>}
+          <Button
+            actionId="auth.gate.back"
+            emphasis="quiet"
+            density="compact"
+            leading={<Icon iconId="arrow-left" size={14} />}
+            onActivate={gateState.onCancel}
+          >
+            {t('auth.gate.inviteCode.back')}
+          </Button>
+        </div>
+      ) : (
+        <form onSubmit={handleEmailSubmit}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {emailError && (
+              <Alert tone="danger" data-login-error title={emailError} />
+            )}
+            <TextField
+              data-login-email
+              type="email"
+              required
+              aria-label={t('auth.login.email.placeholder')}
+              placeholder={t('auth.login.email.placeholder')}
+              value={email}
+              leading={<Icon iconId="mail" size={16} />}
+              onValueChange={setEmail}
+            />
+            <div className="pt-auth-credrow">
+              <TextField
+                data-login-password
+                required
+                type={showPassword ? 'text' : 'password'}
+                aria-label={t('auth.login.password.placeholder')}
+                placeholder={t('auth.login.password.placeholder')}
+                value={password}
+                leading={<Icon iconId="lock" size={16} />}
+                trailing={
+                  <IconButton
+                    actionId="auth.password.reveal"
+                    iconId={showPassword ? 'eye-off' : 'eye'}
+                    label={showPassword
+                      ? t('auth.login.password.hide', { defaultValue: 'Hide password' })
+                      : t('auth.login.password.show', { defaultValue: 'Show password' })}
+                    emphasis="quiet"
+                    density="compact"
+                    onActivate={() => setShowPassword((value) => !value)}
+                  />
+                }
+                onValueChange={setPassword}
+                onEnter={() => void handleEmailSubmit()}
+              />
+              <IconButton
+                actionId="auth.login.submit"
+                iconId={loading ? 'refresh-cw' : 'check'}
+                label={t('auth.login.submit', { defaultValue: 'Sign in' })}
+                emphasis="primary"
+                data-login-submit
+                className={loading ? 'spin' : undefined}
+                availability={loading ? { kind: 'disabled', reason: t('auth.login.waiting') } : undefined}
+                onActivate={() => void handleEmailSubmit()}
+              />
+            </div>
+          </div>
+        </form>
+      )}
+    </div>
   );
 });

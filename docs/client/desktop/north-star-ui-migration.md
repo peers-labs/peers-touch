@@ -99,5 +99,10 @@ peers-ui 改动过 `packages/ui/web` 的 tsc；原型回归用
   - `UserProfilePopover.tsx` 的 antd `Popover/Spin` 与 layout-kit 换为 peers-ui；
     内层 `PublicProfileCard` 属共享身份卡，随身份/chat 波次统一迁移。
   - 新增 i18n：`layout.nav.primary`、`layout.user.viewProfile`（en/zh-CN 对齐）。
-- **P2 chat / P3 moments / P4 settings（待办）**：均为数千行、数十个 antd 耦合文件，
+- **P2 chat / P3 moments / P4 settings（进行中）**：均为数千行、数十个 antd 耦合文件，
   必须逐面“整面迁移 + `make desktop` 真机回归”，不做跨面半成品；按 §3 依赖序推进。
+  - P2 已完成：`SocialChatPage` 外壳（48px chats/contacts 子轨 + 横向布局）与
+    `MessagingRecoveryGate` 覆盖层已换 peers-ui（提交 `154275132`、`3269c5644`）。
+  - 待办：`ChatSessionList`(809)、`ChatMessageArea`(1516)、`ChatDetailPanel`(2318)、
+    `ChatThreadPanel`(683)、contacts 系列等，按文件波次迁移；这些交互密集且依赖实时通信，
+    需登录后真机逐交互核对。

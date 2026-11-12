@@ -1,43 +1,31 @@
 .pt-channel {
-  --channel-accent: #6b5bd6;
-  --channel-positive: var(--ant-color-success, #16865c);
-  --channel-warning: var(--ant-color-warning, #ad6800);
-  --channel-danger: var(--ant-color-error, #d13b3b);
-  --channel-text: var(--ant-color-text, #1f2329);
-  --channel-muted: var(--ant-color-text-secondary, #646a73);
-  --channel-soft: var(--ant-color-fill-quaternary, #f5f6f7);
-  --channel-border: var(--ant-color-border-secondary, #e5e6eb);
+  /* Active north-star grammar: the superseded purple direction board is
+     retired; the ink primary token now drives every accent-tinted surface. */
+  --channel-accent: var(--pt-primary);
+  --channel-positive: var(--pt-success);
+  --channel-warning: var(--pt-warning);
+  --channel-danger: var(--pt-danger);
+  --channel-text: var(--pt-text);
+  --channel-muted: var(--pt-secondary);
+  --channel-soft: var(--pt-subtle);
+  --channel-border: var(--pt-border);
   color: var(--channel-text);
   min-height: 100%;
   width: 100%;
 }
 
 .pt-channel-provision-modal {
-  --channel-accent: #6b5bd6;
-  --channel-positive: var(--ant-color-success, #16865c);
-  --channel-warning: var(--ant-color-warning, #ad6800);
-  --channel-danger: var(--ant-color-error, #d13b3b);
-  --channel-text: var(--ant-color-text, #1f2329);
-  --channel-muted: var(--ant-color-text-secondary, #646a73);
-  --channel-soft: var(--ant-color-fill-quaternary, #f5f6f7);
-  --channel-border: var(--ant-color-border-secondary, #e5e6eb);
+  --channel-accent: var(--pt-primary);
+  --channel-positive: var(--pt-success);
+  --channel-warning: var(--pt-warning);
+  --channel-danger: var(--pt-danger);
+  --channel-text: var(--pt-text);
+  --channel-muted: var(--pt-secondary);
+  --channel-soft: var(--pt-subtle);
+  --channel-border: var(--pt-border);
 }
 
-.pt-channel .ant-btn-primary:not(:disabled),
-.pt-channel-provision-modal .ant-btn-primary:not(:disabled) {
-  background: var(--channel-accent);
-  border-color: var(--channel-accent);
-}
-
-.pt-channel-page-header > .ant-btn {
-  border-radius: 8px;
-  min-height: 32px;
-}
-
-.pt-channel button,
-.pt-channel input,
-.pt-channel select,
-.pt-channel textarea {
+.pt-channel button {
   font: inherit;
   letter-spacing: 0;
 }
@@ -158,9 +146,12 @@
 }
 
 .pt-channel-lark-mark {
-  background: #00d6b9;
+  /* Integration identity marks stay neutral like the prototype sk-bot-icon /
+     sk-channel grammar: accent-tinted tile, no third-party brand hue. */
+  background: color-mix(in srgb, var(--channel-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--channel-accent) 22%, transparent);
   border-radius: 8px;
-  color: #123b56;
+  color: var(--channel-accent);
   height: 44px;
 }
 
@@ -212,10 +203,7 @@
 .pt-channel-connection-row:focus-visible,
 .pt-channel-intent-row:focus-visible,
 .pt-channel button:focus-visible,
-.pt-channel summary:focus-visible,
-.pt-channel input:focus-visible,
-.pt-channel textarea:focus-visible,
-.pt-channel select:focus-visible {
+.pt-channel summary:focus-visible {
   outline: 2px solid var(--channel-accent);
   outline-offset: 2px;
 }
@@ -441,9 +429,8 @@
   font-size: 12px;
 }
 
-.pt-channel-primary-row select,
-.pt-channel-setting-row select,
-.pt-channel-setting-row input {
+.pt-channel-setting-row .pt-select,
+.pt-channel-setting-row .pt-field-frame {
   max-width: min(320px, 48%);
 }
 
@@ -489,22 +476,11 @@
   font-weight: 600;
 }
 
-.pt-channel input,
-.pt-channel textarea,
-.pt-channel select {
-  background: var(--ant-color-bg-container, #fff);
-  border: 1px solid var(--channel-border);
-  border-radius: 6px;
-  box-sizing: border-box;
-  color: var(--channel-text);
-  min-height: 38px;
-  padding: 8px 10px;
+/* Text inputs/areas are peers TextFields: .pt-field-frame owns the box,
+   border and focus ring, so channel CSS must not repaint the inner control. */
+.pt-channel .pt-field-frame {
   width: 100%;
-}
-
-.pt-channel textarea {
-  min-height: 72px;
-  resize: vertical;
+  box-sizing: border-box;
 }
 
 .pt-channel-delivery-result b,
@@ -698,13 +674,6 @@
   white-space: nowrap;
 }
 
-.pt-channel-config-row select,
-.pt-channel-test-panel select,
-.pt-channel-test-panel textarea {
-  border-color: color-mix(in srgb, var(--channel-text) 18%, var(--channel-border));
-  min-height: 40px;
-}
-
 .pt-channel-facts {
   border-block: 1px solid var(--channel-border);
   display: grid;
@@ -761,10 +730,6 @@
   margin: 5px 0 0;
 }
 
-.pt-channel-test-panel textarea {
-  min-height: 76px;
-}
-
 .pt-channel-test-panel .pt-channel-inline-empty,
 .pt-channel-test-panel .pt-channel-delivery-result {
   margin-block: 0;
@@ -784,43 +749,14 @@
   padding: 0;
 }
 
-.pt-channel-provision-modal input,
-.pt-channel-provision-modal textarea,
-.pt-channel-provision-modal select {
-  background: var(--ant-color-bg-container, #fff);
-  border: 1px solid var(--channel-border);
-  border-radius: 8px;
-  box-sizing: border-box;
-  color: var(--channel-text);
-  font: inherit;
-  min-height: 40px;
-  padding: 8px 10px;
+.pt-channel-provision-modal .pt-field-frame {
   width: 100%;
+  box-sizing: border-box;
 }
 
-.pt-channel-provision-modal button:focus-visible,
-.pt-channel-provision-modal input:focus-visible,
-.pt-channel-provision-modal textarea:focus-visible,
-.pt-channel-provision-modal select:focus-visible {
+.pt-channel-provision-modal button:focus-visible {
   outline: 2px solid var(--channel-accent);
   outline-offset: 2px;
-}
-
-.pt-channel-provision-modal .ant-tabs-nav {
-  margin-bottom: 14px;
-}
-
-.pt-channel-provision-modal .ant-tabs-tab {
-  padding-block: 6px;
-}
-
-.pt-channel-provision-modal .ant-tabs-tab:hover,
-.pt-channel-provision-modal .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: var(--channel-accent);
-}
-
-.pt-channel-provision-modal .ant-tabs-ink-bar {
-  background: var(--channel-accent);
 }
 
 .pt-channel-method-pane {
@@ -1029,17 +965,6 @@
   padding-inline: 4px;
 }
 
-.pt-channel-choice-list label {
-  align-items: center;
-  display: flex;
-  gap: 7px;
-}
-
-.pt-channel-choice-list input {
-  min-height: 16px;
-  width: 16px;
-}
-
 .pt-channel-managed-row {
   align-items: center;
   border-bottom: 1px solid var(--channel-border);
@@ -1062,7 +987,7 @@
   justify-content: flex-end;
 }
 
-.pt-channel-row-actions > button:not([class*="ant-btn"]) {
+.pt-channel-row-actions > button {
   align-items: center;
   background: transparent;
   border: 0;
@@ -1076,32 +1001,6 @@
 
 .pt-channel-row-actions > button.is-danger {
   color: var(--channel-danger);
-}
-
-.pt-channel-switch {
-  background: var(--ant-color-fill-secondary, #dfe1e5) !important;
-  border-radius: 999px !important;
-  height: 22px !important;
-  padding: 2px !important;
-  width: 38px !important;
-}
-
-.pt-channel-switch > span {
-  background: #fff;
-  border-radius: 50%;
-  display: block;
-  height: 18px;
-  transform: translateX(0);
-  transition: transform 160ms ease;
-  width: 18px;
-}
-
-.pt-channel-switch.is-on {
-  background: var(--channel-accent) !important;
-}
-
-.pt-channel-switch.is-on > span {
-  transform: translateX(16px);
 }
 
 .pt-channel-permission {
@@ -1268,46 +1167,6 @@
   border-block: 1px solid var(--channel-border);
 }
 
-.pt-channel-dialog-backdrop {
-  align-items: center;
-  background: rgb(0 0 0 / 42%);
-  display: flex;
-  inset: 0;
-  justify-content: center;
-  padding: 24px;
-  position: fixed;
-  z-index: 1100;
-}
-
-.pt-channel-dialog {
-  background: var(--ant-color-bg-elevated, #fff);
-  border-radius: 8px;
-  box-shadow: var(--ant-box-shadow-secondary, 0 16px 40px rgb(0 0 0 / 18%));
-  max-width: 440px;
-  padding: 24px;
-  width: 100%;
-}
-
-.pt-channel-dialog > span {
-  color: var(--channel-danger);
-}
-
-.pt-channel-dialog h3 {
-  margin-top: 12px;
-}
-
-.pt-channel-dialog p {
-  color: var(--channel-muted);
-  line-height: 1.55;
-}
-
-.pt-channel-dialog > div {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 20px;
-}
-
 .is-spinning {
   animation: pt-channel-spin 900ms linear infinite;
 }
@@ -1317,10 +1176,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pt-channel-switch > span {
-    transition: none;
-  }
-
   .is-spinning {
     animation: none;
   }
@@ -1438,9 +1293,8 @@
     flex-direction: column;
   }
 
-  .pt-channel-primary-row select,
-  .pt-channel-setting-row select,
-  .pt-channel-setting-row input {
+  .pt-channel-setting-row .pt-select,
+  .pt-channel-setting-row .pt-field-frame {
     max-width: none;
   }
 
@@ -1457,7 +1311,7 @@
 /* AUD-11 Channel Topics — read-only Station conversation projection. */
 .pt-channel-panel-loading {
   align-items: center;
-  color: var(--channel-muted, #8a8f99);
+  color: var(--channel-muted);
   display: flex;
   gap: 10px;
   justify-content: center;
@@ -1500,14 +1354,25 @@
 }
 
 .pt-channel-topic-date {
-  color: var(--channel-muted, #8a8f99);
+  color: var(--channel-muted);
   flex-shrink: 0;
   font-size: 11px;
 }
 
 .pt-channel-topic-empty {
-  color: var(--channel-muted, #8a8f99);
+  color: var(--channel-muted);
   font-size: 12px;
   margin: 0;
   padding: 8px 2px;
+}
+
+/* Full-width peers-ui primary button (replaces antd block prop). */
+.pt-channel-block-button.pt-button {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Provisioning method switch (replaces antd Tabs). */
+.pt-channel-method-tabs.pt-segmented {
+  margin-bottom: 16px;
 }

@@ -7,7 +7,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 
 // ─── Public Interface ────────────────────────────────────────────────────────
@@ -50,10 +49,8 @@ interface PinDigitInputProps {
 
 const PinDigitInput = memo(
   ({ value, disabled, focused, onChange, onKeyDown, onFocus, onPaste, index, inputRef }: PinDigitInputProps) => {
-    const { token } = theme.useToken();
-
-    const borderColor = value ? token.colorPrimary : token.colorBorderSecondary;
-    const boxShadow = focused ? `0 0 0 2px ${token.colorPrimary}20` : 'none';
+    const borderColor = value ? 'var(--pt-primary)' : 'var(--pt-border)';
+    const boxShadow = focused ? '0 0 0 2px var(--pt-primarySubtle)' : 'none';
 
     return (
       <input
@@ -73,8 +70,8 @@ const PinDigitInput = memo(
           height: 52,
           borderRadius: 12,
           border: `2px solid ${borderColor}`,
-          background: token.colorBgLayout,
-          color: token.colorText,
+          background: 'var(--pt-subtle)',
+          color: 'var(--pt-text)',
           fontSize: 22,
           fontWeight: 'bold',
           textAlign: 'center',
@@ -110,8 +107,6 @@ export const PinInput = memo(
       },
       ref,
     ) => {
-      const { token } = theme.useToken();
-
       const [digits, setDigits] = useState<string[]>(() => Array(length).fill(''));
       const [focusedIndex, setFocusedIndex] = useState<number>(-1);
       const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
@@ -291,7 +286,7 @@ export const PinInput = memo(
               style={{
                 marginTop: 8,
                 fontSize: 13,
-                color: token.colorError,
+                color: 'var(--pt-danger)',
                 textAlign: 'center',
               }}
             >

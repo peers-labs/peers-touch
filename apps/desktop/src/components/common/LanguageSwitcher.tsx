@@ -1,153 +1,79 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Globe, Check, ChevronDown } from 'lucide-react';
-import { theme } from 'antd';
+import { Button, Icon, Popover, Select } from '@peers-touch/ui';
 import { getAvailableLanguages, changeLanguage } from '../../i18n';
 
-const LANG_PANEL_MIN_WIDTH = 160;
-
-export function LanguageSwitcher() {
+export function LanguageSwitcher({
+  variant = 'menu',
+  label,
+}: {
+  /**
+   * `menu` is the compact corner popover used on login. `ghostSelect` is the
+   * inline borderless settings-row control, matching the north-star settings
+   * language row (Select appearance="ghost").
+   */
+  variant?: 'menu' | 'ghostSelect';
+  label?: string;
+}) {
   const { i18n } = useTranslation();
-  const { token } = theme.useToken();
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [panelPos, setPanelPos] = useState<{ top: number; left: number; openRight: boolean }>({ top: 0, left: 0, openRight: true });
   const languages = getAvailableLanguages();
-
-  const updatePosition = useCallback(() => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const spaceRight = window.innerWidth - rect.right;
-    const openRight = spaceRight >= LANG_PANEL_MIN_WIDTH;
-    setPanelPos({
-      top: rect.top - 4,
-      left: openRight ? rect.left : rect.right,
-      openRight,
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-
-    updatePosition();
-
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        triggerRef.current && !triggerRef.current.contains(target) &&
-        panelRef.current && !panelRef.current.contains(target)
-      ) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', updatePosition);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', updatePosition);
-    };
-  }, [open, updatePosition]);
 
   if (languages.length < 2) return null;
 
-  const current = languages.find((l) => l.code === i18n.language);
+  const current = languages.find((language) => language.code === i18n.language);
   const displayName = current?.native_name ?? current?.name ?? i18n.language;
 
-  return (
-    <>
-      <div ref={triggerRef} style={{ position: 'relative', display: 'inline-block' }}>
-        <button
-          onClick={() => setOpen(!open)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '6px 12px',
-            background: 'transparent',
-            border: `1px solid ${token.colorBorderSecondary}`,
-            borderRadius: 8,
-            cursor: 'pointer',
-            color: token.colorTextSecondary,
-            fontSize: 13,
-            fontFamily: 'inherit',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = token.colorBorder;
-            e.currentTarget.style.color = token.colorText;
-            e.currentTarget.style.background = token.colorFillQuaternary;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = token.colorBorderSecondary;
-            e.currentTarget.style.color = token.colorTextSecondary;
-            e.currentTarget.style.background = 'transparent';
-          }}
-        >
-          <Globe size={14} />
-          <span>{displayName}</span>
-          <ChevronDown size={12} style={{ opacity: 0.5, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-        </button>
-      </div>
+  if (variant === 'ghostSelect') {
+    return (
+      <Select<string>
+        appearance="ghost"
+        aria-label={label ?? displayName}
+        value={i18n.language}
+        options={languages.map((language) => ({
+          value: language.code,
+          label: language.native_name ?? language.name ?? language.code,
+        }))}
+        onValueChange={(code) => {
+          if (typeof code === 'string') void changeLanguage(code);
+        }}
+      />
+    );
+  }
 
-      {open && createPortal(
-        <div
-          ref={panelRef}
-          style={{
-            position: 'fixed',
-            top: panelPos.top,
-            left: panelPos.left,
-            transform: panelPos.openRight ? 'translate(0, -100%)' : 'translate(-100%, -100%)',
-            minWidth: LANG_PANEL_MIN_WIDTH,
-            background: token.colorBgElevated,
-            borderRadius: 10,
-            boxShadow: `0 4px 16px rgba(0,0,0,0.1), 0 0 0 1px ${token.colorBorderSecondary}`,
-            padding: 4,
-            zIndex: 10000,
-          }}
-        >
-          {languages.map((lang) => {
-            const isActive = lang.code === i18n.language;
-            return (
-              <button
-                key={lang.code}
-                onClick={() => {
-                  changeLanguage(lang.code);
-                  setOpen(false);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  width: '100%',
-                  padding: '8px 12px',
-                  background: isActive ? token.colorFillSecondary : 'transparent',
-                  border: 'none',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  color: isActive ? token.colorText : token.colorTextSecondary,
-                  fontSize: 13,
-                  fontFamily: 'inherit',
-                  fontWeight: isActive ? 500 : 400,
-                  transition: 'all 0.1s',
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) e.currentTarget.style.background = token.colorFillQuaternary;
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) e.currentTarget.style.background = 'transparent';
-                }}
-              >
-                <span>{lang.native_name ?? lang.name ?? lang.code}</span>
-                {isActive && <Check size={14} />}
-              </button>
-            );
-          })}
-        </div>,
-        document.body,
-      )}
-    </>
+  const panel = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 168 }}>
+      {languages.map((language) => {
+        const isActive = language.code === i18n.language;
+        return (
+          <Button
+            key={language.code}
+            actionId={`language.select.${language.code}`}
+            fullWidth
+            emphasis="quiet"
+            aria-pressed={isActive}
+            trailing={isActive ? <Icon iconId="check" size={14} /> : undefined}
+            onActivate={() => void changeLanguage(language.code)}
+          >
+            <span style={{ flex: 1, textAlign: 'left' }}>
+              {language.native_name ?? language.name ?? language.code}
+            </span>
+          </Button>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <Popover placement="bottom" label={displayName} content={panel}>
+      <Button
+        actionId="language.switch"
+        emphasis="quiet"
+        density="compact"
+        aria-label={displayName}
+        leading={<Icon iconId="globe" size={15} />}
+        trailing={<Icon iconId="chevron-down" size={13} />}
+      >
+        {displayName}
+      </Button>
+    </Popover>
   );
 }

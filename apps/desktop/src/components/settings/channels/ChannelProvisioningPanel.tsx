@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Modal } from '@lobehub/ui';
-import { Tabs } from 'antd';
+import { Button, Dialog, Segmented, Select, TextField } from '@peers-touch/ui';
 import { Schema } from '@peers-touch/schema';
 import {
   ArrowLeft,
@@ -135,27 +134,21 @@ export function ChannelProvisioningPanel({
   };
 
   const wrapDialog = (content: ReactNode) => (
-    <Modal
-      centered
-      destroyOnHidden
-      enableResponsive={false}
-      footer={null}
+    <Dialog
       open
-      rootClassName="pt-channel-provision-modal"
+      onDismiss={closeDialog}
       title={t('channels.v2.create.title')}
       width={560}
-      onCancel={closeDialog}
-      styles={{
-        container: { borderRadius: 12, padding: 20 },
-        body: {
-          maxHeight: 'calc(100vh - 160px)',
-          overflowY: 'auto',
-          padding: 0,
-        },
+      className="pt-channel-provision-modal"
+      contentStyle={{
+        borderRadius: 12,
+        padding: 20,
+        maxHeight: 'calc(100vh - 160px)',
+        overflowY: 'auto',
       }}
     >
       {content}
-    </Modal>
+    </Dialog>
   );
 
   const confirmScan = async () => {
@@ -238,23 +231,25 @@ export function ChannelProvisioningPanel({
       {includeName ? (
         <label>
           <span>{t('channels.v2.create.name')}</span>
-          <input
+          <TextField
+            aria-label={t('channels.v2.create.name')}
             value={draft.name}
-            onChange={(event) => updateDraft({ name: event.target.value })}
+            onValueChange={(value) => updateDraft({ name: value })}
           />
         </label>
       ) : null}
       <label>
         <span>{t('channels.v2.create.region')}</span>
-        <select
+        <Select<ChannelCreationDraft['region']>
           value={draft.region}
-          onChange={(event) => updateDraft({
-            region: event.target.value as ChannelCreationDraft['region'],
+          options={[
+            { value: 'feishu', label: t('channels.v2.region.feishu') },
+            { value: 'lark', label: t('channels.v2.region.lark') },
+          ]}
+          onValueChange={(next) => updateDraft({
+            region: next as ChannelCreationDraft['region'],
           })}
-        >
-          <option value="feishu">{t('channels.v2.region.feishu')}</option>
-          <option value="lark">{t('channels.v2.region.lark')}</option>
-        </select>
+        />
       </label>
     </>
   );
@@ -314,25 +309,39 @@ export function ChannelProvisioningPanel({
           </div>
           {snapshot?.consoleUrl ? (
             <Button
-              onClick={() => api.openExternalUrl(snapshot.consoleUrl)}
-            >
-              <ExternalLink size={15} />
-              {t('channels.v2.provision.openConsole')}
-            </Button>
+              actionId="channel-open-console"
+              density="compact"
+              leading={<ExternalLink size={15} />}
+              label={t('channels.v2.provision.openConsole')}
+              onActivate={() => api.openExternalUrl(snapshot.consoleUrl)}
+            />
           ) : null}
           {error ? <p className="pt-channel-error" role="alert">{error}</p> : null}
         </div>
         <div className="pt-channel-dialog-actions">
-          <Button onClick={() => void cancelScan()}>
-            <ArrowLeft size={15} />
-            {t('channels.v2.back')}
-          </Button>
+          <Button
+            actionId="channel-scan-back"
+            density="compact"
+            leading={<ArrowLeft size={15} />}
+            label={t('channels.v2.back')}
+            onActivate={() => void cancelScan()}
+          />
           <span />
-          <Button onClick={closeDialog}>{t('channels.v2.cancel')}</Button>
+          <Button
+            actionId="channel-scan-cancel"
+            density="compact"
+            label={t('channels.v2.cancel')}
+            onActivate={closeDialog}
+          />
           {ready ? (
-            <Button type="primary" loading={busy} onClick={confirmScan}>
-              {t('channels.v2.provision.connect')}
-            </Button>
+            <Button
+              actionId="channel-scan-connect"
+              emphasis="primary"
+              density="compact"
+              execution={busy ? 'pending' : 'idle'}
+              label={t('channels.v2.provision.connect')}
+              onActivate={() => void confirmScan()}
+            />
           ) : null}
         </div>
       </section>,
@@ -358,15 +367,23 @@ export function ChannelProvisioningPanel({
       {error ? <p className="pt-channel-error" role="alert">{error}</p> : null}
       <div className="pt-channel-dialog-actions">
         <span />
-        <Button onClick={closeDialog}>{t('channels.v2.cancel')}</Button>
         <Button
-          type="primary"
-          loading={busy}
-          disabled={!draft.name.trim()}
-          onClick={beginScan}
-        >
-          {t('channels.v2.create.next')}
-        </Button>
+          actionId="channel-managed-cancel"
+          density="compact"
+          label={t('channels.v2.cancel')}
+          onActivate={closeDialog}
+        />
+        <Button
+          actionId="channel-managed-next"
+          emphasis="primary"
+          density="compact"
+          execution={busy ? 'pending' : 'idle'}
+          label={t('channels.v2.create.next')}
+          availability={!draft.name.trim()
+            ? { kind: 'disabled', reason: t('channels.v2.create.next') }
+            : undefined}
+          onActivate={() => void beginScan()}
+        />
       </div>
     </div>
   );
@@ -377,22 +394,24 @@ export function ChannelProvisioningPanel({
         {renderCoreFields(false)}
         <label>
           <span>{t('channels.config.lark.appId.label')}</span>
-          <input
+          <TextField
+            aria-label={t('channels.config.lark.appId.label')}
             value={appId}
             placeholder={t('channels.config.lark.appId.placeholder')}
-            onChange={(event) => {
-              setAppId(event.target.value);
+            onValueChange={(value) => {
+              setAppId(value);
               setValidation(null);
             }}
           />
         </label>
         <label>
           <span>{t('channels.config.lark.appSecret.label')}</span>
-          <input
+          <TextField
             type="password"
+            aria-label={t('channels.config.lark.appSecret.label')}
             value={appSecret}
-            onChange={(event) => {
-              setAppSecret(event.target.value);
+            onValueChange={(value) => {
+              setAppSecret(value);
               setValidation(null);
             }}
           />
@@ -420,20 +439,33 @@ export function ChannelProvisioningPanel({
       {error ? <p className="pt-channel-error" role="alert">{error}</p> : null}
       <div className="pt-channel-dialog-actions">
         <span />
-        <Button onClick={closeDialog}>{t('channels.v2.cancel')}</Button>
+        <Button
+          actionId="channel-custom-cancel"
+          density="compact"
+          label={t('channels.v2.cancel')}
+          onActivate={closeDialog}
+        />
         {!validation?.valid ? (
           <Button
-            type="primary"
-            loading={busy}
-            disabled={!appId.trim() || !appSecret}
-            onClick={checkCustomApp}
-          >
-            {t('channels.v2.custom.check')}
-          </Button>
+            actionId="channel-custom-check"
+            emphasis="primary"
+            density="compact"
+            execution={busy ? 'pending' : 'idle'}
+            label={t('channels.v2.custom.check')}
+            availability={(!appId.trim() || !appSecret)
+              ? { kind: 'disabled', reason: t('channels.v2.custom.check') }
+              : undefined}
+            onActivate={() => void checkCustomApp()}
+          />
         ) : (
-          <Button type="primary" loading={busy} onClick={connectCustomApp}>
-            {t('channels.v2.custom.connect')}
-          </Button>
+          <Button
+            actionId="channel-custom-connect"
+            emphasis="primary"
+            density="compact"
+            execution={busy ? 'pending' : 'idle'}
+            label={t('channels.v2.custom.connect')}
+            onActivate={() => void connectCustomApp()}
+          />
         )}
       </div>
     </div>
@@ -441,28 +473,22 @@ export function ChannelProvisioningPanel({
 
   return wrapDialog(
     <section className="pt-channel-create is-dialog">
-      <Tabs
-        activeKey={mode}
-        destroyOnHidden
-        items={[
-          {
-            key: 'managed',
-            label: t('channels.v2.create.tabManaged'),
-            children: managedPane,
-          },
-          {
-            key: 'custom',
-            label: t('channels.v2.create.tabExisting'),
-            children: customPane,
-          },
-        ]}
-        size="small"
-        onChange={(key) => {
+      <Segmented<SetupMode>
+        className="pt-channel-method-tabs"
+        density="compact"
+        value={mode}
+        onValueChange={(key) => {
+          if (!key) return;
           setError('');
           setValidation(null);
-          setMode(key as SetupMode);
+          setMode(key);
         }}
+        options={[
+          { value: 'managed', label: t('channels.v2.create.tabManaged') },
+          { value: 'custom', label: t('channels.v2.create.tabExisting') },
+        ]}
       />
+      {mode === 'managed' ? managedPane : customPane}
     </section>,
   );
 }

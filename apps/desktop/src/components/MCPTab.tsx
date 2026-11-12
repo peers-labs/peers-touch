@@ -1,15 +1,27 @@
 import { useEffect, useState } from 'react';
 import { log } from '@/utils/logger';
-import { Flexbox } from 'react-layout-kit';
 import {
-  Alert, Card, Modal, Switch,
-  Typography, Select, message, Popconfirm, Progress, Spin, theme, Input as AntInput,
-} from 'antd';
-import { Button, Empty, Input, Tag, Tooltip } from '@lobehub/ui';
-import {
-  Plus, Trash2, Play, Pencil, Puzzle, Upload, Monitor, Server,
-  RotateCcw, Square,
-} from 'lucide-react';
+  Alert,
+  Button,
+  Card,
+  ConfirmAction,
+  Dialog,
+  Empty,
+  Field,
+  Flex,
+  Icon,
+  IconButton,
+  Progress,
+  Select,
+  Spin,
+  Switch,
+  Tag,
+  Text,
+  TextArea,
+  TextField,
+  Tooltip,
+  type Tone,
+} from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 import {
   CapabilityOperationStatus,
@@ -22,20 +34,18 @@ import {
   useMCPStore,
 } from '../store/mcp';
 import { SettingsContainer } from './settings/SettingsLayout';
+import { notifyError, notifySuccess, notifyWarning } from '../ui/feedback';
 
-const { Text, Title } = Typography;
-const { TextArea } = AntInput;
 type MCPTransport = MCPServerRecord['type'];
 
-function transportColor(type: MCPTransport) {
-  if (type === 'stdio') return 'purple';
-  if (type === 'sse') return 'blue';
-  return 'cyan';
+function transportTone(type: MCPTransport): Tone {
+  if (type === 'stdio') return 'neutral';
+  if (type === 'sse') return 'info';
+  return 'success';
 }
 
 export function MCPTab() {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const {
     servers,
     operationsByServer,
@@ -60,7 +70,7 @@ export function MCPTab() {
     try {
       await toggleServer(name, enabled);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     }
   };
 
@@ -68,7 +78,7 @@ export function MCPTab() {
     try {
       await deleteServer(name);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     }
   };
 
@@ -76,7 +86,7 @@ export function MCPTab() {
     try {
       await testServer(name);
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     }
   };
 
@@ -119,72 +129,75 @@ export function MCPTab() {
           log.warn('mcp', `Import failed for ${name}`, { error: String(err) });
         }
       }
-      message.success(t('provider.mcp.import.success', { count: imported }));
+      notifySuccess(t('provider.mcp.import.success', { count: imported }));
       setImportModal(false);
     } catch (e: any) {
-      message.error(e.message || t('provider.mcp.import.failed'));
+      notifyError(e.message || t('provider.mcp.import.failed'));
     }
   };
 
   return (
     <SettingsContainer fullHeight tier="standard">
-      <Flexbox horizontal justify="space-between" align="center">
-        <Flexbox>
-          <Title level={5} style={{ margin: 0 }}>{t('provider.mcp.title')}</Title>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+      <Flex direction="row" justify="space-between" align="center">
+        <Flex>
+          <Text strong style={{ fontSize: 15 }}>{t('provider.mcp.title')}</Text>
+          <Text tone="secondary" style={{ fontSize: 12 }}>
             {t('provider.mcp.subtitle')}
           </Text>
-        </Flexbox>
-        <Flexbox horizontal gap={8}>
+        </Flex>
+        <Flex direction="row" gap={8}>
           <Button
-            size="small"
-            icon={<Upload size={14} />}
-            onClick={() => setImportModal(true)}
-          >
-            {t('provider.mcp.import.button')}
-          </Button>
+            actionId="mcp-import-open"
+            density="compact"
+            leading={<Icon iconId="upload" size={14} />}
+            label={t('provider.mcp.import.button')}
+            onActivate={() => setImportModal(true)}
+          />
           <Button
-            size="small"
-            type="primary"
-            icon={<Plus size={14} />}
-            onClick={() => setAddModal(true)}
-          >
-            {t('provider.mcp.addServer')}
-          </Button>
-        </Flexbox>
-      </Flexbox>
+            actionId="mcp-add-open"
+            density="compact"
+            emphasis="primary"
+            leading={<Icon iconId="plus" size={14} />}
+            label={t('provider.mcp.addServer')}
+            onActivate={() => setAddModal(true)}
+          />
+        </Flex>
+      </Flex>
 
       {error && (
         <Alert
-          type="error"
-          showIcon
-          message={t('provider.mcp.operationFailed')}
+          tone="danger"
+          title={t('provider.mcp.operationFailed')}
           description={error}
         />
       )}
 
       {loading ? (
-        <Flexbox align="center" style={{ padding: 48 }}>
-          <Spin />
-        </Flexbox>
+        <Flex align="center" justify="center" style={{ padding: 48 }}>
+          <Spin active />
+        </Flex>
       ) : servers.length === 0 ? (
         <Empty
-          icon={Puzzle}
-          title={t('provider.mcp.noServers')}
-          description={t('provider.mcp.noServersHint')}
+          icon={<Icon iconId="puzzle" size={32} />}
+          description={
+            <span>
+              {t('provider.mcp.noServers')}
+              <br />
+              {t('provider.mcp.noServersHint')}
+            </span>
+          }
           action={
             <Button
-              type="primary"
-              icon={<Plus size={14} />}
-              onClick={() => setAddModal(true)}
-            >
-              {t('provider.mcp.addServer')}
-            </Button>
+              actionId="mcp-add-empty"
+              emphasis="primary"
+              leading={<Icon iconId="plus" size={14} />}
+              label={t('provider.mcp.addServer')}
+              onActivate={() => setAddModal(true)}
+            />
           }
-          padding="64px 16px"
         />
       ) : (
-        <Flexbox gap={12}>
+        <Flex gap={12}>
           {servers.map((srv) => (
             <MCPServerCard
               key={srv.name}
@@ -198,10 +211,9 @@ export function MCPTab() {
               onRecoverCleanup={recoverCleanup}
               onRetry={retryOperation}
               onEdit={() => setDetailName(srv.name)}
-              token={token}
             />
           ))}
-        </Flexbox>
+        </Flex>
       )}
 
       {addModal && (
@@ -243,7 +255,6 @@ function MCPServerCard({
   onRecoverCleanup,
   onRetry,
   onEdit,
-  token,
 }: {
   server: MCPServerItem;
   operation?: CapabilityOperation;
@@ -255,7 +266,6 @@ function MCPServerCard({
   onRecoverCleanup: (name: string) => void;
   onRetry: (name: string) => void;
   onEdit: () => void;
-  token: any;
 }) {
   const { t } = useTranslation('provider');
   const active = operation ? isMcpOperationActive(operation.status) : false;
@@ -275,160 +285,165 @@ function MCPServerCard({
 
   return (
     <Card
+      flat
       data-pt-mcp-server={server.name}
-      size="small"
-      hoverable
-      style={{ borderColor: token.colorBorderSecondary, cursor: 'default' }}
+      className="sc-mcp-card"
     >
-      <Flexbox horizontal justify="space-between" align="center">
-        <Flexbox
-          horizontal gap={12} align="center"
-          style={{ cursor: 'pointer', flex: 1 }}
+      <Flex direction="row" justify="space-between" align="center">
+        <Flex
+          direction="row"
+          gap={12}
+          align="center"
+          className="sc-mcp-card__identity"
           onClick={onEdit}
         >
           <span style={{ fontSize: 20 }}>
             {server.metaAvatar || (server.type === 'stdio' ? '💻' : '🌐')}
           </span>
-          <Flexbox>
-            <Flexbox horizontal gap={6} align="center">
+          <Flex>
+            <Flex direction="row" gap={6} align="center">
               <Text strong>{server.title || server.name}</Text>
-              <Tag
-                color={transportColor(server.type)}
-                style={{ fontSize: 11, margin: 0 }}
-              >
+              <Tag tone={transportTone(server.type)} className="sc-mcp-card__tag">
                 {server.type}
               </Tag>
               <Tag
-                icon={server.executionOwner === 'station'
-                  ? <Server size={11} />
-                  : <Monitor size={11} />}
-                style={{ fontSize: 11, margin: 0 }}
+                className="sc-mcp-card__tag"
+                leading={<Icon iconId={server.executionOwner === 'station' ? 'server' : 'monitor'} size={11} />}
               >
                 {server.executionOwner === 'station' ? 'Station' : 'Desktop'}
               </Tag>
-            </Flexbox>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            </Flex>
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {server.description || server.name}
             </Text>
-          </Flexbox>
-        </Flexbox>
-        <Flexbox horizontal gap={8} align="center">
+          </Flex>
+        </Flex>
+        <Flex direction="row" gap={8} align="center">
           {server.toolCount > 0 && (
-            <Tag color="green" style={{ margin: 0 }}>
-              {t('provider.mcp.tools', { count: server.toolCount })}
-            </Tag>
+            <Tag tone="success">{t('provider.mcp.tools', { count: server.toolCount })}</Tag>
           )}
-          <Tooltip title={t('provider.mcp.editServer')}>
-            <Button
-              type="text"
-              size="small"
-              icon={<Pencil size={14} />}
-              disabled={active}
-              onClick={onEdit}
+          <Tooltip label={t('provider.mcp.editServer')}>
+            <IconButton
+              actionId={`mcp-edit-${server.name}`}
+              iconId="pencil-line"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              availability={active ? { kind: 'disabled', reason: '' } : undefined}
+              label={t('provider.mcp.editServer')}
+              onActivate={onEdit}
             />
           </Tooltip>
-          <Tooltip title={t('provider.mcp.testConnection')}>
-            <Button
-              type="text"
-              size="small"
-              icon={<Play size={14} />}
-              loading={active && operation?.operationKind === 'test'}
-              disabled={active}
-              onClick={() => onTest(server.name)}
+          <Tooltip label={t('provider.mcp.testConnection')}>
+            <IconButton
+              actionId={`mcp-test-${server.name}`}
+              iconId="play"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              execution={active && operation?.operationKind === 'test' ? 'pending' : 'idle'}
+              availability={active ? { kind: 'disabled', reason: '' } : undefined}
+              label={t('provider.mcp.testConnection')}
+              onActivate={() => onTest(server.name)}
             />
           </Tooltip>
-          <Tooltip title={server.enabled ? t('provider.mcp.disable') : t('provider.mcp.enable')}>
+          <Tooltip label={server.enabled ? t('provider.mcp.disable') : t('provider.mcp.enable')}>
             <Switch
-              size="small"
               checked={server.enabled}
               disabled={active}
-              onChange={(checked) => onToggle(server.name, checked)}
+              aria-label={server.enabled ? t('provider.mcp.disable') : t('provider.mcp.enable')}
+              onCheckedChange={(checked) => onToggle(server.name, checked)}
             />
           </Tooltip>
-          <Popconfirm
+          <ConfirmAction
+            actionId={`mcp-delete-${server.name}`}
             title={t('provider.mcp.deleteConfirm')}
+            confirmLabel={t('common.action.delete', { ns: 'common' })}
+            cancelLabel={t('common.action.cancel', { ns: 'common' })}
             onConfirm={() => onDelete(server.name)}
           >
-            <Button
-              type="text"
-              size="small"
-              danger
-              disabled={active}
-              icon={<Trash2 size={14} />}
+            <IconButton
+              actionId={`mcp-delete-trigger-${server.name}`}
+              iconId="delete"
+              iconSize={14}
+              density="compact"
+              emphasis="quiet"
+              tone="danger"
+              availability={active ? { kind: 'disabled', reason: '' } : undefined}
+              label={t('provider.mcp.deleteConfirm')}
             />
-          </Popconfirm>
-        </Flexbox>
-      </Flexbox>
+          </ConfirmAction>
+        </Flex>
+      </Flex>
       {(operation || disconnected) && (
-        <Flexbox
+        <Flex
+          gap={8}
+          className="sc-mcp-operation"
           data-pt-mcp-operation-id={operation?.operationId || undefined}
           data-pt-mcp-operation-status={statusName}
-          gap={8}
-          style={{ marginTop: 12 }}
         >
-          <Flexbox horizontal align="center" justify="space-between" gap={8}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+          <Flex direction="row" align="center" justify="space-between" gap={8}>
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {t(`provider.mcp.operation.status.${statusName}`, {
                 action: operation?.operationKind || 'reconnect',
               })}
             </Text>
-            <Flexbox horizontal gap={6}>
+            <Flex direction="row" gap={6}>
               {disconnected && (
                 <Button
-                  size="small"
-                  icon={<RotateCcw size={13} />}
-                  onClick={() => onReconnect(server.name)}
-                >
-                  {t('provider.mcp.operation.reconnect')}
-                </Button>
+                  actionId={`mcp-reconnect-${server.name}`}
+                  density="compact"
+                  leading={<Icon iconId="rotate-ccw" size={13} />}
+                  label={t('provider.mcp.operation.reconnect')}
+                  onActivate={() => onReconnect(server.name)}
+                />
               )}
               {retryable && (
                 <Button
-                  size="small"
-                  icon={<RotateCcw size={13} />}
-                  onClick={() => onRetry(server.name)}
-                >
-                  {t('provider.mcp.operation.retry')}
-                </Button>
+                  actionId={`mcp-retry-${server.name}`}
+                  density="compact"
+                  leading={<Icon iconId="rotate-ccw" size={13} />}
+                  label={t('provider.mcp.operation.retry')}
+                  onActivate={() => onRetry(server.name)}
+                />
               )}
               {cleaning && (
                 <Button
-                  size="small"
-                  icon={<RotateCcw size={13} />}
-                  onClick={() => onRecoverCleanup(server.name)}
-                >
-                  {t('provider.mcp.operation.recoverCleanup')}
-                </Button>
+                  actionId={`mcp-recover-${server.name}`}
+                  density="compact"
+                  leading={<Icon iconId="rotate-ccw" size={13} />}
+                  label={t('provider.mcp.operation.recoverCleanup')}
+                  onActivate={() => onRecoverCleanup(server.name)}
+                />
               )}
               {active && !disconnected && !cleaning && (
                 <Button
-                  danger
-                  size="small"
-                  icon={<Square size={13} />}
-                  onClick={() => onCancel(server.name)}
-                >
-                  {t('provider.mcp.operation.cancel')}
-                </Button>
+                  actionId={`mcp-cancel-${server.name}`}
+                  tone="danger"
+                  density="compact"
+                  leading={<Icon iconId="square" size={13} />}
+                  label={t('provider.mcp.operation.cancel')}
+                  onActivate={() => onCancel(server.name)}
+                />
               )}
-            </Flexbox>
-          </Flexbox>
-          {operation && active && (
+            </Flex>
+          </Flex>
+          {operation && active && operation.progressPercent > 0 && (
             <Progress
-              percent={operation.progressPercent || undefined}
-              showInfo={operation.progressPercent > 0}
-              size="small"
-              status="active"
+              value={operation.progressPercent}
+              maximum={100}
+              showValue={operation.progressPercent > 0}
             />
           )}
           {operation?.error && (
-            <Text type="danger" style={{ fontSize: 12 }}>
+            <Text tone="danger" style={{ fontSize: 12 }}>
               {t('provider.mcp.operation.error', {
                 code: operation.error.code,
                 action: operation.error.recoveryAction,
               })}
             </Text>
           )}
-        </Flexbox>
+        </Flex>
       )}
     </Card>
   );
@@ -469,6 +484,12 @@ function capabilityOperationStatusName(
   }
 }
 
+const TRANSPORT_OPTIONS: ReadonlyArray<{ value: MCPTransport; label: string }> = [
+  { value: 'stdio', label: 'stdio' },
+  { value: 'http', label: 'HTTP' },
+  { value: 'sse', label: 'SSE' },
+];
+
 function AddMCPServerModal({
   onCreate,
   onDone,
@@ -491,15 +512,15 @@ function AddMCPServerModal({
 
   const handleOk = async () => {
     if (!name.trim()) {
-      message.warning(t('provider.mcp.add.nameRequired'));
+      notifyWarning(t('provider.mcp.add.nameRequired'));
       return;
     }
     if (type === 'stdio' && !command.trim()) {
-      message.warning(t('provider.mcp.add.commandRequired'));
+      notifyWarning(t('provider.mcp.add.commandRequired'));
       return;
     }
     if ((type === 'http' || type === 'sse') && !url.trim()) {
-      message.warning(t('provider.mcp.add.urlRequired'));
+      notifyWarning(t('provider.mcp.add.urlRequired'));
       return;
     }
 
@@ -519,91 +540,110 @@ function AddMCPServerModal({
         url: url.trim(),
         executionOwner,
       });
-      message.success(t('provider.mcp.add.success', { name }));
+      notifySuccess(t('provider.mcp.add.success', { name }));
       onDone();
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal
-      title={t('provider.mcp.add.title')}
+    <Dialog
       open
-      onCancel={onCancel}
-      onOk={handleOk}
-      confirmLoading={loading}
-      okText={t('common.action.add', { ns: 'common' })}
+      onDismiss={onCancel}
+      title={t('provider.mcp.add.title')}
       width={560}
+      closeLabel={t('common.action.cancel', { ns: 'common' })}
+      footer={
+        <>
+          <Button
+            actionId="mcp-add-cancel"
+            emphasis="quiet"
+            label={t('common.action.cancel', { ns: 'common' })}
+            onActivate={onCancel}
+          />
+          <Button
+            actionId="mcp-add-confirm"
+            emphasis="primary"
+            execution={loading ? 'pending' : 'idle'}
+            label={t('common.action.add', { ns: 'common' })}
+            onActivate={() => void handleOk()}
+          />
+        </>
+      }
     >
-      <Flexbox gap={12} style={{ paddingBlock: 12 }}>
-        <Input
+      <div className="sc-provider-form">
+        <TextField
+          autoFocus
           placeholder={t('provider.mcp.add.namePlaceholder')}
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          autoFocus
+          onValueChange={setName}
         />
-        <Input
+        <TextField
           placeholder={t('provider.mcp.add.titlePlaceholder')}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onValueChange={setTitle}
         />
-        <Input
+        <TextField
           placeholder={t('provider.mcp.add.descPlaceholder')}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onValueChange={setDescription}
         />
 
-        <Flexbox horizontal gap={8} align="center">
-          <Text style={{ width: 80 }}>{t('provider.mcp.add.transport')}</Text>
-          <Select
+        <Field
+          label={t('provider.mcp.add.transport')}
+          className="sc-mcp-modal-field"
+        >
+          <Select<MCPTransport>
             value={type}
-            onChange={setType}
             style={{ width: 140 }}
-            options={[
-              { value: 'stdio', label: 'stdio' },
-              { value: 'http', label: 'HTTP' },
-              { value: 'sse', label: 'SSE' },
-            ]}
+            options={TRANSPORT_OPTIONS}
+            onValueChange={(value) => {
+              if (typeof value === 'string') setType(value);
+            }}
           />
-        </Flexbox>
-        <Flexbox horizontal gap={8} align="center">
-          <Text style={{ width: 80 }}>{t('provider.mcp.runtime.label')}</Text>
-          <Select
+        </Field>
+        <Field
+          label={t('provider.mcp.runtime.label')}
+          className="sc-mcp-modal-field"
+        >
+          <Select<'station' | 'client'>
             value={executionOwner}
-            onChange={setExecutionOwner}
             style={{ width: 140 }}
             options={[
               { value: 'station', label: t('provider.mcp.runtime.station') },
               { value: 'client', label: t('provider.mcp.runtime.client') },
             ]}
+            onValueChange={(value) => {
+              if (value === 'station' || value === 'client') setExecutionOwner(value);
+            }}
           />
-        </Flexbox>
+        </Field>
 
         {type === 'stdio' ? (
           <>
-            <Input
+            <TextField
               placeholder={t('provider.mcp.add.commandPlaceholder')}
               value={command}
-              onChange={(e) => setCommand(e.target.value)}
+              onValueChange={setCommand}
             />
-            <Input
+            <TextField
               placeholder={t('provider.mcp.add.argsPlaceholder')}
               value={args}
-              onChange={(e) => setArgs(e.target.value)}
+              onValueChange={setArgs}
             />
           </>
         ) : (
-          <Input
+          <TextField
             placeholder={t('provider.mcp.add.urlPlaceholder')}
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onValueChange={setUrl}
           />
         )}
-      </Flexbox>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }
 
@@ -620,7 +660,7 @@ function ImportMCPModal({
 
   const handleOk = async () => {
     if (!text.trim()) {
-      message.warning(t('provider.mcp.import.empty'));
+      notifyWarning(t('provider.mcp.import.empty'));
       return;
     }
     setLoading(true);
@@ -632,28 +672,43 @@ function ImportMCPModal({
   };
 
   return (
-    <Modal
-      title={t('provider.mcp.import.title')}
+    <Dialog
       open
-      onCancel={onCancel}
-      onOk={handleOk}
-      confirmLoading={loading}
-      okText={t('provider.mcp.import.confirm')}
+      onDismiss={onCancel}
+      title={t('provider.mcp.import.title')}
       width={640}
+      closeLabel={t('common.action.cancel', { ns: 'common' })}
+      footer={
+        <>
+          <Button
+            actionId="mcp-import-cancel"
+            emphasis="quiet"
+            label={t('common.action.cancel', { ns: 'common' })}
+            onActivate={onCancel}
+          />
+          <Button
+            actionId="mcp-import-confirm"
+            emphasis="primary"
+            execution={loading ? 'pending' : 'idle'}
+            label={t('provider.mcp.import.confirm')}
+            onActivate={() => void handleOk()}
+          />
+        </>
+      }
     >
-      <Flexbox gap={10} style={{ paddingBlock: 12 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+      <div className="sc-provider-form">
+        <Text tone="secondary" style={{ fontSize: 12 }}>
           {t('provider.mcp.import.hint')}
         </Text>
         <TextArea
+          className="sc-mcp-import-area"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onValueChange={setText}
           placeholder={t('provider.mcp.import.placeholder')}
-          autoSize={{ minRows: 10, maxRows: 20 }}
-          style={{ fontFamily: 'monospace', fontSize: 12 }}
+          rows={12}
         />
-      </Flexbox>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }
 
@@ -671,7 +726,6 @@ function MCPServerEditModal({
   onClose: () => void;
 }) {
   const { t } = useTranslation('provider');
-  const { token } = theme.useToken();
   const [server, setServer] = useState<MCPServerRecord | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -706,7 +760,7 @@ function MCPServerEditModal({
         try {
           env = JSON.parse(envText);
         } catch {
-          message.warning(t('provider.mcp.edit.envInvalid'));
+          notifyWarning(t('provider.mcp.edit.envInvalid'));
           setSaving(false);
           return;
         }
@@ -722,10 +776,10 @@ function MCPServerEditModal({
         env,
         executionOwner,
       });
-      message.success(t('provider.mcp.edit.saved'));
+      notifySuccess(t('provider.mcp.edit.saved'));
       onClose();
     } catch (e: any) {
-      message.error(e.message);
+      notifyError(e.message);
     } finally {
       setSaving(false);
     }
@@ -733,142 +787,148 @@ function MCPServerEditModal({
 
   if (!server) return null;
 
+  const operationTone: Tone = operation
+    ? operation.status === CapabilityOperationStatus.SUCCEEDED
+      ? 'success'
+      : isMcpOperationActive(operation.status)
+        ? 'info'
+        : 'danger'
+    : 'neutral';
+
   return (
-    <Modal
-      title={t('provider.mcp.edit.title', { name: server.title || server.name })}
+    <Dialog
       open
-      onCancel={onClose}
+      onDismiss={onClose}
+      title={t('provider.mcp.edit.title', { name: server.title || server.name })}
       width={640}
+      closeLabel={t('common.action.close', { ns: 'common' })}
       footer={
-        <Flexbox horizontal gap={8} justify="flex-end">
+        <>
           <Button
-            onClick={() => onTest(name)}
-            loading={Boolean(operation && isMcpOperationActive(operation.status))}
-            icon={<Play size={14} />}
-          >
-            {t('provider.mcp.testConnection')}
-          </Button>
-          <Button onClick={onClose}>{t('common.action.close', { ns: 'common' })}</Button>
-          <Button type="primary" onClick={handleSave} loading={saving}>
-            {t('provider.mcp.edit.save')}
-          </Button>
-        </Flexbox>
+            actionId="mcp-edit-test"
+            execution={operation && isMcpOperationActive(operation.status) ? 'pending' : 'idle'}
+            leading={<Icon iconId="play" size={14} />}
+            label={t('provider.mcp.testConnection')}
+            onActivate={() => void onTest(name)}
+          />
+          <Button
+            actionId="mcp-edit-close"
+            emphasis="quiet"
+            label={t('common.action.close', { ns: 'common' })}
+            onActivate={onClose}
+          />
+          <Button
+            actionId="mcp-edit-save"
+            emphasis="primary"
+            execution={saving ? 'pending' : 'idle'}
+            label={t('provider.mcp.edit.save')}
+            onActivate={() => void handleSave()}
+          />
+        </>
       }
     >
-      <Flexbox gap={12} style={{ paddingBlock: 8, maxHeight: '70vh', overflow: 'auto' }}>
-        <Flexbox horizontal gap={8} wrap="wrap">
-          <Tag color={transportColor(server.type)}>{server.type}</Tag>
+      <div className="sc-mcp-edit">
+        <Flex direction="row" gap={8} wrap="wrap">
+          <Tag tone={transportTone(server.type)}>{server.type}</Tag>
           {server.version && <Tag>v{server.version}</Tag>}
-          <Tag color={server.enabled ? 'green' : 'default'}>
+          <Tag tone={server.enabled ? 'success' : 'neutral'}>
             {server.enabled ? t('provider.mcp.detail.enabled') : t('provider.mcp.detail.disabled')}
           </Tag>
-        </Flexbox>
+        </Flex>
 
-        <div>
-          <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('provider.mcp.add.title')}</Text>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} style={{ marginTop: 4 }} />
-        </div>
-        <div>
-          <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('provider.mcp.add.descPlaceholder')}</Text>
-          <Input value={description} onChange={(e) => setDescription(e.target.value)} style={{ marginTop: 4 }} />
-        </div>
+        <Field label={t('provider.mcp.add.title')}>
+          <TextField value={title} onValueChange={setTitle} />
+        </Field>
+        <Field label={t('provider.mcp.add.descPlaceholder')}>
+          <TextField value={description} onValueChange={setDescription} />
+        </Field>
 
-        <Flexbox horizontal gap={8} align="center">
-          <Text style={{ width: 80, fontSize: 12 }}>{t('provider.mcp.add.transport')}</Text>
-          <Select
+        <Field label={t('provider.mcp.add.transport')} className="sc-mcp-modal-field">
+          <Select<MCPTransport>
             value={type}
-            onChange={setType}
             style={{ width: 140 }}
-            options={[
-              { value: 'stdio', label: 'stdio' },
-              { value: 'http', label: 'HTTP' },
-              { value: 'sse', label: 'SSE' },
-            ]}
+            options={TRANSPORT_OPTIONS}
+            onValueChange={(value) => {
+              if (typeof value === 'string') setType(value);
+            }}
           />
-        </Flexbox>
-        <Flexbox horizontal gap={8} align="center">
-          <Text style={{ width: 80, fontSize: 12 }}>{t('provider.mcp.runtime.label')}</Text>
-          <Select
+        </Field>
+        <Field label={t('provider.mcp.runtime.label')} className="sc-mcp-modal-field">
+          <Select<'station' | 'client'>
             value={executionOwner}
-            onChange={setExecutionOwner}
             style={{ width: 140 }}
             options={[
               { value: 'station', label: t('provider.mcp.runtime.station') },
               { value: 'client', label: t('provider.mcp.runtime.client') },
             ]}
+            onValueChange={(value) => {
+              if (value === 'station' || value === 'client') setExecutionOwner(value);
+            }}
           />
-        </Flexbox>
+        </Field>
 
         {type === 'stdio' ? (
           <>
-            <div>
-              <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('provider.mcp.detail.command')}</Text>
-              <Input value={command} onChange={(e) => setCommand(e.target.value)} style={{ marginTop: 4 }} />
-            </div>
-            <div>
-              <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('provider.mcp.detail.args')}</Text>
-              <Input value={args} onChange={(e) => setArgs(e.target.value)} style={{ marginTop: 4 }} placeholder={t('provider.mcp.add.argsPlaceholder')} />
-            </div>
-            <div>
-              <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('provider.mcp.detail.env')}</Text>
+            <Field label={t('provider.mcp.detail.command')}>
+              <TextField value={command} onValueChange={setCommand} />
+            </Field>
+            <Field label={t('provider.mcp.detail.args')}>
+              <TextField
+                value={args}
+                onValueChange={setArgs}
+                placeholder={t('provider.mcp.add.argsPlaceholder')}
+              />
+            </Field>
+            <Field label={t('provider.mcp.detail.env')}>
               <TextArea
+                className="sc-mcp-env-area"
                 value={envText}
-                onChange={(e) => setEnvText(e.target.value)}
-                style={{ marginTop: 4, fontFamily: 'monospace', fontSize: 12 }}
-                autoSize={{ minRows: 3, maxRows: 8 }}
+                onValueChange={setEnvText}
+                rows={4}
                 placeholder='{"KEY": "value"}'
               />
               {server.envKeys && server.envKeys.length > 0 && (
-                <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
+                <Text tone="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
                   {t('provider.mcp.edit.secretKeysStored', {
                     keys: server.envKeys.join(', '),
                   })}
                 </Text>
               )}
-            </div>
+            </Field>
           </>
         ) : (
-          <div>
-            <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>{t('provider.mcp.detail.url')}</Text>
-            <Input value={url} onChange={(e) => setUrl(e.target.value)} style={{ marginTop: 4 }} />
-          </div>
+          <Field label={t('provider.mcp.detail.url')}>
+            <TextField value={url} onValueChange={setUrl} />
+          </Field>
         )}
 
         {operation && (
-          <Flexbox
-            style={{
-              background:
-                operation.status === CapabilityOperationStatus.SUCCEEDED
-                  ? token.colorSuccessBg
-                  : isMcpOperationActive(operation.status)
-                    ? token.colorInfoBg
-                    : token.colorErrorBg,
-              borderRadius: 8,
-              padding: 12,
-            }}
+          <Flex
             gap={4}
+            className="sc-mcp-operation"
+            data-tone={operationTone}
             data-pt-mcp-operation-id={operation.operationId}
             data-pt-mcp-operation-status={capabilityOperationStatusName(operation.status)}
           >
-            <Flexbox horizontal gap={6} align="center">
+            <Flex direction="row" gap={6} align="center">
               <Text strong>
                 {t(
                   `provider.mcp.operation.status.${capabilityOperationStatusName(operation.status)}`,
                   { action: operation.operationKind },
                 )}
               </Text>
-            </Flexbox>
+            </Flex>
             {operation.error && (
-              <Text type="danger" style={{ fontSize: 12 }}>
+              <Text tone="danger" style={{ fontSize: 12 }}>
                 {t('provider.mcp.operation.error', {
                   code: operation.error.code,
                   action: operation.error.recoveryAction,
                 })}
               </Text>
             )}
-          </Flexbox>
+          </Flex>
         )}
-      </Flexbox>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }

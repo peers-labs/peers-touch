@@ -1,9 +1,15 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Button, Tag } from '@lobehub/ui';
-import { Alert, Collapse, Empty, Spin, theme, Typography } from 'antd';
-import { UserPlus, Users, Contact, ChevronRight, Check, X } from 'lucide-react';
+import {
+  Alert as PtAlert,
+  Button,
+  Empty as PtEmpty,
+  Icon,
+  IconButton,
+  Spin as PtSpin,
+  Tag as PtTag,
+  type Tone,
+} from '@peers-touch/ui';
 import { currentAuthenticatedActorPtid } from '../../store/session';
 import {
   projectChatFriendContacts,
@@ -12,9 +18,7 @@ import {
 } from '../../store/friendshipProjection';
 import {
   canonicalProfileAvatar,
-  projectGroupAvatarSlots,
   remoteProfileHandle,
-  resolveActorIdentity,
 } from '../../store/socialProfileProjection';
 import type { FriendRequestData } from '../../store/socialNormalizers';
 import {
@@ -22,7 +26,6 @@ import {
   type PresentedError,
 } from '../../services/errorPresenter';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
 import { log } from '../../utils/logger';
 import {
@@ -36,22 +39,39 @@ import {
 } from './contactSelection';
 import { ChatActorIdentityRow } from './ChatActorIdentityRow';
 
-const { Text } = Typography;
-
 const PANEL_WIDTH = 300;
+
+// Section keys mirror the north-star ContactsPane anatomy: self entry first,
+// then action-bearing request queues, settled history (collapsed at rest),
+// groups and friends.
+type ContactSectionKey = 'incoming' | 'outgoing' | 'history' | 'groups' | 'friends';
+
+const SECTION_COLLAPSED_DEFAULT: Record<ContactSectionKey, boolean> = {
+  incoming: false,
+  outgoing: false,
+  history: true,
+  groups: false,
+  friends: false,
+};
 
 interface ChatContactsPanelProps {
   selectedContact: ContactSelection | null;
   onSelectContact: (selection: ContactSelection) => void;
   onStartChat?: (selection: ContactSelection) => void;
+  /** Embedded inside the unified chat rail: fills the rail width and rows open
+   *  conversations directly (no drill-down detail pane). */
+  embedded?: boolean;
+  /** Live in-rail search query; when non-empty the pane renders flat matches. */
+  query?: string;
 }
 
 export function ChatContactsPanel({
   selectedContact,
   onSelectContact,
   onStartChat,
+  embedded = false,
+  query = '',
 }: ChatContactsPanelProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     friendRequests,
@@ -93,6 +113,17 @@ export function ChatContactsPanel({
 
   const [busyAction, setBusyAction] = useState<{ id: string; kind: 'accept' | 'reject' } | null>(null);
   const [requestActionErrors, setRequestActionErrors] = useState<Record<string, PresentedError>>({});
+  const [collapsed, setCollapsed] = useState<ContactSectionKey[]>(
+    Object.entries(SECTION_COLLAPSED_DEFAULT)
+      .filter(([, isCollapsed]) => isCollapsed)
+      .map(([key]) => key as ContactSectionKey),
+  );
+  const toggleSection = (key: ContactSectionKey) => {
+    setCollapsed((current) => (current.includes(key)
+      ? current.filter((item) => item !== key)
+      : [...current, key]));
+  };
+
   const myDid = currentUserPtid || currentAuthenticatedActorPtid() || '';
   const conversations = useMemo(
     () => {
@@ -190,41 +221,29 @@ export function ChatContactsPanel({
     () => projectChatFriendRequestPeers(friendRequests, myDid),
     [friendRequests, myDid],
   );
-
-  const requestCardStyle: CSSProperties = {
-    padding: '10px',
-    borderRadius: 8,
-    border: `1px solid ${token.colorBorderSecondary}`,
-    background: token.colorFillQuaternary,
-  };
-
-  const avatarSize = 36;
-  const selectedRowStyle: CSSProperties = {
-    background: token.colorPrimaryBg,
-    color: token.colorPrimary,
-    boxShadow: `inset 0 0 0 1px ${token.colorPrimaryBorder}`,
-  };
-
-  const rowBaseStyle: CSSProperties = {
-    padding: '9px 10px',
-    borderRadius: 10,
-    cursor: 'pointer',
-    transition: 'background 0.15s, color 0.15s, box-shadow 0.15s',
-  };
-
-  const rowListStyle: CSSProperties = {
-    padding: '2px 0 4px',
-  };
+  const incomingRequests = useMemo(
+    () => requestPeers.filter((peer) => peer.direction === 'incoming' && peer.request.status === 1),
+    [requestPeers],
+  );
+  const outgoingRequests = useMemo(
+    () => requestPeers.filter((peer) => peer.direction === 'outgoing' && peer.request.status === 1),
+    [requestPeers],
+  );
+  // Settled (accepted/rejected) requests are an archive, not a todo queue.
+  const historyRequests = useMemo(
+    () => requestPeers.filter((peer) => peer.request.status !== 1),
+    [requestPeers],
+  );
 
   function statusTag(status: number) {
     if (status === 1) {
-      return <Tag color="blue">{t('chat.social.contacts.status.pending')}</Tag>;
+      return <PtTag tone="info">{t('chat.social.contacts.status.pending')}</PtTag>;
     }
     if (status === 2) {
-      return <Tag color="green">{t('chat.social.contacts.status.accepted')}</Tag>;
+      return <PtTag tone="success">{t('chat.social.contacts.status.accepted')}</PtTag>;
     }
     if (status === 3) {
-      return <Tag>{t('chat.social.contacts.status.rejected')}</Tag>;
+      return <PtTag>{t('chat.social.contacts.status.rejected')}</PtTag>;
     }
     return null;
   }
@@ -291,470 +310,440 @@ export function ChatContactsPanel({
     }
   };
 
-  const newFriendsContent = requestPeers.length === 0 ? (
-    <Empty
-      image={Empty.PRESENTED_IMAGE_SIMPLE}
-      description={t('chat.social.contacts.noPendingRequests')}
-    />
-  ) : (
-    <Flexbox gap={8}>
-      {requestPeers.map(({
-        request,
-        direction,
-        peerPtid,
-        attemptCount,
-      }) => {
-        const peerName = direction === 'outgoing'
-          ? request.receiverDisplayName
-          : request.senderDisplayName;
-        const peerAvatar = direction === 'outgoing'
-          ? request.receiverAvatar
-          : request.senderAvatar;
-        const federationId = request.federationId;
-        const cachedProfile = peerProfiles[peerPtid];
-        const peerLabel = cachedProfile?.display_name?.trim()
-          || cachedProfile?.username?.trim()
-          || peerName
-          || t('chat.social.sessionList.unknown');
-        // Key on the canonical Station media identity, not the rotating
-        // projected station-resource token from the peer profile edge.
-        const resolvedAvatar = (cachedProfile ? canonicalProfileAvatar(cachedProfile) : '')
-          || peerAvatar;
-        const federatedHandle = cachedProfile
-          ? remoteProfileHandle(cachedProfile)
-          : '';
-        const homeStationPeerId = direction === 'incoming'
-          ? request.senderHomeStationPeerId
-          : request.receiverHomeStationPeerId;
-        const projectedIdentity = friendContactsByPtid.get(peerPtid) ?? {
-          actorPtid: peerPtid,
-          username: cachedProfile?.username?.trim() || '',
-          displayName: peerLabel,
-          avatarUrl: resolvedAvatar,
-          federatedHandle,
-          homeStationDomain: homeStationDomainFromHandle(federatedHandle),
-          homeStationPeerId,
-          homeStationName: stationNamesByActorPtid[peerPtid]
-            || stationNamesByPeerId[homeStationPeerId]
-            || '',
-          federationId,
-          federationName: federationNames.get(federationId) || '',
-        };
-        const isPendingIncoming = direction === 'incoming' && request.status === 1;
-        const actionError = requestActionErrors[request.id];
-        const isSelected = Boolean(
-          selectedContact
-          && selectedContact.kind !== 'group'
-          && selectedContact.peerPtid === peerPtid
+  const renderRequestCard = (peer: (typeof requestPeers)[number]) => {
+    const { request, direction, peerPtid, attemptCount } = peer;
+    const peerName = direction === 'outgoing'
+      ? request.receiverDisplayName
+      : request.senderDisplayName;
+    const peerAvatar = direction === 'outgoing'
+      ? request.receiverAvatar
+      : request.senderAvatar;
+    const federationId = request.federationId;
+    const cachedProfile = peerProfiles[peerPtid];
+    const peerLabel = cachedProfile?.display_name?.trim()
+      || cachedProfile?.username?.trim()
+      || peerName
+      || t('chat.social.sessionList.unknown');
+    // Key on the canonical Station media identity, not the rotating
+    // projected station-resource token from the peer profile edge.
+    const resolvedAvatar = (cachedProfile ? canonicalProfileAvatar(cachedProfile) : '')
+      || peerAvatar;
+    const federatedHandle = cachedProfile
+      ? remoteProfileHandle(cachedProfile)
+      : '';
+    const homeStationPeerId = direction === 'incoming'
+      ? request.senderHomeStationPeerId
+      : request.receiverHomeStationPeerId;
+    const projectedIdentity = friendContactsByPtid.get(peerPtid) ?? {
+      actorPtid: peerPtid,
+      username: cachedProfile?.username?.trim() || '',
+      displayName: peerLabel,
+      avatarUrl: resolvedAvatar,
+      federatedHandle,
+      homeStationDomain: homeStationDomainFromHandle(federatedHandle),
+      homeStationPeerId,
+      homeStationName: stationNamesByActorPtid[peerPtid]
+        || stationNamesByPeerId[homeStationPeerId]
+        || '',
+      federationId,
+      federationName: federationNames.get(federationId) || '',
+    };
+    const isPendingIncoming = direction === 'incoming' && request.status === 1;
+    const isOutgoing = direction === 'outgoing';
+    const isSettled = request.status !== 1;
+    const actionError = requestActionErrors[request.id];
+    const isSelected = Boolean(
+      selectedContact
+      && selectedContact.kind !== 'group'
+      && selectedContact.peerPtid === peerPtid
+    );
+    const selection = request.status === 2
+      ? friendContactSelection(projectedIdentity, friendConversations)
+      : personContactSelection(
+          projectedIdentity,
+          request.status,
+          direction,
+          attemptCount,
         );
-        const selection = request.status === 2
-          ? friendContactSelection(projectedIdentity, friendConversations)
-          : personContactSelection(
-              projectedIdentity,
-              request.status,
-              direction,
-              attemptCount,
-            );
-        const selectRequestActor = () => {
-          if (
-            selection.kind === 'friend'
-            && selection.conversationId
-          ) {
-            selectSession(selection.conversationId);
-          }
-          onSelectContact(selection);
-        };
-        return (
-          <Flexbox
-            key={peerPtid}
-            data-chat-friend-request-id={request.id}
-            data-chat-friend-request-peer-ptid={peerPtid}
-            data-chat-friend-request-direction={direction}
-            data-chat-friend-request-status={request.status}
-            data-chat-friend-request-attempt-count={attemptCount}
-            horizontal
-            align="flex-start"
-            gap={10}
-            title={peerLabel}
-            role="button"
-            tabIndex={0}
-            onClick={selectRequestActor}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' && event.key !== ' ') return;
-              event.preventDefault();
-              selectRequestActor();
-            }}
-            style={{
-              ...requestCardStyle,
-              ...(isSelected ? selectedRowStyle : {}),
-              cursor: 'pointer',
-            }}
-          >
-            <UserSquareAvatar remoteUrl={resolvedAvatar} actorPtid={peerPtid} name={peerLabel} size={36} />
-            <Flexbox flex={1} style={{ minWidth: 0 }} gap={5}>
-              <Text
-                strong
-                style={{
-                  fontSize: 13,
-                  lineHeight: 1.35,
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {peerLabel}
-              </Text>
-              {request.message ? (
-                <Text
-                  type="secondary"
-                  style={{
-                    fontSize: 12,
-                    lineHeight: 1.4,
-                    overflowWrap: 'anywhere',
-                  }}
-                >
-                  {request.message}
-                </Text>
-              ) : null}
-              <Flexbox horizontal align="center" gap={6} style={{ flexWrap: 'wrap' }}>
-                <Tag color={direction === 'incoming' ? 'blue' : 'default'}>
-                  {t(`chat.social.contacts.direction.${direction}`)}
-                </Tag>
-                {statusTag(request.status)}
-                <Tag>
+    const selectRequestActor = () => {
+      if (embedded && request.status === 2) {
+        onStartChat?.(selection);
+        return;
+      }
+      if (
+        selection.kind === 'friend'
+        && selection.conversationId
+      ) {
+        selectSession(selection.conversationId);
+      }
+      onSelectContact(selection);
+    };
+    const directionTone: Tone = isOutgoing ? 'neutral' : 'info';
+    return (
+      <div
+        key={peerPtid}
+        className={[
+          'sc-request-card',
+          isOutgoing ? 'is-outgoing' : '',
+          isSettled ? 'is-history' : '',
+          isSelected ? 'is-selected' : '',
+        ].filter(Boolean).join(' ')}
+        data-chat-friend-request-id={request.id}
+        data-chat-friend-request-peer-ptid={peerPtid}
+        data-chat-friend-request-direction={direction}
+        data-chat-friend-request-status={request.status}
+        data-chat-friend-request-attempt-count={attemptCount}
+        title={peerLabel}
+        role="button"
+        tabIndex={0}
+        onClick={selectRequestActor}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          selectRequestActor();
+        }}
+      >
+        <UserSquareAvatar remoteUrl={resolvedAvatar} actorPtid={peerPtid} name={peerLabel} size={40} />
+        <div className="sc-request-card__body">
+          <div className="sc-request-card__name-row">
+            <strong className="sc-request-card__name">{peerLabel}</strong>
+            <span className="sc-request-card__tags">
+              <PtTag tone={directionTone}>
+                {t(`chat.social.contacts.direction.${direction}`)}
+              </PtTag>
+              {statusTag(request.status)}
+              {attemptCount > 1 ? (
+                <PtTag>
                   {t('chat.social.contacts.requestAttempts', {
                     count: attemptCount,
                   })}
-                </Tag>
-              </Flexbox>
-              {isPendingIncoming ? (
-                <Flexbox horizontal gap={6}>
-                  <Button
-                    data-chat-friend-request-action="accept"
-                    size="small"
-                    type="primary"
-                    icon={<Check size={12} />}
-                    loading={busyAction?.id === request.id && busyAction?.kind === 'accept'}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void runRequestAction(request, 'accept');
-                    }}
-                  >
-                    {t('chat.social.contacts.accept')}
-                  </Button>
-                  <Button
-                    data-chat-friend-request-action="reject"
-                    size="small"
-                    icon={<X size={12} />}
-                    loading={busyAction?.id === request.id && busyAction?.kind === 'reject'}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void runRequestAction(request, 'reject');
-                    }}
-                  >
-                    {t('chat.social.contacts.reject')}
-                  </Button>
-                </Flexbox>
+                </PtTag>
               ) : null}
-              {actionError ? (
-                <div data-chat-friend-request-error={request.id}>
-                  <PresentedErrorAlert
-                    error={actionError}
-                    onClose={() => {
-                      setRequestActionErrors((current) => {
-                        const next = { ...current };
-                        delete next[request.id];
-                        return next;
-                      });
-                    }}
-                  />
-                </div>
-              ) : null}
-            </Flexbox>
-          </Flexbox>
-        );
-      })}
-    </Flexbox>
-  );
+            </span>
+            {isPendingIncoming ? (
+              <span className="sc-request-card__decide">
+                <IconButton
+                  actionId={`friend-request-accept-${request.id}`}
+                  className="sc-decide is-accept"
+                  data-chat-friend-request-action="accept"
+                  iconId="check"
+                  iconSize={14}
+                  density="compact"
+                  emphasis="quiet"
+                  execution={busyAction?.id === request.id && busyAction?.kind === 'accept' ? 'pending' : 'idle'}
+                  label={t('chat.social.contacts.accept')}
+                  onActivate={(event) => {
+                    event.stopPropagation();
+                    void runRequestAction(request, 'accept');
+                  }}
+                />
+                <IconButton
+                  actionId={`friend-request-reject-${request.id}`}
+                  className="sc-decide is-reject"
+                  data-chat-friend-request-action="reject"
+                  iconId="close"
+                  iconSize={14}
+                  density="compact"
+                  emphasis="quiet"
+                  execution={busyAction?.id === request.id && busyAction?.kind === 'reject' ? 'pending' : 'idle'}
+                  label={t('chat.social.contacts.reject')}
+                  onActivate={(event) => {
+                    event.stopPropagation();
+                    void runRequestAction(request, 'reject');
+                  }}
+                />
+              </span>
+            ) : null}
+          </div>
+          {isOutgoing && request.status === 1 ? (
+            <span className="sc-request-card__greeting is-sent">
+              {t('chat.social.contacts.outgoingPendingHint')}
+            </span>
+          ) : request.message ? (
+            <span className="sc-request-card__greeting">{request.message}</span>
+          ) : null}
+          {actionError ? (
+            <div data-chat-friend-request-error={request.id}>
+              <PresentedErrorAlert
+                error={actionError}
+                onClose={() => {
+                  setRequestActionErrors((current) => {
+                    const next = { ...current };
+                    delete next[request.id];
+                    return next;
+                  });
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
 
+  const selfSelected = selectedContact?.kind === 'friend' && selectedContact.peerPtid === myDid;
   const selfRow = !myDid ? null : (
-    <Flexbox
+    <Button
+      actionId="contact.open-self"
+      emphasis="quiet"
+      fullWidth
+      className={`sc-contact-row${selfSelected ? ' is-selected' : ''}`}
       data-chat-contact-self
-      horizontal
-      align="center"
-      gap={9}
-      role="button"
-      tabIndex={0}
-      onClick={openSelfConversation}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        openSelfConversation();
-      }}
-      style={{
-        ...rowBaseStyle,
-        ...(selectedContact?.kind === 'friend' && selectedContact.peerPtid === myDid
-          ? selectedRowStyle
-          : {}),
-      }}
-      onMouseEnter={(e) => {
-        if (!(selectedContact?.kind === 'friend' && selectedContact.peerPtid === myDid)) {
-          e.currentTarget.style.background = token.colorFillQuaternary;
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background =
-          selectedContact?.kind === 'friend' && selectedContact.peerPtid === myDid
-            ? token.colorPrimaryBg
-            : 'transparent';
-      }}
+      onActivate={openSelfConversation}
     >
       <UserSquareAvatar
         remoteUrl={selfIdentity.avatarUrl}
         actorPtid={myDid}
         name={t('chat.social.contacts.savedMessages')}
-        size={avatarSize}
+        size={38}
       />
-      <Flexbox flex={1} style={{ minWidth: 0 }}>
-        <Text strong ellipsis style={{ fontSize: 13 }}>
-          {t('chat.social.contacts.savedMessages')}
-        </Text>
-        <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-          {t('chat.social.contacts.savedMessagesHint')}
-        </Text>
-      </Flexbox>
-      <ChevronRight
-        size={14}
-        style={{ color: token.colorTextQuaternary, flexShrink: 0 }}
-      />
-    </Flexbox>
+      <span className="sc-contact-row__body">
+        <strong className="sc-contact-row__name">{t('chat.social.contacts.savedMessages')}</strong>
+        <span className="sc-contact-row__meta">{t('chat.social.contacts.savedMessagesHint')}</span>
+      </span>
+    </Button>
   );
 
-  const collapseItems = [
-    {
-      key: 'new-friends',
-      label: (
-        <Flexbox
-          data-chat-friend-request-section
-          horizontal
-          align="center"
-          gap={8}
-        >
-          <UserPlus size={14} style={{ color: token.colorTextSecondary }} />
-          <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.contacts.newFriendsCount', { count: requestPeers.length })}
-          </Text>
-        </Flexbox>
-      ),
-      children: newFriendsContent,
-    },
-    {
-      key: 'saved-groups',
-      label: (
-        <Flexbox horizontal align="center" gap={8}>
-          <Users size={14} style={{ color: token.colorTextSecondary }} />
-          <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.contacts.savedGroupsCount', { count: groupConversations.length })}
-          </Text>
-        </Flexbox>
-      ),
-      children:
-        groupConversations.length === 0 ? (
-          <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noGroups')} />
-          </Flexbox>
-        ) : (
-          <Flexbox gap={3} style={rowListStyle}>
-            {groupConversations.map((conversation) => {
-              const isSelected = selectedContact?.kind === 'group'
-                && selectedContact.conversationId === conversation.id;
-              const displayName = conversation.title || t('chat.social.sessionList.unnamedGroup');
-              return (
-                <Flexbox
-                  key={conversation.id}
-                  data-chat-contact-ptid={conversation.peerPtid}
-                  horizontal
-                  align="center"
-                  gap={9}
-                  onClick={() => {
-                    selectGroup(conversation.id);
-                    onSelectContact({
-                      kind: 'group',
-                      conversationId: conversation.id,
-                      displayName,
-                      avatar: conversation.avatar,
-                      memberCount: conversation.memberCount ?? 0,
-                    });
-                  }}
-                  onDoubleClick={() => {
-                    onStartChat?.({
-                      kind: 'group',
-                      conversationId: conversation.id,
-                      displayName,
-                      avatar: conversation.avatar,
-                      memberCount: conversation.memberCount ?? 0,
-                    });
-                  }}
-                  style={{
-                    ...rowBaseStyle,
-                    ...(isSelected ? selectedRowStyle : {}),
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.background = token.colorFillQuaternary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
-                  }}
-                >
-                  <GroupSquareAvatar
-                    conversationId={conversation.id}
-                    remoteUrl={conversation.avatar || undefined}
-                    members={projectGroupAvatarSlots(
-                      groupMembers[conversation.id] || [],
-                      (ptid, nickname) => resolveActorIdentity({
-                        ptid,
-                        currentUserPtid,
-                        currentUserProfile,
-                        peerProfiles,
-                        sessions: [],
-                        nickname,
-                      }),
-                    )}
-                    name={displayName}
-                    size={avatarSize}
-                  />
-                  <Flexbox flex={1} style={{ minWidth: 0 }}>
-                    <Text strong ellipsis style={{ fontSize: 13, color: isSelected ? token.colorPrimary : undefined }}>
-                      {displayName}
-                    </Text>
-                    <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-                      {t('chat.social.detail.membersCount', { count: conversation.memberCount ?? 0 })}
-                    </Text>
-                  </Flexbox>
-                  <ChevronRight
-                    size={14}
-                    style={{
-                      color: isSelected ? token.colorPrimary : token.colorTextQuaternary,
-                      flexShrink: 0,
-                    }}
-                  />
-                </Flexbox>
-              );
-            })}
-          </Flexbox>
-        ),
-    },
-    {
-      key: 'friends',
-      label: (
-        <Flexbox horizontal align="center" gap={8}>
-          <Contact size={14} style={{ color: token.colorTextSecondary }} />
-          <Text strong style={{ fontSize: 13 }}>
-            {t('chat.social.contacts.contactsCount', { count: totalContacts })}
-          </Text>
-        </Flexbox>
-      ),
-      children:
-        friendRequestsError ? (
-          <Alert
-            type="error"
-            showIcon
-            message={t('chat.social.findPeople.friendshipUnavailable')}
+  const renderGroupRow = (conversation: typeof groupConversations[number]) => {
+    const isSelected = selectedContact?.kind === 'group'
+      && selectedContact.conversationId === conversation.id;
+    const displayName = conversation.title || t('chat.social.sessionList.unnamedGroup');
+    return (
+      <Button
+        key={conversation.id}
+        actionId={`contact.open-group.${conversation.id}`}
+        emphasis="quiet"
+        fullWidth
+        className={`sc-contact-row${isSelected ? ' is-selected' : ''}`}
+        data-chat-contact-ptid={conversation.peerPtid}
+        onActivate={() => {
+          const groupSelection = {
+            kind: 'group' as const,
+            conversationId: conversation.id,
+            displayName,
+            avatar: conversation.avatar,
+            memberCount: conversation.memberCount ?? 0,
+          };
+          if (embedded) {
+            onStartChat?.(groupSelection);
+            return;
+          }
+          selectGroup(conversation.id);
+          onSelectContact(groupSelection);
+        }}
+        onDoubleClick={() => {
+          onStartChat?.({
+            kind: 'group',
+            conversationId: conversation.id,
+            displayName,
+            avatar: conversation.avatar,
+            memberCount: conversation.memberCount ?? 0,
+          });
+        }}
+      >
+        <UserSquareAvatar
+          remoteUrl={conversation.avatar}
+          actorPtid={conversation.peerPtid || null}
+          name={displayName}
+          size={38}
+        />
+        <span className="sc-contact-row__body">
+          <strong className="sc-contact-row__name">{displayName}</strong>
+          <span className="sc-contact-row__meta">
+            {t('chat.social.detail.membersCount', { count: conversation.memberCount ?? 0 })}
+          </span>
+        </span>
+      </Button>
+    );
+  };
+
+  const renderFriendRow = (friend: ChatActorIdentityProjection) => {
+    const isSelected = selectedContact?.kind === 'friend'
+      && selectedContact.peerPtid === friend.actorPtid;
+    const selection = friendContactSelection(
+      friend,
+      friendConversations,
+    );
+    return (
+      <button
+        key={friend.actorPtid}
+        type="button"
+        className={`sc-contact-row${isSelected ? ' is-selected' : ''}`}
+        data-chat-contact-ptid={friend.actorPtid}
+        data-chat-contact-conversation-id={friend.conversationId ?? ''}
+        data-chat-contact-federation-id={friend.federationId}
+        data-chat-contact-federated-handle={friend.federatedHandle}
+        data-chat-contact-home-station-domain={friend.homeStationDomain}
+        data-chat-contact-home-station-peer-id={friend.homeStationPeerId}
+        data-chat-contact-home-station-name={friend.homeStationName ?? ''}
+        data-chat-contact-avatar-src={friend.avatarUrl}
+        onClick={() => {
+          if (embedded) {
+            onStartChat?.(selection);
+            return;
+          }
+          selectAcceptedActor(friend);
+        }}
+        onDoubleClick={() => onStartChat?.(selection)}
+      >
+        <ChatActorIdentityRow
+          identity={friend}
+          avatarSize={38}
+        />
+      </button>
+    );
+  };
+
+  const section = (
+    key: ContactSectionKey,
+    label: string,
+    children: ReactNode,
+  ) => (
+    <section
+      key={key}
+      className="sc-contact-section"
+      data-contact-section={key}
+      data-collapsed={collapsed.includes(key) ? 'true' : 'false'}
+    >
+      <Button
+        actionId={`contacts.section.${key}`}
+        className="sc-contact-section__toggle"
+        emphasis="quiet"
+        density="compact"
+        fullWidth
+        aria-expanded={!collapsed.includes(key)}
+        label={label}
+        leading={(
+          <Icon
+            iconId="chevron-down"
+            size={12}
+            className="sc-contact-section__chevron"
           />
-        ) : !friendshipReady || friendRequestsLoading ? (
-          <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
-            <Spin size="small" />
-          </Flexbox>
-        ) : totalContacts === 0 ? (
-          <Flexbox align="center" justify="center" style={{ padding: '14px 8px' }}>
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.contacts.noFriends')} />
-          </Flexbox>
-        ) : (
-          <Flexbox gap={3} style={rowListStyle}>
-            {friendContacts.map((friend) => {
-              const isSelected = selectedContact?.kind === 'friend'
-                && selectedContact.peerPtid === friend.actorPtid;
-              const selection = friendContactSelection(
-                friend,
-                friendConversations,
-              );
-              return (
-                <Flexbox
-                  key={friend.actorPtid}
-                  data-chat-contact-ptid={friend.actorPtid}
-                  data-chat-contact-conversation-id={friend.conversationId ?? ''}
-                  data-chat-contact-federation-id={friend.federationId}
-                  data-chat-contact-federated-handle={friend.federatedHandle}
-                  data-chat-contact-home-station-domain={friend.homeStationDomain}
-                  data-chat-contact-home-station-peer-id={friend.homeStationPeerId}
-                  data-chat-contact-home-station-name={friend.homeStationName ?? ''}
-                  data-chat-contact-avatar-src={friend.avatarUrl}
-                  horizontal
-                  align="center"
-                  gap={9}
-                  onClick={() => selectAcceptedActor(friend)}
-                  onDoubleClick={() => onStartChat?.(selection)}
-                  style={{
-                    ...rowBaseStyle,
-                    ...(isSelected ? selectedRowStyle : {}),
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.background = token.colorFillQuaternary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = isSelected ? token.colorPrimaryBg : 'transparent';
-                  }}
-                >
-                  <ChatActorIdentityRow
-                    identity={friend}
-                    avatarSize={avatarSize}
-                    nameColor={isSelected ? token.colorPrimary : undefined}
-                  />
-                  <ChevronRight
-                    size={14}
-                    style={{
-                      color: isSelected ? token.colorPrimary : token.colorTextQuaternary,
-                      flexShrink: 0,
-                    }}
-                  />
-                </Flexbox>
-              );
-            })}
-          </Flexbox>
-        ),
-    },
-  ];
+        )}
+        onActivate={() => toggleSection(key)}
+      />
+      <div className="sc-contact-section__body">{children}</div>
+    </section>
+  );
+
+  const trimmedQuery = query.trim().toLowerCase();
+  const searching = trimmedQuery.length > 0;
+  const requestMatches = (peer: (typeof requestPeers)[number]) => {
+    const name = peer.direction === 'outgoing'
+      ? peer.request.receiverDisplayName
+      : peer.request.senderDisplayName;
+    return [name, peer.request.message, peer.request.federationId]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(trimmedQuery);
+  };
+  const groupMatches = (conversation: typeof groupConversations[number]) =>
+    conversation.title.toLowerCase().includes(trimmedQuery);
+  const friendMatches = (friend: ChatActorIdentityProjection) =>
+    [
+      friend.displayName,
+      friend.username,
+      friend.federatedHandle,
+      friend.homeStationName,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(trimmedQuery);
+
+  const matchedRequests = searching ? requestPeers.filter(requestMatches) : [];
+  const matchedGroups = searching ? groupConversations.filter(groupMatches) : [];
+  const matchedFriends = searching ? friendContacts.filter(friendMatches) : [];
+  const hasNoMatches = searching
+    && matchedRequests.length === 0
+    && matchedGroups.length === 0
+    && matchedFriends.length === 0;
 
   return (
-    <Flexbox
+    <div
+      className="sc-contacts"
       data-chat-contacts
       data-chat-friendship-state={
         friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
       }
-      style={{
-        width: PANEL_WIDTH,
-        minWidth: PANEL_WIDTH,
-        height: '100%',
-        borderRight: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgContainer,
-        overflow: 'hidden',
-      }}
+      data-contact-search={searching ? 'true' : 'false'}
+      style={embedded
+        ? { width: '100%', minWidth: 0 }
+        : { width: PANEL_WIDTH, minWidth: PANEL_WIDTH }}
     >
-      <Flexbox
-        flex={1}
-        style={{ overflow: 'auto', padding: '8px 6px', flexDirection: 'column' }}
-      >
-        {/* Saved Messages is a fixed always-present self-direct entry, not a
-            collapsible contact category. */}
-        {selfRow ? (
-          <Flexbox gap={3} style={rowListStyle}>{selfRow}</Flexbox>
+      <div className="sc-contacts__scroll">
+        {friendRequestsError ? (
+          <PtAlert
+            className="sc-contacts__alert"
+            tone="danger"
+            title={t('chat.social.findPeople.friendshipUnavailable')}
+          />
         ) : null}
-        <Collapse
-          bordered={false}
-          defaultActiveKey={['saved-groups', 'friends']}
-          style={{ background: 'transparent' }}
-          items={collapseItems}
-        />
-      </Flexbox>
-    </Flexbox>
+
+        {searching ? (
+          <div className="sc-contacts__search-results">
+            {matchedRequests.map(renderRequestCard)}
+            {matchedGroups.map(renderGroupRow)}
+            {matchedFriends.map(renderFriendRow)}
+            {hasNoMatches ? (
+              <PtEmpty className="sc-contacts__empty" description={t('chat.social.contacts.noResults')} />
+            ) : null}
+          </div>
+        ) : (
+          <>
+            {/* Saved Messages is the fixed self-direct entry, separated by a
+                material hairline rather than a collapsible category. */}
+            {selfRow ? (
+              <div className="sc-contacts__self">{selfRow}</div>
+            ) : null}
+
+            {!friendshipReady || friendRequestsLoading ? (
+              <div className="sc-contacts__status"><PtSpin size="small" /></div>
+            ) : (
+              <>
+                {incomingRequests.length > 0
+                  && section(
+                    'incoming',
+                    t('chat.social.contacts.incomingCount', { count: incomingRequests.length }),
+                    <div className="sc-contacts__requests">{incomingRequests.map(renderRequestCard)}</div>,
+                  )}
+                {outgoingRequests.length > 0
+                  && section(
+                    'outgoing',
+                    t('chat.social.contacts.outgoingCount', { count: outgoingRequests.length }),
+                    <div className="sc-contacts__requests">{outgoingRequests.map(renderRequestCard)}</div>,
+                  )}
+                {historyRequests.length > 0
+                  && section(
+                    'history',
+                    t('chat.social.contacts.historyCount', { count: historyRequests.length }),
+                    <div className="sc-contacts__requests">{historyRequests.map(renderRequestCard)}</div>,
+                  )}
+                {section(
+                  'groups',
+                  t('chat.social.contacts.savedGroupsCount', { count: groupConversations.length }),
+                  groupConversations.length === 0 ? (
+                    <PtEmpty className="sc-contacts__empty" description={t('chat.social.contacts.noGroups')} />
+                  ) : (
+                    <div className="sc-contacts__rows">{groupConversations.map(renderGroupRow)}</div>
+                  ),
+                )}
+                {section(
+                  'friends',
+                  t('chat.social.contacts.contactsCount', { count: totalContacts }),
+                  totalContacts === 0 ? (
+                    <PtEmpty className="sc-contacts__empty" description={t('chat.social.contacts.noFriends')} />
+                  ) : (
+                    <div className="sc-contacts__rows">{friendContacts.map(renderFriendRow)}</div>
+                  ),
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1,9 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Button } from '@lobehub/ui';
-import { theme, Typography } from 'antd';
-
-const { Text } = Typography;
+import { Button as PtButton, Dialog } from '@peers-touch/ui';
 
 interface ChatDeleteConfirmOverlayProps {
   deleting: boolean;
@@ -12,62 +8,50 @@ interface ChatDeleteConfirmOverlayProps {
 }
 
 /**
- * 消息删除确认弹层，用于主聊天和 Thread 面板。
- * 父容器需要 `position: relative` 使 overlay 正确覆盖。
+ * Message delete confirmation, used by both the main chat and the thread
+ * panel. The parent mounts it only while a delete target exists, so the Dialog
+ * is open for its whole lifetime; peers Dialog owns the scrim, entrance
+ * motion, focus trap and ESC/outside dismissal.
  */
 export function ChatDeleteConfirmOverlay({
   deleting,
   onCancel,
   onConfirm,
 }: ChatDeleteConfirmOverlayProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
   return (
-    <Flexbox
-      align="center"
-      justify="center"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 20,
-        background: 'rgba(15, 23, 42, 0.18)',
-        padding: 24,
-      }}
-      onClick={() => {
+    <Dialog
+      open
+      onDismiss={() => {
         if (!deleting) onCancel();
       }}
-    >
-      <Flexbox
-        gap={14}
-        style={{
-          width: 320,
-          maxWidth: '100%',
-          padding: 18,
-          borderRadius: 8,
-          background: token.colorBgElevated,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          boxShadow: token.boxShadowSecondary,
-        }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <Flexbox gap={6}>
-          <Text strong style={{ fontSize: 15 }}>
-            {t('chat.social.messageArea.deleteConfirmTitle')}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.45 }}>
-            {t('chat.social.messageArea.deleteConfirmBody')}
-          </Text>
-        </Flexbox>
-        <Flexbox horizontal justify="flex-end" gap={8}>
-          <Button disabled={deleting} onClick={onCancel}>
+      title={t('chat.social.messageArea.deleteConfirmTitle')}
+      description={t('chat.social.messageArea.deleteConfirmBody')}
+      width={320}
+      closeLabel={t('chat.social.messageArea.cancel')}
+      footer={
+        <>
+          <PtButton
+            actionId="delete-message-cancel"
+            onActivate={onCancel}
+            availability={deleting
+              ? { kind: 'disabled', reason: t('chat.social.messageArea.deleteConfirmOk') }
+              : undefined}
+          >
             {t('chat.social.messageArea.cancel')}
-          </Button>
-          <Button type="primary" danger loading={deleting} onClick={onConfirm}>
+          </PtButton>
+          <PtButton
+            actionId="delete-message-confirm"
+            emphasis="primary"
+            tone="danger"
+            execution={deleting ? 'pending' : 'idle'}
+            onActivate={onConfirm}
+          >
             {t('chat.social.messageArea.deleteConfirmOk')}
-          </Button>
-        </Flexbox>
-      </Flexbox>
-    </Flexbox>
+          </PtButton>
+        </>
+      }
+    />
   );
 }

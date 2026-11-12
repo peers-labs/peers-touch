@@ -32,6 +32,8 @@ const SLUGS = [
   'federation-center',
   'connectivity',
   'authority',
+  'crypto',
+  'secret-provisioning',
   'agent-execution',
   'applet-runtime',
   'contracts',

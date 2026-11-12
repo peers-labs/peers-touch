@@ -31,10 +31,10 @@ function readableText(node: ReactNode): string {
 }
 export interface ChoiceGroupProps<T extends string | number> {
   label?: string; options: readonly (SelectionOption<T> | T)[]; value?: readonly T[]; onValueChange?: (value: T[]) => void;
-  style?: CSSProperties; disabled?: boolean;
+  style?: CSSProperties; className?: string; disabled?: boolean;
 }
-export function CheckboxGroup<T extends string | number>({ label, options, value = [], onValueChange, style, disabled }: ChoiceGroupProps<T>) {
-  return <div className="pt-choice-group" role="group" aria-label={label} style={style}>
+export function CheckboxGroup<T extends string | number>({ label, options, value = [], onValueChange, style, className = '', disabled }: ChoiceGroupProps<T>) {
+  return <div className={`pt-choice-group ${className}`} role="group" aria-label={label} style={style}>
     {options.map(entry => { const option = typeof entry === 'object' ? entry : {value:entry,label:String(entry)};
       return <Checkbox key={option.value} checked={value.includes(option.value)}
       disabled={disabled || option.availability?.kind === 'disabled'} label={<>{option.leading}{option.label}</>}
@@ -48,9 +48,9 @@ export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio({ l
 export interface RadioGroupProps<T extends string | number> extends Omit<ChoiceGroupProps<T>, 'value' | 'onValueChange'> {
   value?: T; onValueChange?: (value: T) => void;
 }
-export function RadioGroup<T extends string | number>({ options, value, onValueChange, label, disabled, style }: RadioGroupProps<T>) {
+export function RadioGroup<T extends string | number>({ options, value, onValueChange, label, disabled, style, className = '' }: RadioGroupProps<T>) {
   const name = useId();
-  return <div className="pt-choice-group" role="radiogroup" aria-label={label} style={style}>
+  return <div className={`pt-choice-group ${className}`} role="radiogroup" aria-label={label} style={style}>
     {options.map(entry => { const option = typeof entry === 'object' ? entry : {value:entry,label:String(entry)};
       return <Radio key={option.value} name={name} value={String(option.value)} label={<>{option.leading}{option.label}</>} checked={value === option.value}
       disabled={disabled || option.availability?.kind === 'disabled'} onChange={() => onValueChange?.(option.value)} />; })}

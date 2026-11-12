@@ -1,51 +1,54 @@
 /**
  * SettingsFeature — the settings surface inside the north-star frame.
  *
- * IA parity with desktop `shell/src/Settings.tsx` (FULL production structure):
- *   1. Top: horizontal group tabs — transparent text+icon buttons with a 2px
- *      primary bottom indicator on the active tab and one hairline under the
- *      whole bar (NOT SaaS pill chips).
- *   2. Left sidebar: plain section items with icon+label, active wash.
- *   3. Right: grouped white cards directly (no article page heading; the
- *      active rail item is the subject), composed with peers-ui only
- *      (ListSection inset wells / SettingsSection cards).
+ * Five-group IA that absorbs every reachable desktop settings section
+ * (General / Network / AI / Channels / Advanced). Applets were removed by
+ * product decision; the unreachable knowledge/agent-growth orphan sections and
+ * the dead statistics tab are intentionally not modelled.
  *
- * Groups: General / Network / AI / Channels / Advanced. Applets were removed
- * by product decision. Preferences (language/layout/notifications/privacy/
- * appearance) persist via the shared prefs module.
+ * Anatomy:
+ *   1. L1 group switcher — one compact peers-ui Segmented island (the same
+ *      grammar as chat 消息/联系人 and moments 动态/圈友).
+ *   2. L2 sidebar — plain section items with icon+label and a 160ms wash.
+ *   3. Right content — grouped white cards without an article heading,
+ *      composed with peers-ui only (ListSection inset wells /
+ *      SettingsSection cards; in-row ghost selects and inline alerts).
+ *
+ * Preferences (language/layout/notifications/privacy/appearance) persist via
+ * the shared prefs module; the other sections own honest local demo state.
  */
 import { useEffect, useRef, useState } from 'react';
 import {
   type LucideIcon,
-  Bell as BellIcon, Bot as BotIcon, Brain, Clock3, Command as CommandIcon, Database,
-  Globe, HardDrive, Info, Lock, MonitorSmartphone, Network, Plug, Radio,
+  Bell as BellIcon, Bot as BotIcon, Brain, Clock3, Command as CommandIcon, Cpu, Database,
+  FolderOpen, Globe, HardDrive, Info, Lock, Mic, MonitorSmartphone, Network, Plug, Radio,
   ScrollText, Search as SearchIcon, Send, Server, Settings as SettingsIcon, SlidersHorizontal,
   Sparkles, User, Wrench,
 } from 'lucide-react';
 import { Segmented } from '@peers-touch/ui';
 import { makeTranslate, usePrefs } from '../prefs';
 import type { StringKey } from '../prefs';
+import { AgentsSection, AppearanceSection, NotificationsSection, PrivacySection } from './sections/GeneralSections';
 import { AccountSection } from './sections/AccountSection';
-import { AppearanceSection, NotificationsSection, PrivacySection } from './sections/GeneralSections';
 import { DiscoverySection, FederationSection, StationSection } from './sections/NetworkSections';
 import {
   DiscoverSection as AiDiscoverSection, McpSection, MemorySection, ModelsSection,
-  ProvidersSection, SkillsSection,
+  ProvidersSection, SkillsSection, VoiceSection,
 } from './sections/AiSections';
 import { BotsSection, LarkSection } from './sections/ChannelsSections';
 import {
-  AboutSection, CommandPaletteSection, CronJobsSection, DataStorageSection,
-  LogsSection, StatisticsSection,
+  AboutSection, CommandPaletteSection, CronJobsSection, DataStorageSection, FilesSection,
+  LogsSection, StatisticsSection, ToolsSection,
 } from './sections/AdvancedSections';
 import './settings.css';
 
 export type SettingsGroup = 'general' | 'network' | 'ai' | 'channels' | 'advanced';
 export type SettingsSectionKey =
-  | 'account' | 'notifications' | 'privacy' | 'appearance'
+  | 'account' | 'agents' | 'notifications' | 'privacy' | 'appearance'
   | 'station' | 'discovery' | 'federation'
-  | 'providers' | 'models' | 'discover' | 'memory' | 'skills' | 'mcp'
+  | 'providers' | 'models' | 'discover' | 'memory' | 'skills' | 'mcp' | 'voice'
   | 'bots' | 'lark'
-  | 'storage' | 'statistics' | 'logs' | 'cron' | 'command-menu' | 'about';
+  | 'storage' | 'files' | 'statistics' | 'logs' | 'tools' | 'cron' | 'command-menu' | 'about';
 
 interface SectionDef { key: SettingsSectionKey; labelKey: StringKey; icon: LucideIcon }
 interface GroupDef { key: SettingsGroup; labelKey: StringKey; icon: LucideIcon; sections: SectionDef[] }
@@ -55,6 +58,7 @@ const GROUPS: GroupDef[] = [
     key: 'general', labelKey: 'group.general', icon: SettingsIcon,
     sections: [
       { key: 'account', labelKey: 'sec.account', icon: User },
+      { key: 'agents', labelKey: 'sec.agents', icon: BotIcon },
       { key: 'notifications', labelKey: 'sec.notifications', icon: BellIcon },
       { key: 'privacy', labelKey: 'sec.privacy', icon: Lock },
       { key: 'appearance', labelKey: 'sec.appearance', icon: SlidersHorizontal },
@@ -77,6 +81,7 @@ const GROUPS: GroupDef[] = [
       { key: 'memory', labelKey: 'sec.memory', icon: HardDrive },
       { key: 'skills', labelKey: 'sec.skills', icon: ScrollText },
       { key: 'mcp', labelKey: 'sec.mcp', icon: Plug },
+      { key: 'voice', labelKey: 'sec.voice', icon: Mic },
       { key: 'cron', labelKey: 'sec.cron', icon: Clock3 },
     ],
   },
@@ -91,8 +96,10 @@ const GROUPS: GroupDef[] = [
     key: 'advanced', labelKey: 'group.advanced', icon: Wrench,
     sections: [
       { key: 'storage', labelKey: 'sec.dataStorage', icon: Database },
+      { key: 'files', labelKey: 'sec.files', icon: FolderOpen },
       { key: 'statistics', labelKey: 'sec.statistics', icon: MonitorSmartphone },
       { key: 'logs', labelKey: 'sec.logs', icon: ScrollText },
+      { key: 'tools', labelKey: 'sec.tools', icon: Cpu },
       { key: 'command-menu', labelKey: 'sec.commandMenu', icon: CommandIcon },
       { key: 'about', labelKey: 'sec.about', icon: Info },
     ],
@@ -102,6 +109,7 @@ const GROUPS: GroupDef[] = [
 function renderSection(section: SettingsSectionKey) {
   switch (section) {
     case 'account': return <AccountSection />;
+    case 'agents': return <AgentsSection />;
     case 'notifications': return <NotificationsSection />;
     case 'privacy': return <PrivacySection />;
     case 'appearance': return <AppearanceSection />;
@@ -114,11 +122,14 @@ function renderSection(section: SettingsSectionKey) {
     case 'memory': return <MemorySection />;
     case 'skills': return <SkillsSection />;
     case 'mcp': return <McpSection />;
+    case 'voice': return <VoiceSection />;
     case 'bots': return <BotsSection />;
     case 'lark': return <LarkSection />;
     case 'storage': return <DataStorageSection />;
+    case 'files': return <FilesSection />;
     case 'statistics': return <StatisticsSection />;
     case 'logs': return <LogsSection />;
+    case 'tools': return <ToolsSection />;
     case 'cron': return <CronJobsSection />;
     case 'command-menu': return <CommandPaletteSection />;
     case 'about': return <AboutSection />;

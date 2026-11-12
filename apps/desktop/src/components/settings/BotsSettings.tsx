@@ -1,34 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Empty as LobeEmpty } from '@lobehub/ui';
 import {
   Button,
-  Input,
-  Modal,
-  Popconfirm,
+  ConfirmAction,
+  DataTable,
+  Dialog,
+  Empty,
+  Icon,
+  IconButton,
   Select,
-  Space,
   Spin,
   Switch,
-  Table,
   Tag,
+  Text,
+  TextField,
   Tooltip,
-  Typography,
-  message,
-} from 'antd';
-import {
-  Bot,
-  Copy,
-  KeyRound,
-  Link2,
-  Pause,
-  Play,
-  Plus,
-  RefreshCw,
-  Trash2,
-  Unlink,
-  Upload,
-} from 'lucide-react';
+  type TableColumn,
+} from '@peers-touch/ui';
 
 import {
   api,
@@ -44,8 +32,7 @@ import {
   SettingsSection,
   SettingsPanelHeader,
 } from './SettingsLayout';
-
-const { Text, Paragraph } = Typography;
+import { notifyError, notifySuccess } from '../../ui/feedback';
 
 // Mirrors model/domain/bot/bot.proto BotState.
 const STATE = {
@@ -60,9 +47,7 @@ const tr = (t: (k: string, o?: Record<string, unknown>) => string) =>
 
 function BotAvatar({ bot }: { bot: RegistryBot }) {
   // Single source of truth: the bot avatar lives on the AGENT actor and is
-  // projected into the social profile store. The realtime actor_profile_changed
-  // wake force-refreshes it, so an owner editing the avatar converges here and
-  // in chat immediately without a component-local fetch or bust counter.
+  // projected into the social profile store.
   const profile = useSocialChatStore((s) => s.peerProfiles[bot.botPtid] ?? null);
   const loadPeerProfile = useSocialChatStore((s) => s.loadPeerProfile);
   useEffect(() => {
@@ -106,65 +91,71 @@ function CredentialReveal({
 
   const copy = (value: string) => {
     navigator.clipboard?.writeText(value).then(
-      () => message.success(tt('settings.bots.copied', 'Copied')),
-      () => message.error(tt('settings.bots.copyFailed', 'Copy failed')),
+      () => notifySuccess(tt('settings.bots.copied', 'Copied')),
+      () => notifyError(tt('settings.bots.copyFailed', 'Copy failed')),
     );
   };
 
   return (
-    <Modal
+    <Dialog
       open={open}
+      onDismiss={onClose}
       title={title}
-      onCancel={onClose}
       width={560}
       footer={
-        <Button type="primary" onClick={onClose}>
-          {tt('settings.bots.savedDone', 'I saved it, done')}
-        </Button>
+        <Button
+          actionId="bot-credential-done"
+          emphasis="primary"
+          label={tt('settings.bots.savedDone', 'I saved it, done')}
+          onActivate={onClose}
+        />
       }
     >
-      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+      <div className="sc-bots-credential">
         {ingressUrl && (
-          <div>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+          <div className="sc-bots-credential__field">
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {tt('settings.bots.ingressUrl', 'Message ingress URL (path)')}
             </Text>
-            <Space.Compact style={{ width: '100%' }}>
-              <Input readOnly value={ingressUrl} />
-              <Button icon={<Copy size={14} />} onClick={() => copy(ingressUrl)} />
-            </Space.Compact>
+            <div className="sc-bots-copy-row">
+              <TextField readOnly value={ingressUrl} />
+              <IconButton
+                actionId="bot-copy-ingress"
+                iconId="copy"
+                iconSize={14}
+                density="compact"
+                label={tt('settings.bots.copy', 'Copy')}
+                onActivate={() => copy(ingressUrl)}
+              />
+            </div>
           </div>
         )}
-        <div>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+        <div className="sc-bots-credential__field">
+          <Text tone="secondary" style={{ fontSize: 12 }}>
             {tt('settings.bots.secretOnce', 'Secret — shown only once')}
           </Text>
-          <Space.Compact style={{ width: '100%' }}>
-            <Input.Password readOnly value={secret} />
-            <Button icon={<Copy size={14} />} onClick={() => copy(secret)} />
-          </Space.Compact>
+          <div className="sc-bots-copy-row">
+            <TextField type="password" readOnly value={secret} />
+            <IconButton
+              actionId="bot-copy-secret"
+              iconId="copy"
+              iconSize={14}
+              density="compact"
+              label={tt('settings.bots.copy', 'Copy')}
+              onActivate={() => copy(secret)}
+            />
+          </div>
         </div>
         {curlSnippet && (
-          <div>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+          <div className="sc-bots-credential__field">
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {tt('settings.bots.curlSnippet', 'Quick test (curl)')}
             </Text>
-            <pre
-              style={{
-                background: 'var(--ant-color-fill-quaternary)',
-                padding: 10,
-                borderRadius: 8,
-                fontSize: 11,
-                overflowX: 'auto',
-                whiteSpace: 'pre',
-              }}
-            >
-              {curlSnippet}
-            </pre>
+            <pre className="sc-bots-curl">{curlSnippet}</pre>
           </div>
         )}
-      </Space>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }
 
@@ -184,6 +175,7 @@ export function BotsSettings() {
   const [rotatingFor, setRotatingFor] = useState<RegistryBot | null>(null);
   const [rotated, setRotated] = useState<{ secret: string } | null>(null);
   const [busyPtid, setBusyPtid] = useState<string | null>(null);
+  const [rotateOpen, setRotateOpen] = useState(false);
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [bindingBot, setBindingBot] = useState<RegistryBot | null>(null);
@@ -209,14 +201,14 @@ export function BotsSettings() {
       const resp = await api.botList();
       setBots(resp.bots ?? []);
     } catch (error) {
-      message.error((error as Error)?.message || 'bot_list failed');
+      notifyError((error as Error)?.message || 'bot_list failed');
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
   const pickAvatar = async () => {
@@ -240,7 +232,7 @@ export function BotsSettings() {
       setAvatarPath('');
       await refresh();
     } catch (error) {
-      message.error((error as Error)?.message || 'bot_create failed');
+      notifyError((error as Error)?.message || 'bot_create failed');
     } finally {
       setCreating(false);
     }
@@ -252,7 +244,7 @@ export function BotsSettings() {
       await api.botSetState(bot.botPtid, target);
       await refresh();
     } catch (error) {
-      message.error((error as Error)?.message || 'bot_set_state failed');
+      notifyError((error as Error)?.message || 'bot_set_state failed');
     } finally {
       setBusyPtid(null);
     }
@@ -265,8 +257,9 @@ export function BotsSettings() {
       const resp = await api.botRotateSecret(rotatingFor.botPtid);
       setRotated(resp);
       setRotatingFor(null);
+      setRotateOpen(false);
     } catch (error) {
-      message.error((error as Error)?.message || 'bot_rotate_secret failed');
+      notifyError((error as Error)?.message || 'bot_rotate_secret failed');
     } finally {
       setBusyPtid(null);
     }
@@ -279,11 +272,9 @@ export function BotsSettings() {
     try {
       const uploaded = await api.botUploadAvatar(path);
       await api.botSetProfile(bot.botPtid, uploaded.url);
-      // The post-commit actor_profile_changed wake refreshes the single
-      // peerProfiles projection (here and in chat); no local cache busting.
-      message.success(tt('settings.bots.avatarUpdated', 'Avatar updated'));
+      notifySuccess(tt('settings.bots.avatarUpdated', 'Avatar updated'));
     } catch (error) {
-      message.error((error as Error)?.message || 'bot_set_profile failed');
+      notifyError((error as Error)?.message || 'bot_set_profile failed');
     } finally {
       setBusyPtid(null);
     }
@@ -310,11 +301,11 @@ export function BotsSettings() {
         draftEnabled,
         bindingBot.agentBinding?.version ?? 0,
       );
-      message.success(tt('settings.bots.bindingSaved', 'Binding saved'));
+      notifySuccess(tt('settings.bots.bindingSaved', 'Binding saved'));
       setBindingBot(null);
       await refresh();
     } catch (error) {
-      message.error((error as Error)?.message || 'bot_agent_binding_set failed');
+      notifyError((error as Error)?.message || 'bot_agent_binding_set failed');
     } finally {
       setBindingSaving(false);
     }
@@ -328,145 +319,179 @@ export function BotsSettings() {
         bindingBot.botPtid,
         bindingBot.agentBinding.version,
       );
-      message.success(tt('settings.bots.bindingDeleted', 'Binding removed'));
+      notifySuccess(tt('settings.bots.bindingDeleted', 'Binding removed'));
       setBindingBot(null);
       await refresh();
     } catch (error) {
-      message.error((error as Error)?.message || 'bot_agent_binding_delete failed');
+      notifyError((error as Error)?.message || 'bot_agent_binding_delete failed');
     } finally {
       setBindingSaving(false);
     }
   };
 
   const stateTag = (state: number) => {
-    if (state === STATE.ACTIVE) return <Tag color="success">{tt('settings.bots.stateActive', 'Active')}</Tag>;
+    if (state === STATE.ACTIVE) return <Tag tone="success">{tt('settings.bots.stateActive', 'Active')}</Tag>;
     if (state === STATE.DISABLED) return <Tag>{tt('settings.bots.stateDisabled', 'Disabled')}</Tag>;
-    if (state === STATE.REVOKED) return <Tag color="error">{tt('settings.bots.stateRevoked', 'Revoked')}</Tag>;
+    if (state === STATE.REVOKED) return <Tag tone="danger">{tt('settings.bots.stateRevoked', 'Revoked')}</Tag>;
     return <Tag>{state}</Tag>;
   };
 
-  const columns = [
+  const columns: TableColumn<RegistryBot>[] = [
     {
-      title: tt('settings.bots.colBot', 'Bot'),
-      dataIndex: 'name',
-      render: (_: unknown, bot: RegistryBot) => (
-        <Space>
+      id: 'name',
+      label: tt('settings.bots.colBot', 'Bot'),
+      renderCell: (bot) => (
+        <span className="sc-bots-cell">
           <BotAvatar bot={bot} />
-          <Space direction="vertical" size={0}>
+          <span className="sc-bots-cell__stack">
             <Text strong>{bot.name}</Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>{bot.publishingId}</Text>
-          </Space>
-        </Space>
+            <Text tone="muted" className="sc-bots-cell__sub">{bot.publishingId}</Text>
+          </span>
+        </span>
       ),
     },
-    { title: tt('settings.bots.colState', 'State'), dataIndex: 'state', render: (s: number) => stateTag(s) },
     {
-      // This is the enforced publishing rate-limit ceiling, not observed traffic.
-      title: tt('settings.bots.colRateLimit', 'Rate limit/min'),
-      dataIndex: 'rateLimitPerMinute',
-      width: 120,
+      id: 'state',
+      label: tt('settings.bots.colState', 'State'),
+      renderCell: (bot) => stateTag(bot.state),
     },
     {
-      title: tt('settings.bots.colAgent', 'Agent'),
-      key: 'agentBinding',
+      // This is the enforced publishing rate-limit ceiling, not observed traffic.
+      id: 'rateLimitPerMinute',
+      label: tt('settings.bots.colRateLimit', 'Rate limit/min'),
+      width: 120,
+      renderCell: (bot) => bot.rateLimitPerMinute,
+    },
+    {
+      id: 'agentBinding',
+      label: tt('settings.bots.colAgent', 'Agent'),
       width: 220,
-      render: (_: unknown, bot: RegistryBot) => {
+      renderCell: (bot) => {
         const binding = bot.agentBinding;
         return (
-          <Space size={6}>
+          <span className="sc-bots-cell">
             {binding ? (
-              <Space direction="vertical" size={0}>
+              <span className="sc-bots-cell__stack">
                 <Text style={{ fontSize: 13 }}>{agentNameById(binding.agentId)}</Text>
                 {binding.enabled ? (
-                  <Text type="secondary" style={{ fontSize: 11 }}>
+                  <Text tone="muted" className="sc-bots-cell__sub">
                     {tt('settings.bots.bindingActive', 'Auto-reply on')}
                   </Text>
                 ) : (
-                  <Tag style={{ marginInlineEnd: 0 }}>
-                    {tt('settings.bots.bindingPaused', 'Paused')}
-                  </Tag>
+                  <Tag>{tt('settings.bots.bindingPaused', 'Paused')}</Tag>
                 )}
-              </Space>
+              </span>
             ) : (
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text tone="secondary" style={{ fontSize: 12 }}>
                 {tt('settings.bots.bindingNone', 'Receive only')}
               </Text>
             )}
-            <Tooltip title={tt('settings.bots.configureBinding', 'Configure Agent binding')}>
-              <Button
-                size="small"
-                type="text"
-                disabled={bot.state === STATE.REVOKED || busyPtid === bot.botPtid}
-                icon={<Link2 size={15} />}
-                onClick={() => openBinding(bot)}
+            <Tooltip label={tt('settings.bots.configureBinding', 'Configure Agent binding')}>
+              <IconButton
+                actionId={`bot-bind-${bot.botPtid}`}
+                iconId="link-2"
+                iconSize={15}
+                density="compact"
+                emphasis="quiet"
+                label={tt('settings.bots.configureBinding', 'Configure Agent binding')}
+                availability={bot.state === STATE.REVOKED || busyPtid === bot.botPtid
+                  ? { kind: 'disabled', reason: '' }
+                  : undefined}
+                onActivate={() => openBinding(bot)}
               />
             </Tooltip>
-          </Space>
+          </span>
         );
       },
     },
     {
-      title: tt('settings.bots.colActions', 'Actions'),
-      key: 'actions',
+      id: 'actions',
+      label: tt('settings.bots.colActions', 'Actions'),
       width: 170,
-      render: (_: unknown, bot: RegistryBot) => {
+      renderCell: (bot) => {
         const revoked = bot.state === STATE.REVOKED;
         const active = bot.state === STATE.ACTIVE;
+        const rowBusy = busyPtid === bot.botPtid;
+        const unavailable = revoked || rowBusy;
+        const availability = unavailable
+          ? { kind: 'disabled' as const, reason: '' }
+          : undefined;
         return (
-          <Space size={4}>
-            <Tooltip title={tt('settings.bots.changeAvatar', 'Change avatar')}>
-              <Button
-                size="small"
-                type="text"
-                disabled={revoked || busyPtid === bot.botPtid}
-                icon={<Upload size={15} />}
-                onClick={() => changeAvatar(bot)}
+          <span className="sc-bots-actions">
+            <Tooltip label={tt('settings.bots.changeAvatar', 'Change avatar')}>
+              <IconButton
+                actionId={`bot-avatar-${bot.botPtid}`}
+                iconId="camera"
+                iconSize={15}
+                density="compact"
+                emphasis="quiet"
+                label={tt('settings.bots.changeAvatar', 'Change avatar')}
+                availability={availability}
+                onActivate={() => void changeAvatar(bot)}
               />
             </Tooltip>
-            <Tooltip title={tt('settings.bots.rotateSecret', 'Rotate secret')}>
-              <Button
-                size="small"
-                type="text"
-                disabled={revoked || busyPtid === bot.botPtid}
-                icon={<KeyRound size={15} />}
-                onClick={() => setRotatingFor(bot)}
+            <Tooltip label={tt('settings.bots.rotateSecret', 'Rotate secret')}>
+              <IconButton
+                actionId={`bot-rotate-open-${bot.botPtid}`}
+                iconId="key-round"
+                iconSize={15}
+                density="compact"
+                emphasis="quiet"
+                label={tt('settings.bots.rotateSecret', 'Rotate secret')}
+                availability={availability}
+                onActivate={() => { setRotatingFor(bot); setRotateOpen(true); }}
               />
             </Tooltip>
             {active ? (
-              <Tooltip title={tt('settings.bots.disable', 'Disable')}>
-                <Button
-                  size="small"
-                  type="text"
-                  disabled={revoked || busyPtid === bot.botPtid}
-                  icon={<Pause size={15} />}
-                  onClick={() => changeState(bot, STATE.DISABLED)}
+              <Tooltip label={tt('settings.bots.disable', 'Disable')}>
+                <IconButton
+                  actionId={`bot-disable-${bot.botPtid}`}
+                  iconId="pause"
+                  iconSize={15}
+                  density="compact"
+                  emphasis="quiet"
+                  label={tt('settings.bots.disable', 'Disable')}
+                  availability={availability}
+                  onActivate={() => void changeState(bot, STATE.DISABLED)}
                 />
               </Tooltip>
             ) : (
               !revoked && (
-                <Tooltip title={tt('settings.bots.enable', 'Enable')}>
-                  <Button
-                    size="small"
-                    type="text"
-                    disabled={busyPtid === bot.botPtid}
-                    icon={<Play size={15} />}
-                    onClick={() => changeState(bot, STATE.ACTIVE)}
+                <Tooltip label={tt('settings.bots.enable', 'Enable')}>
+                  <IconButton
+                    actionId={`bot-enable-${bot.botPtid}`}
+                    iconId="play"
+                    iconSize={15}
+                    density="compact"
+                    emphasis="quiet"
+                    label={tt('settings.bots.enable', 'Enable')}
+                    availability={rowBusy ? { kind: 'disabled' as const, reason: '' } : undefined}
+                    onActivate={() => void changeState(bot, STATE.ACTIVE)}
                   />
                 </Tooltip>
               )
             )}
             {!revoked && (
-              <Popconfirm
+              <ConfirmAction
+                actionId={`bot-revoke-${bot.botPtid}`}
                 title={tt('settings.bots.revokeConfirm', 'Revoke this bot? Its secret is cleared and this cannot be undone.')}
-                okText={tt('settings.bots.revoke', 'Revoke')}
-                okButtonProps={{ danger: true }}
-                cancelText={tt('common.cancel', 'Cancel')}
+                confirmLabel={tt('settings.bots.revoke', 'Revoke')}
+                cancelLabel={tt('common.cancel', 'Cancel')}
                 onConfirm={() => changeState(bot, STATE.REVOKED)}
               >
-                <Button size="small" type="text" danger icon={<Trash2 size={15} />} disabled={busyPtid === bot.botPtid} />
-              </Popconfirm>
+                <IconButton
+                  actionId={`bot-revoke-trigger-${bot.botPtid}`}
+                  iconId="delete"
+                  iconSize={15}
+                  density="compact"
+                  emphasis="quiet"
+                  className="sc-bots-actions__danger"
+                  label={tt('settings.bots.revoke', 'Revoke')}
+                  availability={rowBusy ? { kind: 'disabled' as const, reason: '' } : undefined}
+                />
+              </ConfirmAction>
             )}
-          </Space>
+          </span>
         );
       },
     },
@@ -475,78 +500,106 @@ export function BotsSettings() {
   return (
     <SettingsContainer fullHeight tier="wide">
       <SettingsPanelHeader
-        icon={<Bot size={20} />}
+        icon={<Icon iconId="bot" size={20} />}
         title={tt('settings.bots.title', 'Bots')}
         actions={
-          <Space>
-            <Button icon={<RefreshCw size={14} />} onClick={refresh}>
-              {tt('common.refresh', 'Refresh')}
-            </Button>
+          <span className="sc-bots-header-actions">
             <Button
-              type="primary"
-              icon={<Plus size={14} />}
-              onClick={() => {
+              actionId="bots-refresh"
+              leading={<Icon iconId="refresh-cw" size={14} />}
+              execution={loading ? 'pending' : 'idle'}
+              label={tt('common.refresh', 'Refresh')}
+              onActivate={() => void refresh()}
+            />
+            <Button
+              actionId="bots-create-open"
+              emphasis="primary"
+              leading={<Icon iconId="plus" size={14} />}
+              label={tt('settings.bots.create', 'Create bot')}
+              onActivate={() => {
                 setCreated(null);
                 setCreateOpen(true);
               }}
-            >
-              {tt('settings.bots.create', 'Create bot')}
-            </Button>
-          </Space>
+            />
+          </span>
         }
       />
 
       <SettingsSection
-        icon={<Bot size={18} />}
+        icon={<Icon iconId="bot" size={18} />}
         title={tt('settings.bots.sectionTitle', 'Your bots')}
       >
-        <Paragraph type="secondary" style={{ marginTop: 0 }}>
+        <Text tone="secondary" className="sc-bots-intro">
           {tt(
             'settings.bots.intro',
             'Bots are automated actors backed by the common message publishing channel.',
           )}
-        </Paragraph>
-        <Spin spinning={loading}>
-          {bots.length === 0 && !loading ? (
-            <LobeEmpty icon={Bot} title={tt('settings.bots.empty', 'No bots yet')} padding="48px 16px" />
-          ) : (
-            <Table
-              rowKey="botPtid"
-              size="middle"
-              columns={columns}
-              dataSource={bots}
-              pagination={false}
+        </Text>
+        {bots.length === 0 && !loading ? (
+          <div className="sc-bots-empty">
+            <Empty
+              icon={<Icon iconId="bot" size={40} />}
+              description={tt('settings.bots.empty', 'No bots yet')}
             />
-          )}
-        </Spin>
+          </div>
+        ) : (
+          <Spin active={loading}>
+            <DataTable
+              rows={bots}
+              columns={columns}
+              rowKey="botPtid"
+            />
+          </Spin>
+        )}
       </SettingsSection>
 
-      <Modal
+      <Dialog
         open={createOpen}
+        onDismiss={() => setCreateOpen(false)}
         title={tt('settings.bots.createTitle', 'Create a bot')}
-        onCancel={() => setCreateOpen(false)}
-        confirmLoading={creating}
-        okText={tt('settings.bots.generate', 'Generate channel & secret')}
-        okButtonProps={{ disabled: !name.trim() }}
-        onOk={submitCreate}
+        footer={
+          <>
+            <Button
+              actionId="bots-create-cancel"
+              label={tt('common.cancel', 'Cancel')}
+              onActivate={() => setCreateOpen(false)}
+            />
+            <Button
+              actionId="bots-create-submit"
+              emphasis="primary"
+              execution={creating ? 'pending' : 'idle'}
+              label={tt('settings.bots.generate', 'Generate channel & secret')}
+              availability={!name.trim()
+                ? { kind: 'disabled', reason: tt('settings.bots.namePlaceholder', 'Bot name, e.g. Claude Code') }
+                : undefined}
+              onActivate={() => void submitCreate()}
+            />
+          </>
+        }
       >
-        <Space direction="vertical" style={{ width: '100%' }} size={12}>
-          <Input
+        <div className="sc-bots-form">
+          <TextField
             autoFocus
             placeholder={tt('settings.bots.namePlaceholder', 'Bot name, e.g. Claude Code')}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onValueChange={setName}
+            onEnter={() => void submitCreate()}
           />
-          <Space>
-            <Button icon={<Upload size={14} />} onClick={pickAvatar}>
-              {avatarPath
+          <div className="sc-bots-form__avatar">
+            <Button
+              actionId="bots-pick-avatar"
+              leading={<Icon iconId="upload" size={14} />}
+              label={avatarPath
                 ? tt('settings.bots.avatarSelected', 'Avatar selected')
                 : tt('settings.bots.optionalAvatar', 'Avatar (optional)')}
-            </Button>
-            {avatarPath && <Text type="success" style={{ fontSize: 12 }}>{avatarPath.split(/[\\/]/).pop()}</Text>}
-          </Space>
-        </Space>
-      </Modal>
+              onActivate={() => void pickAvatar()}
+            />
+            {avatarPath && (
+              <Text tone="success" style={{ fontSize: 12 }}>{avatarPath.split(/[\\/]/).pop()}</Text>
+            )}
+          </div>
+        </div>
+      </Dialog>
 
       {created && (
         <CredentialReveal
@@ -557,20 +610,33 @@ export function BotsSettings() {
         />
       )}
 
-      <Modal
-        open={!!rotatingFor}
+      <Dialog
+        open={rotateOpen}
+        onDismiss={() => { setRotateOpen(false); setRotatingFor(null); }}
         title={tt('settings.bots.rotateTitle', 'Rotate secret')}
-        onCancel={() => setRotatingFor(null)}
-        confirmLoading={busyPtid === rotatingFor?.botPtid}
-        okText={tt('settings.bots.rotateConfirm', 'Rotate now')}
-        okButtonProps={{ danger: true }}
-        onOk={rotate}
+        footer={
+          <>
+            <Button
+              actionId="bots-rotate-cancel"
+              label={tt('common.cancel', 'Cancel')}
+              onActivate={() => { setRotateOpen(false); setRotatingFor(null); }}
+            />
+            <Button
+              actionId="bots-rotate-confirm"
+              tone="danger"
+              emphasis="primary"
+              execution={busyPtid === rotatingFor?.botPtid ? 'pending' : 'idle'}
+              label={tt('settings.bots.rotateConfirm', 'Rotate now')}
+              onActivate={() => void rotate()}
+            />
+          </>
+        }
       >
         <Text>
           {tt('settings.bots.rotateWarn', 'This invalidates the current secret immediately.')}
           {rotatingFor ? ` (${rotatingFor.name})` : ''}
         </Text>
-      </Modal>
+      </Dialog>
 
       {rotated && (
         <CredentialReveal
@@ -581,82 +647,95 @@ export function BotsSettings() {
         />
       )}
 
-      <Modal
+      <Dialog
         open={!!bindingBot}
+        onDismiss={closeBinding}
         title={tt('settings.bots.bindingTitle', 'Bind Agent')}
-        onCancel={closeBinding}
-        confirmLoading={bindingSaving}
-        okText={tt('settings.bots.save', 'Save')}
-        okButtonProps={{ disabled: !draftAgentId.trim() }}
-        onOk={saveBinding}
-        footer={(_, { OkBtn, CancelBtn }) => (
-          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Space>
+        footer={
+          <div className="sc-bots-binding-footer">
+            <span>
               {bindingBot?.agentBinding && (
-                <Popconfirm
+                <ConfirmAction
+                  actionId="bots-unbind-confirm"
                   title={tt(
                     'settings.bots.unbindConfirm',
                     'Unbind this Agent? Inbound messages will no longer trigger replies.',
                   )}
-                  okText={tt('settings.bots.unbind', 'Unbind')}
-                  okButtonProps={{ danger: true }}
-                  cancelText={tt('common.cancel', 'Cancel')}
-                  onConfirm={unbind}
+                  confirmLabel={tt('settings.bots.unbind', 'Unbind')}
+                  cancelLabel={tt('common.cancel', 'Cancel')}
+                  onConfirm={() => void unbind()}
                 >
-                  <Button danger icon={<Unlink size={14} />} loading={bindingSaving}>
-                    {tt('settings.bots.unbind', 'Unbind')}
-                  </Button>
-                </Popconfirm>
+                  <Button
+                    actionId="bots-unbind-trigger"
+                    tone="danger"
+                    leading={<Icon iconId="unplug" size={14} />}
+                    execution={bindingSaving ? 'pending' : 'idle'}
+                    label={tt('settings.bots.unbind', 'Unbind')}
+                  />
+                </ConfirmAction>
               )}
-            </Space>
-            <Space>
-              <CancelBtn />
-              <OkBtn />
-            </Space>
-          </Space>
-        )}
+            </span>
+            <span className="sc-bots-binding-footer__right">
+              <Button
+                actionId="bots-bind-cancel"
+                label={tt('common.cancel', 'Cancel')}
+                onActivate={closeBinding}
+              />
+              <Button
+                actionId="bots-bind-save"
+                emphasis="primary"
+                execution={bindingSaving ? 'pending' : 'idle'}
+                label={tt('settings.bots.save', 'Save')}
+                availability={!draftAgentId.trim()
+                  ? { kind: 'disabled', reason: tt('settings.bots.bindingAgentPlaceholder', 'Select an Agent') }
+                  : undefined}
+                onActivate={() => void saveBinding()}
+              />
+            </span>
+          </div>
+        }
       >
         {bindingBot && (
-          <Space direction="vertical" style={{ width: '100%' }} size={16}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+          <div className="sc-bots-binding">
+            <Text tone="secondary" style={{ fontSize: 12 }}>
               {tt(
                 'settings.bots.bindingIntro',
                 'Inbound publishing messages run the selected Agent; its reply is published as this bot. No binding means the bot only receives messages.',
               )}
             </Text>
-            <Space direction="vertical" size={4} style={{ width: '100%' }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+            <div className="sc-bots-binding__field">
+              <Text tone="secondary" style={{ fontSize: 12 }}>
                 {tt('settings.bots.bindingAgent', 'Agent')}
               </Text>
               <Select
-                showSearch
+                searchable
                 style={{ width: '100%' }}
                 placeholder={tt('settings.bots.bindingAgentPlaceholder', 'Select an Agent')}
                 value={draftAgentId || undefined}
-                optionFilterProp="label"
                 options={agents.map((agent) => ({
                   label: agent.title || agent.name || agent.id,
                   value: agent.id,
                 }))}
-                onChange={(value) => setDraftAgentId(value)}
-                notFoundContent={tt('settings.bots.bindingNoAgents', 'No agents available')}
+                onValueChange={(value) => {
+                  if (typeof value === 'string') setDraftAgentId(value);
+                }}
               />
-            </Space>
-            <Space direction="vertical" size={4}>
-              <Space>
-                <Switch checked={draftEnabled} onChange={setDraftEnabled} />
+            </div>
+            <div className="sc-bots-binding__field">
+              <span className="sc-bots-binding__switch">
+                <Switch checked={draftEnabled} onCheckedChange={setDraftEnabled} />
                 <Text>{tt('settings.bots.bindingEnabled', 'Automatic replies')}</Text>
-              </Space>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              </span>
+              <Text tone="secondary" style={{ fontSize: 12 }}>
                 {tt(
                   'settings.bots.bindingEnabledHint',
                   'Pause the switch to keep the binding but stop replies immediately.',
                 )}
               </Text>
-            </Space>
-          </Space>
+            </div>
+          </div>
         )}
-      </Modal>
+      </Dialog>
     </SettingsContainer>
   );
 }

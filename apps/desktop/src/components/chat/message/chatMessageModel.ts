@@ -70,3 +70,21 @@ export function replyPreviewForMessage(
 ): string | undefined {
   return replyPreviewForChatMessage(message, labels);
 }
+
+// North-star parity (prototype MessageActions.isEmojiOnly): a short message
+// made only of emoji glyphs renders as a bare enlarged glyph with no bubble.
+const EMOJI_ONLY_REGEX = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\s]+$/u;
+
+export function isEmojiOnlyText(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && trimmed.length <= 24 && EMOJI_ONLY_REGEX.test(trimmed);
+}
+
+export function isBareEmojiOnlyMessage(message: ChatMessage): boolean {
+  return !isRecalledChatMessage(message)
+    && !isEncryptedChatPlaceholder(message)
+    && !message.serviceMessage
+    && (message.attachments?.length ?? 0) === 0
+    && Boolean(message.content)
+    && isEmojiOnlyText(message.content);
+}

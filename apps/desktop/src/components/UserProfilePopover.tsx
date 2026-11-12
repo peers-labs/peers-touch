@@ -45,13 +45,14 @@ export function UserProfilePopover({ children }: Props) {
   }, [currentUser, profile, t]);
 
   const content = (
-    <div style={{ width: 320 }}>
+    <div>
       {loading && !profile ? (
         <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Spin size="small" />
         </div>
       ) : (
         <PublicProfileCard
+          variant="self"
           profile={model}
           actions={currentUser?.actorPtid ? (
             <ProfilePrimaryAction actorPtid={currentUser.actorPtid} />

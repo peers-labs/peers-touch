@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Button, Input } from '@lobehub/ui';
-import { Alert, Spin, Tag, theme, Modal, Tooltip, Typography, message } from 'antd';
+import {
+  Alert as PtAlert,
+  Button as PtButton,
+  Dialog,
+  Empty as PtEmpty,
+  Spin as PtSpin,
+  Tag as PtTag,
+  TextField as PtTextField,
+  Toggle as PtToggle,
+  Tooltip as PtTooltip,
+} from '@peers-touch/ui';
 import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
 import { api } from '../../services/desktop_api';
 import {
@@ -23,8 +31,7 @@ import {
   resolvedProfileToSearchResult,
   type ActorSearchResult,
 } from './findPeopleIdentity';
-
-const { Text } = Typography;
+import { notifySuccess } from '../../ui/feedback';
 
 interface Props {
   open: boolean;
@@ -74,7 +81,6 @@ function parseHandleInput(raw: string): ParsedHandle {
 }
 
 export function FindPeopleModal({ open, onClose }: Props) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     sendFriendRequest,
@@ -269,7 +275,7 @@ export function FindPeopleModal({ open, onClose }: Props) {
         federationId,
         '',
       );
-      message.success(t('chat.social.findPeople.requestSent'));
+      notifySuccess(t('chat.social.findPeople.requestSent'));
     } catch (e: unknown) {
       setRequestErrors((current) => ({
         ...current,
@@ -301,78 +307,74 @@ export function FindPeopleModal({ open, onClose }: Props) {
     setResults([]);
   };
 
+  const searchDisabledReason = blockedByGate
+    ? t('chat.social.findPeople.catalogNoFederation')
+    : !searchText.trim()
+      ? t('chat.social.findPeople.searchPlaceholderFederated')
+      : '';
+
   return (
-    <Modal
-      title={t('chat.social.findPeople.title')}
+    <Dialog
       open={open}
-      onCancel={handleClose}
-      footer={null}
+      onDismiss={handleClose}
+      title={t('chat.social.findPeople.title')}
       width={420}
-      destroyOnHidden
+      closeLabel={t('chat.social.messageArea.cancel')}
     >
-      <Flexbox
-        gap={12}
+      <div
+        className="sc-find"
         data-chat-find-people
         data-chat-friendship-state={
           friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
         }
       >
         {friendRequestsError && (
-          <Alert
-            type="error"
-            showIcon
-            message={t('chat.social.findPeople.friendshipUnavailable')}
-          />
+          <PtAlert tone="danger" title={t('chat.social.findPeople.friendshipUnavailable')} />
         )}
 
-        <Input
+        <PtTextField
           data-chat-find-people-input
-          prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
+          leading={<Search size={14} />}
+          trailing={
+            <PtButton
+              actionId="find-people-search"
+              data-chat-find-people-search
+              emphasis="quiet"
+              density="compact"
+              execution={searching ? 'pending' : 'idle'}
+              onActivate={() => void handleSearch()}
+              availability={searchDisabledReason
+                ? { kind: 'disabled', reason: searchDisabledReason }
+                : undefined}
+            >
+              {t('chat.social.findPeople.search')}
+            </PtButton>
+          }
           placeholder={t('chat.social.findPeople.searchPlaceholderFederated')}
           value={searchText}
-          onChange={(e) => {
-            setSearchText(e.target.value);
-            if (!e.target.value.trim()) setResults([]);
+          onValueChange={(value) => {
+            setSearchText(value);
+            if (!value.trim()) setResults([]);
           }}
-          onPressEnter={handleSearch}
-          allowClear
+          onEnter={() => void handleSearch()}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
-          suffix={
-            <Button
-              data-chat-find-people-search
-              type="link"
-              size="small"
-              loading={searching}
-              onClick={handleSearch}
-              disabled={!searchText.trim() || blockedByGate}
-              style={{ padding: 0 }}
-            >
-              {t('chat.social.findPeople.search')}
-            </Button>
-          }
+          aria-label={t('chat.social.findPeople.title')}
         />
 
         {/* Scope chips */}
-        <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          <Tag.CheckableTag
+        <div className="sc-find__scopes">
+          <PtToggle
+            actionId="find-people-scope-all"
+            className="sc-scope-chip"
+            selected={searchScope === 'all'}
+            onSelectedChange={() => void handleScopeChange('all')}
             data-chat-find-people-scope="all"
-            checked={searchScope === 'all'}
-            onChange={() => void handleScopeChange('all')}
-            style={searchScope === 'all' ? {
-              background: token.colorPrimaryBg,
-              color: token.colorPrimary,
-              borderColor: token.colorPrimary,
-            } : {
-              background: 'transparent',
-              color: token.colorTextSecondary,
-              borderColor: token.colorBorder,
-            }}
           >
             {t('chat.social.findPeople.scopeAll')}
-          </Tag.CheckableTag>
+          </PtToggle>
 
           {federationOptions.map((fed) => {
             const isActive = searchScope === 'federation'
@@ -382,78 +384,58 @@ export function FindPeopleModal({ open, onClose }: Props) {
               fed.federationId,
             );
             return (
-              <Tooltip
+              <PtTooltip
                 key={fed.federationId}
-                title={t(presentation.tooltipKey, { name: presentation.name })}
+                label={t(presentation.tooltipKey, { name: presentation.name })}
               >
-                <Tag.CheckableTag
+                <PtToggle
+                  actionId={`find-people-scope-federation-${fed.federationId}`}
+                  className="sc-scope-chip"
+                  selected={isActive}
+                  onSelectedChange={() => {
+                    if (isActive) {
+                      void handleScopeChange('all');
+                    } else {
+                      void handleScopeChange('federation', fed.federationId);
+                    }
+                  }}
                   aria-label={t(presentation.tooltipKey, { name: presentation.name })}
                   data-chat-find-people-scope="federation"
                   data-chat-find-people-federation-id={fed.federationId}
-                  checked={isActive}
-                  onChange={(checked) => {
-                    if (checked) {
-                      void handleScopeChange(
-                        'federation',
-                        fed.federationId,
-                      );
-                    } else {
-                      void handleScopeChange('all');
-                    }
-                  }}
-                  style={isActive ? {
-                    background: token.colorPrimaryBg,
-                    color: token.colorPrimary,
-                    borderColor: token.colorPrimary,
-                  } : {
-                    background: 'transparent',
-                    color: token.colorTextSecondary,
-                    borderColor: token.colorBorder,
-                  }}
                 >
-                  <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
+                  <Globe size={10} />
                   {t(presentation.labelKey, { name: presentation.name })}
-                </Tag.CheckableTag>
-              </Tooltip>
+                </PtToggle>
+              </PtTooltip>
             );
           })}
 
           {federationOptions.length === 0 && (
-            <Text type="secondary" style={{ fontSize: 11 }}>
+            <span className="sc-find__no-federation">
               {t('chat.social.findPeople.catalogNoFederation')}
-            </Text>
+            </span>
           )}
-        </Flexbox>
+        </div>
 
         {searchError ? (
-          <Alert
-            data-chat-find-people-error
-            type="error"
-            showIcon
-            message={searchError}
-          />
+          <PtAlert data-chat-find-people-error tone="danger" title={searchError} />
         ) : null}
 
-        <Flexbox
-          gap={2}
-          style={{
-            maxHeight: 320,
-            overflow: 'auto',
-          }}
-        >
+        <div className="sc-find__list">
           {searching ? (
-            <Flexbox align="center" gap={8} style={{ padding: 24 }}>
-              <Spin size="small" />
-              <Text type="secondary" style={{ fontSize: 12 }}>
+            <div className="sc-find__status">
+              <PtSpin size="small" />
+              <span>
                 {parsed.isFederated && parsed.hasHost
                   ? t('chat.social.findPeople.resolving')
                   : t('chat.social.findPeople.catalogSearching')}
-              </Text>
-            </Flexbox>
+              </span>
+            </div>
           ) : results.length === 0 ? (
-            <Text type="secondary" style={{ textAlign: 'center', padding: 24, fontSize: 13 }}>
-              {searchText ? t('chat.social.findPeople.noResults') : t('chat.social.findPeople.hint')}
-            </Text>
+            <PtEmpty
+              className="sc-find__empty"
+              description={searchText ? t('chat.social.findPeople.noResults') : t('chat.social.findPeople.hint')}
+            />
           ) : (
             results.map((r) => {
               const receiverPtid = r.id;
@@ -463,9 +445,19 @@ export function FindPeopleModal({ open, onClose }: Props) {
               const homeStation = r.federation?.homeStationDomain
                 || r.homeStationName
                 || r.homeStationPeerId;
+              const actionLabel = isSelf
+                ? t('chat.social.findPeople.self')
+                : isFriend
+                  ? t('chat.social.findPeople.alreadyFriend')
+                  : !friendshipReady
+                    ? t('chat.social.findPeople.checkingFriendship')
+                    : isPending
+                      ? t('chat.social.findPeople.awaitingApproval')
+                      : t('chat.social.findPeople.sendRequest');
               return (
-                <Flexbox
+                <div
                   key={receiverPtid || r.id}
+                  className="sc-find__result"
                   data-chat-find-people-result={receiverPtid}
                   data-chat-find-people-handle={r.federation?.handle ?? ''}
                   data-chat-find-people-home-station={homeStation}
@@ -474,13 +466,6 @@ export function FindPeopleModal({ open, onClose }: Props) {
                     r.federation?.homeStationDomain ?? ''
                   }
                   data-chat-friend-state={isFriend ? 'friend' : isPending ? 'pending' : 'none'}
-                  horizontal
-                  align="center"
-                  gap={10}
-                  style={{
-                    padding: '10px',
-                    borderRadius: 8,
-                  }}
                 >
                   <UserSquareAvatar
                     remoteUrl={r.avatar}
@@ -488,118 +473,81 @@ export function FindPeopleModal({ open, onClose }: Props) {
                       || actorDisplayName(r.username, t('chat.social.detail.unknownMember'))}
                     size={36}
                   />
-                  <Flexbox flex={1} style={{ minWidth: 0 }}>
-                    <Flexbox horizontal align="center" gap={6}>
-                      <Text ellipsis style={{ fontSize: 13 }}>
+                  <div className="sc-find__result-body">
+                    <div className="sc-find__result-line">
+                      <strong className="sc-find__result-name">
                         {actorDisplayName(r.displayName)
                           || actorDisplayName(r.username, t('chat.social.detail.unknownMember'))}
-                      </Text>
+                      </strong>
                       {r.federation && (
-                        <Tag
-                          color="success"
-                          icon={<ShieldCheck size={11} />}
-                          style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
-                        >
+                        <PtTag tone="success" leading={<ShieldCheck size={11} />}>
                           {t('chat.social.findPeople.tagVerified')}
-                        </Tag>
+                        </PtTag>
                       )}
                       {r.federation?.fromCache && (
-                        <Tag
-                          style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
-                        >
-                          {t('chat.social.findPeople.tagFromCache')}
-                        </Tag>
+                        <PtTag>{t('chat.social.findPeople.tagFromCache')}</PtTag>
                       )}
                       {r.federation?.isLocal && (
-                        <Tag
-                          color="processing"
-                          style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
-                        >
-                          {t('chat.social.findPeople.tagLocal')}
-                        </Tag>
+                        <PtTag tone="info">{t('chat.social.findPeople.tagLocal')}</PtTag>
                       )}
                       {r.homeStationName && (
-                        <Tag
-                          icon={<Server size={10} />}
-                          style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
-                        >
-                          {r.homeStationName}
-                        </Tag>
+                        <PtTag leading={<Server size={10} />}>{r.homeStationName}</PtTag>
                       )}
-                    </Flexbox>
+                    </div>
                     <FederatedHandle
                       localPart={r.username}
                       home={r.federation?.homeStationDomain}
                       fontSize={11}
                     />
-                    <Text
-                      data-chat-find-people-ptid
-                      type="secondary"
-                      ellipsis={{ tooltip: receiverPtid }}
-                      style={{ fontSize: 10 }}
-                    >
+                    <span className="sc-find__ptid" title={receiverPtid} data-chat-find-people-ptid>
                       {receiverPtid}
-                    </Text>
+                    </span>
                     {homeStation && !r.federation?.homeStationDomain ? (
-                      <Text
-                        data-chat-find-people-station
-                        type="secondary"
-                        ellipsis={{ tooltip: homeStation }}
-                        style={{ fontSize: 10 }}
-                      >
+                      <span className="sc-find__ptid" title={homeStation} data-chat-find-people-station>
                         {t('chat.social.identity.station', { station: homeStation })}
-                      </Text>
+                      </span>
                     ) : null}
                     {requestErrors[receiverPtid] ? (
-                      <Alert
+                      <PtAlert
                         data-chat-find-people-request-error={receiverPtid}
-                        type="error"
-                        showIcon
-                        message={requestErrors[receiverPtid]}
+                        tone="danger"
+                        title={requestErrors[receiverPtid]}
                       />
                     ) : null}
-                  </Flexbox>
-                  <Button
+                  </div>
+                  <PtButton
+                    actionId={`find-people-action-${receiverPtid}`}
+                    className={isPending || isFriend ? 'sc-find__action--done' : undefined}
                     data-chat-find-people-action={receiverPtid}
                     data-chat-find-people-action-state={
                       isFriend ? 'friend' : isPending ? 'pending' : 'available'
                     }
-                    type={isPending || isFriend ? 'default' : 'primary'}
-                    size="small"
-                    loading={
+                    density="compact"
+                    emphasis={isPending || isFriend ? 'secondary' : 'primary'}
+                    execution={
                       addingId === receiverPtid
                       || (!friendshipReady && friendRequestsLoading)
+                        ? 'pending'
+                        : 'idle'
                     }
-                    disabled={
-                      isPending
-                      || isSelf
-                      || isFriend
-                      || !friendshipReady
-                    }
-                    onClick={(event) => {
+                    onActivate={(event) => {
                       event.stopPropagation();
                       void handleSendRequest(r);
                     }}
-                    style={isPending || isFriend
-                      ? { color: token.colorSuccess, borderColor: token.colorSuccess }
-                      : undefined}
+                    availability={
+                      isPending || isSelf || isFriend || !friendshipReady
+                        ? { kind: 'disabled', reason: actionLabel }
+                        : undefined
+                    }
                   >
-                    {isSelf
-                      ? t('chat.social.findPeople.self')
-                      : isFriend
-                        ? t('chat.social.findPeople.alreadyFriend')
-                      : !friendshipReady
-                        ? t('chat.social.findPeople.checkingFriendship')
-                      : isPending
-                        ? t('chat.social.findPeople.awaitingApproval')
-                        : t('chat.social.findPeople.sendRequest')}
-                  </Button>
-                </Flexbox>
+                    {actionLabel}
+                  </PtButton>
+                </div>
               );
             })
           )}
-        </Flexbox>
-      </Flexbox>
-    </Modal>
+        </div>
+      </div>
+    </Dialog>
   );
 }

@@ -1,7 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Button } from '@lobehub/ui';
-import { Command } from 'lucide-react';
-
+import { Button, Icon } from '@peers-touch/ui';
 import { useCommandMenuStore } from '../../store/commandMenu';
 import { SettingsContainer, SettingsPanelHeader } from './SettingsLayout';
 
@@ -12,17 +10,18 @@ export function CommandPaletteSettings() {
   return (
     <SettingsContainer>
       <SettingsPanelHeader
-        icon={<Command size={20} />}
+        icon={<Icon iconId="command" size={20} />}
         title={t('settings.commandPalette.title')}
         actions={
           <Button
+            actionId="settings-command-palette-open"
             data-pt-settings-command-palette-open
-            icon={<Command size={14} />}
-            onClick={openMenu}
-            type="primary"
-          >
-            {t('settings.commandPalette.open')}
-          </Button>
+            leading={<Icon iconId="command" size={14} />}
+            emphasis="primary"
+            density="compact"
+            label={t('settings.commandPalette.open')}
+            onActivate={openMenu}
+          />
         }
       />
     </SettingsContainer>

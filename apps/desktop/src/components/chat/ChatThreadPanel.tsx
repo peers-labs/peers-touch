@@ -5,9 +5,13 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Button, Tooltip, toast } from '@lobehub/ui';
-import { Alert, Empty, Spin, theme, Typography } from 'antd';
+import {
+  Alert as PtAlert,
+  Button as PtButton,
+  Empty as PtEmpty,
+  Spin as PtSpin,
+  Tooltip as PtTooltip,
+} from '@peers-touch/ui';
 import { LocateFixed, MessageSquareReply, MessagesSquare, RotateCcw, Trash2, X } from 'lucide-react';
 import {
   buildChatThreadSurface,
@@ -43,8 +47,8 @@ import {
   type ChatMessage,
 } from './message/chatMessageModel';
 import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import { notifyError } from '../../ui/feedback';
 
-const { Text } = Typography;
 const EMPTY_SOCIAL_MESSAGES: SocialMessage[] = [];
 
 /**
@@ -77,6 +81,7 @@ interface ThreadMessageItemProps {
   onDelete?: (message: ChatMessage) => void;
   onRecall?: (message: ChatMessage) => void;
   onReply?: (message: ChatMessage) => void;
+  highlighted?: boolean;
   root?: boolean;
   rootUlid: string;
 }
@@ -92,10 +97,10 @@ function ThreadMessageItem({
   onDelete,
   onRecall,
   onReply,
+  highlighted = false,
   root = false,
   rootUlid,
 }: ThreadMessageItemProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderPtid);
   const senderName = actorDisplayName(senderProfile.name, t('chat.social.detail.unknownMember'));
@@ -119,26 +124,16 @@ function ThreadMessageItem({
   );
 
   return (
-    <Flexbox
+    <div
+      className={`thread-comment-row${root ? ' is-root' : ''}${highlighted ? ' is-highlighted' : ''}`}
       data-thread-message-id={message.ulid}
       data-thread-message-order={order}
       data-thread-message-role={root ? 'root' : 'reply'}
-      horizontal
-      align="flex-start"
-      gap={10}
-      style={{
-        padding: root ? '12px 12px 13px' : '10px 0',
-        borderRadius: root ? 8 : 0,
-        background: root ? token.colorFillQuaternary : 'transparent',
-        borderBottom: root ? 'none' : `1px solid ${token.colorBorderSecondary}`,
-        position: 'relative',
-      }}
-      className="thread-comment-row"
     >
       <span
+        className="sc-thread__avatar"
         data-chat-avatar-ptid={message.senderPtid}
         data-chat-avatar-src={senderProfile.avatar}
-        style={{ display: 'inline-flex', flexShrink: 0 }}
       >
         <UserSquareAvatar
           remoteUrl={senderProfile.avatar}
@@ -146,87 +141,68 @@ function ThreadMessageItem({
           size={root ? 30 : 28}
         />
       </span>
-      <Flexbox gap={5} style={{ flex: 1, minWidth: 0 }}>
-        <Flexbox horizontal align="center" justify="space-between" gap={8}>
-          <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
-            <Text ellipsis strong style={{ fontSize: 12, maxWidth: 150 }}>
+      <div className="sc-thread__body">
+        <div className="sc-thread__head">
+          <span className="sc-thread__head-id">
+            <strong className="sc-thread__sender">
               {isOwn ? t('chat.social.thread.you') : senderName}
-            </Text>
-            <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
-              {formatThreadTime(message)}
-            </Text>
-          </Flexbox>
-          <Flexbox horizontal align="center" gap={2} className="thread-reply-action" style={{ flexShrink: 0 }}>
+            </strong>
+            <span className="sc-thread__time">{formatThreadTime(message)}</span>
+          </span>
+          <span className="sc-thread__actions thread-reply-action">
             {!root && onReply && (
-              <Tooltip title={t('chat.social.thread.replyToMessage')}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<MessageSquareReply size={13} />}
+              <PtTooltip label={t('chat.social.thread.replyToMessage')}>
+                <PtButton
+                  actionId={`thread-reply-${message.ulid}`}
+                  className="sc-thread__action"
+                  emphasis="quiet"
+                  density="compact"
+                  leading={<MessageSquareReply size={13} />}
                   aria-label={t('chat.social.thread.replyToMessage')}
-                  onClick={() => onReply(message)}
-                  style={{ width: 24, height: 24 }}
+                  onActivate={() => onReply(message)}
                 />
-              </Tooltip>
+              </PtTooltip>
             )}
             {canRecall && (
-              <Tooltip title={t('chat.social.messageArea.actionRecall')}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<RotateCcw size={13} />}
+              <PtTooltip label={t('chat.social.messageArea.actionRecall')}>
+                <PtButton
+                  actionId={`thread-recall-${message.ulid}`}
+                  className="sc-thread__action"
+                  emphasis="quiet"
+                  density="compact"
+                  leading={<RotateCcw size={13} />}
                   aria-label={t('chat.social.messageArea.actionRecall')}
-                  onClick={() => onRecall?.(message)}
-                  style={{ width: 24, height: 24 }}
+                  onActivate={() => onRecall?.(message)}
                 />
-              </Tooltip>
+              </PtTooltip>
             )}
             {canDelete && (
-              <Tooltip title={t('chat.social.messageArea.actionDelete')}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<Trash2 size={13} />}
+              <PtTooltip label={t('chat.social.messageArea.actionDelete')}>
+                <PtButton
+                  actionId={`thread-delete-${message.ulid}`}
+                  className="sc-thread__action sc-thread__action--danger"
+                  emphasis="quiet"
+                  density="compact"
+                  leading={<Trash2 size={13} />}
                   aria-label={t('chat.social.messageArea.actionDelete')}
-                  onClick={() => onDelete?.(message)}
-                  style={{ width: 24, height: 24, color: token.colorError }}
+                  onActivate={() => onDelete?.(message)}
                 />
-              </Tooltip>
+              </PtTooltip>
             )}
-          </Flexbox>
-        </Flexbox>
+          </span>
+        </div>
         {replyPreview && (
-          <Text
-            type="secondary"
-            ellipsis
-            style={{
-              fontSize: 11,
-              padding: '3px 6px',
-              borderLeft: `2px solid ${token.colorPrimaryBorder}`,
-              background: token.colorFillQuaternary,
-              borderRadius: 4,
-            }}
-          >
-            {replyPreview}
-          </Text>
+          <div className="sc-thread__reply-preview">{replyPreview}</div>
         )}
-        <Flexbox
-          style={{
-            color: token.colorText,
-            fontSize: root ? 13 : 12,
-            lineHeight: 1.55,
-            wordBreak: 'break-word',
-          }}
-        >
-          <ChatMessageContent message={message} isOwn={isOwn} attachmentGap={5} />
-        </Flexbox>
-      </Flexbox>
-    </Flexbox>
+        <div className={`sc-thread__content${root ? ' is-root' : ''}`}>
+          <ChatMessageContent message={message} isOwn={isOwn} thread />
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function ChatThreadPanel() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const {
     activeTab,
@@ -387,7 +363,6 @@ export function ChatThreadPanel() {
           hasAttachment ? draft.attachments : undefined,
           rootMessage.ulid,
           newSendIntentId(),
-          draft.mentions,
         );
       }
       await loadThreadMessages(activeUlid, rootMessage.ulid, activeKind);
@@ -402,7 +377,7 @@ export function ChatThreadPanel() {
       return true;
     } catch (error) {
       log.error('socialChat', 'thread reply send failed', error);
-      toast.error(t('chat.social.thread.sendFailed'));
+      notifyError(t('chat.social.thread.sendFailed'));
       setSending(false);
       return false;
     }
@@ -433,7 +408,7 @@ export function ChatThreadPanel() {
       }
     } catch (error) {
       log.error('socialChat', 'thread recall failed', error);
-      toast.error(t('chat.social.messageArea.recallFailed'));
+      notifyError(t('chat.social.messageArea.recallFailed'));
     }
   };
 
@@ -446,7 +421,7 @@ export function ChatThreadPanel() {
       setDeleteTarget(null);
     } catch (error) {
       log.error('socialChat', 'thread deleteMessage failed', error);
-      toast.error(t('chat.social.messageArea.deleteFailed'));
+      notifyError(t('chat.social.messageArea.deleteFailed'));
     } finally {
       setDeletingMessage(false);
     }
@@ -462,131 +437,62 @@ export function ChatThreadPanel() {
   });
 
   return (
-    <Flexbox
+    <div
       ref={panelRef}
+      className="sc-thread"
       data-chat-thread-panel="open"
       data-chat-thread-reply-count={replies.length}
       data-chat-thread-root={openThreadRootUlid}
-      style={{
-        width: 360,
-        height: '100%',
-        background: token.colorBgContainer,
-        borderLeft: `1px solid ${token.colorBorderSecondary}`,
-        flexShrink: 0,
-        position: 'relative',
-      }}
     >
-      <style>
-        {`
-          .chat-thread-scroll {
-            scrollbar-width: thin;
-            scrollbar-color: ${token.colorFillSecondary} transparent;
-          }
-          .chat-thread-scroll::-webkit-scrollbar {
-            width: 6px;
-            height: 0;
-          }
-          .chat-thread-scroll::-webkit-scrollbar-thumb {
-            background: ${token.colorFillSecondary};
-            border-radius: 999px;
-          }
-          .chat-thread-scroll::-webkit-scrollbar-track {
-            background: transparent;
-          }
-          .thread-reply-action {
-            opacity: 0;
-            transition: opacity 0.14s ease;
-          }
-          .thread-comment-row:hover .thread-reply-action,
-          .thread-comment-row:focus-within .thread-reply-action {
-            opacity: 1;
-          }
-          .thread-comment-row:focus {
-            outline: 2px solid ${token.colorPrimaryBorder};
-            outline-offset: 2px;
-          }
-          .thread-comment-row[data-thread-message-id="${highlightedAnchor || ''}"] {
-            background: ${token.colorPrimaryBg};
-          }
-        `}
-      </style>
-      <Flexbox
-        horizontal
-        align="center"
-        justify="space-between"
-        style={{
-          height: 64,
-          padding: '0 18px',
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          flexShrink: 0,
-        }}
-      >
-        <Flexbox horizontal align="center" gap={8}>
-          <MessagesSquare size={16} style={{ color: token.colorPrimary }} />
-          <Flexbox>
-            <Text strong style={{ fontSize: 14 }}>
-              {t('chat.social.thread.title')}
-            </Text>
+      <header className="sc-thread__header">
+        <span className="sc-thread__title-group">
+          <MessagesSquare size={16} className="sc-thread__title-icon" />
+          <span className="sc-thread__title-text">
+            <strong>{t('chat.social.thread.title')}</strong>
             {rootMessage && (
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                {t('chat.social.thread.replies', { count: replies.length })}
-              </Text>
+              <span>{t('chat.social.thread.replies', { count: replies.length })}</span>
             )}
-          </Flexbox>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={4}>
-          <Button
-            type="text"
-            title={t('chat.social.thread.jumpToOriginal')}
+          </span>
+        </span>
+        <span className="sc-thread__header-actions">
+          <PtButton
+            actionId="thread-jump-original"
+            className="sc-thread__header-action"
+            emphasis="quiet"
+            leading={<LocateFixed size={15} />}
             aria-label={t('chat.social.thread.jumpToOriginal')}
-            icon={<LocateFixed size={15} />}
-            onClick={handleJumpToOriginal}
-            style={{ width: 28, height: 28 }}
+            onActivate={handleJumpToOriginal}
           />
-          <Button
+          <PtButton
+            actionId="thread-close"
+            className="sc-thread__header-action"
             data-chat-thread-close
-            type="text"
-            title={t('chat.social.thread.close')}
+            emphasis="quiet"
+            leading={<X size={16} />}
             aria-label={t('chat.social.thread.close')}
-            icon={<X size={16} />}
-            onClick={closeThread}
-            style={{ width: 28, height: 28 }}
+            onActivate={closeThread}
           />
-        </Flexbox>
-      </Flexbox>
+        </span>
+      </header>
 
       {!rootMessage ? (
-        <Flexbox flex={1} align="center" justify="center" style={{ padding: 16 }}>
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('chat.social.thread.missingRoot')} />
-        </Flexbox>
+        <div className="sc-thread__missing">
+          <PtEmpty description={t('chat.social.thread.missingRoot')} />
+        </div>
       ) : (
         <>
-          <Flexbox
-            className="chat-thread-scroll"
-            flex={1}
-            gap={12}
-            style={{ overflowY: 'auto', overflowX: 'hidden', padding: '14px 16px 12px' }}
-          >
+          <div className="chat-thread-scroll sc-thread__scroll">
             {loadingThread && (
-              <Flexbox horizontal align="center" gap={8} style={{ color: token.colorTextSecondary }}>
-                <Spin size="small" />
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {t('chat.social.thread.loading')}
-                </Text>
-              </Flexbox>
+              <div className="sc-thread__loading">
+                <PtSpin size="small" />
+                <span>{t('chat.social.thread.loading')}</span>
+              </div>
             )}
             {threadLoadError && (
-              <Alert
-                type="warning"
-                showIcon
-                message={t('chat.social.thread.loadFailed')}
-                description={threadLoadError}
-              />
+              <PtAlert tone="warning" title={t('chat.social.thread.loadFailed')} description={threadLoadError} />
             )}
-            <Flexbox gap={7}>
-              <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0 }}>
-                {t('chat.social.thread.rootMessage')}
-              </Text>
+            <div className="sc-thread__section">
+              <span className="sc-thread__section-label">{t('chat.social.thread.rootMessage')}</span>
               <ThreadMessageItem
                 activeConversationId={activeUlid || ''}
                 activeKind={activeKind}
@@ -597,29 +503,20 @@ export function ChatThreadPanel() {
                 order={0}
                 onDelete={setDeleteTarget}
                 onRecall={handleRecall}
+                highlighted={highlightedAnchor === rootMessage.ulid}
                 root
                 rootUlid={rootMessage.ulid}
               />
-            </Flexbox>
+            </div>
 
-            <Flexbox gap={4}>
-              <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0 }}>
+            <div className="sc-thread__section">
+              <span className="sc-thread__section-label">
                 {t('chat.social.thread.replies', { count: replies.length })}
-              </Text>
+              </span>
               {replies.length === 0 ? (
-                <Flexbox
-                  align="center"
-                  justify="center"
-                  style={{
-                    padding: '16px 12px',
-                    borderRadius: 8,
-                    background: token.colorFillQuaternary,
-                  }}
-                >
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {t('chat.social.thread.noReplies')}
-                  </Text>
-                </Flexbox>
+                <div className="sc-thread__no-replies">
+                  <span>{t('chat.social.thread.noReplies')}</span>
+                </div>
               ) : (
                 replies.map((reply, index) => (
                   <ThreadMessageItem
@@ -634,30 +531,32 @@ export function ChatThreadPanel() {
                     onDelete={setDeleteTarget}
                     onRecall={handleRecall}
                     onReply={setReplyTarget}
+                    highlighted={highlightedAnchor === reply.ulid}
                     rootUlid={rootMessage.ulid}
                   />
                 ))
               )}
               {hasMoreReplies && (
-                <Button
-                  size="small"
-                  type="text"
-                  loading={loadingMoreReplies}
-                  onClick={handleLoadMoreReplies}
-                  style={{ alignSelf: 'center', fontSize: 12, marginTop: 8 }}
+                <PtButton
+                  actionId="thread-load-more"
+                  className="sc-thread__load-more"
+                  density="compact"
+                  emphasis="quiet"
+                  execution={loadingMoreReplies ? 'pending' : 'idle'}
+                  onActivate={handleLoadMoreReplies}
                 >
                   {t('chat.social.thread.loadMoreReplies')}
-                </Button>
+                </PtButton>
               )}
-            </Flexbox>
-          </Flexbox>
+            </div>
+          </div>
 
           <ChatComposer
             key={`thread-composer:${activeUlid}:${openThreadRootUlid}`}
             activeConversationId={activeUlid || ''}
             disabled={!activeUlid || !rootMessage}
             editing={false}
-            surfaceBackground={token.colorBgContainer}
+            surfaceBackground="var(--pt-surface)"
             onBlurInput={() => {}}
             onCancelEdit={() => {}}
             onCancelReply={() => setReplyTarget(null)}
@@ -668,7 +567,6 @@ export function ChatThreadPanel() {
             sending={sending}
             capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_THREAD}
             visualSurface="desktop-thread"
-            mentionsEnabled={activeKind === 'group'}
           />
         </>
       )}
@@ -680,6 +578,6 @@ export function ChatThreadPanel() {
           onConfirm={handleConfirmDelete}
         />
       )}
-    </Flexbox>
+    </div>
   );
 }

@@ -608,7 +608,7 @@
         "desktop-windows-native"
       ],
       "tier": "env-evidence",
-      "description": "Run two isolated Native group clients and prove E2EE named @mentions and owner-only @all decrypt with offsets, render chips, and raise the muted-exception yellow marker until the conversation is opened."
+      "description": "Run two isolated Native group clients and prove E2EE named @mentions and owner-only @all decrypt with offsets, render chips, and flip the muted-exception mention flag (navigationBadges.hasMention) until the conversation is opened. The northstar session rail no longer renders a visible yellow marker, so the muted exception is proven at projection-flag level."
     },
     "chat-native-multi-device-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.native_multi_device_runner",

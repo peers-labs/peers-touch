@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Tooltip } from '@lobehub/ui';
-import { theme, Typography } from 'antd';
+import { Button, Tooltip } from '@peers-touch/ui';
 import { RotateCcw } from 'lucide-react';
 
 import {
@@ -9,8 +8,6 @@ import {
   type DeliveryVerdict,
 } from '../../../messaging/deliveryVerdict';
 import type { ChatMessage } from './chatMessageModel';
-
-const { Text } = Typography;
 
 /**
  * Horizon judgments are time-derived from immutable facts, so rows need a
@@ -112,7 +109,6 @@ export function DeliveryVerdictMeta({
   onRetryMessage,
 }: DeliveryVerdictMetaProps) {
   const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
   const nowMs = useHorizonTick();
 
   const verdict = useMemo<DeliveryVerdict | null>(
@@ -169,11 +165,7 @@ export function DeliveryVerdictMeta({
     })
     : null;
 
-  const fontSize = compact ? 10 : 11;
-  const baseStyle = { fontSize, lineHeight: 1.2 } as const;
-
   let label: string;
-  let color = token.colorTextTertiary;
   switch (verdict.kind) {
     case 'queued':
       label = t('chat.social.messageArea.stateQueued');
@@ -183,7 +175,6 @@ export function DeliveryVerdictMeta({
       break;
     case 'submit_overdue':
       label = t('chat.social.messageArea.stateSubmitOverdue');
-      color = token.colorWarning;
       break;
     case 'submitted':
       label = t('chat.social.messageArea.stateSubmitted');
@@ -198,15 +189,12 @@ export function DeliveryVerdictMeta({
       break;
     case 'fully_delivered':
       label = t('chat.social.messageArea.stateDeliveredAll');
-      color = token.colorPrimary;
       break;
     case 'failed_terminal':
       label = t('chat.social.messageArea.stateFailed');
-      color = token.colorError;
       break;
     case 'undeliverable_suspected':
       label = t('chat.social.messageArea.stateUndeliverable');
-      color = token.colorWarning;
       break;
     default:
       return null;
@@ -215,31 +203,32 @@ export function DeliveryVerdictMeta({
   const details = [reason, nextAttempt].filter(Boolean).join(' · ');
   const canRetry = verdict.kind === 'failed_terminal'
     || verdict.kind === 'undeliverable_suspected';
+  const retryLabel = t('chat.message.action.retry');
 
   return (
     <>
-      <Tooltip title={details || label}>
-        <Text
+      <Tooltip label={details || label}>
+        <span
+          className={compact ? 'sc-verdict sc-verdict--compact' : 'sc-verdict'}
           data-message-delivery-state={verdict.kind}
           data-message-delivery-fact={message.deliveryState ?? ''}
           data-message-delivery-reason={verdict.reasonCode ?? ''}
-          style={{ ...baseStyle, color }}
         >
           {label}
           {details ? ` · ${details}` : ''}
-        </Text>
+        </span>
       </Tooltip>
       {canRetry && (
         <Button
+          actionId={`message-retry-${message.ulid}`}
           data-message-retry={message.ulid}
-          aria-label={t('chat.message.action.retry')}
-          type="text"
-          size="small"
-          icon={<RotateCcw size={12} />}
-          onClick={() => onRetryMessage(message)}
-          style={{ height: 24, paddingInline: 5 }}
+          aria-label={retryLabel}
+          emphasis="quiet"
+          density="compact"
+          leading={<RotateCcw size={12} />}
+          onActivate={() => onRetryMessage(message)}
         >
-          {t('chat.message.action.retry')}
+          {retryLabel}
         </Button>
       )}
     </>

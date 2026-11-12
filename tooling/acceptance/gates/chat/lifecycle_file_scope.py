@@ -153,7 +153,7 @@ class ChatFileScopeJourney:
         adapter.post_key_to_process(
             self.client.process_id, NativeKey.COMMA, modifiers=(NativeModifier.PRIMARY,),
         )
-        self.client.find_element('[data-pt-secondary-tab="help"]', 15).click()
+        self.client.find_element('[data-pt-secondary-tab="advanced"]', 15).click()
         sections = self.client.find_elements('[data-pt-section-item="help"]')
         if sections:
             sections[0].click()

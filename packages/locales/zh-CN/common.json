@@ -1430,5 +1430,9 @@
   "xConfig.unsavedChanges": "{{count}} 项未保存变更",
   "xConfig.validate": "校验草稿",
   "xConfig.validationFailed": "{{count}} 项校验未通过",
-  "xConfig.version": "版本"
+  "xConfig.version": "版本",
+  "common.stationPicker.addSuccess": "Station 已添加并选中",
+  "common.stationPicker.addAlreadyPresent": "该 Station 已存在，已为你选中",
+  "common.stationPicker.addFailed": "无法连接该 Station，请检查地址以及它是否在运行。",
+  "common.stationPicker.addFailedWithReason": "添加 Station 失败：{{reason}}"
 }

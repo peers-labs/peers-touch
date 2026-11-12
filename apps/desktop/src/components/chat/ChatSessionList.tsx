@@ -1,23 +1,7 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Button, Dropdown, Input } from '@lobehub/ui';
-import { Badge, Empty, theme, Tooltip, Typography } from 'antd';
-import {
-  BellOff,
-  CheckCheck,
-  CircleAlert,
-  EyeOff,
-  Pin,
-  Plus,
-  RefreshCw,
-  Search,
-  UserPlus,
-  Users,
-  UsersRound,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import { Button, ContextMenu, Empty, Icon, IconButton, Menu, Segmented, TextField } from '@peers-touch/ui';
+import type { MenuAction } from '@peers-touch/ui';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
@@ -44,14 +28,12 @@ import {
 } from './useActiveSocialChatStore';
 import { ChatSearchDropdown } from './ChatSearchDropdown';
 import {
+  cappedChatUnreadCount,
   CHAT_SESSION_ROW_HEIGHT,
-  CHAT_SESSION_UNREAD_LANE_WIDTH,
 } from './chatGeometry';
 import type { FriendContactSelection } from './contactSelection';
 import { CreateGroupModal } from './CreateGroupModal';
 import { FindPeopleModal } from './FindPeopleModal';
-
-const { Text } = Typography;
 
 // #region debug-point A-C:cross-station-direct-open
 function reportDirectOpenDebug(detail: Record<string, unknown>): void {
@@ -66,7 +48,6 @@ function ConversationListError({
   compact?: boolean;
   onRetry: () => Promise<void>;
 }) {
-  const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'common']);
   const [retrying, setRetrying] = useState(false);
 
@@ -81,66 +62,36 @@ function ConversationListError({
   };
 
   return (
-    <Flexbox
+    <div
+      className={`sc-list-error${compact ? '' : ' sc-list-error--block'}`}
       data-chat-session-list-error
       data-chat-session-list-error-mode={compact ? 'stale' : 'blocking'}
-      horizontal={compact}
       role={compact ? 'status' : 'alert'}
       aria-busy={retrying}
-      align="center"
-      justify="center"
-      gap={8}
-      style={{
-        boxSizing: 'border-box',
-        minWidth: 0,
-        width: '100%',
-        minHeight: compact ? 32 : undefined,
-        flexShrink: 0,
-        marginTop: compact ? 8 : undefined,
-        padding: compact ? '0 12px' : '24px 16px',
-        textAlign: compact ? 'left' : 'center',
-      }}
     >
-      <CircleAlert
-        size={compact ? 14 : 24}
-        color={compact ? token.colorWarning : token.colorError}
-        style={{ flexShrink: 0 }}
-        aria-hidden
-      />
-      <Text
-        strong={!compact}
-        style={{
-          display: 'block',
-          flex: compact ? 1 : undefined,
-          minWidth: 0,
-          maxWidth: '100%',
-          color: compact ? token.colorTextSecondary : undefined,
-          fontSize: 12,
-          lineHeight: 1.5,
-          whiteSpace: 'normal',
-          overflowWrap: 'break-word',
-          wordBreak: 'normal',
-        }}
-      >
+      <span className="sc-list-error__glyph">
+        <Icon iconId="warning" size={compact ? 14 : 24} />
+      </span>
+      <span className="sc-list-error__text">
         {retrying
           ? t('common.state.loading', { ns: 'common' })
           : t(compact
             ? 'chat.social.sessionList.refreshFailed'
             : 'chat.social.sessionList.loadFailed')}
-      </Text>
+      </span>
       <Button
+        actionId="chat.session-list.retry"
         data-chat-session-list-retry
-        size="small"
-        type={compact ? 'text' : 'default'}
-        loading={retrying}
-        disabled={retrying}
-        icon={<RefreshCw size={12} />}
-        style={{ flexShrink: 0 }}
-        onClick={handleRetry}
+        emphasis={compact ? 'quiet' : 'secondary'}
+        density="compact"
+        execution={retrying ? 'pending' : 'idle'}
+        availability={retrying ? { kind: 'disabled', reason: '' } : undefined}
+        leading={<Icon iconId="refresh-cw" size={12} />}
+        onActivate={handleRetry}
       >
         {t('common.action.retry', { ns: 'common' })}
       </Button>
-    </Flexbox>
+    </div>
   );
 }
 
@@ -180,16 +131,28 @@ function conversationWithActorIdentity(
   };
 }
 
+export type ChatRailTab = 'chats' | 'contacts';
+
 interface ChatSessionListProps {
   onConversationSelected: () => void;
   onOpenDirect: (contact: FriendContactSelection) => void;
+  /** Active rail tab (消息 / 联系人). Contacts renders the renderContacts slot. */
+  tab: ChatRailTab;
+  onTabChange: (tab: ChatRailTab) => void;
+  /** Contacts pane factory; receives the live in-rail search query. */
+  renderContacts?: (query: string) => ReactNode;
 }
+
+// Rail width is one fixed catalog column (prototype sk-conv-rail parity).
+const CHAT_RAIL_WIDTH = 300;
 
 export function ChatSessionList({
   onConversationSelected,
   onOpenDirect,
+  tab,
+  onTabChange,
+  renderContacts,
 }: ChatSessionListProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'common']);
   const {
     sessions,
@@ -216,6 +179,7 @@ export function ChatSessionList({
     markGroupRead,
     hideConversation,
     loadSessions,
+    peerOnline,
   } = useActiveSocialChatSlice((state) => ({
     sessions: state.sessions,
     groups: state.groups,
@@ -241,6 +205,7 @@ export function ChatSessionList({
     markGroupRead: state.markGroupRead,
     hideConversation: state.hideConversation,
     loadSessions: state.loadSessions,
+    peerOnline: state.peerOnline,
   }));
   const { actorStationEntries, federations } = useActiveChatFederationSlice((state) => ({
     actorStationEntries: state.actorStationEntries,
@@ -248,10 +213,24 @@ export function ChatSessionList({
   }));
 
   const [searchText, setSearchText] = useState('');
+  // Inline rail search stays collapsed until the magnifier is tapped
+  // (prototype sk-rail-search parity).
+  const [searchOpen, setSearchOpen] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showFindPeople, setShowFindPeople] = useState(false);
+
+  const switchTab = (next: ChatRailTab) => {
+    onTabChange(next);
+    if (next !== 'chats') {
+      setSearchOpen(false);
+      setSearchText('');
+    }
+  };
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchText('');
+  };
   const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
-  const mentionFlagsByActor = useNavigationBadgeStore((state) => state.mentionFlagsByActor);
   const stationNamesByPeerId = useMemo(() => Object.fromEntries(
     Object.values(actorStationEntries)
       .map((entry) => [entry.homeStationPeerId.trim(), entry.homeStationName.trim()])
@@ -427,18 +406,18 @@ export function ChatSessionList({
     return [...fromConversations, ...fromContacts];
   }, [friendIdentities, searchText, visibleConversations, t]);
 
-  const plusMenuItems = [
+  const plusMenuItems: MenuAction[] = [
     {
-      key: 'find-people',
-      icon: <UserPlus size={14} />,
-      label: <span data-chat-find-people-menu>{t('chat.social.sessionList.findPeople')}</span>,
-      onClick: () => setShowFindPeople(true),
+      id: 'find-people',
+      iconId: 'user-plus',
+      label: t('chat.social.sessionList.findPeople'),
+      onActivate: () => setShowFindPeople(true),
     },
     {
-      key: 'create-group',
-      icon: <UsersRound size={14} />,
-      label: <span data-chat-create-group-menu>{t('chat.social.sessionList.createGroup')}</span>,
-      onClick: () => setShowCreateGroup(true),
+      id: 'create-group',
+      iconId: 'users-round',
+      label: t('chat.social.sessionList.createGroup'),
+      onActivate: () => setShowCreateGroup(true),
     },
   ];
 
@@ -452,73 +431,57 @@ export function ChatSessionList({
     }
   };
 
-  const buildContextMenu = useCallback((c: DesktopIMConversationProjection) => {
+  const buildContextActions = useCallback((c: DesktopIMConversationProjection): MenuAction[] => {
     const localState = conversationLocalState[`${c.kind}:${c.id}`];
     const isPinned = Boolean(localState?.sticky);
     const isMuted = Boolean(localState?.muted);
 
-    return {
-      items: [
-        {
-          key: 'pin',
-          icon: <Pin size={14} />,
-          label: isPinned ? t('chat.social.contextMenu.unpin') : t('chat.social.contextMenu.pin'),
-        },
-        {
-          key: 'mute',
-          icon: isMuted ? <Volume2 size={14} /> : <VolumeX size={14} />,
-          label: isMuted ? t('chat.social.contextMenu.unmute') : t('chat.social.contextMenu.mute'),
-        },
-        ...(c.unread > 0 ? [{
-          key: 'markRead',
-          icon: <CheckCheck size={14} />,
-          label: t('chat.social.contextMenu.markRead'),
-        }] : []),
-        { type: 'divider' as const, key: 'divider-1' },
-        {
-          key: 'hide',
-          icon: <EyeOff size={14} />,
-          label: t('chat.social.contextMenu.hide'),
-        },
-      ],
-      onClick: async ({ key }: { key: string }) => {
-        switch (key) {
-          case 'pin':
-            try {
-              await updateConversationLocalState(c.kind, c.id, { sticky: !isPinned });
-            } catch (error) {
-              presentError(error, {
-                mapper: mapChatError,
-                context: { operation: 'conversationAction' },
-              });
-            }
-            break;
-          case 'mute':
-            try {
-              await updateConversationLocalState(c.kind, c.id, { muted: !isMuted });
-            } catch (error) {
-              presentError(error, {
-                mapper: mapChatError,
-                context: { operation: 'conversationAction' },
-              });
-            }
-            break;
-          case 'markRead':
-            try {
-              await (c.kind === 'friend' ? markFriendRead(c.id) : markGroupRead(c.id));
-            } catch (error) {
-              presentError(error, {
-                mapper: mapChatError,
-                context: { operation: 'conversationAction' },
-              });
-            }
-            break;
-          case 'hide':
-            hideConversation(c.kind, c.id);
-            break;
-        }
-      },
+    const applyLocal = async (patch: { sticky?: boolean; muted?: boolean }) => {
+      try {
+        await updateConversationLocalState(c.kind, c.id, patch);
+      } catch (error) {
+        presentError(error, {
+          mapper: mapChatError,
+          context: { operation: 'conversationAction' },
+        });
+      }
     };
+
+    const actions: MenuAction[] = [
+      {
+        id: 'pin',
+        iconId: 'pin',
+        label: isPinned ? t('chat.social.contextMenu.unpin') : t('chat.social.contextMenu.pin'),
+        onActivate: () => void applyLocal({ sticky: !isPinned }),
+      },
+      {
+        id: 'mute',
+        iconId: isMuted ? 'volume-2' : 'volume-x',
+        label: isMuted ? t('chat.social.contextMenu.unmute') : t('chat.social.contextMenu.mute'),
+        onActivate: () => void applyLocal({ muted: !isMuted }),
+      },
+    ];
+    if (c.unread > 0) {
+      actions.push({
+        id: 'markRead',
+        iconId: 'check-check',
+        label: t('chat.social.contextMenu.markRead'),
+        onActivate: () => {
+          (c.kind === 'friend' ? markFriendRead(c.id) : markGroupRead(c.id))
+            .catch((error) => presentError(error, {
+              mapper: mapChatError,
+              context: { operation: 'conversationAction' },
+            }));
+        },
+      });
+    }
+    actions.push({
+      id: 'hide',
+      iconId: 'eye-off',
+      label: t('chat.social.contextMenu.hide'),
+      onActivate: () => hideConversation(c.kind, c.id),
+    });
+    return actions;
   }, [
     conversationLocalState,
     hideConversation,
@@ -545,63 +508,113 @@ export function ChatSessionList({
 
   return (
     <>
-      <Flexbox
-        gap={0}
-        style={{
-          width: 'clamp(180px, 28vw, 280px)',
-          minWidth: 180,
-          flexShrink: 0,
-          height: '100%',
-          borderRight: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgContainer,
-          position: 'relative',
-        }}
+      <div
+        className="sc-sessions"
+        data-chat-conversation-pane
+        data-rail-tab={tab}
+        data-rail-search={searchOpen ? 'active' : 'idle'}
+        style={{ width: CHAT_RAIL_WIDTH, minWidth: CHAT_RAIL_WIDTH, maxWidth: CHAT_RAIL_WIDTH }}
       >
-        <Flexbox gap={8} style={{ padding: '12px 12px 0' }}>
-          <Flexbox horizontal align="center" gap={8}>
-            <Input
-              data-chat-session-search
-              prefix={<Search size={14} style={{ color: token.colorTextQuaternary }} />}
-              placeholder={t('chat.social.sessionList.searchPlaceholder')}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              allowClear
-              style={{ flex: 1 }}
-              size="small"
-            />
-            <Dropdown menu={{ items: plusMenuItems }} trigger={['click']} placement="bottomRight">
-              <Button
-                data-chat-new-menu
-                size="small"
-                type="text"
-                icon={<Plus size={16} />}
-                style={{
-                  width: 28,
-                  height: 28,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
+        {/* Rail header — one fixed 52px band. The search tile expands and
+            TAKES OVER the band (prototype sk-rail-header parity): while open
+            the segmented island and chrome tiles unmount, leaving the field
+            plus one close tile on the same row so the list never jumps. */}
+        <div
+          className="sc-rail-header"
+          data-rail-search={searchOpen ? 'active' : 'idle'}
+        >
+          {searchOpen ? (
+            <>
+              <span className="sc-rail-search">
+                <TextField
+                  className="sc-rail-search-field"
+                  data-chat-session-search
+                  data-rail-search-value={searchText}
+                  density="compact"
+                  autoFocus
+                  leading={<Icon iconId="search" size={14} />}
+                  placeholder={t('chat.social.sessionList.searchPlaceholder')}
+                  value={searchText}
+                  onValueChange={setSearchText}
+                  clearable
+                  onClear={() => setSearchText('')}
+                  onKeyDown={event => { if (event.key === 'Escape') closeSearch(); }}
+                />
+              </span>
+              <IconButton
+                actionId="chat.rail-search-close"
+                className="sc-rail-icon"
+                iconId="close"
+                iconSize={15}
+                emphasis="quiet"
+                density="compact"
+                label={t('common.action.close', { ns: 'common' })}
+                onClick={closeSearch}
               />
-            </Dropdown>
-          </Flexbox>
-        </Flexbox>
+            </>
+          ) : (
+            <>
+              <Segmented<ChatRailTab>
+                className="sc-rail-subnav"
+                density="compact"
+                fullWidth
+                aria-label={t('chat.social.subNav.chats')}
+                value={tab}
+                onValueChange={value => switchTab((value ?? 'chats') as ChatRailTab)}
+                options={[
+                  { value: 'chats', label: t('chat.social.subNav.chats'), leading: <Icon iconId="message-circle" size={13} /> },
+                  { value: 'contacts', label: t('chat.social.subNav.contacts'), leading: <Icon iconId="users" size={13} /> },
+                ]}
+              />
+              <IconButton
+                actionId="chat.rail-search"
+                className="sc-rail-icon"
+                data-rail-search-trigger
+                iconId="search"
+                iconSize={15}
+                emphasis="quiet"
+                density="compact"
+                label={t('chat.social.sessionList.searchPlaceholder')}
+                aria-expanded={searchOpen}
+                onClick={() => setSearchOpen(true)}
+              />
+              <Menu actions={plusMenuItems} placement="bottom">
+                <IconButton
+                  actionId="chat.new-menu"
+                  className="sc-rail-icon"
+                  data-chat-new-menu
+                  iconId="plus"
+                  iconSize={16}
+                  emphasis="quiet"
+                  density="compact"
+                  label={t('chat.social.sessionList.newMenu')}
+                />
+              </Menu>
+            </>
+          )}
+        </div>
+
+        {tab === 'contacts' ? (
+          renderContacts?.(searchText)
+        ) : (
+          <>
 
         {loadError && visibleConversations.length > 0 && (
           <ConversationListError compact onRetry={handleRetry} />
         )}
 
-        <Flexbox flex={1} style={{ overflow: 'auto', padding: '8px 8px' }} gap={2}>
+        {/* The Recent label stays mounted while searching (prototype
+            sk-conv-title parity): it reserves constant vertical rhythm so
+            opening the in-rail search field never shifts the list. */}
+        <h2 className="sc-rail-title">{t('chat.social.sessionList.recent')}</h2>
+
+        <div className="sc-sessions__scroll">
           {loadError && visibleConversations.length === 0 ? (
             <ConversationListError onRetry={handleRetry} />
           ) : visibleConversations.length === 0 ? (
-            <Flexbox align="center" justify="center" flex={1}>
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t('chat.social.sessionList.noConversations')}
-              />
-            </Flexbox>
+            <div className="sc-sessions__empty">
+              <Empty description={t('chat.social.sessionList.noConversations')} />
+            </div>
           ) : (
             visibleConversations.map((c) => {
               const isActive = isRowActive(c);
@@ -613,11 +626,6 @@ export function ChatSessionList({
               const timeStr = relativeTime(new Date(c.lastActivityMs), t);
               const unread = c.visibleUnread;
               const localState = conversationLocalState[`${c.kind}:${c.id}`];
-              // @mention markers are local post-decryption state and stay
-              // visible even when the group is muted.
-              const hasMention = c.kind === 'group'
-                && Boolean(currentUserPtid)
-                && (mentionFlagsByActor[currentUserPtid ?? '']?.includes(c.id) ?? false);
 
               // The conversation row subtitle is always the latest message.
               // Station/identity metadata never falls back here: human station
@@ -660,12 +668,28 @@ export function ChatSessionList({
               }
 
               const contextMenuTarget = `context-menu:chat:${c.kind}:${c.id}`;
+              const isMutedRow = Boolean(localState?.muted || localState?.alertEnabled === false);
+              // Unread count rides the avatar corner (prototype sk-unread-badge
+              // parity): an absolutely positioned pill, so presence changes and
+              // unread deltas never reflow the row. The element stays mounted
+              // at zero count (visibility-hidden) to keep the acceptance
+              // geometry probe's bounding box stable.
+              const unreadBadge = (
+                <span
+                  className={`sc-session-unread${unread <= 0 ? ' is-empty' : ''}${isMutedRow ? ' is-muted' : ''}`}
+                  data-chat-session-unread={unread}
+                  data-chat-session-unread-lane
+                  aria-hidden={unread <= 0}
+                >
+                  {unread > 0 ? (unread > 99 ? '99+' : cappedChatUnreadCount(unread)) : ''}
+                </span>
+              );
 
               return (
-                <Dropdown
+                <ContextMenu
                   key={`${c.kind}-${c.id}`}
-                  menu={buildContextMenu(c)}
-                  trigger={['contextMenu']}
+                  actions={buildContextActions(c)}
+                  label={t('chat.social.contextMenu.title')}
                   onOpenChange={(open) => {
                     markOverlayVisible(contextMenuTarget, open, {
                       conversationId: c.id,
@@ -674,10 +698,8 @@ export function ChatSessionList({
                     });
                   }}
                 >
-                  <Flexbox
-                    horizontal
-                    align="center"
-                    gap={10}
+                  <div
+                    className={`sc-session-row${isActive ? ' is-active' : ''}${localState?.sticky ? ' is-pinned-row' : ''}`}
                     data-pt-conversation-item={c.id}
                     data-chat-conversation-kind={c.kind}
                     data-chat-session-ulid={c.kind === 'friend' ? c.id : undefined}
@@ -697,130 +719,132 @@ export function ChatSessionList({
                       });
                     }}
                     onClick={() => handleSelect(c)}
-                    style={{
-                      padding: '10px 12px',
-                      boxSizing: 'border-box',
-                      height: CHAT_SESSION_ROW_HEIGHT,
-                      minHeight: CHAT_SESSION_ROW_HEIGHT,
-                      overflow: 'hidden',
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                      background: isActive ? token.colorPrimaryBg : 'transparent',
-                      transition: 'background 0.15s',
-                    }}
+                    style={{ height: CHAT_SESSION_ROW_HEIGHT, minHeight: CHAT_SESSION_ROW_HEIGHT }}
                   >
                     <OverlayCommitProfiler owner={contextMenuTarget} surface="chat-conversation-context-menu">
-                      <>
-                          {c.kind === 'group' ? (
-                            <GroupSquareAvatar
-                              conversationId={c.id}
-                              remoteUrl={c.avatar || undefined}
-                              members={projectGroupAvatarSlots(
-                                groupMembers[c.id] || [],
-                                (ptid, nickname) => resolveActorIdentity({
-                                  ptid,
-                                  currentUserPtid,
-                                  currentUserProfile,
-                                  peerProfiles,
-                                  sessions,
-                                  nickname,
-                                }),
-                              )}
-                              name={name}
-                              size={36}
-                            />
-                          ) : (
-                            <span
-                              data-chat-avatar-ptid={c.peerPtid || ''}
-                              data-chat-avatar-src={c.avatar || ''}
-                              data-chat-identity-federated-handle={c.federatedHandle || ''}
-                              data-chat-identity-home-station-domain={c.homeStationDomain || ''}
-                              data-chat-identity-home-station-peer-id={c.homeStationPeerId || ''}
-                              data-chat-identity-federation-id={c.federationId || ''}
-                              style={{ display: 'inline-flex', flexShrink: 0 }}
-                            >
-                              <UserSquareAvatar
-                                remoteUrl={c.avatar}
-                                actorPtid={c.peerPtid || null}
-                                name={name}
-                                size={36}
-                              />
-                            </span>
-                          )}
+                      {c.kind === 'group' ? (
+                        <span className="sc-session-avatar sc-session-avatar--group">
+                          <GroupSquareAvatar
+                            conversationId={c.id}
+                            remoteUrl={c.avatar || undefined}
+                            members={projectGroupAvatarSlots(
+                              groupMembers[c.id] || [],
+                              (ptid, nickname) => resolveActorIdentity({
+                                ptid,
+                                currentUserPtid,
+                                currentUserProfile,
+                                peerProfiles,
+                                sessions,
+                                nickname,
+                              }),
+                            )}
+                            name={name}
+                            size={40}
+                          />
+                          {unreadBadge}
+                        </span>
+                      ) : (
+                        <span
+                          className="sc-session-avatar"
+                          data-chat-avatar-ptid={c.peerPtid || ''}
+                          data-chat-avatar-src={c.avatar || ''}
+                          data-chat-identity-federated-handle={c.federatedHandle || ''}
+                          data-chat-identity-home-station-domain={c.homeStationDomain || ''}
+                          data-chat-identity-home-station-peer-id={c.homeStationPeerId || ''}
+                          data-chat-identity-federation-id={c.federationId || ''}
+                        >
+                          <UserSquareAvatar
+                            remoteUrl={c.avatar}
+                            actorPtid={c.peerPtid || null}
+                            name={name}
+                            size={40}
+                          />
+                          {c.peerPtid && peerOnline[c.peerPtid] ? (
+                            <span className="sc-session-presence" data-presence="online" aria-hidden />
+                          ) : null}
+                          {unreadBadge}
+                        </span>
+                      )}
 
-                          <Flexbox flex={1} justify="center" style={{ minWidth: 0, height: '100%' }}>
-                            <Flexbox horizontal align="center" justify="space-between" gap={6} style={{ height: 20 }}>
-                              <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0, flex: 1 }}>
-                                {c.kind === 'group' && (
-                                  <Users size={12} style={{ color: token.colorTextSecondary, flexShrink: 0 }} aria-hidden />
-                                )}
-                                <Text strong ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
-                                  {name}
-                                </Text>
-                                {localState?.sticky ? (
-                                  <Pin size={11} style={{ color: token.colorPrimary, flexShrink: 0 }} aria-label={t('chat.social.detail.stateSticky')} />
-                                ) : null}
-                                {localState?.muted || localState?.alertEnabled === false ? (
-                                  <BellOff size={11} style={{ color: token.colorTextTertiary, flexShrink: 0 }} aria-label={t('chat.social.detail.stateMuted')} />
-                                ) : null}
-                            </Flexbox>
-                              <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
-                                {timeStr}
-                              </Text>
-                          </Flexbox>
-                            <Flexbox horizontal align="center" style={{ height: 20, minWidth: 0 }}>
-                              <Text type="secondary" ellipsis style={{ fontSize: 12, lineHeight: '20px', flex: 1, minWidth: 0 }}>
-                                {subtitle}
-                              </Text>
-                              {hasMention && (
-                                <Tooltip title={t('chat.social.mentions.unreadMarker')}>
-                                  <span
-                                    data-chat-mention-marker={c.id}
-                                    style={{
-                                      flexShrink: 0,
-                                      marginLeft: 6,
-                                      padding: '0 6px',
-                                      height: 18,
-                                      lineHeight: '18px',
-                                      borderRadius: 9,
-                                      fontSize: 11,
-                                      fontWeight: 600,
-                                      color: token.colorWarning,
-                                      background: token.colorWarningBg,
-                                    }}
-                                  >
-                                    @
-                                  </span>
-                                </Tooltip>
-                              )}
-                              <span
-                                data-chat-session-unread={unread}
-                                data-chat-session-unread-lane
-                                aria-hidden={unread <= 0}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'flex-end',
-                                  width: CHAT_SESSION_UNREAD_LANE_WIDTH,
-                                  minWidth: CHAT_SESSION_UNREAD_LANE_WIDTH,
-                                  height: 20,
-                                  marginLeft: 8,
-                                  overflow: 'hidden',
-                                  visibility: unread > 0 ? 'visible' : 'hidden',
-                                }}
-                              >
-                                <Badge count={unread} overflowCount={99} size="small" />
+                      <span className="sc-session-row__body">
+                        <span className="sc-session-row__line">
+                          <span className="sc-session-row__name">
+                            {c.kind === 'group' && (
+                              <span className="sc-session-row__group-glyph" aria-hidden>
+                                <Icon iconId="users" size={12} />
                               </span>
-                          </Flexbox>
-                          </Flexbox>
-                      </>
+                            )}
+                            <span className="sc-session-row__name-text">{name}</span>
+                            {localState?.sticky ? (
+                              <span className="sc-session-row__pin" aria-label={t('chat.social.detail.stateSticky')}>
+                                <Icon iconId="pin" size={11} />
+                              </span>
+                            ) : null}
+                            {localState?.muted || localState?.alertEnabled === false ? (
+                              <span className="sc-session-row__muted" aria-label={t('chat.social.detail.stateMuted')}>
+                                <Icon iconId="bell-off" size={11} />
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="sc-session-row__time">{timeStr}</span>
+                        </span>
+                        <span className="sc-session-row__sub">
+                          <span className="sc-session-row__preview">{subtitle}</span>
+                        </span>
+                      </span>
+                      {/* Hover quick actions (prototype sk-conv-actions
+                          parity): mute / pin toggle + the full action menu. */}
+                      <span className="sc-session-row__actions">
+                        <IconButton
+                          className="sc-session-state"
+                          actionId={`session.mute-${c.id}`}
+                          iconId={localState?.muted ? 'volume-2' : 'bell-off'}
+                          iconSize={11}
+                          emphasis="quiet"
+                          density="compact"
+                          label={localState?.muted
+                            ? t('chat.social.contextMenu.unmute')
+                            : t('chat.social.contextMenu.mute')}
+                          onClick={event => {
+                            event.stopPropagation();
+                            buildContextActions(c).find(action => action.id === 'mute')?.onActivate();
+                          }}
+                        />
+                        <IconButton
+                          className="sc-session-state"
+                          actionId={`session.pin-${c.id}`}
+                          iconId="pin"
+                          iconSize={11}
+                          emphasis="quiet"
+                          density="compact"
+                          label={localState?.sticky
+                            ? t('chat.social.contextMenu.unpin')
+                            : t('chat.social.contextMenu.pin')}
+                          onClick={event => {
+                            event.stopPropagation();
+                            buildContextActions(c).find(action => action.id === 'pin')?.onActivate();
+                          }}
+                        />
+                        <Menu actions={buildContextActions(c)} placement="bottom">
+                          <IconButton
+                            className="sc-session-state"
+                            actionId={`session.more-${c.id}`}
+                            iconId="more-horizontal"
+                            iconSize={12}
+                            emphasis="quiet"
+                            density="compact"
+                            label={t('chat.social.contextMenu.moreActions')}
+                            onClick={event => event.stopPropagation()}
+                          />
+                        </Menu>
+                      </span>
                     </OverlayCommitProfiler>
-                  </Flexbox>
-                </Dropdown>
+                  </div>
+                </ContextMenu>
               );
             })
           )}
-        </Flexbox>
+        </div>
 
         <ChatSearchDropdown
           searchText={searchText}
@@ -828,7 +852,9 @@ export function ChatSessionList({
           onSelect={handleSearchSelect}
           onDismiss={() => setSearchText('')}
         />
-      </Flexbox>
+          </>
+        )}
+      </div>
 
       <CreateGroupModal open={showCreateGroup} onClose={() => setShowCreateGroup(false)} />
       <FindPeopleModal open={showFindPeople} onClose={() => setShowFindPeople(false)} />

@@ -6,7 +6,9 @@ export default {
   site: 'frontend-eles',
   host: 'frontend-eles',
   kind: 'feature',
-  status: 'drafting',
+  // Confirmed 2026-11-07 as the implementation reference for the desktop
+  // chat/settings alignment (user-designated surface: 松松·北极星 skin).
+  status: 'confirmed',
   module: 'ui-system',
   path: 'packages/prototypes/shared/ui-system/',
   docs: 'docs/architecture/platform/client/ui-system/README.md',

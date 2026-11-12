@@ -2190,7 +2190,10 @@ class NativeProductClosureGate(AcceptanceGate):
             self.enter_chat_page(actor)
         self.click("alice", '[data-chat-subpage="chats"]')
         self.click("alice", "[data-chat-new-menu]")
-        self.click("alice", "[data-chat-create-group-menu]")
+        self.click(
+            "alice",
+            '[role="menuitem"][data-action-id="create-group"]',
+        )
         client = self.clients["alice"]
         client.find_element("[data-chat-create-group]", 20)
         contact_selector = (

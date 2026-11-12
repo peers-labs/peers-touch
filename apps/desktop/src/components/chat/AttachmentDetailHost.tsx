@@ -1,15 +1,7 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
-import { Modal } from '@lobehub/ui';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Dialog, IconButton, Tooltip as PtTooltip } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
-import { theme, Tooltip } from 'antd';
-import {
-  Download,
-  ExternalLink,
-  Eye,
-  LoaderCircle,
-  RefreshCw,
-  XCircle,
-} from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
 import {
   chatAttachmentFileType,
   chatFilePreviewKind,
@@ -37,7 +29,6 @@ export function AttachmentDetailHost() {
 
 function AttachmentDetail({ id }: { id: string }) {
   const { t } = useTranslation('chat');
-  const { token } = theme.useToken();
   const { projection, error, src } = useAttachmentAccess({ cid: id });
   const [busy, setBusy] = useState<AttachmentFileAction | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -104,81 +95,57 @@ function AttachmentDetail({ id }: { id: string }) {
         {pending ? (
           <HeaderIcon
             action="cancel"
+            iconId="error"
             label={t('chat.attachment.cancelDownload')}
             onClick={() => void messagingAttachmentAccess.cancel(id)}
-          >
-            <XCircle size={17} />
-          </HeaderIcon>
+          />
         ) : null}
         {failed || projection?.retryable || cancelled ? (
           <HeaderIcon
             action="retry"
+            iconId="refresh-cw"
             label={t('chat.attachment.retry')}
             disabled={busy !== null}
             onClick={() => void messagingAttachmentAccess.retry(id)}
-          >
-            <RefreshCw size={17} />
-          </HeaderIcon>
+          />
         ) : null}
         {canPreview ? (
           <HeaderIcon
             action="preview"
+            iconId="eye"
             label={t('chat.attachment.systemPreview')}
             disabled={busy !== null}
             onClick={() => void run(AttachmentFileAction.PREVIEW)}
-          >
-            <Eye size={17} />
-          </HeaderIcon>
+          />
         ) : null}
         <HeaderIcon
           action="open-external"
+          iconId="external-link"
           label={t('chat.attachment.openExternal')}
           disabled={!ready || busy !== null}
           onClick={() => void run(AttachmentFileAction.OPEN_EXTERNAL)}
-        >
-          <ExternalLink size={17} />
-        </HeaderIcon>
+        />
         <HeaderIcon
           action="save-copy"
+          iconId="download"
           label={t('chat.attachment.saveCopy')}
           primary
           disabled={!ready || busy !== null}
+          pending={busy === AttachmentFileAction.SAVE_COPY}
           onClick={() => void run(AttachmentFileAction.SAVE_COPY)}
-        >
-          {busy === AttachmentFileAction.SAVE_COPY
-            ? <LoaderCircle size={17} className="chat-file-spin" />
-            : <Download size={17} />}
-        </HeaderIcon>
+        />
       </div>
     </div>
   );
 
   return (
-    <Modal
+    <Dialog
       open
       title={header}
       className="chat-file-modal"
       width={1040}
-      centered
-      styles={{
-        // Theme tokens are defined on the portal root so BOTH the header
-        // action buttons and the body toolbar inherit them (the header is
-        // rendered outside the body subtree by the Modal).
-        root: {
-          '--chat-preview-text': token.colorText,
-          '--chat-preview-secondary': token.colorTextSecondary,
-          '--chat-preview-border': token.colorBorderSecondary,
-          '--chat-preview-surface': token.colorBgContainer,
-          '--chat-preview-canvas': token.colorFillQuaternary,
-          '--chat-preview-hover': token.colorFillTertiary,
-          '--chat-preview-accent': token.colorPrimary,
-        } as CSSProperties,
-        body: { maxHeight: 'none', overflow: 'hidden', padding: '0 16px 16px' },
-        header: { justifyContent: 'flex-start', padding: '10px 12px 8px' },
-      }}
       footer={null}
-      destroyOnHidden
-      onCancel={messagingAttachmentAccess.close}
+      onDismiss={messagingAttachmentAccess.close}
     >
       <div className="chat-file-detail" data-chat-file-detail={id}
         data-chat-file-name={filename} data-chat-file-type={mimeType || ''}
@@ -192,7 +159,7 @@ function AttachmentDetail({ id }: { id: string }) {
         </div>
         {feedback ? <div className="chat-file-feedback" role="status" data-chat-file-action-result={feedback}>{t(`chat.attachment.${feedback}`)}</div> : null}
       </div>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -218,29 +185,31 @@ function DownloadProgress({ projection }: { projection: ReturnType<typeof useAtt
 }
 
 function HeaderIcon({
-  label, onClick, disabled, primary, action, children,
+  label, onClick, disabled, primary, action, iconId, pending,
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
   primary?: boolean;
   action?: string;
-  children: React.ReactNode;
+  iconId: Parameters<typeof IconButton>[0]['iconId'];
+  pending?: boolean;
 }) {
   return (
-    <Tooltip title={label}>
-      <button
-        type="button"
+    <PtTooltip label={label}>
+      <IconButton
+        actionId={`chat-file-${action ?? 'action'}`}
+        iconId={iconId}
+        iconSize={17}
         className={`chat-file-header-icon${primary ? ' chat-file-header-icon-primary' : ''}`}
-        aria-label={label}
-        title={label}
-        disabled={disabled}
+        label={label}
+        emphasis={primary ? 'primary' : 'quiet'}
+        execution={pending ? 'pending' : 'idle'}
+        availability={disabled ? { kind: 'disabled', reason: label } : undefined}
+        onActivate={onClick}
         data-chat-file-action={action}
-        onClick={onClick}
-      >
-        {children}
-      </button>
-    </Tooltip>
+      />
+    </PtTooltip>
   );
 }
 

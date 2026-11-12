@@ -1,6 +1,46 @@
-.pt-search-modal .ant-modal { padding-bottom: 0; }
-.pt-search-modal .ant-modal-container { height: min(560px, calc(100dvh - 96px)); border: 1px solid var(--pt-search-border); border-radius: 12px; display: flex; flex-direction: column; }
-.pt-search-modal .ant-modal-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+/* Bespoke command-palette shell (prototype search-overlay parity): own scrim
+   and top-anchored panel over @peers-touch/ui tokens — no modal library. */
+.pt-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--pt-z-overlay, 1000);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.pt-search-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--pt-scrim, rgba(15, 18, 22, 0.32));
+}
+.pt-search-panel {
+  /* --pt-search-* aliases map the legacy surface roles onto pt tokens. */
+  --pt-search-surface: var(--pt-raised);
+  --pt-search-subtle: var(--pt-subtle);
+  --pt-search-border: var(--pt-border);
+  --pt-search-text: var(--pt-text);
+  --pt-search-secondary: var(--pt-secondary);
+  --pt-search-muted: var(--pt-muted);
+  --pt-search-primary: var(--pt-primary);
+  --pt-search-wash: var(--pt-primarySubtle);
+  position: relative;
+  margin-top: 72px;
+  width: 720px;
+  max-width: calc(100% - 48px);
+  height: min(560px, calc(100dvh - 96px));
+  background: var(--pt-search-surface);
+  border: 1px solid var(--pt-search-border);
+  border-radius: 12px;
+  box-shadow: var(--pt-shadow-soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: pt-search-in 0.16s ease-out;
+}
+@keyframes pt-search-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .pt-search-field-area { flex: none; padding: 14px 16px 6px; }
 .pt-search-field { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px; border-radius: 10px; background: var(--pt-search-subtle); color: var(--pt-search-muted); }
 .pt-search-field:focus-within { outline: 2px solid var(--pt-search-primary); outline-offset: 2px; }
@@ -47,9 +87,10 @@
 .pt-search-footer-actions { flex: none; display: flex; align-items: center; gap: 12px; }
 .pt-search-opening { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .pt-search-footer button { border: 0; border-radius: 6px; background: transparent; color: var(--pt-search-primary); cursor: pointer; }
-.pt-search-modal button:focus-visible, .pt-search-row-target:focus-visible { outline: 2px solid var(--pt-search-primary); outline-offset: 2px; }
+.pt-search-panel button:focus-visible, .pt-search-row-target:focus-visible { outline: 2px solid var(--pt-search-primary); outline-offset: 2px; }
 .pt-search-field button:focus-visible { outline: none; }
 .pt-search-popover { max-width: 320px; display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto; scrollbar-width: thin; }
+.pt-search-popover-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--pt-search-text); }
 .pt-search-popover h6 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pt-search-muted); }
 .pt-search-popover p, .pt-search-popover ul { margin: 0; font-size: 12px; line-height: 17px; color: var(--pt-search-secondary); }
 .pt-search-popover ul { padding-left: 14px; }

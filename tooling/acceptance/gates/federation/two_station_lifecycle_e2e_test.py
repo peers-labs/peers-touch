@@ -35,7 +35,7 @@ class FederationTwoStationLifecycleGateTest(unittest.TestCase):
         elements = {
             '[data-pt-primary-nav="chat"] [role="button"]': [primary],
             '[data-chat-new-menu]': [menu],
-            '[data-chat-find-people-menu]': [find_people],
+            '[role="menuitem"][data-action-id="find-people"]': [find_people],
         }
         session.find_elements.side_effect = lambda selector: (
             ([section] if find_people.click.called else [])

@@ -92,9 +92,9 @@ export function SocialEmptyState({
         alignItems: 'center',
         textAlign: 'center',
         gap: 8,
-        padding: compact ? '24px 12px' : '32px 18px',
-        background: token.colorBgContainer,
-        border: `1px dashed ${token.colorBorderSecondary}`,
+        padding: compact ? '24px 12px' : '40px 18px',
+        background: 'transparent',
+        border: 'none',
         borderRadius: 14,
       }}
     >
@@ -195,8 +195,8 @@ export function SocialSearchEmpty({ query }: { query: string }) {
         textAlign: 'center',
         gap: 8,
         padding: '28px 16px',
-        background: token.colorBgContainer,
-        border: `1px dashed ${token.colorBorderSecondary}`,
+        background: 'transparent',
+        border: 'none',
         borderRadius: 14,
       }}
     >

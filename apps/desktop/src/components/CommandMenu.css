@@ -1,0 +1,40 @@
+/* Command directory (Cmd+Shift+K) reuses the prototype search-palette shell
+   (.pt-search-* in SearchOverlay.css). These rules only narrow the panel for
+   the command directory and style its keyboard hints. */
+.pt-command-panel {
+  width: 560px;
+  height: min(520px, calc(100dvh - 140px));
+  margin-top: 88px;
+}
+.pt-command-kbd {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--pt-subtle);
+  color: var(--pt-muted);
+  font-size: 11px;
+  line-height: 1;
+}
+.pt-command-kbd svg { width: 11px; height: 11px; }
+.pt-command-hint-chip {
+  flex: none;
+  align-self: center;
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--pt-muted);
+  font-variant-numeric: tabular-nums;
+}
+.pt-command-foot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.pt-command-foot kbd {
+  font: inherit;
+  font-family: var(--pt-mono);
+  color: var(--pt-secondary);
+}

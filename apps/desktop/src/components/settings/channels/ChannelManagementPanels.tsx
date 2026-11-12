@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button } from '@lobehub/ui';
+import { Button, Checkbox, IconButton, Select, Switch, TextArea, TextField } from '@peers-touch/ui';
 import { Schema } from '@peers-touch/schema';
 import {
-  ArrowLeft,
   Check,
   CircleAlert,
   Download,
   ExternalLink,
   HeartPulse,
   MessageSquareText,
-  Pencil,
-  Play,
   Plus,
   RefreshCw,
   Route,
@@ -82,9 +79,13 @@ function PanelHeader({
 }) {
   return (
     <header className="pt-channel-panel-header">
-      <button type="button" onClick={onBack} aria-label={title}>
-        <ArrowLeft size={17} />
-      </button>
+      <IconButton
+        actionId="channel-panel-back"
+        iconId="arrow-left"
+        iconSize={17}
+        label={title}
+        onActivate={onBack}
+      />
       <div>
         <h3 tabIndex={-1}>{title}</h3>
         <p>{description}</p>
@@ -172,44 +173,55 @@ function RoutePanel({
         <div className="pt-channel-focused-form">
           <label>
             <span>{t('channels.v2.routes.chat')}</span>
-            <select
-              value={draft.chatId}
-              onChange={(event) => {
-                const chat = chats.find((item) => item.chatId === event.target.value);
+            <Select<string>
+              value={draft.chatId || undefined}
+              clearable
+              placeholder={t('channels.v2.routes.selectChat')}
+              options={chats.map((chat) => ({
+                value: chat.chatId,
+                label: chat.name || chat.lastSenderName || chat.chatId,
+              }))}
+              onValueChange={(next) => {
+                const nextChatId = typeof next === 'string' ? next : '';
+                const chat = chats.find((item) => item.chatId === nextChatId);
                 setDraft({
                   ...draft,
-                  chatId: event.target.value,
+                  chatId: nextChatId,
                   chatName: chat?.name ?? '',
                 });
               }}
-            >
-              <option value="">{t('channels.v2.routes.selectChat')}</option>
-              {chats.map((chat) => (
-                <option key={chat.chatId} value={chat.chatId}>
-                  {chat.name || chat.lastSenderName || chat.chatId}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <label>
             <span>{t('channels.v2.routes.agent')}</span>
-            <select
-              value={draft.agentId}
-              onChange={(event) => setDraft({ ...draft, agentId: event.target.value })}
-            >
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.title || agent.name}
-                </option>
-              ))}
-            </select>
+            <Select<string>
+              value={draft.agentId || undefined}
+              options={agents.map((agent) => ({
+                value: agent.id,
+                label: agent.title || agent.name,
+              }))}
+              onValueChange={(next) => setDraft({
+                ...draft,
+                agentId: typeof next === 'string' ? next : '',
+              })}
+            />
           </label>
           {error ? <p className="pt-channel-error" role="alert">{error}</p> : null}
           <div className="pt-channel-actions">
-            <Button onClick={() => setDraft(null)}>{t('channels.v2.cancel')}</Button>
-            <Button type="primary" loading={busy} onClick={save}>
-              {t('channels.v2.save')}
-            </Button>
+            <Button
+              actionId="channel-route-cancel"
+              density="compact"
+              label={t('channels.v2.cancel')}
+              onActivate={() => setDraft(null)}
+            />
+            <Button
+              actionId="channel-route-save"
+              emphasis="primary"
+              density="compact"
+              execution={busy ? 'pending' : 'idle'}
+              label={t('channels.v2.save')}
+              onActivate={() => void save()}
+            />
           </div>
         </div>
       ) : (
@@ -222,9 +234,14 @@ function RoutePanel({
               agent: channelAgentLabel(agents, binding.agentId),
             })}</small>
           </div>
-          <Button type="primary" icon={Plus} onClick={() => begin()}>
-            {t('channels.v2.routes.add')}
-          </Button>
+          <Button
+            actionId="channel-route-add"
+            emphasis="primary"
+            density="compact"
+            leading={<Plus size={14} />}
+            label={t('channels.v2.routes.add')}
+            onActivate={() => begin()}
+          />
         </div>
       )}
       <div className="pt-channel-managed-list">
@@ -242,24 +259,27 @@ function RoutePanel({
               </small>
             </span>
             <span className="pt-channel-row-actions">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={route.enabled}
-                className={`pt-channel-switch${route.enabled ? ' is-on' : ''}`}
-                onClick={() => void toggle(route)}
-              ><span /></button>
-              <button type="button" onClick={() => begin(route)} aria-label={t('channels.v2.edit')}>
-                <Pencil size={15} />
-              </button>
-              <button
-                type="button"
-                className="is-danger"
-                aria-label={t('channels.v2.delete')}
-                onClick={() => void channelActions.deleteRoute(binding.bindingId, route.routeId)}
-              >
-                <Trash2 size={15} />
-              </button>
+              <Switch
+                checked={route.enabled}
+                onCheckedChange={() => void toggle(route)}
+              />
+              <IconButton
+                actionId={`channel-route-edit-${route.routeId}`}
+                iconId="pencil-line"
+                iconSize={15}
+                density="compact"
+                label={t('channels.v2.edit')}
+                onActivate={() => begin(route)}
+              />
+              <IconButton
+                actionId={`channel-route-delete-${route.routeId}`}
+                iconId="delete"
+                iconSize={15}
+                density="compact"
+                tone="danger"
+                label={t('channels.v2.delete')}
+                onActivate={() => void channelActions.deleteRoute(binding.bindingId, route.routeId)}
+              />
             </span>
           </div>
         ))}
@@ -511,44 +531,47 @@ function AutomationPanel({
         <div className="pt-channel-focused-form">
           <label>
             <span>{t('channels.v2.automations.when')}</span>
-            <select
+            <Select<ChannelAutomationDraft['triggerType']>
               value={draft.triggerType}
-              onChange={(event) => setDraft({
+              options={[
+                { value: 'schedule', label: t('channels.v2.automations.schedule') },
+                { value: 'message', label: t('channels.v2.automations.message') },
+                { value: 'document', label: t('channels.v2.automations.document') },
+              ]}
+              onValueChange={(next) => setDraft({
                 ...draft,
-                triggerType: event.target.value as ChannelAutomationDraft['triggerType'],
+                triggerType: next as ChannelAutomationDraft['triggerType'],
               })}
-            >
-              <option value="schedule">{t('channels.v2.automations.schedule')}</option>
-              <option value="message">{t('channels.v2.automations.message')}</option>
-              <option value="document">{t('channels.v2.automations.document')}</option>
-            </select>
+            />
           </label>
           {draft.triggerType === 'schedule' ? (
             <div className="pt-channel-form-grid">
               <label>
                 <span>{t('channels.v2.automations.frequency')}</span>
-                <select
-                  value={draft.scheduleKind}
-                  onChange={(event) => setDraft({
+                <Select<NonNullable<ChannelAutomationDraft['scheduleKind']>>
+                  value={draft.scheduleKind ?? 'weekly'}
+                  options={[
+                    { value: 'interval', label: t('channels.v2.automations.interval') },
+                    { value: 'daily', label: t('channels.v2.automations.daily') },
+                    { value: 'weekly', label: t('channels.v2.automations.weekly') },
+                  ]}
+                  onValueChange={(next) => setDraft({
                     ...draft,
-                    scheduleKind: event.target.value as ChannelAutomationDraft['scheduleKind'],
+                    scheduleKind: next as ChannelAutomationDraft['scheduleKind'],
                   })}
-                >
-                  <option value="interval">{t('channels.v2.automations.interval')}</option>
-                  <option value="daily">{t('channels.v2.automations.daily')}</option>
-                  <option value="weekly">{t('channels.v2.automations.weekly')}</option>
-                </select>
+                />
               </label>
               {draft.scheduleKind === 'interval' ? (
                 <label>
                   <span>{t('channels.v2.automations.intervalMinutes')}</span>
-                  <input
+                  <TextField
                     type="number"
                     min={1}
+                    aria-label={t('channels.v2.automations.intervalMinutes')}
                     value={draft.intervalMinutes}
-                    onChange={(event) => setDraft({
+                    onValueChange={(value) => setDraft({
                       ...draft,
-                      intervalMinutes: Number(event.target.value),
+                      intervalMinutes: Number(value),
                     })}
                   />
                 </label>
@@ -557,29 +580,28 @@ function AutomationPanel({
                   {draft.scheduleKind === 'weekly' ? (
                     <label>
                       <span>{t('channels.v2.automations.weekday')}</span>
-                      <select
-                        value={draft.scheduleWeekday}
-                        onChange={(event) => setDraft({
+                      <Select<number>
+                        value={draft.scheduleWeekday ?? 5}
+                        options={Array.from({ length: 7 }, (_, day) => ({
+                          value: day,
+                          label: t(`channels.v2.automations.weekdays.${day}`),
+                        }))}
+                        onValueChange={(next) => setDraft({
                           ...draft,
-                          scheduleWeekday: Number(event.target.value),
+                          scheduleWeekday: typeof next === 'number' ? next : 5,
                         })}
-                      >
-                        {Array.from({ length: 7 }, (_, day) => (
-                          <option key={day} value={day}>
-                            {t(`channels.v2.automations.weekdays.${day}`)}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </label>
                   ) : null}
                   <label>
                     <span>{t('channels.v2.automations.time')}</span>
-                    <input
+                    <TextField
                       type="time"
+                      aria-label={t('channels.v2.automations.time')}
                       value={draft.scheduleTime}
-                      onChange={(event) => setDraft({
+                      onValueChange={(value) => setDraft({
                         ...draft,
-                        scheduleTime: event.target.value,
+                        scheduleTime: value,
                       })}
                     />
                   </label>
@@ -587,7 +609,11 @@ function AutomationPanel({
               )}
               <label>
                 <span>{t('channels.v2.automations.timezone')}</span>
-                <input value={draft.scheduleTimezone} readOnly />
+                <TextField
+                  aria-label={t('channels.v2.automations.timezone')}
+                  value={draft.scheduleTimezone}
+                  readOnly
+                />
               </label>
             </div>
           ) : null}
@@ -595,41 +621,42 @@ function AutomationPanel({
             <div className="pt-channel-form-grid">
               <label>
                 <span>{t('channels.v2.automations.match')}</span>
-                <select
-                  value={draft.messageMatch}
-                  onChange={(event) => setDraft({
+                <Select<NonNullable<ChannelAutomationDraft['messageMatch']>>
+                  value={draft.messageMatch ?? 'contains'}
+                  options={[
+                    { value: 'contains', label: t('channels.v2.automations.contains') },
+                    { value: 'equals', label: t('channels.v2.automations.equals') },
+                    { value: 'regex', label: t('channels.v2.automations.regex') },
+                  ]}
+                  onValueChange={(next) => setDraft({
                     ...draft,
-                    messageMatch: event.target.value as ChannelAutomationDraft['messageMatch'],
+                    messageMatch: next as ChannelAutomationDraft['messageMatch'],
                   })}
-                >
-                  <option value="contains">{t('channels.v2.automations.contains')}</option>
-                  <option value="equals">{t('channels.v2.automations.equals')}</option>
-                  <option value="regex">{t('channels.v2.automations.regex')}</option>
-                </select>
+                />
               </label>
               <label>
                 <span>{t('channels.v2.automations.trigger')}</span>
-                <input
+                <TextField
+                  aria-label={t('channels.v2.automations.trigger')}
                   value={draft.triggerValue}
-                  onChange={(event) => setDraft({ ...draft, triggerValue: event.target.value })}
+                  onValueChange={(value) => setDraft({ ...draft, triggerValue: value })}
                 />
               </label>
               <label>
                 <span>{t('channels.v2.automations.sourceChat')}</span>
-                <select
-                  value={draft.messageChatId}
-                  onChange={(event) => setDraft({
+                <Select<string>
+                  value={draft.messageChatId || undefined}
+                  clearable
+                  placeholder={t('channels.v2.automations.anyChat')}
+                  options={chats.map((chat) => ({
+                    value: chat.chatId,
+                    label: chat.name || chat.lastSenderName || chat.chatId,
+                  }))}
+                  onValueChange={(next) => setDraft({
                     ...draft,
-                    messageChatId: event.target.value,
+                    messageChatId: typeof next === 'string' ? next : '',
                   })}
-                >
-                  <option value="">{t('channels.v2.automations.anyChat')}</option>
-                  {chats.map((chat) => (
-                    <option key={chat.chatId} value={chat.chatId}>
-                      {chat.name || chat.lastSenderName || chat.chatId}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             </div>
           ) : null}
@@ -638,101 +665,112 @@ function AutomationPanel({
               <div className="pt-channel-form-grid">
                 <label>
                   <span>{t('channels.v2.automations.document')}</span>
-                  <input
+                  <TextField
+                    aria-label={t('channels.v2.automations.document')}
                     value={draft.triggerValue}
                     placeholder={t('channels.v2.automations.documentPlaceholder')}
-                    onChange={(event) => setDraft({
+                    onValueChange={(value) => setDraft({
                       ...draft,
-                      triggerValue: event.target.value,
+                      triggerValue: value,
                     })}
                   />
                 </label>
                 <label>
                   <span>{t('channels.v2.automations.documentType')}</span>
-                  <select
-                    value={draft.documentFileType}
-                    onChange={(event) => setDraft({
+                  <Select<NonNullable<ChannelAutomationDraft['documentFileType']>>
+                    value={draft.documentFileType ?? 'docx'}
+                    options={[
+                      { value: 'docx', label: t('channels.v2.automations.documentType.docx') },
+                      { value: 'doc', label: t('channels.v2.automations.documentType.doc') },
+                      { value: 'sheet', label: t('channels.v2.automations.documentType.sheet') },
+                      { value: 'bitable', label: t('channels.v2.automations.documentType.bitable') },
+                    ]}
+                    onValueChange={(next) => setDraft({
                       ...draft,
-                      documentFileType: event.target.value as ChannelAutomationDraft['documentFileType'],
+                      documentFileType: next as ChannelAutomationDraft['documentFileType'],
                     })}
-                  >
-                    <option value="docx">{t('channels.v2.automations.documentType.docx')}</option>
-                    <option value="doc">{t('channels.v2.automations.documentType.doc')}</option>
-                    <option value="sheet">{t('channels.v2.automations.documentType.sheet')}</option>
-                    <option value="bitable">{t('channels.v2.automations.documentType.bitable')}</option>
-                  </select>
+                  />
                 </label>
               </div>
               <fieldset className="pt-channel-choice-list">
                 <legend>{t('channels.v2.automations.documentEvents')}</legend>
                 {(['edit', 'title_updated', 'created', 'deleted', 'trashed'] as const)
                   .map((eventName) => (
-                    <label key={eventName}>
-                      <input
-                        type="checkbox"
-                        checked={draft.documentEvents?.includes(eventName) ?? false}
-                        onChange={(event) => {
-                          const current = draft.documentEvents ?? [];
-                          setDraft({
-                            ...draft,
-                            documentEvents: event.target.checked
-                              ? [...current, eventName]
-                              : current.filter((item) => item !== eventName),
-                          });
-                        }}
-                      />
-                      <span>{t(`channels.v2.automations.documentEvent.${eventName}`)}</span>
-                    </label>
+                    <Checkbox
+                      key={eventName}
+                      checked={draft.documentEvents?.includes(eventName) ?? false}
+                      onCheckedChange={(checked) => {
+                        const current = draft.documentEvents ?? [];
+                        setDraft({
+                          ...draft,
+                          documentEvents: checked
+                            ? [...current, eventName]
+                            : current.filter((item) => item !== eventName),
+                        });
+                      }}
+                      label={t(`channels.v2.automations.documentEvent.${eventName}`)}
+                    />
                   ))}
               </fieldset>
             </>
           ) : null}
           <label>
             <span>{t('channels.v2.automations.action')}</span>
-            <textarea
-              rows={3}
+            <TextArea
+              aria-label={t('channels.v2.automations.action')}
+              minimumRows={3}
               value={draft.actionPrompt}
-              onChange={(event) => setDraft({ ...draft, actionPrompt: event.target.value })}
+              onValueChange={(value) => setDraft({ ...draft, actionPrompt: value })}
             />
           </label>
           <div className="pt-channel-form-grid">
             <label>
               <span>{t('channels.v2.automations.agent')}</span>
-              <select
-                value={draft.agentId}
-                onChange={(event) => setDraft({ ...draft, agentId: event.target.value })}
-              >
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.title || agent.name}
-                  </option>
-                ))}
-              </select>
+              <Select<string>
+                value={draft.agentId || undefined}
+                options={agents.map((agent) => ({
+                  value: agent.id,
+                  label: agent.title || agent.name,
+                }))}
+                onValueChange={(next) => setDraft({
+                  ...draft,
+                  agentId: typeof next === 'string' ? next : '',
+                })}
+              />
             </label>
             <label>
               <span>{t('channels.v2.automations.destination')}</span>
-              <select
-                value={draft.destinationChatId}
-                onChange={(event) => setDraft({
+              <Select<string>
+                value={draft.destinationChatId || undefined}
+                clearable
+                placeholder={t('channels.v2.routes.selectChat')}
+                options={chats.map((chat) => ({
+                  value: chat.chatId,
+                  label: chat.name || chat.lastSenderName || chat.chatId,
+                }))}
+                onValueChange={(next) => setDraft({
                   ...draft,
-                  destinationChatId: event.target.value,
+                  destinationChatId: typeof next === 'string' ? next : '',
                 })}
-              >
-                <option value="">{t('channels.v2.routes.selectChat')}</option>
-                {chats.map((chat) => (
-                  <option key={chat.chatId} value={chat.chatId}>
-                    {chat.name || chat.lastSenderName || chat.chatId}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           </div>
           {error ? <p className="pt-channel-error" role="alert">{error}</p> : null}
           <div className="pt-channel-actions">
-            <Button onClick={() => setDraft(null)}>{t('channels.v2.cancel')}</Button>
-            <Button type="primary" loading={busy} onClick={save}>
-              {t('channels.v2.save')}
-            </Button>
+            <Button
+              actionId="channel-automation-cancel"
+              density="compact"
+              label={t('channels.v2.cancel')}
+              onActivate={() => setDraft(null)}
+            />
+            <Button
+              actionId="channel-automation-save"
+              emphasis="primary"
+              density="compact"
+              execution={busy ? 'pending' : 'idle'}
+              label={t('channels.v2.save')}
+              onActivate={() => void save()}
+            />
           </div>
         </div>
       ) : (
@@ -743,9 +781,14 @@ function AutomationPanel({
               : t('channels.v2.automations.empty')}</b>
             <small>{t('channels.v2.automations.summary')}</small>
           </div>
-          <Button type="primary" icon={Plus} onClick={() => begin()}>
-            {t('channels.v2.automations.add')}
-          </Button>
+          <Button
+            actionId="channel-automation-add"
+            emphasis="primary"
+            density="compact"
+            leading={<Plus size={14} />}
+            label={t('channels.v2.automations.add')}
+            onActivate={() => begin()}
+          />
         </div>
       )}
       <div className="pt-channel-managed-list">
@@ -765,37 +808,41 @@ function AutomationPanel({
               </em>
             </span>
             <span className="pt-channel-row-actions">
-              <button
-                type="button"
-                aria-label={t('channels.v2.runNow')}
-                onClick={() => void channelActions.runAutomation(
+              <IconButton
+                actionId={`channel-automation-run-${automation.automationId}`}
+                iconId="play"
+                iconSize={15}
+                density="compact"
+                label={t('channels.v2.runNow')}
+                onActivate={() => void channelActions.runAutomation(
                   binding.bindingId,
                   automation.automationId,
                 )}
-              >
-                <Play size={15} />
-              </button>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={automation.enabled}
-                className={`pt-channel-switch${automation.enabled ? ' is-on' : ''}`}
-                onClick={() => void toggle(automation)}
-              ><span /></button>
-              <button type="button" onClick={() => begin(automation)} aria-label={t('channels.v2.edit')}>
-                <Pencil size={15} />
-              </button>
-              <button
-                type="button"
-                className="is-danger"
-                aria-label={t('channels.v2.delete')}
-                onClick={() => void channelActions.deleteAutomation(
+              />
+              <Switch
+                checked={automation.enabled}
+                onCheckedChange={() => void toggle(automation)}
+              />
+              <IconButton
+                actionId={`channel-automation-edit-${automation.automationId}`}
+                iconId="pencil-line"
+                iconSize={15}
+                density="compact"
+                label={t('channels.v2.edit')}
+                onActivate={() => begin(automation)}
+              />
+              <IconButton
+                actionId={`channel-automation-delete-${automation.automationId}`}
+                iconId="delete"
+                iconSize={15}
+                density="compact"
+                tone="danger"
+                label={t('channels.v2.delete')}
+                onActivate={() => void channelActions.deleteAutomation(
                   binding.bindingId,
                   automation.automationId,
                 )}
-              >
-                <Trash2 size={15} />
-              </button>
+              />
             </span>
           </div>
         ))}
@@ -824,15 +871,13 @@ function RequesterDomainPicker({
             {t(`channels.v2.personal.domainGroup.${group.id}`)}
           </legend>
           {group.domains.map((domain) => (
-            <label key={domain}>
-              <input
-                type="checkbox"
-                checked={selected.has(domain)}
-                disabled={locked.has(domain)}
-                onChange={() => onToggle(domain)}
-              />
-              <span>{t(`channels.v2.personal.domain.${domain}`)}</span>
-            </label>
+            <Checkbox
+              key={domain}
+              checked={selected.has(domain)}
+              disabled={locked.has(domain)}
+              onCheckedChange={() => onToggle(domain)}
+              label={t(`channels.v2.personal.domain.${domain}`)}
+            />
           ))}
         </fieldset>
       ))}
@@ -986,11 +1031,12 @@ function PersonalAccessPanel({
                   errorLabel={t('channels.schema.qrUnavailable')}
                 />
                 <Button
-                  icon={<ExternalLink size={15} />}
-                  onClick={() => api.openExternalUrl(authorization.verificationUrl)}
-                >
-                  {t('channels.v2.personal.openAuthorization')}
-                </Button>
+                  actionId="channel-personal-open-auth"
+                  density="compact"
+                  leading={<ExternalLink size={15} />}
+                  label={t('channels.v2.personal.openAuthorization')}
+                  onActivate={() => api.openExternalUrl(authorization.verificationUrl)}
+                />
               </div>
             ) : null}
             <div className="pt-channel-domain-summary">
@@ -1001,13 +1047,14 @@ function PersonalAccessPanel({
               ))}
             </div>
             <Button
-              danger
-              loading={busy}
-              icon={<X size={15} />}
-              onClick={() => void cancel()}
-            >
-              {t('channels.v2.personal.cancelAuthorization')}
-            </Button>
+              actionId="channel-personal-cancel-auth"
+              tone="danger"
+              density="compact"
+              execution={busy ? 'pending' : 'idle'}
+              leading={<X size={15} />}
+              label={t('channels.v2.personal.cancelAuthorization')}
+              onActivate={() => void cancel()}
+            />
           </>
         ) : connected && authorization ? (
           <>
@@ -1033,37 +1080,43 @@ function PersonalAccessPanel({
             <div className="pt-channel-actions">
               {showDomainPicker ? (
                 <Button
-                  type="primary"
-                  loading={busy}
-                  disabled={!hasNewDomains}
-                  icon={<Plus size={15} />}
-                  onClick={() => void connect()}
-                >
-                  {t('channels.v2.personal.authorizeMore')}
-                </Button>
+                  actionId="channel-personal-authorize-more"
+                  emphasis="primary"
+                  density="compact"
+                  execution={busy ? 'pending' : 'idle'}
+                  leading={<Plus size={15} />}
+                  label={t('channels.v2.personal.authorizeMore')}
+                  availability={!hasNewDomains
+                    ? { kind: 'disabled', reason: t('channels.v2.personal.authorizeMore') }
+                    : undefined}
+                  onActivate={() => void connect()}
+                />
               ) : (
                 <Button
-                  icon={<Plus size={15} />}
-                  onClick={() => setDomainEditorBindingId(binding.bindingId)}
-                >
-                  {t('channels.v2.personal.addWorkAreas')}
-                </Button>
+                  actionId="channel-personal-add-work-areas"
+                  density="compact"
+                  leading={<Plus size={15} />}
+                  label={t('channels.v2.personal.addWorkAreas')}
+                  onActivate={() => setDomainEditorBindingId(binding.bindingId)}
+                />
               )}
               <Button
-                loading={busy}
-                icon={<RefreshCw size={15} />}
-                onClick={() => void refresh()}
-              >
-                {t('channels.v2.personal.refresh')}
-              </Button>
+                actionId="channel-personal-refresh"
+                density="compact"
+                execution={busy ? 'pending' : 'idle'}
+                leading={<RefreshCw size={15} />}
+                label={t('channels.v2.personal.refresh')}
+                onActivate={() => void refresh()}
+              />
               <Button
-                danger
-                loading={busy}
-                icon={<Trash2 size={15} />}
-                onClick={() => void revoke()}
-              >
-                {t('channels.v2.personal.remove')}
-              </Button>
+                actionId="channel-personal-remove"
+                tone="danger"
+                density="compact"
+                execution={busy ? 'pending' : 'idle'}
+                leading={<Trash2 size={15} />}
+                label={t('channels.v2.personal.remove')}
+                onActivate={() => void revoke()}
+              />
             </div>
           </>
         ) : (
@@ -1096,18 +1149,21 @@ function PersonalAccessPanel({
               </p>
             ) : null}
             <Button
-              type="primary"
-              loading={busy}
-              disabled={!refreshable && selectedDomains.length === 0}
-              icon={refreshable ? <RefreshCw size={15} /> : undefined}
-              onClick={() => void (refreshable ? refresh() : connect())}
-            >
-              {refreshable
+              actionId="channel-personal-connect"
+              emphasis="primary"
+              density="compact"
+              execution={busy ? 'pending' : 'idle'}
+              leading={refreshable ? <RefreshCw size={15} /> : undefined}
+              label={refreshable
                 ? t('channels.v2.personal.refresh')
                 : needsRecovery
-                ? t('channels.v2.personal.reconnect')
-                : t('channels.v2.personal.connect')}
-            </Button>
+                  ? t('channels.v2.personal.reconnect')
+                  : t('channels.v2.personal.connect')}
+              availability={(!refreshable && selectedDomains.length === 0)
+                ? { kind: 'disabled', reason: t('channels.v2.personal.connect') }
+                : undefined}
+              onActivate={() => void (refreshable ? refresh() : connect())}
+            />
           </>
         )}
         {error ? <p className="pt-channel-error" role="alert">{error}</p> : null}
@@ -1139,18 +1195,21 @@ function AccessPanel({
           <b>{t('channels.v2.access.mode')}</b>
           <small>{t('channels.v2.access.modeDescription')}</small>
         </span>
-        <select
+        <Select<string>
+          appearance="ghost"
+          aria-label={t('channels.v2.access.mode')}
           value={binding.accessMode || 'approval'}
-          onChange={(event) => void channelActions.updateBinding(
+          options={[
+            { value: 'owner', label: t('channels.v2.access.owner') },
+            { value: 'approval', label: t('channels.v2.access.approval') },
+            { value: 'allowlist', label: t('channels.v2.access.allowlist') },
+            { value: 'open', label: t('channels.v2.access.open') },
+          ]}
+          onValueChange={(next) => void channelActions.updateBinding(
             binding.bindingId,
-            { accessMode: event.target.value },
+            { accessMode: typeof next === 'string' ? next : 'approval' },
           )}
-        >
-          <option value="owner">{t('channels.v2.access.owner')}</option>
-          <option value="approval">{t('channels.v2.access.approval')}</option>
-          <option value="allowlist">{t('channels.v2.access.allowlist')}</option>
-          <option value="open">{t('channels.v2.access.open')}</option>
-        </select>
+        />
       </label>
       <div className="pt-channel-managed-list">
         {members.map((member) => (
@@ -1163,26 +1222,26 @@ function AccessPanel({
             {member.status === 'pending' ? (
               <span className="pt-channel-row-actions">
                 <Button
-                  size="small"
-                  onClick={() => void channelActions.decideMemberAccess(
+                  actionId={`channel-access-deny-${member.accessId}`}
+                  density="compact"
+                  label={t('channels.v2.access.deny')}
+                  onActivate={() => void channelActions.decideMemberAccess(
                     binding.bindingId,
                     member.accessId,
                     'deny',
                   )}
-                >
-                  {t('channels.v2.access.deny')}
-                </Button>
+                />
                 <Button
-                  size="small"
-                  type="primary"
-                  onClick={() => void channelActions.decideMemberAccess(
+                  actionId={`channel-access-allow-${member.accessId}`}
+                  emphasis="primary"
+                  density="compact"
+                  label={t('channels.v2.access.allow')}
+                  onActivate={() => void channelActions.decideMemberAccess(
                     binding.bindingId,
                     member.accessId,
                     'allow',
                   )}
-                >
-                  {t('channels.v2.access.allow')}
-                </Button>
+                />
               </span>
             ) : null}
           </div>
@@ -1234,9 +1293,13 @@ function HealthPanel({
         ) : null}
       </div>
       <Button
-        type="primary"
-        loading={busy}
-        onClick={async () => {
+        actionId="channel-health-run"
+        emphasis="primary"
+        density="compact"
+        execution={busy ? 'pending' : 'idle'}
+        leading={<RefreshCw size={15} />}
+        label={t('channels.v2.health.run')}
+        onActivate={async () => {
           setBusy(true);
           try {
             await channelActions.checkHealth(binding.bindingId);
@@ -1244,10 +1307,7 @@ function HealthPanel({
             setBusy(false);
           }
         }}
-      >
-        <RefreshCw size={15} />
-        {t('channels.v2.health.run')}
-      </Button>
+      />
     </section>
   );
 }
@@ -1291,22 +1351,25 @@ function ActivityPanel({
             </span>
             {event.deliveryId && event.errorCode ? (
               <Button
-                size="small"
-                onClick={() => void channelActions.retryDelivery(
+                actionId={`channel-activity-retry-${event.deliveryId}`}
+                density="compact"
+                label={t('channels.v2.activity.retry')}
+                onActivate={() => void channelActions.retryDelivery(
                   binding.bindingId,
                   event.deliveryId,
                 )}
-              >
-                {t('channels.v2.activity.retry')}
-              </Button>
+              />
             ) : null}
           </div>
         ))}
       </div>
-      <Button onClick={() => void channelActions.exportDiagnostics(binding.bindingId)}>
-        <Download size={15} />
-        {t('channels.v2.activity.export')}
-      </Button>
+      <Button
+        actionId="channel-activity-export"
+        density="compact"
+        leading={<Download size={15} />}
+        label={t('channels.v2.activity.export')}
+        onActivate={() => void channelActions.exportDiagnostics(binding.bindingId)}
+      />
     </section>
   );
 }
@@ -1371,9 +1434,14 @@ function TopicsPanel({
           <b>{t('channels.v2.topics.heading')}</b>
           <small>{t('channels.v2.topics.readonly')}</small>
         </div>
-        <Button icon={RefreshCw} loading={loading} onClick={() => void load()}>
-          {t('channels.v2.topics.refresh')}
-        </Button>
+        <Button
+          actionId="channel-topics-refresh"
+          density="compact"
+          leading={<RefreshCw size={14} />}
+          execution={loading ? 'pending' : 'idle'}
+          label={t('channels.v2.topics.refresh')}
+          onActivate={() => void load()}
+        />
       </div>
       {loadError ? (
         <div className="pt-channel-notice is-warning" role="alert">
@@ -1449,11 +1517,20 @@ function AppPanel({
       <div className="pt-channel-focused-form">
         <label>
           <span>{t('channels.config.lark.appId.label')}</span>
-          <input value={appId} onChange={(event) => setAppId(event.target.value)} />
+          <TextField
+            aria-label={t('channels.config.lark.appId.label')}
+            value={appId}
+            onValueChange={setAppId}
+          />
         </label>
         <label>
           <span>{t('channels.config.lark.appSecret.label')}</span>
-          <input type="password" value={secret} onChange={(event) => setSecret(event.target.value)} />
+          <TextField
+            type="password"
+            aria-label={t('channels.config.lark.appSecret.label')}
+            value={secret}
+            onValueChange={setSecret}
+          />
         </label>
         {validation ? (
           <div className={`pt-channel-validation${validation.valid ? ' is-ready' : ' is-warning'}`}>
@@ -1471,8 +1548,11 @@ function AppPanel({
         {error ? <p className="pt-channel-error" role="alert">{error}</p> : null}
         <div className="pt-channel-actions">
           <Button
-            loading={busy}
-            onClick={async () => {
+            actionId="channel-app-check"
+            density="compact"
+            execution={busy ? 'pending' : 'idle'}
+            label={t('channels.v2.custom.check')}
+            onActivate={async () => {
               setBusy(true);
               setError('');
               try {
@@ -1491,27 +1571,31 @@ function AppPanel({
                 setBusy(false);
               }
             }}
-          >
-            {t('channels.v2.custom.check')}
-          </Button>
+          />
           <Button
-            type="primary"
-            disabled={!validation?.valid}
-            onClick={async () => {
+            actionId="channel-app-rotate"
+            emphasis="primary"
+            density="compact"
+            label={t('channels.v2.app.rotate')}
+            availability={!validation?.valid
+              ? { kind: 'disabled', reason: t('channels.v2.app.rotate') }
+              : undefined}
+            onActivate={async () => {
               await channelActions.updateBinding(binding.bindingId, { appSecret: secret });
               setSecret('');
               setValidation(null);
               onBack();
             }}
-          >
-            {t('channels.v2.app.rotate')}
-          </Button>
+          />
         </div>
         {validation?.consoleUrl ? (
-          <Button onClick={() => api.openExternalUrl(validation.consoleUrl)}>
-            <ExternalLink size={15} />
-            {t('channels.v2.provision.openConsole')}
-          </Button>
+          <Button
+            actionId="channel-app-console"
+            density="compact"
+            leading={<ExternalLink size={15} />}
+            label={t('channels.v2.provision.openConsole')}
+            onActivate={() => api.openExternalUrl(validation.consoleUrl)}
+          />
         ) : null}
       </div>
     </section>
@@ -1538,7 +1622,8 @@ function SettingsPanel({
       <div className="pt-channel-settings-list">
         <label className="pt-channel-setting-row">
           <span><b>{t('channels.v2.settings.name')}</b></span>
-          <input
+          <TextField
+            aria-label={t('channels.v2.settings.name')}
             defaultValue={binding.name}
             onBlur={(event) => {
               if (event.target.value.trim() !== binding.name) {
@@ -1549,34 +1634,41 @@ function SettingsPanel({
         </label>
         <label className="pt-channel-setting-row">
           <span><b>{t('channels.v2.settings.groupMode')}</b><small>{t('channels.v2.settings.groupModeDescription')}</small></span>
-          <select
+          <Select<string>
+            appearance="ghost"
+            aria-label={t('channels.v2.settings.groupMode')}
             value={binding.groupResponseMode || 'mention'}
-            onChange={(event) => void update({ groupResponseMode: event.target.value })}
-          >
-            <option value="mention">{t('channels.v2.settings.mention')}</option>
-            <option value="all">{t('channels.v2.settings.all')}</option>
-            <option value="off">{t('channels.v2.settings.off')}</option>
-          </select>
+            options={[
+              { value: 'mention', label: t('channels.v2.settings.mention') },
+              { value: 'all', label: t('channels.v2.settings.all') },
+              { value: 'off', label: t('channels.v2.settings.off') },
+            ]}
+            onValueChange={(next) => void update({
+              groupResponseMode: typeof next === 'string' ? next : 'mention',
+            })}
+          />
         </label>
         <label className="pt-channel-setting-row">
           <span><b>{t('channels.v2.settings.threadIsolation')}</b><small>{t('channels.v2.settings.threadIsolationDescription')}</small></span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={binding.threadIsolation}
-            className={`pt-channel-switch${binding.threadIsolation ? ' is-on' : ''}`}
-            onClick={() => void update({ threadIsolation: !binding.threadIsolation })}
-          ><span /></button>
+          <Switch
+            checked={binding.threadIsolation}
+            onCheckedChange={() => void update({ threadIsolation: !binding.threadIsolation })}
+          />
         </label>
         <label className="pt-channel-setting-row">
           <span><b>{t('channels.v2.settings.output')}</b></span>
-          <select
+          <Select<string>
+            appearance="ghost"
+            aria-label={t('channels.v2.settings.output')}
             value={binding.outputMode || 'concise'}
-            onChange={(event) => void update({ outputMode: event.target.value })}
-          >
-            <option value="concise">{t('channels.v2.settings.concise')}</option>
-            <option value="detailed">{t('channels.v2.settings.detailed')}</option>
-          </select>
+            options={[
+              { value: 'concise', label: t('channels.v2.settings.concise') },
+              { value: 'detailed', label: t('channels.v2.settings.detailed') },
+            ]}
+            onValueChange={(next) => void update({
+              outputMode: typeof next === 'string' ? next : 'concise',
+            })}
+          />
         </label>
       </div>
     </section>

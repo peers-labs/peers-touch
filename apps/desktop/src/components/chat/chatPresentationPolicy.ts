@@ -42,26 +42,38 @@ ResolvedChatComposerCapabilities = {
 
 const DESKTOP_CHAT_LAYOUT_MAIN: DesktopChatVisualLayout = {
   surface: 'desktop-main',
-  avatarSize: 36,
-  avatarGap: 8,
-  avatarRadius: 10,
-  ownRowMaxWidth: 'min(74%, 740px)',
-  peerRowMaxWidth: 'min(74%, 740px)',
+  // Prototype .sk-msg-avatar in ConversationView: 32px, 9px row gap.
+  avatarSize: 32,
+  avatarGap: 9,
+  // Direct-chat avatar radius (--sk-avatar-radius 11); group rows pass an
+  // explicit 8px in ChatMessageRow to match the prototype group tile.
+  avatarRadius: 11,
+  // Prototype .sk-msg max-width: 78%. The px cap is a desktop readability
+  // guard for very wide windows; the percentage stays on the prototype value.
+  ownRowMaxWidth: 'min(78%, 740px)',
+  peerRowMaxWidth: 'min(78%, 740px)',
+  // Desktop extension: group context rows may breathe wider (locked by
+  // desktop visual policy test); the prototype itself keeps one 78% width.
   groupPeerRowMaxWidth: 'min(82%, 800px)',
   bubbleMinWidth: 0,
-  bubblePadding: '9px 13px',
+  // Prototype design-directions.css .sk-msg-bubble: padding 10px 14px.
+  bubblePadding: '10px 14px',
   ownBubbleRadius: '16px 16px 6px 16px',
   peerBubbleRadius: '16px 16px 16px 6px',
   mediaBubblePadding: '0',
   hoverActionBridgeHeight: 18,
   hoverActionBridgeInsetX: 180,
-  composerOuterPadding: '6px 6px 8px',
-  composerShellRadius: 8,
-  composerShellShadow: '0 12px 34px rgba(15, 23, 42, 0.10)',
-  composerInputMinHeight: 82,
+  // Prototype .sk-conv-view frame: composer zone shares the 22px horizontal
+  // inset with the message stream; 6px top joins the stream's 6px bottom into
+  // the 12px stream↔composer gap and 12px is the bottom frame inset.
+  composerOuterPadding: '6px 22px 12px',
+  // Prototype sk-composer: a quiet rounded 18px shell, no float shadow.
+  composerShellRadius: 18,
+  composerShellShadow: 'none',
+  composerInputMinHeight: 38,
   composerInputExpandedMinHeight: 'min(360px, 44vh)',
   composerInputExpandedMaxHeight: 'min(520px, 58vh)',
-  composerToolButtonSize: 32,
+  composerToolButtonSize: 34,
   composerHasAttachmentTools: true,
 };
 

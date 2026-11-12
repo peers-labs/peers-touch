@@ -1,10 +1,7 @@
 import { memo, useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Spin, Typography, theme } from 'antd';
-import { ShieldCheck } from 'lucide-react';
+import { Icon } from '@peers-touch/ui';
 import { PinInput } from '../../../components/common/PinInput';
-
-const { Text } = Typography;
 
 export interface RelinkPinViewProps {
   loading: boolean;
@@ -17,15 +14,11 @@ export const RelinkPinView = memo(function RelinkPinView({
   error,
   onSubmit,
 }: RelinkPinViewProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('auth');
   const [resetKey, setResetKey] = useState(0);
 
-  // Reset PIN input when error changes
   useEffect(() => {
-    if (error) {
-      setResetKey(k => k + 1);
-    }
+    if (error) setResetKey((key) => key + 1);
   }, [error]);
 
   const handleComplete = useCallback((pin: string) => {
@@ -33,36 +26,36 @@ export const RelinkPinView = memo(function RelinkPinView({
   }, [onSubmit]);
 
   return (
-    <>
-      <div style={{
-        width: 52, height: 52, borderRadius: 14,
-        background: `${token.colorPrimary}12`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginBottom: 16,
-      }}>
-        <ShieldCheck size={26} color={token.colorPrimary} />
+    <div className="pt-auth-form">
+      <div className="pt-auth-identity">
+        <span className="pt-auth-pin-icon">
+          <Icon iconId="shield-check" size={24} />
+        </span>
       </div>
-
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
+      <h2 className="pt-auth-title">
         {t('auth.pin.relinkTitle', { defaultValue: 'Enter PIN' })}
       </h2>
-      <Text type="secondary" style={{ fontSize: 13, marginBottom: 24, textAlign: 'center' }}>
+      <p className="pt-auth-subtitle">
         {t('auth.pin.relinkSubtitle', {
           defaultValue: 'Use your existing PIN to keep quick login enabled.',
         })}
-      </Text>
+      </p>
 
-      <PinInput
-        onComplete={handleComplete}
-        disabled={loading}
-        error={error}
-        resetKey={resetKey}
-        autoFocus
-      />
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <PinInput
+          onComplete={handleComplete}
+          disabled={loading}
+          error={error}
+          resetKey={resetKey}
+          autoFocus
+        />
+      </div>
 
       {loading && (
-        <Spin size="small" style={{ marginTop: 12 }} />
+        <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--pt-primary)' }}>
+          <Icon iconId="refresh-cw" size={18} className="spin" />
+        </div>
       )}
-    </>
+    </div>
   );
 });

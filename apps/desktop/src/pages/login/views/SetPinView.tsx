@@ -1,10 +1,7 @@
 import React, { memo, useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Spin, Typography, theme } from 'antd';
-import { ShieldCheck } from 'lucide-react';
+import { Button, Icon } from '@peers-touch/ui';
 import { PinInput, type PinInputRef } from '../../../components/common/PinInput';
-
-const { Text } = Typography;
 
 export interface SetPinViewProps {
   canSkip: boolean;
@@ -23,7 +20,6 @@ export const SetPinView = memo(function SetPinView({
   onSkip,
   title: titleOverride,
 }: SetPinViewProps) {
-  const { token } = theme.useToken();
   const { t } = useTranslation('auth');
   const [step, setStep] = useState<'create' | 'confirm'>('create');
   const [createdPin, setCreatedPin] = useState('');
@@ -32,16 +28,14 @@ export const SetPinView = memo(function SetPinView({
 
   const confirmRef = React.useRef<PinInputRef>(null);
 
-  // Propagate external error
   const displayError = error || internalError;
 
-  // Reset to create step on external error
   useEffect(() => {
     if (error) {
       setStep('create');
       setCreatedPin('');
       setInternalError('');
-      setResetKey(k => k + 1);
+      setResetKey((key) => key + 1);
     }
   }, [error]);
 
@@ -49,7 +43,7 @@ export const SetPinView = memo(function SetPinView({
     setCreatedPin(pin);
     setStep('confirm');
     setInternalError('');
-    setResetKey(k => k + 1);
+    setResetKey((key) => key + 1);
   }, []);
 
   const handleConfirmComplete = useCallback((pin: string) => {
@@ -57,7 +51,7 @@ export const SetPinView = memo(function SetPinView({
       setInternalError(t('auth.pin.mismatch', { defaultValue: 'PINs do not match. Try again.' }));
       setStep('create');
       setCreatedPin('');
-      setResetKey(k => k + 1);
+      setResetKey((key) => key + 1);
       return;
     }
     setInternalError('');
@@ -65,64 +59,62 @@ export const SetPinView = memo(function SetPinView({
   }, [createdPin, onComplete, t]);
 
   return (
-    <>
-      <div style={{
-        width: 52, height: 52, borderRadius: 14,
-        background: `${token.colorPrimary}12`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginBottom: 16,
-      }}>
-        <ShieldCheck size={26} color={token.colorPrimary} />
+    <div className="pt-auth-form">
+      <div className="pt-auth-identity">
+        <span className="pt-auth-pin-icon">
+          <Icon iconId="shield-check" size={24} />
+        </span>
       </div>
-
-      <h2 style={{ fontSize: 20, fontWeight: 700, color: token.colorText, margin: '0 0 4px' }}>
+      <h2 className="pt-auth-title">
         {step === 'create'
           ? (titleOverride || t('auth.pin.setTitle', { defaultValue: 'Set a PIN' }))
-          : t('auth.pin.confirmTitle', { defaultValue: 'Confirm PIN' })
-        }
+          : t('auth.pin.confirmTitle', { defaultValue: 'Confirm PIN' })}
       </h2>
-      <Text type="secondary" style={{ fontSize: 13, marginBottom: 24, textAlign: 'center' }}>
+      <p className="pt-auth-subtitle">
         {step === 'create'
           ? t('auth.pin.setSubtitle', { defaultValue: 'Create a 6-digit PIN to protect your account' })
-          : t('auth.pin.confirmSubtitle', { defaultValue: 'Enter the same PIN again to confirm' })
-        }
-      </Text>
+          : t('auth.pin.confirmSubtitle', { defaultValue: 'Enter the same PIN again to confirm' })}
+      </p>
 
-      {step === 'create' ? (
-        <PinInput
-          onComplete={handleCreateComplete}
-          disabled={loading}
-          error={displayError}
-          resetKey={resetKey}
-          autoFocus
-        />
-      ) : (
-        <PinInput
-          ref={confirmRef}
-          onComplete={handleConfirmComplete}
-          disabled={loading}
-          error={displayError}
-          resetKey={resetKey}
-          autoFocus
-        />
-      )}
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        {step === 'create' ? (
+          <PinInput
+            onComplete={handleCreateComplete}
+            disabled={loading}
+            error={displayError}
+            resetKey={resetKey}
+            autoFocus
+          />
+        ) : (
+          <PinInput
+            ref={confirmRef}
+            onComplete={handleConfirmComplete}
+            disabled={loading}
+            error={displayError}
+            resetKey={resetKey}
+            autoFocus
+          />
+        )}
+      </div>
 
       {loading && (
-        <Spin size="small" style={{ marginTop: 12 }} />
+        <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--pt-primary)' }}>
+          <Icon iconId="refresh-cw" size={18} className="spin" />
+        </div>
       )}
 
       {canSkip && (
         <Button
+          actionId="auth.pin.skip"
+          emphasis="inline"
+          density="compact"
           data-login-pin-skip
-          type="link"
-          size="small"
-          onClick={onSkip}
-          disabled={loading}
-          style={{ marginTop: 20, fontSize: 12, color: token.colorTextTertiary }}
+          availability={loading ? { kind: 'disabled', reason: t('auth.login.waiting') } : undefined}
+          onActivate={onSkip}
         >
           {t('auth.pin.skipForNow', { defaultValue: 'Skip for now' })}
         </Button>
       )}
-    </>
+    </div>
   );
 });

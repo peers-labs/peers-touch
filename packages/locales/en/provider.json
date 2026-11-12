@@ -867,5 +867,15 @@
   "provider.menu.retry": "Try again",
   "provider.detail.loadFailed": "Unable to load this provider's models.",
   "provider.modelService.defaultLoadFailed": "Unable to load your default model. Try again before making a selection.",
-  "provider.modelService.saving": "Saving your default model…"
+  "provider.modelService.saving": "Saving your default model…",
+  "provider.logs.clear": "Clear",
+  "provider.logs.colTime": "Time",
+  "provider.logs.colSource": "Source",
+  "provider.logs.colLevel": "Level",
+  "provider.logs.colMessage": "Message",
+  "provider.account.identity.changeAvatar": "Change avatar",
+  "provider.updateProvider.providerLogoPlaceholder": "https://example.com/logo.png",
+  "provider.detail.enabled": "Enabled",
+  "provider.detail.enabledDesc": "Include this provider in model discovery and routing.",
+  "provider.detail.checking": "Checking…"
 }

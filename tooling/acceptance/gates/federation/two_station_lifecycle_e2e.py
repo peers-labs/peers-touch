@@ -944,7 +944,7 @@ class FederationTwoStationLifecycleGate(AcceptanceGate):
                 "visible new Chat menu",
             ),
             (
-                '[data-chat-find-people-menu]',
+                '[role="menuitem"][data-action-id="find-people"]',
                 "visible Find People action",
             ),
         ):

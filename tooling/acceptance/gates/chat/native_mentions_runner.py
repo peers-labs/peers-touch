@@ -5,12 +5,19 @@ Journey (one Station, two actors, one MLS group):
 
 * Alice (owner) creates a group containing Bob.
 * Bob mutes the group and parks the conversation (surface not active).
-* Alice sends an in-ciphertext named @mention of Bob; Bob must surface the
-  yellow mention marker and decrypted chip even though the group is muted.
-* Opening the group clears the marker and shows the mention chip in the
-  decrypted bubble.
-* Alice sends @all (owner-only); Bob again gets the muted-exception marker
+* Alice sends an in-ciphertext named @mention of Bob; Bob's muted-exception
+  mention flag (navigationBadges.hasMention, exposed via the acceptance
+  harness) must flip even though the group is muted, and the decrypted
+  bubble renders the mention chip.
+* Opening the group clears the mention flag and shows the mention chip in
+  the decrypted bubble.
+* Alice sends @all (owner-only); Bob again gets the muted-exception flag
   and the projection carries mentionAll.
+
+Note: the northstar-parity redesign removed the visible yellow marker from
+the session rail; the muted-exception behaviour is now proven at the
+projection-flag level plus the rendered chip (data-chat-mention), not via a
+DOM marker.
 """
 
 from __future__ import annotations
@@ -48,11 +55,11 @@ REQUIRED_ASSERTIONS = {
     "actor_isolation",
     "group_created",
     "named_mention_projected",
-    "muted_group_mention_marker",
+    "muted_group_mention_flag",
     "mention_chip_rendered",
-    "marker_cleared_on_open",
+    "mention_flag_cleared_on_open",
     "all_mention_owner_only",
-    "muted_all_mention_marker",
+    "all_mention_cleared_with_chip",
     "resources_released",
 }
 
@@ -106,16 +113,6 @@ def mention_flag(client: TauriSession, conversation_id: str) -> dict[str, Any]:
     if not isinstance(result, dict):
         raise GateError("mention flag state invalid")
     return result
-
-
-def marker_visible(client: TauriSession) -> bool:
-    return bool(
-        client.execute_script(
-            """
-            return Boolean(document.querySelector('[data-chat-mention-marker]'));
-            """,
-        )
-    )
 
 
 def bubble_chip(client: TauriSession, message_id: str, actor_ptid: str) -> bool:
@@ -538,42 +535,41 @@ class NativeMentionsGate(AcceptanceGate):
             )
 
             self.step(
-                "bob.muted_marker",
+                "bob.muted_mention_flag",
                 lambda: wait_until(
                     lambda: mention_flag(
                         self.clients["bob"], self.group_id
                     ).get("mentioned")
-                    is True
-                    and marker_visible(self.clients["bob"]),
-                    "Bob muted mention marker",
+                    is True,
+                    "Bob muted mention flag",
                     STEP_TIMEOUT,
                     1,
                 ),
                 "bob",
             )
             self.assert_condition(
-                "muted_group_mention_marker",
+                "muted_group_mention_flag",
                 mention_flag(self.clients["bob"], self.group_id).get("mentioned")
                 is True,
             )
 
-            # Opening the group clears the marker and renders the chip.
+            # Opening the group clears the mention flag and renders the chip.
             self.sync_group("bob", self.group_id)
             self.step(
-                "bob.marker_cleared",
+                "bob.mention_flag_cleared",
                 lambda: wait_until(
                     lambda: mention_flag(
                         self.clients["bob"], self.group_id
                     ).get("mentioned")
                     is False,
-                    "Bob marker cleared on open",
+                    "Bob mention flag cleared on open",
                     STEP_TIMEOUT,
                     1,
                 ),
                 "bob",
             )
             self.assert_condition(
-                "marker_cleared_on_open",
+                "mention_flag_cleared_on_open",
                 mention_flag(self.clients["bob"], self.group_id).get("mentioned")
                 is False,
             )
@@ -631,14 +627,13 @@ class NativeMentionsGate(AcceptanceGate):
                 f"projection={all_projection}",
             )
             self.step(
-                "bob.muted_all_marker",
+                "bob.muted_all_mention_flag",
                 lambda: wait_until(
                     lambda: mention_flag(
                         self.clients["bob"], self.group_id
                     ).get("mentioned")
-                    is True
-                    and marker_visible(self.clients["bob"]),
-                    "Bob muted @all marker",
+                    is True,
+                    "Bob muted @all mention flag",
                     STEP_TIMEOUT,
                     1,
                 ),
@@ -656,7 +651,7 @@ class NativeMentionsGate(AcceptanceGate):
                 "bob",
             )
             self.assert_condition(
-                "muted_all_mention_marker",
+                "all_mention_cleared_with_chip",
                 mention_flag(self.clients["bob"], self.group_id).get("mentioned")
                 is False
                 and all_chip(self.clients["bob"], all_message_id),

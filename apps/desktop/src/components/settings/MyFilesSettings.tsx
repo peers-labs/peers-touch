@@ -1,50 +1,58 @@
 /**
  * MyFilesSettings — owner-side file lifecycle inside Settings.
  *
- * Lists the actor's `oss_files` rows from the bound Station, with
- * filters for visibility / bucket / mime prefix / show-deleted, and
- * inline owner-side mutations:
+ * Lists the actor's `oss_files` rows from the bound Station, with filters for
+ * visibility / bucket / mime prefix / show-deleted, and inline owner-side
+ * mutations (soft delete, restore inside the grace window, and a PATCH dialog
+ * distinguishing leave / set / clear for the optional expiry).
  *
- *   - DELETE  → soft-delete; the row goes into the restore window.
- *   - RESTORE → reverses a soft-delete inside the grace window. The
- *                grace window is enforced server-side; the UI only
- *                surfaces the action when `deleted_at` is non-null.
- *   - PATCH   → edit visibility / chat-session / TTL / filename.
- *                The dialog distinguishes "no change", "set value",
- *                and "clear value" for `expires_at`, which the
- *                station treats as three different intents.
- *
- * The Rust adapter invalidates the on-disk attachment cache after
- * every successful mutation, so the renderer doesn't have to.
- *
- * We intentionally do NOT expose blob-level concepts (sha256 / blob
- * refcount / backend) in the table. Those belong on the dashboard
- * admin surface; the user's MyFiles view is about *their* files,
- * not the storage primitives that back them.
+ * The Rust adapter invalidates the on-disk attachment cache after every
+ * successful mutation, so the renderer doesn't have to. Blob-level concepts
+ * (sha256 / refcount / backend) stay on the dashboard admin surface.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Alert, Badge, Button, Card, DatePicker, Empty, Form, Input as AntdInput,
-  message, Modal, Pagination, Popconfirm, Segmented, Select, Space,
-  Switch, Table, Tag, Tooltip, Typography,
-} from 'antd';
-import type { ColumnsType } from 'antd/es/table';
-import { Flexbox } from 'react-layout-kit';
+  Alert,
+  Button,
+  ConfirmAction,
+  DataTable,
+  Dialog,
+  Field,
+  Icon,
+  IconButton,
+  Pagination,
+  Segmented,
+  Select,
+  Switch,
+  Tag,
+  Text,
+  TextField,
+  Tooltip,
+  type IconId,
+  type TableColumn,
+  type Tone,
+} from '@peers-touch/ui';
+import dayjs from 'dayjs';
 import {
-  AlertTriangle, Eye, FolderOpen, Globe, Lock, MessageSquare, Pencil,
-  RefreshCw, RotateCcw, Trash2, Upload as UploadIcon,
-} from 'lucide-react';
-import dayjs, { type Dayjs } from 'dayjs';
-import {
-  api, type OssFileMeta, type OssListMyFilesQuery, type OssMyFilesResponse,
-  type OssPatchFileBody, type OssVisibility,
+  api,
+  type OssFileMeta,
+  type OssListMyFilesQuery,
+  type OssMyFilesResponse,
+  type OssPatchFileBody,
+  type OssVisibility,
 } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { SettingsContainer, SettingsPanelHeader } from './SettingsLayout';
+import {
+  notifyError,
+  notifyInfo,
+  notifySuccess,
+  notifyWarning,
+} from '../../ui/feedback';
 
-const { Text } = Typography;
+const PAGE_SIZE = 25;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,25 +72,29 @@ function formatTime(iso: string | null | undefined): string {
   return d.format('YYYY-MM-DD HH:mm');
 }
 
-function visibilityIcon(v: string) {
+function toDateTimeLocal(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = dayjs(iso);
+  return d.isValid() ? d.format('YYYY-MM-DDTHH:mm:ss') : '';
+}
+
+function visibilityIconId(v: string): IconId {
   switch (v) {
-    case 'public':  return <Globe size={12} />;
-    case 'chat':    return <MessageSquare size={12} />;
-    case 'private': return <Lock size={12} />;
-    default:        return <Eye size={12} />;
+    case 'public': return 'globe';
+    case 'chat': return 'message-square';
+    case 'private': return 'lock';
+    default: return 'eye';
   }
 }
 
-function visibilityColor(v: string): string {
+function visibilityTone(v: string): Tone {
   switch (v) {
-    case 'public':  return 'blue';
-    case 'chat':    return 'cyan';
-    case 'private': return 'default';
-    default:        return 'orange';
+    case 'public': return 'info';
+    case 'chat': return 'success';
+    case 'private': return 'neutral';
+    default: return 'warning';
   }
 }
-
-const PAGE_SIZE = 25;
 
 // ---------------------------------------------------------------------------
 // Patch dialog
@@ -100,14 +112,8 @@ interface PatchFormState {
   chat_session_id: string;
   bucket: string;
   filename: string;
-  /**
-   * Three-state:
-   *   - `'leave'` → omit from PATCH (server keeps current).
-   *   - `'set'`   → send `expires_at` from the picker.
-   *   - `'clear'` → send `clear_expires_at: true` (NULL the column).
-   */
   expires_mode: 'leave' | 'set' | 'clear';
-  expires_at: Dayjs | null;
+  expires_at: string;
 }
 
 function defaultPatchState(file: OssFileMeta | null): PatchFormState {
@@ -117,7 +123,7 @@ function defaultPatchState(file: OssFileMeta | null): PatchFormState {
     bucket: '',
     filename: file?.name ?? '',
     expires_mode: 'leave',
-    expires_at: file?.expires_at ? dayjs(file.expires_at) : null,
+    expires_at: toDateTimeLocal(file?.expires_at),
   };
 }
 
@@ -134,10 +140,6 @@ function PatchDialog({ file, open, onClose, onSubmitted }: PatchDialogProps) {
 
   if (!file) return null;
 
-  // Build the body the server sees. Empty strings collapse to
-  // "no change" rather than "clear" — we don't ship the empty
-  // string sentinel to the server because the column types are
-  // not nullable for filename / chat_session_id.
   const buildBody = (): OssPatchFileBody | null => {
     const body: OssPatchFileBody = {};
     if (form.visibility && form.visibility !== file.visibility) {
@@ -156,7 +158,7 @@ function PatchDialog({ file, open, onClose, onSubmitted }: PatchDialogProps) {
       body.filename = filename;
     }
     if (form.expires_mode === 'set' && form.expires_at) {
-      body.expires_at = form.expires_at.toISOString();
+      body.expires_at = new Date(form.expires_at).toISOString();
     } else if (form.expires_mode === 'clear') {
       body.clear_expires_at = true;
     }
@@ -166,7 +168,7 @@ function PatchDialog({ file, open, onClose, onSubmitted }: PatchDialogProps) {
   const onSubmit = useCallback(async () => {
     const body = buildBody();
     if (!body) {
-      message.info(t('settings.myFiles.message.noChanges'));
+      notifyInfo(t('settings.myFiles.message.noChanges'));
       return;
     }
     setSubmitting(true);
@@ -174,100 +176,117 @@ function PatchDialog({ file, open, onClose, onSubmitted }: PatchDialogProps) {
       const resp = await api.ossPatchFile(file.key, body);
       const changed = resp.fields_changed?.length ?? 0;
       if (resp.capability_version) {
-        message.warning(
-          t('settings.myFiles.message.updatedVisibility', { count: changed }),
-        );
+        notifyWarning(t('settings.myFiles.message.updatedVisibility', { count: changed }));
       } else {
-        message.success(t('settings.myFiles.message.updated', { count: changed }));
+        notifySuccess(t('settings.myFiles.message.updated', { count: changed }));
       }
       onSubmitted();
       onClose();
     } catch (err) {
       log.error('oss', 'Patch failed', err);
-      message.error((err as Error)?.message || t('settings.myFiles.message.patchFailed'));
+      notifyError((err as Error)?.message || t('settings.myFiles.message.patchFailed'));
     } finally {
       setSubmitting(false);
     }
-    // buildBody is intentionally invoked inside the closure; lint
-    // exemption because PatchFormState is captured.
+    // buildBody is intentionally invoked inside the closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, form, onClose, onSubmitted, t]);
 
+  const visibilityOptions = [
+    {
+      label: t('settings.myFiles.edit.keepVisibility', {
+        value: t(`settings.myFiles.visibility.${file.visibility}`),
+      }),
+      value: file.visibility,
+    },
+    ...(['public', 'chat', 'private'] as const).map((value) => ({
+      label: t(`settings.myFiles.visibility.${value}`),
+      value,
+    })),
+  ];
+
+  const showChatField = form.visibility === 'chat'
+    || (!form.visibility && file.visibility === 'chat');
+
   return (
-    <Modal
+    <Dialog
       open={open}
-      title={
-        <Flexbox horizontal gap={8} align="center">
-          <Pencil size={16} />
+      onDismiss={onClose}
+      title={(
+        <span className="sc-myfiles-dialog-title">
+          <Icon iconId="pencil-line" size={16} />
           <span>{t('settings.myFiles.edit.title')}</span>
-        </Flexbox>
-      }
-      onCancel={onClose}
-      onOk={onSubmit}
-      okButtonProps={{ loading: submitting }}
-      okText={t('settings.myFiles.action.apply')}
-      destroyOnHidden
+        </span>
+      )}
+      width={520}
+      footer={(
+        <Button
+          actionId="myfiles-patch-apply"
+          emphasis="primary"
+          execution={submitting ? 'pending' : 'idle'}
+          label={t('settings.myFiles.action.apply')}
+          onActivate={() => void onSubmit()}
+        />
+      )}
     >
-      <Form layout="vertical" component="div" size="middle">
-        <Form.Item label={t('settings.myFiles.field.filename')}>
-          <AntdInput
+      <div className="sc-myfiles-form">
+        <Field label={t('settings.myFiles.field.filename')}>
+          <TextField
             value={form.filename}
             placeholder={file.name}
-            onChange={(e) => setForm({ ...form, filename: e.target.value })}
+            onValueChange={(value) => setForm({ ...form, filename: value })}
           />
-        </Form.Item>
+        </Field>
 
-        <Form.Item
+        <Field
           label={t('settings.myFiles.field.visibility')}
-          extra={t('settings.myFiles.edit.visibilityHint')}
+          description={t('settings.myFiles.edit.visibilityHint')}
         >
           <Select
             value={form.visibility || file.visibility}
-            options={[
-              {
-                label: t('settings.myFiles.edit.keepVisibility', {
-                  value: t(`settings.myFiles.visibility.${file.visibility}`),
-                }),
-                value: file.visibility,
-              },
-              ...(['public', 'chat', 'private'] as const).map((value) => ({
-                label: t(`settings.myFiles.visibility.${value}`),
-                value,
-              })),
-            ]}
-            onChange={(v) => setForm({ ...form, visibility: v as OssVisibility })}
+            options={visibilityOptions}
+            onValueChange={(value) => {
+              if (typeof value === 'string') {
+                setForm({ ...form, visibility: value as OssVisibility });
+              }
+            }}
           />
-        </Form.Item>
+        </Field>
 
-        {(form.visibility === 'chat' || (!form.visibility && file.visibility === 'chat')) && (
-          <Form.Item
+        {showChatField && (
+          <Field
             label={t('settings.myFiles.field.chatSessionId')}
-            extra={t('settings.myFiles.edit.chatSessionHint')}
+            description={t('settings.myFiles.edit.chatSessionHint')}
           >
-            <AntdInput
+            <TextField
               value={form.chat_session_id}
               placeholder={file.chat_session_id ?? t('settings.myFiles.placeholder.sessionId')}
-              onChange={(e) => setForm({ ...form, chat_session_id: e.target.value })}
+              onValueChange={(value) => setForm({ ...form, chat_session_id: value })}
             />
-          </Form.Item>
+          </Field>
         )}
 
-        <Form.Item
+        <Field
           label={t('settings.myFiles.edit.moveBucket')}
-          extra={t('settings.myFiles.edit.moveBucketHint')}
+          description={t('settings.myFiles.edit.moveBucketHint')}
         >
-          <AntdInput
+          <TextField
             value={form.bucket}
             placeholder={t('settings.myFiles.placeholder.unchanged')}
-            onChange={(e) => setForm({ ...form, bucket: e.target.value })}
+            onValueChange={(value) => setForm({ ...form, bucket: value })}
           />
-        </Form.Item>
+        </Field>
 
-        <Form.Item label={t('settings.myFiles.field.expiry')}>
-          <Flexbox gap={8}>
-            <Segmented
+        <Field label={t('settings.myFiles.field.expiry')}>
+          <div className="sc-myfiles-expiry">
+            <Segmented<PatchFormState['expires_mode']>
+              density="compact"
               value={form.expires_mode}
-              onChange={(v) => setForm({ ...form, expires_mode: v as PatchFormState['expires_mode'] })}
+              onValueChange={(value) => {
+                if (value === 'leave' || value === 'set' || value === 'clear') {
+                  setForm({ ...form, expires_mode: value });
+                }
+              }}
               options={[
                 { label: t('settings.myFiles.edit.expiryKeep'), value: 'leave' },
                 { label: t('settings.myFiles.edit.expirySet'), value: 'set' },
@@ -275,25 +294,28 @@ function PatchDialog({ file, open, onClose, onSubmitted }: PatchDialogProps) {
               ]}
             />
             {form.expires_mode === 'set' && (
-              <DatePicker
-                showTime
+              <TextField
+                type="datetime-local"
                 value={form.expires_at}
-                onChange={(d) => setForm({ ...form, expires_at: d })}
-                style={{ width: '100%' }}
+                onValueChange={(value) => setForm({ ...form, expires_at: value })}
               />
             )}
             {form.expires_mode === 'clear' && (
-              <Text type="secondary">{t('settings.myFiles.edit.expiryClearHint')}</Text>
+              <p className="sk-field-hint">
+                {t('settings.myFiles.edit.expiryClearHint')}
+              </p>
             )}
             {form.expires_mode === 'leave' && file.expires_at && (
-              <Text type="secondary">
-                {t('settings.myFiles.edit.expiryCurrent', { value: formatTime(file.expires_at) })}
-              </Text>
+              <p className="sk-field-hint">
+                {t('settings.myFiles.edit.expiryCurrent', {
+                  value: formatTime(file.expires_at),
+                })}
+              </p>
             )}
-          </Flexbox>
-        </Form.Item>
-      </Form>
-    </Modal>
+          </div>
+        </Field>
+      </div>
+    </Dialog>
   );
 }
 
@@ -301,25 +323,6 @@ function PatchDialog({ file, open, onClose, onSubmitted }: PatchDialogProps) {
 // Upload dialog
 // ---------------------------------------------------------------------------
 
-/**
- * UploadDialog — picks a file via the native dialog (Tauri side
- * already exposes `pick_chat_attachment`, which returns the absolute
- * path on success or rejects on cancel) and pushes it through the
- * shared `chat_upload_attachment` command. We re-use that command
- * because the Station endpoint (`/sub-oss/upload`) is identical for
- * "uploaded from chat" and "uploaded standalone" — the only thing
- * that changes is how we tell it to scope the file:
- *
- *   - `visibility = 'private'` (default) → only the owner can fetch.
- *   - `visibility = 'public'`            → discoverable by any peer.
- *   - `visibility = 'chat'`              → REQUIRES `chat_session_id`;
- *                                          the Station validates
- *                                          membership at fetch time.
- *
- * The Rust adapter already tags the upload with the right metadata
- * and bumps `oss_blobs.ref_count`, so all this dialog has to do is
- * collect the form, invoke, and refresh the listing on success.
- */
 interface UploadDialogProps {
   open: boolean;
   onClose: () => void;
@@ -329,11 +332,6 @@ interface UploadDialogProps {
 
 function UploadDialog({ open, onClose, onUploaded, defaultBucket }: UploadDialogProps) {
   const { t } = useTranslation('settings');
-  // The parent gates this component's mount on `open`, so the
-  // `useState` defaults below double as the per-session reset
-  // (each "Upload" click yields a fresh component instance). This
-  // avoids a `useEffect`-based reset and the "setState in effect"
-  // lint that comes with it.
   const [filePath, setFilePath] = useState<string>('');
   const [bucket, setBucket] = useState<string>(defaultBucket ?? 'attachments');
   const [visibility, setVisibility] = useState<OssVisibility>('private');
@@ -359,15 +357,15 @@ function UploadDialog({ open, onClose, onUploaded, defaultBucket }: UploadDialog
 
   const onSubmit = useCallback(async () => {
     if (!filePath) {
-      message.warning(t('settings.myFiles.message.pickFileFirst'));
+      notifyWarning(t('settings.myFiles.message.pickFileFirst'));
       return;
     }
     if (!bucket.trim()) {
-      message.warning(t('settings.myFiles.message.bucketRequired'));
+      notifyWarning(t('settings.myFiles.message.bucketRequired'));
       return;
     }
     if (visibility === 'chat' && !chatSessionID.trim()) {
-      message.warning(t('settings.myFiles.message.chatSessionRequired'));
+      notifyWarning(t('settings.myFiles.message.chatSessionRequired'));
       return;
     }
     setSubmitting(true);
@@ -379,10 +377,10 @@ function UploadDialog({ open, onClose, onUploaded, defaultBucket }: UploadDialog
         chat_session_id: visibility === 'chat' ? chatSessionID.trim() : null,
       });
       if (!resp) {
-        message.error(t('settings.myFiles.message.uploadFailed'));
+        notifyError(t('settings.myFiles.message.uploadFailed'));
         return;
       }
-      message.success(t('settings.myFiles.message.uploaded', {
+      notifySuccess(t('settings.myFiles.message.uploaded', {
         filename: resp.filename,
         size: (resp.size / 1024).toFixed(1),
       }));
@@ -390,84 +388,97 @@ function UploadDialog({ open, onClose, onUploaded, defaultBucket }: UploadDialog
       onClose();
     } catch (err) {
       log.error('oss', 'Upload failed', err);
-      message.error((err as Error)?.message || t('settings.myFiles.message.uploadFailed'));
+      notifyError((err as Error)?.message || t('settings.myFiles.message.uploadFailed'));
     } finally {
       setSubmitting(false);
     }
   }, [filePath, bucket, visibility, chatSessionID, onUploaded, onClose, t]);
 
   return (
-    <Modal
+    <Dialog
       open={open}
-      title={
-        <Flexbox horizontal gap={8} align="center">
-          <UploadIcon size={16} />
+      onDismiss={onClose}
+      title={(
+        <span className="sc-myfiles-dialog-title">
+          <Icon iconId="upload" size={16} />
           <span>{t('settings.myFiles.upload.title')}</span>
-        </Flexbox>
-      }
-      onCancel={onClose}
-      onOk={onSubmit}
-      okButtonProps={{ loading: submitting, disabled: !filePath || !bucket.trim() }}
-      okText={t('settings.myFiles.action.upload')}
-      destroyOnHidden
+        </span>
+      )}
+      width={520}
+      footer={(
+        <Button
+          actionId="myfiles-upload-submit"
+          emphasis="primary"
+          execution={submitting ? 'pending' : 'idle'}
+          label={t('settings.myFiles.action.upload')}
+          availability={(!filePath || !bucket.trim())
+            ? { kind: 'disabled', reason: t('settings.myFiles.action.upload') }
+            : undefined}
+          onActivate={() => void onSubmit()}
+        />
+      )}
     >
-      <Form layout="vertical" component="div" size="middle">
-        <Form.Item label={t('settings.myFiles.field.file')}>
-          <Flexbox horizontal gap={8} align="center">
-            <Button icon={<UploadIcon size={14} />} onClick={onPick}>
-              {t('settings.myFiles.action.chooseFile')}
-            </Button>
-            <Tooltip title={filePath || ''}>
-              <Text
-                type={filePath ? undefined : 'secondary'}
-                style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              >
+      <div className="sc-myfiles-form">
+        <Field label={t('settings.myFiles.field.file')}>
+          <div className="sc-myfiles-pick">
+            <Button
+              actionId="myfiles-choose-file"
+              leading={<Icon iconId="upload" size={14} />}
+              label={t('settings.myFiles.action.chooseFile')}
+              onActivate={() => void onPick()}
+            />
+            <Tooltip label={filePath}>
+              <Text tone={filePath ? 'primary' : 'secondary'} truncate className="sc-myfiles-pick__label">
                 {fileLabel}
               </Text>
             </Tooltip>
-          </Flexbox>
-        </Form.Item>
+          </div>
+        </Field>
 
-        <Form.Item
+        <Field
           label={t('settings.myFiles.field.bucket')}
-          extra={t('settings.myFiles.upload.bucketHint')}
+          description={t('settings.myFiles.upload.bucketHint')}
         >
-          <AntdInput
+          <TextField
             value={bucket}
-            onChange={(e) => setBucket(e.target.value)}
             placeholder={t('settings.myFiles.placeholder.bucketExamples')}
+            onValueChange={setBucket}
           />
-        </Form.Item>
+        </Field>
 
-        <Form.Item
+        <Field
           label={t('settings.myFiles.field.visibility')}
-          extra={t('settings.myFiles.upload.visibilityHint')}
+          description={t('settings.myFiles.upload.visibilityHint')}
         >
-          <Segmented
+          <Segmented<OssVisibility>
             value={visibility}
-            onChange={(v) => setVisibility(v as OssVisibility)}
+            onValueChange={(value) => {
+              if (value === 'private' || value === 'chat' || value === 'public') {
+                setVisibility(value);
+              }
+            }}
             options={[
               { label: t('settings.myFiles.visibility.private'), value: 'private' },
               { label: t('settings.myFiles.visibility.chat'), value: 'chat' },
               { label: t('settings.myFiles.visibility.public'), value: 'public' },
             ]}
           />
-        </Form.Item>
+        </Field>
 
         {visibility === 'chat' && (
-          <Form.Item
+          <Field
             label={t('settings.myFiles.field.chatSessionId')}
-            extra={t('settings.myFiles.upload.chatSessionHint')}
+            description={t('settings.myFiles.upload.chatSessionHint')}
           >
-            <AntdInput
+            <TextField
               value={chatSessionID}
-              onChange={(e) => setChatSessionID(e.target.value)}
               placeholder={t('settings.myFiles.placeholder.sessionId')}
+              onValueChange={setChatSessionID}
             />
-          </Form.Item>
+          </Field>
         )}
-      </Form>
-    </Modal>
+      </div>
+    </Dialog>
   );
 }
 
@@ -475,13 +486,15 @@ function UploadDialog({ open, onClose, onUploaded, defaultBucket }: UploadDialog
 // Page shell
 // ---------------------------------------------------------------------------
 
+type VisibilityFilter = 'all' | OssVisibility;
+
 export function MyFilesSettings() {
   const { t } = useTranslation('settings');
   const [data, setData] = useState<OssMyFilesResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [bucketFilter, setBucketFilter] = useState('');
   const [mimeFilter, setMimeFilter] = useState('');
-  const [visibilityFilter, setVisibilityFilter] = useState<'all' | OssVisibility>('all');
+  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>('all');
   const [includeDeleted, setIncludeDeleted] = useState(false);
   const [page, setPage] = useState(1);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -504,23 +517,23 @@ export function MyFilesSettings() {
       setData(resp);
     } catch (err) {
       log.error('oss', 'Failed to list my files', err);
-      message.error((err as Error)?.message || t('settings.myFiles.message.listFailed'));
+      notifyError((err as Error)?.message || t('settings.myFiles.message.listFailed'));
     } finally {
       setLoading(false);
     }
   }, [buildQuery, t]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const onDelete = useCallback(async (file: OssFileMeta) => {
     setBusyKey(file.key);
     try {
       await api.ossDeleteFile(file.key);
-      message.success(t('settings.myFiles.message.deleted'));
+      notifySuccess(t('settings.myFiles.message.deleted'));
       await load();
     } catch (err) {
       log.error('oss', 'Delete failed', err);
-      message.error((err as Error)?.message || t('settings.myFiles.message.deleteFailed'));
+      notifyError((err as Error)?.message || t('settings.myFiles.message.deleteFailed'));
     } finally {
       setBusyKey(null);
     }
@@ -530,11 +543,11 @@ export function MyFilesSettings() {
     setBusyKey(file.key);
     try {
       await api.ossRestoreFile(file.key);
-      message.success(t('settings.myFiles.message.restored'));
+      notifySuccess(t('settings.myFiles.message.restored'));
       await load();
     } catch (err) {
       log.error('oss', 'Restore failed', err);
-      message.error((err as Error)?.message || t('settings.myFiles.message.restoreFailed'));
+      notifyError((err as Error)?.message || t('settings.myFiles.message.restoreFailed'));
     } finally {
       setBusyKey(null);
     }
@@ -543,126 +556,129 @@ export function MyFilesSettings() {
   const items = data?.files ?? [];
   const total = data?.total ?? 0;
   const tombstoneCount = useMemo(
-    () => items.filter((f) => !!f.deleted_at).length,
+    () => items.filter((f) => Boolean(f.deleted_at)).length,
     [items],
   );
 
-  const columns: ColumnsType<OssFileMeta> = [
+  const columns: TableColumn<OssFileMeta>[] = [
     {
-      title: t('settings.myFiles.column.name'),
-      dataIndex: 'name',
-      key: 'name',
-      ellipsis: { showTitle: false },
-      render: (v: string, r) => (
-        <Flexbox>
-          <Tooltip title={v}>
-            <Text strong style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {v || t('settings.myFiles.unnamed')}
+      id: 'name',
+      label: t('settings.myFiles.column.name'),
+      renderCell: (row) => (
+        <span className="sc-myfiles-name">
+          <Tooltip label={row.name}>
+            <Text strong truncate className="sc-myfiles-name__primary">
+              {row.name || t('settings.myFiles.unnamed')}
             </Text>
           </Tooltip>
-          <Tooltip title={t('settings.myFiles.key', { value: r.key })}>
-            <Text type="secondary" style={{ fontSize: 12 }}>{r.mime || 'application/octet-stream'}</Text>
+          <Tooltip label={t('settings.myFiles.key', { value: row.key })}>
+            <Text tone="muted" className="sc-myfiles-name__detail">
+              {row.mime || 'application/octet-stream'}
+            </Text>
           </Tooltip>
-        </Flexbox>
+        </span>
       ),
     },
     {
-      title: t('settings.myFiles.column.visibility'),
-      dataIndex: 'visibility',
-      key: 'visibility',
-      width: 110,
-      render: (v: string) => (
-        <Tag color={visibilityColor(v)} icon={visibilityIcon(v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          {t(`settings.myFiles.visibility.${v}`, { defaultValue: v })}
+      id: 'visibility',
+      label: t('settings.myFiles.column.visibility'),
+      width: 120,
+      renderCell: (row) => (
+        <Tag tone={visibilityTone(row.visibility)} leading={<Icon iconId={visibilityIconId(row.visibility)} size={11} />}>
+          {t(`settings.myFiles.visibility.${row.visibility}`, { defaultValue: row.visibility })}
         </Tag>
       ),
     },
     {
-      title: t('settings.myFiles.column.size'),
-      dataIndex: 'size',
-      key: 'size',
+      id: 'size',
+      label: t('settings.myFiles.column.size'),
       width: 100,
       align: 'right',
-      sorter: (a, b) => a.size - b.size,
-      render: (v: number) => <Text>{formatBytes(v)}</Text>,
+      compare: (a, b) => a.size - b.size,
+      renderCell: (row) => <Text>{formatBytes(row.size)}</Text>,
     },
     {
-      title: t('settings.myFiles.column.expires'),
-      dataIndex: 'expires_at',
-      key: 'expires_at',
+      id: 'expires_at',
+      label: t('settings.myFiles.column.expires'),
       width: 160,
-      render: (v: string | null | undefined) => v
-        ? <Text type={dayjs(v).isBefore(dayjs()) ? 'danger' : undefined}>{formatTime(v)}</Text>
-        : <Text type="secondary">—</Text>,
+      renderCell: (row) => row.expires_at ? (
+        <Text tone={dayjs(row.expires_at).isBefore(dayjs()) ? 'danger' : 'primary'}>
+          {formatTime(row.expires_at)}
+        </Text>
+      ) : (
+        <Text tone="muted">—</Text>
+      ),
     },
     {
-      title: t('settings.myFiles.column.updated'),
-      dataIndex: 'updated_at',
-      key: 'updated_at',
+      id: 'updated_at',
+      label: t('settings.myFiles.column.updated'),
       width: 160,
-      render: (v: string) => <Text type="secondary">{formatTime(v)}</Text>,
-      sorter: (a, b) => dayjs(a.updated_at).valueOf() - dayjs(b.updated_at).valueOf(),
+      compare: (a, b) => dayjs(a.updated_at).valueOf() - dayjs(b.updated_at).valueOf(),
+      renderCell: (row) => <Text tone="muted">{formatTime(row.updated_at)}</Text>,
     },
     {
-      title: t('settings.myFiles.column.state'),
-      key: 'state',
+      id: 'state',
+      label: t('settings.myFiles.column.state'),
       width: 110,
-      render: (_, r) => r.deleted_at
-        ? <Badge status="error" text={t('settings.myFiles.state.deleted')} />
-        : <Badge status="success" text={t('settings.myFiles.state.live')} />,
-      filters: [
-        { text: t('settings.myFiles.state.live'), value: 'live' },
-        { text: t('settings.myFiles.state.deleted'), value: 'deleted' },
-      ],
-      onFilter: (value, record) => (value === 'deleted' ? !!record.deleted_at : !record.deleted_at),
+      renderCell: (row) => (
+        <Tag tone={row.deleted_at ? 'danger' : 'success'}>
+          {row.deleted_at
+            ? t('settings.myFiles.state.deleted')
+            : t('settings.myFiles.state.live')}
+        </Tag>
+      ),
     },
     {
-      title: t('settings.myFiles.column.actions'),
-      key: 'actions',
+      id: 'actions',
+      label: t('settings.myFiles.column.actions'),
       width: 220,
       align: 'right',
-      render: (_, file) => {
+      renderCell: (file) => {
         const busy = busyKey === file.key;
         return (
-          <Space size={4}>
+          <span className="sc-myfiles-row-actions">
             {file.deleted_at ? (
-              <Button
-                size="small"
-                icon={<RotateCcw size={14} />}
-                disabled={busy}
-                onClick={() => onRestore(file)}
-              >
-                {t('settings.myFiles.action.restore')}
-              </Button>
+              <IconButton
+                actionId={`myfiles-restore-${file.key}`}
+                iconId="rotate-ccw"
+                iconSize={14}
+                density="compact"
+                label={t('settings.myFiles.action.restore')}
+                availability={busy ? { kind: 'disabled', reason: '' } : undefined}
+                onActivate={() => void onRestore(file)}
+              />
             ) : (
               <>
-                <Button
-                  size="small"
-                  icon={<Pencil size={14} />}
-                  disabled={busy}
-                  onClick={() => setEditTarget(file)}
-                >
-                  {t('settings.myFiles.action.edit')}
-                </Button>
-                <Popconfirm
+                <IconButton
+                  actionId={`myfiles-edit-${file.key}`}
+                  iconId="pencil-line"
+                  iconSize={14}
+                  density="compact"
+                  label={t('settings.myFiles.action.edit')}
+                  availability={busy ? { kind: 'disabled', reason: '' } : undefined}
+                  onActivate={() => setEditTarget(file)}
+                />
+                <ConfirmAction
+                  actionId={`myfiles-delete-${file.key}`}
                   title={t('settings.myFiles.delete.confirmTitle')}
                   description={t('settings.myFiles.delete.confirmDescription')}
-                  okText={t('settings.myFiles.action.delete')}
-                  okButtonProps={{ danger: true }}
+                  confirmLabel={t('settings.myFiles.action.delete')}
+                  cancelLabel={t('settings.myFiles.action.cancel')}
                   onConfirm={() => onDelete(file)}
                 >
-                  <Button
-                    size="small"
-                    danger
-                    icon={<Trash2 size={14} />}
-                    disabled={busy}
-                  >
-                    {t('settings.myFiles.action.delete')}
-                  </Button>
-                </Popconfirm>
+                  <IconButton
+                    actionId={`myfiles-delete-trigger-${file.key}`}
+                    iconId="delete"
+                    iconSize={14}
+                    density="compact"
+                    className="sc-myfiles-row-actions__danger"
+                    label={t('settings.myFiles.action.delete')}
+                    availability={busy ? { kind: 'disabled', reason: '' } : undefined}
+                  />
+                </ConfirmAction>
               </>
             )}
-          </Space>
+          </span>
         );
       },
     },
@@ -672,119 +688,106 @@ export function MyFilesSettings() {
     <SettingsContainer fullHeight tier="wide">
       <SettingsPanelHeader
         title={t('settings.myFiles.title')}
-        subtitle={t('settings.myFiles.subtitle')}
-        icon={<FolderOpen size={20} />}
-        actions={
-          <Space>
+        icon={<Icon iconId="folder-open" size={20} />}
+        actions={(
+          <span className="sc-myfiles-header-actions">
             <Button
-              type="primary"
-              icon={<UploadIcon size={14} />}
-              onClick={() => setUploadOpen(true)}
-              size="small"
-            >
-              {t('settings.myFiles.action.upload')}
-            </Button>
-            <Button icon={<RefreshCw size={14} />} onClick={load} loading={loading} size="small">
-              {t('settings.myFiles.action.refresh')}
-            </Button>
-          </Space>
-        }
+              actionId="myfiles-upload-open"
+              emphasis="primary"
+              density="compact"
+              leading={<Icon iconId="upload" size={14} />}
+              label={t('settings.myFiles.action.upload')}
+              onActivate={() => setUploadOpen(true)}
+            />
+            <Button
+              actionId="myfiles-refresh"
+              density="compact"
+              leading={<Icon iconId="refresh-cw" size={14} />}
+              execution={loading ? 'pending' : 'idle'}
+              label={t('settings.myFiles.action.refresh')}
+              onActivate={() => void load()}
+            />
+          </span>
+        )}
       />
 
-      <Flexbox gap={12}>
-        <Card>
-          <Flexbox horizontal gap={12} style={{ flexWrap: 'wrap' }}>
-            <Flexbox gap={4} style={{ minWidth: 180 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('settings.myFiles.filter.bucket')}
-              </Text>
-              <AntdInput
-                value={bucketFilter}
-                placeholder={t('settings.myFiles.placeholder.any')}
-                onChange={(e) => { setPage(1); setBucketFilter(e.target.value); }}
-                allowClear
-              />
-            </Flexbox>
-            <Flexbox gap={4} style={{ minWidth: 200 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('settings.myFiles.filter.mimePrefix')}
-              </Text>
-              <AntdInput
-                value={mimeFilter}
-                placeholder={t('settings.myFiles.placeholder.mimePrefix')}
-                onChange={(e) => { setPage(1); setMimeFilter(e.target.value); }}
-                allowClear
-              />
-            </Flexbox>
-            <Flexbox gap={4}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('settings.myFiles.field.visibility')}
-              </Text>
-              <Segmented
-                value={visibilityFilter}
-                onChange={(v) => { setPage(1); setVisibilityFilter(v as typeof visibilityFilter); }}
-                options={[
-                  { label: t('settings.myFiles.visibility.all'), value: 'all' },
-                  { label: t('settings.myFiles.visibility.public'), value: 'public' },
-                  { label: t('settings.myFiles.visibility.chat'), value: 'chat' },
-                  { label: t('settings.myFiles.visibility.private'), value: 'private' },
-                ]}
-              />
-            </Flexbox>
-            <Flexbox gap={4}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {t('settings.myFiles.filter.includeDeleted')}
-              </Text>
-              <Switch
-                checked={includeDeleted}
-                onChange={(v) => { setPage(1); setIncludeDeleted(v); }}
-              />
-            </Flexbox>
-          </Flexbox>
-        </Card>
-
-        {includeDeleted && tombstoneCount > 0 ? (
-          <Alert
-            type="warning"
-            showIcon
-            icon={<AlertTriangle size={14} />}
-            message={t('settings.myFiles.tombstonesOnPage', { count: tombstoneCount })}
-            description={t('settings.myFiles.tombstonesDescription')}
+      <div className="sc-myfiles-filters">
+        <Field label={t('settings.myFiles.filter.bucket')}>
+          <TextField
+            clearable
+            value={bucketFilter}
+            placeholder={t('settings.myFiles.placeholder.any')}
+            onValueChange={(value) => { setPage(1); setBucketFilter(value); }}
           />
-        ) : null}
-
-        <Card styles={{ body: { padding: 0 } }}>
-          <Table
-            dataSource={items}
-            columns={columns}
-            rowKey="id"
-            size="small"
-            loading={loading}
-            pagination={false}
-            locale={{
-              emptyText: loading
-                ? t('settings.myFiles.loading')
-                : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('settings.myFiles.empty')} />,
+        </Field>
+        <Field label={t('settings.myFiles.filter.mimePrefix')}>
+          <TextField
+            clearable
+            value={mimeFilter}
+            placeholder={t('settings.myFiles.placeholder.mimePrefix')}
+            onValueChange={(value) => { setPage(1); setMimeFilter(value); }}
+          />
+        </Field>
+        <Field label={t('settings.myFiles.field.visibility')}>
+          <Segmented<VisibilityFilter>
+            density="compact"
+            value={visibilityFilter}
+            onValueChange={(value) => {
+              if (typeof value === 'string') {
+                setPage(1);
+                setVisibilityFilter(value as VisibilityFilter);
+              }
             }}
+            options={[
+              { label: t('settings.myFiles.visibility.all'), value: 'all' },
+              { label: t('settings.myFiles.visibility.public'), value: 'public' },
+              { label: t('settings.myFiles.visibility.chat'), value: 'chat' },
+              { label: t('settings.myFiles.visibility.private'), value: 'private' },
+            ]}
           />
-          {total > PAGE_SIZE && (
-            <Flexbox horizontal justify="flex-end" style={{ padding: 12 }}>
-              <Pagination
-                size="small"
-                current={page}
-                pageSize={PAGE_SIZE}
-                total={total}
-                showSizeChanger={false}
-                onChange={(p) => setPage(p)}
-              />
-            </Flexbox>
-          )}
-        </Card>
-      </Flexbox>
+        </Field>
+        <Field label={t('settings.myFiles.filter.includeDeleted')}>
+          <Switch
+            checked={includeDeleted}
+            onCheckedChange={(value) => { setPage(1); setIncludeDeleted(value); }}
+          />
+        </Field>
+      </div>
+
+      {includeDeleted && tombstoneCount > 0 ? (
+        <Alert
+          tone="warning"
+          icon={<Icon iconId="warning" size={14} />}
+          title={t('settings.myFiles.tombstonesOnPage', { count: tombstoneCount })}
+          description={t('settings.myFiles.tombstonesDescription')}
+        />
+      ) : null}
+
+      <div className="sc-myfiles-table">
+        <DataTable
+          rows={items}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          emptyLabel={loading
+            ? t('settings.myFiles.loading')
+            : t('settings.myFiles.empty')}
+        />
+        {total > PAGE_SIZE ? (
+          <div className="sc-myfiles-pagination">
+            <Pagination
+              page={page}
+              total={total}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+            />
+          </div>
+        ) : null}
+      </div>
 
       <PatchDialog
         file={editTarget}
-        open={!!editTarget}
+        open={Boolean(editTarget)}
         onClose={() => setEditTarget(null)}
         onSubmitted={load}
       />

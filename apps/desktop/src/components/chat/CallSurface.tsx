@@ -13,12 +13,10 @@
 //   outgoing      — compact global tray ("Ringing…" / Cancel)
 //   active        — compact tray or expanded video with media controls.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Flexbox } from 'react-layout-kit';
-import { Dropdown, theme, Typography } from 'antd';
-import type { MenuProps } from 'antd';
+import { Popover as PtPopover } from '@peers-touch/ui';
 import {
   Camera,
   CameraOff,
@@ -39,15 +37,14 @@ import {
   type CallSnapshot,
 } from '../../modules/p2p/callP2p';
 import { log } from '../../utils/logger';
-import { ActionIcon, toast } from '@lobehub/ui';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useChatActorIdentity } from './useChatActorIdentity';
-
-const { Text } = Typography;
+import { notifyError } from '../../ui/feedback';
 
 type CallDisplayMode = 'compact' | 'chat' | 'fullscreen';
 
-const CALL_TRAY_EDGE = 20;
+// North-star .sk-call-hud anchors the floating tray 22px from the viewport edge.
+const CALL_TRAY_EDGE = 22;
 const CALL_TRAY_MAX_WIDTH = 320;
 
 /** Map a terminal call result onto a localized, user-explainable
@@ -78,8 +75,40 @@ function formatDuration(ms: number): string {
   return `${m}:${s}`;
 }
 
+function CallButton({
+  label,
+  onClick,
+  variant = 'neutral',
+  size = 32,
+  pressed,
+  children,
+  extra,
+}: {
+  label: string;
+  onClick: () => void;
+  variant?: 'neutral' | 'danger' | 'success' | 'glass';
+  size?: number;
+  pressed?: boolean;
+  children: ReactNode;
+  extra?: Record<string, string>;
+}) {
+  return (
+    <button
+      type="button"
+      className={`sc-call__btn sc-call__btn--${variant}`}
+      aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      data-chat-call-display-mode-target={extra?.['data-chat-call-display-mode-target']}
+      style={{ width: size, height: size }}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function CallSurface() {
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   // We track the *single* active call snapshot. The manager already
   // refuses overlapping calls (it auto-rejects a second
@@ -105,7 +134,7 @@ export function CallSurface() {
         // hangup or self-cancel needs no toast.
         if (snapshot.state === 'ended' && snapshot.endReason) {
           const key = END_REASON_KEY[snapshot.endReason];
-          if (key) toast.error(t(key));
+          if (key) notifyError(t(key));
         }
         setActive((cur) => (cur && cur.peerPtid === peerPtid ? null : cur));
         return;
@@ -216,7 +245,7 @@ export function CallSurface() {
       await callP2p.acceptCall(myDid, peerPtid);
     } catch (error) {
       log.warn('callSurface', 'accept failed', error);
-      toast.error(t('chat.social.call.mediaDenied'));
+      notifyError(t('chat.social.call.mediaDenied'));
     }
   };
 
@@ -231,81 +260,53 @@ export function CallSurface() {
   const handleSwitchAudio = (deviceId: string) => {
     callP2p.switchAudioDevice(myDid, peerPtid, deviceId).catch((error) => {
       log.warn('callSurface', 'switch mic failed', error);
-      toast.error(t('chat.social.call.deviceSwitchFailed'));
+      notifyError(t('chat.social.call.deviceSwitchFailed'));
     });
   };
 
   const handleSwitchVideo = (deviceId: string) => {
     callP2p.switchVideoDevice(myDid, peerPtid, deviceId).catch((error) => {
       log.warn('callSurface', 'switch camera failed', error);
-      toast.error(t('chat.social.call.deviceSwitchFailed'));
+      notifyError(t('chat.social.call.deviceSwitchFailed'));
     });
   };
 
   // Incoming calls use the same global compact tray boundary as Agent
   // background operations so they remain actionable without blocking Chat.
   if (snapshot.state === 'incoming') {
+    const incomingTitle = t('chat.social.call.incomingTitle', {
+      kind: isVideo ? t('chat.social.call.videoBadge') : t('chat.social.call.audioBadge'),
+    });
     const incomingSurface = (
-      <Flexbox
+      <div
+        className="sc-call sc-call--tray"
         data-chat-call-surface
         data-chat-call-state="incoming"
         data-chat-call-media-kind={snapshot.mediaKind}
         data-chat-call-display-mode="compact"
         role="dialog"
         aria-live="assertive"
-        aria-label={t('chat.social.call.incomingTitle', {
-          kind: isVideo ? t('chat.social.call.videoBadge') : t('chat.social.call.audioBadge'),
-        })}
-        horizontal
-        align="center"
-        gap={10}
-        style={{
-          position: 'fixed',
-          right: CALL_TRAY_EDGE,
-          bottom: CALL_TRAY_EDGE,
-          zIndex: 1100,
-          width: `min(${CALL_TRAY_MAX_WIDTH}px, calc(100vw - ${CALL_TRAY_EDGE * 2}px))`,
-          minHeight: 64,
-          padding: '10px 12px',
-          borderRadius: 14,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          background: token.colorBgElevated,
-          boxShadow: token.boxShadowSecondary,
-          boxSizing: 'border-box',
-        }}
+        aria-label={incomingTitle}
+        style={{ width: `min(${CALL_TRAY_MAX_WIDTH}px, calc(100vw - ${CALL_TRAY_EDGE * 2}px))` }}
       >
         <UserSquareAvatar
           remoteUrl={peerIdentity.avatarUrl}
           name={peerIdentity.displayName}
           size={40}
         />
-        <Flexbox flex={1} style={{ minWidth: 0 }}>
-          <Text strong ellipsis style={{ fontSize: 13 }}>
-            {t('chat.social.call.incomingTitle', {
-              kind: isVideo ? t('chat.social.call.videoBadge') : t('chat.social.call.audioBadge'),
-            })}
-          </Text>
-          <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-            {t('chat.social.call.incomingFrom', { from: peerIdentity.displayName })}
-          </Text>
-        </Flexbox>
-        <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
-          <ActionIcon
-            icon={PhoneOff}
-            title={t('chat.social.call.decline')}
-            size={{ blockSize: 32, size: 15 }}
-            onClick={handleDecline}
-            style={{ borderRadius: 999, background: token.colorError, color: token.colorTextLightSolid }}
-          />
-          <ActionIcon
-            icon={isVideo ? Video : Phone}
-            title={t('chat.social.call.accept')}
-            size={{ blockSize: 32, size: 15 }}
-            onClick={() => void handleAccept()}
-            style={{ borderRadius: 999, background: token.colorSuccess, color: token.colorTextLightSolid }}
-          />
-        </Flexbox>
-      </Flexbox>
+        <div className="sc-call__tray-body">
+          <strong>{incomingTitle}</strong>
+          <span>{t('chat.social.call.incomingFrom', { from: peerIdentity.displayName })}</span>
+        </div>
+        <div className="sc-call__tray-actions">
+          <CallButton label={t('chat.social.call.decline')} variant="danger" onClick={handleDecline}>
+            <PhoneOff size={15} />
+          </CallButton>
+          <CallButton label={t('chat.social.call.accept')} variant="success" onClick={() => void handleAccept()}>
+            {isVideo ? <Video size={15} /> : <Phone size={15} />}
+          </CallButton>
+        </div>
+      </div>
     );
     return typeof document === 'undefined'
       ? incomingSurface
@@ -323,35 +324,42 @@ export function CallSurface() {
   const hasMedia = isActive || isReconnecting;
   const elapsed = isActive && snapshot.startedAt ? now - snapshot.startedAt : 0;
 
-  // Build the device-picker menu. Each input kind becomes a group with a
-  // selectable item per device; the currently-captured device shows a
-  // check. Labels fall back to a generic numbered name when the browser
-  // withholds them (e.g. before any permission grant on this origin).
-  const deviceMenu: MenuProps['items'] = [];
-  if (devices.audioInputs.length > 0) {
-    deviceMenu.push({
-      type: 'group',
-      label: t('chat.social.call.selectMic'),
-      children: devices.audioInputs.map((d, i) => ({
-        key: `audio:${d.deviceId}`,
-        label: d.label || t('chat.social.call.deviceFallbackMic', { index: i + 1 }),
-        onClick: () => handleSwitchAudio(d.deviceId),
-        ...(snapshot.audioDeviceId === d.deviceId ? { icon: <Mic size={14} /> } : {}),
-      })),
-    });
-  }
-  if (isVideo && devices.videoInputs.length > 0) {
-    deviceMenu.push({
-      type: 'group',
-      label: t('chat.social.call.selectCamera'),
-      children: devices.videoInputs.map((d, i) => ({
-        key: `video:${d.deviceId}`,
-        label: d.label || t('chat.social.call.deviceFallbackCamera', { index: i + 1 }),
-        onClick: () => handleSwitchVideo(d.deviceId),
-        ...(snapshot.videoDeviceId === d.deviceId ? { icon: <Camera size={14} /> } : {}),
-      })),
-    });
-  }
+  const deviceMenu = (
+    <div className="sc-call__devices">
+      {devices.audioInputs.length > 0 && (
+        <>
+          <div className="sc-call__devices-label">{t('chat.social.call.selectMic')}</div>
+          {devices.audioInputs.map((d, i) => (
+            <button
+              type="button"
+              key={`audio:${d.deviceId}`}
+              className={`sc-call__device${snapshot.audioDeviceId === d.deviceId ? ' is-active' : ''}`}
+              onClick={() => handleSwitchAudio(d.deviceId)}
+            >
+              {snapshot.audioDeviceId === d.deviceId && <Mic size={13} />}
+              <span>{d.label || t('chat.social.call.deviceFallbackMic', { index: i + 1 })}</span>
+            </button>
+          ))}
+        </>
+      )}
+      {isVideo && devices.videoInputs.length > 0 && (
+        <>
+          <div className="sc-call__devices-label">{t('chat.social.call.selectCamera')}</div>
+          {devices.videoInputs.map((d, i) => (
+            <button
+              type="button"
+              key={`video:${d.deviceId}`}
+              className={`sc-call__device${snapshot.videoDeviceId === d.deviceId ? ' is-active' : ''}`}
+              onClick={() => handleSwitchVideo(d.deviceId)}
+            >
+              {snapshot.videoDeviceId === d.deviceId && <Camera size={13} />}
+              <span>{d.label || t('chat.social.call.deviceFallbackCamera', { index: i + 1 })}</span>
+            </button>
+          ))}
+        </>
+      )}
+    </div>
+  );
 
   const effectiveDisplayMode: CallDisplayMode = isVideo ? displayMode : 'compact';
   const expandedVideo = isVideo && effectiveDisplayMode !== 'compact';
@@ -362,56 +370,48 @@ export function CallSurface() {
       : snapshot.state === 'outgoing'
         ? t('chat.social.call.ringing')
         : t('chat.social.call.connecting');
-  const neutralControlStyle = {
-    borderRadius: 999,
-    border: `1px solid ${token.colorBorderSecondary}`,
-    background: token.colorBgContainer,
-    color: token.colorTextSecondary,
-  };
 
   const callControls = (
-    <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
+    <div className="sc-call__controls">
       {hasMedia && (
-        <ActionIcon
-          icon={snapshot.micMuted ? MicOff : Mic}
-          title={snapshot.micMuted ? t('chat.social.call.unmuteMic') : t('chat.social.call.muteMic')}
-          size={{ blockSize: 32, size: 15 }}
+        <CallButton
+          label={snapshot.micMuted ? t('chat.social.call.unmuteMic') : t('chat.social.call.muteMic')}
+          pressed={snapshot.micMuted}
           onClick={() => callP2p.toggleMic(myDid, peerPtid, !snapshot.micMuted)}
-          style={neutralControlStyle}
-        />
+        >
+          {snapshot.micMuted ? <MicOff size={15} /> : <Mic size={15} />}
+        </CallButton>
       )}
       {hasMedia && isVideo && (
-        <ActionIcon
-          icon={snapshot.cameraOff ? CameraOff : Camera}
-          title={snapshot.cameraOff ? t('chat.social.call.cameraOn') : t('chat.social.call.cameraOff')}
-          size={{ blockSize: 32, size: 15 }}
+        <CallButton
+          label={snapshot.cameraOff ? t('chat.social.call.cameraOn') : t('chat.social.call.cameraOff')}
+          pressed={snapshot.cameraOff}
           onClick={() => callP2p.toggleCamera(myDid, peerPtid, !snapshot.cameraOff)}
-          style={neutralControlStyle}
-        />
+        >
+          {snapshot.cameraOff ? <CameraOff size={15} /> : <Camera size={15} />}
+        </CallButton>
       )}
-      {hasMedia && deviceMenu.length > 0 && (
-        <Dropdown menu={{ items: deviceMenu }} trigger={['click']} placement="top">
-          <ActionIcon
-            icon={Settings}
-            title={t('chat.social.call.devices')}
-            size={{ blockSize: 32, size: 15 }}
-            style={neutralControlStyle}
-          />
-        </Dropdown>
+      {hasMedia && (devices.audioInputs.length > 0 || (isVideo && devices.videoInputs.length > 0)) && (
+        <PtPopover placement="top" content={deviceMenu} label={t('chat.social.call.devices')}>
+          <CallButton label={t('chat.social.call.devices')} onClick={() => {}}>
+            <Settings size={15} />
+          </CallButton>
+        </PtPopover>
       )}
-      <ActionIcon
-        icon={PhoneOff}
-        title={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}
-        size={{ blockSize: 32, size: 15 }}
+      <CallButton
+        label={hasMedia ? t('chat.social.call.hangup') : t('chat.social.call.cancel')}
+        variant="danger"
         onClick={handleHangup}
-        style={{ borderRadius: 999, background: token.colorError, color: token.colorTextLightSolid }}
-      />
-    </Flexbox>
+      >
+        <PhoneOff size={15} />
+      </CallButton>
+    </div>
   );
 
   const surface = (
-    <Flexbox
+    <div
       ref={surfaceRef}
+      className={`sc-call sc-call--${effectiveDisplayMode}${isVideo ? ' is-video' : ' is-audio'}`}
       data-chat-call-surface
       data-chat-call-state={snapshot.state}
       data-chat-call-media-kind={snapshot.mediaKind}
@@ -420,62 +420,29 @@ export function CallSurface() {
       aria-modal={effectiveDisplayMode === 'fullscreen' ? true : undefined}
       aria-label={isVideo ? t('chat.social.call.startVideo') : t('chat.social.call.startAudio')}
       tabIndex={expandedVideo ? -1 : undefined}
-      style={{
-        position: effectiveDisplayMode === 'chat' ? 'absolute' : 'fixed',
-        ...(effectiveDisplayMode === 'compact'
-          ? {
-              right: CALL_TRAY_EDGE,
-              bottom: CALL_TRAY_EDGE,
-              width: `min(${CALL_TRAY_MAX_WIDTH}px, calc(100vw - ${CALL_TRAY_EDGE * 2}px))`,
-            }
-          : { inset: 0, width: '100%', height: '100%' }),
-        background: isVideo ? '#000' : token.colorBgElevated,
-        border: effectiveDisplayMode === 'compact'
-          ? `1px solid ${token.colorBorderSecondary}`
-          : 'none',
-        borderRadius: effectiveDisplayMode === 'compact' ? 14 : 0,
-        boxShadow: effectiveDisplayMode === 'compact' ? token.boxShadowSecondary : 'none',
-        zIndex: effectiveDisplayMode === 'fullscreen' ? 2000 : 1100,
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      }}
+      style={effectiveDisplayMode === 'compact'
+        ? {
+            width: `min(${CALL_TRAY_MAX_WIDTH}px, calc(100vw - ${CALL_TRAY_EDGE * 2}px))`,
+          }
+        : undefined}
     >
       {!isVideo && (
-        <Flexbox
-          horizontal
-          align="center"
-          gap={10}
-          style={{
-            minHeight: 64,
-            padding: '10px 12px',
-            background: token.colorBgElevated,
-            boxSizing: 'border-box',
-          }}
-        >
+        <div className="sc-call__bar">
           <UserSquareAvatar
             remoteUrl={peerIdentity.avatarUrl}
             name={peerIdentity.displayName}
             size={40}
           />
-          <Flexbox flex={1} style={{ minWidth: 0 }}>
-            <Text strong ellipsis style={{ fontSize: 13 }}>{peerIdentity.displayName}</Text>
-            <Text type="secondary" ellipsis style={{ fontSize: 11 }}>{status}</Text>
-          </Flexbox>
+          <div className="sc-call__bar-body">
+            <strong>{peerIdentity.displayName}</strong>
+            <span>{status}</span>
+          </div>
           {callControls}
-        </Flexbox>
+        </div>
       )}
 
       {isVideo && (
-        <div
-          style={{
-            position: 'relative',
-            width: '100%',
-            height: expandedVideo ? undefined : 184,
-            flex: expandedVideo ? 1 : undefined,
-            minHeight: 0,
-            background: '#000',
-          }}
-        >
+        <div className="sc-call__video">
           {hasMedia ? (
             <video
               data-chat-call-remote-video
@@ -483,36 +450,19 @@ export function CallSurface() {
               autoPlay
               playsInline
               muted={false}
-              style={{ width: '100%', height: '100%', background: '#000', objectFit: 'cover' }}
             />
           ) : (
-            <Flexbox align="center" justify="center" style={{ width: '100%', height: '100%', background: token.colorFillTertiary }}>
+            <div className="sc-call__video-placeholder">
               <UserSquareAvatar
                 remoteUrl={peerIdentity.avatarUrl}
                 name={peerIdentity.displayName}
                 size={expandedVideo ? 80 : 56}
               />
-            </Flexbox>
+            </div>
           )}
 
           {isReconnecting && (
-            <Flexbox
-              align="center"
-              justify="center"
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                padding: '6px 12px',
-                background: token.colorWarning,
-                color: token.colorTextLightSolid,
-                fontSize: 12,
-                zIndex: 1,
-              }}
-            >
-              {t('chat.social.call.reconnecting')}
-            </Flexbox>
+            <div className="sc-call__reconnecting">{t('chat.social.call.reconnecting')}</div>
           )}
           {hasMedia && !snapshot.cameraOff && (
             <video
@@ -521,56 +471,29 @@ export function CallSurface() {
               autoPlay
               playsInline
               muted
-              style={{
-                position: 'absolute',
-                right: expandedVideo ? 16 : 8,
-                bottom: expandedVideo ? 16 : 8,
-                width: expandedVideo ? 136 : 72,
-                height: expandedVideo ? 92 : 52,
-                background: '#000',
-                borderRadius: 6,
-                objectFit: 'cover',
-                border: `1px solid ${token.colorBorder}`,
-              }}
+              className={expandedVideo ? 'is-expanded' : ''}
             />
           )}
 
-          <Flexbox
-            horizontal
-            align="center"
-            gap={2}
-            style={{
-              position: 'absolute',
-              top: expandedVideo ? 12 : 8,
-              right: expandedVideo ? 12 : 8,
-              zIndex: 2,
-              padding: 3,
-              borderRadius: 8,
-              background: 'rgba(15,23,42,0.56)',
-              backdropFilter: 'blur(12px)',
-            }}
-          >
+          <div className="sc-call__display-modes">
             {([
               ['compact', Minimize2, 'chat.social.call.compactWindow'],
               ['chat', PanelTop, 'chat.social.call.fillChat'],
               ['fullscreen', Maximize2, 'chat.social.call.fullscreen'],
-            ] as const).map(([mode, Icon, titleKey]) => (
-              <ActionIcon
+            ] as const).map(([mode, Glyph, titleKey]) => (
+              <CallButton
                 key={mode}
-                data-chat-call-display-mode-target={mode}
-                icon={Icon}
-                title={t(titleKey)}
-                aria-pressed={effectiveDisplayMode === mode}
-                size={{ blockSize: 28, size: 14 }}
+                label={t(titleKey)}
+                variant="glass"
+                size={28}
+                pressed={effectiveDisplayMode === mode}
                 onClick={() => setDisplayMode(mode)}
-                style={{
-                  borderRadius: 6,
-                  background: effectiveDisplayMode === mode ? 'rgba(255,255,255,0.2)' : 'transparent',
-                  color: token.colorTextLightSolid,
-                }}
-              />
+                extra={{ 'data-chat-call-display-mode-target': mode }}
+              >
+                <Glyph size={14} />
+              </CallButton>
             ))}
-          </Flexbox>
+          </div>
         </div>
       )}
 
@@ -585,30 +508,20 @@ export function CallSurface() {
       />
 
       {isVideo && (
-        <Flexbox
-          horizontal={expandedVideo}
-          align={expandedVideo ? 'center' : undefined}
-          justify={expandedVideo ? 'space-between' : undefined}
-          gap={expandedVideo ? 16 : 8}
-          style={{
-            padding: expandedVideo ? '10px 16px' : 12,
-            background: token.colorBgElevated,
-            borderTop: `1px solid ${token.colorBorderSecondary}`,
-          }}
-        >
-          <Flexbox horizontal align="center" justify="space-between" gap={8} style={{ minWidth: 0, flex: 1 }}>
+        <div className={`sc-call__footer${expandedVideo ? ' is-expanded' : ''}`}>
+          <div className="sc-call__footer-id">
             <UserSquareAvatar
               remoteUrl={peerIdentity.avatarUrl}
               name={peerIdentity.displayName}
               size={32}
             />
-            <Text strong ellipsis style={{ flex: 1 }}>{peerIdentity.displayName}</Text>
-            <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>{status}</Text>
-          </Flexbox>
+            <strong>{peerIdentity.displayName}</strong>
+            <span>{status}</span>
+          </div>
           {callControls}
-        </Flexbox>
+        </div>
       )}
-    </Flexbox>
+    </div>
   );
 
   return effectiveDisplayMode === 'chat' || typeof document === 'undefined'
