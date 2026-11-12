@@ -678,11 +678,12 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
         commentReads.set(trimmedPostId, read);
         set((state) => {
           const existing = state.threadsByPost[trimmedPostId];
-          // Background refresh of a healthy, already-loaded thread: keep the
-          // exact thread reference and do not flash a loading state. The read
-          // resolves in place and applyPage reuses the reference when nothing
-          // changed, eliminating the periodic repaint/flicker.
-          if (existing?.loaded && existing.state === undefined) {
+          // A background refresh/anchor replace of a healthy, already-loaded
+          // thread keeps its exact reference and does not flash a loading
+          // state; applyPage reuses the reference when nothing changed,
+          // eliminating the periodic repaint/flicker. Pagination (append,
+          // replace=false) and first load still flip loading=true.
+          if (replace && existing?.loaded && existing.state === undefined) {
             return state;
           }
           return {
