@@ -243,7 +243,7 @@ const interactive = [
 const controls = interactive.map((element) => {
   const boundary = element.closest(
     [
-      '.station-url-control',
+      '.station-url-field',
       '.pt-field-frame',
       '.pt-check-label',
       '.pt-switch',
@@ -330,7 +330,7 @@ const rectFor = (selector) => {
     height: Math.round(rect.height),
   };
 };
-const stationAddressElement = document.querySelector('.station-address-input');
+const stationAddressElement = document.querySelector('[data-acceptance-id="station-address-input"]');
 const stationPlaceholder = stationAddressElement && visible(stationAddressElement)
   ? stationAddressElement.getAttribute('placeholder')
   : null;
@@ -375,9 +375,9 @@ return {
   blockingSurfaces,
   stationLayout: {
     launchCard: rectFor('.launch-panel'),
-    addressInput: rectFor('.station-address-input'),
+    addressInput: rectFor('[data-acceptance-id="station-address-input"]'),
     placeholder: stationPlaceholder,
-    submit: rectFor('.station-submit'),
+    submit: rectFor('[data-action-id="station.submit"]'),
     helper: stationHelper,
     logo: stationLogoStyle
       ? {

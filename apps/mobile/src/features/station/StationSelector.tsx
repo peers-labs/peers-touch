@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Dialog, Icon, Spin, Text } from '@peers-touch/ui';
+import { Button, Dialog, Icon, IconButton, Spin, Text, TextField } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import {
@@ -149,15 +149,16 @@ export function StationSelector({
       {showStationInput ? (
         <div className={`station-input-row ${hasEntries ? 'with-cancel' : ''}`}>
           <div
-            className={`station-url-control ${error ? 'error' : ''}`}
+            className="station-url-field"
             data-product-surface={
               surfaceFixture === 'address-invalid'
                 ? 'entry.station-address-invalid'
                 : 'entry.station-address'
             }
           >
-            <input
-              className="station-address-input"
+            <TextField
+              className="station-address-field"
+              data-acceptance-id="station-address-input"
               value={stationUrl}
               placeholder={t('mobile.launch.placeholder')}
               aria-label={t('common.stationPicker.inputLabel')}
@@ -165,32 +166,34 @@ export function StationSelector({
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              onChange={(event) => setStationUrl(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void submit();
-              }}
+              aria-invalid={error ? true : undefined}
+              onValueChange={setStationUrl}
+              onEnter={() => void submit()}
+              trailing={
+                <IconButton
+                  actionId="station.submit"
+                  iconId="plus"
+                  iconSize={17}
+                  label={t('mobile.launch.addStation')}
+                  emphasis="quiet"
+                  execution={checking ? 'pending' : 'idle'}
+                  availability={!canAdd || checking
+                    ? { kind: 'disabled', reason: t('mobile.launch.addStation') }
+                    : undefined}
+                  onActivate={() => void submit()}
+                />
+              }
             />
-            <button
-              type="button"
-              className="station-submit"
-              aria-label={t('mobile.launch.addStation')}
-              disabled={!canAdd || checking}
-              onClick={() => void submit()}
-            >
-              {checking
-                ? <Spin size="small" />
-                : <Icon iconId="plus" size={17} />}
-            </button>
           </div>
           {hasEntries ? (
-            <button
-              type="button"
-              className="station-input-cancel"
-              aria-label={t('common.action.cancel')}
-              onClick={closeStationInput}
-            >
-              <Icon iconId="close" size={16} />
-            </button>
+            <IconButton
+              actionId="station.input-cancel"
+              iconId="close"
+              iconSize={16}
+              label={t('common.action.cancel')}
+              emphasis="quiet"
+              onActivate={closeStationInput}
+            />
           ) : null}
         </div>
       ) : null}

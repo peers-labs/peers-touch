@@ -161,12 +161,12 @@ describe('StationSelector layout contract', () => {
     expect(source).toContain("surfaceFixture === 'address'");
     expect(source).toContain("buildStationUrl(stationUrl)?.startsWith('http://')");
     expect(source).toContain('className="station-field-helper warning"');
-    expect(source).toContain('className="station-submit"');
+    expect(source).toContain('actionId="station.submit"');
     expect(source).not.toContain('<select');
     expect(source).not.toContain('station-protocol-select');
   });
 
-  it('anchors the surface and preserves a useful one-line address field', () => {
+  it('anchors the surface and keeps the 16px input that prevents iOS focus zoom', () => {
     expect(styles).toMatch(
       /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-start;/s,
     );
@@ -175,8 +175,10 @@ describe('StationSelector layout contract', () => {
     );
     expect(styles).toMatch(/\.launch-panel\s*\{[^}]*flex:\s*0 0 auto;/s);
     expect(styles).toMatch(/\.launch-panel\s*\{[^}]*margin-top:\s*auto;/s);
+    // The peers-ui TextField input inherits the global 16px input rule, which
+    // stops iOS from auto-zooming on focus; the surface no longer hardcodes it.
     expect(styles).toMatch(
-      /\.station-address-input\s*\{[^}]*height:\s*44px;[^}]*font-size:\s*16px;/s,
+      /input,\s*textarea,\s*select\s*\{[^}]*font-size:\s*16px\s*!important/s,
     );
     expect(styles).toMatch(
       /\.station-field-helper\s*\{[^}]*white-space:\s*nowrap;/s,
@@ -187,11 +189,11 @@ describe('StationSelector layout contract', () => {
     expect(styles).not.toMatch(/\.launch-brand-logo\s*\{[^}]*border:/s);
   });
 
-  it('never draws an inner focus frame inside the outer control', () => {
-    expect(styles).not.toContain('.station-address-input:focus-visible');
-    expect(styles).toMatch(
-      /\.station-address-input\s*\{[\s\S]*?border:\s*0;[\s\S]*?outline:\s*none;/,
-    );
+  it('lets the peers-ui input primitive own the borderless inner focus chrome', () => {
+    expect(styles).not.toContain('.station-address-input');
+    expect(styles).not.toContain('.station-submit');
+    expect(source).toContain('data-acceptance-id="station-address-input"');
+    expect(source).toContain('aria-invalid={error ? true : undefined}');
   });
 });
 
@@ -217,8 +219,8 @@ describe('Station entry visual contract', () => {
   });
 
   it('renders Station address as one parent field frame', () => {
-    expect(source).toContain('className="station-submit"');
-    expect(source).toContain('`station-url-control ${error ? \'error\' : \'\'}');
+    expect(source).toContain('actionId="station.submit"');
+    expect(source).toContain('className="station-url-field"');
     expect(source).not.toContain('station-url-divider');
     expect(source).not.toContain('station-protocol-select');
     expect(source).not.toContain('<Tag');

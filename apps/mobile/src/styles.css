@@ -1163,92 +1163,18 @@ select {
   line-height: 17px;
 }
 
+/* Layout-only row: the TextField frame and trailing/cancel IconButtons own
+   their own chrome and touch sizes via peers-ui primitives. */
 .station-input-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.station-input-row.with-cancel {
-  grid-template-columns: minmax(0, 1fr) 44px;
-}
-
-.station-input-row > button {
-  height: 44px;
-  width: 44px;
-  padding: 0;
-  border-radius: 12px;
-}
-
-.station-input-cancel {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--pt-secondary);
-}
-
-.station-url-control {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-width: 0;
-  height: 52px;
-  gap: 0;
-  padding: 0 0 0 12px;
-  border: 1px solid var(--pt-border);
-  border-radius: 12px;
-  background: transparent;
-  overflow: hidden;
 }
 
-.station-url-control:focus-within {
-  border-color: color-mix(in srgb, var(--pt-accent) 55%, transparent);
-}
-
-.station-url-control.error {
-  border-color: var(--pt-danger);
-}
-
-.station-address-input {
+.station-input-row .station-url-field {
   flex: 1 1 auto;
   min-width: 0;
-  height: 44px;
-  padding: 0 10px;
-  border: 0;
-  outline: none;
-  background: transparent;
-  box-shadow: none;
-  color: var(--pt-text);
-  font-size: 16px;
-  line-height: 22px;
-}
-
-.station-submit {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-left: 1px solid var(--pt-border);
-  border-radius: 0 8px 8px 0;
-  background: transparent;
-  color: var(--pt-text);
-}
-
-.station-submit:disabled {
-  color: var(--pt-muted);
-}
-
-.station-submit:not(:disabled):active {
-  background: color-mix(in srgb, var(--pt-accent) 8%, transparent);
 }
 
 .station-field-helper {
