@@ -52,6 +52,48 @@ const PRIVATE_CONTENT_STALE_PLAN: &str = "SOCIAL_PRIVATE_STALE_PLAN";
 const FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN: &[u8] =
     b"peers-touch:social:federated-private-interaction:v1\0";
 
+// A remote (cross-station) private comment prepare is resolved by an
+// asynchronous federation round-trip. The home station first durably enqueues
+// the interaction and answers with SOCIAL_PRIVATE_DEPENDENCY_FAILURE until the
+// source station returns the encryption plan; the same command_id makes every
+// retry an idempotent exact replay. Poll briefly instead of treating the
+// expected pending state as a terminal failure.
+const FEDERATION_DEPENDENCY_PENDING_CODE: &str = "SOCIAL_PRIVATE_DEPENDENCY_FAILURE";
+const FEDERATION_PREPARE_MAX_ATTEMPTS: u32 = 10;
+const FEDERATION_PREPARE_BACKOFF: Duration = Duration::from_millis(700);
+
+fn is_federation_dependency_pending(error: &NativeTransportError) -> bool {
+    error.message == FEDERATION_DEPENDENCY_PENDING_CODE
+}
+
+/// Retry an idempotent federation call while the station reports the expected
+/// asynchronous dependency-pending condition. The sleep hook is injectable so
+/// the bounded backoff stays deterministic in tests.
+fn with_federation_dependency_retry<T, F, S>(
+    mut attempt_call: F,
+    sleep: S,
+) -> Result<T, NativeTransportError>
+where
+    F: FnMut(u32) -> Result<T, NativeTransportError>,
+    S: Fn(Duration),
+{
+    let mut attempts = 0u32;
+    loop {
+        match attempt_call(attempts) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                if !is_federation_dependency_pending(&error)
+                    || attempts + 1 >= FEDERATION_PREPARE_MAX_ATTEMPTS
+                {
+                    return Err(error);
+                }
+                attempts += 1;
+                sleep(FEDERATION_PREPARE_BACKOFF);
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct PrivateCommentIntent {
     pub actor_ptid: String,
@@ -320,6 +362,25 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         .and_then(|draft| draft_projection(&draft))
     }
 
+    /// Call prepare-private, tolerating the asynchronous federation round-trip.
+    ///
+    /// For a remote parent post the home station enqueues the interaction and
+    /// replies `SOCIAL_PRIVATE_DEPENDENCY_FAILURE` while the source station
+    /// produces the encryption plan. Re-issuing the identical (signed, stable
+    /// command_id) request is an idempotent exact replay, so poll until the plan
+    /// resolves. Any other transport error — including a dependency failure that
+    /// never resolves within the bounded window — propagates unchanged.
+    fn prepare_private_comment_with_federation_retry(
+        &self,
+        post_id: &str,
+        request: &social::PreparePrivateCommentRequest,
+    ) -> Result<social::PreparePrivateCommentResponse, NativeTransportError> {
+        with_federation_dependency_retry(
+            |_| self.transport.prepare_private_comment(post_id, request),
+            std::thread::sleep,
+        )
+    }
+
     pub fn prepare(
         &self,
         intent: &PrivateCommentIntent,
@@ -374,9 +435,10 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 ))
                 .map_err(|error| PrivateCommentFailure::failed("COMMENT_PREPARE_INVALID", error))?;
             let prepare_response = match self
-                .transport
-                .prepare_private_comment(&stored.post_id, &prepare_request)
-            {
+                .prepare_private_comment_with_federation_retry(
+                    &stored.post_id,
+                    &prepare_request,
+                ) {
                 Ok(response) => response,
                 Err(error) => {
                     return Err(PrivateCommentFailure::from_transport(error));
@@ -643,10 +705,13 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 cause,
             )
         })?;
-        match self
-            .transport
-            .submit_private_comment(&acquired.draft.post_id, request_bytes)
-        {
+        match with_federation_dependency_retry(
+            |_| {
+                self.transport
+                    .submit_private_comment(&acquired.draft.post_id, request_bytes)
+            },
+            std::thread::sleep,
+        ) {
             Ok(_) => {
                 let committed = self.commit_comment_submit_response(&acquired)?;
                 self.reconcile_comment_readback(committed)?.ok_or_else(|| {
@@ -2257,6 +2322,77 @@ mod tests {
     use crate::secure_content::{SecureContentSession, SecureContentSessionKey};
     use ed25519_dalek::{Signer, SigningKey};
     use std::sync::Arc;
+
+    fn dependency_pending_error() -> NativeTransportError {
+        NativeTransportError {
+            http_status: Some(500),
+            stable_code: crate::model::error::ErrorCode::InternalServerError as i32,
+            retry_after_seconds: None,
+            disposition: NativeErrorDisposition::Terminal,
+            message: FEDERATION_DEPENDENCY_PENDING_CODE.to_string(),
+        }
+    }
+
+    fn other_transport_error() -> NativeTransportError {
+        NativeTransportError {
+            http_status: Some(500),
+            stable_code: crate::model::error::ErrorCode::InternalServerError as i32,
+            retry_after_seconds: None,
+            disposition: NativeErrorDisposition::Terminal,
+            message: "ERROR_CODE_INTERNAL_SERVER_ERROR".to_string(),
+        }
+    }
+
+    #[test]
+    fn federation_dependency_retry_resolves_after_pending() {
+        let mut calls = 0u32;
+        let result: Result<u32, NativeTransportError> = with_federation_dependency_retry(
+            |_| {
+                calls += 1;
+                if calls < 3 {
+                    Err(dependency_pending_error())
+                } else {
+                    Ok(42u32)
+                }
+            },
+            |_| {},
+        );
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(calls, 3);
+    }
+
+    #[test]
+    fn non_dependency_transport_error_is_not_retried() {
+        let mut calls = 0u32;
+        let result: Result<u32, NativeTransportError> = with_federation_dependency_retry(
+            |_| {
+                calls += 1;
+                Err(other_transport_error())
+            },
+            |_| {},
+        );
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn pending_dependency_retry_is_bounded_and_surfaces_last_error() {
+        let mut calls = 0u32;
+        let sleeps = std::cell::Cell::new(0u32);
+        let result: Result<u32, NativeTransportError> = with_federation_dependency_retry(
+            |_| {
+                calls += 1;
+                Err(dependency_pending_error())
+            },
+            |_| {
+                sleeps.set(sleeps.get() + 1);
+            },
+        );
+        let error = result.unwrap_err();
+        assert!(is_federation_dependency_pending(&error));
+        assert_eq!(calls, FEDERATION_PREPARE_MAX_ATTEMPTS);
+        assert_eq!(sleeps.get(), FEDERATION_PREPARE_MAX_ATTEMPTS - 1);
+    }
 
     fn session() -> SecureContentSession {
         session_with_client(StationClient::testing_scoped("station-1", 1))
