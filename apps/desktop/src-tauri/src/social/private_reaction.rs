@@ -11,6 +11,8 @@ use crate::secure_content::store::{
 };
 use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
+use super::federation_retry::with_federation_dependency_retry;
+
 use super::private_comment::PrivateCommentProjection;
 use super::projection::{
     canonical_reaction_summaries, PrivateMomentContentProjection, PrivateMomentProjection,
@@ -286,18 +288,30 @@ impl<'a> PrivateReactionOrchestrator<'a> {
             store.acquire_reaction_command(command_id, self.lease.session.key.session_generation)
         })?;
         let response = match command.operation {
-            PrivateReactionOperation::Unreact => self
-                .transport
-                .submit_private_unreaction(&command.post_id, &command.request_bytes)
-                .map(ReactionResponse::Unreact),
-            PrivateReactionOperation::React => self
-                .transport
-                .submit_private_reaction(&command.post_id, &command.request_bytes)
-                .map(ReactionResponse::React),
-            PrivateReactionOperation::VotePoll => self
-                .transport
-                .submit_private_poll_vote(&command.post_id, &command.request_bytes)
-                .map(ReactionResponse::VotePoll),
+            PrivateReactionOperation::Unreact => with_federation_dependency_retry(
+                |_| {
+                    self.transport
+                        .submit_private_unreaction(&command.post_id, &command.request_bytes)
+                        .map(ReactionResponse::Unreact)
+                },
+                std::thread::sleep,
+            ),
+            PrivateReactionOperation::React => with_federation_dependency_retry(
+                |_| {
+                    self.transport
+                        .submit_private_reaction(&command.post_id, &command.request_bytes)
+                        .map(ReactionResponse::React)
+                },
+                std::thread::sleep,
+            ),
+            PrivateReactionOperation::VotePoll => with_federation_dependency_retry(
+                |_| {
+                    self.transport
+                        .submit_private_poll_vote(&command.post_id, &command.request_bytes)
+                        .map(ReactionResponse::VotePoll)
+                },
+                std::thread::sleep,
+            ),
         };
         match response {
             Ok(response) => match self.commit_response(&command, response) {

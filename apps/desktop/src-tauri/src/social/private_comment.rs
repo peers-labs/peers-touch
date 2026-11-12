@@ -32,6 +32,10 @@ use crate::secure_content::store::{
 use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
 use super::crypto::{bounded_command_id, seal_content_envelopes, validate_content_plan};
+use super::federation_retry::{
+    is_federation_dependency_pending, with_federation_dependency_retry,
+    FEDERATION_DEPENDENCY_PENDING_CODE, FEDERATION_PREPARE_MAX_ATTEMPTS,
+};
 use super::private_mention::{
     build_signed_mention_routing, canonical_private_mentions, validated_mention_routing_hash,
     verify_decrypted_mentions, PrivateMentionIntent,
@@ -51,48 +55,6 @@ const COMMENT_READBACK_PENDING: &str = "COMMENT_READBACK_PENDING";
 const PRIVATE_CONTENT_STALE_PLAN: &str = "SOCIAL_PRIVATE_STALE_PLAN";
 const FEDERATED_PRIVATE_INTERACTION_SIGNING_DOMAIN: &[u8] =
     b"peers-touch:social:federated-private-interaction:v1\0";
-
-// A remote (cross-station) private comment prepare is resolved by an
-// asynchronous federation round-trip. The home station first durably enqueues
-// the interaction and answers with SOCIAL_PRIVATE_DEPENDENCY_FAILURE until the
-// source station returns the encryption plan; the same command_id makes every
-// retry an idempotent exact replay. Poll briefly instead of treating the
-// expected pending state as a terminal failure.
-const FEDERATION_DEPENDENCY_PENDING_CODE: &str = "SOCIAL_PRIVATE_DEPENDENCY_FAILURE";
-const FEDERATION_PREPARE_MAX_ATTEMPTS: u32 = 10;
-const FEDERATION_PREPARE_BACKOFF: Duration = Duration::from_millis(700);
-
-fn is_federation_dependency_pending(error: &NativeTransportError) -> bool {
-    error.message == FEDERATION_DEPENDENCY_PENDING_CODE
-}
-
-/// Retry an idempotent federation call while the station reports the expected
-/// asynchronous dependency-pending condition. The sleep hook is injectable so
-/// the bounded backoff stays deterministic in tests.
-fn with_federation_dependency_retry<T, F, S>(
-    mut attempt_call: F,
-    sleep: S,
-) -> Result<T, NativeTransportError>
-where
-    F: FnMut(u32) -> Result<T, NativeTransportError>,
-    S: Fn(Duration),
-{
-    let mut attempts = 0u32;
-    loop {
-        match attempt_call(attempts) {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                if !is_federation_dependency_pending(&error)
-                    || attempts + 1 >= FEDERATION_PREPARE_MAX_ATTEMPTS
-                {
-                    return Err(error);
-                }
-                attempts += 1;
-                sleep(FEDERATION_PREPARE_BACKOFF);
-            }
-        }
-    }
-}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PrivateCommentIntent {

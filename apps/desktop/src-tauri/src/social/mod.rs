@@ -1,4 +1,5 @@
 mod crypto;
+mod federation_retry;
 mod private_comment;
 mod private_media;
 mod private_mention;
