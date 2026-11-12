@@ -1896,6 +1896,78 @@ describe('private Moments Native projection', () => {
       'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
     );
   });
+
+  it('retains the projection reference when a same-generation reconcile is unchanged', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'post-private': {
+          postId: 'post-private',
+          contentId: 'content-private',
+          generation: '8',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          reactions: [],
+          reactionRevision: '0',
+          reactionsHydrated: true,
+          content: { kind: 'TEXT', text: 'stable body' },
+        },
+      },
+    });
+    const before = usePrivateMomentsStore.getState().postsById['post-private'];
+
+    // A periodic reconcile re-emits a brand-new instance with identical content.
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [{
+        post_id: 'post-private',
+        content_id: 'content-private',
+        generation: '8',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        reactions_hydrated: true,
+        reaction_revision: '0',
+        content: { kind: 'TEXT', text: 'stable body' },
+      }],
+    }));
+
+    await usePrivateMomentsStore.getState().bootstrap(5);
+
+    // Unchanged shape must keep the same reference so memoized cards do not
+    // repaint on a no-op periodic refresh.
+    expect(usePrivateMomentsStore.getState().postsById['post-private']).toBe(before);
+
+    // A real content change still produces a new reference and value.
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [{
+        post_id: 'post-private',
+        content_id: 'content-private',
+        generation: '8',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        reactions_hydrated: true,
+        reaction_revision: '0',
+        content: { kind: 'TEXT', text: 'edited body' },
+      }],
+    }));
+
+    await usePrivateMomentsStore.getState().bootstrap(5);
+
+    const after = usePrivateMomentsStore.getState().postsById['post-private'];
+    expect(after).not.toBe(before);
+    expect(after?.content).toMatchObject({ kind: 'TEXT', text: 'edited body' });
+  });
 });
 
 describe('moments store: comments', () => {
@@ -2304,6 +2376,61 @@ describe('moments store: comments', () => {
     ]);
     expect(thread.nextCursor).toBe('private-cursor');
     expect(thread.hasMore).toBe(true);
+  });
+
+  it('keeps the private comment thread reference stable across an unchanged refresh', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 13);
+    const page = (text: string) => statusOk({
+      post_id: 'private-post',
+      comments: [{
+        comment_id: 'private-comment',
+        content_id: 'private-comment',
+        generation: '3',
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        author_ptid: 'ptid:author',
+        author_acct: 'author@example.com',
+        state: 'COMMENT_POSTED',
+        text,
+        reactions_count: 0,
+        reaction_revision: '0',
+        replies_count: 0,
+      }],
+      next_cursor: 'private-cursor',
+      has_more: false,
+    });
+
+    enqueue('social_private_comments_list', page('stable comment'));
+    await usePrivateCommentsStore.getState().loadComments('private-post', true);
+    const threadBefore = selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    );
+    const commentBefore = threadBefore.comments[0];
+
+    // A periodic reconcile re-emits an identical page as fresh objects.
+    enqueue('social_private_comments_list', page('stable comment'));
+    await usePrivateCommentsStore.getState().loadComments('private-post', true);
+    const threadAfter = selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    );
+
+    expect(threadAfter).toBe(threadBefore);
+    expect(threadAfter.comments[0]).toBe(commentBefore);
+
+    // A genuine text change still produces new references.
+    enqueue('social_private_comments_list', page('edited comment'));
+    await usePrivateCommentsStore.getState().loadComments('private-post', true);
+    const threadChanged = selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    );
+    expect(threadChanged).not.toBe(threadBefore);
+    expect(threadChanged.comments[0]).not.toBe(commentBefore);
+    expect(threadChanged.comments[0]?.text).toBe('edited comment');
   });
 
   it('retains a rate-limited private draft and retries the same Native identity', async () => {

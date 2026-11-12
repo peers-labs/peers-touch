@@ -16,6 +16,7 @@ import {
 import { ReactionKind } from '../gen/proto/domain/social/post_pb';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
+import { structuralEqual } from '../utils/structuralEqual';
 
 const TAG = 'private-comments-store';
 let fallbackDraftSequence = 0;
@@ -123,13 +124,16 @@ function newerComment(
     ? current : incoming;
   const reaction = compareGeneration(incoming.reactionRevision, current.reactionRevision) < 0
     ? current : incoming;
-  return {
+  const merged = {
     ...content,
     reactions: reaction.reactions,
     reactionsCount: reaction.reactionsCount,
     reactionRevision: reaction.reactionRevision,
     isLiked: reaction.isLiked,
   };
+  // A periodic read that carries no real change must keep the existing
+  // reference so memoized comment rows do not repaint (no 90s-style refresh).
+  return structuralEqual(current, merged) ? current : merged;
 }
 
 function createDraftId(): string {
@@ -374,16 +378,27 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
             comments[index] = newerComment(comments[index]!, comment);
           }
         }
+        // If every row kept its identity and the paging metadata is unchanged,
+        // reuse the whole thread (including its comments array) so selector
+        // references stay stable and memoized comment rows do not repaint on a
+        // no-op periodic refresh.
+        const commentsUnchanged = comments.length === current.comments.length
+          && comments.every((comment, index) => comment === current.comments[index]);
+        const thread = commentsUnchanged
+          && page.nextCursor === current.nextCursor
+          && page.hasMore === current.hasMore
+          ? current
+          : {
+            comments,
+            nextCursor: page.nextCursor,
+            hasMore: page.hasMore,
+            loading: false,
+            loaded: true,
+          };
         return {
           threadsByPost: {
             ...state.threadsByPost,
-            [page.postId]: {
-              comments,
-              nextCursor: page.nextCursor,
-              hasMore: page.hasMore,
-              loading: false,
-              loaded: true,
-            },
+            [page.postId]: thread,
           },
         };
       });
@@ -661,17 +676,27 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
           scope, cursor, refresh: replace, anchorCommentId: anchor, completion,
         };
         commentReads.set(trimmedPostId, read);
-        set((state) => ({
-          threadsByPost: {
-            ...state.threadsByPost,
-            [trimmedPostId]: {
-              ...(state.threadsByPost[trimmedPostId] ?? emptyThread()),
-              loading: true,
-              state: undefined,
-              errorCode: undefined,
+        set((state) => {
+          const existing = state.threadsByPost[trimmedPostId];
+          // Background refresh of a healthy, already-loaded thread: keep the
+          // exact thread reference and do not flash a loading state. The read
+          // resolves in place and applyPage reuses the reference when nothing
+          // changed, eliminating the periodic repaint/flicker.
+          if (existing?.loaded && existing.state === undefined) {
+            return state;
+          }
+          return {
+            threadsByPost: {
+              ...state.threadsByPost,
+              [trimmedPostId]: {
+                ...(existing ?? emptyThread()),
+                loading: true,
+                state: undefined,
+                errorCode: undefined,
+              },
             },
-          },
-        }));
+          };
+        });
         return completion;
       },
 

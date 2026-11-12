@@ -20,6 +20,7 @@ import { ReactionKind } from '../gen/proto/domain/social/post_pb';
 import type { PrivateResourceRevocationReason } from '../kernel/events/types';
 import { emitFrontendTelemetryEvent } from '../kernel/frontendTelemetry';
 import { log } from '../utils/logger';
+import { structuralEqual } from '../utils/structuralEqual';
 
 const TAG = 'private-moments-store';
 
@@ -132,6 +133,20 @@ function isCurrentScope(
   );
 }
 
+/**
+ * Structural equality for native moment projections. Periodic reconciles
+ * re-emit brand-new object instances whose content is unchanged; deep comparing
+ * the normalized projection shape lets the merge retain the existing reference
+ * so memoized MomentCards do not repaint on a no-op refresh (mirrors
+ * sameFeedExplanation in the public moments store).
+ */
+function samePrivateProjection(
+  current: PrivateMomentProjection,
+  next: PrivateMomentProjection,
+): boolean {
+  return structuralEqual(current, next);
+}
+
 function mergeProjection(
   current: PrivateMomentProjection | undefined,
   incoming: PrivateMomentProjection,
@@ -171,7 +186,7 @@ function mergeProjection(
     const currentMedia = new Map(
       current.content.media.map((media) => [media.objectId, media]),
     );
-    return {
+    next = {
       ...next,
       content: {
         ...next.content,
@@ -181,6 +196,11 @@ function mergeProjection(
         }),
       },
     };
+  }
+  // Same generation and identical shape: keep the current reference so a
+  // periodic read with no real change never triggers a card repaint.
+  if (generationOrder === 0 && samePrivateProjection(current, next)) {
+    return current;
   }
   return next;
 }
