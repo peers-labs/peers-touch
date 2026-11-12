@@ -202,8 +202,41 @@ _SENSITIVE_COMMAND_FLAG = re.compile(
     rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
     r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
 )
+# Whitespace-separated line assignments (netrc/shell "name value" with no
+# separator) are only safe for unambiguous credential keepers. Bare dictionary
+# words such as auth/key/token/secret/cookie/bearer legitimately begin prose and
+# CSS comment lines (e.g. "auth card. Only a failure card ..."), so they are
+# excluded from this loose line form. Their structured forms remain fully
+# covered: "key=..."/"token: ..." by _SENSITIVE_ASSIGNMENT, query parameters by
+# _URL_QUERY_SECRET, and authorization/cookie/bearer headers by their dedicated
+# header patterns.
+_LINE_ASSIGNMENT_PROSE_PRONE_TOKENS = frozenset(
+    {
+        "auth",
+        "bearer",
+        "cookie",
+        "cookies",
+        "key",
+        "keys",
+        "secret",
+        "secrets",
+        "token",
+        "tokens",
+    }
+)
+_LINE_ASSIGNMENT_FIELDS = tuple(
+    sorted(
+        set(_SENSITIVE_KEY_PHRASES)
+        | (_SENSITIVE_KEY_TOKENS - _LINE_ASSIGNMENT_PROSE_PRONE_TOKENS),
+        key=len,
+        reverse=True,
+    )
+)
+_SENSITIVE_LINE_FIELD_PATTERN = "|".join(
+    _field_pattern(name) for name in _LINE_ASSIGNMENT_FIELDS
+)
 _SENSITIVE_LINE_ASSIGNMENT = re.compile(
-    rf"(?im)(?P<prefix>^\s*(?:{_SENSITIVE_FIELD_PATTERN})\s+)"
+    rf"(?im)(?P<prefix>^\s*(?:{_SENSITIVE_LINE_FIELD_PATTERN})\s+)"
     rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
     r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\r\n]+)"
 )

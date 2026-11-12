@@ -282,6 +282,38 @@ class TextRedactionTests(unittest.TestCase):
         self.assertIn("safe value", redacted)
         self.assertEqual(redacted.count(REDACTED), 2)
 
+    def test_keeps_prose_and_css_bare_words_out_of_line_assignment(self) -> None:
+        # Real regression: a painted DOM boot style contained the CSS comment
+        # line "auth card. Only a failure card ...", which the whitespace
+        # line-assignment rule mistook for a netrc-style credential.
+        style = (
+            "<style id=\"pt-boot-style\">\n"
+            "  /* North-star boot.\n"
+            "     auth card. Only a failure card is painted. */\n"
+            "  #boot { cursor: pointer; }\n"
+            "  /* key decisions, secret santa, cookie jar prose */\n"
+            "</style>"
+        )
+        self.assertEqual(redact_text(style), style)
+
+        # The same bare words remain protected in their structured forms.
+        structured = (
+            "key=frame-id token: abc123\n"
+            "?access_token=zzz&secret=s\n"
+            "authorization: Basic abcdef\n"
+        )
+        redacted_structured = redact_text(structured)
+        self.assertNotIn("frame-id", redacted_structured)
+        self.assertNotIn("abc123", redacted_structured)
+        self.assertNotIn("zzz", redacted_structured)
+        self.assertNotIn("abcdef", redacted_structured)
+
+        # Unambiguous netrc keepers still use the whitespace line form.
+        netrc = "password netrc-secret\npassphrase keeper-phrase\n"
+        redacted_netrc = redact_text(netrc)
+        self.assertNotIn("netrc-secret", redacted_netrc)
+        self.assertNotIn("keeper-phrase", redacted_netrc)
+
     def test_redacts_additional_provider_token_families(self) -> None:
         tokens = (
             "glpat-" + "a" * 24,
