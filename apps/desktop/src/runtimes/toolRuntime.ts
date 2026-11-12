@@ -667,7 +667,9 @@ function projectionFromDiagnostic(
       || status === 'pending'
       || status === 'approval_required'
       || status === 'approved',
-    result: source.result,
+    // Prefer the live result, but hydrate from the Station diagnostics
+    // envelope when a live/replayed tool_result event was missed.
+    result: source.result || fact.result,
     error: diagnosticToolError(fact, source),
     decisionErrorCode: fact.errorCode || undefined,
     approvalId: fact.approvalId || source.approvalId,

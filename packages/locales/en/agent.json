@@ -120,8 +120,10 @@
   "agent.profile.capabilityInventory.reason.mcp_operation_not_active": "The MCP capability is not active.",
   "agent.profile.capabilityInventory.reason.other": "Station reported {{reasonCode}}.",
   "agent.chat.agentWorkspace": "Agent Workspace",
-  "agent.module.chat": "Chat",
-  "agent.module.atelier": "Atelier",
+  "agent.atelier.title": "Atelier",
+  "agent.atelier.back": "Back to chat",
+  "agent.atelier.entryHint": "Personal agent workbench — coming soon",
+  "agent.atelier.placeholderHint": "Atelier is being reworked into a sub-surface of Chat. The personal agent workbench will appear here once its ownership and workflows are re-established.",
   "agent.chat.myAgents": "My Agents",
   "agent.chat.pinned": "Pinned",
   "agent.chat.allAgents": "All Agents",
@@ -1239,6 +1241,7 @@
   "agent.errors.capabilityUnavailable": "The capability is unavailable on the selected device.",
   "agent.errors.capabilityPolicyInvalid": "The selected capability approval policy is invalid.",
   "agent.errors.resumeUnavailable": "This run cannot resume with its previous runtime state.",
+  "agent.errors.runtimeBindingStale": "The model bound to this conversation no longer exists. Rebind to the current default runtime to continue.",
   "agent.errors.executorUnavailable": "The required client executor is unavailable.",
   "agent.errors.clientLeaseExpired": "The client execution lease has expired.",
   "agent.errors.clientPermissionDenied": "The client does not have the required permission.",
@@ -1301,6 +1304,8 @@
   "agent.recovery.confirmReset": "Confirm reset",
   "agent.recovery.confirmResetDescription": "This permanently removes the unavailable external session and its runtime files. Conversation history is kept, and the next turn starts a new runtime session.",
   "agent.recovery.runtimeResetCompleted": "External runtime reset. The next turn will start a new session.",
+  "agent.recovery.rebindRuntime": "Switch to default runtime and retry",
+  "agent.recovery.runtimeRebindCompleted": "Runtime rebound to the current default. Retrying the turn.",
   "agent.recovery.reconnectExecutor": "Reconnect executor",
   "agent.recovery.reconcile": "Reconcile",
   "agent.recovery.openPermissionSettings": "Open permission settings",
@@ -1338,5 +1343,12 @@
   "agent.recovery.reselectTarget": "Reselect target",
   "agent.recovery.openTerminalResults": "Open final results",
   "agent.recovery.openExistingChildOrUseNewKey": "Open existing retry or use a new key",
-  "agent.recovery.retryWhenEvaluatorReady": "Retry when evaluator is ready"
+  "agent.recovery.retryWhenEvaluatorReady": "Retry when evaluator is ready",
+  "errors": {
+    "sandboxUnavailable": "Workspace sandbox is unavailable on this Station.",
+    "sandboxNotReady": "The workspace sandbox is not ready; the capability binding must be confirmed before running.",
+    "sandboxPermissionDenied": "The operation was denied inside the sandbox (operating system permission error).",
+    "sandboxExecutionTargetForbidden": "Mixed execution targets in one turn, or a sandbox-to-local fallback, are forbidden.",
+    "sandboxInvalidArgs": "Invalid sandbox tool arguments."
+  }
 }

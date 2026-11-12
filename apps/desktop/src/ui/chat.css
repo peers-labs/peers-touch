@@ -1014,6 +1014,38 @@
   color: var(--pt-success);
   word-break: break-word;
 }
+/* Unified diff produced by the device worker from real before/after bytes. */
+.sc-tool-diff {
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--pt-text) 5%, transparent);
+  color: var(--pt-muted);
+  font-family: var(--pt-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sc-tool-diff__line--add {
+  color: var(--pt-success);
+  background: color-mix(in srgb, var(--pt-success) 10%, transparent);
+}
+.sc-tool-diff__line--del {
+  color: var(--pt-danger);
+  background: color-mix(in srgb, var(--pt-danger) 10%, transparent);
+}
+.sc-tool-diff__line--hunk { color: var(--pt-primary); }
+.sc-tool-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--pt-muted);
+}
+.sc-tool-warn { font-size: 10px; color: var(--pt-warning); }
 
 .sc-tool-delegation {
   border: 1px solid var(--pt-border);

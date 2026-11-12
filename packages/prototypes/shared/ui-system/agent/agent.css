@@ -1,0 +1,1805 @@
+/*
+ * Agent prototype domain layout.
+ * Only --pt-* design tokens are allowed; peers-ui primitives own the chrome.
+ * Adjacent rails separate by hairline (Agent UI Identity), never by gutters
+ * or independent rounded cards.
+ */
+
+.pa-shell {
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  background: var(--pt-surface);
+}
+
+/* ---- rails ----------------------------------------------------------- */
+
+.pa-rail {
+  flex: 0 0 auto;
+  min-height: 0;
+  border-right: 1px solid var(--pt-border);
+  background: var(--pt-surface);
+  position: relative;
+}
+
+.pa-rail--collapsed {
+  align-items: center;
+  gap: var(--pt-space-xs);
+  padding: var(--pt-space-sm) 0;
+  overflow: hidden;
+}
+
+.pa-rail--collapsed .pa-rail__list--collapsed {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Fixed height: the idle icon buttons and the expanded search field share
+   one vertical reservation so toggling search never shifts the list below. */
+.pa-rail__head {
+  padding: var(--pt-space-sm) var(--pt-space-sm) var(--pt-space-xs);
+  height: calc(var(--pt-control-compact) + var(--pt-space-xxs) * 2 + var(--pt-space-sm) + var(--pt-space-xs));
+  box-sizing: border-box;
+  gap: var(--pt-space-xs);
+}
+
+/* Idle head title pushes search/create to the right and labels the rail,
+   matching the production "my agents" text header (not a tab control). */
+.pa-rail__head-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pt-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pa-rail__search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
+/* Normalize the search frame to a fixed 36px (compact control + two xxs
+   paddings); the input drops its normal-density min-height so it cannot
+   re-grow the frame. */
+.pa-rail__search-field .pt-field-frame {
+  flex: 1;
+  min-width: 0;
+  height: calc(var(--pt-control-compact) + var(--pt-space-xxs) * 2);
+  min-height: calc(var(--pt-control-compact) + var(--pt-space-xxs) * 2);
+}
+
+.pa-rail__search-field .pt-input {
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.pa-rail__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pa-rail__list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--pt-space-xs) var(--pt-space-sm);
+}
+
+.pa-rail__list--collapsed {
+  width: 100%;
+  padding: var(--pt-space-xs) 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pt-space-xxs);
+}
+
+/* Production PanelToggleDock parity: one absolutely-positioned 28px tile at
+   the bottom-left, identical in expanded and collapsed rails. The rail keeps
+   bottom padding so the list never scrolls under it. */
+.pa-rail {
+  padding-bottom: calc(var(--pt-control-compact) + var(--pt-space-md) + var(--pt-space-xs));
+}
+
+.pa-rail__toggle {
+  position: absolute;
+  left: var(--pt-space-sm);
+  bottom: var(--pt-space-md);
+  width: var(--pt-control-compact);
+  height: var(--pt-control-compact);
+  flex: 0 0 auto;
+  z-index: 2;
+}
+
+/* TopicRail collapse tile shares the exact absolute contract of the
+   AgentRoster toggle: one 28px tile pinned to the same bottom-left point,
+   identical in expanded and collapsed rails. In-flow placement let the
+   collapsed tile drift to the top of the narrow rail. */
+.pa-rail__dock {
+  position: absolute;
+  left: var(--pt-space-sm);
+  bottom: var(--pt-space-md);
+  width: var(--pt-control-compact);
+  height: var(--pt-control-compact);
+  flex: 0 0 auto;
+  z-index: 2;
+}
+
+/* Inside a Drawer the overlay owns border and dismissal, but the rail head
+   (mode switch / search / create) stays functional rather than hidden. */
+.pt-drawer-left .pa-rail {
+  border-right: 0;
+  width: 100%;
+}
+
+.pa-compact-count {
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ---- selectable rows ------------------------------------------------- */
+
+.pa-row-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pa-row-wrap .pa-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-row-wrap .pa-row__menu {
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity var(--pt-motion-fast) ease;
+}
+
+.pa-row-wrap:hover .pa-row__menu,
+.pa-row-wrap:focus-within .pa-row__menu {
+  opacity: 1;
+}
+
+/* The row overflow menu only carries two short actions; tighten it to hug
+   its content instead of the library's generic 180px menu min-width. Scoped
+   to this surface so other menus keep the shared spec. */
+.pt-overlay.pa-row-menu {
+  min-width: 150px;
+}
+
+.pa-row-menu .pt-menu-item {
+  padding-inline: var(--pt-space-sm);
+}
+
+.pa-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-sm);
+  width: 100%;
+  padding: var(--pt-space-xs) var(--pt-space-sm);
+  border-radius: var(--pt-radius-md);
+  color: var(--pt-text);
+  text-align: left;
+}
+
+.pa-row:hover {
+  background: var(--pt-subtle);
+}
+
+.pa-row[data-selected] {
+  background: var(--pt-primarySubtle);
+}
+
+.pa-row:focus-visible {
+  outline: 2px solid var(--pt-focus);
+  outline-offset: -2px;
+}
+
+.pa-row__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.pa-row__title,
+.pa-row__desc,
+.pa-row__meta {
+  display: block;
+}
+
+.pa-row__desc,
+.pa-row__meta {
+  font-size: 12px;
+}
+
+.pa-row--topic {
+  padding-left: var(--pt-space-xs);
+}
+
+.pa-row__glyph {
+  color: var(--pt-muted);
+  flex: 0 0 auto;
+}
+
+.pa-row__pin {
+  color: var(--pt-muted);
+  flex: 0 0 auto;
+}
+
+.pa-compact-row {
+  width: 40px;
+  max-width: 40px;
+  min-width: 0;
+  height: 42px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--pt-radius-md);
+  flex: 0 0 auto;
+}
+
+.pa-compact-row[data-selected] {
+  background: var(--pt-primarySubtle);
+}
+
+.pa-group-label {
+  margin: 0;
+  padding: var(--pt-space-sm) var(--pt-space-sm) var(--pt-space-xxs);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pt-muted);
+}
+
+/* ---- topic rail ------------------------------------------------------ */
+
+.pa-topics__name {
+  flex: 0 0 auto;
+  height: 44px;
+  padding: 0 var(--pt-space-md);
+  min-width: 0;
+}
+
+.pa-topics__slots {
+  flex: 0 0 auto;
+  height: 42px;
+  padding: 2px var(--pt-space-sm) var(--pt-space-xs);
+}
+
+.pa-slot {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.pa-topics__count-bar {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 var(--pt-space-xs) 0 var(--pt-space-md);
+  border-top: 1px solid var(--pt-border);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.pa-topics__count {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pa-topics__count-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pt-space-xxs);
+}
+
+.pa-topics__selected-count {
+  min-width: 18px;
+  text-align: center;
+  font-size: 11px;
+}
+
+/* ---- date groups & topic rows --------------------------------------- */
+
+.pa-date-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.pa-date-group__head {
+  width: 100%;
+  height: 28px;
+  justify-content: flex-start;
+  gap: var(--pt-space-xxs);
+  border-radius: 0;
+}
+
+.pa-date-group__chevron {
+  color: var(--pt-secondary);
+  transition: transform var(--pt-motion-fast) ease;
+}
+
+.pa-date-group__chevron[data-collapsed] {
+  transform: rotate(0deg);
+}
+
+.pa-date-group__chevron:not([data-collapsed]) {
+  transform: rotate(90deg);
+}
+
+.pa-date-group__label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pa-topic-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-sm);
+  width: 100%;
+  min-height: 36px;
+  padding: 4px var(--pt-space-sm);
+  border-radius: var(--pt-radius-md);
+  color: var(--pt-text);
+  text-align: left;
+}
+
+.pa-topic-row:hover {
+  background: var(--pt-subtle);
+}
+
+.pa-topic-row[data-active] {
+  background: var(--pt-primarySubtle);
+}
+
+.pa-topic-row:focus-visible {
+  outline: 2px solid var(--pt-focus);
+  outline-offset: -2px;
+}
+
+.pa-topic-row__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.pa-topic-row__glyph {
+  color: var(--pt-muted);
+  flex: 0 0 auto;
+}
+
+.pa-topic-row-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pa-topic-row-wrap .pa-topic-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-topic-row-wrap .pa-topic-row__menu {
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity var(--pt-motion-fast) ease;
+}
+
+.pa-topic-row-wrap:hover .pa-topic-row__menu,
+.pa-topic-row-wrap:focus-within .pa-topic-row__menu {
+  opacity: 1;
+}
+
+/* Checkbox label becomes the full selectable row in batch mode. */
+.pa-topic-row--select.pt-check-label {
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-sm);
+  width: 100%;
+  min-height: 36px;
+  padding: 4px var(--pt-space-sm);
+  border-radius: var(--pt-radius-md);
+  cursor: pointer;
+}
+
+.pa-topic-row--select.pt-check-label:hover {
+  background: var(--pt-subtle);
+}
+
+.pa-topic-row--select .pa-topic-row__select-body {
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-topic-row--select input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pa-topic-row--editing {
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-sm);
+  padding: 4px var(--pt-space-sm);
+}
+
+.pa-topic-row--editing .pt-field {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- conversation rail ----------------------------------------------- */
+
+.pa-conversation {
+  min-width: 0;
+  min-height: 0;
+  background: var(--pt-surface);
+}
+
+.pa-conversation__bar {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 var(--pt-space-sm);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+/* The h4 keeps its UA block margins (~18.6px each side) because peers-ui does
+   not reset heading margins; zero them so the bar settles on the 44px track
+   instead of growing to 59px and misaligning the topic-rail title row. */
+.pa-conversation__bar .pt-heading {
+  margin: 0;
+}
+
+.pa-conversation__title {
+  min-width: 0;
+}
+
+.pa-conversation__body {
+  flex: 1;
+  min-height: 0;
+}
+
+.pa-conversation__empty {
+  height: 100%;
+}
+
+/* The dominant column: chat pane plus the optional right work area. The
+   floating rail anchors to this relative row while the panel is closed. */
+.pa-conversation__main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pa-conversation__main > * {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---- right work area ------------------------------------------------- */
+
+.pa-wb-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Closed state: floating vertical quick-entry rail (Trae activity bar). */
+.pa-wb-rail {
+  position: absolute;
+  top: 50%;
+  right: var(--pt-space-sm);
+  transform: translateY(-50%);
+  z-index: 20;
+  padding: var(--pt-space-xxs) 4px;
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-lg);
+  background: var(--pt-surface);
+  box-shadow: var(--pt-shadow-card, var(--pt-border));
+}
+
+/* Open state: the library ResizablePanel owns width + the resize separator. */
+.pa-workbench.pt-resizable {
+  height: 100%;
+  border-left: 1px solid var(--pt-border);
+  background: var(--pt-raised);
+}
+
+.pa-workbench .pt-resizable-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pa-workbench__header {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 var(--pt-space-xs) 0 var(--pt-space-sm);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.pa-workbench__tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-workbench__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pa-wb-tab {
+  flex: 0 0 auto;
+  border-radius: var(--pt-radius-md);
+  background: transparent;
+}
+
+.pa-wb-tab[data-selected] {
+  background: var(--pt-primarySubtle);
+}
+
+.pa-wb-tab__select.pt-button {
+  font-size: 12px;
+}
+
+/* Launcher (open, no active tab). */
+.pa-wb-launcher {
+  flex: 1;
+  min-height: 0;
+  padding: var(--pt-space-md);
+}
+
+.pa-wb-launcher__hint {
+  display: block;
+  margin-bottom: var(--pt-space-md);
+  font-size: 13px;
+}
+
+.pa-wb-launcher__row.pt-button {
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.pa-wb-launcher__icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--pt-muted);
+}
+
+.pa-wb-launcher__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pa-wb-launcher__name {
+  font-size: 14px;
+}
+
+.pa-wb-launcher__desc {
+  font-size: 12px;
+}
+
+/* Add-tool popover. */
+.pa-wb-addmenu {
+  width: 248px;
+}
+
+.pa-wb-addmenu__list {
+  margin-top: var(--pt-space-xs);
+}
+
+.pa-wb-addmenu__empty {
+  padding: var(--pt-space-sm);
+  font-size: 12px;
+}
+
+/* Shared dock chrome. */
+.pa-wb-dock {
+  flex: 1;
+  min-height: 0;
+  padding: var(--pt-space-sm);
+}
+
+.pa-wb-dock--centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- summary dock ---------------------------------------------------- */
+
+.pa-wb-summary__title {
+  display: block;
+  margin-bottom: var(--pt-space-md);
+  font-size: 14px;
+}
+
+.pa-wb-summary__facts {
+  margin-bottom: var(--pt-space-md);
+  font-size: 12px;
+}
+
+.pa-wb-summary__grid .pa-wb-metric {
+  padding: var(--pt-space-sm);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+}
+
+.pa-wb-metric[data-tone="danger"] {
+  background: var(--pt-dangerSubtle, var(--pt-subtle));
+}
+
+.pa-wb-metric[data-tone="warning"] {
+  background: var(--pt-warningSubtle, var(--pt-subtle));
+}
+
+/* ---- file dock ------------------------------------------------------- */
+
+.pa-wb-file {
+  padding: 0;
+}
+
+.pa-wb-file__head {
+  flex: 0 0 auto;
+  padding: var(--pt-space-xs) var(--pt-space-sm);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.pa-wb-file__root-icon {
+  color: var(--pt-secondary);
+}
+
+.pa-wb-file__root-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.pa-wb-file__tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pa-wb-file__tabs .pt-tab-panel {
+  flex: 1;
+  min-height: 0;
+  padding-top: 0;
+}
+
+.pa-wb-file__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--pt-space-xs) var(--pt-space-xxs);
+}
+
+.pa-wb-tree-row.pt-button {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.pa-wb-tree-row__chevron,
+.pa-wb-tree-row__chevron-spacer {
+  flex: 0 0 auto;
+  width: 12px;
+  color: var(--pt-muted);
+}
+
+.pa-wb-tree-row__chevron[data-collapsed] {
+  transform: none;
+}
+
+.pa-wb-tree-row__chevron:not([data-collapsed]) {
+  transform: rotate(90deg);
+}
+
+.pa-wb-tree-row__glyph {
+  flex: 0 0 auto;
+  color: var(--pt-secondary);
+}
+
+.pa-wb-tree-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-wb-file__count.pt-tag {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.pa-wb-file__status.pt-tag {
+  flex: 0 0 auto;
+  width: 28px;
+  justify-content: center;
+  font-family: var(--pt-font-mono, monospace);
+  font-size: 11px;
+}
+
+.pa-wb-change-row.pt-button {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.pa-wb-file__path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pt-font-mono, monospace);
+}
+
+.pa-wb-file__detail-head {
+  flex: 0 0 auto;
+  padding: var(--pt-space-xs) var(--pt-space-sm);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.pa-wb-file__detail-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pt-font-mono, monospace);
+  font-size: 12px;
+}
+
+.pa-wb-file__detail-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--pt-space-xs) var(--pt-space-sm);
+}
+
+.pa-wb-file__section-label {
+  display: block;
+  margin: var(--pt-space-sm) 0 var(--pt-space-xs);
+  font-size: 11px;
+}
+
+/* ---- browser dock ---------------------------------------------------- */
+
+.pa-wb-browser {
+  padding: 0;
+}
+
+.pa-wb-browser__start {
+  flex: 1;
+  padding: var(--pt-space-lg);
+}
+
+.pa-wb-browser__start .pt-field {
+  width: 100%;
+}
+
+.pa-wb-browser__globe {
+  color: var(--pt-muted);
+}
+
+.pa-wb-browser__tabs,
+.pa-wb-browser__navbar {
+  flex: 0 0 auto;
+  padding: var(--pt-space-xxs) var(--pt-space-xs);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.pa-wb-browser__tab-scroll {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-wb-browser__tab {
+  flex: 0 0 auto;
+  border-radius: var(--pt-radius-md);
+}
+
+.pa-wb-browser__tab[aria-current="page"] {
+  background: var(--pt-subtle);
+}
+
+.pa-wb-browser__tab-label {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.pa-wb-browser__navbar .pt-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-wb-browser__viewport {
+  flex: 1;
+  min-height: 0;
+}
+
+.pa-wb-browser__frame {
+  min-height: 100%;
+  padding: var(--pt-space-lg);
+  text-align: center;
+}
+
+.pa-wb-browser__frame-icon {
+  color: var(--pt-muted);
+}
+
+.pa-wb-browser__frame-url {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.pa-wb-browser__frame-hint {
+  font-size: 11px;
+}
+
+/* ---- terminal dock --------------------------------------------------- */
+
+.pa-wb-term {
+  padding: 0;
+}
+
+.pa-wb-term__strip {
+  flex: 0 0 auto;
+  padding: var(--pt-space-xxs) var(--pt-space-xs);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.pa-wb-term__tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-wb-term__tab-wrap {
+  flex: 0 0 auto;
+  border-radius: var(--pt-radius-sm);
+}
+
+.pa-wb-term__tab[aria-current="page"] {
+  background: var(--pt-subtle);
+}
+
+.pa-wb-term__tab .pt-button-content {
+  font-size: 12px;
+}
+
+.pa-wb-term__dead {
+  color: var(--pt-muted);
+}
+
+.pa-wb-term__surface.pt-terminal {
+  flex: 1;
+  min-height: 0;
+  margin: var(--pt-space-xs);
+}
+
+.pa-wb-term__surface .pt-terminal__viewport {
+  flex: 1;
+  max-height: none;
+}
+
+.pa-wb-term__menu {
+  width: 260px;
+}
+
+.pa-wb-term__custom {
+  margin-top: var(--pt-space-xs);
+}
+
+.pa-wb-term__placement {
+  flex: 0 0 auto;
+  padding: var(--pt-space-xxs) var(--pt-space-sm);
+  font-size: 11px;
+}
+
+/* ---- memory dock ----------------------------------------------------- */
+
+.pa-wb-memory {
+  padding: var(--pt-space-sm);
+}
+
+.pa-wb-memory__head {
+  flex: 0 0 auto;
+  margin-bottom: var(--pt-space-sm);
+}
+
+.pa-wb-memory__list {
+  flex: 1;
+  min-height: 0;
+}
+
+.pa-wb-memory__card {
+  padding: var(--pt-space-sm);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+}
+
+.pa-wb-memory__layer.pt-tag {
+  align-self: flex-start;
+}
+
+.pa-wb-memory__content {
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* ---- branches dock --------------------------------------------------- */
+
+.pa-wb-branch {
+  padding: var(--pt-space-sm);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+}
+
+.pa-wb-branch[data-selected] {
+  border-color: var(--pt-primary);
+  background: var(--pt-primarySubtle);
+}
+
+.pa-wb-branch__time {
+  font-size: 11px;
+}
+
+.pa-wb-branch__snippet {
+  font-size: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- B4 profile ------------------------------------------------------ */
+
+.pa-profile {
+  flex: 1;
+  min-height: 0;
+  background: var(--pt-surface);
+}
+
+.pa-profile__content {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: var(--pt-space-md) var(--pt-space-lg) var(--pt-space-xl);
+}
+
+.pa-profile__title-row {
+  min-height: 38px;
+}
+
+.pa-profile__title-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Production parity: a borderless 23px/750 transparent title input (38px
+   tall), not a bordered form field. peers-ui forwards the consumer className
+   to the inner <input>, so the flex item is the wrapping .pt-field-frame and
+   must be sized as a direct child of the title row. */
+.pa-profile__title-row > .pt-field-frame {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.pa-profile__title-input {
+  height: 38px;
+  font-size: 23px;
+  font-weight: 750;
+}
+
+/* 64px left track shared by the back control and the square avatar tile. */
+.pa-profile__identity-row {
+  margin-top: var(--pt-space-xs);
+}
+
+.pa-profile__avatar-button.pt-button {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border-radius: var(--pt-radius-lg);
+}
+
+.pa-profile__avatar-button .pt-avatar {
+  border-radius: var(--pt-radius-lg);
+}
+
+/* The TextArea className lands on the inner <textarea>; the flex item that
+   must absorb the row width is its wrapping .pt-field-frame. */
+.pa-profile__identity-row > .pt-field-frame {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-profile__agent-id {
+  color: var(--pt-muted);
+  font-family: var(--pt-font-mono, monospace);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.pa-profile__tabs .pt-tab-panel {
+  padding-top: var(--pt-space-md);
+}
+
+/* Identity document editors. */
+.pa-profile-identity__grid {
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  .pa-profile-identity__grid.pt-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pa-doc-editor.pt-card {
+  min-width: 0;
+}
+
+.pa-doc-editor__textarea {
+  font-family: var(--pt-font-mono, monospace);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Avatar picker. */
+.pa-avatar-picker__pane {
+  padding: var(--pt-space-sm) 0;
+}
+
+.pa-avatar-picker__grid {
+  width: 100%;
+}
+
+.pa-avatar-picker__emojis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--pt-space-xxs);
+}
+
+.pa-avatar-picker__emoji.pt-button {
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.pa-avatar-picker__preview {
+  width: 112px;
+  height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+}
+
+.pa-avatar-picker__requirements {
+  font-size: 11px;
+}
+
+/* Extensions. */
+.pa-extension-group {
+  padding-bottom: var(--pt-space-md);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.pa-extension-group__icon {
+  color: var(--pt-secondary);
+}
+
+.pa-extension-group__empty {
+  padding: var(--pt-space-xs) 0 var(--pt-space-xxs) 23px;
+  font-size: 12px;
+}
+
+.pa-extension-row {
+  min-height: 52px;
+  padding: var(--pt-space-xs) var(--pt-space-sm);
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+}
+
+.pa-extension-row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pa-extension-row__name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-extension-row__desc {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Extension catalog picker. */
+.pa-extension-picker__list {
+  min-height: 120px;
+}
+
+.pa-extension-picker__row.pt-button {
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--pt-space-sm);
+  text-align: left;
+  min-height: 54px;
+}
+
+.pa-extension-picker__icon {
+  flex: 0 0 auto;
+  color: var(--pt-secondary);
+}
+
+.pa-extension-picker__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pa-extension-picker__name {
+  font-size: 13px;
+}
+
+.pa-extension-picker__desc {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-extension-picker__add {
+  flex: 0 0 auto;
+  color: var(--pt-primary);
+}
+
+/* ---- B5 agent AI settings -------------------------------------------- */
+
+.pa-aisettings {
+  flex: 1;
+  min-height: 0;
+  background: var(--pt-surface);
+}
+
+.pa-aisettings__nav {
+  flex: 0 0 220px;
+  width: 220px;
+  padding: var(--pt-space-md) var(--pt-space-sm);
+  border-right: 1px solid var(--pt-border);
+  overflow: hidden;
+}
+
+.pa-aisettings__nav-head {
+  padding: 0 var(--pt-space-xs) var(--pt-space-md);
+}
+
+.pa-aisettings__sidenav {
+  min-height: 0;
+}
+
+.pa-aisettings__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.pa-aisettings__pane {
+  max-width: 860px;
+  padding: var(--pt-space-lg);
+}
+
+.pa-aisettings__pane-head h4 {
+  margin: 0;
+}
+
+/* Section cards + rows. */
+.pa-aisec.pt-card {
+  min-width: 0;
+}
+
+.pa-aisec__icon {
+  color: var(--pt-secondary);
+}
+
+.pa-aisec__subtitle {
+  display: block;
+  margin-bottom: var(--pt-space-md);
+  font-size: 12px;
+}
+
+.pa-aisec__hint {
+  font-size: 12px;
+}
+
+.pa-airow {
+  padding: var(--pt-space-xs) 0;
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.pa-airow:last-child {
+  border-bottom: 0;
+}
+
+.pa-airow__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.pa-airow__label {
+  font-size: 13px;
+}
+
+.pa-airow__desc {
+  font-size: 12px;
+}
+
+.pa-airow__control {
+  flex: 0 0 auto;
+}
+
+.pa-mono {
+  font-family: var(--pt-font-mono, monospace);
+  font-size: 12px;
+}
+
+/* Providers. */
+.pa-providers {
+  align-items: stretch;
+}
+
+.pa-providers__list {
+  flex: 0 0 220px;
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+  padding: var(--pt-space-xs);
+}
+
+.pa-providers__scroll {
+  min-height: 0;
+}
+
+.pa-providers__item.pt-button {
+  justify-content: flex-start;
+  gap: var(--pt-space-xs);
+  font-size: 12px;
+}
+
+.pa-providers__item[aria-current="page"] {
+  background: var(--pt-primarySubtle);
+}
+
+.pa-providers__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.pa-providers__key {
+  width: 100%;
+}
+
+.pa-providers__models {
+  padding-top: var(--pt-space-sm);
+  border-top: 1px solid var(--pt-border);
+}
+
+.pa-providers__model-row {
+  padding: var(--pt-space-xxs) 0;
+}
+
+.pa-providers__model-name {
+  font-family: var(--pt-font-mono, monospace);
+  font-size: 12px;
+}
+
+/* Generic catalog rows (discover / skills / mcp). */
+.pa-catalog__scroll,
+.pa-catalog__row,
+.pa-skills__row,
+.pa-mcp__row {
+  min-width: 0;
+}
+
+.pa-catalog__text,
+.pa-skills__text,
+.pa-mcp__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pa-catalog__publisher,
+.pa-skills__desc {
+  font-size: 12px;
+}
+
+.pa-skills__tabs {
+  display: flex;
+  gap: var(--pt-space-xxs);
+  border-bottom: 1px solid var(--pt-border);
+  padding-bottom: var(--pt-space-xxs);
+}
+
+.pa-skills__tab[aria-pressed="true"] {
+  background: var(--pt-subtle);
+}
+
+.pa-skills__icon,
+.pa-mcp__icon {
+  flex: 0 0 auto;
+  color: var(--pt-secondary);
+}
+
+.pa-mcp__tools {
+  padding-left: 28px;
+  flex-wrap: wrap;
+}
+
+/* Memory weights. */
+.pa-memory__weights .pt-slider {
+  width: 100%;
+}
+
+.pa-memory__weight-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.pa-memory__weight-label em {
+  font-style: normal;
+  color: var(--pt-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pa-memory__dsn {
+  width: 100%;
+}
+
+/* Cron table. */
+.pa-cron__job {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pa-cron__name {
+  font-size: 13px;
+}
+
+.pa-cron__prompt {
+  font-size: 11px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pa-cron__schedule {
+  font-family: var(--pt-font-mono, monospace);
+  font-size: 12px;
+}
+
+.pa-cron__next {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pa-cron__errors {
+  font-size: 11px;
+}
+
+.pa-cron__form {
+  padding: var(--pt-space-sm);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+}
+
+/* ---- B2 conversation ------------------------------------------------- */
+
+.pa-conversation-pane {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--pt-surface);
+}
+
+.pa-message-list {
+  flex: 1;
+  min-height: 0;
+}
+
+.pa-message-list__inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-lg);
+  max-width: 860px;
+  margin: 0 auto;
+  padding: var(--pt-space-lg) var(--pt-space-md) var(--pt-space-md);
+}
+
+.pa-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-xs);
+  min-width: 0;
+}
+
+.pa-msg--user {
+  align-items: flex-end;
+}
+
+.pa-msg--assistant {
+  align-items: stretch;
+}
+
+.pa-msg--system {
+  align-items: center;
+  padding: var(--pt-space-xs) 0;
+}
+
+.pa-msg__meta {
+  flex: 0 0 auto;
+}
+
+.pa-msg__time,
+.pa-msg__model {
+  font-size: 11px;
+}
+
+.pa-msg__bubble {
+  border-radius: var(--pt-radius-lg);
+  padding: var(--pt-space-sm) var(--pt-space-md);
+  min-width: 0;
+}
+
+.pa-msg__bubble--user {
+  max-width: 80%;
+  background: var(--pt-primarySubtle);
+  border: 1px solid var(--pt-border);
+}
+
+.pa-msg__bubble--assistant {
+  width: 100%;
+  background: var(--pt-surface);
+  border: 1px solid var(--pt-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-sm);
+}
+
+.pa-msg__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+.pa-msg__markdown {
+  min-width: 0;
+}
+
+.pa-msg__pending {
+  font-size: 12px;
+}
+
+.pa-msg__followups {
+  flex-wrap: wrap;
+}
+
+.pa-msg__system-text {
+  font-size: 12px;
+}
+
+/* attachments */
+
+.pa-msg__attachments,
+.pa-composer__attachments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-xxs);
+  margin-bottom: var(--pt-space-xs);
+}
+
+.pa-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pt-space-xs);
+  padding: var(--pt-space-xxs) var(--pt-space-sm);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+  max-width: 100%;
+}
+
+.pa-attachment__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.pa-attachment__size {
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.pa-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pt-space-xxs);
+}
+
+/* attribution */
+
+.pa-attribution {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pt-space-xxs);
+}
+
+.pa-attribution__label {
+  font-size: 11px;
+}
+
+/* reasoning */
+
+.pa-thinking__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pt-space-xs);
+  font-size: 12px;
+  color: var(--pt-secondary);
+  cursor: pointer;
+}
+
+.pa-thinking__body {
+  display: block;
+  margin-top: var(--pt-space-xs);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* tool cards */
+
+.pa-msg__tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-sm);
+}
+
+.pa-tool .pt-card-header {
+  align-items: center;
+}
+
+.pa-tool__head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pt-space-xs);
+  min-width: 0;
+}
+
+.pa-tool__title {
+  font-family: var(--pt-mono);
+  font-size: 12px;
+}
+
+.pa-tool__icon {
+  color: var(--pt-secondary);
+  flex: 0 0 auto;
+}
+
+.pa-tool__shell,
+.pa-tool__file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-xs);
+}
+
+.pa-tool__row {
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-xs);
+  min-width: 0;
+}
+
+.pa-tool__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--pt-space-xs);
+  flex-wrap: wrap;
+}
+
+.pa-tool__duration {
+  font-size: 11px;
+}
+
+.pa-tool__digests {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.pa-tool__digest {
+  font-family: var(--pt-mono);
+  font-size: 11px;
+}
+
+.pa-tool__delegation {
+  font-size: 12px;
+}
+
+/* clarification */
+
+.pa-clarify {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-sm);
+  padding: var(--pt-space-sm);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+}
+
+.pa-clarify__prompt {
+  font-size: 13px;
+}
+
+.pa-clarify__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pt-space-xs);
+}
+
+.pa-clarify__input {
+  width: 100%;
+}
+
+.pa-clarify__answer {
+  font-size: 13px;
+}
+
+/* ---- composer -------------------------------------------------------- */
+
+.pa-composer {
+  flex: 0 0 auto;
+  margin: 0 var(--pt-space-md) var(--pt-space-sm);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-lg);
+  background: var(--pt-raised);
+  padding: var(--pt-space-xs) var(--pt-space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-xs);
+}
+
+.pa-composer[data-pt-agent-full-access] {
+  border-color: var(--pt-warning);
+}
+
+.pa-composer__chips {
+  flex-wrap: wrap;
+}
+
+.pa-composer__input {
+  min-width: 0;
+}
+
+.pa-composer__footer {
+  flex: 0 0 auto;
+}
+
+.pa-composer__footer-spacer {
+  flex: 1;
+}
+
+.pa-composer__blocked {
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-subtle);
+  padding: var(--pt-space-xs) var(--pt-space-sm);
+  font-size: 12px;
+}
+
+/* popover panels */
+
+.pa-pop-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-xxs);
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow: auto;
+  padding: var(--pt-space-xs);
+}
+
+.pa-pop-panel--wide {
+  min-width: 300px;
+}
+
+.pa-pop-panel__desc {
+  font-size: 12px;
+}
+
+.pa-capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pt-space-xxs);
+}
+
+.pa-provider-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-xxs);
+}
+
+.pa-provider-group__title {
+  font-size: 11px;
+  padding: var(--pt-space-xxs) var(--pt-space-sm);
+}
+
+/* slash command surface (conditioned, not a foreign overlay) */
+.pa-composer {
+  position: relative;
+}
+
+.pa-slash-panel {
+  position: absolute;
+  left: var(--pt-space-sm);
+  right: var(--pt-space-sm);
+  bottom: calc(100% - var(--pt-space-xs));
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-xxs);
+  padding: var(--pt-space-xs);
+  border: 1px solid var(--pt-border);
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-raised);
+  box-shadow: var(--pt-shadow-float);
+  z-index: 5;
+  max-height: 240px;
+  overflow: auto;
+}
+
+/* Create-agent dialog fields stack vertically. */
+.pa-create-agent {
+  width: 100%;
+}

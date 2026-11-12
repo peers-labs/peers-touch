@@ -27,6 +27,68 @@ pub(crate) struct WorkspaceGrant {
     pub locator: String,
 }
 
+/// Placement of the root an interactive terminal lands in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TerminalWorkspaceKind {
+    /// A user-authorized project directory selected in the workspace picker.
+    Project,
+    /// The actor's private opaque sandbox under application data.
+    Sandbox,
+}
+
+impl TerminalWorkspaceKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            TerminalWorkspaceKind::Project => "project",
+            TerminalWorkspaceKind::Sandbox => "sandbox",
+        }
+    }
+}
+
+pub(crate) struct TerminalWorkspace {
+    pub(crate) root: PathBuf,
+    pub(crate) kind: TerminalWorkspaceKind,
+}
+
+/// Resolves the root a device-held terminal session opens inside. A
+/// user-activated project directory wins so the shell starts in the
+/// authorized workspace; a missing/moved project or no activation falls back
+/// to the private sandbox instead of failing terminal creation.
+pub(crate) fn resolve_terminal_workspace(
+    active_root: Option<PathBuf>,
+    actor_ptid: &str,
+    device_id: &str,
+) -> Result<TerminalWorkspace, String> {
+    if let Some(root) = active_root {
+        // Activated roots are validated on selection; re-canonicalize so a
+        // deleted or moved project fails closed into the sandbox.
+        if let Ok(canonical) = fs::canonicalize(&root) {
+            if canonical.is_dir() {
+                return Ok(TerminalWorkspace {
+                    root: canonical,
+                    kind: TerminalWorkspaceKind::Project,
+                });
+            }
+        }
+    }
+    let root = provision_actor_workspace(actor_ptid, device_id)?;
+    Ok(TerminalWorkspace {
+        root,
+        kind: TerminalWorkspaceKind::Sandbox,
+    })
+}
+
+/// Interactive shell for auto-started terminal sessions. The platform login
+/// shell is preferred so user profiles load; bash remains the portable
+/// fallback inside the acceptance cell and minimal environments.
+pub(crate) fn default_shell() -> String {
+    std::env::var("SHELL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "bash".to_string())
+}
+
 /// Provisions the persistent default workspace root for one actor/device.
 pub(crate) fn provision_actor_workspace(
     actor_ptid: &str,

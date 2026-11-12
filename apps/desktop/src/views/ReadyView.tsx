@@ -9,7 +9,6 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { GlobalLayout } from '../components/GlobalLayout';
 import { AppSideNav } from '../components/AppSideNav';
-import { AgentModuleNav } from '../components/agent/AgentModuleNav';
 import { PageRouter } from '../components/PageRouter';
 import { CommandMenu } from '../components/CommandMenu';
 import { SearchHost } from '../components/search/SearchHost';
@@ -108,7 +107,6 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
           flexDirection: 'column',
         }}>
           <SearchReturnBar navigation={navigation} />
-          <AgentModuleNav page={router.page} navigation={navigation} />
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
             <ShellCommitProfiler owner="shell:page-host" surface="page-host">
               <PageHost

@@ -29,6 +29,7 @@ func openTurnAdmissionDB(t *testing.T, name string) *gorm.DB {
 		&persistence.AgentTurn{},
 		&persistence.TurnAttempt{},
 		&persistence.TurnQueueEntry{},
+		&persistence.AgentTurnAmendment{},
 	); err != nil {
 		t.Fatalf("migrate admission db: %v", err)
 	}
@@ -77,6 +78,17 @@ func TestTurnAdmissionStartsOneAndQueuesFIFO(t *testing.T) {
 	if first.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED ||
 		first.GetTurnId() == "" {
 		t.Fatalf("first turn was not started: %+v", first)
+	}
+
+	// Cross the irreversible dispatch fence; subsequent admissions queue.
+	if _, err := svc.ClaimTurnAmendments(
+		context.Background(),
+		"ptid:actor-1",
+		"agent-1",
+		"conversation-1",
+		first.GetTurnId(),
+	); err != nil {
+		t.Fatalf("claim first turn amendments: %v", err)
 	}
 
 	second, err := svc.Admit(
@@ -328,6 +340,17 @@ func TestTurnAdmissionIdempotencyAndCapacity(t *testing.T) {
 	)
 	requireAdmissionDuplicateConflict(t, err, "active", first.GetTurnId())
 
+	// After the dispatch fence, follow-up admissions must reach the queue.
+	if _, err := svc.ClaimTurnAmendments(
+		context.Background(),
+		"ptid:actor-1",
+		"agent-1",
+		"conversation-1",
+		first.GetTurnId(),
+	); err != nil {
+		t.Fatalf("cross active dispatch fence: %v", err)
+	}
+
 	var firstQueued *model.TurnAdmission
 	for index := uint32(0); index < turnQueueCapacity; index++ {
 		key := fmt.Sprintf("queued-%d", index)
@@ -405,6 +428,15 @@ func TestTurnAdmissionCancelAndAdmitNext(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("admit active: %v", err)
+	}
+	if _, err := svc.ClaimTurnAmendments(
+		context.Background(),
+		"ptid:actor-1",
+		"agent-1",
+		"conversation-1",
+		active.GetTurnId(),
+	); err != nil {
+		t.Fatalf("cross active dispatch fence: %v", err)
 	}
 	queued, err := svc.Admit(
 		context.Background(),
@@ -520,6 +552,15 @@ func TestTurnAdmissionCancelsQueuedEntryWhenAttachmentExpiresBeforeDequeue(t *te
 	if err != nil {
 		t.Fatalf("admit active: %v", err)
 	}
+	if _, err := svc.ClaimTurnAmendments(
+		context.Background(),
+		"ptid:actor-1",
+		"agent-1",
+		"conversation-1",
+		active.GetTurnId(),
+	); err != nil {
+		t.Fatalf("cross active dispatch fence: %v", err)
+	}
 	queuedRequest := admissionRequest("queued-attachment", "inspect")
 	queuedRequest.Attachments = []*model.AgentAttachmentRef{{
 		AttachmentId: "attachment-1",
@@ -609,5 +650,200 @@ func requireAdmissionDuplicateConflict(
 		biz.Payload.GetDetails()["idempotency_key_hash"] != idempotencyKeyHash ||
 		biz.Payload.GetDetails()["existing_command_id"] != existingCommandID {
 		t.Fatalf("unexpected duplicate conflict: %+v", biz)
+	}
+}
+
+func admissionRequestWithAttachment(key, input, objectRef string) *model.ExecuteTurnRequest {
+	request := admissionRequest(key, input)
+	request.Attachments = []*model.AgentAttachmentRef{{
+		AttachmentId: "attachment-" + key,
+		ObjectRef:    objectRef,
+	}}
+	return request
+}
+
+func TestTurnAdmissionAmendsBeforeDispatchFence(t *testing.T) {
+	db := openTurnAdmissionDB(t, "turn_admission_amend")
+	seedAdmissionConversation(t, db)
+	svc := newTurnAdmissionServiceWithDB(db)
+
+	first, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("first", "one"),
+	)
+	if err != nil || first.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
+		t.Fatalf("first admission = %+v err=%v", first, err)
+	}
+
+	second, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequestWithAttachment("second", "two", "oss:cas/amend-2"),
+	)
+	if err != nil {
+		t.Fatalf("amend second: %v", err)
+	}
+	if second.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_AMENDED ||
+		second.GetTurnId() != first.GetTurnId() ||
+		second.GetAmendedCount() != 1 {
+		t.Fatalf("second admission was not amended into the running turn: %+v", second)
+	}
+
+	third, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("third", "three"),
+	)
+	if err != nil || third.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_AMENDED ||
+		third.GetAmendedCount() != 2 {
+		t.Fatalf("third admission = %+v err=%v", third, err)
+	}
+
+	// Idempotent replay of the amendment key resolves to AMENDED.
+	replayed, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequestWithAttachment("second", "two", "oss:cas/amend-2"),
+	)
+	if err != nil || replayed.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_AMENDED ||
+		replayed.GetTurnId() != first.GetTurnId() {
+		t.Fatalf("amendment replay = %+v err=%v", replayed, err)
+	}
+
+	claimed, err := svc.ClaimTurnAmendments(
+		context.Background(),
+		"ptid:actor-1",
+		"agent-1",
+		"conversation-1",
+		first.GetTurnId(),
+	)
+	if err != nil {
+		t.Fatalf("claim amendments: %v", err)
+	}
+	if len(claimed) != 2 {
+		t.Fatalf("claimed %d amendments, want 2", len(claimed))
+	}
+	if claimed[0].GetUserInput() != "two" ||
+		len(claimed[0].GetAttachments()) != 1 ||
+		claimed[0].GetAttachments()[0].GetObjectRef() != "oss:cas/amend-2" {
+		t.Fatalf("first claimed amendment payload mismatch: %+v", claimed[0])
+	}
+	if claimed[1].GetUserInput() != "three" {
+		t.Fatalf("second claimed amendment payload mismatch: %+v", claimed[1])
+	}
+
+	// Claim is idempotent: the fence stays crossed for the turn's lifetime.
+	reclaimed, err := svc.ClaimTurnAmendments(
+		context.Background(),
+		"ptid:actor-1",
+		"agent-1",
+		"conversation-1",
+		first.GetTurnId(),
+	)
+	if err != nil || len(reclaimed) != 0 {
+		t.Fatalf("second claim must return no amendments: %+v err=%v", reclaimed, err)
+	}
+
+	// After the fence, a new admission queues FIFO.
+	queued, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("fourth", "four"),
+	)
+	if err != nil || queued.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED {
+		t.Fatalf("post-fence admission must queue: %+v err=%v", queued, err)
+	}
+}
+
+func TestTurnAdmissionQueuesAmendmentWhenToolWaiting(t *testing.T) {
+	db := openTurnAdmissionDB(t, "turn_admission_amend_guard_tool")
+	seedAdmissionConversation(t, db)
+	svc := newTurnAdmissionServiceWithDB(db)
+
+	first, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("first", "one"),
+	)
+	if err != nil {
+		t.Fatalf("admit first: %v", err)
+	}
+
+	// A waiting-local-tool turn has already issued an irreversible request.
+	if err := db.Model(&persistence.AgentTurn{}).
+		Where("id = ?", first.GetTurnId()).
+		Update("status", string(domain.TurnStatusWaitingLocalTool)).Error; err != nil {
+		t.Fatalf("mark waiting local tool: %v", err)
+	}
+	second, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("second", "two"),
+	)
+	if err != nil || second.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED {
+		t.Fatalf("waiting-tool admission must queue: %+v err=%v", second, err)
+	}
+}
+
+func TestTurnAdmissionNeverAmendsAheadOfQueuedTurn(t *testing.T) {
+	db := openTurnAdmissionDB(t, "turn_admission_amend_guard_queue")
+	seedAdmissionConversation(t, db)
+	svc := newTurnAdmissionServiceWithDB(db)
+
+	first, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("first", "one"),
+	)
+	if err != nil {
+		t.Fatalf("admit first: %v", err)
+	}
+	// Seed one pending queue entry directly while the first turn is still
+	// unfenced: amendment must never jump the FIFO queue.
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.AgentTurn{
+		ID:                   "queued-turn-seed",
+		ConversationID:       "conversation-1",
+		AgentID:              "agent-1",
+		ClientIdempotencyKey: stringPointerValue("seed-queued"),
+		UserInput:            stringPointerValue("seed"),
+		Status:               string(domain.TurnStatusQueued),
+		StartedAt:            now,
+	}).Error; err != nil {
+		t.Fatalf("seed queued turn: %v", err)
+	}
+	if err := db.Create(&persistence.TurnQueueEntry{
+		ID:                   "queue-seed",
+		ConversationID:       "conversation-1",
+		AgentID:              "agent-1",
+		Ptid:                 "ptid:actor-1",
+		ClientIdempotencyKey: "seed-queued",
+		RequestPayload:       []byte{0x0a},
+		QueueSequence:        1,
+		Status:               queueStatusPending,
+		AdmittedTurnID:       "queued-turn-seed",
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}).Error; err != nil {
+		t.Fatalf("seed queue entry: %v", err)
+	}
+
+	second, err := svc.Admit(
+		context.Background(),
+		"ptid:actor-1",
+		admissionRequest("second", "two"),
+	)
+	if err != nil || second.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED ||
+		second.GetQueueEntry().GetQueuePosition() != 2 {
+		t.Fatalf("admission ahead of queued turn must queue second: %+v err=%v", second, err)
+	}
+	var amendmentCount int64
+	if err := db.Model(&persistence.AgentTurnAmendment{}).
+		Where("turn_id = ?", first.GetTurnId()).Count(&amendmentCount).Error; err != nil {
+		t.Fatalf("count amendments: %v", err)
+	}
+	if amendmentCount != 0 {
+		t.Fatalf("unexpected amendment recorded ahead of queue: %d", amendmentCount)
 	}
 }

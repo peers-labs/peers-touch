@@ -20,7 +20,9 @@ export interface AgentAttachmentDraft {
   progress: number;
   error?: string;
   attachment?: AgentAttachmentRefInput;
-  file: File;
+  // Present for locally picked files. TW-D2 rehydrated drafts carry only
+  // the Station-owned ref, so the binary is intentionally absent.
+  file?: File;
 }
 
 // #region debug-point A-D:foundation-attachment-upload
@@ -48,6 +50,33 @@ interface UseAgentAttachmentDraftsOptions {
   conversationId: string;
   disabled: boolean;
   fallbackName: string;
+  /**
+   * TW-D2: durable ready refs to rehydrate when the conversation becomes
+   * active (task switch back, renderer reload). Read lazily inside the
+   * switch effect so it always sees the current persisted snapshot.
+   */
+  hydrateReadyAttachments?: () => AgentAttachmentRefInput[];
+  /**
+   * TW-D2: notifies whenever the ready-ref list changes (staging completed,
+   * removed, sent, or rehydrated) so the owner can persist the draft.
+   */
+  onReadyAttachmentsChange?: (refs: AgentAttachmentRefInput[]) => void;
+}
+
+/** Reconstruct a composer chip from a durable Station-owned attachment ref. */
+function createRehydratedDraftAttachment(
+  ref: AgentAttachmentRefInput,
+): AgentAttachmentDraft {
+  return {
+    id: nextDraftId(),
+    name: ref.filename,
+    mimeType: ref.mime_type,
+    size: ref.size_bytes,
+    previewUrl: null,
+    status: 'ready',
+    progress: 100,
+    attachment: ref,
+  };
 }
 
 function nextDraftId(): string {
@@ -80,15 +109,25 @@ export function agentAttachmentDraftsBlockSend(
 }
 
 /** File types accepted by the agent attachment flow. */
-export const AGENT_ATTACHMENT_ACCEPT = 'image/png,application/pdf';
+export const AGENT_ATTACHMENT_ACCEPT = 'image/png,application/pdf,text/plain';
 
 export function useAgentAttachmentDrafts({
   conversationId,
   disabled,
   fallbackName,
+  hydrateReadyAttachments,
+  onReadyAttachmentsChange,
 }: UseAgentAttachmentDraftsOptions) {
   const draftsRef = useRef<AgentAttachmentDraft[]>([]);
   const [drafts, setDrafts] = useState<AgentAttachmentDraft[]>([]);
+  const hydrateReadyAttachmentsRef = useRef(hydrateReadyAttachments);
+  const onReadyAttachmentsChangeRef = useRef(onReadyAttachmentsChange);
+  useEffect(() => {
+    hydrateReadyAttachmentsRef.current = hydrateReadyAttachments;
+  });
+  useEffect(() => {
+    onReadyAttachmentsChangeRef.current = onReadyAttachmentsChange;
+  });
 
   const patchDraft = useCallback((id: string, patch: Partial<AgentAttachmentDraft>) => {
     const next = draftsRef.current.map((item) => (item.id === id ? { ...item, ...patch } : item));
@@ -130,6 +169,9 @@ export function useAgentAttachmentDrafts({
   }, [patchDraft]);
 
   const uploadDraft = useCallback((draft: AgentAttachmentDraft) => {
+    // Rehydrated (TW-D2) drafts carry only the Station ref; they are
+    // already staged and never re-upload from a missing local binary.
+    if (!draft.file) return;
     patchDraft(draft.id, { status: 'uploading', progress: 10, error: undefined });
     const attachmentConversationId =
       conversationIdFromAgentDraftKey(conversationId) ?? conversationId;
@@ -199,18 +241,49 @@ export function useAgentAttachmentDrafts({
     if (draft?.status === 'failed') uploadDraft(draft);
   }, [uploadDraft]);
 
-  useEffect(() => () => {
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
+
+  // TW-D2: detach revokes local previews and reclaims only uploads that
+  // never became a durable-ready ref. Ready refs remain staged in Station
+  // OSS under the persisted draft; if a draft is truly abandoned (never
+  // rehydrated), the Station OSS TTL sweeper is the final reclaimer.
+  const detachDrafts = useCallback(() => {
     const current = draftsRef.current;
     draftsRef.current = [];
+    setDrafts([]);
     current.forEach((draft) => {
       revokePreviewUrl(draft);
-      deleteUploadedAttachment(draft);
+      if (draft.status !== 'ready') deleteUploadedAttachment(draft);
     });
   }, []);
 
+  // Switching tasks detaches the outgoing draft WITHOUT deleting its ready
+  // refs, then rehydrates the incoming draft from its durable refs.
   useEffect(() => {
-    clearDrafts(true);
-  }, [clearDrafts, conversationId]);
+    detachDrafts();
+    const restored = (hydrateReadyAttachmentsRef.current?.() ?? [])
+      .map(createRehydratedDraftAttachment);
+    if (restored.length > 0) {
+      draftsRef.current = restored;
+      setDrafts(restored);
+    }
+  }, [conversationId, detachDrafts]);
+
+  // Closing the page keeps ready refs staged for the next launch.
+  useEffect(() => () => {
+    detachDrafts();
+  }, [detachDrafts]);
+
+  // Mirror the ready-ref list to the durable-draft owner. Identity is
+  // guarded in the store action, so rehydration cannot start a write loop.
+  useEffect(() => {
+    const readyRefs = drafts
+      .map((draft) => draft.attachment)
+      .filter((attachment): attachment is AgentAttachmentRefInput => Boolean(attachment));
+    onReadyAttachmentsChangeRef.current?.(readyRefs);
+  }, [drafts]);
 
   return {
     drafts,

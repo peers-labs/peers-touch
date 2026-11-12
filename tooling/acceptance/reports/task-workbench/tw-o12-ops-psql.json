@@ -1,0 +1,109 @@
+{
+  "plan": "TW-20261102",
+  "closure": "tw-o12-ops-psql",
+  "outcome": "O12-device-ops",
+  "source_commit": "5b542a55c1e2007cd8bbf03cc7013868aabefd8f",
+  "verified_at": "2026-11-05T11:58:00.340Z",
+  "source": "postgres://pt-tw-d1/postgres peers_touch_tw_d1 (direct SQL, independent of gateway/SSE/fs)",
+  "turn_id": "turn_339314b56916d962537c0f81",
+  "artifact_id": "art_4a7fb4e47a184acf8fecc5c5",
+  "version_id": "artver_e5dac8e9af6143fae6533fe3",
+  "tool_calls": [
+    {
+      "tool_name": "local_file_write",
+      "tool_call_id": "tool_call_ab71edba7c8a2f190b2c0bf4",
+      "status": "succeeded",
+      "approved": true,
+      "decision_revision": 1,
+      "execution_owner": "client_capability",
+      "dispatch_sequence": 1,
+      "execution_attempt_count": 1,
+      "has_session": true,
+      "has_device": true
+    },
+    {
+      "tool_name": "local_shell_exec",
+      "tool_call_id": "tool_call_9cd8cd1fc7566a6d70bc66e1",
+      "status": "succeeded",
+      "approved": true,
+      "decision_revision": 1,
+      "execution_owner": "client_capability",
+      "dispatch_sequence": 2,
+      "execution_attempt_count": 1,
+      "has_session": true,
+      "has_device": true
+    },
+    {
+      "tool_name": "local_file_edit",
+      "tool_call_id": "tool_call_e22d7f2fe37a62a3b13088fe",
+      "status": "succeeded",
+      "approved": true,
+      "decision_revision": 1,
+      "execution_owner": "client_capability",
+      "dispatch_sequence": 3,
+      "execution_attempt_count": 1,
+      "has_session": true,
+      "has_device": true
+    },
+    {
+      "tool_name": "local_shell_exec",
+      "tool_call_id": "tool_call_bc0837fdac1691c0206ae679",
+      "status": "succeeded",
+      "approved": true,
+      "decision_revision": 1,
+      "execution_owner": "client_capability",
+      "dispatch_sequence": 4,
+      "execution_attempt_count": 1,
+      "has_session": true,
+      "has_device": true
+    }
+  ],
+  "tool_result_groups": [
+    {
+      "status": "applied",
+      "count": 4
+    }
+  ],
+  "artifact_version": [
+    {
+      "id": "artver_e5dac8e9af6143fae6533fe3",
+      "seq": 1,
+      "origin": "agent_output",
+      "source_turn_id": "turn_339314b56916d962537c0f81",
+      "source_tool_call_id": "tool_call_e22d7f2fe37a62a3b13088fe",
+      "sha256": "96ec516e517ec5a613a612a18c65b45356ca8337deae0bd4b637e5619ddadc76"
+    }
+  ],
+  "assertions": [
+    [
+      "four_calls_succeeded",
+      true
+    ],
+    [
+      "all_human_approved_rev1",
+      true
+    ],
+    [
+      "all_client_capability_dispatched",
+      true
+    ],
+    [
+      "all_bound_to_session_and_device",
+      true
+    ],
+    [
+      "results_all_applied",
+      true
+    ],
+    [
+      "version_binds_turn_and_edit_call",
+      true
+    ],
+    [
+      "artifact_sha_matches_report",
+      true
+    ]
+  ],
+  "pass": 7,
+  "fail": 0
+}

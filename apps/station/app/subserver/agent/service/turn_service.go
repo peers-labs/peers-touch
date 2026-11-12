@@ -61,6 +61,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/sandbox"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -299,8 +300,25 @@ type TurnService struct {
 	turnAdmission        *TurnAdmissionService
 	attachmentAdmission  *AttachmentAdmissionService
 	externalRuntime      *ExternalRuntimeService
+	sandboxLocalTools    SandboxLocalToolRunner
 	resumeProviderCall   continuationProviderCall
 	providerCall         turnProviderCall
+}
+
+// SandboxLocalToolRunner executes an authorized local-* tool bound to a
+// workspace.sandbox.* capability inside its provisioned workspace sandbox
+// (WE-20261104). The implementation lazily ensures the sandbox and never falls
+// back to the desktop; infrastructure failures are returned as errors while
+// ordinary OS results (non-zero exit, EACCES/ENOENT) are bounded ToolResults.
+type SandboxLocalToolRunner interface {
+	RunAgentTool(
+		ctx context.Context,
+		actorPTID, agentID string,
+		capabilityID, bindingID string,
+		bindingRevision uint64,
+		toolName string,
+		rawArgs json.RawMessage,
+	) (*sandbox.ToolResult, error)
 }
 
 func (s *TurnService) SetAdmissionResolver(r *RuntimeAdmissionResolver) {
@@ -323,6 +341,13 @@ func (s *TurnService) SetAttachmentAdmissionService(admission *AttachmentAdmissi
 
 func (s *TurnService) SetExternalRuntimeService(runtime *ExternalRuntimeService) {
 	s.externalRuntime = runtime
+}
+
+// SetSandboxLocalToolRunner injects the WORKSPACE_SANDBOX executor used for
+// Station-owned local-* tools. When unset, such calls fail closed rather than
+// executing locally or on the desktop.
+func (s *TurnService) SetSandboxLocalToolRunner(runner SandboxLocalToolRunner) {
+	s.sandboxLocalTools = runner
 }
 
 func (s *TurnService) PreflightTurn(
@@ -683,6 +708,7 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 			actorID,
 			request.GetAgentId(),
 			request.GetConversationId(),
+			request.GetUserInput(),
 			request.GetUserInput(),
 		)
 		if err != nil {
@@ -1359,6 +1385,24 @@ func (s *TurnService) SettleAdmittedTurnAfterError(
 //	Step 8  — nudge state counters
 //	Step 9  — persist assistant message + complete turn
 //	Step 10 — save TurnTrace
+
+// mergeAmendedTurnInput appends a pre-dispatch amendment to the current
+// provider input behind an explicit, model-visible boundary. The distinct
+// expressions are persisted separately as user messages; this merged form
+// only drives the single Turn's model request.
+func mergeAmendedTurnInput(primary string, amendment string) string {
+	primary = strings.TrimSpace(primary)
+	amendment = strings.TrimSpace(amendment)
+	switch {
+	case primary == "":
+		return amendment
+	case amendment == "":
+		return primary
+	default:
+		return fmt.Sprintf("%s\n\n[Additional input]\n%s", primary, amendment)
+	}
+}
+
 func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userInput string) (*domain.Turn, error) {
 	if config == nil {
 		return nil, errcode.New(
@@ -1464,6 +1508,42 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		}
 		return nil, settleAdmissionFailure(maxDelegationDepthExhaustedReason, budgetErr)
 	}
+	// TW-D2: cross the irreversible-dispatch fence and claim every amendment
+	// admitted before it. The merged input is what budget validation,
+	// attachment admission, prompt assembly, and the provider call observe;
+	// admissions arriving after the claim queue FIFO as new Turns. The
+	// original primary input is persisted verbatim in its own user message.
+	primaryUserInput := userInput
+	primaryAttachmentObjectRefs := attachmentObjectRefSet(config.Attachments)
+	amendedUserInputs := make([]string, 0)
+	amendmentObjectRefs := make([]map[string]struct{}, 0)
+	if s.turnAdmission != nil && admittedTurnID != "" {
+		claimed, claimErr := s.turnAdmission.ClaimTurnAmendments(
+			ctx,
+			config.ActorID,
+			config.AgentID,
+			config.ConversationID,
+			admittedTurnID,
+		)
+		if claimErr != nil {
+			return nil, settleAdmissionFailure("claim turn amendments", claimErr)
+		}
+		for _, amendment := range claimed {
+			text := strings.TrimSpace(amendment.GetUserInput())
+			amendedUserInputs = append(amendedUserInputs, text)
+			if text != "" {
+				userInput = mergeAmendedTurnInput(userInput, text)
+			}
+			amendmentObjectRefs = append(
+				amendmentObjectRefs,
+				attachmentObjectRefSet(amendment.GetAttachments()),
+			)
+			config.Attachments = appendMissingAttachmentRefs(
+				config.Attachments,
+				amendment.GetAttachments(),
+			)
+		}
+	}
 	if admittedTurnID == "" {
 		if err := validateInputBudgetBeforePersistence(
 			s.compression,
@@ -1496,6 +1576,20 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	config.AdmittedAttachments = admittedAttachments
 	config.Attachments = attachmentRefs(admittedAttachments)
+	// Per-input attachment attribution after re-admission, in claim order:
+	// primary Turn input keeps its own refs; each amendment keeps only refs
+	// its request carried.
+	primaryPersistedAttachments := filterAttachmentRefs(
+		config.Attachments,
+		primaryAttachmentObjectRefs,
+	)
+	amendmentPersistedAttachments := make([][]*model.AgentAttachmentRef, 0, len(amendmentObjectRefs))
+	for _, refs := range amendmentObjectRefs {
+		amendmentPersistedAttachments = append(
+			amendmentPersistedAttachments,
+			filterAttachmentRefs(config.Attachments, refs),
+		)
+	}
 
 	// Attachment admission is intentionally complete before any Turn, attempt,
 	// runtime binding, message, or provider state is persisted.
@@ -1627,18 +1721,35 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 
 	// Persist user message unless a revision command already created or selected
-	// the immutable source branch.
+	// the immutable source branch. TW-D2: the primary Turn input and each
+	// claimed amendment are persisted as their own user messages, in send
+	// order. Prompt assembly excludes all current-Turn user messages from
+	// history and sends the merged current input, so the model sees each
+	// expression exactly once.
 	if !config.SkipUserMessage {
 		if err := s.persistMessageWithAttachments(
 			ctx,
 			config.ConversationID,
 			turnID,
 			string(domain.MessageRoleUser),
-			userInput,
+			primaryUserInput,
 			config.Model,
-			config.Attachments,
+			primaryPersistedAttachments,
 		); err != nil {
 			return nil, settleRunningFailure("failed to persist user message", err)
+		}
+		for index, text := range amendedUserInputs {
+			if err := s.persistMessageWithAttachments(
+				ctx,
+				config.ConversationID,
+				turnID,
+				string(domain.MessageRoleUser),
+				text,
+				config.Model,
+				amendmentPersistedAttachments[index],
+			); err != nil {
+				return nil, settleRunningFailure("failed to persist amendment user message", err)
+			}
 		}
 	}
 
@@ -4586,6 +4697,14 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 					call,
 					config,
 				)
+			case "local_shell_exec", "local_shell_safe",
+				"local_file_read", "local_file_write", "local_file_edit":
+				output, executionErr = s.executeSandboxLocalTool(
+					toolCtx,
+					claim,
+					batch.AgentID,
+					call,
+				)
 			default:
 				result := s.toolRegistry.Dispatch(
 					toolCtx,
@@ -5581,6 +5700,12 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		}
 		return true, err
 	}
+	if err := s.publishClientToolResultEvents(ctx, config, batch.TurnID, batch.ID); err != nil {
+		if settled, settleErr := settleExpiredContinuation(err); settled {
+			return true, settleErr
+		}
+		return true, err
+	}
 	if err := s.toolDispatch.MarkContinuationEmitted(
 		ctx,
 		continuation.ID,
@@ -5944,6 +6069,60 @@ func (s *TurnService) appendClientToolResultsToTrace(
 	return nil
 }
 
+// publishClientToolResultEvents emits one persisted "tool_result" live event
+// per terminal client-tool result in the batch. Renderers use it to surface
+// the real device output envelope (shell exit code/stdout, file change facts)
+// immediately; persisted events also rebuild the projection on reconnect. The
+// projection reducer is idempotent by tool call id, so a re-claimed
+// continuation can republish safely.
+func (s *TurnService) publishClientToolResultEvents(
+	ctx context.Context,
+	config *TurnConfig,
+	turnID string,
+	toolBatchID string,
+) error {
+	var rows []struct {
+		ToolCallID    string
+		ToolName      string
+		Status        string
+		BoundedResult []byte
+		ErrorCode     string
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	if err := db.WithContext(ctx).Raw(`
+		SELECT c.tool_call_id AS tool_call_id,
+		       c.tool_name   AS tool_name,
+		       r.status      AS status,
+		       r.bounded_result AS bounded_result,
+		       r.error_code  AS error_code
+		FROM agent_tool_calls c
+		JOIN agent_tool_results r ON r.tool_call_id = c.tool_call_id
+		WHERE c.tool_batch_id = ?
+		ORDER BY c.dispatch_sequence ASC, c.created_at ASC`, toolBatchID).Scan(&rows).Error; err != nil {
+		return internalToolError("load client tool results for events", err)
+	}
+	for _, row := range rows {
+		event := TurnEvent{
+			Type:       "tool_result",
+			ToolCallID: row.ToolCallID,
+			ToolName:   row.ToolName,
+		}
+		errorCode := strings.TrimSpace(row.ErrorCode)
+		if errorCode != "" && len(row.BoundedResult) == 0 {
+			event.Error = errorCode
+		} else {
+			event.Result = truncateResult(string(row.BoundedResult))
+		}
+		if err := s.emitTurnEvent(ctx, config, turnID, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func isClientOwnedTool(toolName string) bool {
 	return capabilityIDForTool(toolName) != ""
 }
@@ -5966,6 +6145,10 @@ func capabilityIDForTool(toolName string) string {
 		return "filesystem.edit"
 	case "local_shell_exec":
 		return "shell.allowlist"
+	case "browser_navigate", "browser_snapshot", "browser_screenshot":
+		return "browser.observe"
+	case "browser_click", "browser_fill", "browser_submit":
+		return "browser.interact"
 	default:
 		return ""
 	}
@@ -5979,6 +6162,50 @@ func stableToolBatchID(turnID string, attemptID string, iteration int) string {
 func stableToolCallID(toolBatchID string, index int, call toolCallEntry) string {
 	value := hashString(fmt.Sprintf("%s\x00%d\x00%s\x00%s", toolBatchID, index, call.ToolName, call.Arguments))
 	return "tool_call_" + value[:24]
+}
+
+// executeSandboxLocalTool runs one authorized Station-owned local-* call inside
+// the agent's provisioned workspace sandbox. The capability gate has already
+// admitted (capabilityId, bindingId, revision) READY; this function only
+// performs the effect. Ordinary OS outcomes (non-zero exit, EACCES/ENOENT) are
+// returned as the bounded model output, not errors; infrastructure failures
+// fail closed and never fall back to the desktop.
+func (s *TurnService) executeSandboxLocalTool(
+	ctx context.Context,
+	claim *persistence.ToolCall,
+	agentID string,
+	call toolCallEntry,
+) (string, error) {
+	if s.sandboxLocalTools == nil {
+		return "", errcode.New(
+			errcode.AgentSandboxUnavailable,
+			http.StatusServiceUnavailable,
+			errcode.AgentSandboxUnavailableLocaleKey,
+			fmt.Errorf("workspace sandbox executor is not configured"),
+		).WithDetail("tool_name", call.ToolName)
+	}
+	if !sandbox.IsSandboxFamily(claim.CapabilityID) {
+		return "", errcode.New(
+			errcode.AgentSandboxExecutionTargetForbidden,
+			http.StatusUnprocessableEntity,
+			errcode.AgentSandboxExecutionTargetForbiddenLocaleKey,
+			fmt.Errorf("station executor received a non-sandbox capability"),
+		).WithDetail("capability_id", claim.CapabilityID)
+	}
+	result, err := s.sandboxLocalTools.RunAgentTool(
+		ctx,
+		claim.ActorID,
+		agentID,
+		claim.CapabilityID,
+		claim.BindingID,
+		claim.BindingRevision,
+		call.ToolName,
+		json.RawMessage(call.Arguments),
+	)
+	if err != nil {
+		return "", err
+	}
+	return result.ModelOutput(), nil
 }
 
 func (s *TurnService) executeStationHumanDecisionResumeTool(

@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { GlobalOperationTray } from './GlobalOperationTray';
 
 interface GlobalLayoutProps {
   sideNav: ReactNode;
@@ -17,7 +16,6 @@ export function GlobalLayout({ sideNav, children, overlay }: GlobalLayoutProps) 
     <div className="ds-shell">
       {sideNav}
       <div className="ds-stage">{children}</div>
-      <GlobalOperationTray />
       {overlay}
     </div>
   );

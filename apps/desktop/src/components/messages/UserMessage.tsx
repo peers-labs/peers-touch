@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Button, TextArea } from '@peers-touch/ui';
+import { Button, Tag, TextArea } from '@peers-touch/ui';
 import type { ChatMessage } from '../../store/chat';
 import { useChatStore } from '../../store/chat';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
@@ -81,6 +81,7 @@ export function UserMessage({ message }: UserMessageProps) {
       className={`sc-user-message${hovered ? ' is-hovered' : ''}`}
       data-pt-agent-message="user"
       data-pt-agent-message-id={message.id}
+      data-pt-agent-delivery={message.deliveryStatus}
       data-pt-user-actor-ptid={user.ptid}
       id={`agent-message-${message.id}`}
       onMouseEnter={() => setHovered(true)}
@@ -97,6 +98,18 @@ export function UserMessage({ message }: UserMessageProps) {
         <span className="sc-user-message__time" title={fullTime(message.timestamp)}>
           {timeAgo(message.timestamp, t)}
         </span>
+        {/* Amended delivery badge: agent message-state contract kept from
+            the task-workbench branch; rendered with the peers-ui Tag so the
+            north-star shell's antd-free component model stays intact. */}
+        {message.deliveryStatus === 'amended' && (
+          <Tag
+            tone="warning"
+            data-pt-agent-delivery-amended
+            style={{ margin: 0, fontSize: 11 }}
+          >
+            {t('chat.delivery.amended')}
+          </Tag>
+        )}
       </div>
 
       {/* Message body */}

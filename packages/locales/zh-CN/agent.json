@@ -120,8 +120,10 @@
   "agent.profile.capabilityInventory.reason.mcp_operation_not_active": "该 MCP 能力未激活。",
   "agent.profile.capabilityInventory.reason.other": "Station 返回：{{reasonCode}}。",
   "agent.chat.agentWorkspace": "Agent 工作区",
-  "agent.module.chat": "对话",
-  "agent.module.atelier": "Atelier",
+  "agent.atelier.title": "Atelier",
+  "agent.atelier.back": "返回对话",
+  "agent.atelier.entryHint": "个人 Agent 工作台 · 即将推出",
+  "agent.atelier.placeholderHint": "Atelier 正在重构为对话下的子表面。待其产品定位与协作流程重新确立后，个人 Agent 工作台将在此呈现。",
   "agent.chat.myAgents": "我的 Agent",
   "agent.chat.pinned": "置顶",
   "agent.chat.allAgents": "全部 Agent",
@@ -1239,6 +1241,7 @@
   "agent.errors.capabilityUnavailable": "所选设备无法使用该能力。",
   "agent.errors.capabilityPolicyInvalid": "所选能力审批策略无效。",
   "agent.errors.resumeUnavailable": "无法使用之前的运行时状态恢复本次运行。",
+  "agent.errors.runtimeBindingStale": "该会话绑定的模型已不存在，重新绑定到当前默认运行时即可继续。",
   "agent.errors.executorUnavailable": "所需的客户端执行器不可用。",
   "agent.errors.clientLeaseExpired": "客户端执行租约已过期。",
   "agent.errors.clientPermissionDenied": "客户端缺少所需权限。",
@@ -1301,6 +1304,8 @@
   "agent.recovery.confirmReset": "确认重置",
   "agent.recovery.confirmResetDescription": "这会永久删除不可恢复的外部会话及其运行时文件。对话历史会保留，下一轮将创建新的运行时会话。",
   "agent.recovery.runtimeResetCompleted": "外部运行时已重置，下一轮将创建新会话。",
+  "agent.recovery.rebindRuntime": "切换到默认运行时并重试",
+  "agent.recovery.runtimeRebindCompleted": "已重新绑定到当前默认运行时，正在重试该轮对话。",
   "agent.recovery.reconnectExecutor": "重新连接执行器",
   "agent.recovery.reconcile": "核对状态",
   "agent.recovery.openPermissionSettings": "打开权限设置",
@@ -1338,5 +1343,12 @@
   "agent.recovery.reselectTarget": "重新选择目标",
   "agent.recovery.openTerminalResults": "打开最终结果",
   "agent.recovery.openExistingChildOrUseNewKey": "打开已有重试或使用新键",
-  "agent.recovery.retryWhenEvaluatorReady": "评估器就绪后重试"
+  "agent.recovery.retryWhenEvaluatorReady": "评估器就绪后重试",
+  "errors": {
+    "sandboxUnavailable": "此 Station 上的工作区沙盒不可用。",
+    "sandboxNotReady": "工作区沙盒尚未就绪，必须先确认能力绑定后才能执行。",
+    "sandboxPermissionDenied": "操作在沙盒内被拒绝（操作系统权限错误）。",
+    "sandboxExecutionTargetForbidden": "禁止在同一回合混用执行落点，或将沙盒回退到本机执行。",
+    "sandboxInvalidArgs": "沙盒工具参数无效。"
+  }
 }

@@ -14,8 +14,17 @@ describe('ToolCallsBlock approval visibility', () => {
     expect(source).toContain(
       'Boolean(toolCall.approvalId)',
     );
+    // TW-D4: fenced file/command cards carry auditable change facts and
+    // must be expanded by default once settled; other cards still rely on
+    // the explicit expansion/actionable/pending union.
     expect(source).toContain(
-      'const [expanded, setExpanded] = useState(false)',
+      "sourceTool.name === 'local_file_write'",
+    );
+    expect(source).toContain(
+      "sourceTool.name === 'local_file_edit'",
+    );
+    expect(source).toContain(
+      "sourceTool.name === 'local_shell_exec'",
     );
     expect(source).toContain(
       'expanded || actionableToolState || pendingCount > 0',

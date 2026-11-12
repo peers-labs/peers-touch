@@ -1,5 +1,6 @@
 use super::fenced_executor::{CapabilityContract, CapabilityExecutor};
 use super::resource_registry::LocalResource;
+use crate::application::browser::AgentBrowserBridge;
 use crate::application::skills_market::managed_package;
 use crate::application::{mcp, oauth2, tools};
 use crate::model::agent::ClientCapabilityRequest;
@@ -7,7 +8,8 @@ use serde_json::Value;
 #[cfg(feature = "acceptance-webdriver")]
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::Arc;
 #[cfg(feature = "acceptance-webdriver")]
 use std::sync::{Mutex, OnceLock};
 
@@ -30,13 +32,20 @@ static ACCEPTANCE_EXTERNAL_IDEMPOTENCY_RESULTS: OnceLock<
 pub struct LocalCapabilityExecutor {
     actor_ptid: String,
     contracts: HashMap<String, CapabilityContract>,
+    browser: Option<Arc<AgentBrowserBridge>>,
     execution_attempts: AtomicU64,
+    /// Machine-local per-session shell authorization shared with the
+    /// supervisor so the user can raise/lower it without rebuilding the
+    /// executor. Never derived from a Station/model envelope.
+    shell_mode: Arc<AtomicU8>,
 }
 
 impl LocalCapabilityExecutor {
     pub fn new(
         actor_ptid: &str,
         contracts: impl IntoIterator<Item = CapabilityContract>,
+        browser: Option<Arc<AgentBrowserBridge>>,
+        shell_mode: Arc<AtomicU8>,
     ) -> Result<Self, String> {
         if !actor_ptid.starts_with("ptid:") {
             return Err("local capability executor requires an actor PTID".to_string());
@@ -60,6 +69,8 @@ impl LocalCapabilityExecutor {
                     | "shell.execute"
                     | "shell.allowlist"
                     | "skill.resource.read"
+                    | "browser.observe"
+                    | "browser.interact"
             ) && !is_mcp_capability_id(&contract.capability_id)
                 && !is_connector_capability_id(&contract.capability_id)
             {
@@ -67,6 +78,15 @@ impl LocalCapabilityExecutor {
                     "unsupported local capability contract: {}",
                     contract.capability_id
                 ));
+            }
+            if contract.capability_id == "browser.observe"
+                || contract.capability_id == "browser.interact"
+            {
+                if browser.is_none() {
+                    return Err(
+                        "browser capability advertised without a managed browser bridge".to_string(),
+                    );
+                }
             }
             if contract.supports_external_idempotency
                 && !has_external_idempotency_adapter(&contract.capability_id)
@@ -86,12 +106,18 @@ impl LocalCapabilityExecutor {
         Ok(Self {
             actor_ptid: actor_ptid.to_string(),
             contracts: indexed,
+            browser,
             execution_attempts: AtomicU64::new(0),
+            shell_mode,
         })
     }
 
     pub fn execution_attempt_count(&self) -> u64 {
         self.execution_attempts.load(Ordering::SeqCst)
+    }
+
+    fn shell_mode(&self) -> tools::ShellMode {
+        tools::ShellMode::from_u8(self.shell_mode.load(Ordering::SeqCst))
     }
 }
 
@@ -118,6 +144,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
             .iter()
             .map(|resource| resource.locator.clone())
             .collect::<Vec<_>>();
+        let shell_mode = self.shell_mode();
         let execute_once = || {
             Ok(match request.capability_id.as_str() {
                 "filesystem.read" => {
@@ -128,6 +155,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "filesystem.list" => {
@@ -138,6 +166,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "clipboard.read" => {
@@ -148,6 +177,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         None,
                         &[],
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "clipboard.write" => {
@@ -158,6 +188,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         None,
                         &[],
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "shell.execute" => {
@@ -168,6 +199,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "filesystem.write" => {
@@ -178,6 +210,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "filesystem.edit" => {
@@ -188,6 +221,7 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "shell.allowlist" => {
@@ -198,11 +232,25 @@ impl CapabilityExecutor for LocalCapabilityExecutor {
                         workspace_root,
                         &allowed_roots,
                         &request.tool_call_id,
+                        shell_mode,
                     )?
                 }
                 "skill.resource.read" => {
                     record_side_effect_start()?;
                     execute_managed_skill_resource_read(arguments)?
+                }
+                "browser.observe" | "browser.interact" => {
+                    record_side_effect_start()?;
+                    let bridge = self
+                        .browser
+                        .as_ref()
+                        .ok_or("BROWSER_BRIDGE_UNAVAILABLE")?;
+                    bridge.execute(
+                        &request.tool_name,
+                        &arguments,
+                        &request.conversation_id,
+                        &request.turn_id,
+                    )?
                 }
                 capability_id if is_mcp_capability_id(capability_id) => {
                     record_side_effect_start()?;
@@ -333,6 +381,7 @@ fn execute_builtin(
     workspace_root: Option<&str>,
     allowed_roots: &[String],
     tool_call_id: &str,
+    shell_mode: tools::ShellMode,
 ) -> Result<Value, String> {
     tools::execute_builtin_local_tool(
         tool_name,
@@ -340,8 +389,14 @@ fn execute_builtin(
         workspace_root,
         Some(allowed_roots),
         Some(tool_call_id),
+        shell_mode,
     )
-    .map_err(|_| "CLIENT_CAPABILITY_EXECUTION_FAILED".to_string())
+    .map_err(|error| {
+        // Surface the typed device code (path/command/timeout) while keeping
+        // the human-readable detail in the worker log.
+        tracing::warn!(code = error.code, error = %error.message, "local capability tool failed");
+        error.code.to_string()
+    })
 }
 
 fn execute_mcp_capability(
@@ -477,6 +532,8 @@ mod tests {
                 max_result_bytes: 1024,
                 supports_external_idempotency: false,
             }],
+            None,
+            Arc::new(AtomicU8::new(0)),
         )
         .unwrap();
         let request = ClientCapabilityRequest {
@@ -524,6 +581,8 @@ mod tests {
                 max_result_bytes: 65536,
                 supports_external_idempotency: false,
             }],
+            None,
+            Arc::new(AtomicU8::new(0)),
         )
         .expect("managed Skill resource capability should register");
         assert!(executor.contract("skill.resource.read").is_some());
@@ -541,6 +600,8 @@ mod tests {
                 max_result_bytes: 1024,
                 supports_external_idempotency: false,
             }],
+            None,
+            Arc::new(AtomicU8::new(0)),
         )
         .expect("Station-derived Connector capability should register");
         assert!(executor.contract(&capability_id).is_some());
@@ -554,6 +615,8 @@ mod tests {
                 max_result_bytes: 1024,
                 supports_external_idempotency: false,
             }],
+            None,
+            Arc::new(AtomicU8::new(0)),
         );
         assert!(invalid.is_err());
     }

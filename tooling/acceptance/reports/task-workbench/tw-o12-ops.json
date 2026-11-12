@@ -1,0 +1,293 @@
+{
+  "ran_at": "2026-11-06T01:19:18.960Z",
+  "mode": "desktop-native-headless-gateway",
+  "plan": "TW-20261102",
+  "closure": "tw-o12-ops",
+  "outcome": "O12-device-ops",
+  "source_commit": "4dfcdc7b7",
+  "station_url": "persisted-active",
+  "provider_id": "ark",
+  "model_id": "ep-20260623145021-n4xdm",
+  "pass": 10,
+  "fail": 0,
+  "results": [
+    {
+      "id": "G1",
+      "pass": true,
+      "evidence": "session=capability_session_5929865455787bc10da24330 device=01M6FHJ46NZ6FJWW9Z217FGV7Q lease=capability_lease_64e5fc7e239e3dbb12b72b51 granted=[browser.interact,browser.observe,clipboard.read,clipboard.write,filesystem.edit,filesystem.list,filesystem.read,filesystem.write,shell.allowlist,shell.execute,skill.resource.read]"
+    },
+    {
+      "id": "G2a",
+      "pass": true,
+      "evidence": "bindings=clipboard.read:policy1:rev1 clipboard.write:policy1:rev1 filesystem.read:policy1:rev1 filesystem.list:policy1:rev1 filesystem.write:policy1:rev1 filesystem.edit:policy1:rev1 shell.execute:policy1:rev1 shell.allowlist:policy1:rev1"
+    },
+    {
+      "id": "G2b",
+      "pass": true,
+      "evidence": "snapshot=capability-readiness-f63153b33b16bbc2ee78f1c3 selected=capability_session_5929865455787bc10da24330 ready=[filesystem.edit:1,filesystem.list:1,filesystem.read:1,filesystem.write:1,shell.allowlist:1]"
+    },
+    {
+      "id": "G3",
+      "pass": true,
+      "evidence": "terminal=turn_completed calls=[local_file_write,local_shell_exec,local_file_edit,local_shell_exec]"
+    },
+    {
+      "id": "G4",
+      "pass": true,
+      "evidence": "approvals=4 decisions=[ok:rev1,ok:rev1,ok:rev1,ok:rev1]"
+    },
+    {
+      "id": "G5",
+      "pass": true,
+      "evidence": "write=created grep1.exit=1 edit=true grep2.exit=0 grep2.stdout=\"STATE=green\""
+    },
+    {
+      "id": "G6",
+      "pass": true,
+      "evidence": "trace.status=TURN_STATUS_COMPLETED tool_iterations=4 provider_calls=6"
+    },
+    {
+      "id": "G7",
+      "pass": true,
+      "evidence": "bytes=\"STATE=green\" sha=96ec516e517e writeShaDiffer=true editHashMatches=true"
+    },
+    {
+      "id": "G8",
+      "pass": true,
+      "evidence": "final=\"The first grep exited with code 1, and the second grep exited with code 0 (printing \\\"STATE=green\\\").\""
+    },
+    {
+      "id": "G9",
+      "pass": true,
+      "evidence": "artifact=art_af3c597af4283007771356cf v=artver_66df2a7f1c651068094e8ec6 claim=true commandCheck=true (stdoutSha=6de68c032945) accepted=true"
+    }
+  ],
+  "evidence": {
+    "provider_id": "ark",
+    "model_id": "ep-20260623145021-n4xdm",
+    "agent": {
+      "id": "agent_3861ccdcc387960116aa3478",
+      "version": 1
+    },
+    "capability_session": {
+      "id": "capability_session_5929865455787bc10da24330",
+      "device_id": "01M6FHJ46NZ6FJWW9Z217FGV7Q",
+      "lease_id": "capability_lease_64e5fc7e239e3dbb12b72b51",
+      "granted": [
+        "browser.interact",
+        "browser.observe",
+        "clipboard.read",
+        "clipboard.write",
+        "filesystem.edit",
+        "filesystem.list",
+        "filesystem.read",
+        "filesystem.write",
+        "shell.allowlist",
+        "shell.execute",
+        "skill.resource.read"
+      ]
+    },
+    "readiness": {
+      "snapshot_id": "capability-readiness-f63153b33b16bbc2ee78f1c3",
+      "runtime_snapshot_id": "snap-00d7961804b4dc7fca7c9cc139791319",
+      "capabilities": [
+        {
+          "capability_id": "filesystem.edit",
+          "state": 1,
+          "binding_id": "capability-binding_055dd4c65ee4ce9345c2c1fb",
+          "binding_revision": 1,
+          "reason_code": "capability_ready"
+        },
+        {
+          "capability_id": "filesystem.list",
+          "state": 1,
+          "binding_id": "capability-binding_5565f6b9964e0938500a3d70",
+          "binding_revision": 1,
+          "reason_code": "capability_ready"
+        },
+        {
+          "capability_id": "filesystem.read",
+          "state": 1,
+          "binding_id": "capability-binding_43a8e9a693505f44992e8d61",
+          "binding_revision": 1,
+          "reason_code": "capability_ready"
+        },
+        {
+          "capability_id": "filesystem.write",
+          "state": 1,
+          "binding_id": "capability-binding_6c51cae0a239ad654cecc666",
+          "binding_revision": 1,
+          "reason_code": "capability_ready"
+        },
+        {
+          "capability_id": "shell.allowlist",
+          "state": 1,
+          "binding_id": "capability-binding_6f850aac20513b20bd54e864",
+          "binding_revision": 1,
+          "reason_code": "capability_ready"
+        }
+      ]
+    },
+    "workspace_root": "/workspace/run/actor-home/.local/share/peers-touch/agent-workspaces/a0ab024e3dbd0fc648ca933a4653c5b4",
+    "file_name": "o12ops-6b605c.txt",
+    "turn_id": "turn_2d935dba45cf5db2d9482885",
+    "terminal_stage": "turn_completed",
+    "governance": {
+      "approvals": [
+        {
+          "seq": 25,
+          "tool": "local_file_write",
+          "approval_id": "approval_314d907928659f04df58a54d"
+        },
+        {
+          "seq": 49,
+          "tool": "local_shell_exec",
+          "approval_id": "approval_72aabbc3ff82394129e3a90e"
+        },
+        {
+          "seq": 100,
+          "tool": "local_file_edit",
+          "approval_id": "approval_d55f9e2e89a30d59f822d863"
+        },
+        {
+          "seq": 112,
+          "tool": "local_shell_exec",
+          "approval_id": "approval_cadb1e7a84eed2d49d3303b1"
+        }
+      ],
+      "decisions": [
+        {
+          "accepted": true,
+          "approved": true,
+          "decision_revision": 1,
+          "error_code": "TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED"
+        },
+        {
+          "accepted": true,
+          "approved": true,
+          "decision_revision": 1,
+          "error_code": "TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED"
+        },
+        {
+          "accepted": true,
+          "approved": true,
+          "decision_revision": 1,
+          "error_code": "TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED"
+        },
+        {
+          "accepted": true,
+          "approved": true,
+          "decision_revision": 1,
+          "error_code": "TOOL_APPROVAL_DECISION_ERROR_CODE_UNSPECIFIED"
+        }
+      ]
+    },
+    "tool_results": [
+      {
+        "tool": "local_file_write",
+        "ok": true,
+        "exit_code": null,
+        "stdout": null,
+        "failure_reason": null,
+        "artifact_sha": "c0743435fdced1f58b895328fb0769b3378195b30718cb05d57372b3add752d7",
+        "duration_ms": null
+      },
+      {
+        "tool": "local_shell_exec",
+        "ok": true,
+        "exit_code": 1,
+        "stdout": "",
+        "failure_reason": "non-zero exit code",
+        "artifact_sha": null,
+        "duration_ms": 50
+      },
+      {
+        "tool": "local_file_edit",
+        "ok": true,
+        "exit_code": null,
+        "stdout": null,
+        "failure_reason": null,
+        "artifact_sha": "96ec516e517ec5a613a612a18c65b45356ca8337deae0bd4b637e5619ddadc76",
+        "duration_ms": null
+      },
+      {
+        "tool": "local_shell_exec",
+        "ok": true,
+        "exit_code": 0,
+        "stdout": "STATE=green\n",
+        "failure_reason": "",
+        "artifact_sha": null,
+        "duration_ms": 50
+      }
+    ],
+    "trace": {
+      "status": "TURN_STATUS_COMPLETED",
+      "tool_iterations": 4,
+      "trace_id": "trace_bb73d7f305d0844eee5fdac1",
+      "provider_calls": [
+        {
+          "cache_hit": false,
+          "credential_id": "",
+          "input_tokens": 0,
+          "latency_ms": "3960",
+          "model": "doubao-seed-2-1-pro-260628",
+          "output_tokens": 0,
+          "provider": "ark"
+        },
+        {
+          "cache_hit": false,
+          "credential_id": "",
+          "input_tokens": 0,
+          "latency_ms": "3837",
+          "model": "doubao-seed-2-1-pro-260628",
+          "output_tokens": 0,
+          "provider": "ark"
+        },
+        {
+          "cache_hit": false,
+          "credential_id": "",
+          "input_tokens": 0,
+          "latency_ms": "4801",
+          "model": "doubao-seed-2-1-pro-260628",
+          "output_tokens": 0,
+          "provider": "ark"
+        },
+        {
+          "cache_hit": false,
+          "credential_id": "",
+          "input_tokens": 0,
+          "latency_ms": "4269",
+          "model": "doubao-seed-2-1-pro-260628",
+          "output_tokens": 0,
+          "provider": "ark"
+        },
+        {
+          "cache_hit": false,
+          "credential_id": "",
+          "input_tokens": 0,
+          "latency_ms": "5564",
+          "model": "doubao-seed-2-1-pro-260628",
+          "output_tokens": 0,
+          "provider": "ark"
+        },
+        {
+          "cache_hit": false,
+          "credential_id": "",
+          "input_tokens": 0,
+          "latency_ms": "1999",
+          "model": "ep-20260623145021-n4xdm",
+          "output_tokens": 0,
+          "provider": "ark"
+        }
+      ]
+    },
+    "final_assistant_text": "The first grep exited with code 1, and the second grep exited with code 0 (printing \"STATE=green\").",
+    "artifact": {
+      "id": "art_af3c597af4283007771356cf",
+      "version_id": "artver_66df2a7f1c651068094e8ec6",
+      "sha256": "96ec516e517ec5a613a612a18c65b45356ca8337deae0bd4b637e5619ddadc76",
+      "source_tool_call_id": "tool_call_70b36eb56a28bc42cb106dc7",
+      "command_output_sha256": "6de68c032945d0926d041c3510100a07d1f4ceb480f62af11311fbaceabe99ee"
+    }
+  }
+}

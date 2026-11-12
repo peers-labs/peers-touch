@@ -1,0 +1,51 @@
+{
+  "ran_at": "2026-11-06T02:02:20.774Z",
+  "mode": "desktop-native-headless-gateway",
+  "plan": "TW-20261102",
+  "closure": "tw-o03-replay-watermark",
+  "outcome": "O03",
+  "source_commit": "4dfcdc7b7",
+  "station_url": "persisted-active",
+  "provider_id": "ollama-local",
+  "model_id": "qwen-tw",
+  "pass": 4,
+  "fail": 0,
+  "results": [
+    {
+      "id": "R1",
+      "pass": true,
+      "evidence": "messages=4 seqs=[1,2,3,4] contiguous=true ids=true"
+    },
+    {
+      "id": "R2",
+      "pass": true,
+      "evidence": "after_seq=2 tailSeqs=[3,4] count=2"
+    },
+    {
+      "id": "R3",
+      "pass": true,
+      "evidence": "replay+dedup size=4 noDup=true sameSet=true noGap=true"
+    },
+    {
+      "id": "R4",
+      "pass": true,
+      "evidence": "fresh-session read identical=true messages=4"
+    }
+  ],
+  "evidence": {
+    "capability_session_id": "capability_session_2f898439b3df661a2382d77f",
+    "conversation_id": "conv_15db1f11eef5a397dd58156e",
+    "seqs": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "watermark": 2,
+    "tailSeqs": [
+      3,
+      4
+    ],
+    "replayMergedCount": 4
+  }
+}

@@ -146,6 +146,13 @@ services:
       PT_AGENT_EXTERNAL_START_ARGV_JSON: ${PT_AGENT_EXTERNAL_START_ARGV_JSON:-}
       PT_AGENT_EXTERNAL_RESUME_ARGV_JSON: ${PT_AGENT_EXTERNAL_RESUME_ARGV_JSON:-}
       PT_AGENT_EXTERNAL_RESET_ARGV_JSON: ${PT_AGENT_EXTERNAL_RESET_ARGV_JSON:-}
+      # WE-20261104 WORKSPACE_SANDBOX execution. Empty default keeps sandbox
+      # execution inert; the sandbox compose profile sets the provisioner URL
+      # and pins the image by immutable content id (fail-closed if unset).
+      PEERS_SANDBOX_PROVISIONER_URL: ${PEERS_SANDBOX_PROVISIONER_URL:-http://workspace-sandbox-provisioner:8090}
+      PEERS_SANDBOX_DEFAULT_IMAGE: ${PEERS_SANDBOX_DEFAULT_IMAGE:-}
+      # Must match SANDBOX_PROVISIONER_TOKEN on the provisioner side.
+      PEERS_SANDBOX_PROVISIONER_TOKEN: ${PEERS_SANDBOX_PROVISIONER_TOKEN:-}
     ports:
       - "${STATION_PORT:-18080}:18080"
       # libp2p port for the bootstrap subserver. Same-host coexistence
@@ -312,6 +319,56 @@ services:
     command: ["-hooks", "/etc/webhook/hooks.json", "-verbose", "-hotreload"]
     restart: unless-stopped
 
+  # ── Workspace Sandbox provisioner (WE-20261104) ─────────────────
+  # Independent sidecar: the ONLY service that mounts the Docker socket.
+  # It allocates sibling sandbox containers on the isolated `wbox-isolated`
+  # network; Station reaches it over the project bridge but Station itself
+  # never mounts the socket and never shares the sandbox network. Enabled with
+  # COMPOSE_PROFILES=...,sandbox.
+  workspace-sandbox-provisioner:
+    build:
+      context: ../..
+      dockerfile: tooling/docker/sandbox/provisioner.Dockerfile
+    profiles: [sandbox]
+    logging: *json-logging
+    environment:
+      PROVISIONER_LISTEN: ":8090"
+      # Sandbox containers attach only to this internal network: no route to
+      # the project bridge (Station/Postgres) and no external egress.
+      SANDBOX_ISOLATED_NETWORK: wbox-isolated
+      # Immutable content-id pin for the locally built sandbox base image (or
+      # repo@digest entries). The provisioner rejects anything not listed.
+      SANDBOX_ALLOWED_IMAGE_IDS: ${PEERS_SANDBOX_DEFAULT_IMAGE:-}
+      SANDBOX_RUN_UID: "10001"
+      SANDBOX_RUN_GID: "10001"
+      # Shared Station↔provisioner bearer secret. When set, the sidecar
+      # requires it on every /v1 call; Station sends the same value (below).
+      # Empty leaves the surface unauthenticated (dev only; network-isolated).
+      SANDBOX_PROVISIONER_TOKEN: ${PEERS_SANDBOX_PROVISIONER_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The provisioner is NOT attached to wbox-isolated: it places sandbox
+    # containers there through the daemon but joining the network itself would
+    # expose its control API to a compromised workload. The top-level network is
+    # created by compose even with no member service.
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=3", "http://127.0.0.1:8090/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
 volumes:
   pg_data:
   peers_data:
+
+networks:
+  # Dedicated, fully internal network for sandbox containers. It is attached
+  # to the provisioner only so compose guarantees its creation; workload
+  # containers themselves are placed here exclusively and cannot reach the
+  # default bridge or the outside world.
+  wbox-isolated:
+    name: wbox-isolated
+    internal: true

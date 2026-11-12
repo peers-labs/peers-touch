@@ -1,0 +1,89 @@
+/*
+ * Terminal chrome. A shell is a console surface with its own fixed dark
+ * palette (see terminalTheme.ts); it deliberately does not follow the app's
+ * light surface tokens, matching VS Code / Trae / iTerm terminal defaults.
+ * Colors are scoped under .wb-term so no global token is overridden.
+ */
+
+.wb-term {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+  color: #cccccc;
+}
+
+/* Shell tab strip. */
+.wb-term__tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: #252526;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+.wb-term__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 4px 0 6px;
+  border-radius: 6px;
+}
+
+.wb-term__tab[data-selected='true'] {
+  background: #2d2d2d;
+}
+
+/* peers-ui buttons default to light-surface ink; repaint them for the dark
+   terminal chrome. Scoping under .wb-term keeps the override local. */
+.wb-term .pt-button {
+  color: #9d9d9d;
+  font-size: 12px;
+}
+
+.wb-term .pt-button:hover:not([aria-disabled='true']) {
+  background: #2d2d2d;
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.wb-term__tab[data-selected='true'] .pt-button {
+  color: #ffffff;
+}
+
+.wb-term__tab .pt-icon-button {
+  width: 22px;
+  min-height: 22px;
+}
+
+/* Live xterm surface. */
+.wb-term__xterm {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+  background: #1e1e1e;
+  overflow: hidden;
+}
+
+/* No-shell states: provisioning hint and the concrete failure reason. */
+.wb-term__empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+.wb-term__error {
+  color: #f14c4c;
+  line-height: 1.6;
+  word-break: break-word;
+}

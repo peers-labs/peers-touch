@@ -103,7 +103,9 @@ func (s *ChatTaskService) getDB(ctx context.Context) (*gorm.DB, error) {
 
 // EnsureChatTask returns the root TaskRun id for a conversation, creating it on
 // first use. The unique index on conversation_id guarantees a single root task.
-func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorPTID, agentID, conversationID, title string) (string, error) {
+// goal carries the full accepted goal text (distinct from the display title)
+// and is stored on first creation; later Turns never overwrite it.
+func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorPTID, agentID, conversationID, title, goal string) (string, error) {
 	actorPTID = strings.TrimSpace(actorPTID)
 	conversationID = strings.TrimSpace(conversationID)
 	if actorPTID == "" || conversationID == "" {
@@ -127,6 +129,7 @@ func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorPTID, agentID
 	record := persistence.TaskRun{
 		TaskID:         generateID("chat"),
 		Title:          strings.TrimSpace(title),
+		Description:    strings.TrimSpace(goal),
 		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
 		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
 		OwnerActorPTID: actorPTID,
@@ -152,6 +155,64 @@ func (s *ChatTaskService) EnsureChatTask(ctx context.Context, actorPTID, agentID
 	}, record.TaskID, "", "", nil)
 
 	return record.TaskID, nil
+}
+
+// TaskIDForConversation resolves the canonical Chat task owning one
+// actor-owned conversation. Empty string means the conversation has no task
+// yet (no admitted Turn); callers must treat that as "not found", not as zero
+// value equality to a real task.
+func (s *ChatTaskService) TaskIDForConversation(ctx context.Context, actorPTID, conversationID string) (string, error) {
+	identity, err := s.TaskIDsForConversations(ctx, actorPTID, []string{conversationID})
+	if err != nil {
+		return "", err
+	}
+	return identity[strings.TrimSpace(conversationID)], nil
+}
+
+// TaskIDsForConversations batch-resolves canonical Chat task ids for
+// actor-owned conversations in one indexed query.
+func (s *ChatTaskService) TaskIDsForConversations(ctx context.Context, actorPTID string, conversationIDs []string) (map[string]string, error) {
+	result := make(map[string]string, len(conversationIDs))
+	ids := make([]string, 0, len(conversationIDs))
+	seen := make(map[string]struct{}, len(conversationIDs))
+	for _, candidate := range conversationIDs {
+		id := strings.TrimSpace(candidate)
+		if id == "" {
+			continue
+		}
+		if _, duplicated := seen[id]; duplicated {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []persistence.TaskRun
+	err = db.WithContext(ctx).
+		Select("task_id", "conversation_id").
+		Where(
+			"surface = ? AND owner_actor_ptid = ? AND conversation_id IN ?",
+			int32(model.TaskSurface_TASK_SURFACE_CHAT),
+			strings.TrimSpace(actorPTID),
+			ids,
+		).
+		Find(&rows).Error
+	if err != nil {
+		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to resolve chat task identities", err)
+	}
+	for _, row := range rows {
+		if strings.TrimSpace(row.ConversationID) == "" || strings.TrimSpace(row.TaskID) == "" {
+			continue
+		}
+		result[row.ConversationID] = row.TaskID
+	}
+	return result, nil
 }
 
 // BeginChatStep opens a new ExecutionStep for one user message, acquires a

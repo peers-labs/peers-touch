@@ -114,7 +114,7 @@ func (h *TurnHandlers) beginChatTaskStep(
 	if actorID == "" {
 		return "", nil, nil
 	}
-	taskID, err = h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), req.GetUserInput())
+	taskID, err = h.chatTaskService.EnsureChatTask(ctx, actorID, req.GetAgentId(), req.GetConversationId(), truncateForTitle(req.GetUserInput()), req.GetUserInput())
 	if err != nil {
 		return "", nil, err
 	}
@@ -439,8 +439,11 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		}
 		if admission.GetStatus() != model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_STARTED {
 			event := "admission_replayed"
-			if admission.GetStatus() == model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED {
+			switch admission.GetStatus() {
+			case model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_QUEUED:
 				event = "queued"
+			case model.TurnAdmissionStatus_TURN_ADMISSION_STATUS_AMENDED:
+				event = "amended"
 			}
 			_ = writeTurnStreamEvent(resp, event, map[string]any{
 				"type":      event,

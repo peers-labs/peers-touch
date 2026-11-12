@@ -78,7 +78,37 @@ import {
   QuickCompletionResponseSchema,
   RecordFeedbackResponseSchema,
   ResetConversationRuntimeResponseSchema,
+  ClaimArtifactVersionResponseSchema,
+  ListTaskArtifactsResponseSchema,
+  ListArtifactVersionsResponseSchema,
+  GetArtifactVersionBodyResponseSchema,
+  SubmitArtifactFeedbackResponseSchema,
+  ListArtifactFeedbackResponseSchema,
+  RecordArtifactCheckResponseSchema,
+  ListArtifactChecksResponseSchema,
+  AcceptArtifactVersionResponseSchema,
+  ListArtifactAcceptancesResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
+import {
+  CreateTerminalSessionResponseSchema,
+  UpdateTerminalSessionResponseSchema,
+  ListTerminalSessionsResponseSchema,
+  ReconcileTerminalSessionsResponseSchema,
+  RemoveTerminalSessionResponseSchema,
+  SandboxPtyWriteResponseSchema,
+  SandboxPtyReadResponseSchema,
+  SandboxPtyResizeResponseSchema,
+  SandboxPtySignalResponseSchema,
+  ResolveActiveSandboxesResponseSchema,
+  TerminalSessionStatus,
+} from '../gen/proto/domain/agent/terminal_session_pb';
+import {
+  CreateBrowserSessionResponseSchema,
+  UpdateBrowserSessionResponseSchema,
+  ListBrowserSessionsResponseSchema,
+  ReconcileBrowserSessionsResponseSchema,
+  RemoveBrowserSessionResponseSchema,
+} from '../gen/proto/domain/agent/browser_session_pb';
 import type {
   AdvanceCapabilityAcceptanceScenarioClockRequest,
   AgentCommandCapabilitySnapshot,
@@ -890,6 +920,8 @@ export interface Session {
   key: string;
   agent_name: string;
   title: string;
+  // Canonical Chat TaskRun identity (Station truth) backing this session.
+  task_id?: string;
   message_count: number;
   version?: number;
   model_override?: string;
@@ -2614,6 +2646,7 @@ export interface AgentErrorResolutionAction {
     | 'editQueue'
     | 'selectRuntime'
     | 'confirmReset'
+    | 'rebindRuntime'
     | 'retryLater'
     | 'retry'
     | 'switchAccount'
@@ -2670,6 +2703,10 @@ export const AGENT_RUNTIME_RESUME_UNAVAILABLE_ERROR_TYPE =
   'RUNTIME_RESUME_UNAVAILABLE';
 export const AGENT_RUNTIME_RESUME_UNAVAILABLE_LOCALE_KEY =
   'agent.errors.resumeUnavailable';
+export const AGENT_RUNTIME_BINDING_STALE_ERROR_TYPE =
+  'RUNTIME_BINDING_STALE';
+export const AGENT_RUNTIME_BINDING_STALE_LOCALE_KEY =
+  'agent.errors.runtimeBindingStale';
 export const AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE = 'PROVIDER_RATE_LIMIT';
 export const AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY =
   'agent.errors.providerRateLimit';
@@ -2745,6 +2782,13 @@ export type AgentRuntimeResumeUnavailableError = AgentTypedErrorPayload & {
   details: {
     runtime_profile_id: string;
     reason_code: string;
+  };
+};
+
+export type AgentRuntimeBindingStaleError = AgentTypedErrorPayload & {
+  details: {
+    provider_id: string;
+    model_id: string;
   };
 };
 
@@ -3125,6 +3169,27 @@ export function isAgentRuntimeResumeUnavailableError(
   );
 }
 
+export function isAgentRuntimeBindingStaleError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentRuntimeBindingStaleError {
+  if (
+    error?.error_type !== AGENT_RUNTIME_BINDING_STALE_ERROR_TYPE
+    || error.locale_key !== AGENT_RUNTIME_BINDING_STALE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'model_id'
+    && detailKeys[1] === 'provider_id'
+    && error.details.provider_id.trim().length > 0
+    && error.details.model_id.trim().length > 0
+  );
+}
+
 export function isAgentProviderRateLimitError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentProviderRateLimitError {
@@ -3489,6 +3554,14 @@ export function resolveAgentTypedErrorAction(
       runtimeProfileId: error.details.runtime_profile_id,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.confirmReset',
+    };
+  }
+  if (isAgentRuntimeBindingStaleError(error)) {
+    return {
+      type: 'rebindRuntime',
+      providerId: error.details.provider_id,
+      modelId: error.details.model_id,
+      label: 'agent.recovery.rebindRuntime',
     };
   }
   if (isAgentQueueFullError(error)) {
@@ -3982,10 +4055,71 @@ export interface AgentCapabilitySessionList {
   }>;
 }
 
+export interface AgentWorkspaceChoice {
+  locator: string;
+  label: string;
+  isGit: boolean;
+  worktreeBase: string | null;
+  createdAtMs: number;
+  lastUsedMs: number;
+}
+
+export interface AgentWorkspaceState {
+  // Canonical root granted to the live capability session; null = private
+  // sandbox default.
+  currentRoot: string | null;
+  // Machine-local shell authorization: "standard" (allowlist) | "full".
+  shellAccess: 'standard' | 'full';
+  choices: AgentWorkspaceChoice[];
+}
+
+export interface AgentWorkspaceEntry {
+  name: string;
+  relativePath: string;
+  isDir: boolean;
+  isSymlink: boolean;
+  size: number;
+  modifiedMs: number;
+}
+
+export interface AgentWorkspaceFsList {
+  root: string;
+  rootName: string;
+  isGit: boolean;
+  path: string;
+  entries: AgentWorkspaceEntry[];
+}
+
+export interface AgentWorkspaceFile {
+  path: string;
+  content: string;
+  truncated: boolean;
+  size: number;
+}
+
+export interface AgentWorkspaceChange {
+  status: string;
+  path: string;
+}
+
+export interface AgentWorkspaceChanges {
+  isGit: boolean;
+  changes: AgentWorkspaceChange[];
+}
+
+export interface AgentWorkspaceDiff {
+  path: string;
+  untracked: boolean;
+  diff: string;
+}
+
 export interface AgentConversation {
   conversation_id: string;
   agent_id: string;
   ptid: string;
+  // Canonical Chat-surface TaskRun owning this conversation; empty before the
+  // first admitted Turn.
+  task_id?: string;
   title: string;
   description?: string;
   provider_id?: string;
@@ -4096,6 +4230,16 @@ export interface AgentConversationRuntimeResetResult {
   conversation: AgentConversation;
   closed_external_session_epoch: number;
   replayed: boolean;
+}
+
+export interface AgentConversationRuntimeRebindInput {
+  conversation_id: string;
+  expected_conversation_version: number;
+}
+
+export interface AgentConversationRuntimeRebindResult {
+  ok: boolean;
+  conversation: AgentConversation;
 }
 
 function agentProtoTimestamp(
@@ -5794,6 +5938,158 @@ export const api = {
       { turn_id: turnId },
     ),
 
+  // ── TW-D3 logical task artifacts ────────────────────────────────────────
+  claimTaskArtifactVersion: (input: {
+    conversationId: string;
+    artifactId?: string;
+    name?: string;
+    expectedBaseVersionId?: string;
+    origin:
+      | 'ARTIFACT_VERSION_ORIGIN_AGENT_OUTPUT'
+      | 'ARTIFACT_VERSION_ORIGIN_HUMAN_EDIT'
+      | 'ARTIFACT_VERSION_ORIGIN_FEEDBACK_REVISION'
+      | 'ARTIFACT_VERSION_ORIGIN_IMPORT';
+    sourceTurnId?: string;
+    sourceMessageId?: string;
+    body?: string;
+    contentType?: string;
+    summary?: string;
+    feedbackId?: string;
+    adoptedAttachmentRefs?: string[];
+    clientIdempotencyKey?: string;
+  }) =>
+    invokeRustProto(
+      'agent_task_artifact_claim_version',
+      ClaimArtifactVersionResponseSchema,
+      {
+        conversation_id: input.conversationId,
+        artifact_id: input.artifactId ?? '',
+        name: input.name ?? '',
+        expected_base_version_id: input.expectedBaseVersionId ?? '',
+        origin: input.origin,
+        source_turn_id: input.sourceTurnId ?? '',
+        source_message_id: input.sourceMessageId ?? '',
+        body: input.body ?? '',
+        content_type: input.contentType ?? '',
+        summary: input.summary ?? '',
+        feedback_id: input.feedbackId ?? '',
+        adopted_attachment_refs: input.adoptedAttachmentRefs ?? [],
+        client_idempotency_key: input.clientIdempotencyKey ?? '',
+      },
+    ),
+
+  listTaskArtifacts: (conversationId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_list',
+      ListTaskArtifactsResponseSchema,
+      { conversation_id: conversationId },
+    ),
+
+  listTaskArtifactVersions: (artifactId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_versions',
+      ListArtifactVersionsResponseSchema,
+      { artifact_id: artifactId },
+    ),
+
+  getTaskArtifactVersionBody: (versionId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_body_get',
+      GetArtifactVersionBodyResponseSchema,
+      { version_id: versionId },
+    ),
+
+  submitTaskArtifactFeedback: (input: {
+    artifactId: string;
+    baseVersionId: string;
+    kind: 'ARTIFACT_FEEDBACK_KIND_SELECTION' | 'ARTIFACT_FEEDBACK_KIND_COMMENT';
+    anchorText?: string;
+    instruction: string;
+    clientIdempotencyKey?: string;
+  }) =>
+    invokeRustProto(
+      'agent_task_artifact_feedback_submit',
+      SubmitArtifactFeedbackResponseSchema,
+      {
+        artifact_id: input.artifactId,
+        base_version_id: input.baseVersionId,
+        kind: input.kind,
+        anchor_text: input.anchorText ?? '',
+        instruction: input.instruction,
+        client_idempotency_key: input.clientIdempotencyKey ?? '',
+      },
+    ),
+
+  listTaskArtifactFeedback: (artifactId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_feedback_list',
+      ListArtifactFeedbackResponseSchema,
+      { artifact_id: artifactId },
+    ),
+
+  recordTaskArtifactCheck: (input: {
+    artifactId: string;
+    versionId: string;
+    checkType:
+      | 'ARTIFACT_CHECK_TYPE_STRUCTURAL'
+      | 'ARTIFACT_CHECK_TYPE_HUMAN_REVIEW'
+      | 'ARTIFACT_CHECK_TYPE_COMMAND';
+    result: 'ARTIFACT_CHECK_RESULT_PASSED' | 'ARTIFACT_CHECK_RESULT_FAILED';
+    detail?: string;
+    environment?: string;
+    clientIdempotencyKey?: string;
+    sourceToolCallId?: string;
+    commandExitCode?: number;
+    commandOutputSha256?: string;
+    command?: string;
+  }) =>
+    invokeRustProto(
+      'agent_task_artifact_check_record',
+      RecordArtifactCheckResponseSchema,
+      {
+        artifact_id: input.artifactId,
+        version_id: input.versionId,
+        check_type: input.checkType,
+        result: input.result,
+        detail: input.detail ?? '',
+        environment: input.environment ?? '',
+        client_idempotency_key: input.clientIdempotencyKey ?? '',
+        source_tool_call_id: input.sourceToolCallId ?? '',
+        command_exit_code: input.commandExitCode ?? 0,
+        command_output_sha256: input.commandOutputSha256 ?? '',
+        command: input.command ?? '',
+      },
+    ),
+
+  listTaskArtifactChecks: (artifactId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_check_list',
+      ListArtifactChecksResponseSchema,
+      { artifact_id: artifactId },
+    ),
+
+  acceptTaskArtifactVersion: (
+    artifactId: string,
+    versionId: string,
+    clientIdempotencyKey?: string,
+  ) =>
+    invokeRustProto(
+      'agent_task_artifact_accept',
+      AcceptArtifactVersionResponseSchema,
+      {
+        artifact_id: artifactId,
+        version_id: versionId,
+        client_idempotency_key: clientIdempotencyKey ?? '',
+      },
+    ),
+
+  listTaskArtifactAcceptances: (artifactId: string) =>
+    invokeRustProto(
+      'agent_task_artifact_acceptance_list',
+      ListArtifactAcceptancesResponseSchema,
+      { artifact_id: artifactId },
+    ),
+
   createAgentCollaborationTask: (input: AgentCollaborationCreateInput) =>
     invokeRustDataFromStatus<AgentCollaborationCreateInput, { task?: CollaborationTask }>(
       'agent_collaboration_create',
@@ -6913,6 +7209,69 @@ export const api = {
       {},
     ),
 
+  // ── Agent working directory selection (per-session authorization) ──────
+  agentWorkspaceList: () =>
+    invokeRustData<Record<string, never>, AgentWorkspaceState>(
+      'agent_workspace_list',
+      {},
+    ),
+
+  agentWorkspaceAddDirectory: (path: string) =>
+    invokeRustData<{ path: string }, AgentWorkspaceState>(
+      'agent_workspace_add_directory',
+      { path },
+    ),
+
+  agentWorkspaceCreateWorktree: (base: string, name: string) =>
+    invokeRustData<{ base: string; name: string }, AgentWorkspaceState>(
+      'agent_workspace_create_worktree',
+      { base, name },
+    ),
+
+  agentWorkspaceRemove: (locator: string) =>
+    invokeRustData<{ locator: string }, AgentWorkspaceState>(
+      'agent_workspace_remove',
+      { locator },
+    ),
+
+  // locator null restores the private sandbox root.
+  agentWorkspaceActivate: (locator: string | null) =>
+    invokeRustData<{ locator: string | null }, AgentWorkspaceState>(
+      'agent_workspace_activate',
+      { locator },
+    ),
+
+  // full=true grants Full Access shell (arbitrary commands in the granted
+  // workspace) for this session; false restores the standard allowlist.
+  agentWorkspaceSetShellAccess: (fullAccess: boolean) =>
+    invokeRustData<{ fullAccess: boolean }, AgentWorkspaceState>(
+      'agent_workspace_set_shell_access',
+      { fullAccess },
+    ),
+
+  // Read-only browsing of the active local workspace. Unsupported for the
+  // remote Station sandbox (code agent.workspaceRemoteSandbox).
+  agentWorkspaceFsList: (path: string) =>
+    invokeRustData<{ path: string }, AgentWorkspaceFsList>(
+      'agent_workspace_fs_list',
+      { path },
+    ),
+  agentWorkspaceFsRead: (path: string) =>
+    invokeRustData<{ path: string }, AgentWorkspaceFile>(
+      'agent_workspace_fs_read',
+      { path },
+    ),
+  agentWorkspaceGitChanges: () =>
+    invokeRustData<Record<string, never>, AgentWorkspaceChanges>(
+      'agent_workspace_git_changes',
+      {},
+    ),
+  agentWorkspaceGitDiff: (path: string) =>
+    invokeRustData<{ path: string }, AgentWorkspaceDiff>(
+      'agent_workspace_git_diff',
+      { path },
+    ),
+
   listAgentConversations: (agentId: string, options?: { status?: string; page?: number; pageSize?: number }) =>
     invokeRustDataFromStatus<AgentConversationListInput, { ok: boolean; conversations: AgentConversation[]; total: number }>(
       'agent_conversation_list',
@@ -6985,6 +7344,12 @@ export const api = {
       ResetConversationRuntimeResponseSchema,
       input,
     ).then(agentRuntimeResetResultFromProto),
+
+  rebindAgentConversationRuntime: (input: AgentConversationRuntimeRebindInput) =>
+    invokeRustDataFromStatus<
+      AgentConversationRuntimeRebindInput,
+      AgentConversationRuntimeRebindResult
+    >('agent_conversation_runtime_rebind', input),
 
   retryAgentTurn: (input: AgentRetryTurnInput) =>
     invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),
@@ -9792,6 +10157,11 @@ export interface GrowthSnapshot {
   window_end: string;
 }
 
+export type AgentMemoryStatus = 'candidate' | 'confirmed' | 'rejected';
+
+// Legacy shape referenced by the growth debug tab. New code should use
+// AgentMemoryEntry, which matches the camelCase JSON actually returned by the
+// station memory proxy.
 export interface MemoryItem {
   id: string;
   agent_id: string;
@@ -9805,7 +10175,27 @@ export interface MemoryItem {
   harmful_count: number;
   created_at: string;
   updated_at: string;
+  status?: AgentMemoryStatus;
 }
+
+// Accurate station-proxy shape for the candidate review lifecycle.
+export interface AgentMemoryEntry {
+  memoryId: string;
+  agentId: string;
+  target: string;
+  layer?: string;
+  content: string;
+  source?: string;
+  isFrozen?: boolean;
+  status?: AgentMemoryStatus;
+  sourceTurnId?: string;
+  createdAt: number | string | null;
+  updatedAt: number | string | null;
+}
+
+export const AGENT_MEMORY_STATUS_CANDIDATE = 1;
+export const AGENT_MEMORY_STATUS_CONFIRMED = 2;
+export const AGENT_MEMORY_STATUS_REJECTED = 3;
 
 export interface SkillItem {
   id: string;
@@ -9838,6 +10228,36 @@ export async function getAgentMemories(agentId: string): Promise<MemoryItem[]> {
     { agent_id: agentId },
   );
   return result;
+}
+
+/**
+ * List memory entries with an optional lifecycle status filter. Pass
+ * AGENT_MEMORY_STATUS_CANDIDATE to load the human review queue.
+ */
+export async function listAgentMemories(
+  agentId: string,
+  statusCode: number = 0,
+): Promise<AgentMemoryEntry[]> {
+  const result = await invokeRustDataFromStatus<
+    { agent_id: string; status: number },
+    { items?: AgentMemoryEntry[] }
+  >('agent_memory_list', { agent_id: agentId, status: statusCode });
+  return result?.items ?? [];
+}
+
+/** Apply a human confirm/reject decision to a memory candidate. */
+export async function reviewAgentMemory(
+  agentId: string,
+  memoryId: string,
+  statusCode:
+    | typeof AGENT_MEMORY_STATUS_CONFIRMED
+    | typeof AGENT_MEMORY_STATUS_REJECTED,
+): Promise<AgentMemoryEntry | null> {
+  const result = await invokeRustDataFromStatus<
+    { agent_id: string; memory_id: string; status: number },
+    { item?: AgentMemoryEntry | null }
+  >('agent_memory_review', { agent_id: agentId, memory_id: memoryId, status: statusCode });
+  return result?.item ?? null;
 }
 
 export async function getAgentSkills(agentId: string): Promise<SkillItem[]> {
@@ -9889,4 +10309,613 @@ export async function exportAgentTurnDiagnostics(turnId: string): Promise<Export
     ExportTurnDiagnosticsResponseSchema,
     { turn_id: turnId },
   );
+}
+
+// ── TW-D5 persistent terminal sessions ──────────────────────────────────
+
+export interface TerminalSessionMeta {
+  sessionId: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  pid: number;
+  status: 'running' | 'exited' | 'killed' | 'unknown';
+  exitCode?: number | null;
+  outputBytes: number;
+  startedAtMs: number;
+}
+
+export interface TerminalSessionRead {
+  meta: TerminalSessionMeta;
+  chunkB64: string;
+  nextCursor: number;
+  resync: boolean;
+}
+
+export interface TerminalStationSession {
+  sessionId: string;
+  conversationId: string;
+  turnId: string;
+  deviceId: string;
+  cwd: string;
+  command: string;
+  args: string[];
+  pid: number;
+  status:
+    | 'TERMINAL_SESSION_STATUS_UNSPECIFIED'
+    | 'TERMINAL_SESSION_STATUS_RUNNING'
+    | 'TERMINAL_SESSION_STATUS_EXITED'
+    | 'TERMINAL_SESSION_STATUS_KILLED'
+    | 'TERMINAL_SESSION_STATUS_UNKNOWN'
+    | string;
+  exitCode: number;
+  outputBytes: string;
+  createdAt?: { seconds?: string };
+  endedAt?: { seconds?: string };
+  // WE-S6 dual execution placement. Present on rows created after the
+  // sandbox work landed; legacy/desktop rows default to DESKTOP_DEVICE.
+  executionTarget?:
+    | 'EXECUTION_TARGET_UNSPECIFIED'
+    | 'EXECUTION_TARGET_DESKTOP_DEVICE'
+    | 'EXECUTION_TARGET_WORKSPACE_SANDBOX'
+    | number;
+  sandboxRef?: string;
+}
+
+export interface TerminalDefaultWorkspace {
+  // Root the terminal cwd is pinned inside: either the user-authorized
+  // project directory or the actor's private sandbox.
+  workspaceRoot: string;
+  // 'project' when workspaceRoot is a user-activated directory,
+  // 'sandbox' for the opaque actor workspace.
+  kind: 'project' | 'sandbox';
+  // Platform interactive shell ($SHELL, bash fallback) for auto-start.
+  shell: string;
+}
+
+export async function terminalDefaultWorkspace(
+  deviceId: string,
+): Promise<TerminalDefaultWorkspace> {
+  return invokeRustData<{ device_id: string }, TerminalDefaultWorkspace>(
+    'terminal_default_workspace',
+    { device_id: deviceId },
+  );
+}
+
+export async function terminalWorkerCreate(input: {
+  command: string;
+  args: string[];
+  cwd?: string;
+  workspaceRoot: string;
+  allowedRoots?: string[];
+  cols?: number;
+  rows?: number;
+}): Promise<TerminalSessionMeta> {
+  return invokeRustData('terminal_session_create', {
+    command: input.command,
+    args: input.args,
+    cwd: input.cwd ?? null,
+    workspaceRoot: input.workspaceRoot,
+    allowedRoots: input.allowedRoots ?? [],
+    cols: input.cols ?? null,
+    rows: input.rows ?? null,
+  });
+}
+
+export async function terminalWorkerWrite(sessionId: string, data: Uint8Array): Promise<boolean> {
+  const chunkB64 = btoa(String.fromCharCode(...data));
+  return invokeRustData('terminal_session_write', { sessionId, dataB64: chunkB64 });
+}
+
+export async function terminalWorkerResize(sessionId: string, cols: number, rows: number): Promise<boolean> {
+  return invokeRustData('terminal_session_resize', { sessionId, cols, rows });
+}
+
+export async function terminalWorkerKill(sessionId: string): Promise<TerminalSessionMeta> {
+  return invokeRustData('terminal_session_kill', { sessionId });
+}
+
+export async function terminalWorkerRemove(sessionId: string): Promise<boolean> {
+  return invokeRustData('terminal_session_remove', { sessionId });
+}
+
+export async function terminalWorkerList(): Promise<TerminalSessionMeta[]> {
+  return invokeRustData('terminal_session_list');
+}
+
+export async function terminalWorkerRead(sessionId: string, cursor: number): Promise<TerminalSessionRead> {
+  return invokeRustData('terminal_session_read', { sessionId, cursor });
+}
+
+export async function terminalStationCreate(input: {
+  sessionId: string;
+  conversationId: string;
+  turnId?: string;
+  deviceId: string;
+  cwd: string;
+  command: string;
+  args: string[];
+  pid: number;
+  // WE-S6: WORKSPACE_SANDBOX sessions omit deviceId and carry sandboxRef.
+  executionTarget?: 'EXECUTION_TARGET_DESKTOP_DEVICE' | 'EXECUTION_TARGET_WORKSPACE_SANDBOX';
+  sandboxRef?: string;
+}): Promise<TerminalStationSession> {
+  const response = await invokeRustProto(
+    'agent_terminal_session_create',
+    CreateTerminalSessionResponseSchema,
+    {
+      session_id: input.sessionId,
+      conversation_id: input.conversationId,
+      turn_id: input.turnId ?? '',
+      device_id: input.deviceId,
+      cwd: input.cwd,
+      command: input.command,
+      args: input.args,
+      pid: input.pid,
+      execution_target:
+        input.executionTarget === 'EXECUTION_TARGET_WORKSPACE_SANDBOX'
+          ? 2
+          : 1,
+      sandbox_ref: input.sandboxRef ?? '',
+    },
+  );
+  return response.session as unknown as TerminalStationSession;
+}
+
+export async function terminalStationUpdate(input: {
+  sessionId: string;
+  status: 'TERMINAL_SESSION_STATUS_RUNNING' | 'TERMINAL_SESSION_STATUS_EXITED' | 'TERMINAL_SESSION_STATUS_KILLED' | 'TERMINAL_SESSION_STATUS_UNKNOWN';
+  exitCode?: number;
+  outputBytes?: number;
+}): Promise<void> {
+  await invokeRustProto(
+    'agent_terminal_session_update',
+    UpdateTerminalSessionResponseSchema,
+    {
+      session_id: input.sessionId,
+      status: input.status,
+      exit_code: input.exitCode ?? 0,
+      output_bytes: input.outputBytes ?? 0,
+    },
+  );
+}
+
+export async function terminalStationList(conversationId: string): Promise<TerminalStationSession[]> {
+  const response = await invokeRustProto(
+    'agent_terminal_session_list',
+    ListTerminalSessionsResponseSchema,
+    { conversation_id: conversationId },
+  );
+  return response.sessions as unknown as TerminalStationSession[];
+}
+
+// WE-S6 sandbox reconcile scope. When set, Station scopes by sandbox_ref and
+// the caller proves liveness through successful PTY reads (not worker ids).
+export interface TerminalSandboxReconcileScope {
+  sandboxRef: string;
+}
+
+export async function terminalStationReconcile(
+  deviceId: string,
+  liveSessionIds: string[],
+  sandboxScope?: TerminalSandboxReconcileScope,
+): Promise<TerminalStationSession[]> {
+  const response = await invokeRustProto(
+    'agent_terminal_session_reconcile',
+    ReconcileTerminalSessionsResponseSchema,
+    sandboxScope
+      ? {
+          device_id: '',
+          live_session_ids: liveSessionIds,
+          execution_target: 2,
+          sandbox_ref: sandboxScope.sandboxRef,
+        }
+      : { device_id: deviceId, live_session_ids: liveSessionIds },
+  );
+  return response.sessions as unknown as TerminalStationSession[];
+}
+
+// WE-S6 read-only view of one actor allocation. `usable` means a terminal may
+// be opened against it (ALLOCATED/DORMANT); DORMANT cold-starts at create.
+export interface ActiveSandboxSession {
+  sandboxRef: string;
+  agentId: string;
+  workspaceRoot: string;
+  state: string;
+  usable: boolean;
+}
+
+// Resolve the actor's current sandbox allocations. Strictly read-only: it
+// never allocates or starts a container.
+export async function terminalResolveActiveSandboxes(): Promise<ActiveSandboxSession[]> {
+  const response = await invokeRustProto(
+    'agent_sandbox_resolve_active',
+    ResolveActiveSandboxesResponseSchema,
+    {},
+  );
+  return response.sandboxes as unknown as ActiveSandboxSession[];
+}
+
+export async function terminalStationRemove(sessionId: string): Promise<void> {
+  await invokeRustProto(
+    'agent_terminal_session_remove',
+    RemoveTerminalSessionResponseSchema,
+    { session_id: sessionId },
+  );
+}
+
+// ── WE-S6 WORKSPACE_SANDBOX PTY proxy (Station forwards to provisioner) ──
+
+export interface SandboxPtyReadResult {
+  data: Uint8Array;
+  nextCursor: number;
+  truncated: boolean;
+  status: TerminalSessionStatus;
+  exitCode: number;
+  outputBytes: number;
+}
+
+export async function terminalSandboxPtyWrite(sessionId: string, data: Uint8Array): Promise<number> {
+  let binary = '';
+  data.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  const response = await invokeRustProto(
+    'agent_sandbox_pty_write',
+    SandboxPtyWriteResponseSchema,
+    { sessionId, dataB64: btoa(binary) },
+  );
+  return Number(response.bytesWritten ?? 0);
+}
+
+export async function terminalSandboxPtyRead(
+  sessionId: string,
+  cursor: number,
+  maxBytes: number,
+): Promise<SandboxPtyReadResult> {
+  const response = await invokeRustProto(
+    'agent_sandbox_pty_read',
+    SandboxPtyReadResponseSchema,
+    { sessionId, cursor, maxBytes },
+  );
+  return {
+    data: response.data ?? new Uint8Array(),
+    nextCursor: Number(response.nextCursor ?? 0),
+    truncated: Boolean(response.truncated),
+    status: response.status,
+    exitCode: response.exitCode ?? 0,
+    outputBytes: Number(response.outputBytes ?? 0),
+  };
+}
+
+export async function terminalSandboxPtyResize(
+  sessionId: string,
+  cols: number,
+  rows: number,
+): Promise<void> {
+  await invokeRustProto(
+    'agent_sandbox_pty_resize',
+    SandboxPtyResizeResponseSchema,
+    { sessionId, cols, rows },
+  );
+}
+
+export async function terminalSandboxPtySignal(sessionId: string, signal: number): Promise<void> {
+  await invokeRustProto(
+    'agent_sandbox_pty_signal',
+    SandboxPtySignalResponseSchema,
+    { sessionId, signal },
+  );
+}
+
+// Text-input convenience; the binary path (terminalSandboxPtyWrite) is the
+// primary one because PTY input carries arbitrary control bytes.
+export async function terminalSandboxPtyWriteText(sessionId: string, text: string): Promise<number> {
+  return terminalSandboxPtyWrite(sessionId, new TextEncoder().encode(text));
+}
+
+// ── TW-D6 persistent browser sessions ──────────────────────────────────
+
+export interface BrowserHostInfo {
+  available: boolean;
+  engine: string;
+  version: string;
+  path: string;
+}
+
+export interface BrowserTabMeta {
+  tabId: string;
+  generation: number;
+  url: string;
+  title: string;
+}
+
+export type BrowserSessionStatus = 'active' | 'closed' | 'unknown';
+export type BrowserControlLease = 'agent' | 'human';
+
+export interface BrowserSessionMeta {
+  sessionId: string;
+  engine: string;
+  status: string;
+  lease: string;
+  tabs: BrowserTabMeta[];
+  startedAtMs: number;
+}
+
+export interface BrowserElementInfo {
+  ref: string;
+  tag: string;
+  inputType: string;
+  role: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BrowserViewportInfo {
+  innerWidth: number;
+  innerHeight: number;
+  outerWidth: number;
+  outerHeight: number;
+  screenX: number;
+  screenY: number;
+}
+
+export interface BrowserSnapshot {
+  tab: BrowserTabMeta;
+  lease: string;
+  text: string;
+  viewport: BrowserViewportInfo;
+  elements: BrowserElementInfo[];
+}
+
+export interface BrowserScreenshotResult {
+  mime: string;
+  dataB64: string;
+}
+
+export async function browserHostInfo(): Promise<BrowserHostInfo> {
+  return invokeRustData<Record<string, unknown>, BrowserHostInfo>('browser_host_info', {});
+}
+
+export async function browserWorkerCreate(sessionId: string): Promise<BrowserSessionMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserSessionMeta>('browser_session_create', { sessionId });
+}
+
+export async function browserWorkerOpenTab(sessionId: string, url: string): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_tab_open', { sessionId, url });
+}
+
+export async function browserWorkerCloseTab(sessionId: string, tabId: string): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_tab_close', { sessionId, tabId });
+}
+
+export async function browserWorkerTabList(sessionId: string): Promise<BrowserTabMeta[]> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta[]>('browser_tab_list', { sessionId });
+}
+
+export async function browserWorkerNavigate(
+  sessionId: string,
+  tabId: string,
+  url: string,
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_navigate', { sessionId, tabId, url });
+}
+
+export async function browserWorkerHistory(
+  sessionId: string,
+  tabId: string,
+  direction: 'back' | 'forward' | 'reload',
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_history', { sessionId, tabId, direction });
+}
+
+export async function browserWorkerSnapshot(
+  sessionId: string,
+  tabId: string,
+): Promise<BrowserSnapshot> {
+  return invokeRustData<Record<string, unknown>, BrowserSnapshot>('browser_snapshot', { sessionId, tabId });
+}
+
+export async function browserWorkerClick(
+  sessionId: string,
+  tabId: string,
+  elementRef: string,
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_click', { sessionId, tabId, elementRef });
+}
+
+export async function browserWorkerFill(
+  sessionId: string,
+  tabId: string,
+  elementRef: string,
+  value: string,
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_fill', { sessionId, tabId, elementRef, value });
+}
+
+export async function browserWorkerSubmit(
+  sessionId: string,
+  tabId: string,
+  elementRef: string,
+): Promise<BrowserTabMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserTabMeta>('browser_submit', { sessionId, tabId, elementRef });
+}
+
+export async function browserWorkerScreenshot(
+  sessionId: string,
+  tabId: string,
+): Promise<BrowserScreenshotResult> {
+  return invokeRustData<Record<string, unknown>, BrowserScreenshotResult>('browser_screenshot', { sessionId, tabId });
+}
+
+export async function browserWorkerScreencastStart(
+  sessionId: string,
+  tabId: string,
+  width: number,
+  height: number,
+): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_screencast_start', {
+    sessionId,
+    tabId,
+    width,
+    height,
+  });
+}
+
+export async function browserWorkerScreencastStop(sessionId: string, tabId: string): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_screencast_stop', { sessionId, tabId });
+}
+
+export type BrowserMouseKind = 'moved' | 'pressed' | 'released';
+
+export async function browserWorkerSendMouse(input: {
+  sessionId: string;
+  tabId: string;
+  kind: BrowserMouseKind;
+  x: number;
+  y: number;
+  button?: 'left' | 'right' | 'middle';
+  buttons: number;
+  clickCount: number;
+}): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_send_mouse', {
+    button: 'left',
+    ...input,
+  });
+}
+
+export async function browserWorkerSendWheel(input: {
+  sessionId: string;
+  tabId: string;
+  x: number;
+  y: number;
+  deltaX: number;
+  deltaY: number;
+}): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_send_wheel', input);
+}
+
+export async function browserWorkerSendKey(input: {
+  sessionId: string;
+  tabId: string;
+  kind: 'down' | 'up';
+  key: string;
+  code: string;
+  modifiers: number;
+}): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_send_key', input);
+}
+
+export async function browserWorkerInsertText(
+  sessionId: string,
+  tabId: string,
+  text: string,
+): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_insert_text', { sessionId, tabId, text });
+}
+
+export async function browserWorkerInspect(sessionId: string): Promise<BrowserSessionMeta> {
+  return invokeRustData<Record<string, unknown>, BrowserSessionMeta>('browser_inspect', { sessionId });
+}
+
+export async function browserWorkerRemove(sessionId: string): Promise<boolean> {
+  return invokeRustData<Record<string, unknown>, boolean>('browser_remove', { sessionId });
+}
+
+export async function browserWorkerList(): Promise<BrowserSessionMeta[]> {
+  return invokeRustData<Record<string, unknown>, BrowserSessionMeta[]>('browser_session_list', {});
+}
+
+// Station metadata (proto passthrough). Worker generation is the authority;
+// Station persists only session/tab/lease metadata.
+export interface BrowserStationSession {
+  sessionId: string;
+  conversationId: string;
+  turnId?: string;
+  deviceId: string;
+  engine: string;
+  status:
+    | 'BROWSER_SESSION_STATUS_UNSPECIFIED'
+    | 'BROWSER_SESSION_STATUS_ACTIVE'
+    | 'BROWSER_SESSION_STATUS_CLOSED'
+    | 'BROWSER_SESSION_STATUS_UNKNOWN'
+    | string;
+  lease:
+    | 'BROWSER_CONTROL_LEASE_UNSPECIFIED'
+    | 'BROWSER_CONTROL_LEASE_AGENT'
+    | 'BROWSER_CONTROL_LEASE_HUMAN'
+    | string;
+  tabs?: BrowserTabMeta[];
+  createdAt?: { seconds?: string };
+  endedAt?: { seconds?: string };
+}
+
+export async function browserStationCreate(input: {
+  sessionId: string;
+  conversationId: string;
+  turnId?: string;
+  deviceId: string;
+  engine: string;
+}): Promise<BrowserStationSession> {
+  const response = await invokeRustProto(
+    'agent_browser_session_create',
+    CreateBrowserSessionResponseSchema,
+    {
+      session_id: input.sessionId,
+      conversation_id: input.conversationId,
+      turn_id: input.turnId ?? '',
+      device_id: input.deviceId,
+      engine: input.engine,
+    },
+  );
+  return response.session as unknown as BrowserStationSession;
+}
+
+export async function browserStationUpdate(input: {
+  sessionId: string;
+  status: number;
+  lease: number;
+  tabs?: BrowserTabMeta[];
+}): Promise<void> {
+  await invokeRustProto('agent_browser_session_update', UpdateBrowserSessionResponseSchema, {
+    session_id: input.sessionId,
+    status: input.status,
+    lease: input.lease,
+    tabs: (input.tabs ?? []).map((tab) => ({
+      tab_id: tab.tabId,
+      generation: tab.generation,
+      url: tab.url,
+      title: tab.title,
+    })),
+  });
+}
+
+export async function browserStationList(conversationId: string): Promise<BrowserStationSession[]> {
+  const response = await invokeRustProto(
+    'agent_browser_session_list',
+    ListBrowserSessionsResponseSchema,
+    { conversation_id: conversationId },
+  );
+  return response.sessions as unknown as BrowserStationSession[];
+}
+
+export async function browserStationReconcile(
+  deviceId: string,
+  liveSessionIds: string[],
+): Promise<BrowserStationSession[]> {
+  const response = await invokeRustProto(
+    'agent_browser_session_reconcile',
+    ReconcileBrowserSessionsResponseSchema,
+    { device_id: deviceId, live_session_ids: liveSessionIds },
+  );
+  return response.sessions as unknown as BrowserStationSession[];
+}
+
+export async function browserStationRemove(sessionId: string): Promise<void> {
+  await invokeRustProto('agent_browser_session_remove', RemoveBrowserSessionResponseSchema, {
+    session_id: sessionId,
+  });
 }

@@ -1,0 +1,56 @@
+{
+  "plan": "TW-20261102",
+  "closure": "tw-o12-sandbox-psql",
+  "outcome": "O12-workspace-sandbox",
+  "source_commit": "f36e38b2535fe963eea7f512f567c7f37f730534",
+  "verified_at": "2026-11-05T14:36:09.148Z",
+  "source": "postgres://pt-tw-d1/postgres peers_touch_tw_d1 (direct SQL, independent of SSE/closure)",
+  "turn_id": "turn_802dfafa86d13e00d183694b",
+  "sandbox_ref": "wbox-e0e9c4ef030865fe07a5e760afa3c985",
+  "facts": {
+    "station_sandbox_calls": 4,
+    "applied_results": 4,
+    "non_sandbox_calls": 0,
+    "sandbox_state": "allocated",
+    "pinned_image": "sha256:b752ae95cc70c825c0a9b1ef480f19737469ca8a51009c795d18f05cb60e2e9d",
+    "backend": "oci_linux",
+    "sandbox_pty_sessions": 1,
+    "pty_with_device_violations": 0
+  },
+  "assertions": [
+    [
+      "four_tools_succeeded_station_owned",
+      true
+    ],
+    [
+      "four_bounded_results_applied",
+      true
+    ],
+    [
+      "zero_calls_outside_sandbox_family",
+      true
+    ],
+    [
+      "sandbox_allocated",
+      true
+    ],
+    [
+      "image_content_id_pinned",
+      true
+    ],
+    [
+      "backend_oci_linux",
+      true
+    ],
+    [
+      "pty_sessions_bound_to_sandbox",
+      true
+    ],
+    [
+      "no_pty_session_bound_device",
+      true
+    ]
+  ],
+  "pass": 8,
+  "fail": 0
+}

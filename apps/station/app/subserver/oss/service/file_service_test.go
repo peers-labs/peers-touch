@@ -1369,6 +1369,26 @@ func TestSaveFile_MimeBlocklistRejectsExt(t *testing.T) {
 	}
 }
 
+// TestDetectMimeCanonicalizesExecutables is host-independent: regardless of
+// whether the local shared-mime DB calls a PE file x-msdownload or
+// x-ms-dos-executable (or has no entry at all), the dangerous family must
+// resolve to the stable MIME an operator blocklist targets.
+func TestDetectMimeCanonicalizesExecutables(t *testing.T) {
+	for _, ext := range []string{".exe", ".dll", ".com", ".scr", ".sys", ".drv", ".pif"} {
+		if got := detectMime(ext); got != "application/x-msdownload" {
+			t.Fatalf("detectMime(%q)=%q, want application/x-msdownload", ext, got)
+		}
+	}
+	if got := detectMime(".msi"); got != "application/x-msi" {
+		t.Fatalf("detectMime(.msi)=%q, want application/x-msi", got)
+	}
+	// Benign text still resolves through the host/fallback, unknown stays
+	// octet-stream; canonicalization must not widen beyond the executable set.
+	if got := detectMime(".txt"); got == "" || got == "application/x-msdownload" {
+		t.Fatalf("detectMime(.txt)=%q unexpectedly overridden", got)
+	}
+}
+
 // TestPrepareUpload_MimeBlocklistRejectsContentType — the presign
 // path runs the same gate against `req.ContentType`. We refuse to
 // hand the client a presigned URL when the declared MIME would be

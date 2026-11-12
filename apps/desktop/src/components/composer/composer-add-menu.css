@@ -1,0 +1,76 @@
+/*
+ * Composer "+" aggregation menu. One entry point that gathers the three
+ * composer-side actions (workspace file search, attachment, recent topics)
+ * instead of scattering them across separate controls. Layout-only styles
+ * over --pt-* tokens; peers-ui primitives own interactive states.
+ */
+
+.pa-addmenu {
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--pt-surface);
+}
+
+.pa-addmenu__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 6px;
+}
+
+.pa-addmenu__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pt-text);
+}
+
+.pa-addmenu__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Full-width quiet rows keep icon + label columns aligned left. */
+.pa-addmenu__row {
+  justify-content: flex-start;
+}
+
+.pa-addmenu__row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.pa-addmenu__row-meta {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--pt-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pa-addmenu__empty {
+  padding: 14px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pt-muted);
+  text-align: center;
+}
+
+.pa-addmenu__limit {
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  color: var(--pt-muted);
+}

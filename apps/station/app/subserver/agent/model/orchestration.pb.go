@@ -1602,8 +1602,17 @@ type TaskRun struct {
 	StartedAt           *timestamppb.Timestamp  `protobuf:"bytes,12,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	UpdatedAt           *timestamppb.Timestamp  `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	EndedAt             *timestamppb.Timestamp  `protobuf:"bytes,14,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Canonical user-visible conversation for a Chat-surface task. A Chat task
+	// has 0..1 conversation (0 only before the first admitted Turn) and a
+	// conversation owns at most one Chat task.
+	CanonicalConversationId string `protobuf:"bytes,15,opt,name=canonical_conversation_id,json=canonicalConversationId,proto3" json:"canonical_conversation_id,omitempty"`
+	// Current accepted goal / acceptance target of the task. Distinct from the
+	// display title; updated only through explicit goal revision.
+	Goal string `protobuf:"bytes,16,opt,name=goal,proto3" json:"goal,omitempty"`
+	// User-defined organization labels. Labels never carry execution semantics.
+	Labels        []string `protobuf:"bytes,17,rep,name=labels,proto3" json:"labels,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TaskRun) Reset() {
@@ -1730,6 +1739,27 @@ func (x *TaskRun) GetUpdatedAt() *timestamppb.Timestamp {
 func (x *TaskRun) GetEndedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.EndedAt
+	}
+	return nil
+}
+
+func (x *TaskRun) GetCanonicalConversationId() string {
+	if x != nil {
+		return x.CanonicalConversationId
+	}
+	return ""
+}
+
+func (x *TaskRun) GetGoal() string {
+	if x != nil {
+		return x.Goal
+	}
+	return ""
+}
+
+func (x *TaskRun) GetLabels() []string {
+	if x != nil {
+		return x.Labels
 	}
 	return nil
 }
@@ -5990,7 +6020,7 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xf1\x05\n" +
+	"\bended_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\"\xd9\x06\n" +
 	"\aTaskRun\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -6010,7 +6040,10 @@ const file_domain_agent_orchestration_proto_rawDesc = "" +
 	"started_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x125\n" +
-	"\bended_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x1a7\n" +
+	"\bended_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12:\n" +
+	"\x19canonical_conversation_id\x18\x0f \x01(\tR\x17canonicalConversationId\x12\x12\n" +
+	"\x04goal\x18\x10 \x01(\tR\x04goal\x12\x16\n" +
+	"\x06labels\x18\x11 \x03(\tR\x06labels\x1a7\n" +
 	"\tMetaEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb4\x06\n" +

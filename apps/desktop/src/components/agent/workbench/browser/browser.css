@@ -1,0 +1,158 @@
+/*
+ * Browser work surface chrome. Mirrors a conventional desktop browser:
+ * tab strip on top, then one left-aligned navigation toolbar whose address
+ * field fills the remaining width (back / forward / reload, address, go).
+ * Layout-only styles over --pt-* design tokens; peers-ui primitives own the
+ * interactive states, so no raw colors live here.
+ */
+
+.wb-browser {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pt-surface);
+}
+
+/* Tab strip. */
+.wb-browser__tabstrip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 4px 6px 0;
+  background: var(--pt-subtle);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.wb-browser__tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  padding: 4px 8px;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--pt-muted);
+  background: transparent;
+}
+
+.wb-browser__tab[data-selected='true'] {
+  color: var(--pt-text);
+  background: var(--pt-surface);
+}
+
+.wb-browser__tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Navigation toolbar: always left-aligned, address field takes the rest. */
+.wb-browser__toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--pt-surface);
+  border-bottom: 1px solid var(--pt-border);
+}
+
+.wb-browser__nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.wb-browser__address {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* peers-ui TextField applies className to the inner <input>, not the
+   .pt-field-frame wrapper, so target the frame directly to make the address
+   field fill the toolbar width between the nav buttons and Go. */
+.wb-browser__toolbar .pt-field-frame {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wb-browser__toolbar .pt-field-frame .pt-input {
+  width: 100%;
+}
+
+.wb-browser__go {
+  flex: 0 0 auto;
+}
+
+/* Error line under the toolbar. */
+.wb-browser__error {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--pt-danger);
+}
+
+/* Live page / start surface fills everything below the toolbar. */
+.wb-browser__viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--pt-surface);
+}
+
+.wb-browser__start {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.wb-browser__start-hint {
+  font-size: 11px;
+  color: var(--pt-muted);
+  text-align: center;
+}
+
+/* Fail-closed empty state when no managed browser host is verified. */
+.wb-browser__unavailable {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.wb-browser__unavailable-icon {
+  flex-shrink: 0;
+  color: var(--pt-muted);
+}
+
+.wb-browser__unavailable-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--pt-muted);
+  max-width: 240px;
+}
+
+.wb-browser__connecting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pt-muted);
+  font-size: 12px;
+}

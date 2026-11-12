@@ -1123,6 +1123,15 @@ pub struct AgentConversationRuntimeResetInput {
     pub destructive_confirmed: bool,
 }
 
+/// Explicit recovery input for a stale DIRECT_MODEL runtime binding
+/// (RUNTIME_BINDING_STALE). Releases the conversation-level binding so the
+/// next turn re-admits against the current default runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationRuntimeRebindInput {
+    pub conversation_id: String,
+    pub expected_conversation_version: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRetryTurnInput {
     pub conversation_id: String,

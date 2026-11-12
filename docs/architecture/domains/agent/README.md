@@ -1,8 +1,8 @@
 # Agent 架构
 
 > **Status**: active
-> **Version**: v1.6
-> **Created**: 2026-04-11 | **Updated**: 2026-10-20
+> **Version**: v1.7
+> **Created**: 2026-04-11 | **Updated**: 2026-11-02
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/station/app/subserver/agent/`, `apps/desktop/src-tauri/src/application/agent_turn/`, `apps/desktop/src-tauri/src/application/mcp/`
 
@@ -38,6 +38,8 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 | [data-model.md](./data-model.md) | Agent、Conversation、Turn、Capability Binding 与 ToolCall 的权威模型 |
 | [module-layout.md](./module-layout.md) | Model、Station、Desktop 与 Acceptance 的模块职责 |
 | [integration.md](./integration.md) | 跨运行时集成、证据和迁移边界 |
+| [task-workbench/](./task-workbench/) | **持续任务工作台 accepted product + architecture（2026-11-02）** — 一个任务一条连续工作线：TaskRun ↔ canonical Conversation ↔ Turn、durable 事件 replay/live、版本化 Artifact、受控文件/命令、TerminalSession、BrowserSession、Profile/Memory 与插件 readiness；实施由 [TW-20261102 执行计划](./execution-plans/20261102-task-workbench/plan.md)（D1–D7）承接 |
+| [workspace-execution/](./workspace-execution/) | **工作区执行落点 accepted architecture（2026-11-04）** — shell/file 与 TerminalSession 的两个执行落点：本机 DESKTOP_DEVICE（现状）与 Station WORKSPACE_SANDBOX（新）。Station 不持容器特权，sibling 沙盒由独立 provisioner 按 ExecutorBackend SPI 分配，非 root/只读 rootfs/网络隔离/egress allowlist；越界由 OS 自然报错、禁止沙盒→本机回退；持久单元=workspace 卷。实施由 [WE-20261104 执行计划](./execution-plans/20261104-workspace-execution/plan.md)（WE-S1–S8，Linux 优先，Win/mac 目标 runner 后置）承接 |
 | [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前最小交付由 Minimum Usable Agent Chat Plan 管理 |
 | [agent-usability-depth/design.md](./agent-usability-depth/design.md) | **execution-active（2026-10-27）** — 参考客户端可用性水平的整体实现设计：V01–V06 任务执行深度（预算/写执行/Skill 资源/队列/恢复/产物）与 V07–V14 能力供给面真实化（Knowledge/Memory/MCP/Provider/Cron/Lark/Bot/身份）；实施 Plan 与逐条证据见 [execution-plans/20261025-agent-usability-depth](./execution-plans/20261025-agent-usability-depth/plan.md)（TD-J01…J05 原生 Journey 仍 UNPROVEN） |
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
@@ -59,7 +61,20 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 ## 4. 执行计划
 
 当前执行入口为
-[Agent 可用性深度 V01–V14（execution-active，2026-10-27 源码门禁通过；TD-Journey UNPROVEN）](./execution-plans/20261025-agent-usability-depth/plan.md)：
+[持续任务工作台 D1–D7（TW-20261102，2026-11-02 冻结，D1 待实施；TW-O01…O12 全部 UNPROVEN）](./execution-plans/20261102-task-workbench/plan.md)：
+以两条端到端旅程（研究/文档、代码/服务/Browser 验证）为北极星，按日交付纵向闭包——
+任务/Turn/事件主链、输入队列与介入、Artifact 版本闭环、真实文件/命令/Diff、
+持久 TerminalSession、真实 BrowserSession、Profile/Memory/插件 readiness 收口；
+架构源为 [task-workbench/](./task-workbench/)，在 Agent 可用性深度已交付底座上演进。
+
+后续能力计划（prepared，未启动实施）：
+[工作区执行落点 WE-S1–S8（WE-20261104，2026-11-04 冻结）](./execution-plans/20261104-workspace-execution/plan.md)
+——shell/file 与 TerminalSession 增加 Station WORKSPACE_SANDBOX 落点：独立 provisioner + sibling 容器、ExecutorBackend SPI 跨 OS、
+非 root/网络隔离/越界 OS 自然报错/禁止回落到本机、持久单元=workspace 卷；Linux 优先，Windows/macOS 目标 runner（REMOTE_CONNECTOR）列末期；
+架构源为 [workspace-execution/](./workspace-execution/)。
+
+上一执行入口为
+[Agent 可用性深度 V01–V14（V01–V14 源码门禁通过；TD-Journey UNPROVEN）](./execution-plans/20261025-agent-usability-depth/plan.md)：
 以 TD-C01…TD-C06 任务结果为北极星，连续执行预算、CLIENT 写/命令工具、
 Skill 资源包、运行中队列、过程恢复、真实文件产物，以及 Knowledge/Memory/
 MCP/Provider/Cron/Lark/Bot/身份八条能力供给垂直；Task Depth 修订案与

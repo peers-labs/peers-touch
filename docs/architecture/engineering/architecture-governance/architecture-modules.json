@@ -468,7 +468,15 @@
         "MCA-D18",
         "MCA-D20",
         "MCA-D22",
-        "MCA-D23"
+        "MCA-D23",
+        "WE-D01",
+        "WE-D02",
+        "WE-D03",
+        "WE-D04",
+        "WE-D05",
+        "WE-D06",
+        "WE-D07",
+        "WE-D08"
       ],
       "governedPaths": [
         "apps/desktop/src-tauri/src/application/agent_turn",

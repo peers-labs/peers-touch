@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "tw-o12-native-journey",
+  "journeyId": "tw-o12-research-memory",
+  "commit": "4e4ce0df0272064e6fd8c74f6e60f4a3115ff1d7",
+  "stationUrl": "http://127.0.0.1:18092",
+  "model": "volcengine-ark/doubao-seed (ep-20260623145021-n4xdm)",
+  "recordedAt": "2026-11-04T05:12:10.274Z",
+  "agentName": "assistant",
+  "agentId": "agent_31f12bda0aca231b80b14790",
+  "marker": "O12RMW1NR0G8",
+  "material": {
+    "objectRef": "oss:2026/11/04/bVA_4jpOVMiHLxqWDCAycw.txt",
+    "token": "O12-MAT-MW1NR0G8-TOKEN",
+    "proofPhrase": "harbor ledger rooms are painted indigo on tuesdays",
+    "consumedIntoV1Bytes": true
+  },
+  "artifact": {
+    "v1": {
+      "id": "artver_193a9dbfcf2dad060b6492df",
+      "seq": "1"
+    },
+    "v2": {
+      "id": "artver_b02298102331bf344130f752",
+      "seq": "2",
+      "parent": "artver_193a9dbfcf2dad060b6492df",
+      "origin": "feedback_revision",
+      "feedbackLinked": true
+    },
+    "distinctHashes": true,
+    "currentVersion": "artver_b02298102331bf344130f752",
+    "adoptedV1": "1",
+    "adoptedV2": "0",
+    "reopenedAcceptedVersion": "artver_b02298102331bf344130f752"
+  },
+  "memoryRecall": {
+    "code": "ZEPHYR-MW1NR0G8",
+    "memoryId": "mem_5a2e9adb304a30e5f4672589",
+    "confirmedViaDock": true,
+    "retrievalsBefore": 0,
+    "retrievalsAfter": 1,
+    "recallTurnStatus": "completed",
+    "recallReply": "assistantjust nowTurn diagnostics18sZEPHYR-MW1NR0G8Save as artifact",
+    "modelEchoedCode": true
+  }
+}

@@ -59,6 +59,32 @@ func modelMemoryLayerToDomain(layer model.MemoryLayer) domain.MemoryLayer {
 	return ""
 }
 
+var modelToDomainMemoryStatus = map[model.MemoryStatus]domain.MemoryStatus{
+	model.MemoryStatus_MEMORY_STATUS_CANDIDATE: domain.MemoryStatusCandidate,
+	model.MemoryStatus_MEMORY_STATUS_CONFIRMED: domain.MemoryStatusConfirmed,
+	model.MemoryStatus_MEMORY_STATUS_REJECTED:  domain.MemoryStatusRejected,
+}
+
+var domainToModelMemoryStatus = map[domain.MemoryStatus]model.MemoryStatus{
+	domain.MemoryStatusCandidate: model.MemoryStatus_MEMORY_STATUS_CANDIDATE,
+	domain.MemoryStatusConfirmed: model.MemoryStatus_MEMORY_STATUS_CONFIRMED,
+	domain.MemoryStatusRejected:  model.MemoryStatus_MEMORY_STATUS_REJECTED,
+}
+
+func modelMemoryStatusToDomain(status model.MemoryStatus) domain.MemoryStatus {
+	if d, ok := modelToDomainMemoryStatus[status]; ok {
+		return d
+	}
+	return ""
+}
+
+func domainMemoryStatusToModel(status domain.MemoryStatus) model.MemoryStatus {
+	if m, ok := domainToModelMemoryStatus[status]; ok {
+		return m
+	}
+	return model.MemoryStatus_MEMORY_STATUS_CONFIRMED
+}
+
 // HandleListMemories retrieves all memory entries for a given agent and target.
 func (h *MemoryHandlers) HandleListMemories(ctx context.Context, req *model.ListMemoriesRequest) (*model.ListMemoriesResponse, error) {
 	since, until, err := resolveMemoryTimeRange(req.GetSince(), req.GetUntil(), req.GetPeriod())
@@ -75,6 +101,7 @@ func (h *MemoryHandlers) HandleListMemories(ctx context.Context, req *model.List
 		OrderBy:  req.GetOrderBy(),
 		Since:    since,
 		Until:    until,
+		Status:   modelMemoryStatusToDomain(req.GetStatus()),
 	})
 	if err != nil {
 		logger.Errorf(ctx, "HandleListMemories failed: agent_id=%s, target=%s, err=%v",
@@ -302,6 +329,19 @@ func (h *MemoryHandlers) HandleFeedback(ctx context.Context, req *model.MemoryFe
 	}, nil
 }
 
+// HandleReviewMemory applies a human confirm/reject decision to a candidate.
+func (h *MemoryHandlers) HandleReviewMemory(ctx context.Context, req *model.ReviewMemoryRequest) (*model.ReviewMemoryResponse, error) {
+	if req.GetMemoryId() == "" {
+		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "memory_id is required", nil))
+	}
+	target := modelMemoryStatusToDomain(req.GetStatus())
+	item, err := h.memoryService.ReviewMemory(ctx, req.GetAgentId(), req.GetMemoryId(), target)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.ReviewMemoryResponse{Item: memoryItemToProto(item)}, nil
+}
+
 func memoryItemToProto(item *domain.MemoryItem) *model.MemoryItem {
 	if item == nil {
 		return nil
@@ -322,6 +362,7 @@ func memoryItemToProto(item *domain.MemoryItem) *model.MemoryItem {
 		HelpfulCount: int32(item.HelpfulCount),
 		HarmfulCount: int32(item.HarmfulCount),
 		IsFrozen:     item.IsFrozen,
+		Status:       domainMemoryStatusToModel(item.Status),
 	}
 	if !item.CreatedAt.IsZero() {
 		mi.CreatedAt = timestamppb.New(item.CreatedAt)
@@ -367,6 +408,7 @@ func memorySnapshotToProto(s *domain.MemorySnapshot) *model.MemorySnapshot {
 		MemoryContent:  s.MemoryContent,
 		UserContent:    s.UserContent,
 		PersonaContent: s.PersonaContent,
+		Degraded:       s.Degraded,
 	}
 	for i := range s.RelevantItems {
 		out.RelevantItems = append(out.RelevantItems, memoryItemToProto(&s.RelevantItems[i]))

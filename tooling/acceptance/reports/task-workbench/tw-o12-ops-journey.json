@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "tw-o12-native-journey",
+  "journeyId": "tw-o12-ops-failfix",
+  "commit": "93a141662338856409ba389abde2a3d96e84934b",
+  "stationUrl": "http://127.0.0.1:18092",
+  "model": "volcengine-ark/doubao-seed (ep-20260623145021-n4xdm)",
+  "recordedAt": "2026-11-04T05:37:10.360Z",
+  "marker": "o121oon3b",
+  "failCallId": "tool_call_d9f200bc47d8eebf970da33b",
+  "passCallId": "tool_call_58950876b2ac140dd0fd2682",
+  "distinctFailThenPass": true,
+  "diffFacts": "modified|64|80|false",
+  "diffPreview": "--- a/o121oon3b.txt+++ b/o121oon3b.txt@@ -1,1 +1,1 @@+status=ok-status=fail ",
+  "commandCheckId": "artchk_3597a21960ad8e85b2566e1b",
+  "checkFacts": "tool_call_58950876b2ac140dd0fd2682|grep|0|64",
+  "outputHashMatches": true,
+  "artifact": {
+    "versionId": "artver_a85039a16a2fa27feb2f9194",
+    "accepted": "accepted",
+    "currentVersion": "artver_a85039a16a2fa27feb2f9194"
+  }
+}
