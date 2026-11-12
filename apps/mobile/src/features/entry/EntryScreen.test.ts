@@ -18,12 +18,14 @@ describe('Mobile Entry surface inventory contracts', () => {
     );
   });
 
-  it('keeps the scan action at the minimum 44px touch target', () => {
-    const rule = styles.match(
-      /\.entry-scan-button\s*\{[^}]*\}/,
-    )?.[0] ?? '';
-    expect(rule).toContain('width: 44px');
-    expect(rule).toContain('height: 44px');
+  it('exposes scan as a quiet peers-ui IconButton whose touch target is primitive-owned', () => {
+    // The IconButton primitive enforces the comfortable touch size on coarse
+    // pointers (packages/ui styles.css pointer:coarse rule), so the entry
+    // surface no longer carries a 44px app-class override.
+    expect(source).toContain('actionId="entry.scan"');
+    expect(source).toContain('iconId="scan-line"');
+    expect(source).toContain('emphasis="quiet"');
+    expect(source).not.toContain('entry-scan-button');
   });
 
   it('lets a single auth action size to its label instead of clipping it', () => {

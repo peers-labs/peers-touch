@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Icon, Spin } from '@peers-touch/ui';
+import { Button, Icon, IconButton, Spin } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import logo from '../../assets/logo.png';
@@ -111,15 +111,14 @@ export function EntryScreen({
     >
       <div className="launch-topbar entry-topbar">
         {onScan ? (
-          <button
-            type="button"
-            className="entry-scan-button"
-            aria-label={t('mobile.deviceLink.scan')}
-            title={t('mobile.deviceLink.scan')}
-            onClick={onScan}
-          >
-            <Icon iconId="scan-line" size={19} aria-hidden="true" />
-          </button>
+          <IconButton
+            actionId="entry.scan"
+            iconId="scan-line"
+            iconSize={19}
+            label={t('mobile.deviceLink.scan')}
+            emphasis="quiet"
+            onActivate={onScan}
+          />
         ) : null}
         <LanguageSwitcher />
       </div>

@@ -204,9 +204,10 @@ describe('Station entry visual contract', () => {
     expect(entrySource).not.toContain('launch-hero');
   });
 
-  it('exposes scan as a small icon action in the top bar', () => {
-    expect(entrySource).toContain('className="entry-scan-button"');
-    expect(entrySource).toContain("aria-label={t('mobile.deviceLink.scan')}");
+  it('exposes scan as a quiet peers-ui IconButton in the top bar', () => {
+    expect(entrySource).toContain('actionId="entry.scan"');
+    expect(entrySource).toContain("label={t('mobile.deviceLink.scan')}");
+    expect(entrySource).not.toContain('entry-scan-button');
   });
 
   it('embeds the access gate inline instead of navigating to a separate page', () => {

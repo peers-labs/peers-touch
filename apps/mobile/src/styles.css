@@ -267,26 +267,6 @@ select {
   gap: 10px;
 }
 
-.entry-scan-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  /* North-star quiet icon tile: no bordered chrome, ink-on-canvas ghost. */
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--pt-secondary);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.entry-scan-button:active {
-  background: var(--pt-subtle);
-  color: var(--pt-text);
-}
-
 .entry-active-station {
   display: flex;
   align-items: center;
@@ -537,28 +517,6 @@ select {
   .station-entry {
     min-height: 44px;
   }
-}
-
-.mobile-language-switcher {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 44px;
-  min-width: 70px;
-  gap: 6px;
-  padding: 0 12px;
-  /* North-star quiet language toggle: borderless ghost, paired with the
-     borderless scan tile in the entry top bar. */
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--pt-secondary);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  box-shadow: none;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
 .pt-network-intro {

@@ -1,4 +1,4 @@
-import { Icon, Menu } from '@peers-touch/ui';
+import { Button, Icon, Menu } from '@peers-touch/ui';
 
 import { useMobileI18n } from '../app/mobileI18n';
 
@@ -17,10 +17,15 @@ export function LanguageSwitcher() {
         onActivate: () => setLanguage(option.code),
       }))}
     >
-      <button type="button" className="mobile-language-switcher" aria-label={current.nativeName}>
-        <Icon iconId="globe" size={15} />
-        <span>{current.shortName}</span>
-      </button>
+      <Button
+        actionId="entry.language"
+        emphasis="quiet"
+        density="compact"
+        leading={<Icon iconId="globe" size={15} />}
+        aria-label={current.nativeName}
+      >
+        {current.shortName}
+      </Button>
     </Menu>
   );
 }

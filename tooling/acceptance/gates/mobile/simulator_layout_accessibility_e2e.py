@@ -123,7 +123,7 @@ return {
 SWITCH_LANGUAGE_SCRIPT = """
 const done = arguments[arguments.length - 1];
 const before = document.documentElement.lang || '';
-const trigger = document.querySelector('.mobile-language-switcher');
+const trigger = document.querySelector('[data-action-id="entry.language"]');
 if (!trigger) {
   done({error: 'language-trigger-missing'});
   return;
