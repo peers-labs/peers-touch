@@ -23,6 +23,21 @@ const globalCss = readFileSync(
   'utf8',
 );
 
+// Exact-selector rule lookup: a bare-class regex also matches compound
+// descendant rules (e.g. `.sk-banner[data-has-image='false']
+// .sc-account-banner__action`) that appear earlier in the cascade. Split the
+// selector list and accept only blocks declaring the bare selector itself.
+function rule(css: string, selector: string): string {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const blockRe = /(?:^|\})([^{}]*)\{([^}]*)\}/gm;
+  let match: RegExpExecArray | null;
+  while ((match = blockRe.exec(stripped))) {
+    const selectors = match[1].split(',').map((part) => part.trim());
+    if (selectors.includes(selector)) return match[2];
+  }
+  return '';
+}
+
 describe('pt custom-property references resolve to emitted tokens', () => {
   it('never references the undefined --pt-font-mono name', () => {
     expect(northstarCss).not.toContain('--pt-font-mono');
@@ -84,16 +99,12 @@ describe('pt custom-property references resolve to emitted tokens', () => {
     // .sk-identity-avatar-action / .sk-banner-action). They reuse the library
     // FilePicker iconOnly convention: a translucent dark tile with a fixed
     // white glyph, legible over arbitrary photos in every theme.
-    const avatarActionRule = northstarCss.match(
-      /\.sc-account-avatar__action\s*\{[^}]*\}/,
-    )?.[0] ?? '';
+    const avatarActionRule = rule(northstarCss, '.sc-account-avatar__action');
     expect(avatarActionRule).toContain('background: color-mix(in srgb, #000 34%, transparent)');
     expect(avatarActionRule).toContain('color: #fff');
     expect(avatarActionRule).toContain('right: 6px');
     expect(avatarActionRule).toContain('bottom: 6px');
-    const bannerActionRule = northstarCss.match(
-      /\.sc-account-banner__action\s*\{[^}]*\}/,
-    )?.[0] ?? '';
+    const bannerActionRule = rule(northstarCss, '.sc-account-banner__action');
     expect(bannerActionRule).toContain('background: color-mix(in srgb, #000 34%, transparent)');
     expect(bannerActionRule).toContain('color: #fff');
     expect(bannerActionRule).toContain('right: 12px');
@@ -113,8 +124,34 @@ describe('pt custom-property references resolve to emitted tokens', () => {
   it('renders settings cards as flat hairline surfaces, matching the prototype shadowless card', () => {
     const cardRule = northstarCss.match(/\.sc-settings-card\s*\{[^}]*\}/)?.[0] ?? '';
     expect(cardRule).toContain('border-radius: 12px');
-    expect(cardRule).toContain('padding: 0 14px');
+    expect(cardRule).toContain('padding: 0 8px');
     expect(cardRule).not.toContain('box-shadow');
+  });
+
+  it('owns the settings edge inset once, as a uniform 8px gutter on every side', () => {
+    // The scroll layer is the single gutter owner; the column stays
+    // padding-free so the two never stack into a wider double inset.
+    expect(rule(northstarCss, '.sc-settings__scroll')).toContain('padding: 8px');
+    expect(rule(northstarCss, '.sc-settings-column')).toContain('padding: 0');
+    expect(rule(northstarCss, '.sc-settings-card')).toContain('padding: 0 8px');
+  });
+
+  it('fills the content width instead of capping and centering the column', () => {
+    // A max-width cap plus margin-inline:auto left large dead bands on both
+    // sides of every settings card. The column now fills the region and only
+    // the scroll layer's 8px gutter separates cards from the viewport edge.
+    const columnRule = rule(northstarCss, '.sc-settings-column');
+    expect(columnRule).toContain('width: 100%');
+    expect(columnRule).not.toContain('max-width');
+    expect(columnRule).not.toContain('margin-inline');
+  });
+
+  it('gives the settings surface a definite height so its internal scroll chain works', () => {
+    // The page host is a position:relative block, not a flex box, so flex:1
+    // alone let the surface grow past the viewport and get clipped with no
+    // scrollable overflow. height:100% pins it to the host's definite height.
+    expect(rule(northstarCss, '.sc-settings')).toContain('height: 100%');
+    expect(rule(northstarCss, '.sc-settings__scroll')).toContain('overflow: auto');
   });
 
   it('sizes L2 sidebar items to the prototype 7px 10px inset instead of the 28px compact default', () => {

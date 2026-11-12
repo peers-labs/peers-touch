@@ -208,7 +208,73 @@ Unproven: exact missing runtime, platform, accessibility, or performance cell
 Do not return an averaged score. A severe failure in task completion,
 accessibility, trust, or recovery blocks the verdict regardless of polish.
 
-## 11. AI Agent Checklist
+## 11. Surface And Route Transition Motion
+
+Peers Touch desktop is a native application shell rendered with web
+technology, not a web page. The single most common "looks like an H5 page"
+defect is treating a route or surface change as a full-page transition:
+sliding an entire mounted pane across the screen, fading a whole view in and
+out, or unmounting/remounting a surface so it flashes blank before content
+returns. Native surfaces are already alive in memory; switching to one must
+feel like revealing an existing view, not loading a new document.
+
+### 11.1 Three motion scopes, three different rules
+
+| Scope | Examples | Allowed motion | Forbidden |
+| --- | --- | --- | --- |
+| Route / page / persistent surface | primary nav tabs, chat ↔ agent ↔ settings, narrow single-pane conversation swap, in-rail tab (Messages/People) | Instant visibility flip (`display`/`visibility`) on a keepAlive tree; no enter/exit animation on the surface itself | Whole-surface `translateX/Y` sweep, whole-view fade, scale/zoom enter, remount-on-navigate, keyframe that moves the surface's own geometry |
+| Floating layer | modal, dialog, drawer, command palette, popover, menu, toast | Short **opacity-only** fade (optionally a near-1 scale, e.g. 0.98→1); scrim fades with it | Directional slide/translate of the panel, full-screen push, motion that shifts content behind the scrim |
+| Component-local state | spinner, typing dots, recording/thinking pulse, progress, hover/press/focus, toggle | Localized micro-motion that never changes surrounding layout | Any motion that pushes, resizes, or reflows neighboring elements |
+
+### 11.2 Hard rules
+
+1. **Persistent surfaces switch by visibility, not by mount/unmount.** Pages
+   use the kernel keepAlive tree (`PageHost`: `display: contents | none`).
+   Never key a persistent surface by the active route to force a rebuild; a
+   remount loses live state, refetches, and flashes. `keepAlive: 'none'` is
+   the exception and needs a recorded reason.
+2. **No CSS imitation of a native view-controller push.** A keyframe such as
+   `from { transform: translateX(100%) }` on an entire pane is prohibited. The
+   header, scroll region, and composer travelling together reads as a web page
+   reload and causes compositor jitter. Native push, where genuinely wanted, is
+   a platform-level transition, not a hand-rolled CSS transform on a mounted
+   subtree.
+3. **Motion must not move geometry it does not own.** An enter/exit effect may
+   only animate `opacity` (and, for floating layers, a near-identity `scale`).
+   Animating `transform: translate`, `width/height`, `top/left`, or margins on
+   a surface changes layout and is a defect unless it is the explicit,
+   scoped product transition (e.g. an accordion expanding its own region).
+4. **Floating layers fade, they do not slide.** Keep overlay enter motion to
+   an opacity fade within `motion.surface`/`motion.normal`; the scrim and
+   panel cross-fade together. Directional panel motion is reserved for
+   documented drawer patterns.
+5. **Reserve motion tokens and honor reduced motion.** Durations/easings come
+   from `tokens.md §8`; never hardcode milliseconds in a one-off rule. Under
+   `prefers-reduced-motion: reduce`, every non-essential movement collapses to
+   an instant state change while preserving state meaning.
+6. **Stability is measurable.** A surface switch must not introduce Cumulative
+   Layout Shift, must not change scroll position of an inactive surface, and
+   must not show a blank intermediate frame.
+
+### 11.3 Review checklist for any navigation change
+
+- [ ] Is the target surface already mounted (keepAlive), with only visibility
+  flipped? If it remounts, why?
+- [ ] Does any whole-pane or whole-view `transform`/`translate`/`fade` play on
+  open or close? It must not.
+- [ ] Is every enter/exit effect either opacity-only (floating layer) or
+  component-local state motion?
+- [ ] Does an inactive surface keep its scroll position and live state after
+  switching away and back?
+- [ ] Are durations/easings from motion tokens, and is reduced-motion
+  honored?
+- [ ] Is there any blank/loading flash or geometry jump on the switch?
+
+See the recorded pitfall
+`docs/knowledge/pitfalls/css-full-pane-translate-mimics-h5-reload.md` for the
+concrete failure this section prevents.
+
+## 12. AI Agent Checklist
 
 - [ ] Product thesis and main subject are explicit.
 - [ ] External references have Peers-specific dispositions.

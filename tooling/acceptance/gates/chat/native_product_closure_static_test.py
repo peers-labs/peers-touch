@@ -71,6 +71,7 @@ CHAT_SESSION_LIST = ROOT / "apps/desktop/src/components/chat/ChatSessionList.tsx
 CHAT_SEARCH_DROPDOWN = (
     ROOT / "apps/desktop/src/components/chat/ChatSearchDropdown.tsx"
 )
+CHAT_CSS = ROOT / "apps/desktop/src/ui/chat.css"
 NATIVE_FILE_PICKER = (
     ROOT / "tooling/acceptance/gates/chat/native_file_picker.py"
 )
@@ -3320,10 +3321,43 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertNotIn("ulid::Ulid::new()", browser_group_create)
 
     def test_conversation_pane_stays_inside_the_native_viewport(self) -> None:
-        self.assertIn("width: 'clamp(180px, 28vw, 280px)'", self.chat_session_list)
-        self.assertIn("minWidth: 180", self.chat_session_list)
-        self.assertIn("minWidth: 0", self.chat_message_area)
-        self.assertNotIn("minWidth: 380", self.chat_message_area)
+        # The native window owns the hard geometry floor: below 360x480 the web
+        # surface never renders, so no pane can overflow the native viewport.
+        window = self.desktop_tauri_config["app"]["windows"][0]
+        self.assertEqual(360, window["minWidth"])
+        self.assertEqual(480, window["minHeight"])
+
+        # Rail width moved out of inline styles into CSS. Inline pixel locks
+        # would defeat the media-query single-pane swap below 720px.
+        self.assertNotIn("CHAT_RAIL_WIDTH", self.chat_session_list)
+        self.assertNotIn('style={{ width:', self.chat_session_list)
+
+        # chat.css owns the fixed desktop rail and the narrow swap contract:
+        # the catalog owns the stage by default, data-narrow-open flips it.
+        chat_css = CHAT_CSS.read_text(encoding="utf-8")
+        self.assertIn("width: 300px;", chat_css)
+        self.assertIn("flex: 0 0 300px;", chat_css)
+        self.assertIn(
+            ".sc-chat[data-narrow='true'] .sc-conversation { display: none; }",
+            chat_css,
+        )
+        self.assertIn(
+            ".sc-chat[data-narrow='true'][data-narrow-open='true'] "
+            ".sc-conversation",
+            chat_css,
+        )
+        self.assertIn("@media (max-width: 480px)", chat_css)
+
+        # The page state machine drives the swap attributes from the media
+        # query, and the message area renders the tile that returns to catalog.
+        page = SOCIAL_CHAT_PAGE.read_text(encoding="utf-8")
+        self.assertIn("NARROW_MEDIA_QUERY", page)
+        self.assertIn("data-narrow={isNarrow ? 'true' : 'false'}", page)
+        self.assertIn(
+            "data-narrow-open={narrowOpen ? 'true' : 'false'}", page
+        )
+        self.assertIn("data-chat-narrow-back", self.chat_message_area)
+        self.assertIn("onNarrowBack", self.chat_message_area)
 
     def test_session_list_error_is_bounded_and_replaces_empty_state(self) -> None:
         self.assertIn("data-chat-session-list-error", self.chat_session_list)

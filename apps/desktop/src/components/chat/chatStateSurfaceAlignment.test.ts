@@ -78,14 +78,25 @@ describe('recalled message tombstone (north-star .sk-recalled-tombstone parity)'
   });
 });
 
-describe('direct-open intent error column', () => {
-  it('styles the capped error column via class, not inline layout', () => {
-    expect(areaSource).toContain('className="sc-conversation__intent-error"');
-    expect(areaSource).toContain('data-chat-conversation-intent-error=');
-    expect(areaSource).not.toContain("width: 'min(420px, 100%)'");
-    const intentError = rule('.sc-conversation__intent-error');
-    expect(intentError).toContain('width: min(420px, 100%)');
-    expect(intentError).toContain('flex-direction: column');
-    expect(intentError).toContain('gap: 10px');
+describe('direct-open intent failure stays inside the conversation shell', () => {
+  const pageSource = readFileSync(
+    new URL('../../pages/SocialChatPage.tsx', import.meta.url),
+    'utf8',
+  );
+
+  it('keeps the peer-bound pane for both creating and failed phases', () => {
+    expect(areaSource).toContain('data-chat-conversation-intent-state={directOpenIntent.phase}');
+    // A failed open renders the standard empty conversation state, not an
+    // inline error replacement or a retry action inside the pane.
+    expect(areaSource).not.toContain('sc-conversation__intent-error');
+    expect(areaSource).not.toContain('data-chat-conversation-intent-error');
+    expect(areaSource).not.toContain('data-chat-conversation-intent-retry');
+    expect(areaSource).not.toContain('onRetryDirectOpen');
+  });
+
+  it('routes createDirect failures to the unified floating toast', () => {
+    expect(pageSource).not.toContain("mode: 'inline'");
+    expect(pageSource).toContain('presentError(error, {');
+    expect(pageSource).toContain('failDirectConversationOpen');
   });
 });

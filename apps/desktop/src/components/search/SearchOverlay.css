@@ -38,14 +38,21 @@
   animation: pt-search-in 0.16s ease-out;
 }
 @keyframes pt-search-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .pt-search-field-area { flex: none; padding: 14px 16px 6px; }
-.pt-search-field { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px; border-radius: 10px; background: var(--pt-search-subtle); color: var(--pt-search-muted); }
-.pt-search-field:focus-within { outline: 2px solid var(--pt-search-primary); outline-offset: 2px; }
+/* Field grammar mirrors the app .pt-field-frame: hairline border on a raised
+   surface, focus expressed by an ink hairline + soft subtle ring. The old
+   offset square outline painted a heavy double frame (north-star spec:
+   focus is a hairline change, the embedded input's square outline is
+   suppressed — see global-search-overlay.md §6). */
+.pt-search-field { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px; border-radius: var(--pt-radius-md); background: var(--pt-search-surface); border: 1px solid var(--pt-borderStrong); color: var(--pt-search-muted); transition: border-color var(--pt-motion-fast) var(--pt-motion-standard), box-shadow var(--pt-motion-fast) var(--pt-motion-standard); }
+.pt-search-field:focus-within { border-color: var(--pt-focus); box-shadow: 0 0 0 2px var(--pt-primarySubtle); outline: none; }
 .pt-search-field input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--pt-search-text); font: inherit; font-size: 15px; }
+.pt-search-field input:focus-visible { outline: none; }
 .pt-search-close { width: 28px; height: 28px; display: inline-flex; justify-content: center; align-items: center; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.pt-search-close:hover { background: var(--pt-search-subtle); color: var(--pt-search-text); }
 .pt-search-intents { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 6px 16px; }
 .pt-search-intents button { padding: 6px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--pt-search-secondary); cursor: pointer; }
 .pt-search-intents button.active { color: var(--pt-search-primary); background: var(--pt-search-wash); font-weight: 600; }

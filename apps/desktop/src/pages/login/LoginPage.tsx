@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Icon } from '@peers-touch/ui';
+import { Button, Card, Icon, IconButton } from '@peers-touch/ui';
 import { feedbackChannel, notifyError } from '../../ui/feedback';
 import { BRANDING } from '../../branding';
 import { LanguageSwitcher } from '../../components/common/LanguageSwitcher';
@@ -21,8 +21,15 @@ import {
   type AccessDecision,
 } from '../../services/accessGate';
 import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
-import { BrandMark } from '../../components/common/BrandMark';
-import { StationSwitcher } from './StationSwitcher';
+
+import { StationSetupPanel } from './StationSetupPanel';
+import { useStationRegistry } from './useStationRegistry';
+import {
+  isAutoStationSetup,
+  resolveAuthGateStage,
+  type AuthGateOverride,
+  type AuthGateStage,
+} from './resolveAuthGateStage';
 import { AccountPickerView } from './views/AccountPickerView';
 import { PinEntryView } from './views/PinEntryView';
 import { SetPinView } from './views/SetPinView';
@@ -95,6 +102,32 @@ export function LoginPage({
 
   // ── Core state machine ──
   const [loginState, setLoginState] = useState<LoginState>(initialState);
+
+  // ── Outer gate: Station setup vs credential/account auth ──
+  // One registry instance feeds both the first-run Station card and the
+  // gear-opened one. The gear pins the gate to `station_setup` via override;
+  // null follows the automatic rule (first-run when no Station exists, auth
+  // otherwise), per resolveAuthGateStage.
+  const { t: tCommon } = useTranslation('common');
+  const stationRegistry = useStationRegistry();
+  const [gateOverride, setGateOverride] = useState<AuthGateOverride>(null);
+  const gateInput = {
+    hydrated: stationRegistry.hydrated,
+    hasStation: stationRegistry.hasStation,
+    override: gateOverride,
+  };
+  const gateStage: AuthGateStage = embedded
+    ? 'auth'
+    : resolveAuthGateStage(gateInput);
+  const showInlineStationSetup = gateStage === 'station_setup';
+  // The automatic first-run gate has nowhere to go back to; a gear-opened
+  // Station card gets a back control that releases the override.
+  const stationPanelOnBack = showInlineStationSetup
+    && !embedded
+    && !isAutoStationSetup(gateInput)
+    ? () => setGateOverride(null)
+    : undefined;
+
   const [tab, setTab] = useState<LoginTab>('quick');
   const [selectedAccount, setSelectedAccount] = useState<SessionUser | null>(null);
   const [expiredAccount, setExpiredAccount] = useState<SessionUser | null>(null);
@@ -133,6 +166,9 @@ export function LoginPage({
 
   // ── Email login error (inline on the login card) ──
   const [emailError, setEmailError] = useState('');
+
+  // ── Re-auth identity tile: focus the password field after routing to email ──
+  const [reauthFocusPassword, setReauthFocusPassword] = useState(false);
 
   // ── Refs for email login (needed for gate chain) ──
   const emailRef = useRef('');
@@ -280,6 +316,48 @@ export function LoginPage({
     setLoginState('logged_out');
   }, [markAccountSessionless]);
 
+  // ── Re-auth identity tile ──
+  // The expired-account tile is a real control, not a static strip: clicking it
+  // routes to the sign-in method matching that account's provider so the flow
+  // has no dead-end. Password accounts land on the email tab with the password
+  // field focused (email is prefilled from the expired account); OAuth accounts
+  // land on the quick tab where their provider button is the primary action.
+  const handleReauthIdentity = useCallback(() => {
+    const account = expiredAccount;
+    if (!account) return;
+    const provider = (account.provider || '').toLowerCase();
+    const isPasswordProvider = provider === 'password' || provider === '' || provider === 'email';
+    if (isPasswordProvider) {
+      setTab('email');
+      setReauthFocusPassword(true);
+    } else {
+      setTab('quick');
+      setReauthFocusPassword(false);
+    }
+  }, [expiredAccount]);
+
+  // ── Post-switch continuation ──
+  // Shared by direct account selection and the welcome-back Continue button:
+  // once a live session is switched in, a PIN-protected account asks for the
+  // PIN; every other account moves to the skippable first-time PIN setup. This
+  // keeps "pick an already-signed-in account" flowing straight into the app
+  // instead of parking on an intermediate dead-end screen.
+  const continueWithSwitchedAccount = useCallback(async () => {
+    try {
+      const active = await api.accountGetActive();
+      if (active?.has_pin) {
+        const user = accountIdentityToSessionUser(active);
+        setSelectedAccount(user);
+        setPinError('');
+        setLoginState('pin_entry');
+        return;
+      }
+    } catch {
+      // Fall through to first-time PIN prompt.
+    }
+    setLoginState('set_pin');
+  }, []);
+
   // ── Event handlers ──
 
   const handleSwitchAccount = useCallback(() => {
@@ -316,11 +394,15 @@ export function LoginPage({
     setPinError('');
     setExpiredAccount(null);
 
+    // PIN-protected live session: the PIN is the unlock gate, go straight in.
     if (account.hasPin && account.hasSession) {
       setLoginState('pin_entry');
       return;
     }
 
+    // Live session without a PIN prompt: switch the active identity and
+    // continue immediately (PIN entry/setup only when the account requires it),
+    // so a saved account never parks on an intermediate welcome screen.
     if (account.hasSession && account.accountId) {
       try {
         await onSwitchAccount(account.accountId);
@@ -329,8 +411,10 @@ export function LoginPage({
           routeToProviderLogin(account, true);
           return;
         }
-        setLoginState('welcome_back');
+        await continueWithSwitchedAccount();
       } catch {
+        // The stored session is no longer valid despite the optimistic flag:
+        // drop it and fall through to an explicit re-login with a notice.
         if (account.accountId) {
           try { await api.accountClearSession(account.accountId); } catch { /* noop */ }
           markAccountSessionless(account.accountId);
@@ -340,8 +424,16 @@ export function LoginPage({
       return;
     }
 
-    routeToProviderLogin(account, false);
-  }, [onSwitchAccount, routeToProviderLogin, markAccountSessionless]);
+    // No live session: the account is signed out/expired. Route to its own
+    // sign-in method (password -> email tab, OAuth -> quick tab) and surface a
+    // re-login notice instead of opening a silent, context-less login form.
+    routeToProviderLogin(account, true);
+  }, [
+    onSwitchAccount,
+    routeToProviderLogin,
+    markAccountSessionless,
+    continueWithSwitchedAccount,
+  ]);
 
   // ── PIN entry ──
 
@@ -506,21 +598,10 @@ export function LoginPage({
 
   // ── Welcome back continue ──
 
-  const handleWelcomeContinue = useCallback(async () => {
-    try {
-      const active = await api.accountGetActive();
-      if (active?.has_pin) {
-        const user = accountIdentityToSessionUser(active);
-        setSelectedAccount(user);
-        setPinError('');
-        setLoginState('pin_entry');
-        return;
-      }
-    } catch {
-      // Fall through to set_pin
-    }
-    setLoginState('set_pin');
-  }, []);
+  const handleWelcomeContinue = useCallback(
+    () => continueWithSwitchedAccount(),
+    [continueWithSwitchedAccount],
+  );
 
   // ── OAuth handlers ──
 
@@ -707,6 +788,7 @@ export function LoginPage({
 
   const handleTabChange = useCallback((newTab: LoginTab) => {
     setTab(newTab);
+    setReauthFocusPassword(false);
     if (newTab === 'email') {
       resetOAuthAction();
     }
@@ -745,6 +827,23 @@ export function LoginPage({
 
   // ── Render card content based on state ──
   const renderCardContent = () => {
+    // Outer gate first: an unconfigured install must set up a Station before
+    // any credential/account surface is reachable. Once a Station exists the
+    // inner LoginState machine takes over unchanged.
+    if (showInlineStationSetup) {
+      return (
+        <StationSetupPanel
+          registry={stationRegistry}
+          onBack={stationPanelOnBack}
+          autoHint={stationPanelOnBack
+            ? undefined
+            : tCommon('stationPicker.firstRunHint', {
+                defaultValue: 'Set up a Station to connect to the network before signing in.',
+              })}
+        />
+      );
+    }
+
     switch (loginState) {
       case 'account_picker':
         return (
@@ -815,7 +914,10 @@ export function LoginPage({
                 <span style={{ fontSize: 12 }}>{t('auth.pin.recovery.cancel')}</span>
               </>
             }
+            backInHeader={showHeaderBack}
             title={t('auth.pin.recovery.authenticating')}
+            onReauthIdentity={handleReauthIdentity}
+            reauthFocusPassword={reauthFocusPassword}
           />
         );
 
@@ -861,32 +963,94 @@ export function LoginPage({
             onTabChange={handleTabChange}
             gateState={gateStateProp}
             backContent={backButtonContent}
+            backInHeader={showHeaderBack}
+            onReauthIdentity={handleReauthIdentity}
+            reauthFocusPassword={reauthFocusPassword}
           />
         );
     }
   };
 
+  // The back control lives in the card header, symmetric with the language
+  // switcher. The form views render their own back only when embedded or when
+  // the current state has no header back.
+  const isRecoveryAuth = loginState === 'pin_recovery_auth';
+  const showHeaderBack =
+    !embedded
+    && (isRecoveryAuth
+      || (loginState === 'logged_out'
+        && (hasSignedInUser || hasMultipleAccounts)
+        && !connectProvider));
+  const headerBackContent = isRecoveryAuth ? (
+    <>
+      <Icon iconId="arrow-left" size={14} />
+      <span style={{ fontSize: 12 }}>{t('auth.pin.recovery.cancel')}</span>
+    </>
+  ) : (
+    backButtonContent
+  );
+
+  // Header: back (lead slot) on the left; on the right the Station gear (opens
+  // the dedicated Station setup card via the gate override) and the language
+  // switcher. The gear is the single Station entry on the credential surface —
+  // Station configuration never shares the auth card body/footer.
+  const showStationGear = !embedded && !showInlineStationSetup;
   const cardHead = (
     <div className="pt-auth-head">
-      <span className="pt-auth-brand">
-        <BrandMark size={22} className="pt-auth-brand-mark" />
-        <span className="pt-auth-brand-name">{BRANDING.appName}</span>
-      </span>
-      {!embedded && <LanguageSwitcher />}
+      <div className="pt-auth-head__lead">
+        {showHeaderBack && !showInlineStationSetup && (
+          <Button
+            actionId="auth.back"
+            emphasis="quiet"
+            density="compact"
+            onActivate={isRecoveryAuth ? handleRecoveryCancel : handleBackToWelcome}
+          >
+            {headerBackContent}
+          </Button>
+        )}
+      </div>
+      {!embedded && (
+        <div className="pt-auth-head__actions">
+          {showStationGear && (
+            <IconButton
+              actionId="auth.station.open"
+              iconId="settings"
+              label={tCommon('stationPicker.title')}
+              emphasis="quiet"
+              density="compact"
+              onActivate={() => setGateOverride('station_setup')}
+            />
+          )}
+          <LanguageSwitcher />
+        </div>
+      )}
+    </div>
+  );
+
+  // Centered brand hero. The app icon is a square white tile with transparent
+  // rounded corners, so the tinted card shows through around it for depth.
+  // The first-run Station gate uses a compact card instead, so the hero stays
+  // out of that surface.
+  const brandHero = embedded || showInlineStationSetup ? null : (
+    <div className="pt-auth-brand-hero">
+      <img
+        className="pt-auth-brand-logo"
+        src={BRANDING.logos.appIcon}
+        alt={BRANDING.appName}
+      />
     </div>
   );
 
   const card = (
     <Card
-      className="pt-auth-card"
+      className={[
+        'pt-auth-card',
+        showInlineStationSetup ? 'pt-auth-card--station' : '',
+      ].filter(Boolean).join(' ')}
       data-pt-login-card
-      footer={embedded ? undefined : (
-        <div className="pt-auth-station">
-          <StationSwitcher />
-        </div>
-      )}
     >
       {cardHead}
+      {brandHero}
       {renderCardContent()}
     </Card>
   );
@@ -894,7 +1058,9 @@ export function LoginPage({
   if (embedded) return card;
 
   return (
-    <div className="pt-auth-shell">
+    // deep: blank shell area drags the login window; form controls stay
+    // interactive because Tauri excludes inputs/buttons from the subtree walk.
+    <div className="pt-auth-shell" data-tauri-drag-region="deep">
       <div className="pt-auth-region">{card}</div>
     </div>
   );

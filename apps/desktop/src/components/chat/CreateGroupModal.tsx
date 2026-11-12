@@ -351,7 +351,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
               <div className="sc-create-group__alert">
                 <PtAlert tone="danger" title={t('chat.social.findPeople.friendshipUnavailable')} />
               </div>
-            ) : !friendshipReady || friendRequestsLoading ? (
+            ) : !friendshipReady && friendRequestsLoading ? (
               <div className="sc-create-group__center">
                 <PtSpin size="small" />
               </div>

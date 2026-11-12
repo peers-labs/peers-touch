@@ -113,10 +113,13 @@ describe('message stream rhythm (north-star .sk-msg-stream / .sk-msg parity)', (
     expect(rowSource).toContain('CHAT_MESSAGE_SPACING.item');
   });
 
-  it('frames the stream and composer with the shared 22px prototype inset', () => {
-    expect(rule('.sc-conversation__stream')).toContain('padding: 12px 22px 6px');
+  it('shares a tight 12px column inset between the stream and the composer', () => {
+    expect(rule('.sc-conversation__stream')).toContain('padding: 12px 12px 6px');
     const main = desktopChatLayoutForSurface('desktop-main');
-    expect(main.composerOuterPadding).toBe('6px 22px 12px');
+    // One 12px horizontal frame for the whole column so the composer shell
+    // edges align with the message bubbles (WeChat parity); the 4px/10px
+    // vertical inset keeps the composer sitting high.
+    expect(main.composerOuterPadding).toBe('4px 12px 10px');
   });
 
   it('sets bubble→meta 6px with 6px meta item gap (.sk-msg-under)', () => {

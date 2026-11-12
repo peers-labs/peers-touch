@@ -102,6 +102,7 @@
   "error.chat.sendFailed": "Failed to send message",
   "error.chat.groupActorUnavailable": "A selected member is not ready for encrypted group chat.",
   "error.chat.groupFederationInactive": "A selected member's Home Station is not active in this Federation.",
+  "error.chat.federationInactive": "The recipient's Home Station is not connected by an active Federation, so the message cannot be delivered yet.",
   "error.chat.secureChannelUnavailable": "The secure channel is not ready. The recipient may need to open Peers before encrypted messages can be sent.",
   "error.chat.senderKeySyncing": "Group encryption keys are still syncing. Try again shortly.",
   "error.chat.setCursorFailed": "Failed to set cursor",

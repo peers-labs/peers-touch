@@ -35,6 +35,18 @@ describe('account identity image actions (north-star corner FilePicker parity)',
     expect(codeSource).not.toMatch(/sc-account-(avatar|banner)__surface[\s\S]{0,200}tabIndex/);
   });
 
+  it('keeps the cover banner flush to the card edges with no white strip above it', () => {
+    // The identity block must outrank the generic
+    // .sc-settings-card > *:not(...) margin-block: 8px rule (0,3,0); otherwise
+    // an 8px white strip opens between the card top and the cover image.
+    const identity = rule('.sc-settings .sc-settings-card > .sk-identity');
+    expect(identity).toContain('margin: 0 -8px');
+    const banner = rule('.sk-banner .sc-account-banner');
+    expect(banner).toContain('margin: 0');
+    expect(banner).toContain('border: 0');
+    expect(banner).toContain('border-radius: 0');
+  });
+
   it('reveals actions with the prototype 0.24s soft-rise, including focus and touch', () => {
     const avatar = rule('.sc-account-avatar__action');
     expect(avatar).toContain('right: 6px');

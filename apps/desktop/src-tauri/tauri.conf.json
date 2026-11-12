@@ -14,10 +14,13 @@
       {
         "title": "Peers",
         "decorations": true,
-        "width": 1200,
-        "height": 800,
-        "minWidth": 860,
-        "minHeight": 640,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "maximizable": true,
+        "width": 360,
+        "height": 640,
+        "minWidth": 320,
+        "minHeight": 440,
         "center": true
       }
     ],

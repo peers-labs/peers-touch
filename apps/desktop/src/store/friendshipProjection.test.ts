@@ -11,6 +11,8 @@ import type { FriendRequestData } from './socialNormalizers';
 import {
   chatActorIdentityMetadata,
   chatActorIdentityMetadataParts,
+  isSameStationActor,
+  localFederationFallback,
   projectChatFriendContacts,
   projectChatFriendRequestPeers,
   projectMutualFriends,
@@ -431,5 +433,44 @@ describe('singleFederationId', () => {
       { federationId: 'federation-a' },
       { federationId: 'federation-b' },
     ])).toBe('');
+  });
+});
+
+describe('localFederationFallback', () => {
+  it('returns the first non-empty local federation context', () => {
+    expect(localFederationFallback([
+      { federationId: '  ' },
+      { federationId: 'federation-local' },
+      { federationId: 'federation-other' },
+    ])).toBe('federation-local');
+  });
+
+  it('stays empty when no federation context exists so callers keep their guard', () => {
+    expect(localFederationFallback([])).toBe('');
+    expect(localFederationFallback([{ federationId: '   ' }])).toBe('');
+  });
+});
+
+describe('isSameStationActor', () => {
+  it('is true only when both Home Station peer ids match', () => {
+    expect(isSameStationActor({
+      selfHomeStationPeerId: 'station-local',
+      targetHomeStationPeerId: 'station-local',
+    })).toBe(true);
+  });
+
+  it('is false for a federated actor or missing self identity', () => {
+    expect(isSameStationActor({
+      selfHomeStationPeerId: 'station-local',
+      targetHomeStationPeerId: 'station-remote',
+    })).toBe(false);
+    expect(isSameStationActor({
+      selfHomeStationPeerId: undefined,
+      targetHomeStationPeerId: 'station-local',
+    })).toBe(false);
+    expect(isSameStationActor({
+      selfHomeStationPeerId: 'station-local',
+      targetHomeStationPeerId: '  ',
+    })).toBe(false);
   });
 });

@@ -1520,10 +1520,15 @@ fn buffer_response(
         )
     })?;
     if !(200..300).contains(&response.status) {
+        let content_type = response
+            .headers
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok());
+        let display_message = status_error_display_message(content_type, &body);
         return Err(build_error_for_status_with_headers(
             response.status,
             path,
-            &String::from_utf8_lossy(&body),
+            &display_message,
             Some(&headers_to_json(&response.headers)),
         ));
     }
@@ -1930,6 +1935,31 @@ struct StationErrorBody {
     message: String,
 }
 
+/// Render a non-2xx Station body as display text.
+///
+/// Protobuf-accepting endpoints (`application/protobuf`) receive a binary
+/// `ErrorResponse` on failure (tag 1 = code, tag 2 = message). Dumping that
+/// body as lossy UTF-8 surfaces wire control bytes (e.g. `\x08\x01\x12\x19`)
+/// as tofu glyphs in the UI. Decode the proto message whenever the wire
+/// content type says protobuf or the body contains non-text control bytes;
+/// fall back to lossy UTF-8 for plain-text/JSON errors.
+fn status_error_display_message(content_type: Option<&str>, body: &[u8]) -> String {
+    let protobuf_content_type = content_type.is_some_and(|value| {
+        value.to_ascii_lowercase().contains("protobuf")
+    });
+    let contains_wire_control = body.iter().any(|byte| {
+        matches!(byte, b'\0'..=b'\x08' | b'\x0b' | b'\x0c' | b'\x0e'..=b'\x1f')
+    });
+    if protobuf_content_type || contains_wire_control {
+        if let Ok(parsed) = StationErrorBody::decode(body) {
+            if !parsed.message.is_empty() {
+                return parsed.message;
+            }
+        }
+    }
+    String::from_utf8_lossy(body).into_owned()
+}
+
 pub fn peers_failure_error(status: u16, bytes: &[u8]) -> StationClientError {
     let mut details = serde_json::json!({ "status": status });
     if let Ok(body) = StationErrorBody::decode(bytes) {
@@ -2013,6 +2043,28 @@ mod tests {
             cancellation.is_cancelled(),
             "shared read did not cancel its transport"
         );
+    }
+
+    #[test]
+    fn status_error_display_message_decodes_binary_error_response() {
+        // Captured Station 400 body: tag1 code=1, tag2 message (25 bytes).
+        let message = "invalid email or password";
+        let mut body = vec![0x08, 0x01, 0x12, message.len() as u8];
+        body.extend_from_slice(message.as_bytes());
+
+        let rendered = status_error_display_message(Some("application/protobuf"), &body);
+        assert_eq!(rendered, message);
+
+        // Control-byte heuristic also catches servers that omit the content type.
+        let rendered_sniffed = status_error_display_message(None, &body);
+        assert_eq!(rendered_sniffed, message);
+    }
+
+    #[test]
+    fn status_error_display_message_keeps_plain_text_errors() {
+        let body = b"invalid email or password";
+        let rendered = status_error_display_message(Some("text/plain; charset=utf-8"), body);
+        assert_eq!(rendered, "invalid email or password");
     }
 
     #[test]

@@ -643,6 +643,9 @@ pub fn access_submit_login(
     if let Err(error) = validate_login_input(&input.account, &input.password) {
         return map_domain_error(error);
     }
+    // Capture the canonical login identifier before the request takes ownership
+    // so it can be persisted on the identity for later re-auth pre-fill.
+    let login_email = input.account.trim().to_string();
     let device_type = input
         .device_type
         .as_deref()
@@ -657,7 +660,7 @@ pub fn access_submit_login(
         input.schema_digest,
         input.submission_id,
         submit_access_gate_request::ActionInput::Login(LoginRequest {
-            email: input.account,
+            email: login_email.clone(),
             password: input.password,
             device_type: device_type.to_string(),
         }),
@@ -687,6 +690,7 @@ pub fn access_submit_login(
         login_response,
         state,
         "access_submit_login",
+        &login_email,
     )
 }
 
@@ -872,6 +876,7 @@ fn finish_login(
     data: LoginResponse,
     state: &AppState,
     command: &str,
+    account_email: &str,
 ) -> AppResult<AuthSessionPayload> {
     let station_client = resources.client();
     let token = data
@@ -912,7 +917,10 @@ fn finish_login(
         .as_ref()
         .map(|profile| profile.display_name.clone())
         .unwrap_or_default();
-    let email_str = String::new();
+    // Persist the exact identifier the user authenticated with so the
+    // re-authentication tile can pre-fill the email field after a session
+    // expires. The public actor profile intentionally carries no email.
+    let email_str = account_email.trim().to_string();
     let avatar = profile
         .as_ref()
         .map(|profile| profile.avatar.clone())

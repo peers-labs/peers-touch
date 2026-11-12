@@ -27,7 +27,12 @@ import { projectChatFriendRequestPeers } from '../store/friendshipProjection';
 import { useSocialChatStore } from '../store/socialChat';
 import { log } from '../utils/logger';
 
-const SOCIAL_RECONCILE_INTERVAL_MS = 30_000;
+// Safety-net only: the unified realtime SSE stream pushes graph/profile/
+// presence changes as they happen. Each reconcile here is a full fan-out
+// (friend requests, friendship, every peer profile, station identities,
+// presence, unread counts), so a 30s cadence produced a dozen+ bridge calls
+// per minute at idle. 120s still bounds missed-event drift without the churn.
+const SOCIAL_RECONCILE_INTERVAL_MS = 120_000;
 const EXTERNAL_HOST_RECONCILE_DEBOUNCE_MS = 1_000;
 const MAX_SEEN_SOCIAL_NOTIFICATIONS = 500;
 

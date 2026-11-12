@@ -358,9 +358,6 @@ function EditableAvatar({
   );
 }
 
-const HEADER_HEIGHT = 120;
-const HEADER_RADIUS = 12;
-
 function EditableHeaderBanner({
   src,
   uploading,
@@ -382,19 +379,14 @@ function EditableHeaderBanner({
     <div
       className="sc-account-banner"
       data-uploading={uploading ? 'true' : undefined}
-      style={{ height: HEADER_HEIGHT, borderRadius: HEADER_RADIUS }}
     >
-      <div
-        className="sc-account-banner__surface"
-        style={{ borderRadius: HEADER_RADIUS }}
-      >
+      <div className="sc-account-banner__surface">
         {src && (
           <img
             src={src}
             alt=""
             aria-hidden
             className="sc-account-banner__image"
-            style={{ borderRadius: HEADER_RADIUS }}
           />
         )}
 
@@ -402,7 +394,7 @@ function EditableHeaderBanner({
           <OptimisticImageLayer
             url={pendingUrl}
             progress={progress}
-            radius={HEADER_RADIUS}
+            radius={0}
             reducedMotion={reducedMotion}
           />
         )}

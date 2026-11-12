@@ -63,16 +63,21 @@ const DESKTOP_CHAT_LAYOUT_MAIN: DesktopChatVisualLayout = {
   mediaBubblePadding: '0',
   hoverActionBridgeHeight: 18,
   hoverActionBridgeInsetX: 180,
-  // Prototype .sk-conv-view frame: composer zone shares the 22px horizontal
-  // inset with the message stream; 6px top joins the stream's 6px bottom into
-  // the 12px stream↔composer gap and 12px is the bottom frame inset.
-  composerOuterPadding: '6px 22px 12px',
+  // The composer zone shares the message stream's horizontal column inset so
+  // the shell edges line up with the bubbles. WeChat keeps this tight (~12px);
+  // vertical insets stay slim (4px top, 10px bottom) so the shell hugs content.
+  composerOuterPadding: '4px 12px 10px',
   // Prototype sk-composer: a quiet rounded 18px shell, no float shadow.
   composerShellRadius: 18,
   composerShellShadow: 'none',
-  composerInputMinHeight: 38,
-  composerInputExpandedMinHeight: 'min(360px, 44vh)',
-  composerInputExpandedMaxHeight: 'min(520px, 58vh)',
+  // Single-line input matches the 34px composer controls so the resting shell
+  // height is driven by the textarea line plus the footer tool row.
+  composerInputMinHeight: 34,
+  // Expanded stays compact (WeChat parity): the box grows the editable area to
+  // a readable ~4-line surface instead of swallowing half the window, and caps
+  // well under the viewport so the message stream remains visible above it.
+  composerInputExpandedMinHeight: 'min(120px, 22vh)',
+  composerInputExpandedMaxHeight: 'min(320px, 40vh)',
   composerToolButtonSize: 34,
   composerHasAttachmentTools: true,
 };
