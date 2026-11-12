@@ -15,6 +15,11 @@ _SAFE_REFERENCE_SUFFIXES = (
     "_reference",
     "_references",
 )
+# A digest is a non-reversible hash by construction, never a raw credential.
+# Keys such as storage_key_digest or password_digest contain a sensitive token
+# only by name; their values cannot be reversed into the secret and are safe to
+# retain in evidence, matching the host_key_sha256 / idempotency_key_hash rules.
+_SAFE_DIGEST_SUFFIXES = ("_digest",)
 _SAFE_EXACT_KEYS = frozenset(
     {
         "cache_tokens",
@@ -213,6 +218,8 @@ def is_sensitive_key(key: object) -> bool:
     if normalized in _SAFE_EXACT_KEYS:
         return False
     if normalized.endswith(_SAFE_REFERENCE_SUFFIXES):
+        return False
+    if normalized.endswith(_SAFE_DIGEST_SUFFIXES):
         return False
     tokens = frozenset(filter(None, normalized.split("_")))
     if tokens & _SENSITIVE_KEY_TOKENS:

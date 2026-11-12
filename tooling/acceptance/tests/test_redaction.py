@@ -82,11 +82,24 @@ class SensitiveKeyTests(unittest.TestCase):
             "secretLeakCount",
             "tokenAccountingPresent",
             "tokenUsage",
+            # Non-reversible hashes are safe even when the name embeds a
+            # sensitive token; the raw storage_key/password stays sensitive.
+            "storage_key_digest",
+            "storageKeyDigest",
+            "password_digest",
+            "secret_digest",
+            "manifest_digest",
         )
 
         for key in safe_keys:
             with self.subTest(key=key):
                 self.assertFalse(is_sensitive_key(key))
+
+    def test_digest_suffix_is_safe_but_raw_secret_key_is_redacted(self) -> None:
+        self.assertFalse(is_sensitive_key("storage_key_digest"))
+        self.assertTrue(is_sensitive_key("storage_key"))
+        self.assertFalse(is_sensitive_key("password_digest"))
+        self.assertTrue(is_sensitive_key("password"))
 
 
 class StructuredRedactionTests(unittest.TestCase):
