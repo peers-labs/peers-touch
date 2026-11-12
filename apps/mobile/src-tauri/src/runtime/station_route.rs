@@ -580,7 +580,16 @@ impl RouteRuntime {
             // use on every mobile entry path. Lazily materialize the default
             // platform store here so transport identity never depends on
             // startup ordering. Install is idempotent once a store is present.
-            *storage_guard = Some(SecureStorage::new());
+            //
+            // Android has no standalone constructor: its SecureStorage is a
+            // Tauri plugin handle installed exclusively through
+            // install_transport_identity in the builder setup hook. Leave the
+            // guard empty on that target and fail with secureStorageUnavailable
+            // below instead of fabricating a store the plugin never wired.
+            #[cfg(not(target_os = "android"))]
+            {
+                *storage_guard = Some(SecureStorage::new());
+            }
         }
         let storage = storage_guard
             .as_ref()
