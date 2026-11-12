@@ -237,7 +237,7 @@ func (s *TurnService) persistRuntimeAuthority(
 				return errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 					"decode conversation runtime binding", err)
 			}
-			snapshot, err = reconcileBoundRuntimeSnapshotTx(tx, conversation.ID, binding, snapshot)
+			snapshot, err = reconcileBoundRuntimeSnapshotTx(tx, config.ActorID, conversation.ID, binding, snapshot)
 			if err != nil {
 				return err
 			}
@@ -757,8 +757,49 @@ func newConversationRuntimeBinding(
 	return binding, nil
 }
 
+// boundRuntimeTupleExistsTx reports whether the actor still has an enabled
+// provider/model matching the binding identity. A missing tuple means the
+// bound runtime was retired by an operational provider rebuild, which is
+// recoverable through an explicit conversation runtime rebind rather than a
+// permanent config/capability version conflict.
+func boundRuntimeTupleExistsTx(
+	tx *gorm.DB,
+	actorPTID string,
+	binding *model.ConversationRuntimeBinding,
+) (bool, error) {
+	// Catalog tables are auto-migrated in every real deployment. Minimal test
+	// fixtures may omit them; when the catalog cannot be introspected, fail
+	// safe toward the stricter legacy version-conflict instead of overriding
+	// the binding on uncertain evidence.
+	if !tx.Migrator().HasTable(&persistence.AgentProvider{}) ||
+		!tx.Migrator().HasTable(&persistence.AgentModel{}) {
+		return true, nil
+	}
+	var providerCount int64
+	if err := tx.Model(&persistence.AgentProvider{}).
+		Where("actor_ptid = ? AND name = ? AND enabled = ?",
+			actorPTID, binding.GetProviderId(), true).
+		Count(&providerCount).Error; err != nil {
+		return false, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"check bound runtime provider existence", err)
+	}
+	if providerCount == 0 {
+		return false, nil
+	}
+	var modelCount int64
+	if err := tx.Model(&persistence.AgentModel{}).
+		Where("actor_ptid = ? AND provider_id = ? AND model_id = ? AND enabled = ?",
+			actorPTID, binding.GetProviderId(), binding.GetModelId(), true).
+		Count(&modelCount).Error; err != nil {
+		return false, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
+			"check bound runtime model existence", err)
+	}
+	return modelCount > 0, nil
+}
+
 func reconcileBoundRuntimeSnapshotTx(
 	tx *gorm.DB,
+	actorPTID string,
 	conversationID string,
 	binding *model.ConversationRuntimeBinding,
 	candidate *model.RuntimeSnapshot,
@@ -823,6 +864,24 @@ func reconcileBoundRuntimeSnapshotTx(
 		binding.GetExternalSessionEpoch() != candidate.GetExternalSessionEpoch() ||
 		binding.GetConfigSnapshotHash() != candidateConfigHash ||
 		boundCapabilityHash != candidateCapabilityHash {
+		// A retired bound provider/model (operational rebuild) is a stale
+		// identity the client can repair with an explicit rebind. A still
+		// catalog-present tuple only drifting in config/capability hashes keeps
+		// the stricter version conflict so model downgrades can't pass silently.
+		identityMismatch := binding.GetProviderId() != candidate.GetProviderId() ||
+			binding.GetModelId() != candidate.GetModelId()
+		if identityMismatch && binding.GetRuntimeKind() == model.RuntimeKind_RUNTIME_KIND_DIRECT_MODEL {
+			exists, existsErr := boundRuntimeTupleExistsTx(tx, actorPTID, binding)
+			if existsErr != nil {
+				return nil, existsErr
+			}
+			if !exists {
+				return nil, errcode.NewRuntimeBindingStale(
+					binding.GetProviderId(),
+					binding.GetModelId(),
+				)
+			}
+		}
 		return nil, errcode.New(
 			errcode.AgentVersionConflict,
 			http.StatusConflict,

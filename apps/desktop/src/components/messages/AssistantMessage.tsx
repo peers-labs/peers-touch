@@ -43,7 +43,7 @@ import { MessageActionBar } from '../messages';
 import { ForwardMessageModal } from './ForwardMessageModal';
 import { ToolCallsBlock } from './ToolCallCard';
 import { TurnArtifactBar } from './TurnArtifactBar';
-import { DocumentArtifactActions } from '../agent/workbench/DocumentArtifactActions';
+import { useDocumentArtifactActions } from './actions/useDocumentArtifactActions';
 import { ThinkingIndicator } from './ThinkingBlock';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
 import { TurnAttribution } from './TurnAttribution';
@@ -299,6 +299,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const [collapsed, setCollapsed] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const artifactActions = useDocumentArtifactActions(message);
 
   const branchFromMessage = useChatStore(s => s.branchFromMessage);
   const continueGeneration = useChatStore(s => s.continueGeneration);
@@ -309,6 +310,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const retryTurnRecovery = useChatStore(s => s.retryTurnRecovery);
   const reloadTurnSnapshot = useChatStore(s => s.reloadTurnSnapshot);
   const resetExternalRuntime = useChatStore(s => s.resetExternalRuntime);
+  const rebindConversationRuntime = useChatStore(s => s.rebindConversationRuntime);
   const reconcileClientLease = useChatStore(s => s.reconcileClientLease);
   const requestComposerFocus = useChatStore(s => s.requestComposerFocus);
   const requestComposerModelSelection = useChatStore(s => s.requestComposerModelSelection);
@@ -382,6 +384,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           ? 'select-runtime'
         : message.resolution?.type === 'confirmReset'
           ? 'confirm-reset'
+        : message.resolution?.type === 'rebindRuntime'
+          ? 'rebind-runtime'
         : message.resolution?.type === 'openPermissionSettings'
           ? 'open-permission-settings'
         : message.resolution?.type === 'retryLater'
@@ -631,6 +635,34 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       throw error;
     }
   }, [currentSessionKey, resetExternalRuntime, t]);
+
+  // RUNTIME_BINDING_STALE recovery: release the dead conversation-level
+  // runtime pointer, then re-run the failed turn. Re-admission binds the
+  // conversation to the actor's current default runtime; the user explicitly
+  // triggers this switch, nothing changes silently.
+  const handleRebindRuntime = useCallback(async () => {
+    const resolution = message.resolution;
+    if (
+      resolution?.type !== 'rebindRuntime'
+      || !currentSessionKey
+      || !useChatStore.getState().messages.some((candidate) => candidate.id === message.id)
+    ) {
+      notifyError(t('chat.message.resolution.actionFailed'));
+      return;
+    }
+    await rebindConversationRuntime(currentSessionKey);
+    notifySuccess(
+      t('agent.recovery.runtimeRebindCompleted', { ns: 'agent' }),
+    );
+    await retryMessage(message.id);
+  }, [
+    currentSessionKey,
+    message.id,
+    message.resolution,
+    rebindConversationRuntime,
+    retryMessage,
+    t,
+  ]);
 
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
@@ -976,6 +1008,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       && message.resolution.type !== 'editQueue'
                       && message.resolution.type !== 'selectRuntime'
                       && message.resolution.type !== 'openPermissionSettings'
+                      && message.resolution.type !== 'rebindRuntime'
                       && message.resolution.type !== 'retryLater'
                       && message.resolution.type !== 'retry'
                       && message.resolution.type !== 'inspectBudget'
@@ -1011,6 +1044,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                             : message.resolution.type === 'retry'
                               ? <RotateCcw size={14} />
                             : message.resolution.type === 'confirmReset'
+                              ? <RotateCcw size={14} />
+                            : message.resolution.type === 'rebindRuntime'
                               ? <RotateCcw size={14} />
                             : message.resolution.type === 'inspectBudget'
                               ? <Activity size={14} />
@@ -1055,6 +1090,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'confirmReset') {
                           handleConfirmRuntimeReset();
+                          return;
+                        }
+                        if (message.resolution!.type === 'rebindRuntime') {
+                          await handleRebindRuntime();
                           return;
                         }
                         if (message.resolution!.type === 'openPermissionSettings') {
@@ -1213,20 +1252,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
               }
             },
             onForward: () => setForwardOpen(true),
+            artifactActions,
           }}
-          style={{
-            alignSelf: 'flex-start',
-            opacity: hovered ? 1 : 0,
-            pointerEvents: hovered ? 'auto' : 'none',
-            transition: 'opacity 0.2s',
-          }}
+          style={{ alignSelf: 'flex-start' }}
         />
-      )}
-      {/* TW-D3: promote the completed assistant bytes into the artifact system. */}
-      {!message.loading && message.content && (
-        <div style={{ alignSelf: 'flex-start' }}>
-          <DocumentArtifactActions message={message} />
-        </div>
       )}
       <ForwardMessageModal
         open={forwardOpen}

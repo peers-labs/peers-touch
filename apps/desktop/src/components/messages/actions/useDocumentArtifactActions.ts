@@ -1,32 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Button, theme } from 'antd';
-import { Flexbox } from 'react-layout-kit';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Archive, ExternalLink, FilePlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+
 import type { ChatMessage } from '../../../store/chat';
 import { useChatStore } from '../../../store/chat';
 import { useTaskArtifactStore } from '../../../store/taskArtifacts';
+import { notifyError } from '../../../ui/feedback';
 import type { LogicalArtifact } from '../../../gen/proto/domain/agent/agent_pb';
-
-interface DocumentArtifactActionsProps {
-  message: ChatMessage;
-}
+import type { MessageActionDef } from './types';
 
 // Stable fallback for selectors: a fresh [] on every getSnapshot call makes
 // useSyncExternalStore detect a changed snapshot forever (React #185 loop).
 const EMPTY_STRING_LIST: readonly string[] = [];
 
 /**
- * TW-D3 entry point: promote a completed assistant message's real bytes into
- * the immutable artifact system — either as a new logical artifact or as a
- * new version of an existing one (consuming any recorded selection feedback).
- * Nothing is parsed from code blocks; bytes come from the Station message.
+ * TW-D3 entry point moved into the message "more" menu: promote a completed
+ * assistant message's real bytes into the immutable artifact system — either
+ * as a new logical artifact or as a new version of an existing one (consuming
+ * any recorded selection feedback). Nothing is parsed from code blocks; bytes
+ * come from the Station message. Returns menu entries (empty when the message
+ * cannot back an artifact) so the action bar stays a single compact row.
  */
-export function DocumentArtifactActions({ message }: DocumentArtifactActionsProps) {
-  // The folded bubble id is the turn's first assistant leg (often an empty
-  // tool-call leg); artifact provenance must reference the leg that actually
-  // carries the claimed bytes.
+export function useDocumentArtifactActions(message: ChatMessage): MessageActionDef[] {
   const sourceMessageId = message.contentMessageId ?? message.id;
-  const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const conversationId = useChatStore((s) => s.currentSessionKey);
   const messages = useChatStore((s) => s.messages);
@@ -40,7 +36,6 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
   const [artifacts, setArtifacts] = useState<LogicalArtifact[]>([]);
   const [claimedArtifactId, setClaimedArtifactId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +76,6 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
           .filter((ref): ref is string => Boolean(ref)),
       ));
       setBusyId(artifactId ?? 'new');
-      setError(null);
       try {
         const response = await claimFromMessage({
           conversationId,
@@ -93,7 +87,7 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
         });
         await openPanel(conversationId, response.artifact!.artifactId, response.version!.versionId);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        notifyError(cause instanceof Error ? cause.message : String(cause));
       } finally {
         setBusyId(null);
       }
@@ -101,59 +95,44 @@ export function DocumentArtifactActions({ message }: DocumentArtifactActionsProp
     [claimFromMessage, conversationId, sourceMessageId, message.turnId, messages, openPanel],
   );
 
-  if (message.loading || message.terminalStatus === 'failed') return null;
+  return useMemo<MessageActionDef[]>(() => {
+    if (message.loading || message.terminalStatus === 'failed') return [];
 
-  // An empty assistant leg (e.g. the tool-call leg of a turn) cannot back
-  // an artifact version; claiming it only yields an invalid empty body.
-  if (!claimedArtifactId && !String(message.content ?? '').trim()) return null;
+    // An empty assistant leg (e.g. the tool-call leg of a turn) cannot back
+    // an artifact version; claiming it only yields an invalid empty body.
+    if (!claimedArtifactId && !String(message.content ?? '').trim()) return [];
 
-  // A message already claimed as a version only gets an "open artifact" entry.
-  if (claimedArtifactId) {
-    return (
-      <Flexbox horizontal gap={6} style={{ marginTop: 6 }}>
-        <Button
-          size="small"
-          onClick={() => void openPanel(conversationId, claimedArtifactId)}
-          data-pt-artifact-open={claimedArtifactId}
-        >
-          {t('chat.artifact.open')}
-        </Button>
-      </Flexbox>
-    );
-  }
+    // A message already claimed as a version only gets an "open artifact" entry.
+    if (claimedArtifactId) {
+      return [
+        {
+          key: 'openArtifact',
+          label: t('chat.artifact.open'),
+          icon: ExternalLink,
+          probe: { 'pt-artifact-open': claimedArtifactId },
+          onClick: () => void openPanel(conversationId, claimedArtifactId),
+        },
+      ];
+    }
 
-  return (
-    <Flexbox
-      horizontal
-      gap={6}
-      wrap="wrap"
-      data-pt-artifact-actions={message.id}
-      style={{ marginTop: 6 }}
-    >
-      <Button
-        size="small"
-        loading={busyId === 'new'}
-        onClick={() => void claim()}
-        data-pt-artifact-save-new
-      >
-        {t('chat.artifact.saveAs')}
-      </Button>
-      {artifacts.map((artifact) => (
-        <Button
-          key={artifact.artifactId}
-          size="small"
-          loading={busyId === artifact.artifactId}
-          onClick={() => void claim(artifact.artifactId, artifact.currentVersionId)}
-          data-pt-artifact-save-version={artifact.artifactId}
-        >
-          {t('chat.artifact.saveAsVersion', { name: artifact.name })}
-        </Button>
-      ))}
-      {error && (
-        <span style={{ color: token.colorError, fontSize: 12 }} data-pt-artifact-save-error>
-          {error}
-        </span>
-      )}
-    </Flexbox>
-  );
+    const saveLabel = t('chat.artifact.saveAs');
+    return [
+      {
+        key: 'saveArtifact',
+        label: saveLabel,
+        icon: Archive,
+        disabled: busyId === 'new',
+        probe: { 'pt-artifact-save-new': '' },
+        onClick: () => void claim(),
+      },
+      ...artifacts.map<MessageActionDef>((artifact) => ({
+        key: `saveArtifactVersion-${artifact.artifactId}`,
+        label: t('chat.artifact.saveAsVersion', { name: artifact.name }),
+        icon: FilePlus,
+        disabled: busyId === artifact.artifactId,
+        probe: { 'pt-artifact-save-version': artifact.artifactId },
+        onClick: () => void claim(artifact.artifactId, artifact.currentVersionId),
+      })),
+    ];
+  }, [message.loading, message.terminalStatus, message.content, claimedArtifactId, artifacts, busyId, claim, openPanel, conversationId, t]);
 }

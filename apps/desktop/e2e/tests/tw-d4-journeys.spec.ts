@@ -75,6 +75,20 @@ const poll = async <T>(page: TauriPage, fn: string, timeoutMs = 240_000, tickMs 
   throw new Error(`poll timeout (${timeoutMs}ms) ${fn.slice(0, 160)} last=${last}`);
 };
 
+// Artifact claim entries live inside the message "more" menu; open the latest
+// assistant message's menu so its probes mount into the DOM.
+async function openLatestMessageMoreMenu(page: TauriPage): Promise<void> {
+  await poll(page,
+    `(() => {
+      const triggers = Array.from(document.querySelectorAll('[data-pt-message-actions-more]'));
+      if (!triggers.length) return null;
+      triggers[triggers.length - 1].click();
+      return 1;
+    })()`,
+    30_000);
+  await sleep(500);
+}
+
 async function setValue(page: TauriPage, selector: string, value: string) {
   // The agent surface cold bootstrap can block the renderer main thread
   // long enough for the bridge's fixed 30s eval timeout to fire once.
@@ -349,21 +363,18 @@ tauriTest('files/commands/diffs/checks: modify inside root, run command fail→f
   ) as number;
   expect(exitZeroTag).toBeGreaterThanOrEqual(1);
 
-  // 5. Claim the last assistant message as an artifact version.
+  // 5. Claim the last assistant message as an artifact version. The
+  // tool-call leg has an empty body and cannot back a version; the latest
+  // message's more menu holds the substantive save-as-artifact entry.
+  await openLatestMessageMoreMenu(page);
   await poll(
     page,
-    `(() => {
-      const buttons = Array.from(document.querySelectorAll('[data-pt-artifact-save-new]'));
-      return buttons.length > 0 ? buttons.length : null;
-    })()`,
+    `(() => document.querySelector('[data-pt-artifact-save-new]') ? 1 : null)()`,
     30_000,
   );
-  // The tool-call leg has an empty body and cannot back a version; claim
-  // the substantive final message (last save-new button).
   await page.evaluate(
     `(() => {
-      const buttons = Array.from(document.querySelectorAll('[data-pt-artifact-save-new]'));
-      buttons[buttons.length - 1]?.click();
+      document.querySelector('[data-pt-artifact-save-new]')?.click();
     })()`,
   );
   await poll(page, `(() => document.querySelector('[data-pt-artifact-panel]') ? 1 : null)()`, 20_000);

@@ -76,6 +76,9 @@ export interface MenuAction {
   iconId?: string;
   tone?: Tone;
   availability?: Availability;
+  /** Optional data-* attributes (without the "data-" prefix) forwarded to
+   *  the rendered menu item, used mainly for e2e probes. */
+  data?: Record<string, string>;
   onActivate: () => void;
 }
 export interface PlatformSupport {

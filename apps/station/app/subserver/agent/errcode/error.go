@@ -26,6 +26,10 @@ const (
 	AgentAttachmentRejected               Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentRuntimeUnavailable               Code = "RUNTIME_UNAVAILABLE"
 	AgentRuntimeResumeUnavailable         Code = "RUNTIME_RESUME_UNAVAILABLE"
+	// AgentRuntimeBindingStale marks a conversation whose bound provider/model
+	// no longer exists in the actor catalog. It is recoverable through an
+	// explicit runtime rebind, unlike a config/capability version conflict.
+	AgentRuntimeBindingStale Code = "RUNTIME_BINDING_STALE"
 	AgentRuntimeIncompatibleCapability    Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
 	AgentCapabilityManifestNotFound       Code = "CAPABILITY_MANIFEST_NOT_FOUND"
 	AgentCapabilityManifestVersionStale   Code = "CAPABILITY_MANIFEST_VERSION_STALE"
@@ -83,6 +87,7 @@ const (
 	AgentAttachmentRejectedLocaleKey               = "agent.errors.attachmentRejected"
 	AgentRuntimeUnavailableLocaleKey               = "agent.errors.runtimeUnavailable"
 	AgentRuntimeResumeUnavailableLocaleKey         = "agent.errors.resumeUnavailable"
+	AgentRuntimeBindingStaleLocaleKey              = "agent.errors.runtimeBindingStale"
 	AgentRuntimeIncompatibleCapabilityLocaleKey    = "agent.errors.incompatibleCapability"
 	AgentCapabilityManifestNotFoundLocaleKey       = "agent.errors.capabilityManifestNotFound"
 	AgentCapabilityManifestVersionStaleLocaleKey   = "agent.errors.capabilityManifestVersionStale"
@@ -288,6 +293,28 @@ func NewRuntimeResumeUnavailable(runtimeProfileID, reasonCode string) *BizError 
 			Details: map[string]string{
 				"runtime_profile_id": runtimeProfileID,
 				"reason_code":        reasonCode,
+			},
+		},
+	}
+}
+
+// NewRuntimeBindingStale marks a conversation bound to a provider/model the
+// actor catalog no longer contains. It stays terminal for the current turn but
+// retryable after the client performs an explicit conversation runtime rebind.
+func NewRuntimeBindingStale(providerID, modelID string) *BizError {
+	return &BizError{
+		Code:       AgentRuntimeBindingStale,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentRuntimeBindingStaleLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentRuntimeBindingStaleLocaleKey,
+			ErrorType: string(AgentRuntimeBindingStale),
+			LocaleKey: AgentRuntimeBindingStaleLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"provider_id": providerID,
+				"model_id":    modelID,
 			},
 		},
 	}

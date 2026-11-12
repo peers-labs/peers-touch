@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -359,6 +360,57 @@ func (h *ConversationHandlers) HandleResetConversationRuntime(
 		ClosedExternalSessionEpoch: result.ClosedEpoch,
 		Replayed:                   result.Replayed,
 	}, nil
+}
+
+type conversationRuntimeRebindRequest struct {
+	ConversationID  string `json:"conversation_id"`
+	ExpectedVersion uint64 `json:"expected_conversation_version"`
+}
+
+// HandleRebindConversationRuntime releases a stale DIRECT_MODEL runtime
+// binding so the next turn re-admits against the current default runtime.
+// It is the explicit, audited recovery for RUNTIME_BINDING_STALE and never
+// applies to external-agent runtimes (which use the reset endpoint).
+func (h *ConversationHandlers) HandleRebindConversationRuntime(
+	ctx context.Context,
+	req server.Request,
+	resp server.Response,
+) error {
+	var input conversationRuntimeRebindRequest
+	if err := json.Unmarshal(req.Body(), &input); err != nil {
+		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
+		return nil
+	}
+	if input.ConversationID == "" || input.ExpectedVersion == 0 {
+		writeJSON(resp, http.StatusBadRequest, map[string]any{
+			"ok": false, "error": "conversation_id and expected_conversation_version are required",
+		})
+		return nil
+	}
+	result, err := h.convService.RebindConversationRuntime(
+		ctx,
+		subjectActorID(ctx),
+		input.ConversationID,
+		input.ExpectedVersion,
+	)
+	if err != nil {
+		status := http.StatusConflict
+		errorType := ""
+		var bizErr *errcode.BizError
+		if errors.As(err, &bizErr) {
+			status = bizErr.HTTPStatus
+			errorType = string(bizErr.Code)
+		}
+		writeJSON(resp, status, map[string]any{
+			"ok": false, "error": err.Error(), "error_type": errorType,
+		})
+		return nil
+	}
+	writeJSON(resp, http.StatusOK, map[string]any{
+		"ok":           true,
+		"conversation": conversationToJSON(result.Conversation),
+	})
+	return nil
 }
 
 func (h *ConversationHandlers) HandleListMessages(ctx context.Context, req server.Request, resp server.Response) error {

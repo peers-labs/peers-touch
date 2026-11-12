@@ -94,6 +94,20 @@ async function poll<T>(page: TauriPage, fn: string, timeoutMs: number, tickMs = 
   throw new Error(`poll timeout (${timeoutMs}ms): ${fn.slice(0, 160)} last=${last}`);
 }
 
+// Artifact claim/open entries live inside the message "more" menu; open the
+// latest assistant message's menu so its probes mount into the DOM.
+async function openLatestMessageMoreMenu(page: TauriPage): Promise<void> {
+  await poll(page,
+    `(() => {
+      const triggers = Array.from(document.querySelectorAll('[data-pt-message-actions-more]'));
+      if (!triggers.length) return null;
+      triggers[triggers.length - 1].click();
+      return 1;
+    })()`,
+    30_000);
+  await sleep(500);
+}
+
 async function setValue(page: TauriPage, selector: string, value: string): Promise<void> {
   await page.evaluate(
     `(() => {
@@ -283,6 +297,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   expect(materialProbeHit(assistantText)).toBe(true);
 
   // ── 1. Claim v1 ────────────────────────────────────────────────────────
+  await openLatestMessageMoreMenu(page);
   await poll(page,
     "document.querySelector('[data-pt-artifact-save-new]') ? 1 : null",
     30_000);
@@ -328,6 +343,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   await sleep(4_000);
   await poll(page, "document.querySelectorAll('[data-pt-primary-nav]').length > 0 ? 1 : null", 60_000);
   await gotoAgent(page);
+  await openLatestMessageMoreMenu(page);
   await poll(page, "document.querySelector('[data-pt-artifact-open]') ? 1 : null", 30_000);
   await page.click('[data-pt-artifact-open]');
   await poll(page, "document.querySelector('[data-pt-artifact-panel]') ? 1 : null", 20_000);
@@ -398,6 +414,7 @@ tauriTest('TW-D3: material, immutable artifact, feedback revision, checks, accep
   expect(revisionStatus).toBe('completed');
 
   // Claim the new assistant output as v2 of the same artifact.
+  await openLatestMessageMoreMenu(page);
   await poll(page, "document.querySelector('[data-pt-artifact-save-version]') ? 1 : null", 30_000);
   const saveVersionSelector = await page.evaluate<string>(
     `document.querySelector('[data-pt-artifact-save-version]')?.getAttribute('data-pt-artifact-save-version') || ''`,

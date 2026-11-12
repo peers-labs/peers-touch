@@ -3834,6 +3834,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &token,
             ))
         }
+        "agent_conversation_runtime_rebind" => {
+            let input = match parse_args::<AgentConversationRuntimeRebindInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_runtime_rebind(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
         "agent_task_create" => {
             let input = match parse_args::<AgentTaskCreateInput>(args) {
                 Ok(v) => v,

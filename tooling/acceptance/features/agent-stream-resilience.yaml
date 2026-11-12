@@ -7,7 +7,7 @@
     "apps/station/app/subserver/agent/service/turn_delivery_service.go",
     "apps/station/app/subserver/agent/service/live_resume_broker.go",
     "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
-    "apps/desktop/src/components/GlobalOperationTray.tsx",
+    "apps/desktop/src/components/AgentSidebar.tsx",
     "apps/desktop/src/components/messages/AssistantMessage.tsx",
     "apps/desktop/src/components/messages/ThinkingBlock.tsx",
     "apps/desktop/src/kernel/identityRuntime.ts",

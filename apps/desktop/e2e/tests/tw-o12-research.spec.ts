@@ -61,6 +61,20 @@ async function poll<T>(page: TauriPage, fn: string, timeoutMs: number, tickMs = 
   throw new Error(`poll timeout (${timeoutMs}ms): ${fn.slice(0, 160)} last=${last}`);
 }
 
+// Artifact claim/open entries live inside the message "more" menu; open the
+// latest assistant message's menu so its probes mount into the DOM.
+async function openLatestMessageMoreMenu(page: TauriPage): Promise<void> {
+  await poll(page,
+    `(() => {
+      const triggers = Array.from(document.querySelectorAll('[data-pt-message-actions-more]'));
+      if (!triggers.length) return null;
+      triggers[triggers.length - 1].click();
+      return 1;
+    })()`,
+    30_000);
+  await sleep(500);
+}
+
 async function setValue(page: TauriPage, selector: string, value: string): Promise<void> {
   await page.evaluate(
     `(() => {
@@ -321,13 +335,16 @@ tauriTest('TW-O12 research/doc: material deliverable, feedback revision, recall 
   expect(probeHit(assistantText)).toBe(true);
 
   // ── 3. Claim the deliverable as immutable v1 ────────────────────────────
-  await poll(page, "document.querySelector('[data-pt-artifact-save-new]') ? 1 : null", 30_000);
-  // Re-issue the native click until the panel mounts (the WebKit trusted
-  // click occasionally misses the antd button's inner span).
+  await openLatestMessageMoreMenu(page);
+  // Re-issue the native click until the panel mounts; reopen the more menu
+  // when a previous attempt closed it without mounting the artifact panel.
   await poll(page,
     `(() => {
       if (document.querySelector('[data-pt-artifact-panel]')) return 1;
-      document.querySelector('[data-pt-artifact-save-new]')?.click();
+      const item = document.querySelector('[data-pt-artifact-save-new]');
+      if (item) { item.click(); return null; }
+      const triggers = Array.from(document.querySelectorAll('[data-pt-message-actions-more]'));
+      triggers[triggers.length - 1]?.click();
       return null;
     })()`,
     30_000, 1_000);
@@ -363,6 +380,7 @@ tauriTest('TW-O12 research/doc: material deliverable, feedback revision, recall 
   }
   expect(revisionStatus).toBe('completed');
 
+  await openLatestMessageMoreMenu(page);
   await poll(page, "document.querySelector('[data-pt-artifact-save-version]') ? 1 : null", 30_000);
   const saveVersionSelector = await page.evaluate<string>(
     `document.querySelector('[data-pt-artifact-save-version]')?.getAttribute('data-pt-artifact-save-version') || ''`,
@@ -421,6 +439,7 @@ tauriTest('TW-O12 research/doc: material deliverable, feedback revision, recall 
   await sleep(4_000);
   await poll(page, "document.querySelectorAll('[data-pt-primary-nav]').length > 0 ? 1 : null", 60_000);
   await gotoAgent(page);
+  await openLatestMessageMoreMenu(page);
   await poll(page, "document.querySelector('[data-pt-artifact-open]') ? 1 : null", 30_000);
   await page.click('[data-pt-artifact-open]');
   await poll(page,

@@ -25,7 +25,8 @@ export function MessageActionBar({ context, style }: MessageActionBarProps) {
           emphasis="quiet"
           density="compact"
           leading={<action.icon size={14} />}
-          label={t(action.label)}
+          aria-label={t(action.label)}
+          title={t(action.label)}
           availability={action.disabled ? { kind: 'disabled', reason: t(action.label) } : undefined}
           onActivate={action.onClick}
         />
@@ -39,8 +40,13 @@ export function MessageActionBar({ context, style }: MessageActionBarProps) {
             label: t(action.label),
             leading: <action.icon size={14} />,
             tone: action.danger ? 'danger' : undefined,
+            data: action.probe
+              ? Object.fromEntries(
+                  Object.entries(action.probe).filter((entry): entry is [string, string] => entry[1] !== undefined),
+                )
+              : undefined,
             availability: action.disabled
-              ? { kind: 'disabled' as const, reason: '' }
+              ? { kind: 'disabled' as const, reason: t(action.label) }
               : undefined,
           }))}
         >

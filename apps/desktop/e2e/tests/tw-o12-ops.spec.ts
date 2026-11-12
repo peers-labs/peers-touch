@@ -65,6 +65,20 @@ async function poll<T>(page: TauriPage, fn: string, timeoutMs = 240_000, tickMs 
   throw new Error(`poll timeout (${timeoutMs}ms) ${fn.slice(0, 160)} last=${last}`);
 }
 
+// Artifact claim entries live inside the message "more" menu; open the latest
+// assistant message's menu so its probes mount into the DOM.
+async function openLatestMessageMoreMenu(page: TauriPage): Promise<void> {
+  await poll(page,
+    `(() => {
+      const triggers = Array.from(document.querySelectorAll('[data-pt-message-actions-more]'));
+      if (!triggers.length) return null;
+      triggers[triggers.length - 1].click();
+      return 1;
+    })()`,
+    30_000);
+  await sleep(500);
+}
+
 async function setValue(page: TauriPage, selector: string, value: string): Promise<void> {
   await page.evaluate(
     `(() => {
@@ -246,13 +260,13 @@ tauriTest('TW-O12 ops: file write, failing check, feedback edit/diff, retest pas
   );
 
   // 5. Claim the substantive final message as an immutable artifact.
+  await openLatestMessageMoreMenu(page);
   await poll(page,
-    `(() => document.querySelectorAll('[data-pt-artifact-save-new]').length > 0 ? 1 : null)()`,
+    `(() => document.querySelector('[data-pt-artifact-save-new]') ? 1 : null)()`,
     30_000);
   await page.evaluate(
     `(() => {
-      const buttons = Array.from(document.querySelectorAll('[data-pt-artifact-save-new]'));
-      buttons[buttons.length - 1]?.click();
+      document.querySelector('[data-pt-artifact-save-new]')?.click();
     })()`,
   );
   const versionId = await poll<string>(page,

@@ -1019,6 +1019,7 @@ fn main() {
             agent_turn::agent_conversation_delete_batch,
             agent_turn::agent_conversation_restore,
             agent_turn::agent_conversation_runtime_reset,
+            agent_turn::agent_conversation_runtime_rebind,
             agent_turn::agent_retry_turn,
             agent_turn::agent_regenerate_turn,
             agent_turn::agent_edit_and_resend,

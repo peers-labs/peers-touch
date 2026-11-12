@@ -5,6 +5,7 @@ import i18n, { resolveI18nValue } from '../i18n/index';
 import {
   api,
   type AgentConversation,
+  type AgentConversationRuntimeRebindResult,
   type AgentConversationRuntimeResetResult,
   type Session,
   type StreamEvent,
@@ -1160,6 +1161,9 @@ interface ChatState {
   resetExternalRuntime: (
     conversationId?: string,
   ) => Promise<AgentConversationRuntimeResetResult>;
+  rebindConversationRuntime: (
+    conversationId?: string,
+  ) => Promise<AgentConversationRuntimeRebindResult>;
   reconcileClientLease: (
     conversationId: string,
     messageId: string,
@@ -2613,6 +2617,30 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
           : state.sessionBuffers,
       };
     });
+    return result;
+  },
+
+  // Explicit recovery for RUNTIME_BINDING_STALE: release the conversation-level
+  // runtime pointer (provider/model retired from the catalog) so the next turn
+  // re-admits against the current default runtime. Historical turns keep their
+  // immutable per-turn snapshots; only the conversation version advances.
+  rebindConversationRuntime: async (conversationId) => {
+    const key = conversationId || get().currentSessionKey;
+    if (isAgentDraftKey(key)) {
+      throw new Error('agent.errors.runtimeBindingStale');
+    }
+    const conversation = await api.getAgentConversation(key);
+    const result = await api.rebindAgentConversationRuntime({
+      conversation_id: key,
+      expected_conversation_version: conversation.version,
+    });
+
+    set((state) => ({
+      sessions: reconcileRevisionSession(
+        state.sessions,
+        result.conversation,
+      ),
+    }));
     return result;
   },
 

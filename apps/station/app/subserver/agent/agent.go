@@ -686,6 +686,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-conversation-delete-batch", "/agent/conversation/delete-batch", server.POST, convHandlers.HandleDeleteConversations, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-restore", "/agent/conversation/restore", server.POST, convHandlers.HandleRestoreConversation, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-conversation-runtime-reset", "/agent/conversation/runtime/reset", server.POST, convHandlers.HandleResetConversationRuntime, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-runtime-rebind", "/agent/conversation/runtime/rebind", server.POST, convHandlers.HandleRebindConversationRuntime, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-messages", "/agent/conversation/messages", server.POST, convHandlers.HandleListMessages, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-message-translate", "/agent/conversation/message/translate", server.POST, convHandlers.HandleSetMessageTranslation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-events", "/agent/conversation/events", server.POST, convHandlers.HandleStreamConversationEvents, logIDWrapper, jwtWrapper),

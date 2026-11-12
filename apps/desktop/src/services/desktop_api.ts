@@ -2646,6 +2646,7 @@ export interface AgentErrorResolutionAction {
     | 'editQueue'
     | 'selectRuntime'
     | 'confirmReset'
+    | 'rebindRuntime'
     | 'retryLater'
     | 'retry'
     | 'switchAccount'
@@ -2702,6 +2703,10 @@ export const AGENT_RUNTIME_RESUME_UNAVAILABLE_ERROR_TYPE =
   'RUNTIME_RESUME_UNAVAILABLE';
 export const AGENT_RUNTIME_RESUME_UNAVAILABLE_LOCALE_KEY =
   'agent.errors.resumeUnavailable';
+export const AGENT_RUNTIME_BINDING_STALE_ERROR_TYPE =
+  'RUNTIME_BINDING_STALE';
+export const AGENT_RUNTIME_BINDING_STALE_LOCALE_KEY =
+  'agent.errors.runtimeBindingStale';
 export const AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE = 'PROVIDER_RATE_LIMIT';
 export const AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY =
   'agent.errors.providerRateLimit';
@@ -2777,6 +2782,13 @@ export type AgentRuntimeResumeUnavailableError = AgentTypedErrorPayload & {
   details: {
     runtime_profile_id: string;
     reason_code: string;
+  };
+};
+
+export type AgentRuntimeBindingStaleError = AgentTypedErrorPayload & {
+  details: {
+    provider_id: string;
+    model_id: string;
   };
 };
 
@@ -3157,6 +3169,27 @@ export function isAgentRuntimeResumeUnavailableError(
   );
 }
 
+export function isAgentRuntimeBindingStaleError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentRuntimeBindingStaleError {
+  if (
+    error?.error_type !== AGENT_RUNTIME_BINDING_STALE_ERROR_TYPE
+    || error.locale_key !== AGENT_RUNTIME_BINDING_STALE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'model_id'
+    && detailKeys[1] === 'provider_id'
+    && error.details.provider_id.trim().length > 0
+    && error.details.model_id.trim().length > 0
+  );
+}
+
 export function isAgentProviderRateLimitError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentProviderRateLimitError {
@@ -3521,6 +3554,14 @@ export function resolveAgentTypedErrorAction(
       runtimeProfileId: error.details.runtime_profile_id,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.confirmReset',
+    };
+  }
+  if (isAgentRuntimeBindingStaleError(error)) {
+    return {
+      type: 'rebindRuntime',
+      providerId: error.details.provider_id,
+      modelId: error.details.model_id,
+      label: 'agent.recovery.rebindRuntime',
     };
   }
   if (isAgentQueueFullError(error)) {
@@ -4189,6 +4230,16 @@ export interface AgentConversationRuntimeResetResult {
   conversation: AgentConversation;
   closed_external_session_epoch: number;
   replayed: boolean;
+}
+
+export interface AgentConversationRuntimeRebindInput {
+  conversation_id: string;
+  expected_conversation_version: number;
+}
+
+export interface AgentConversationRuntimeRebindResult {
+  ok: boolean;
+  conversation: AgentConversation;
 }
 
 function agentProtoTimestamp(
@@ -7293,6 +7344,12 @@ export const api = {
       ResetConversationRuntimeResponseSchema,
       input,
     ).then(agentRuntimeResetResultFromProto),
+
+  rebindAgentConversationRuntime: (input: AgentConversationRuntimeRebindInput) =>
+    invokeRustDataFromStatus<
+      AgentConversationRuntimeRebindInput,
+      AgentConversationRuntimeRebindResult
+    >('agent_conversation_runtime_rebind', input),
 
   retryAgentTurn: (input: AgentRetryTurnInput) =>
     invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),
