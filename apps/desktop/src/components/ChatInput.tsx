@@ -28,6 +28,7 @@ import {
 } from '../store/agentCapabilityReadiness';
 import { useMentionStore } from '../store/mentions';
 import { AttachmentStage } from './composer/AttachmentStage';
+import { ComposerAddMenu } from './composer/ComposerAddMenu';
 import {
   AGENT_ATTACHMENT_ACCEPT,
   useAgentAttachmentDrafts,
@@ -883,6 +884,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
       <Flexbox horizontal align="center" gap={8}>
         <Flexbox horizontal align="center" gap={8}>
+          <ComposerAddMenu onPickAttachment={handlePickImages} />
           <div style={{ position: 'relative' }}>
             <button
               ref={commandTriggerRef}
