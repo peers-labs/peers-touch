@@ -173,22 +173,30 @@ function mediaBlockBodies(maxWidth: number, source: string): string {
   return bodies.join('\n');
 }
 
-describe('480px composer wrap contract', () => {
-  const narrow = mediaBlockBodies(480, stylesheet);
+// Extract the declaration body of a top-level (non-media) selector.
+function ruleBody(source: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?:^|\\})[^}]*?${escaped}\\s*\\{([^}]*)\\}`, 'm');
+  return source.match(re)?.[1] ?? '';
+}
 
-  it('wraps the composer row and lifts the input to a full-width first row', () => {
-    expect(narrow).toMatch(/\.sc-composer__row\s*\{[^}]*flex-wrap: wrap/);
-    expect(narrow).toMatch(
-      /\.sc-composer__row \.sc-composer__input-wrap\s*\{[^}]*flex: 1 1 100%[^}]*order: -1/,
+describe('composer vertical layout (narrow-safe by construction)', () => {
+  it('stacks the full-width input above the tool/send footer without a row wrap', () => {
+    // The WeChat-style shell is vertical at every width: the textarea fills
+    // the top region and the controls sit in a footer row, so no 480px
+    // single-row wrapping override is needed.
+    expect(stylesheet).not.toContain('.sc-composer__row');
+    expect(stylesheet).toContain('.sc-composer__footer');
+    expect(stylesheet).toMatch(
+      /\.sc-composer__input-wrap\s*\{[^}]*flex: 1 1 auto/,
     );
   });
 
-  it('keeps every composer control mounted on a second tool/send row (no display:none)', () => {
-    expect(narrow).toMatch(/\.sc-composer__row \.sc-composer__tools\s*\{[^}]*flex: 1 1 auto/);
-    expect(narrow).toMatch(
-      /\.sc-composer__row \.sc-composer__send-group\s*\{[^}]*flex: 0 0 auto/,
-    );
-    const composerRules = narrow.match(/\.sc-composer[^{]*\{[^}]*\}/g) ?? [];
+  it('keeps every composer control mounted in the footer (no display:none)', () => {
+    const footer = ruleBody(stylesheet, '.sc-composer__footer');
+    expect(footer).toContain('display: flex');
+    expect(footer).toContain('justify-content: space-between');
+    const composerRules = stylesheet.match(/\.sc-composer[^{]*\{[^}]*\}/g) ?? [];
     expect(composerRules.some((rule) => rule.includes('display: none'))).toBe(false);
   });
 });

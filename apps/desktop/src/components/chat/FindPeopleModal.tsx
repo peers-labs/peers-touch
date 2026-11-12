@@ -18,7 +18,11 @@ import {
   useActiveSocialChatSlice,
   useActiveSocialChatStore,
 } from './useActiveSocialChatStore';
-import { singleFederationId } from '../../store/friendshipProjection';
+import {
+  isSameStationActor,
+  localFederationFallback,
+  singleFederationId,
+} from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { actorDisplayName } from '../../store/socialProfileProjection';
 import { FederatedHandle } from '../FederatedHandle';
@@ -96,11 +100,12 @@ export function FindPeopleModal({ open, onClose }: Props) {
     friendRequestsError: s.friendRequestsError,
   }));
   const currentUserPtid = useActiveSocialChatStore((s) => s.currentUserPtid);
-  const { federations, rememberCatalogEntries, refreshFederationContexts } =
+  const { federations, rememberCatalogEntries, refreshFederationContexts, self } =
     useActiveChatFederationSlice((s) => ({
       federations: s.federations,
       rememberCatalogEntries: s.rememberCatalogEntries,
       refreshFederationContexts: s.refreshFederationContexts,
+      self: s.self,
     }));
 
   // Federation contexts are session-scoped and fetched at bootstrap. The
@@ -250,10 +255,19 @@ export function FindPeopleModal({ open, onClose }: Props) {
       return;
     }
     if (receiverPtid === currentUserPtid) return;
+    // With multiple federations there is no single default. A same-Station
+    // actor only needs a valid local federation context, so fall back to the
+    // first active context; federated targets keep requiring an explicit
+    // Federation scope and stay guarded below.
+    const sameStation = isSameStationActor({
+      selfHomeStationPeerId: self?.home_station_peer_id,
+      targetHomeStationPeerId: target.homeStationPeerId,
+    });
     const federationId =
       activeFederationId
       || previousRequestFederationId
-      || defaultFederationId;
+      || defaultFederationId
+      || (sameStation ? localFederationFallback(federations) : '');
     if (!federationId || !target.homeStationPeerId) {
       setRequestErrors((current) => ({
         ...current,

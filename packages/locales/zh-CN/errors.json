@@ -102,6 +102,7 @@
   "error.chat.sendFailed": "消息发送失败",
   "error.chat.groupActorUnavailable": "所选成员尚未准备好加入加密群聊。",
   "error.chat.groupFederationInactive": "所选成员的 Home Station 在当前联邦中未处于活跃状态。",
+  "error.chat.federationInactive": "对方的 Home Station 尚未与当前 Station 建立活跃联邦，消息暂时无法送达。",
   "error.chat.secureChannelUnavailable": "安全通道尚未就绪。对方可能需要先打开 Peers，才能接收加密消息。",
   "error.chat.senderKeySyncing": "群聊加密密钥还在同步，请稍后重试",
   "error.chat.setCursorFailed": "设置游标失败",

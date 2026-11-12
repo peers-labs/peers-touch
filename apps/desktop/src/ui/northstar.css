@@ -28,6 +28,34 @@
   flex-direction: column;
 }
 
+/*
+ * Overlay title-bar inset. With macOS `titleBarStyle: Overlay` the web content
+ * fills the title bar, so the first in-window row reserves a top strip where
+ * the native traffic lights float. The strip is the window drag region.
+ * Non-macOS keeps the native title bar and needs zero inset. The platform
+ * flag is set synchronously in kernel/hostPolicy before first paint.
+ */
+:root {
+  /* Generic top clearance for columns whose header starts beside (not under)
+     the traffic lights — kept slim so content rises into the title-bar band
+     like WeChat instead of leaving an empty strip. */
+  --pt-titlebar-inset: 0px;
+  /* The icon rail is the only column under the lights. WeChat-style zoning
+     splits it into a header band (traffic lights only) and a content band
+     below; the self avatar anchors the content band top, never the seam. */
+  --pt-rail-top: 0px;
+  /* WeChat-parity faint column hairline: material carries the separation, the
+     line is only a 6% ink whisper, never a hard rule. */
+  --pt-column-hairline: color-mix(in srgb, var(--pt-text) 6%, transparent);
+}
+:root[data-platform='macos'] {
+  --pt-titlebar-inset: 8px;
+  /* 48px header band: matches the `.sc-rail-header` 48px rhythm and leaves
+     the traffic lights (~20px tall) a full zone to themselves, so the avatar
+     starts on the content-band top instead of the header/content seam. */
+  --pt-rail-top: 48px;
+}
+
 /* ── Shell frame ──────────────────────────────────────────────────────────
  * Full-bleed production window: a constant 60px icon rail beside a flexible
  * content stage. Unlike the centered prototype card there is no outer margin;
@@ -49,13 +77,29 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 14px 0;
+  /* The rail is the column under the traffic lights; the rail-top padding
+     reserves the header band so the self avatar anchors the content band
+     below it while other columns rise into the title-bar strip. */
+  padding: var(--pt-rail-top) 0 14px;
   gap: 4px;
   /* Chrome zones separate by material (translucent surface + blur), never by
-     a hairline border — north-star frame grammar #2. */
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
+     an opaque hairline — north-star frame grammar #2. WeChat-parity frosted
+     glass: a wide translucent-surface gradient with real light play (bright
+     outer edge fading toward the stage) and a soft inset edge that defines
+     the material boundary. The saturated backdrop blur is live for any
+     overlay content; the rail's fixed 60px column means page content never
+     scrolls beneath it, so true desktop vibrancy would additionally require
+     a native NSVisualEffectView window treatment. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--pt-surface) 88%, transparent),
+    color-mix(in srgb, var(--pt-surface) 38%, transparent)
+  );
+  backdrop-filter: blur(26px) saturate(1.8);
+  -webkit-backdrop-filter: blur(26px) saturate(1.8);
+  box-shadow:
+    inset -1px 0 0 color-mix(in srgb, var(--pt-text) 5%, transparent),
+    inset 8px 0 18px -16px color-mix(in srgb, var(--pt-text) 18%, transparent);
 }
 
 .ds-stage {
@@ -276,6 +320,46 @@
   .ds-boot-ring { animation-duration: 1.6s; }
 }
 
+/* Auth → ready surface transition veil. Covers the native window resize so
+   the ready shell never paints at an intermediate width; it cross-fades only
+   (no translation), mirroring the ds-boot wordmark/ring grammar. Sits above
+   the shell but below interactive overlays (menus/dialogs start at 1100). */
+.pt-surface-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--pt-canvas);
+  opacity: 1;
+  transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pt-surface-veil.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+.pt-surface-veil__wordmark {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--pt-text);
+}
+.pt-surface-veil__ring {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid var(--pt-border);
+  border-top-color: var(--pt-accent);
+  animation: ds-boot-spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pt-surface-veil { transition: none; }
+  .pt-surface-veil__ring { animation-duration: 1.6s; }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
  * Settings surface — north-star shell (prototype SettingsFeature parity).
  * L1 = one Segmented group island; L2 = plain section sidebar; content is a
@@ -283,6 +367,12 @@
  * migrate off antd incrementally; this block owns only the frame geometry.
  * ───────────────────────────────────────────────────────────────────────── */
 .sc-settings {
+  /* The page host wrapper is a position:relative block (not a flex box), so
+     flex:1 alone never constrains this surface: it grew to the document's
+     full height and got clipped by .ds-stage's overflow:hidden with no
+     scrollable overflow. A definite percentage height against the host's
+     flex-resolved height restores the internal overflow:auto scroll chain. */
+  height: 100%;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -346,7 +436,9 @@
   flex: 1;
   min-width: 0;
   overflow: auto;
-  padding: 18px 28px 48px;
+  /* Single edge inset owner: the inner column carries no padding of its own
+     so the content keeps a uniform 8px gutter instead of two stacked paddings. */
+  padding: 8px;
 }
 .sc-settings__scroll[data-scroll-lock='true'] { overflow: hidden; }
 
@@ -375,10 +467,12 @@
   display: flex;
   flex-direction: column;
   gap: 22px;
-  padding: 18px 28px 48px;
-  max-width: 880px;
+  /* Fill the content region: the only edge gap is the 8px gutter owned by
+     .sc-settings__scroll. No centered max-width cap — the cap used to leave
+     large dead bands on both sides of every settings card. */
+  width: 100%;
   min-width: 0;
-  margin-inline: auto;
+  padding: 0;
   box-sizing: border-box;
 }
 .sc-settings-column[data-full-height='true'] {
@@ -435,18 +529,18 @@
   background: var(--pt-surface);
   border: 1px solid color-mix(in srgb, var(--pt-text) 4%, transparent);
   border-radius: 12px;
-  padding: 0 14px;
+  padding: 0 8px;
 }
 
 /* Generic non-row content still breathes inside the inset card. */
 .sc-settings-card > *:not(.sc-settings-row):not(.sc-settings-row--vertical) {
-  margin-block: 14px;
+  margin-block: 8px;
 }
 .sc-settings-card > *:first-child {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 .sc-settings-card > *:last-child {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 /* Row: label block left, intrinsic control right, one hairline between. */
@@ -564,8 +658,11 @@
 }
 
 /* ── Ported north-star account identity grammar ── */
-.sc-settings .sk-identity {
-  margin: 0 -14px;
+/* Specificity (0,3,0) matches the generic .sc-settings-card > *:not(...)
+   margin-block rule above; appearing later lets this win so the cover banner
+   stays flush to the card's top edge instead of inheriting an 8px white strip. */
+.sc-settings .sc-settings-card > .sk-identity {
+  margin: 0 -8px;
   border-radius: 12px 12px 0 0;
   overflow: hidden;
 }
@@ -600,7 +697,7 @@
   transform: none;
 }
 .sk-identity-card {
-  padding: 0 18px 16px;
+  padding: 0 8px 8px;
   background: transparent;
 }
 .sk-identity-row {
@@ -790,6 +887,23 @@
 .sk-banner .sc-account-banner__surface,
 .sk-banner .sc-account-banner__image {
   border-radius: 0 !important;
+}
+/* No header image yet: collapse the 120px blank bar into a compact,
+   self-explanatory upload zone instead of a large empty white strip. The
+   edit tile stays visible at rest so the affordance does not depend on hover. */
+.sk-banner[data-has-image='false'] {
+  height: 56px;
+}
+.sk-banner[data-has-image='false'] .sc-account-banner {
+  height: 56px;
+  border: 1px dashed var(--pt-border);
+  border-radius: 8px;
+  background: var(--pt-subtle);
+}
+.sk-banner[data-has-image='false'] .sc-account-banner__action {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
 }
 .sk-identity-avatar .sc-account-avatar {
   border-radius: 22px;
@@ -1388,9 +1502,11 @@
 .sc-account-banner {
   position: relative;
   width: 100%;
+  height: 120px;
   overflow: hidden;
   background: linear-gradient(135deg, var(--pt-subtle) 0%, var(--pt-surface) 100%);
   border: 1px solid var(--pt-border);
+  border-radius: 12px;
 }
 .sc-account-banner__surface {
   position: absolute;

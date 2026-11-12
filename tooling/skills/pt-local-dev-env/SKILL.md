@@ -75,6 +75,16 @@ private to that user, and containing shell-safe literal assignments. A local
 Profile never grants remote deploy or reset. The resolver emits quoted exports;
 normal development never executes the file with `source`.
 
+## Two Desktop Clients On One Station
+
+For IM messaging E2E between two users, run two desktop instances against the
+same Station with separate storage roots, gateway ports, and bundle
+identifiers, and register a second same-Station test account. The full
+procedure — including the `/actor/sign-up` password rules, Station-trust
+seeding, the single-session rotation rule, and the headless-vs-GUI boundary —
+is in
+[`references/two-desktop-same-station-test-accounts.md`](references/two-desktop-same-station-test-accounts.md).
+
 ## Workflow
 
 1. Confirm the exact canonical worktree, then inspect current authority:

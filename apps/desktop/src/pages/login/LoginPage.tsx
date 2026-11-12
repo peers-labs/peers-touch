@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Icon } from '@peers-touch/ui';
+import { Button, Card, Icon, IconButton } from '@peers-touch/ui';
 import { feedbackChannel, notifyError } from '../../ui/feedback';
 import { BRANDING } from '../../branding';
 import { LanguageSwitcher } from '../../components/common/LanguageSwitcher';
@@ -22,7 +22,14 @@ import {
 } from '../../services/accessGate';
 import { UserSquareAvatar } from '../../components/common/UserSquareAvatar';
 
-import { StationSwitcher } from './StationSwitcher';
+import { StationSetupPanel } from './StationSetupPanel';
+import { useStationRegistry } from './useStationRegistry';
+import {
+  isAutoStationSetup,
+  resolveAuthGateStage,
+  type AuthGateOverride,
+  type AuthGateStage,
+} from './resolveAuthGateStage';
 import { AccountPickerView } from './views/AccountPickerView';
 import { PinEntryView } from './views/PinEntryView';
 import { SetPinView } from './views/SetPinView';
@@ -95,6 +102,32 @@ export function LoginPage({
 
   // ── Core state machine ──
   const [loginState, setLoginState] = useState<LoginState>(initialState);
+
+  // ── Outer gate: Station setup vs credential/account auth ──
+  // One registry instance feeds both the first-run Station card and the
+  // gear-opened one. The gear pins the gate to `station_setup` via override;
+  // null follows the automatic rule (first-run when no Station exists, auth
+  // otherwise), per resolveAuthGateStage.
+  const { t: tCommon } = useTranslation('common');
+  const stationRegistry = useStationRegistry();
+  const [gateOverride, setGateOverride] = useState<AuthGateOverride>(null);
+  const gateInput = {
+    hydrated: stationRegistry.hydrated,
+    hasStation: stationRegistry.hasStation,
+    override: gateOverride,
+  };
+  const gateStage: AuthGateStage = embedded
+    ? 'auth'
+    : resolveAuthGateStage(gateInput);
+  const showInlineStationSetup = gateStage === 'station_setup';
+  // The automatic first-run gate has nowhere to go back to; a gear-opened
+  // Station card gets a back control that releases the override.
+  const stationPanelOnBack = showInlineStationSetup
+    && !embedded
+    && !isAutoStationSetup(gateInput)
+    ? () => setGateOverride(null)
+    : undefined;
+
   const [tab, setTab] = useState<LoginTab>('quick');
   const [selectedAccount, setSelectedAccount] = useState<SessionUser | null>(null);
   const [expiredAccount, setExpiredAccount] = useState<SessionUser | null>(null);
@@ -794,6 +827,23 @@ export function LoginPage({
 
   // ── Render card content based on state ──
   const renderCardContent = () => {
+    // Outer gate first: an unconfigured install must set up a Station before
+    // any credential/account surface is reachable. Once a Station exists the
+    // inner LoginState machine takes over unchanged.
+    if (showInlineStationSetup) {
+      return (
+        <StationSetupPanel
+          registry={stationRegistry}
+          onBack={stationPanelOnBack}
+          autoHint={stationPanelOnBack
+            ? undefined
+            : tCommon('stationPicker.firstRunHint', {
+                defaultValue: 'Set up a Station to connect to the network before signing in.',
+              })}
+        />
+      );
+    }
+
     switch (loginState) {
       case 'account_picker':
         return (
@@ -940,12 +990,15 @@ export function LoginPage({
     backButtonContent
   );
 
-  // Header: back (lead slot, always rendered to keep the language switcher
-  // symmetric on the right) and language switcher.
+  // Header: back (lead slot) on the left; on the right the Station gear (opens
+  // the dedicated Station setup card via the gate override) and the language
+  // switcher. The gear is the single Station entry on the credential surface —
+  // Station configuration never shares the auth card body/footer.
+  const showStationGear = !embedded && !showInlineStationSetup;
   const cardHead = (
     <div className="pt-auth-head">
       <div className="pt-auth-head__lead">
-        {showHeaderBack && (
+        {showHeaderBack && !showInlineStationSetup && (
           <Button
             actionId="auth.back"
             emphasis="quiet"
@@ -956,13 +1009,29 @@ export function LoginPage({
           </Button>
         )}
       </div>
-      {!embedded && <LanguageSwitcher />}
+      {!embedded && (
+        <div className="pt-auth-head__actions">
+          {showStationGear && (
+            <IconButton
+              actionId="auth.station.open"
+              iconId="settings"
+              label={tCommon('stationPicker.title')}
+              emphasis="quiet"
+              density="compact"
+              onActivate={() => setGateOverride('station_setup')}
+            />
+          )}
+          <LanguageSwitcher />
+        </div>
+      )}
     </div>
   );
 
   // Centered brand hero. The app icon is a square white tile with transparent
   // rounded corners, so the tinted card shows through around it for depth.
-  const brandHero = embedded ? null : (
+  // The first-run Station gate uses a compact card instead, so the hero stays
+  // out of that surface.
+  const brandHero = embedded || showInlineStationSetup ? null : (
     <div className="pt-auth-brand-hero">
       <img
         className="pt-auth-brand-logo"
@@ -974,13 +1043,11 @@ export function LoginPage({
 
   const card = (
     <Card
-      className="pt-auth-card"
+      className={[
+        'pt-auth-card',
+        showInlineStationSetup ? 'pt-auth-card--station' : '',
+      ].filter(Boolean).join(' ')}
       data-pt-login-card
-      footer={embedded ? undefined : (
-        <div className="pt-auth-station">
-          <StationSwitcher />
-        </div>
-      )}
     >
       {cardHead}
       {brandHero}
@@ -991,7 +1058,9 @@ export function LoginPage({
   if (embedded) return card;
 
   return (
-    <div className="pt-auth-shell">
+    // deep: blank shell area drags the login window; form controls stay
+    // interactive because Tauri excludes inputs/buttons from the subtree walk.
+    <div className="pt-auth-shell" data-tauri-drag-region="deep">
       <div className="pt-auth-region">{card}</div>
     </div>
   );

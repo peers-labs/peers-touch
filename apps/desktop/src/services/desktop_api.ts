@@ -8482,6 +8482,16 @@ export const api = {
       NativeDockBadgeResult
     >('native_dock_set_badge', { unreadConversationCount }),
 
+  nativeWindowApplyAuthSurface: () =>
+    invokeRustDataFromStatus<void, NativeWindowSurfaceResult>(
+      'native_window_apply_auth_surface',
+    ),
+
+  nativeWindowApplyReadySurface: () =>
+    invokeRustDataFromStatus<void, NativeWindowSurfaceResult>(
+      'native_window_apply_ready_surface',
+    ),
+
   // ── Station registry (verified Station identity and route picker) ──
 
   stationList: () =>
@@ -8774,6 +8784,12 @@ export interface NativeNotificationShowResult {
 export interface NativeDockBadgeResult {
   applied: boolean;
   unreadConversationCount: number;
+}
+
+export interface NativeWindowSurfaceResult {
+  surface: 'auth' | 'ready';
+  width: number;
+  height: number;
 }
 
 function notificationSnapshotMatchesUpdates(

@@ -20,7 +20,11 @@ import { Check, Globe, MessageCircle, UserPlus, Clock } from 'lucide-react';
 import { useSessionStore } from '../../store/session';
 import { useSocialChatStore } from '../../store/socialChat';
 import { useFederationStore } from '../../store/federation';
-import { singleFederationId } from '../../store/friendshipProjection';
+import {
+  isSameStationActor,
+  localFederationFallback,
+  singleFederationId,
+} from '../../store/friendshipProjection';
 import { EVENT, eventBus } from '../../kernel/events';
 import { notifyError, notifySuccess, notifyWarning } from '../../ui/feedback';
 import { findFriendRequest } from './profileRelationship';
@@ -44,6 +48,9 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
 
   const peerProfile = useSocialChatStore((state) => state.peerProfiles[actorPtid]);
   const federations = useFederationStore((state) => state.federations);
+  const selfHomeStationPeerId = useFederationStore(
+    (state) => state.self?.home_station_peer_id,
+  );
   const friendRequests = useSocialChatStore((state) => state.friendRequests);
   const currentUserPtid = useSessionStore((state) => state.currentUser?.actorPtid ?? null);
   const sendFriendRequest = useSocialChatStore((state) => state.sendFriendRequest);
@@ -160,9 +167,17 @@ export function ProfilePrimaryAction({ actorPtid, onMessage, onAction }: Profile
         (conversation) => conversation.kind === 'friend'
           && conversation.peerPtid === actorPtid,
       );
+    // Same-Station peers only need a valid local federation context; when the
+    // Station participates in several federations there is no single default,
+    // so fall back to the first active context instead of blocking the add.
+    const sameStation = isSameStationActor({
+      selfHomeStationPeerId,
+      targetHomeStationPeerId: homeStationPeerId,
+    });
     const federationId = friendRequest?.federationId
       || existingConversation?.federationId
-      || singleFederationId(federations);
+      || singleFederationId(federations)
+      || (sameStation ? localFederationFallback(federations) : '');
     if (!homeStationPeerId || !federationId) {
       notifyWarning(t('chat.social.profile.addIdentityUnavailable'));
       return;

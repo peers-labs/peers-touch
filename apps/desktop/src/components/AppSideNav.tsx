@@ -123,7 +123,9 @@ export function AppSideNav({ page, navigation }: AppSideNavProps) {
   }, [handleNewChat, handleNextAgent, navigatePrimary]);
 
   return (
-    <nav className="ds-rail" aria-label={t('layout.nav.primary')}>
+    // deep: any non-interactive spot in the rail drags the window; buttons/
+    // links/inputs inside are still auto-excluded by Tauri's drag-region walk.
+    <nav className="ds-rail" aria-label={t('layout.nav.primary')} data-tauri-drag-region="deep">
       <UserProfilePopover>
         <Button actionId="rail.open-self" emphasis="quiet" className="ds-rail-avatar"
           aria-label={t('layout.user.viewProfile')} aria-haspopup="dialog">

@@ -166,7 +166,9 @@ describe('chat visual layout contract', () => {
     expect(main.ownBubbleRadius).toBe('16px 16px 6px 16px');
     expect(main.hoverActionBridgeHeight).toBeGreaterThanOrEqual(18);
     expect(main.hoverActionBridgeInsetX).toBeGreaterThanOrEqual(160);
-    expect(main.composerInputExpandedMinHeight).toBe('min(360px, 44vh)');
+    expect(main.composerInputExpandedMinHeight).toBe('min(120px, 22vh)');
+    expect(main.composerInputExpandedMaxHeight).toBe('min(320px, 40vh)');
+    expect(main.composerOuterPadding).toBe('4px 12px 10px');
     expect(desktopChatMessageRowMaxWidth(main, { own: false, groupPeer: true })).toBe('min(82%, 800px)');
 
     expect(thread.avatarSize).toBe(30);

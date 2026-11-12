@@ -24,17 +24,16 @@
    The 消息/联系人 Segmented island, quiet search/new icon tiles and the
    inline search expansion live in one rail header (prototype sk-rail-header
    parity). The old 48px vertical sub-rail is gone. */
-/* Fixed 52px band owning the frame inset (12 top + 40 row): the expanded
-   search field totals the same height as the segmented track, so opening
-   search never grows the header or jumps the list (prototype sk-rail-header
-   parity). */
+/* Slim 48px band that shares the overlay traffic-light row: only a small top
+   clearance, so the segmented track / search rise to the top like WeChat
+   instead of leaving an empty strip (prototype sk-rail-header parity). */
 .sc-rail-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 52px;
+  min-height: 48px;
   box-sizing: border-box;
-  padding: 12px 16px 4px;
+  padding: 6px 16px;
   flex-shrink: 0;
 }
 .sc-rail-subnav { flex: 1 1 auto; min-width: 0; }
@@ -161,7 +160,9 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--pt-border);
+  /* WeChat-parity separation: a faint ink whisper, the surface material does
+     the real work rather than a hard rule. */
+  border-right: 1px solid var(--pt-column-hairline);
   background: var(--pt-surface);
   position: relative;
 }
@@ -386,6 +387,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Inline send failure: a calm danger-tinted tile above the input, replacing
+   the shell-wide floating toast so the error stays attached to the composer. */
+.sc-composer__banner--error {
+  background: color-mix(in srgb, var(--pt-danger) 8%, var(--pt-surface));
+  border: 1px solid color-mix(in srgb, var(--pt-danger) 28%, transparent);
+}
+.sc-composer__banner--error .sc-composer__banner-label { color: var(--pt-danger); }
+.sc-composer__banner--error .sc-composer__banner-text {
+  color: var(--pt-text);
+  white-space: normal;
+}
 .sc-composer__banner-cancel.pt-button {
   flex-shrink: 0;
   width: 26px;
@@ -586,45 +598,41 @@
 .sc-composer__shell:focus-within {
   box-shadow: 0 0 0 2px var(--pt-focus) !important;
 }
-/* Prototype .sk-composer .pt-textarea: 13.5px / 1.55 with the primitive's
-   4px 12px embedded padding; auto-grow is instant (no height transition). */
+/* WeChat composer grammar: the textarea fills the full top region (the large
+   editable area), and the tool/send controls sit in a separate footer row.
+   13.5px / 1.55 type with symmetric gutters; auto-grow is instant (no height
+   transition) between the min/max-height contract. */
 .sc-composer__input {
   width: 100%;
   box-sizing: border-box;
   resize: none;
-  padding: 4px 12px;
+  padding: 10px 12px 6px;
   background: transparent;
   color: var(--pt-text);
   caret-color: var(--pt-primary);
   font-family: inherit;
   font-size: 13.5px;
   line-height: 1.55;
-  min-height: var(--sc-composer-input-min-height, 38px);
+  min-height: var(--sc-composer-input-min-height, 34px);
   max-height: var(--sc-composer-input-max-height, 180px);
   overflow-y: auto;
 }
-/* North-star composer capsule: tools left, growing input center, send right,
-   all on ONE row (prototype .sk-composer parity). The row bottom-aligns every
-   group so tools/send stay on the baseline as the input auto-grows; the 10px
-   gap and 8px symmetric padding match the prototype pill. */
-.sc-composer__row {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 8px;
-}
+/* The input region owns the full shell width so expanded text fills the box
+   instead of leaving a large empty area beside a narrow column. */
 .sc-composer__input-wrap {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: flex;
 }
-.sc-composer__row .sc-composer__tools {
-  flex: 0 0 auto;
-  align-self: flex-end;
-}
-.sc-composer__row .sc-composer__send-group {
-  flex: 0 0 auto;
-  align-self: flex-end;
+/* Footer: borderless tool glyphs on the left, expand + send on the right, all
+   on one 34px-tall row under the text area. */
+.sc-composer__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 8px 6px;
 }
 .sc-composer__tools,
 .sc-composer__send-group { display: inline-flex; align-items: center; }
@@ -1492,16 +1500,24 @@
 
 /* Runtime reset confirm footer */
 .sc-reset-confirm__footer { display: flex; justify-content: flex-end; gap: 8px; }
-/* Small composer glyphs are 34px circular quiet buttons (prototype
-   sk-composer-tool parity); the send control below matches the same circular
-   footprint, distinguished only by its primary fill. */
+/* Small composer glyphs are 34px circular ghost buttons (WeChat parity): no
+   border or fill at rest — only the glyph reads, and hover adds a faint ink
+   wash. The send control keeps the same circular footprint but a primary fill. */
 .sc-composer__tool.pt-button {
   width: 34px;
   height: 34px;
   min-width: 34px;
   padding: 0;
   border-radius: 999px;
+  border-color: transparent;
+  background: transparent;
   color: var(--pt-secondary);
+}
+.sc-composer__tool.pt-button:hover,
+.sc-composer__tool.pt-button:active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--pt-text) 6%, transparent);
+  color: var(--pt-text);
 }
 /* Recording tool mirrors .sk-composer-tool.is-recording: danger glyph on a
    quiet danger wash, not just a recolored icon. */
@@ -1509,17 +1525,38 @@
   color: var(--pt-danger);
   background: color-mix(in srgb, var(--pt-danger) 10%, transparent);
 }
-/* Send is a peers-ui IconButton (emphasis=primary): the library owns the ink
-   capsule fill, hover lift and disabled wash. App CSS pins it to the same
-   34px circular footprint as the composer tools so the row reads as one
-   consistent icon-button set; the primary fill still distinguishes the send
-   action from the quiet tools. */
+/* Send is a borderless paper-plane glyph (WeChat parity): no black circle, no
+   fill or ring in either state. It stays muted while the draft is empty and
+   takes the accent ink once a message can actually be sent, matching the
+   composer tool footprint so the footer reads as one quiet icon set. */
 .sc-composer__send.pt-icon-button {
   width: 34px;
   height: 34px;
   min-height: 0;
   padding: 0;
   border-radius: 999px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--pt-secondary);
+  box-shadow: none;
+}
+.sc-composer__send.pt-icon-button:hover,
+.sc-composer__send.pt-icon-button:active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--pt-text) 6%, transparent);
+}
+/* A sendable draft lights the glyph up in the accent ink, still without a
+   filled chip. The Button omits aria-disabled entirely while allowed (it only
+   emits aria-disabled="true" when blocked), so the enabled state is selected
+   via :not([aria-disabled]) — an [aria-disabled='false'] selector never
+   matches because that attribute value is never rendered. */
+.sc-composer__send.pt-icon-button:not([aria-disabled]) {
+  color: var(--pt-accent);
+}
+.sc-composer__send.pt-icon-button[aria-disabled='true'] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--pt-muted);
 }
 .sc-composer__uploading { font-size: 12px; color: var(--pt-secondary); }
 .chat-composer-spin { animation: chat-composer-spin 1s linear infinite; }
@@ -2675,6 +2712,13 @@
 
 /* ── Thread panel ───────────────────────────────────────────────────────── */
 .sc-thread {
+  /* iMessage-parity thread card material. These specialty blues are scoped
+     to the thread panel so they never leak into the neutral pine token set;
+     a future dark theme only has to override these four variables. */
+  --thread-card-bg: #d1e3fe;
+  --thread-card-inner: #b7cefc;
+  --thread-card-divider: rgba(47, 107, 148, 0.16);
+  --thread-card-divider-strong: rgba(47, 107, 148, 0.28);
   width: 360px;
   height: 100%;
   background: var(--pt-surface);
@@ -2714,7 +2758,7 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 14px 16px 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2723,8 +2767,33 @@
 }
 .sc-thread__scroll::-webkit-scrollbar { width: 6px; height: 0; }
 .sc-thread__scroll::-webkit-scrollbar-thumb { background: var(--pt-subtle); border-radius: 999px; }
-.sc-thread__section { display: flex; flex-direction: column; gap: 7px; }
-.sc-thread__section-label { font-size: 11px; color: var(--pt-muted); }
+
+/* Unified frosted-blue card hosting the root message and every reply. The
+   panel chrome stays neutral white; only this content surface takes the
+   iMessage-parity blue, with a soft hairline defining its edge. */
+.sc-thread__card {
+  background: var(--thread-card-bg);
+  border: 1px solid var(--thread-card-divider);
+  border-radius: var(--pt-radius-lg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sc-thread__section { display: flex; flex-direction: column; gap: 4px; }
+.sc-thread__section + .sc-thread__section {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--thread-card-divider);
+}
+.sc-thread__section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--pt-info) 72%, transparent);
+  padding: 0 2px 2px;
+}
 .sc-thread__loading { display: flex; align-items: center; gap: 8px; color: var(--pt-secondary); font-size: 12px; }
 .sc-thread__no-replies {
   display: flex;
@@ -2732,29 +2801,33 @@
   justify-content: center;
   padding: 16px 12px;
   border-radius: var(--pt-radius-md);
-  background: var(--pt-subtle);
+  background: color-mix(in srgb, var(--pt-white) 42%, transparent);
   color: var(--pt-secondary);
   font-size: 12px;
 }
 .sc-thread__load-more { align-self: center; margin-top: 8px; font-size: 12px; }
 
+/* Rows sit transparently inside the blue card; the card and section rules
+   own the surfaces and hairlines, so individual rows no longer paint their
+   own background or bottom border. */
 .thread-comment-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--pt-border);
+  padding: 10px 2px;
+  border-radius: var(--pt-radius-sm);
   position: relative;
-  border-radius: 0;
+}
+.thread-comment-row + .thread-comment-row {
+  border-top: 1px solid var(--thread-card-divider);
 }
 .thread-comment-row.is-root {
-  padding: 12px;
-  border-bottom: 0;
-  border-radius: var(--pt-radius-md);
-  background: var(--pt-subtle);
+  padding: 4px 2px 10px;
 }
-.thread-comment-row:focus { outline: 2px solid var(--pt-focus); outline-offset: 2px; }
-.thread-comment-row.is-highlighted { background: var(--pt-primarySubtle); }
+.thread-comment-row:focus { outline: 2px solid var(--pt-info); outline-offset: 2px; }
+.thread-comment-row.is-highlighted {
+  background: color-mix(in srgb, var(--pt-info) 14%, transparent);
+}
 .sc-thread__avatar { display: inline-flex; flex-shrink: 0; }
 .sc-thread__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .sc-thread__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -2766,12 +2839,14 @@
 .thread-comment-row:focus-within .sc-thread__actions { opacity: 1; }
 .sc-thread__action.pt-button { width: 24px; min-width: 24px; height: 24px; padding: 0; border-radius: var(--pt-radius-sm); color: var(--pt-secondary); }
 .sc-thread__action--danger.pt-button { color: var(--pt-danger); }
+/* Quoted / mention content reads as a deeper-blue nested chip inside the
+   card, matching the iMessage reference sub-surface. */
 .sc-thread__reply-preview {
   font-size: 11px;
   color: var(--pt-secondary);
-  padding: 3px 6px;
-  border-left: 2px solid var(--pt-borderStrong);
-  background: var(--pt-subtle);
+  padding: 5px 8px;
+  border-left: 2px solid var(--thread-card-divider-strong);
+  background: var(--thread-card-inner);
   border-radius: var(--pt-radius-sm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2916,15 +2991,40 @@
   /* Prototype .sk-request-card hover is instant. */
 }
 .sc-contact-section__body .sc-request-card + .sc-request-card,
-.sc-contacts__search-results .sc-request-card + .sc-request-card {
+.sc-contact-section__body .pt-context-menu + .pt-context-menu .sc-request-card,
+.sc-contacts__search-results .sc-request-card + .sc-request-card,
+.sc-contacts__search-results .pt-context-menu + .pt-context-menu .sc-request-card {
   border-top: 1px solid color-mix(in srgb, var(--pt-text) 7%, transparent);
 }
+/* A ContextMenu wrapper becomes each history card's flex item and must fill
+   the rail width so the inner card keeps its original geometry. */
+.sc-contacts__requests .pt-context-menu { display: block; width: 100%; }
 .sc-request-card:hover { background: color-mix(in srgb, var(--pt-text) 4%, transparent); }
 .sc-request-card.is-outgoing {
   background: color-mix(in srgb, var(--pt-primary) 5%, transparent);
 }
 .sc-request-card.is-history { opacity: 0.72; }
 .sc-request-card.is-history:hover { opacity: 1; }
+/* Compact archive rows: one line, vertically centered on the avatar, never
+   taller than the 40px avatar. Name ellipsizes first; tags keep their size. */
+.sc-request-card.is-history {
+  align-items: center;
+  padding: 4px 8px;
+}
+.sc-request-card.is-history .sc-request-card__body { gap: 0; }
+.sc-request-card.is-history .sc-request-card__name-row {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.sc-request-card.is-history .sc-request-card__name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.sc-request-card.is-history .sc-request-card__tags {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
 .sc-request-card.is-selected {
   background: var(--pt-surface);
   box-shadow: inset 2.5px 0 0 var(--pt-accent);
@@ -3416,14 +3516,14 @@
 .sc-chat-head {
   flex-shrink: 0;
   box-sizing: border-box;
-  height: 52px;
-  padding: 8px 20px 0;
+  min-height: 48px;
+  padding: 6px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   background: var(--pt-surface);
-  border-bottom: 1px solid color-mix(in srgb, var(--pt-text) 8%, transparent);
+  border-bottom: 1px solid var(--pt-column-hairline);
 }
 .sc-chat-head-id { flex: 1 1 auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
 /* Station presence chip (desktop evidence surface). Online uses the pine
@@ -3571,10 +3671,9 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Prototype .sk-conv-view frame: 22px horizontal inset shared with the
-     composer; 12px below the header band and 6px above the composer's 6px
-     outer top padding (one 12px stream↔composer gap, .sk-conv-view gap). */
-  padding: 12px 22px 6px;
+  /* Tight 12px horizontal inset shared with the composer so bubble edges line
+     up with the input shell (WeChat parity); 12px below the header band. */
+  padding: 12px 12px 6px;
   scrollbar-width: thin;
   scrollbar-color: var(--pt-subtle) transparent;
 }
@@ -4346,27 +4445,8 @@
   }
 }
 
-/* Phone-narrow composer: the single-row pill holds four tools + the input +
-   expand/send, which cannot share the ~300px conversation pane below 480px.
-   Wrap into a full-width input row above a tool/send row instead of squeezing
-   the textarea into a vertical letter strip. Every control stays mounted and
-   keyboard-reachable (chat-layout-contract §6/§7: narrow degrades toward the
-   mobile single-pane model, affordances are not hidden). */
-@media (max-width: 480px) {
-  .sc-composer__row {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .sc-composer__row .sc-composer__input-wrap {
-    flex: 1 1 100%;
-    order: -1;
-  }
-  .sc-composer__row .sc-composer__tools {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  .sc-composer__row .sc-composer__send-group {
-    flex: 0 0 auto;
-    margin-left: auto;
-  }
-}
+/* The composer is vertical by construction (textarea on top, tool/send
+   footer below), so it already degrades cleanly to phone-narrow widths without
+   a wrapping single-row override. The footer keeps tools left / send right via
+   space-between and every control stays mounted and keyboard-reachable
+   (chat-layout-contract §6/§7). */

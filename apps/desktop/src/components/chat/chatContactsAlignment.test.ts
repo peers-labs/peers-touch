@@ -85,6 +85,103 @@ describe('friend request cards (north-star .sk-request-card parity)', () => {
   });
 });
 
+describe('settled history card compression (single-line archive rows)', () => {
+  it('keeps the compact history card at 4px vertical padding and centered on the avatar', () => {
+    // Two .sc-request-card.is-history blocks exist; the compact block is the
+    // one carrying align-items/padding, distinct from the opacity block.
+    const compactRule = chatCss.match(
+      /\.sc-request-card\.is-history\s*\{[^}]*align-items: center;[^}]*\}/,
+    )?.[0] ?? '';
+    expect(compactRule).toContain('align-items: center');
+    expect(compactRule).toContain('padding: 4px 8px');
+    const nameRowRule = chatCss.match(
+      /\.sc-request-card\.is-history \.sc-request-card__name-row\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(nameRowRule).toContain('flex-wrap: nowrap');
+    const tagsRule = chatCss.match(
+      /\.sc-request-card\.is-history \.sc-request-card__tags\s*\{[^}]*\}/,
+    )?.[0] ?? '';
+    expect(tagsRule).toContain('flex-wrap: nowrap');
+    expect(tagsRule).toContain('overflow: hidden');
+  });
+
+  it('renders the repeated-attempt tag only on pending cards and moves it to the tooltip on history', () => {
+    // Inline attempts tag is gated to non-settled cards.
+    expect(contactsSource).toContain('!isSettled && attemptsLabel');
+    // History rows surface the count through the native title tooltip instead.
+    expect(contactsSource).toContain('chat.social.contacts.historyRowTitle');
+    // Greeting lines are pending-only so settled rows stay one line tall.
+    expect(contactsSource).toContain('!isSettled && isOutgoing && request.status === 1');
+    expect(contactsSource).toContain('!isSettled && request.message');
+  });
+
+  it('keeps hairline separators working across the ContextMenu wrappers', () => {
+    expect(chatCss).toContain(
+      '.pt-context-menu + .pt-context-menu .sc-request-card',
+    );
+    expect(chatCss).toContain(
+      '.sc-contacts__requests .pt-context-menu { display: block; width: 100%; }',
+    );
+  });
+});
+
+describe('settled history right-click dismissal', () => {
+  it('wraps only settled cards in a ContextMenu wired to local dismissal', () => {
+    expect(contactsSource).toContain('ContextMenu');
+    expect(contactsSource).toContain('data-chat-friend-request-history-card');
+    expect(contactsSource).toContain('friend-request-history-delete-');
+    expect(contactsSource).toContain("iconId: 'delete'");
+    expect(contactsSource).toContain("t('chat.social.contacts.deleteHistory')");
+    expect(contactsSource).toContain("t('chat.social.contacts.historyContextMenu')");
+    // Pending cards return the raw card before any ContextMenu wrapper.
+    expect(contactsSource).toContain('if (!isSettled) {');
+    expect(contactsSource).toContain('dismissFriendRequestPeer(peerPtid)');
+  });
+
+  it('filters dismissed peers out of the history section via the actor-scoped store', () => {
+    expect(contactsSource).toContain(
+      "from '../../store/dismissedFriendRequests'",
+    );
+    expect(contactsSource).toMatch(
+      /peer\.request\.status !== 1 && !dismissedPeers\.includes\(peer\.peerPtid\)/,
+    );
+    expect(contactsSource).toContain('loadDismissedForActor(myDid)');
+  });
+
+  it('persists dismissals in an actor-scoped localStorage store without server calls', () => {
+    const storeSource = readFileSync(
+      new URL('../../store/dismissedFriendRequests.ts', import.meta.url),
+      'utf8',
+    );
+    expect(storeSource).toContain("'peers-dismissed-friend-requests'");
+    expect(storeSource).toContain('localStorage.setItem');
+    expect(storeSource).toContain('dismissPeer');
+    expect(storeSource).toContain('loadForActor');
+    // Local-only archive dismissal must never invoke a Station/API delete.
+    expect(storeSource).not.toContain('api.');
+    expect(storeSource).not.toContain('invoke');
+  });
+
+  it('ships the dismissal copy in both locale bundles', () => {
+    const en = readFileSync(
+      new URL('../../../../../packages/locales/en/chat.json', import.meta.url),
+      'utf8',
+    );
+    const zh = readFileSync(
+      new URL('../../../../../packages/locales/zh-CN/chat.json', import.meta.url),
+      'utf8',
+    );
+    for (const key of [
+      'chat.social.contacts.deleteHistory',
+      'chat.social.contacts.historyContextMenu',
+      'chat.social.contacts.historyRowTitle',
+    ]) {
+      expect(en).toContain(`"${key}"`);
+      expect(zh).toContain(`"${key}"`);
+    }
+  });
+});
+
 describe('contact rows and self entry (north-star .sk-conv-row / .sk-contact-self parity)', () => {
   it('uses the shared 8px row geometry, 4% hover and inset accent selection', () => {
     const rowRule = ruleFor('.sc-contact-row');
@@ -150,5 +247,29 @@ describe('contact rows and self entry (north-star .sk-conv-row / .sk-contact-sel
     const meta = ruleFor('.sc-contact-row .sc-identity-row__metadata span');
     expect(meta).toContain('font-size: 11.5px');
     expect(meta).toContain('color: var(--pt-muted)');
+  });
+});
+
+describe('silent background reconcile (no refresh flash)', () => {
+  it('shows the spinner only on the first load, not when already-ready data refreshes', () => {
+    // The gate must require BOTH "never loaded" (!friendshipReady) AND an active
+    // load. After the first load, friendshipReady stays true forever, so a
+    // background reconcile flipping friendRequestsLoading must never swap the
+    // mounted list for a spinner.
+    expect(contactsSource).toContain('!friendshipReady && friendRequestsLoading');
+    expect(contactsSource).not.toContain(
+      '!friendshipReady || friendRequestsLoading',
+    );
+  });
+
+  it('applies the same first-load-only gate in the create-group contact picker', () => {
+    const createGroupSource = readFileSync(
+      new URL('./CreateGroupModal.tsx', import.meta.url),
+      'utf8',
+    );
+    expect(createGroupSource).toContain('!friendshipReady && friendRequestsLoading');
+    expect(createGroupSource).not.toContain(
+      '!friendshipReady || friendRequestsLoading',
+    );
   });
 });

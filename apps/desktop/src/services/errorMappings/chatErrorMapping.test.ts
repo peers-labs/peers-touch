@@ -34,7 +34,7 @@ describe('mapChatError Group creation', () => {
     ).toContain('ptid:bob');
   });
 
-  it('preserves the typed inactive-Station reason', () => {
+  it('maps the inactive-Station code to a readable message without the raw reason', () => {
     const error = new RustCommandException('messaging_create_group', {
       code: 'CONFLICT',
       message: 'Failed to create group',
@@ -50,9 +50,26 @@ describe('mapChatError Group creation', () => {
       code: 'CONVERSATION_FEDERATION_STATION_INACTIVE',
       recoverable: true,
     });
-    expect(
-      mapChatError(error, { operation: 'createGroup' })?.message,
-    ).toContain('station-five');
+    // The raw station reason must not leak; a stable i18n key is presented.
+    const presented = mapChatError(error, { operation: 'createGroup' });
+    expect(presented?.message).toBe('error.chat.federationInactive');
+    expect(presented?.message).not.toContain('station-five');
+  });
+
+  it('maps the inactive-Station code for a direct send as well', () => {
+    const error = new RustCommandException('messaging_send_friend', {
+      code: 'CONFLICT',
+      message: 'station returned 409',
+      details: {
+        error_code: 'CONVERSATION_FEDERATION_STATION_INACTIVE',
+        reason: 'station-five is not an active Federation Station',
+      },
+    });
+
+    expect(mapChatError(error, { operation: 'send' })).toMatchObject({
+      code: 'CONVERSATION_FEDERATION_STATION_INACTIVE',
+      message: 'error.chat.federationInactive',
+    });
   });
 });
 

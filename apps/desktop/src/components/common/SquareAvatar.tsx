@@ -33,6 +33,28 @@ export interface SquareAvatarProps {
   degradedLabel?: string;
 }
 
+/**
+ * Decides whether the deterministic caller fallback (initials tile) may paint.
+ *
+ * - 'absent' from the asset owner: the canonical identity was checked and has
+ *   no image.
+ * - A known actor (explicit actorPtid) with no avatar identity: the actor
+ *   itself is already resolved, so its initials are safe even though no image
+ *   URL exists. This keeps avatar-less real users visually distinguishable
+ *   instead of all collapsing into the neutral bot glyph.
+ * - No actor identity and no image: genuinely unknown / profile still loading,
+ *   callers must keep the neutral placeholder rather than guess a letter.
+ */
+export function isAuthoritativeAvatarAbsent(input: {
+  identity: string;
+  actorPtid?: string | null;
+  phase?: string;
+}): boolean {
+  const knownActorWithoutIdentity =
+    !input.identity && Boolean(input.actorPtid?.trim());
+  return input.phase === 'absent' || knownActorWithoutIdentity;
+}
+
 export function SquareAvatar({
   remoteUrl,
   name = '',
@@ -99,6 +121,10 @@ export function SquareAvatar({
   // Authoritative ABSENT: caller's deterministic fallback (initials). Anything
   // still resolving or failed without last-good uses the neutral placeholder
   // so an unresolved actor can never paint another actor's letter/image.
-  const authoritativeAbsent = asset?.phase === 'absent';
+  const authoritativeAbsent = isAuthoritativeAvatarAbsent({
+    identity,
+    actorPtid,
+    phase: asset?.phase,
+  });
   return <>{authoritativeAbsent ? children : (neutralFallback ?? children)}</>;
 }

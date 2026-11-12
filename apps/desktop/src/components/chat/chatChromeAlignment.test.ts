@@ -12,13 +12,11 @@ function rule(selector: string): string {
 }
 
 describe('conversation header (north-star .sk-chat-head parity)', () => {
-  it('keeps the 52px band with 8/20 inset and the 8% hairline', () => {
+  it('uses a slim 48px band with a small 6/20 inset and the faint column hairline', () => {
     const head = rule('.sc-chat-head');
-    expect(head).toContain('height: 52px');
-    expect(head).toContain('padding: 8px 20px 0');
-    expect(head).toContain(
-      'border-bottom: 1px solid color-mix(in srgb, var(--pt-text) 8%, transparent)',
-    );
+    expect(head).toContain('min-height: 48px');
+    expect(head).toContain('padding: 6px 20px');
+    expect(head).toContain('border-bottom: 1px solid var(--pt-column-hairline)');
   });
 
   it('places title + annotation on one baseline row at 15.5px', () => {

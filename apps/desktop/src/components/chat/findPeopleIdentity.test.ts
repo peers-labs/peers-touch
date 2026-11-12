@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import type { FederationResolveView } from '../../services/desktop_api';
@@ -147,5 +148,29 @@ describe('Find People identity projection', () => {
         federationId: 'federation-b',
       },
     ], 'ptid:bob', 'ptid:alice')).toBe('');
+  });
+});
+
+describe('same-Station friend request federation fallback (source contract)', () => {
+  it('resolves a local federation context for same-Station targets in Find People', () => {
+    // Multi-federation Stations have no single default, which previously left
+    // same-Station actors blocked by the identity-incomplete guard. The modal
+    // must gate the fallback on a Home Station match, never guess for
+    // federated targets, and keep the empty-federation guard intact.
+    const modalSource = readFileSync(new URL('./FindPeopleModal.tsx', import.meta.url), 'utf8');
+    expect(modalSource).toContain('isSameStationActor');
+    expect(modalSource).toContain('localFederationFallback(federations)');
+    expect(modalSource).toMatch(/sameStation \? localFederationFallback\(federations\) : ''/);
+    expect(modalSource).toContain('if (!federationId || !target.homeStationPeerId)');
+  });
+
+  it('applies the same guarded fallback from the profile card primary action', () => {
+    const profileActionSource = readFileSync(
+      new URL('../profile/ProfilePrimaryAction.tsx', import.meta.url),
+      'utf8',
+    );
+    expect(profileActionSource).toContain('isSameStationActor');
+    expect(profileActionSource).toContain('localFederationFallback(federations)');
+    expect(profileActionSource).toMatch(/sameStation \? localFederationFallback\(federations\) : ''/);
   });
 });

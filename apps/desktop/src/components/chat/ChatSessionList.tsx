@@ -515,9 +515,12 @@ export function ChatSessionList({
             TAKES OVER the band (prototype sk-rail-header parity): while open
             the segmented island and chrome tiles unmount, leaving the field
             plus one close tile on the same row so the list never jumps. */}
+        {/* deep so header blank space drags; the segmented control, search
+            field and icon buttons remain interactive (auto-excluded). */}
         <div
           className="sc-rail-header"
           data-rail-search={searchOpen ? 'active' : 'idle'}
+          data-tauri-drag-region="deep"
         >
           {searchOpen ? (
             <>

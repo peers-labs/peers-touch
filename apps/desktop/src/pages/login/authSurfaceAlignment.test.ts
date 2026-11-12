@@ -1,10 +1,11 @@
-// Source-contract: the auth surface has two layout grammars. Wide windows keep
-// a centered floating card with a light pine tint; at the 480px phone floor the
-// card itself becomes the surface and fills the window edge to edge. A centered
-// brand hero carries the horizontal wordmark (height-only sizing preserves its
-// aspect), and the back control shares the header row with the language
-// switcher. The desktop package has no DOM test environment, so these
-// assertions pin the stylesheet and component-source contract.
+// Source-contract: the auth surface is a single full-bleed grammar. The card
+// itself is the window content at every size (no outer app canvas band or
+// floating box), while its inner content keeps a fixed reading measure and
+// centers. A centered brand hero carries the horizontal wordmark (height-only
+// sizing preserves its aspect), and the back control shares the header row
+// with the language switcher. The desktop package has no DOM test
+// environment, so these assertions pin the stylesheet and component-source
+// contract.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -28,48 +29,117 @@ const pickerSource = readFileSync(
   new URL('./views/AccountPickerView.tsx', import.meta.url),
   'utf8',
 );
-const switcherSource = readFileSync(
-  new URL('./StationSwitcher.tsx', import.meta.url),
+const gateStageSource = readFileSync(
+  new URL('./resolveAuthGateStage.ts', import.meta.url),
+  'utf8',
+);
+const registrySource = readFileSync(
+  new URL('./useStationRegistry.ts', import.meta.url),
+  'utf8',
+);
+const setupPanelSource = readFileSync(
+  new URL('./StationSetupPanel.tsx', import.meta.url),
+  'utf8',
+);
+const tauriConf = JSON.parse(
+  readFileSync(
+    new URL('../../../src-tauri/tauri.conf.json', import.meta.url),
+    'utf8',
+  ),
+) as {
+  app: {
+    windows: Array<{
+      width: number;
+      height: number;
+      minWidth: number;
+      minHeight: number;
+      decorations: boolean;
+      titleBarStyle?: string;
+      hiddenTitle?: boolean;
+      maximizable?: boolean;
+    }>;
+  };
+};
+const windowSizingRs = readFileSync(
+  new URL('../../../src-tauri/src/application/window_sizing.rs', import.meta.url),
+  'utf8',
+);
+const mainRs = readFileSync(
+  new URL('../../../src-tauri/src/main.rs', import.meta.url),
+  'utf8',
+);
+const nativeSurfaceRs = readFileSync(
+  new URL('../../../src-tauri/src/interface/tauri_commands/native_surface.rs', import.meta.url),
+  'utf8',
+);
+const appSource = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+const desktopApiSource = readFileSync(
+  new URL('../../services/desktop_api.ts', import.meta.url),
+  'utf8',
+);
+const windowSurfaceHook = readFileSync(
+  new URL('../../hooks/useWindowSurface.ts', import.meta.url),
   'utf8',
 );
 
-// Narrow block only: slice from the phone media query so base rules above it
-// cannot satisfy the fill assertions by accident.
-const narrowBlock = stylesheet.slice(stylesheet.lastIndexOf('@media (max-width: 480px)'));
-
-describe('auth tinted card grammar', () => {
-  it('tints the card with pine and keeps a wider centered floating card', () => {
-    expect(stylesheet).toContain('width: var(--pt-auth-card-width, 384px);');
+describe('auth full-bleed surface grammar', () => {
+  it('renders the card as the window surface with no outer canvas band', () => {
+    // The shell has no padding/canvas band; the card fills it edge to edge.
+    expect(stylesheet).toMatch(/\.pt-auth-shell\s*\{[\s\S]*?padding:\s*0/);
+    expect(stylesheet).toMatch(
+      /\.pt-auth-shell \.pt-auth-card\s*\{[\s\S]*?width:\s*100%[\s\S]*?min-height:\s*100%/,
+    );
+    // No floating-tile chrome once inside the shell.
+    expect(stylesheet).toMatch(
+      /\.pt-auth-shell \.pt-auth-card\s*\{[\s\S]*?border:\s*0[\s\S]*?border-radius:\s*0[\s\S]*?box-shadow:\s*none/,
+    );
+    // Pine tint still defines the surface identity.
     expect(stylesheet).toContain(
       'color-mix(in srgb, var(--pt-accent) 8%, var(--pt-surface))',
     );
-    // Mid-range windows (481-760px) still center the card vertically.
-    expect(stylesheet).toMatch(/@media \(max-width: 760px\)[\s\S]*?margin-block: auto/);
   });
 
-  it('keeps the card as a content-sized block above the phone breakpoint', () => {
-    // No flex stretching at base level — wide cards hug content and center.
-    const baseCard = stylesheet.slice(
-      0,
-      stylesheet.indexOf('@media (max-width: 760px)'),
+  it('keeps inner content on a fixed centered reading measure', () => {
+    // The surface is full-bleed but body/footer stay capped at the card width
+    // variable and center, so wide windows do not stretch the form.
+    expect(stylesheet).toMatch(
+      /\.pt-auth-shell \.pt-auth-card \.pt-card-body\s*\{[\s\S]*?max-width:\s*var\(--pt-auth-card-width, 336px\)[\s\S]*?margin-inline:\s*auto/,
     );
-    expect(baseCard).not.toMatch(/\.pt-auth-card\s*\{[^}]*display: flex/);
-  });
-
-  it('never stretches the card to fill the window above 480px', () => {
-    // The 481-760 band must not override the fixed width; only the <=480
-    // full-bleed block is allowed to set width:100% on the card.
-    const midBlock = stylesheet.slice(
-      stylesheet.indexOf('@media (max-width: 760px)'),
-      stylesheet.lastIndexOf('@media (max-width: 480px)'),
+    expect(stylesheet).toMatch(
+      /\.pt-auth-shell \.pt-auth-card > footer\s*\{[\s\S]*?max-width:\s*var\(--pt-auth-card-width, 336px\)[\s\S]*?margin-inline:\s*auto/,
     );
-    expect(midBlock).not.toMatch(/\.pt-auth-card\s*\{[^}]*width:\s*100%/);
-    expect(stylesheet).toContain('width: var(--pt-auth-card-width, 384px);');
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?width: 100%/);
   });
 
-  it('softens the card hairline against the tinted surface', () => {
-    // Derive a lighter hairline from the shared border token, not a new color.
+  it('keeps the card a flex column and compacts the first-run Station gate', () => {
+    // The card remains a flex column; the body still flexes to fill the
+    // available height whether it hosts the Station gate or a credential view.
+    expect(stylesheet).toMatch(
+      /\.pt-auth-shell \.pt-auth-card\s*\{[\s\S]*?display:\s*flex[\s\S]*?flex-direction:\s*column/,
+    );
+    expect(stylesheet).toMatch(
+      /\.pt-auth-shell \.pt-auth-card \.pt-card-body\s*\{[\s\S]*?flex:\s*1 1 auto/,
+    );
+    // The Station gate renders as a compact centered card: it never stretches
+    // to the full window height like the credential surface.
+    expect(stylesheet).toMatch(
+      /\.pt-auth-shell \.pt-auth-card\.pt-auth-card--station\s*\{[\s\S]*?min-height:\s*0[\s\S]*?align-self:\s*center/,
+    );
+    // Station management is a gear in the card header that opens the dedicated
+    // Station setup card through the gate override; it never shares the auth
+    // card body or a footer strip.
+    expect(pageSource).toContain('actionId="auth.station.open"');
+    expect(pageSource).toContain("setGateOverride('station_setup')");
+    expect(stylesheet).toContain('.pt-auth-head__actions');
+    expect(pageSource).not.toContain('<StationSwitcher />');
+  });
+
+  it('is size-independent: no auth width breakpoints remain', () => {
+    expect(stylesheet).not.toContain('@media (max-width: 760px)');
+    expect(stylesheet).not.toContain('@media (max-width: 480px)');
+  });
+
+  it('softens the embedded card hairline against the tinted surface', () => {
+    // The non-shell (embedded) render path keeps a soft hairline.
     expect(stylesheet).toContain(
       'border-color: color-mix(in srgb, var(--pt-border) 55%, transparent)',
     );
@@ -197,23 +267,6 @@ describe('auth account-selection continuity', () => {
   });
 });
 
-describe('auth phone-narrow fill grammar', () => {
-  it('lets the card fill the window without an outer canvas band at <=480px', () => {
-    expect(narrowBlock).toContain('@media (max-width: 480px)');
-    expect(narrowBlock).toMatch(/\.pt-auth-shell\s*\{[\s\S]*?padding: 0/);
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?min-height: 100%/);
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?border-radius: 0/);
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?box-shadow: none/);
-  });
-
-  it('turns the full-height card into a flex column and pins the Station footer', () => {
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?display: flex/);
-    expect(narrowBlock).toMatch(/\.pt-auth-card\s*\{[\s\S]*?flex-direction: column/);
-    expect(narrowBlock).toMatch(/\.pt-auth-card \.pt-card-body\s*\{[\s\S]*?flex: 1 1 auto/);
-    expect(narrowBlock).toMatch(/\.pt-auth-card > footer\s*\{[\s\S]*?margin-top: auto/);
-  });
-});
-
 describe('auth centered brand hero', () => {
   it('uses the square app icon tile centered with equal width and height', () => {
     expect(pageSource).toContain('className="pt-auth-brand-hero"');
@@ -251,18 +304,73 @@ describe('auth surface polish', () => {
     expect(stylesheet).toMatch(/\.pt-auth-reauth-meta\s*\{[\s\S]*?flex: 1 1 auto/);
   });
 
-  it('repositions the macOS traffic-light cluster toward the left edge', () => {
-    const mainRs = readFileSync(
-      new URL('../../../src-tauri/src/main.rs', import.meta.url),
+  it('switches traffic-light chrome with the auth and ready surfaces', () => {
+    const trafficLightRs = readFileSync(
+      new URL(
+        '../../../src-tauri/src/application/traffic_lights.rs',
+        import.meta.url,
+      ),
       'utf8',
     );
-    expect(mainRs).toContain('fn configure_window_traffic_lights');
-    expect(mainRs).toContain('NSWindowButton::CloseButton');
-    expect(mainRs).toContain('NSWindowButton::MiniaturizeButton');
-    expect(mainRs).toContain('TRAFFIC_LIGHT_LEFT_SHIFT');
-    expect(mainRs).toContain('setFrame(CGRect::new(');
-    // The zoom light stays removed in the same routine.
-    expect(mainRs).toContain('NSWindowButton::ZoomButton');
+    // The dedicated module owns both chrome modes instead of a one-shot setup
+    // mutation that hid the secondary lights for the whole app lifetime.
+    expect(trafficLightRs).toContain('enum TrafficLightMode');
+    expect(trafficLightRs).toContain('TrafficLightMode::Auth');
+    expect(trafficLightRs).toContain('TrafficLightMode::Ready');
+    expect(trafficLightRs).toContain('NSWindowButton::CloseButton');
+    // Minimal WeChat-style auth chrome: minimize and zoom are hidden there.
+    expect(trafficLightRs).toContain('NSWindowButton::MiniaturizeButton');
+    expect(trafficLightRs).toContain('NSWindowButton::ZoomButton');
+    // Auth hides the secondary lights; ready unhides the full cluster. The
+    // hidden decision is a pure per-mode flag table consumed by one call site.
+    expect(trafficLightRs).toContain('fn hidden_flags');
+    expect(trafficLightRs).toContain(
+      'TrafficLightMode::Auth => [false, true, true]',
+    );
+    expect(trafficLightRs).toContain(
+      'TrafficLightMode::Ready => [false, false, false]',
+    );
+    expect(trafficLightRs).toContain('.setHidden(hidden[index])');
+    // The close light uses rail-derived geometry matched to WeChat's compact
+    // corner cluster, never a relative default-origin shift that overflows.
+    expect(trafficLightRs).toContain('const RAIL_WIDTH: f64 = 60.0;');
+    expect(trafficLightRs).toContain('const TRAFFIC_LIGHT_PITCH: f64 = 18.0;');
+    expect(trafficLightRs).toContain('const CLOSE_LEFT_INSET: f64 = 5.0;');
+    expect(trafficLightRs).toContain('fn position_close_light');
+    expect(trafficLightRs).toContain('fn position_ready_cluster');
+    expect(trafficLightRs).toContain('setFrame(CGRect::new(');
+    // Pristine frames donate size/baseline only; the ready cluster is re-laid
+    // against the rail so the zoom light never overflows into content.
+    expect(trafficLightRs).toContain('original_frames');
+    expect(trafficLightRs).toContain('index as f64 * TRAFFIC_LIGHT_PITCH');
+    // AppKit re-lays standard buttons after a window resize and can discard
+    // setFrame; the frames must be re-asserted on a second run-loop pass.
+    expect(trafficLightRs).toContain('fn layout_buttons');
+    expect(trafficLightRs).toContain('DispatchQueue::main().exec_async');
+    expect(trafficLightRs.match(/layout_buttons\(ns_window, target_frames, hidden\)/g)?.length).toBeGreaterThanOrEqual(2);
+
+    // main.rs no longer owns a one-shot configurator; it applies the auth
+    // mode at setup and lets the surface commands drive later transitions.
+    expect(mainRs).not.toContain('fn configure_window_traffic_lights');
+    expect(mainRs).toContain('TrafficLightState::default()');
+    expect(mainRs).toContain('TrafficLightMode::Auth');
+    expect(nativeSurfaceRs).toContain('fn apply_traffic_light_mode');
+    expect(nativeSurfaceRs).toContain('TrafficLightMode::Auth');
+    expect(nativeSurfaceRs).toContain('TrafficLightMode::Ready');
+    // Chrome switching is inert under the acceptance build so harness chrome
+    // stays governed by setup and harness window placement.
+    expect(nativeSurfaceRs).toMatch(
+      /fn apply_traffic_light_mode[\s\S]*?cfg!\(feature = "acceptance-webdriver"\)/,
+    );
+
+    // The native rail constant must match the CSS rail width so the whole
+    // three-light cluster (zoom right edge = 60px) never crosses the first
+    // column's right edge.
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    expect(northstar).toMatch(/\.ds-rail\s*\{[^}]*width:\s*60px/);
   });
 });
 
@@ -279,12 +387,39 @@ describe('auth symmetric header back control', () => {
 });
 
 describe('auth surface structural hooks', () => {
-  it('keeps the login card marker and footer Station switcher', () => {
+  it('keeps the login card marker with the gear-driven Station card', () => {
     expect(pageSource).toContain('data-pt-login-card');
-    expect(pageSource).toContain('<StationSwitcher />');
-    // The switcher stays a popover trigger; the redesign is structural/CSS only.
-    expect(switcherSource).toContain('actionId="auth.station.switch"');
-    expect(switcherSource).toContain('className="pt-auth-station-trigger"');
+    // Zero-config installs get the inline first-run gate card.
+    expect(pageSource).toContain('pt-auth-card--station');
+    expect(setupPanelSource).toContain('data-pt-station-setup');
+    // Already-configured installs re-open Station setup from the header gear,
+    // which pins the gate machine to station_setup via an explicit override.
+    expect(pageSource).toContain('actionId="auth.station.open"');
+    expect(pageSource).toContain('useState<AuthGateOverride>(null)');
+    // The gear-opened card gets a back control that releases the override.
+    expect(setupPanelSource).toContain('actionId="auth.station.back"');
+    expect(pageSource).toContain('setGateOverride(null)');
+  });
+
+  it('drives first-run Station setup through an explicit gate stage machine', () => {
+    // The outer gate resolves station_setup vs auth from hydration + registry.
+    expect(gateStageSource).toContain("export type AuthGateStage = 'station_setup' | 'auth'");
+    expect(gateStageSource).toContain('export function resolveAuthGateStage');
+    // The card feeds the gate its hydration state plus the gear override.
+    expect(pageSource).toContain('resolveAuthGateStage(gateInput)');
+    expect(pageSource).toContain('override: gateOverride');
+    expect(pageSource).toContain('const showInlineStationSetup = gateStage === \'station_setup\'');
+    // First run renders the inline Station card before any credential view.
+    expect(pageSource).toContain('<StationSetupPanel');
+  });
+
+  it('keeps a single Station registry hook as the shared data source', () => {
+    expect(registrySource).toContain('export function useStationRegistry');
+    expect(registrySource).toContain('api.stationList()');
+    expect(registrySource).toContain('hasStation: entries.length > 0');
+    // The setup panel is pure presentation; the registry owns every mutation.
+    expect(setupPanelSource).toContain('registry: StationRegistry');
+    expect(setupPanelSource).not.toContain('api.stationList');
   });
 });
 
@@ -307,5 +442,139 @@ describe('account picker row trailing alignment', () => {
 
   it('does not lay the trailing cluster out with an inline flex style', () => {
     expect(pickerSource).not.toMatch(/style=\{\{[^}]*display:\s*'inline-flex'/);
+  });
+});
+
+describe('native auth/ready window surface', () => {
+  const mainWindow = tauriConf.app.windows[0];
+
+  it('opens in the compact 360x640 auth window with the 320x440 floor', () => {
+    expect(mainWindow.width).toBe(360);
+    expect(mainWindow.height).toBe(640);
+    expect(mainWindow.minWidth).toBe(320);
+    expect(mainWindow.minHeight).toBe(440);
+  });
+
+  it('uses an overlay, title-hidden chrome without dropping decorations', () => {
+    expect(mainWindow.decorations).toBe(true);
+    expect(mainWindow.titleBarStyle).toBe('Overlay');
+    expect(mainWindow.hiddenTitle).toBe(true);
+    // The native maximize capability stays available even though the zoom
+    // light itself is hidden for the minimal single-close title bar.
+    expect(mainWindow.maximizable).toBe(true);
+  });
+
+  it('reserves a 48px rail header band so the avatar anchors the content top', () => {
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    expect(northstar).toContain("--pt-titlebar-inset: 8px");
+    // The rail-top matches the 48px chat rail header rhythm: the traffic
+    // lights own the header band and the avatar starts on the content band.
+    expect(northstar).toContain("--pt-rail-top: 48px");
+    expect(northstar).toContain('padding: var(--pt-rail-top) 0 14px');
+    const chatStyles = readFileSync(
+      new URL('../../ui/chat.css', import.meta.url),
+      'utf8',
+    );
+    expect(chatStyles).toMatch(/\.sc-rail-header\s*\{[^}]*min-height: 48px/);
+  });
+
+  it('defines the auth and ready geometry constants and ready fallback', () => {
+    expect(windowSizingRs).toContain('AUTH_WINDOW_WIDTH: f64 = 360.0');
+    expect(windowSizingRs).toContain('AUTH_WINDOW_HEIGHT: f64 = 640.0');
+    expect(windowSizingRs).toContain('DEFAULT_READY_WIDTH: f64 = 1200.0');
+    expect(windowSizingRs).toContain('DEFAULT_READY_HEIGHT: f64 = 800.0');
+  });
+
+  it('persists only ready-surface user resizes in config storage', () => {
+    expect(windowSizingRs).toContain('"window", "geometry.json"');
+    expect(windowSizingRs).toContain('StorageKind::Config');
+    // Programmatic resizes are flagged so they never overwrite the memory.
+    expect(windowSizingRs).toContain('applying_programmatic');
+  });
+
+  it('stays inert under the acceptance-webdriver build', () => {
+    expect(windowSizingRs).toContain('cfg!(feature = "acceptance-webdriver")');
+  });
+
+  it('registers both surface commands on the native surface module', () => {
+    expect(nativeSurfaceRs).toContain('pub fn native_window_apply_auth_surface');
+    expect(nativeSurfaceRs).toContain('pub fn native_window_apply_ready_surface');
+    expect(mainRs).toContain('native_surface::native_window_apply_auth_surface');
+    expect(mainRs).toContain('native_surface::native_window_apply_ready_surface');
+    expect(mainRs).toContain('window_sizing::WindowSizingState::default()');
+    expect(mainRs).toContain('window_sizing::handle_window_event');
+  });
+
+  it('drives the surface from the React lifecycle through typed api wrappers', () => {
+    expect(desktopApiSource).toContain('nativeWindowApplyAuthSurface');
+    expect(desktopApiSource).toContain('nativeWindowApplyReadySurface');
+    expect(desktopApiSource).toContain("'native_window_apply_auth_surface'");
+    expect(desktopApiSource).toContain("'native_window_apply_ready_surface'");
+    expect(windowSurfaceHook).toContain("viewState === 'ready'");
+    expect(windowSurfaceHook).toContain('api.nativeWindowApplyReadySurface()');
+    expect(windowSurfaceHook).toContain('api.nativeWindowApplyAuthSurface()');
+    expect(appSource).toContain('useWindowSurface(viewState)');
+  });
+
+  it('applies the macOS frame atomically instead of two async frame commits', () => {
+    // Size + recenter fold into one synchronous main-queue block; AppKit
+    // coalesces the flush at run-loop end, so no intermediate frame paints.
+    expect(windowSizingRs).toContain('fn apply_window_frame');
+    expect(windowSizingRs).toContain('setContentSize');
+    expect(windowSizingRs).toContain('.center()');
+    expect(windowSizingRs).toContain('DispatchQueue::main().exec_sync');
+    // The deprecated no-op screen-update gate must not be relied upon.
+    expect(windowSizingRs).not.toContain('disableScreenUpdatesUntilFlush');
+  });
+
+  it('hides the resize behind a boot veil with geometry-scoped, epoch-guarded transitions', () => {
+    // The hook exposes the veil state and the ready-shell settle gate.
+    expect(windowSurfaceHook).toContain('veilVisible');
+    expect(windowSurfaceHook).toContain('readySurfaceSettled');
+    // Transitions fire only on an actual auth ↔ ready geometry change; views in
+    // the same geometry family (onboarding ↔ resuming) never resize or veil.
+    expect(windowSurfaceHook).toContain("type WindowSurface = 'auth' | 'ready'");
+    expect(windowSurfaceHook).toContain('appliedSurfaceRef');
+    expect(windowSurfaceHook).toContain('inFlightRef');
+    expect(windowSurfaceHook).toContain('targetSurface === appliedSurfaceRef.current');
+    // Interrupted/StrictMode runs re-apply instead of no-opping.
+    expect(windowSurfaceHook).toContain('inFlightRef.current = true');
+    // Rapid transitions are guarded so a stale transition cannot reveal early.
+    expect(windowSurfaceHook).toContain('epochRef');
+    // Two frames let the WebView re-lay out at the final bounds, then one more
+    // lets the ready shell commit its first paint behind the opaque veil.
+    expect(windowSurfaceHook).toContain('await nextFrame()');
+    // A failed native command still releases the veil instead of trapping the user.
+    expect(windowSurfaceHook).toContain("log.error('app', 'native window surface apply failed'");
+    // Hard degradation guard so a stalled chain can never trap the user.
+    expect(windowSurfaceHook).toContain('VEIL_FORCE_RELEASE_MS');
+
+    const veilSource = readFileSync(
+      new URL('../../components/SurfaceTransitionVeil.tsx', import.meta.url),
+      'utf8',
+    );
+    expect(veilSource).toContain('pt-surface-veil');
+    expect(veilSource).toContain('is-leaving');
+    // App only mounts the heavy ready shell after geometry settles, and renders
+    // the veil as a fixed sibling so it covers both expand and shrink.
+    expect(appSource).toContain('mountReadyShell');
+    expect(appSource).toContain('surfaceTransition.readySurfaceSettled');
+    expect(appSource).toContain('<SurfaceTransitionVeil');
+
+    const northstar = readFileSync(
+      new URL('../../ui/northstar.css', import.meta.url),
+      'utf8',
+    );
+    expect(northstar).toMatch(
+      /\.pt-surface-veil\s*\{[^}]*position:\s*fixed[^}]*opacity:\s*1/,
+    );
+    expect(northstar).toContain('transition: opacity 160ms');
+    // Overlays cross-fade only; reduced-motion users get an instant switch.
+    expect(northstar).toMatch(
+      /prefers-reduced-motion: reduce[\s\S]*?\.pt-surface-veil\s*\{\s*transition: none;/,
+    );
   });
 });

@@ -73,16 +73,15 @@ export const mapChatError: ErrorMapper<ChatErrorContext> = (error, context) => {
     );
   }
 
-  if (
-    context?.operation === 'createGroup'
-    && stationCode === 'CONVERSATION_FEDERATION_STATION_INACTIVE'
-  ) {
+  // Federation inactivity can block a direct send, a group create, or any
+  // conversation action. Map it for every operation to a readable, actionable
+  // message instead of leaking the raw station code into a generic toast.
+  if (stationCode === 'CONVERSATION_FEDERATION_STATION_INACTIVE') {
     return presentedError(
       stationCode,
-      'error.chat.groupFederationInactive',
+      'error.chat.federationInactive',
       true,
       message,
-      reason,
     );
   }
 

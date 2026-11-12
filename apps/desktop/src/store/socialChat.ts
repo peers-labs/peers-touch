@@ -544,6 +544,14 @@ interface SocialChatState {
     options?: ThreadLoadOptions,
   ) => Promise<void>;
   refreshThreadCounts: (ulid: string, rootUlids: string[], kind?: 'friend' | 'group') => Promise<void>;
+  /**
+   * Silently hydrates the inline thread preview slices (up to the collector's
+   * 10-reply tail) for roots that already have replies. It never sets
+   * openThreadRootUlid, so the standalone Thread panel stays closed until the
+   * user explicitly opens a preview. Roots whose slice is already loaded are
+   * skipped; failures are non-blocking and per-root.
+   */
+  prefetchThreadPreviews: (ulid: string, rootUlids: string[], kind?: 'friend' | 'group') => Promise<void>;
   markThreadRead: (ulid: string, rootUlid: string, lastReadUlid?: string, kind?: 'friend' | 'group') => Promise<void>;
   sendFriendMessage: (
     sessionUlid: string,
@@ -1579,6 +1587,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       ) {
         await refreshed.loadThreadMessages(ulid, refreshed.openThreadRootUlid, activeTab);
       }
+      // Hydrate inline previews (up to 10 replies per root) without opening the
+      // standalone Thread panel. Runs after the open-thread load so a slice the
+      // panel already fetched is skipped instead of requested twice. The active
+      // conversation/kind guard mirrors the open-thread load so a background
+      // refresh for a non-active conversation never prefetches its threads.
+      if (
+        rootUlids.length > 0
+        && isCurrentProjection()
+        && refreshed.activeTab === activeTab
+        && activeUlid === ulid
+      ) {
+        await get().prefetchThreadPreviews(ulid, rootUlids, activeTab);
+      }
     } catch (error) {
       if (!isCurrentProjection()) return;
       if (isUnauthorizedError(error)) {
@@ -1800,6 +1821,46 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       }
       return { threadCounts: next };
     });
+  },
+
+  prefetchThreadPreviews: async (ulid, rootUlids, kind) => {
+    const actorPtid = currentAuthenticatedActorPtid();
+    if (!actorPtid || !ulid) return;
+    const generation = messagingProjectionGeneration;
+    const isCurrentProjection = () => (
+      generation === messagingProjectionGeneration
+      && currentAuthenticatedActorPtid() === actorPtid
+    );
+    const activeKind = kind ?? get().activeTab;
+    const snapshot = get();
+    // Only roots that already have replies and whose slice has not been loaded
+    // (by an explicit open or an earlier prefetch) need a background fetch.
+    const rootsToFetch = Array.from(new Set(rootUlids.filter(Boolean)))
+      .filter((rootUlid) => {
+        const key = socialThreadKey(activeKind, ulid, rootUlid);
+        const replyCount = snapshot.threadCounts[key]?.replyCount ?? 0;
+        const alreadyLoaded = (snapshot.threadMessages[key]?.length ?? 0) > 0;
+        return replyCount > 0 && !alreadyLoaded;
+      });
+    if (rootsToFetch.length === 0) return;
+    // Silent and isolated per root: the inline preview must never spin a loader
+    // or fail the timeline load. allSettled keeps one bad slice from affecting
+    // the others; the standalone panel remains closed (openThreadRootUlid is
+    // untouched) until the user clicks a preview.
+    await Promise.allSettled(rootsToFetch.map(async (rootUlid) => {
+      const projections = await imServiceV1.messaging.listThreadMessages(ulid, rootUlid);
+      if (!isCurrentProjection()) return;
+      const key = socialThreadKey(activeKind, ulid, rootUlid);
+      // An explicit open may have populated the slice while this flight was in
+      // flight; never overwrite that authoritative load.
+      if ((get().threadMessages[key]?.length ?? 0) > 0) return;
+      const nextMessages = projections.map((projection) =>
+        projectMessagingProjection(activeKind, ulid, projection),
+      );
+      set((state) => ({
+        threadMessages: { ...state.threadMessages, [key]: nextMessages },
+      }));
+    }));
   },
 
   markThreadRead: async (ulid, rootUlid, lastReadUlid, kind) => {

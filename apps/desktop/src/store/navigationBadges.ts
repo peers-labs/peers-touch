@@ -155,7 +155,11 @@ export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>(
 
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let unsubscribeStore: (() => void) | null = null;
-const RECONCILE_INTERVAL_MS = 30_000;
+const RECONCILE_INTERVAL_MS = 60_000;
+// Last count already mirrored to the native dock. Without this guard every
+// badge-store write fired a native_dock_set_badge IPC even when the count was
+// identical (measured ~4 redundant calls/min at idle).
+let lastDockBadgeCount: number | null = null;
 
 /**
  * Unread *conversation* count for the native dock badge (BOT-D13). The
@@ -172,7 +176,12 @@ function isTauriRuntime(): boolean {
 function syncDockBadge(): void {
   if (!isTauriRuntime()) return;
   const count = selectUnreadConversationCount();
+  // Idempotent: the native badge only changes when the count changes.
+  if (lastDockBadgeCount === count) return;
+  lastDockBadgeCount = count;
   void api.nativeDockSetBadge(count).catch((error) => {
+    // Allow a retry on the next store change if the IPC failed.
+    lastDockBadgeCount = null;
     log.warn('navigationBadges', 'dock badge sync failed', error);
   });
 }
@@ -215,6 +224,7 @@ export function teardownNavigationBadgeProjection(): void {
   if (isTauriRuntime()) {
     void api.nativeDockSetBadge(0).catch(() => {});
   }
+  lastDockBadgeCount = null;
   useNavigationBadgeStore.getState().reset();
   log.info('navigationBadges', 'projection torn down');
 }

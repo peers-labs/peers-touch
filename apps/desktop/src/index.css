@@ -115,19 +115,27 @@ input, textarea, [contenteditable="true"] {
  * One compact peers-ui card (sign-in + Station) centered on the calm pt
  * canvas. No gradient, glow, or decorative motion.
  */
+/*
+ * Full-bleed auth surface: the card IS the window content. There is no outer
+ * app canvas band or floating box — outside the card only the OS window
+ * chrome remains. The shell carries the same pine tint so overscroll never
+ * reveals a second background, and scrolls (without a visible bar) on short
+ * windows instead of clipping.
+ */
 .pt-auth-shell {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   width: 100%;
   height: 100%;
-  padding: 24px;
-  overflow: hidden;
-  background: var(--pt-canvas);
-  /* The auth card must never show a system scrollbar: on short windows the
-     <=760 block enables scroll, but the bar itself is suppressed (scoped to
-     this surface only) while wheel/trackpad scrolling keeps working. */
+  /* Reserve the overlay traffic-light strip at the top (macOS); the shell
+     itself is the window drag region. Zero on platforms with a native bar. */
+  padding: var(--pt-titlebar-inset) 0 0;
+  overflow: auto;
+  background: color-mix(in srgb, var(--pt-accent) 8%, var(--pt-surface));
+  /* Suppress the system scrollbar on this surface only; wheel/trackpad
+     scrolling keeps working. */
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -145,16 +153,71 @@ input, textarea, [contenteditable="true"] {
   justify-content: center;
   width: 100%;
   min-width: 0;
+  min-height: 100%;
 }
 
-.pt-auth-card {
-  width: var(--pt-auth-card-width, 384px);
-  max-width: 100%;
+/* The card fills the shell edge to edge at every size (no radius/border/
+   shadow — it is the surface, not a floating tile). Geometry is scoped under
+   .pt-auth-shell so an embedded card keeps the default peers-ui card chrome. */
+.pt-auth-shell .pt-auth-card {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   /* Light pine tint so the dark wordmark and white controls read as layered
      surfaces instead of blending into an all-white card. */
   background: color-mix(in srgb, var(--pt-accent) 8%, var(--pt-surface));
-  /* The shared .pt-card hairline reads heavy against the tint; derive a softer
-     hairline from the same border token instead of introducing a new color. */
+}
+
+/* Content keeps a comfortable reading measure and stays centered on wide
+   windows even though the surface itself is full-bleed. */
+.pt-auth-shell .pt-auth-card .pt-card-body {
+  width: 100%;
+  max-width: var(--pt-auth-card-width, 336px);
+  margin-inline: auto;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pt-space-sm);
+  padding: 16px 12px 12px;
+}
+
+.pt-auth-shell .pt-auth-card > footer {
+  width: 100%;
+  max-width: var(--pt-auth-card-width, 336px);
+  margin-inline: auto;
+  margin-top: auto;
+  padding: 0 12px 16px;
+}
+
+/* First-run Station gate: a compact centered card instead of the full-bleed
+   login surface — no brand hero, no full-height stretch, WeChat-scale padding.
+   The higher-specificity selector overrides the edge-to-edge card rules above. */
+.pt-auth-shell .pt-auth-card.pt-auth-card--station {
+  min-height: 0;
+  width: 100%;
+  max-width: var(--pt-auth-card-width, 336px);
+  align-self: center;
+  border-radius: var(--pt-radius-lg);
+  border: 1px solid color-mix(in srgb, var(--pt-border) 55%, transparent);
+  box-shadow: var(--pt-shadow-float);
+  background: var(--pt-surface);
+}
+
+.pt-auth-shell .pt-auth-card--station .pt-card-body {
+  padding: 16px 18px;
+  gap: 10px;
+}
+
+/* Base (embedded) card skin: pine tint + soft hairline for the non-shell
+   render path. */
+.pt-auth-card {
+  background: color-mix(in srgb, var(--pt-accent) 8%, var(--pt-surface));
   border-color: color-mix(in srgb, var(--pt-border) 55%, transparent);
 }
 
@@ -162,11 +225,11 @@ input, textarea, [contenteditable="true"] {
   display: flex;
   flex-direction: column;
   gap: var(--pt-space-sm);
-  padding: 18px 22px 14px;
+  padding: 16px 12px 12px;
 }
 
 .pt-auth-card > footer {
-  padding: 0 22px 16px;
+  padding: 0 12px 14px;
 }
 
 .pt-auth-head {
@@ -177,12 +240,27 @@ input, textarea, [contenteditable="true"] {
 }
 
 /* The lead slot always occupies the left track; when no back control is
-   present it stays empty, keeping the language switcher symmetric. */
+   present it stays empty, keeping the right-side actions symmetric. */
 .pt-auth-head__lead {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
   align-items: center;
+}
+
+/* Right-side header cluster: the Station gear (dedicated setup card entry)
+   and the language switcher share one quiet, evenly-spaced track. */
+.pt-auth-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Back control pinned to the top of the gear-opened Station setup card. */
+.pt-station-panel__back {
+  align-self: flex-start;
+  margin-bottom: 4px;
 }
 
 /* Centered brand hero: the square app icon already ships as a white rounded
@@ -191,7 +269,7 @@ input, textarea, [contenteditable="true"] {
 .pt-auth-brand-hero {
   display: flex;
   justify-content: center;
-  padding: 8px 0 16px;
+  padding: 4px 0 10px;
 }
 
 .pt-auth-brand-logo {
@@ -477,16 +555,6 @@ input, textarea, [contenteditable="true"] {
   margin-top: 12px;
 }
 
-.pt-auth-station-trigger {
-  width: 100%;
-}
-
-.pt-auth-station-trigger .pt-button-content {
-  width: 100%;
-  justify-content: flex-start;
-  gap: 8px;
-}
-
 .pt-station-meta {
   display: flex;
   align-items: center;
@@ -518,23 +586,37 @@ input, textarea, [contenteditable="true"] {
 .pt-station-dot[data-status='checking'] { background: var(--pt-primary); }
 
 .pt-station-panel {
-  width: 300px;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--pt-space-sm);
+  gap: 8px;
 }
 
 .pt-station-panel-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
   color: var(--pt-text);
+}
+
+.pt-station-panel__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pt-secondary);
+}
+
+.pt-station-panel__empty {
+  padding: 6px 4px;
+  font-size: 12px;
+  color: var(--pt-secondary);
+  text-align: center;
 }
 
 .pt-station-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 220px;
+  max-height: 160px;
   overflow-y: auto;
 }
 
@@ -568,81 +650,10 @@ input, textarea, [contenteditable="true"] {
   min-width: 0;
 }
 
-@media (max-width: 760px) {
-  .pt-auth-shell {
-    align-items: flex-start;
-    overflow: auto;
-  }
-
-  .pt-auth-region {
-    align-items: center;
-    width: 100%;
-    min-height: 100%;
-  }
-
-  /* The card keeps its fixed --pt-auth-card-width and only centers; it must
-     not stretch to fill the window above the 480px full-bleed breakpoint. */
-  .pt-auth-card {
-    margin-block: auto;
-  }
-}
-
-/*
- * Phone-narrow auth (window floor is 360x480): the card becomes the surface —
- * no outer canvas band, no floating box. It fills the window edge to edge with
- * the pine tint, square corners, and page-scale insets; wide windows keep the
- * calm centered floating card above untouched.
- */
-@media (max-width: 480px) {
-  .pt-auth-shell {
-    padding: 0;
-    align-items: stretch;
-  }
-
-  .pt-auth-region {
-    min-height: 100%;
-  }
-
-  .pt-auth-card {
-    width: 100%;
-    min-height: 100%;
-    margin-block: 0;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .pt-auth-card .pt-card-body {
-    flex: 1 1 auto;
-    padding: 12px 22px 16px;
-    gap: 10px;
-  }
-
-  /* Full-height card: absorb free space into the body and pin the Station
-     switcher footer to the window bottom. */
-  .pt-auth-card > footer {
-    margin-top: auto;
-    padding: 0 22px 16px;
-  }
-
-  .pt-auth-brand-hero {
-    padding: 10px 0 18px;
-  }
-
-  .pt-auth-back {
-    margin: 0;
-  }
-
-  .pt-auth-title {
-    margin: 0;
-  }
-
-  .pt-auth-station {
-    margin-top: 8px;
-  }
-}
+/* Full-bleed is now size-independent: the same edge-to-edge surface applies
+   from the 360px window floor up to wide desktop, so there are no auth width
+   breakpoints. Short windows scroll via .pt-auth-shell (overflow:auto), and
+   the Station footer stays pinned by margin-top:auto on the flex card. */
 
 @media (prefers-reduced-motion: reduce) {
   [data-pt-agent-workbench],
