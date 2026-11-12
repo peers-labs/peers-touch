@@ -61,6 +61,24 @@ from .desktop_acceptance_build import DesktopAcceptanceBuild
 NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
 NATIVE_FOCUS_READY_TIMEOUT_SECONDS = 30.0
 
+# A semantic (mjs/WebDriver, no synthetic HID) qualification proves
+# non-interference from a frozen operator baseline. On a shared GUI session
+# contending with other native apps, the probe's AX tree can momentarily fail
+# to expose a focused control inside the one-second focus window: an observed
+# environment boundary, not a product or identity defect. Each probe already
+# treats its own failed observation as terminal and fully cleans up, so a fresh
+# probe process is a brand-new observation scope (a new frozen baseline), never
+# a rebaseline of an existing one. Bound the number of independent lease
+# attempts; the successful attempt still has to pass every strict probe.
+SEMANTIC_QUALIFICATION_MAX_ATTEMPTS = 3
+SEMANTIC_QUALIFICATION_BACKOFF_SECONDS = 2.0
+_SEMANTIC_RETRYABLE_RESOURCES = frozenset(
+    {
+        "runtime-cell-operator-focus",
+        "runtime-cell-semantic-adapter",
+    }
+)
+
 
 _WINDOW_BOUNDS_PROBE = r"""
 import json
@@ -208,7 +226,7 @@ class NativeDesktopMacOSProvisioner:
         try:
             source = self._source_identity()
             platform_identity, transport, display = self._host_identity()
-            adapter, webdriver_port = self._probe_native_adapter(source, run_id)
+            adapter, webdriver_port = self._qualified_native_adapter(source, run_id)
             current = source_identity(self.source_root)
             if (
                 current["commit"] != source.commit
@@ -374,6 +392,54 @@ class NativeDesktopMacOSProvisioner:
                 ),
             ),
         )
+
+    def _qualified_native_adapter(
+        self,
+        source: CellSourceIdentity,
+        run_id: str,
+    ) -> tuple[CellAdapterIdentity, int]:
+        """Qualify the native adapter, tolerating transient semantic AX races.
+
+        Exclusive (physical HID) qualification runs exactly once: its proof is
+        a single owned interaction and must never be retried. Semantic
+        qualification drives the client only through embedded WebDriver, so a
+        failed probe leaves no input side effect; when the failure is the
+        observed shared-GUI AX boundary, start a completely fresh probe (new
+        process, new frozen operator baseline) a bounded number of times. Every
+        attempt independently passes the full strict qualification, and any
+        non-environmental error propagates on the first attempt.
+        """
+        input_mode = admit_local_native_input_mode(
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE"),
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
+        )
+        if input_mode is not NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            return self._probe_native_adapter(source, run_id)
+
+        last_error: BlockedError | None = None
+        for attempt in range(1, SEMANTIC_QUALIFICATION_MAX_ATTEMPTS + 1):
+            try:
+                return self._probe_native_adapter(source, run_id)
+            except BlockedError as error:
+                if error.resource not in _SEMANTIC_RETRYABLE_RESOURCES:
+                    raise
+                last_error = error
+                if attempt >= SEMANTIC_QUALIFICATION_MAX_ATTEMPTS:
+                    break
+                error.add_note(
+                    "semantic native qualification attempt "
+                    f"{attempt}/{SEMANTIC_QUALIFICATION_MAX_ATTEMPTS} hit an "
+                    f"AX environment boundary ({error.resource}); retrying with "
+                    "a fresh probe and frozen operator baseline"
+                )
+                time.sleep(SEMANTIC_QUALIFICATION_BACKOFF_SECONDS)
+        assert last_error is not None
+        last_error.add_note(
+            "semantic native qualification exhausted "
+            f"{SEMANTIC_QUALIFICATION_MAX_ATTEMPTS} independent probes on the "
+            "shared-GUI AX boundary; no probe was relaxed or rebaselined"
+        )
+        raise last_error
 
     def _probe_native_adapter(
         self,

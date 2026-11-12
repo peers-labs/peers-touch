@@ -44,6 +44,7 @@ from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 from tooling.acceptance.provisioners.native_desktop_macos import (
     NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
     NATIVE_WINDOW_READY_TIMEOUT_SECONDS,
+    SEMANTIC_QUALIFICATION_MAX_ATTEMPTS,
     NativeDesktopMacOSProvisioner,
     _WINDOW_BOUNDS_PROBE,
 )
@@ -742,6 +743,113 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             )
 
         adapter.window_state.assert_called_once_with(42)
+
+    def _qualification_lifecycle(self) -> NativeDesktopMacOSProvisioner:
+        with tempfile.TemporaryDirectory() as directory:
+            return NativeDesktopMacOSProvisioner(state_root=Path(directory))
+
+    def test_semantic_qualification_retries_environment_boundary_then_succeeds(
+        self,
+    ) -> None:
+        lifecycle = self._qualification_lifecycle()
+        boundary = BlockedError(
+            "macOS scoped native observation failed",
+            resource="runtime-cell-operator-focus",
+        )
+        adapter = Mock(spec=CellAdapterIdentity)
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "admit_local_native_input_mode",
+            return_value=NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos.time.sleep"
+        ) as sleep, patch.object(
+            lifecycle,
+            "_probe_native_adapter",
+            side_effect=(boundary, (adapter, 45123)),
+        ) as probe:
+            result, port = lifecycle._qualified_native_adapter(Mock(), "run-1")
+
+        self.assertEqual((result, port), (adapter, 45123))
+        self.assertEqual(probe.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_semantic_qualification_does_not_retry_other_blocked_resources(
+        self,
+    ) -> None:
+        lifecycle = self._qualification_lifecycle()
+        non_environmental = BlockedError(
+            "no connected display",
+            resource="runtime-cell-display",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "admit_local_native_input_mode",
+            return_value=NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos.time.sleep"
+        ) as sleep, patch.object(
+            lifecycle,
+            "_probe_native_adapter",
+            side_effect=non_environmental,
+        ) as probe:
+            with self.assertRaises(BlockedError):
+                lifecycle._qualified_native_adapter(Mock(), "run-1")
+
+        probe.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_semantic_qualification_raises_last_after_exhausting_attempts(
+        self,
+    ) -> None:
+        lifecycle = self._qualification_lifecycle()
+        boundary = BlockedError(
+            "macOS scoped native observation failed",
+            resource="runtime-cell-semantic-adapter",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "admit_local_native_input_mode",
+            return_value=NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos.time.sleep"
+        ), patch.object(
+            lifecycle,
+            "_probe_native_adapter",
+            side_effect=boundary,
+        ) as probe:
+            with self.assertRaisesRegex(BlockedError, "observation failed"):
+                lifecycle._qualified_native_adapter(Mock(), "run-1")
+
+        self.assertEqual(
+            probe.call_count,
+            SEMANTIC_QUALIFICATION_MAX_ATTEMPTS,
+        )
+
+    def test_exclusive_qualification_never_retries_environment_boundary(
+        self,
+    ) -> None:
+        lifecycle = self._qualification_lifecycle()
+        boundary = BlockedError(
+            "macOS scoped native observation failed",
+            resource="runtime-cell-operator-focus",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "admit_local_native_input_mode",
+            return_value=NativeInputMode.EXCLUSIVE_NATIVE_INPUT,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos.time.sleep"
+        ) as sleep, patch.object(
+            lifecycle,
+            "_probe_native_adapter",
+            side_effect=boundary,
+        ) as probe:
+            with self.assertRaises(BlockedError):
+                lifecycle._qualified_native_adapter(Mock(), "run-1")
+
+        probe.assert_called_once()
+        sleep.assert_not_called()
 
     def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
         default = inspect.signature(
