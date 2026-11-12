@@ -44,7 +44,14 @@ describe('Desktop Moments interaction contract', () => {
     inspect(new URL('./', import.meta.url));
     inspect(new URL('../../pages/moments/', import.meta.url));
     expect(legacy).toEqual([]);
-    expect(source('../../App.tsx')).toContain('feedback={feedback}');
+    // The shell owns the session-scoped feedback channel: it creates it via
+    // useAppFeedback, provides it through AppFeedbackContext (consumed by
+    // useScopedFeedback), and renders its FeedbackHost. UIProvider itself moved
+    // up to main.tsx on master, so the binding lives on the context/host here.
+    const appSourceScoped = source('../../App.tsx');
+    expect(appSourceScoped).toContain('useAppFeedback()');
+    expect(appSourceScoped).toContain('AppFeedbackContext.Provider value={feedback}');
+    expect(appSourceScoped).toContain('<FeedbackHost channel={feedback} />');
     for (const consumer of ['./MomentComposer.tsx', './MomentCard.tsx', './CommentList.tsx',
       './MomentAuthorTrigger.tsx', './MomentRelationshipAction.tsx', '../../pages/moments/CircleManagePage.tsx']) {
       expect(source(consumer)).toContain('useScopedFeedback');
