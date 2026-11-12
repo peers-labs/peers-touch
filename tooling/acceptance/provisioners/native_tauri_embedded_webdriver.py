@@ -70,6 +70,14 @@ _CROSS_STATION_SOCIAL_GATE_CLIENTS = {
     ),
     "social-cross-station-native-e2e": ("alice", "bob", "eve", "bob2"),
 }
+# Outsider fixture roles receive an account and federation routing but must
+# never be seeded into the mutual-friendship graph. They authenticate over
+# HTTP without enrolling a device identity, so a FRIENDS private audience that
+# targeted them could never resolve content prekeys. The private Social Suite
+# relies on "eve" staying an outsider for its uniform-denial scenario.
+_CROSS_STATION_SOCIAL_FRIENDSHIP_OUTSIDERS = {
+    "social-cross-station-native-e2e": ("eve",),
+}
 PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -600,6 +608,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                     credential_ref=credential_refs[0] if credential_refs else "",
                     reset_authorized=None,
                     fixture_id=self.fixture_id,
+                    friendship_roles=self._friendship_roles(gate_id, roles),
                 )
             if gate_id == "federation-two-station-lifecycle-e2e":
                 actor_ref = self._persist_station_keyed_actor_manifest(
@@ -667,6 +676,18 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
                 resource=f"gate-environment:{gate_id}",
             )
         return roles
+
+    def _friendship_roles(
+        self, gate_id: str, roles: tuple[str, ...]
+    ) -> tuple[str, ...] | None:
+        """Restrict the seeded mutual-friendship mesh.
+
+        Returning ``None`` keeps the full mesh over every bound role, which is
+        the Chat contract where every actor enrolls a device and exchanges
+        messages. Cross-Station Social overrides this to keep token-only
+        outsider actors out of the friendship graph.
+        """
+        return None
 
 
 class NativeTauriSingleStationWebDriverProvisioner(
@@ -979,3 +1000,12 @@ class CrossStationSocialNativeProvisioner(
                 resource=f"gate-environment:{gate_id}",
             )
         return roles
+
+    def _friendship_roles(
+        self, gate_id: str, roles: tuple[str, ...]
+    ) -> tuple[str, ...] | None:
+        outsiders = _CROSS_STATION_SOCIAL_FRIENDSHIP_OUTSIDERS.get(gate_id)
+        if not outsiders:
+            return None
+        outsider_set = set(outsiders)
+        return tuple(role for role in roles if role not in outsider_set)

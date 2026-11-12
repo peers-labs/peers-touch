@@ -684,10 +684,43 @@ def prepare_federation_routing(
         )
 
 
+def _friendship_mesh_roles(
+    role_targets: Mapping[str, tuple[str, str]],
+    friendship_roles: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    """Resolve the roles that participate in the mutual-contact mesh.
+
+    ``None`` keeps the historical full-mesh behaviour used by the Chat gates.
+    An explicit subset lets a Gate provision outsider fixture actors: they
+    still receive an account and federation routing, but they are never seeded
+    as friends. Such outsiders enroll no device identity, so a FRIENDS
+    audience targeting them could never resolve content prekeys and would fail
+    private-moment preparation.
+    """
+    if friendship_roles is None:
+        return tuple(role_targets)
+    unknown = tuple(sorted(set(friendship_roles) - set(role_targets)))
+    if unknown:
+        raise BlockedError(
+            reason=(
+                "Friendship mesh references roles outside the bound actor "
+                f"targets: {', '.join(unknown)}"
+            ),
+            resource="fixture-friendship:roles",
+        )
+    selected = set(friendship_roles)
+    return tuple(role for role in role_targets if role in selected)
+
+
 def prepare_bound_friendships(
     role_targets: Mapping[str, tuple[str, str]],
     actors: tuple[ActorIdentity, ...],
+    friendship_roles: tuple[str, ...] | None = None,
 ) -> None:
+    # Validate the mesh configuration before any Station-side record reads so
+    # an invalid role declaration fails fast instead of surfacing as an
+    # unrelated actor-identity error.
+    mesh_roles = _friendship_mesh_roles(role_targets, friendship_roles)
     by_role = {actor.role: actor for actor in actors}
     records = _read_bound_actor_records(role_targets)
     for role, record in records.items():
@@ -704,14 +737,17 @@ def prepare_bound_friendships(
     contacts_by_target: dict[
         tuple[str, str], list[tuple[FixtureActorRecord, FixtureActorRecord]]
     ] = {}
-    for actor_role, (station_url, environment) in role_targets.items():
-        for peer_role in role_targets:
+    for actor_role in mesh_roles:
+        station_url, environment = role_targets[actor_role]
+        for peer_role in mesh_roles:
             if actor_role == peer_role:
                 continue
             contacts_by_target.setdefault((station_url, environment), []).append(
                 (records[actor_role], records[peer_role])
             )
     for (station_url, environment), contacts in contacts_by_target.items():
+        if not contacts:
+            continue
         seed_bound_contacts(
             station_url, environment, tuple(contacts), federation_members,
         )
@@ -793,6 +829,7 @@ def produce_bound_actor_manifest(
     credential_ref: str,
     reset_authorized: bool | None,
     fixture_id: str = "chat-native-actors",
+    friendship_roles: tuple[str, ...] | None = None,
 ) -> tuple[ActorManifest, Path, dict[str, str]]:
     unique_roles = tuple(dict.fromkeys(role_targets))
     if reset_authorized is None:
@@ -824,7 +861,9 @@ def produce_bound_actor_manifest(
     actors = tuple(
         _resolved_actor_identity(role, records[role]) for role in unique_roles
     )
-    prepare_bound_friendships(role_targets, actors)
+    prepare_bound_friendships(
+        role_targets, actors, friendship_roles=friendship_roles
+    )
     manifest = ActorManifest(
         fixture_id=fixture_id,
         environment_id=environment_id,

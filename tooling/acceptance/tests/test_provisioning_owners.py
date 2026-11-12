@@ -1035,6 +1035,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     "bob": ("http://station.example", "station-three"),
                 },
                 manifest.actors,
+                friendship_roles=None,
             )
             serialized = path.read_text(encoding="utf-8")
             self.assertNotIn("not-persisted", serialized)
@@ -1108,6 +1109,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     "bob": ("http://station-five", "station-five"),
                 },
                 manifest.actors,
+                friendship_roles=None,
             )
             self.assertEqual(
                 [actor.ptid for actor in manifest.actors],
@@ -1203,6 +1205,108 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 ),
             ],
         )
+
+    def test_bound_friendships_exclude_outsider_roles_from_mesh(self) -> None:
+        from tooling.acceptance.core.provisioning import ActorIdentity
+
+        role_targets = {
+            "alice": ("http://station-four", "station-four"),
+            "bob": ("http://station-five", "station-five"),
+            "eve": ("http://station-five", "station-five"),
+        }
+
+        def record(role: str, station: str) -> chat_native_reset.FixtureActorRecord:
+            return chat_native_reset.FixtureActorRecord(
+                ptid=f"ptid:{role}",
+                preferred_username=role,
+                name=role.title(),
+                summary="",
+                icon="",
+                image="",
+                url=f"https://{station}.example/actors/{role}",
+                federated_handle=f"@{role}@{station}.example",
+                home_station_peer_id=station,
+                home_station_domain=f"{station}.example",
+                visibility=1,
+                locator_seq=1,
+            )
+
+        records = {
+            "alice": record("alice", "station-four"),
+            "bob": record("bob", "station-five"),
+            "eve": record("eve", "station-five"),
+        }
+        by_account = {
+            ACTOR_ACCOUNTS[role]: value
+            for role, value in records.items()
+        }
+        actors = tuple(
+            ActorIdentity(
+                role=role,
+                account_ref=f"station-account:{ACTOR_ACCOUNTS[role]}",
+                ptid=value.ptid,
+            )
+            for role, value in records.items()
+        )
+
+        federation_members = tuple(records.values())
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actors",
+            side_effect=lambda _station, _environment, accounts: {
+                account: by_account[account] for account in accounts
+            },
+        ) as read_actor, patch(
+            "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contacts"
+        ) as seed_contact, patch(
+            "tooling.acceptance.fixtures.chat_native_actors."
+            "prepare_bound_federation_routing"
+        ) as prepare_routing:
+            prepare_bound_friendships(
+                role_targets, actors, friendship_roles=("alice", "bob"),
+            )
+
+        self.assertEqual(read_actor.call_count, 2)
+        # Routing still covers every bound role, including the outsider.
+        prepare_routing.assert_called_once_with(role_targets, records)
+        # The contact mesh only contains the enrolled alice/bob pair. The
+        # outsider "eve" must never appear in any seeded friendship pair.
+        self.assertEqual(
+            seed_contact.call_args_list,
+            [
+                call(
+                    "http://station-four",
+                    "station-four",
+                    ((records["alice"], records["bob"]),),
+                    federation_members,
+                ),
+                call(
+                    "http://station-five",
+                    "station-five",
+                    ((records["bob"], records["alice"]),),
+                    federation_members,
+                ),
+            ],
+        )
+        for seeded in seed_contact.call_args_list:
+            for actor, peer in seeded.args[2]:
+                self.assertNotIn(records["eve"], (actor, peer))
+
+    def test_bound_friendships_reject_unknown_mesh_role(self) -> None:
+        from tooling.acceptance.core.provisioning import ActorIdentity
+
+        role_targets = {
+            "alice": ("http://station-four", "station-four"),
+            "bob": ("http://station-five", "station-five"),
+        }
+        actors = (
+            ActorIdentity(role="alice", account_ref="a", ptid="ptid:alice"),
+            ActorIdentity(role="bob", account_ref="b", ptid="ptid:bob"),
+        )
+        with self.assertRaises(BlockedError) as context:
+            prepare_bound_friendships(
+                role_targets, actors, friendship_roles=("alice", "eve"),
+            )
+        self.assertEqual(context.exception.resource, "fixture-friendship:roles")
 
     @patch(
         "tooling.acceptance.fixtures.chat_native_actors._bootstrap_request"
@@ -1311,6 +1415,28 @@ class CrossStationSocialProvisioningOwnerTests(unittest.TestCase):
             CrossStationSocialNativeProvisioner,
         )
         self.assertEqual(bindings, provisioner._required_station_profiles())
+
+    def test_cross_station_friendship_mesh_excludes_outsider_eve(self) -> None:
+        provisioner = get_provisioner(
+            self.contract,
+            service_profiles={
+                "station-four": "four",
+                "station-five-arm": "fiveArm",
+            },
+        )
+        roles = ("alice", "bob", "eve")
+        self.assertEqual(
+            provisioner._friendship_roles(
+                "social-cross-station-native-e2e", roles
+            ),
+            ("alice", "bob"),
+        )
+        # Gates without declared outsiders keep the default full mesh.
+        self.assertIsNone(
+            provisioner._friendship_roles(
+                "social-public-feed-native-e2e", ("alice", "bob")
+            )
+        )
 
     def test_federation_actor_manifest_rejects_home_station_mismatch(
         self,
