@@ -44,7 +44,10 @@ body,
   height: 100dvh;
   width: 100%;
   overflow: hidden;
-  background: var(--brand-muted);
+  /* Neutral north-star canvas (matches --pt-canvas). body sits outside the
+     UIProvider scope so it cannot read the scoped --pt-* token; this is the
+     only permitted hard-coded neutral, retired with styles.css at Slice 6. */
+  background: #f4f5f4;
   color-scheme: light;
   font-size: var(--mobile-base-font-size);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;

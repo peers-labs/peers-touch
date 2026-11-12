@@ -29,6 +29,18 @@ body,
   --pt-m-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --pt-m-composer-min-height: 56px;
   --pt-m-scroll-bottom-clearance: 12px;
+
+  /* Transitional private-palette aliases. The legacy styles.css still consumes
+     --brand-* while surfaces migrate slice by slice; redirecting them at the
+     provider scope makes --pt-* the single color source immediately, so no
+     second hue set reaches the product tree. These aliases carry no new color
+     and are deleted at Slice 6 once every var(--brand-*) consumer is rewritten
+     to its --pt-* counterpart. See northstar-realignment design.md §2.1. */
+  --brand-primary: var(--pt-accent);
+  --brand-secondary: var(--pt-accent);
+  --brand-surface: var(--pt-surface);
+  --brand-muted: var(--pt-subtle);
+  --brand-border: var(--pt-border);
 }
 
 @media (display-mode: standalone) {
