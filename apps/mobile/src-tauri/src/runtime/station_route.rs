@@ -647,6 +647,23 @@ pub(crate) fn install_transport_identity(storage: SecureStorage) -> MobileResult
     Ok(())
 }
 
+/// Idempotently copy the Tauri-managed SecureStorage into the global route
+/// runtime. The builder setup hook installs it first on every platform, but on
+/// Android the plugin-managed handle is the only available constructor, so the
+/// storage-aware commands also ensure it here. This makes transport identity
+/// independent of setup-hook ordering without fabricating a platform store.
+fn ensure_identity_storage(storage: &SecureStorage) -> MobileResult<()> {
+    if ROUTES
+        .identity_storage
+        .read()
+        .map(|guard| guard.is_some())
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    install_transport_identity(storage.clone())
+}
+
 fn route_transport_scope(route: &StationRouteCandidate) -> MobileResult<TransportIdentityScope> {
     match route.route_type {
         StationRouteType::Direct => Ok(TransportIdentityScope::DirectStation(
@@ -675,6 +692,7 @@ pub fn station_route_activate(
     storage: State<'_, SecureStorage>,
     input: StationRouteSelectionInput,
 ) -> MobileResult<StationRouteBindingProjection> {
+    ensure_identity_storage(&storage)?;
     let station_peer_id = clean_identifier(&input.station_peer_id, "stationPeerId")?;
     let route_id = clean_identifier(&input.route_id, "routeId")?;
     let cached = ROUTES.cached(&station_peer_id, &route_id)?;
@@ -691,6 +709,7 @@ pub async fn station_route_restore(
     storage: State<'_, SecureStorage>,
     input: StationRouteRestoreInput,
 ) -> MobileResult<StationRouteRefreshProjection> {
+    ensure_identity_storage(&storage)?;
     let station_peer_id = clean_identifier(&input.station_peer_id, "stationPeerId")?;
     let route_id = clean_identifier(&input.route_id, "routeId")?;
     let source = if input.source_ref.trim().is_empty() {
