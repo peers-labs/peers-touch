@@ -134,7 +134,40 @@ _SENSITIVE_FIELD_PATTERN = "|".join(
     _field_pattern(name)
     for name in sorted(_SENSITIVE_ASSIGNMENT_FIELDS, key=len, reverse=True)
 )
+# Assignment redaction splits sensitive field names into two classes so the
+# generic text pattern cannot flag non-secret framework attributes in DOM
+# evidence:
+#  * compound names (api_key, client_secret, ...) are enumerated phrases and
+#    matched across their full . _ - space spelling, so api-key / api.key stay
+#    sensitive even when embedded in a larger token;
+#  * bare single-word fields (key, token, secret, ...) match only as standalone
+#    fields. A bare token that merely tails a larger hyphen/dot identifier
+#    (data-group-key, rc-util-key, config.token) is a framework or data
+#    attribute carrying an opaque UI identifier, not a credential.
+_SENSITIVE_COMPOUND_FIELD_PATTERN = "|".join(
+    _field_pattern(name)
+    for name in sorted(
+        (name for name in _SENSITIVE_ASSIGNMENT_FIELDS if "_" in name),
+        key=len,
+        reverse=True,
+    )
+)
+_SENSITIVE_BARE_FIELD_PATTERN = "|".join(
+    _field_pattern(name)
+    for name in sorted(
+        (name for name in _SENSITIVE_ASSIGNMENT_FIELDS if "_" not in name),
+        key=len,
+        reverse=True,
+    )
+)
 _REDACTED_VALUE_PATTERN = re.escape(REDACTED)
+# A bare "key" URL query parameter is the object-storage object identifier by
+# convention (S3/OSS/GCS: GET /file?key=YYYY/MM/DD/<id><ext>), i.e. a resource
+# path rather than a credential; object access is authorized separately via a
+# signature or auth header. Keep it out of URL query redaction while compound
+# names such as api_key/access_key and every other sensitive parameter remain
+# covered.
+_SAFE_URL_QUERY_FIELDS = frozenset({"key"})
 _URL_QUERY_FIELD_PATTERN = "|".join(
     _field_pattern(name)
     for name in sorted(
@@ -147,14 +180,20 @@ _URL_QUERY_FIELD_PATTERN = "|".join(
             "x_amz_credential",
             "x_amz_security_token",
             "x_amz_signature",
-        },
+        }
+        - _SAFE_URL_QUERY_FIELDS,
         key=len,
         reverse=True,
     )
 )
 _SENSITIVE_ASSIGNMENT = re.compile(
-    rf"(?i)(?P<prefix>(?<![\w])[\"']?(?:{_SENSITIVE_FIELD_PATTERN})"
-    rf"[\"']?\s*[:=]\s*)"
+    rf"(?i)(?P<prefix>"
+    rf"(?<![\w])[\"']?(?:{_SENSITIVE_COMPOUND_FIELD_PATTERN})[\"']?\s*[:=]\s*"
+    # Bare fields never own URL query/fragment parameters: ? &# introduce a
+    # query string that _URL_QUERY_SECRET handles, so assignment matching must
+    # not re-flag an exempt object-storage key there.
+    rf"|(?<![\w.?&#-])[\"']?(?:{_SENSITIVE_BARE_FIELD_PATTERN})[\"']?\s*[:=]\s*"
+    rf")"
     rf"(?P<value>{_REDACTED_VALUE_PATTERN}|"
     r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s}\]]+)"
 )

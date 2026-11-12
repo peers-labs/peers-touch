@@ -372,6 +372,73 @@ class TextRedactionTests(unittest.TestCase):
         self.assertNotIn("alpha,beta;gamma", redacted)
         self.assertIn("next=safe", redacted)
 
+    def test_preserves_framework_dom_key_attributes(self) -> None:
+        # Painted page-source evidence carries UI framework and data-* attributes
+        # whose bare "key" token only tails a larger hyphen/dot identifier. These
+        # hold opaque UI identifiers (tab groups, cssinjs cache keys), never
+        # credentials, and must stay byte-identical so the evidence audit does
+        # not raise a false secret-bypass conflict.
+        dom = (
+            '<style data-rc-order="prepend" rc-util-key="rc-util-ltr"></style>'
+            '<div data-group-key="general" data-pt-secondary-tab="general"></div>'
+            '<div data-section-key="network"></div>'
+            '<span data-group-key="federation"></span>'
+        )
+
+        self.assertEqual(redact_text(dom), dom)
+
+    def test_redacts_standalone_credential_inside_dom_but_keeps_data_attrs(self) -> None:
+        dom = (
+            '<html><body>password=dom-leak-secret'
+            '<div data-group-key="general"></div></body></html>'
+        )
+        redacted = redact_text(dom)
+
+        self.assertNotIn("dom-leak-secret", redacted)
+        self.assertIn(REDACTED, redacted)
+        self.assertIn('data-group-key="general"', redacted)
+
+    def test_compound_sensitive_names_redact_while_bare_suffixes_do_not(self) -> None:
+        # Enumerated compound names stay sensitive across separators even though
+        # bare tokens no longer match as hyphen/dot suffixes.
+        redacted = redact_text(
+            'api.key="alpha" api-key=bravo client-secret=charlie '
+            'data-group-key=general rc-util-key=cache'
+        )
+
+        self.assertNotIn("alpha", redacted)
+        self.assertNotIn("bravo", redacted)
+        self.assertNotIn("charlie", redacted)
+        self.assertIn('data-group-key=general', redacted)
+        self.assertIn('rc-util-key=cache', redacted)
+
+    def test_preserves_object_storage_key_query_parameters(self) -> None:
+        # A bare "key" query parameter is the object-storage object identifier
+        # (resource path), not a credential. It must survive in media URLs that
+        # appear in painted DOM evidence.
+        urls = (
+            "http://station.test:18080/sub-oss/file?key=2026/07/30/object.png",
+            "https://station.test/sub-oss/file?key=avatars%2Falice.png",
+            'url(&quot;self/sub-oss/file?key=cas%2Faa%2Fimage&quot;)',
+            '<img src="https://h/sub-oss/file?key=2026/x.png&owner=did:alice">',
+        )
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(redact_text(url), url)
+
+    def test_redacts_url_credentials_alongside_object_key(self) -> None:
+        text = (
+            "https://p.test/callback?code=authorization-code"
+            "&access_token=frag-token&key=2026/07/30/object.png&safe=value"
+        )
+        redacted = redact_text(text)
+
+        self.assertNotIn("authorization-code", redacted)
+        self.assertNotIn("frag-token", redacted)
+        self.assertIn("key=2026/07/30/object.png", redacted)
+        self.assertIn("safe=value", redacted)
+
 
 class ArtifactRedactionTests(unittest.TestCase):
     def test_redacts_structured_json_and_reports_change(self) -> None:
@@ -440,6 +507,38 @@ class ArtifactRedactionTests(unittest.TestCase):
 
         self.assertFalse(changed)
         self.assertEqual(redacted, payload)
+
+    def test_painted_dom_framework_attributes_do_not_flag_artifact(self) -> None:
+        # Reproduces the social-cross-station painted page-source evidence: the
+        # immutable-writer audit must not treat framework/data-* key attributes
+        # as a credential bypass, otherwise the whole run is discarded.
+        dom = (
+            "<!DOCTYPE html><html><body>"
+            '<style data-rc-order="prepend" rc-util-key="rc-util-ltr"></style>'
+            '<div data-group-key="general" data-section-key="network"></div>'
+            '<span data-group-key="federation"></span>'
+            "</body></html>"
+        ).encode()
+
+        redacted, changed = redact_artifact_bytes(dom)
+
+        self.assertFalse(changed)
+        self.assertEqual(redacted, dom)
+
+    def test_painted_dom_media_object_key_urls_do_not_flag_artifact(self) -> None:
+        # Moments avatars and post media render as object-storage URLs whose
+        # bare "key" parameter is a resource path, not a credential.
+        dom = (
+            "<!DOCTYPE html><html><body>"
+            '<img src="http://station.test:18080/sub-oss/file?key=2026/07/30/a.png">'
+            '<img src="https://station.test/sub-oss/file?key=avatars%2Falice.png">'
+            "</body></html>"
+        ).encode()
+
+        redacted, changed = redact_artifact_bytes(dom)
+
+        self.assertFalse(changed)
+        self.assertEqual(redacted, dom)
 
 
 if __name__ == "__main__":
