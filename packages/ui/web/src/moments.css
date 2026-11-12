@@ -118,10 +118,20 @@
 .sk-inline-composer .pt-field-frame { flex: 1; min-width: 0; min-height: 36px; background: var(--sk-card-bg, var(--pt-surface)); border-color: var(--sk-card-border, var(--pt-border)); border-radius: 10px; padding: 0 12px; }
 .sk-inline-composer .pt-input { min-height: 36px; font-size: 13px; }
 .sk-inline-composer .pt-textarea { min-height: 36px; font-size: 13px; padding: 7px 0; }
+/* The field frame is a 36px normal-height control. Align the compact action
+   controls to the same height (and square the icon button) so the composer
+   row is geometrically symmetric instead of pairing a 36px field with a 28px
+   compact control. */
+.sk-inline-composer .pt-button[data-density='compact'] { min-height: var(--pt-control-normal); }
 .sk-inline-composer .pt-icon-button { flex-shrink: 0; }
+.sk-inline-composer .pt-icon-button[data-density='compact'] { width: var(--pt-control-normal); min-height: var(--pt-control-normal); }
 .sk-reply-composer { margin-top: 6px; }
 .sk-comment-composer { position: relative; min-width: 0; }
-.sk-comment-composer[data-invalid] { color: var(--pt-danger); }
+/* Danger is a semantic signal, not a text treatment: the preserved draft keeps
+   normal ink. Confine the danger color to the alert status line and the field
+   hairline, so an invalid composer never paints its input contents red. */
+.sk-comment-composer[data-invalid] .sk-comment-status { color: var(--pt-danger); }
+.sk-comment-composer[data-invalid] .pt-field-frame { border-color: var(--pt-danger); }
 .sk-comment-status { margin-top: 6px; font-size: 12px; }
 .sk-post-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
 .sk-react-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
