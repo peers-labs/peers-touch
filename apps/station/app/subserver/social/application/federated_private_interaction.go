@@ -793,7 +793,7 @@ func (s *PrivateContentService) ReceiveFederatedPrivateInteractionResult(
 		privatecontentpb.FederatedPrivateInteractionResultKind_FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_COMMITTED &&
 		command.GetOperation() ==
 			privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT {
-		if err := s.importFederatedPrivateCommentResult(
+		if err := s.verifyFederatedPrivateCommentResult(
 			ctx,
 			transaction,
 			command,
@@ -2173,14 +2173,14 @@ func (s *PrivateContentService) projectPrivateCommentReactions(
 	return nil
 }
 
-func (s *PrivateContentService) importFederatedPrivateCommentResult(
+func (s *PrivateContentService) verifyFederatedPrivateCommentResult(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	command *privatecontentpb.FederatedPrivateInteractionCommand,
 	canonicalResult []byte,
 	frame *federationdelivery.Frame,
 ) error {
-	const operation = "social.private_content.import_federated_comment_result"
+	const operation = "social.private_content.verify_federated_comment_result"
 	response := &privatecontentpb.SubmitPrivateCommentResponse{}
 	if err := proto.Unmarshal(canonicalResult, response); err != nil {
 		return socialdomain.WrapPrivateContentError(
@@ -2264,86 +2264,7 @@ func (s *PrivateContentService) importFederatedPrivateCommentResult(
 			err,
 		)
 	}
-	localAttestation, err :=
-		s.stationSigner.AttestImportedContentProofVerificationKeyInTransaction(
-			ctx,
-			transaction,
-			frame.GetSourceStationPeerId(),
-			proof.GetStationSigningKeyId(),
-			s.now(),
-		)
-	if err != nil {
-		return socialdomain.WrapPrivateContentError(
-			socialdomain.PrivateContentDependency,
-			operation,
-			err,
-		)
-	}
-	projectedVerification := proto.Clone(
-		verification,
-	).(*privatecontentpb.PrivateContentVerification)
-	projectedVerification.StationSigningKeyAttestation = localAttestation
-	deliveryMessage := &privatecontentpb.FederatedPrivateResourceDelivery{
-		FormatVersion: socialdomain.PrivateContentFormatVersion,
-		FederationId:  command.GetFederationId(),
-		DeliveryId: deterministicPrivateID(
-			"federated-resource",
-			resource.GetContentId(),
-			command.GetActor().GetActor().GetPtid(),
-		),
-		SourceStationPeerId: frame.GetSourceStationPeerId(),
-		TargetStationPeerId: frame.GetTargetStationPeerId(),
-		TargetActor: proto.Clone(
-			command.GetActor().GetActor(),
-		).(*actormodel.ActorRef),
-		ResourceKind: privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT,
-		Resource: proto.Clone(
-			resource,
-		).(*securecontentpb.SecureResourceRef),
-		LifecycleRevision: resource.GetGeneration(),
-		Metadata: &privatecontentpb.FederatedPrivateResourceDelivery_Comment{
-			Comment: proto.Clone(
-				comment.GetMetadata(),
-			).(*privatecontentpb.CommentMetadata),
-		},
-		Payload: proto.Clone(
-			access.GetPayload(),
-		).(*securecontentpb.EncryptedPayload),
-		TargetActorEnvelopes: []*securecontentpb.ViewerContentKeyEnvelope{
-			proto.Clone(
-				access.GetViewerEnvelope(),
-			).(*securecontentpb.ViewerContentKeyEnvelope),
-		},
-		Objects:      cloneEncryptedObjects(access.GetObjects()),
-		Verification: projectedVerification,
-		AudienceExplanation: &actormodel.AudienceExplanation{
-			Kind:           actormodel.Audience_CUSTOM_ALLOW,
-			ViewerIsAuthor: true,
-		},
-		CommittedAt: proto.Clone(
-			comment.GetMetadata().GetCreatedAt(),
-		).(*timestamppb.Timestamp),
-	}
-	canonicalDelivery, err := socialdomain.CanonicalProtoBytes(deliveryMessage)
-	if err != nil {
-		return err
-	}
-	if _, err := s.store.ApplyRemotePrivateResource(
-		ctx,
-		transaction,
-		deliveryMessage,
-		canonicalDelivery,
-	); err != nil {
-		return mapPrivateStoreError(operation, err)
-	}
-	return s.events.StageImportedCommented(
-		ctx,
-		transaction,
-		comment.GetMetadata().GetPostId(),
-		comment.GetMetadata().GetCommentId(),
-		comment.GetMetadata().GetAuthor().GetPtid(),
-		command.GetActor().GetActor().GetPtid(),
-	)
+	return nil
 }
 
 func (s *PrivateContentService) observeFederatedPrivateInteraction(

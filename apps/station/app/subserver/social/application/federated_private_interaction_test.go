@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -487,6 +488,236 @@ func TestFederatedPrivateCommentParentReadCountsRootAndReply(t *testing.T) {
 	}
 	fixture.completeReact(t, fixture.reactRequest(t, "parent-count-like", actormodel.ReactionKind_REACTION_LIKE))
 	assertCount(2)
+}
+
+func TestFederatedPrivateCommentReplacementReadsRootAndReply(t *testing.T) {
+	fixture := newFederatedPrivateReactionFixture(t)
+	rootID := fixture.completeComment(t, "replacement-root", "")
+	replyID := fixture.completeComment(t, "replacement-reply", rootID)
+	replacement := proto.Clone(fixture.receiver.bob).(*actormodel.ActorDeviceRef)
+	replacement.DeviceId = "bob-replacement-device"
+	before := make(map[string]*privatecontentpb.CommentResource)
+	for _, commentID := range []string{rootID, replyID} {
+		original, err := fixture.receiver.service.GetPrivateComment(
+			fixture.ctx, fixture.receiver.bob, fixture.postID, commentID,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[commentID] = original.GetComment()
+		t.Run(commentID, func(t *testing.T) {
+			read, err := fixture.receiver.service.GetPrivateComment(
+				fixture.ctx, replacement, fixture.postID, commentID,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			private := read.GetComment().GetPrivateContent()
+			if private == nil || private.GetViewerEnvelope() != nil ||
+				!proto.Equal(private.GetPayload(), original.GetComment().GetPrivateContent().GetPayload()) ||
+				!proto.Equal(read.GetComment().GetMetadata(), original.GetComment().GetMetadata()) ||
+				!proto.Equal(read.GetComment().GetMetadata().GetAuthor(),
+					private.GetVerification().GetCommitProof().GetAuthor().GetActor()) ||
+				private.GetVerification().GetReceiverVerifiedSenderSigningKey().GetActorPtid() != "ptid:bob" {
+				t.Fatal("replacement read changed the committed Comment or proof author")
+			}
+		})
+	}
+	t.Run("page", func(t *testing.T) {
+		page, err := fixture.receiver.service.ListPrivateComments(
+			fixture.ctx, replacement,
+			&privatecontentpb.ListMomentCommentsRequest{PostId: fixture.postID, Limit: 20},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.GetComments()) != 2 || page.GetHasMore() {
+			t.Fatalf("replacement comment page = %+v", page)
+		}
+		for _, comment := range page.GetComments() {
+			original := before[comment.GetMetadata().GetCommentId()]
+			if original == nil || comment.GetPrivateContent().GetViewerEnvelope() != nil ||
+				!proto.Equal(comment.GetMetadata(), original.GetMetadata()) ||
+				!proto.Equal(comment.GetPrivateContent().GetPayload(), original.GetPrivateContent().GetPayload()) {
+				t.Fatal("replacement page changed the committed root or reply")
+			}
+		}
+	})
+	t.Run("parent-count", func(t *testing.T) {
+		parent, err := fixture.receiver.service.GetPrivateMoment(fixture.ctx, replacement, fixture.postID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if parent.GetResource().GetMetadata().GetStats().GetCommentsCount() != 2 {
+			t.Fatalf("replacement parent comments = %d, want 2",
+				parent.GetResource().GetMetadata().GetStats().GetCommentsCount())
+		}
+	})
+	t.Run("policy", func(t *testing.T) {
+		policy, err := fixture.receiver.service.CheckMomentReadPolicy(fixture.ctx, replacement,
+			&privatecontentpb.CheckMomentReadPolicyRequest{Targets: []*privatecontentpb.MomentReadPolicyTarget{
+				{ItemId: "root", PostId: fixture.postID, CommentId: rootID},
+				{ItemId: "reply", PostId: fixture.postID, CommentId: replyID},
+			}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, outcome := range policy.GetOutcomes() {
+			if outcome.GetDecision() != privatecontentpb.MomentReadDecision_MOMENT_READ_DECISION_READABLE {
+				t.Fatalf("replacement policy = %+v", policy)
+			}
+		}
+	})
+	t.Run("recoverable-history", func(t *testing.T) {
+		history, err := fixture.receiver.service.ListRecoverablePrivateContent(fixture.ctx,
+			replacement.GetActor().GetPtid(),
+			&privatecontentpb.ListRecoverablePrivateContentRequest{Limit: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := make(map[string]bool)
+		for _, resource := range history.GetResources() {
+			seen[resource.GetResource().GetContentId()] = true
+		}
+		if !seen[rootID] || !seen[replyID] || !seen[fixture.postID] {
+			t.Fatal("original recovery history lost the parent, root or reply")
+		}
+	})
+}
+
+func TestFederatedPrivateCommentResultAndResourceDeliveryOrder(t *testing.T) {
+	for _, deliveryFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("delivery-first-%t", deliveryFirst), func(t *testing.T) {
+			fixture := newFederatedPrivateReactionFixture(t)
+			prepared := fixture.completePrepare(t, fixture.prepareRequest(t, "prepare-order", "order"))
+			submit := fixture.submitRequest(t, prepared.GetPlan(), "submit-order")
+			if _, err := fixture.receiver.service.SubmitPrivateCommentForAuthor(fixture.ctx,
+				fixture.bobAuthor, submit); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+				t.Fatalf("initial submit = %v", err)
+			}
+			fixture.deliverCommand(t, submit.GetCommandId())
+			resultFrame := federatedPrivateOutboxFrame(t, fixture.source.database,
+				federationdelivery.PayloadKindSocialPrivateResult,
+				func(frame *federationdelivery.Frame) bool { return frame.GetPayloadId() == submit.GetCommandId() })
+			result := &privatecontentpb.FederatedPrivateInteractionResult{}
+			response := &privatecontentpb.SubmitPrivateCommentResponse{}
+			if err := proto.Unmarshal(resultFrame.GetOpaquePayload(), result); err != nil {
+				t.Fatal(err)
+			}
+			if err := proto.Unmarshal(result.GetCanonicalResult(), response); err != nil {
+				t.Fatal(err)
+			}
+			commentID := response.GetComment().GetMetadata().GetCommentId()
+			receiveResult := func() {
+				t.Helper()
+				result, err := fixture.receiver.receiver.Receive(fixture.ctx, resultFrame)
+				if err != nil || (result.Disposition != federationdelivery.DispositionAccepted &&
+					result.Disposition != federationdelivery.DispositionDuplicate) {
+					t.Fatalf("receive result = %+v, %v", result, err)
+				}
+			}
+			if deliveryFirst {
+				fixture.deliverAuthorComment(t, commentID)
+			}
+			receiveResult()
+			if !deliveryFirst {
+				if _, err := fixture.receiver.service.GetPrivateComment(fixture.ctx,
+					fixture.receiver.bob, fixture.postID, commentID); err == nil {
+					t.Fatal("result alone created a partial resource projection")
+				}
+				fixture.deliverAuthorComment(t, commentID)
+			}
+			receiveResult()
+			fixture.deliverAuthorComment(t, commentID)
+			replacement := proto.Clone(fixture.receiver.bob).(*actormodel.ActorDeviceRef)
+			replacement.DeviceId = "bob-replacement-device"
+			if _, err := fixture.receiver.service.GetPrivateComment(fixture.ctx,
+				replacement, fixture.postID, commentID); err != nil {
+				t.Fatal(err)
+			}
+			parent, err := fixture.receiver.service.GetPrivateMoment(fixture.ctx, replacement, fixture.postID)
+			if err != nil || parent.GetResource().GetMetadata().GetStats().GetCommentsCount() != 1 {
+				t.Fatalf("duplicate deliveries changed parent count: %+v, %v", parent, err)
+			}
+		})
+	}
+}
+
+func TestFederatedPrivateCommentRecoveryRejectsMissingAmbiguousAndTamperedEnvelopes(t *testing.T) {
+	for _, name := range []string{"missing", "ambiguous", "actor", "resource", "payload", "sender", "signature"} {
+		t.Run(name, func(t *testing.T) {
+			fixture := newFederatedPrivateReactionFixture(t)
+			commentID := fixture.completeComment(t, "invalid-recovery-"+name, "")
+			replacement := proto.Clone(fixture.receiver.bob).(*actormodel.ActorDeviceRef)
+			replacement.DeviceId = "bob-replacement-device"
+			rows := func() *gorm.DB {
+				return fixture.receiver.database.Table("social_remote_private_envelopes").
+					Where("content_id = ? AND target_actor_ptid = ? AND recipient_key_kind = ?",
+						commentID, "ptid:bob", int32(securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY))
+			}
+			var row struct{ EnvelopeBytes []byte }
+			if err := rows().Take(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			envelope := &securecontentpb.ViewerContentKeyEnvelope{}
+			if err := proto.Unmarshal(row.EnvelopeBytes, envelope); err != nil {
+				t.Fatal(err)
+			}
+			switch name {
+			case "missing":
+				if err := fixture.receiver.database.Exec(`DELETE FROM social_remote_private_envelopes
+					WHERE content_id = ? AND target_actor_ptid = ? AND recipient_key_kind = ?`,
+					commentID, "ptid:bob",
+					int32(securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY)).Error; err != nil {
+					t.Fatal(err)
+				}
+			case "ambiguous":
+				if err := fixture.receiver.database.Exec(`INSERT INTO social_remote_private_envelopes
+					(source_station_peer_id, content_id, generation, target_actor_ptid, recipient_key_kind,
+					 recipient_device_id, one_time_key_id, envelope_bytes, principal_epoch)
+					SELECT source_station_peer_id, content_id, generation, target_actor_ptid, recipient_key_kind,
+					 recipient_device_id, 'ambiguous-key', envelope_bytes, principal_epoch
+					FROM social_remote_private_envelopes WHERE content_id = ? AND target_actor_ptid = ?
+					 AND recipient_key_kind = ?`, commentID, "ptid:bob",
+					int32(securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY)).Error; err != nil {
+					t.Fatal(err)
+				}
+			default:
+				switch name {
+				case "actor":
+					envelope.GetRecoveryActor().Ptid = "ptid:eve"
+				case "resource":
+					envelope.Binding.Resource.ContentId = "wrong-resource"
+				case "payload":
+					envelope.Binding.PayloadCiphertextSha256[0] ^= 1
+				case "sender":
+					envelope.Binding.Sender.Actor.Ptid = "ptid:eve"
+				case "signature":
+					envelope.SenderSignature[0] ^= 1
+				}
+				canonical, err := securecontentkernel.CanonicalEnvelopeBindingBytes(envelope.Binding)
+				if err != nil {
+					t.Fatal(err)
+				}
+				envelope.BindingSha256 = privateSHA256(canonical)
+				encoded, err := proto.Marshal(envelope)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := rows().Update("envelope_bytes", encoded).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := fixture.receiver.service.GetPrivateComment(fixture.ctx, replacement,
+				fixture.postID, commentID); err == nil {
+				t.Fatal("invalid recovery envelope was admitted by point read")
+			}
+			if _, err := fixture.receiver.service.ListPrivateComments(fixture.ctx, replacement,
+				&privatecontentpb.ListMomentCommentsRequest{PostId: fixture.postID, Limit: 20}); err == nil {
+				t.Fatal("invalid recovery envelope was admitted by page read")
+			}
+		})
+	}
 }
 
 func TestFederatedPrivateCommentSubmit(t *testing.T) {
@@ -2021,6 +2252,44 @@ func (f *federatedPrivateCommentFixture) deliverResult(
 	if err != nil || (result.Disposition != federationdelivery.DispositionAccepted &&
 		result.Disposition != federationdelivery.DispositionDuplicate) {
 		t.Fatalf("deliver interaction result = %+v, %v", result, err)
+	}
+	interaction := &privatecontentpb.FederatedPrivateInteractionResult{}
+	if err := proto.Unmarshal(frame.GetOpaquePayload(), interaction); err != nil {
+		t.Fatal(err)
+	}
+	if interaction.GetKind() != privatecontentpb.FederatedPrivateInteractionResultKind_FEDERATED_PRIVATE_INTERACTION_RESULT_KIND_COMMITTED {
+		return
+	}
+	commandFrame := federatedPrivateOutboxFrame(t, f.receiver.database,
+		federationdelivery.PayloadKindSocialPrivateInteraction,
+		func(candidate *federationdelivery.Frame) bool { return candidate.GetPayloadId() == commandID })
+	command := &privatecontentpb.FederatedPrivateInteractionCommand{}
+	if err := proto.Unmarshal(commandFrame.GetOpaquePayload(), command); err != nil {
+		t.Fatal(err)
+	}
+	if command.GetOperation() == privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_SUBMIT_COMMENT {
+		response := &privatecontentpb.SubmitPrivateCommentResponse{}
+		if err := proto.Unmarshal(interaction.GetCanonicalResult(), response); err != nil {
+			t.Fatal(err)
+		}
+		f.deliverAuthorComment(t, response.GetComment().GetMetadata().GetCommentId())
+	}
+}
+
+func (f *federatedPrivateCommentFixture) deliverAuthorComment(t *testing.T, commentID string) {
+	t.Helper()
+	frame := federatedPrivateOutboxFrame(t, f.source.database,
+		federationdelivery.PayloadKindSocialPrivateResource,
+		func(candidate *federationdelivery.Frame) bool {
+			message := &privatecontentpb.FederatedPrivateResourceDelivery{}
+			return proto.Unmarshal(candidate.GetOpaquePayload(), message) == nil &&
+				message.GetResource().GetContentId() == commentID &&
+				message.GetTargetActor().GetPtid() == f.bobAuthor.Endpoint.GetActor().GetPtid()
+		})
+	result, err := f.receiver.receiver.Receive(f.ctx, frame)
+	if err != nil || (result.Disposition != federationdelivery.DispositionAccepted &&
+		result.Disposition != federationdelivery.DispositionDuplicate) {
+		t.Fatalf("deliver full author Comment = %+v, %v", result, err)
 	}
 }
 

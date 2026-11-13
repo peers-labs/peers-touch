@@ -1173,6 +1173,7 @@ func (s *PrivateContentService) submitPrivateComment(
 				commitProof,
 				commitProofRow,
 				committedAt,
+				authorFederationID,
 			)
 		},
 		response,
@@ -2837,6 +2838,7 @@ func (s *PrivateContentService) persistComment(
 	proof *securecontentpb.ViewerContentCommitProof,
 	proofRow dbmodel.SocialPrivateCommitProof,
 	committedAt time.Time,
+	authorFederationID string,
 ) ([]byte, error) {
 	retryAfter, err := tx.PrivateCommentRetryAfter(
 		ctx,
@@ -2947,6 +2949,7 @@ func (s *PrivateContentService) persistComment(
 		proof,
 		receiverVerifiedSenderKey,
 		committedAt,
+		authorFederationID,
 	); err != nil {
 		return nil, err
 	}

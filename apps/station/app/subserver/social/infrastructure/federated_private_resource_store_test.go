@@ -352,11 +352,6 @@ func TestRemotePrivatePostCommentCountIsCompleteScopedAndReadOnly(t *testing.T) 
 		{"other-device", func(m *privatecontentpb.FederatedPrivateResourceDelivery) {
 			m.TargetActorEnvelopes[0].GetEndpoint().DeviceId = "device-other"
 		}},
-		{"recovery-only", func(m *privatecontentpb.FederatedPrivateResourceDelivery) {
-			envelope := m.TargetActorEnvelopes[0]
-			envelope.Binding.RecipientKeyKind = securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY
-			envelope.Recipient = &securecontentpb.ViewerContentKeyEnvelope_RecoveryActor{RecoveryActor: m.TargetActor}
-		}},
 		{"ambiguous-envelope", func(m *privatecontentpb.FederatedPrivateResourceDelivery) {
 			second := proto.Clone(m.TargetActorEnvelopes[0]).(*securecontentpb.ViewerContentKeyEnvelope)
 			second.Binding.RecipientKeyId = "prekey-two"
@@ -412,6 +407,12 @@ func TestRemotePrivatePostCommentCountIsCompleteScopedAndReadOnly(t *testing.T) 
 		t.Fatal(err)
 	}
 	assertCount(104)
+	recoveryOnly := comment("recovery-only")
+	envelope := recoveryOnly.TargetActorEnvelopes[0]
+	envelope.Binding.RecipientKeyKind = securecontentpb.ContentPreKeyKind_CONTENT_PREKEY_KIND_ACTOR_RECOVERY
+	envelope.Recipient = &securecontentpb.ViewerContentKeyEnvelope_RecoveryActor{RecoveryActor: recoveryOnly.TargetActor}
+	applyRemotePrivateDelivery(t, database, store, recoveryOnly)
+	assertCount(105)
 	var after remotePrivateResourceModel
 	if err := database.Where("content_id = ?", "post-count").First(&after).Error; err != nil {
 		t.Fatal(err)

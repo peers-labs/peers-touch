@@ -403,6 +403,7 @@ func (s *PrivateContentService) enqueueFederatedPrivateComment(
 	proof *securecontentpb.ViewerContentCommitProof,
 	receiverVerifiedSenderKey *actormodel.VerifiedActorDeviceSigningKey,
 	committedAt time.Time,
+	authorFederationID string,
 ) error {
 	remote := make([]socialdomain.RecipientLocality, 0)
 	for _, locality := range snapshot.RecipientLocalities {
@@ -410,6 +411,20 @@ func (s *PrivateContentService) enqueueFederatedPrivateComment(
 			locality.HomeStationPeerID != s.localStationPeerID {
 			remote = append(remote, locality)
 		}
+	}
+	if s.localStationPeerID != "" && plan.AuthorHomeStationPeerID != s.localStationPeerID {
+		if authorFederationID == "" {
+			return socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentConflict,
+				"social.private_content.enqueue_federated_comment",
+				"author_federation_id",
+				"is missing from a remote author",
+			)
+		}
+		remote = append(remote, socialdomain.RecipientLocality{
+			ActorPTID: plan.AuthorPTID, HomeStationPeerID: plan.AuthorHomeStationPeerID,
+			FederationID: authorFederationID,
+		})
 	}
 	if len(remote) == 0 {
 		return nil
@@ -512,6 +527,10 @@ func (s *PrivateContentService) enqueueFederatedPrivateComment(
 				ViewerIsMember: true,
 			},
 			CommittedAt: timestamppb.New(committedAt),
+		}
+		if target.ActorPTID == plan.AuthorPTID {
+			payload.AudienceExplanation.ViewerIsAuthor = true
+			payload.AudienceExplanation.ViewerIsMember = false
 		}
 		payloadBytes, err := socialdomain.CanonicalProtoBytes(payload)
 		if err != nil {
@@ -1789,7 +1808,10 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 			"is blocked by receiver-local policy",
 		)
 	}
-	if audienceKind == actormodel.Audience_FRIENDS {
+	viewerIsAuthor := message.GetResourceKind() ==
+		privatecontentpb.FederatedPrivateResourceKind_FEDERATED_PRIVATE_RESOURCE_KIND_COMMENT &&
+		target.GetPtid() == resourceAuthor.GetPtid()
+	if audienceKind == actormodel.Audience_FRIENDS && !viewerIsAuthor {
 		friendSnapshot, friendErr := s.audiences.ResolveFriendsPostSnapshot(
 			ctx,
 			transaction,
@@ -1905,8 +1927,8 @@ func (s *PrivateContentService) validateFederatedPrivateResource(
 	explanation := message.GetAudienceExplanation()
 	if explanation == nil ||
 		explanation.GetKind() != audienceKind ||
-		explanation.GetViewerIsAuthor() ||
-		!explanation.GetViewerIsMember() {
+		explanation.GetViewerIsAuthor() != viewerIsAuthor ||
+		explanation.GetViewerIsMember() == viewerIsAuthor {
 		return socialdomain.NewPrivateContentError(
 			socialdomain.PrivateContentIntegrityFailed,
 			operation,
