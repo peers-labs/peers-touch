@@ -213,14 +213,15 @@ describe('session authentication convergence', () => {
   });
 
   it('does not fall back to unscoped rollback without a native activation', async () => {
+    const bindingError = new Error('station binding failed');
     mocks.accessSubmitLogin.mockResolvedValueOnce({
       ...authenticatedResponse,
       session_activation_id: undefined,
     });
-    mocks.stationBindingComplete.mockRejectedValueOnce(new Error('station binding failed'));
+    mocks.stationBindingComplete.mockRejectedValueOnce(bindingError);
     await expect(useSessionStore.getState().accessSubmitLogin(
       'attempt-1', loginGate, 'alice@p.t', TEST_PASSWORD,
-    )).rejects.toThrow('station binding failed');
+    )).rejects.toBe(bindingError);
     expect(mocks.authLogout).not.toHaveBeenCalled();
   });
 
