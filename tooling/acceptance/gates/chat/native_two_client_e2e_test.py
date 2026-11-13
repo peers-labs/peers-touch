@@ -1564,6 +1564,9 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         avatar = (
             root / "apps/desktop/src/components/common/SquareAvatar.tsx"
         ).read_text(encoding="utf-8")
+        avatar_assets = (
+            root / "apps/desktop/src/services/avatarAssets.ts"
+        ).read_text(encoding="utf-8")
         social_chat = (
             root / "apps/desktop/src/store/socialChat.ts"
         ).read_text(encoding="utf-8")
@@ -1656,7 +1659,8 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             "scrollIntoView(chatMessageTailScrollOptions())",
             message_area,
         )
-        self.assertIn("RETIRED_GENERATED_AVATAR_PREFIX", avatar)
+        self.assertIn("../../services/avatarAssets", avatar)
+        self.assertIn("RETIRED_GENERATED_AVATAR_PREFIX", avatar_assets)
         self.assertIn("inlineAvatarSource", avatar)
         self.assertNotIn("internal.example.invalid", actor_config)
         avatar_payloads = re.findall(
@@ -1664,7 +1668,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             actor_config,
             flags=re.MULTILINE,
         )
-        self.assertEqual(len(avatar_payloads), 3)
+        self.assertEqual(len(avatar_payloads), 4)
         for payload in avatar_payloads:
             svg = base64.b64decode(payload, validate=True).decode("utf-8")
             self.assertIn('<rect width="128" height="128" fill="', svg)
@@ -1674,7 +1678,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             actor_config,
             flags=re.MULTILINE,
         )
-        self.assertEqual(len(legacy_payloads), 3)
+        self.assertEqual(len(legacy_payloads), 4)
         for payload in legacy_payloads:
             svg = base64.b64decode(payload, validate=True).decode("utf-8")
             self.assertIn('rx="64"', svg)

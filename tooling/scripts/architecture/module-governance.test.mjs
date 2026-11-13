@@ -315,6 +315,7 @@ test('current repository satisfies the module registry', () => {
     'node-connectivity',
     'oauth-login-broker',
     'release-distribution',
+    'runtime-secrets',
     'search',
     'secure-content',
     'shared-schema',
@@ -324,6 +325,7 @@ test('current repository satisfies the module registry', () => {
   ]);
   assert.deepEqual(result.capabilityIds, [
     'acceptance.core.execution',
+    'acceptance.native.operator-observation',
     'agent.chat.minimum-usable',
     'agent.mcp.dual-runtime',
     'architecture.module.validate',
@@ -427,6 +429,11 @@ test('current shared client dependencies are capability-registered', () => {
         id: 'pnpm:@peers-touch/client-storage',
         capabilityId: 'client.storage.headless',
         reuseLayer: 'shared-ts-core',
+      },
+      {
+        id: 'pnpm:@peers-touch/ui',
+        capabilityId: 'client.ui.system',
+        reuseLayer: 'shared-ui-primitive',
       },
     ],
   );
