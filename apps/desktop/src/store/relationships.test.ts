@@ -263,4 +263,88 @@ describe('authoritative relationship commands', () => {
       expect(seen.mock.calls).toEqual([[{ targetActorPtid: 'ptid:bob', action: blocked ? 'block' : 'unblock' }]]);
     } finally { release(); }
   });
+
+  it.each([true, false])('retains a complete list before the delayed blocked=%s command response', async blocked => {
+    const before = status(!blocked, 10n);
+    api.status.mockResolvedValueOnce({ relationship: before });
+    let commit!: (value: ReturnType<typeof result>) => void;
+    const command = blocked ? api.block : api.unblock;
+    command.mockReturnValueOnce(new Promise(resolve => { commit = resolve; }));
+    const mutation = useRelationshipsStore.getState().setBlocked('ptid:bob', blocked);
+    await vi.waitFor(() => expect(command).toHaveBeenCalledTimes(1));
+    let finishRead!: (value: unknown) => void;
+    api.status.mockReturnValueOnce(new Promise(resolve => { finishRead = resolve; }));
+    const read = useRelationshipsStore.getState().loadRelationshipStatus('ptid:bob');
+    const stale = expect(read).rejects.toThrow('SOCIAL_RELATIONSHIP_READ_SUPERSEDED');
+    const seen = vi.fn();
+    const release = eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, seen);
+    try {
+      api.blocked.mockResolvedValueOnce({
+        items: blocked ? [{ actor: { ptid: 'ptid:bob' }, revision: 11n }] : [],
+        nextCursor: '', revision: blocked ? 11n : 0n,
+      });
+      await useRelationshipsStore.getState().loadBlockedActors();
+      finishRead({ relationship: before });
+      await stale;
+      expect(Boolean(useRelationshipsStore.getState().blockedActors['ptid:bob'])).toBe(blocked);
+      commit(result(blocked, 11n));
+      await mutation;
+      expect(useRelationshipsStore.getState().statuses['ptid:bob']).toMatchObject({
+        revision: 11n, blockedByViewer: blocked,
+      });
+      expect(seen.mock.calls).toEqual([[{ targetActorPtid: 'ptid:bob', action: blocked ? 'block' : 'unblock' }]]);
+    } finally { release(); }
+  });
+
+  it('retains removal fences without treating a page maximum as a global watermark', async () => {
+    api.blocked.mockResolvedValueOnce({
+      items: [{ actor: { ptid: 'ptid:bob' }, revision: 10n }], nextCursor: '', revision: 10n,
+    });
+    await useRelationshipsStore.getState().loadBlockedActors();
+    api.blocked.mockResolvedValueOnce({ items: [], nextCursor: '', revision: 0n });
+    await useRelationshipsStore.getState().loadBlockedActors();
+    api.blocked.mockResolvedValueOnce({
+      items: [{ actor: { ptid: 'ptid:bob' }, revision: 10n },
+        { actor: { ptid: 'ptid:carol' }, revision: 1n }],
+      nextCursor: '', revision: 10n,
+    });
+    await useRelationshipsStore.getState().loadBlockedActors();
+    expect(Object.keys(useRelationshipsStore.getState().blockedActors)).toEqual(['ptid:carol']);
+    api.status.mockResolvedValueOnce({ relationship: status(true, 10n) });
+    await expect(useRelationshipsStore.getState().loadRelationshipStatus('ptid:bob'))
+      .rejects.toThrow('SOCIAL_RELATIONSHIP_READ_SUPERSEDED');
+    api.status.mockResolvedValueOnce({ relationship: status(true, 12n) });
+    await useRelationshipsStore.getState().loadRelationshipStatus('ptid:bob');
+    expect(useRelationshipsStore.getState().blockedActors['ptid:bob'].revision).toBe(12n);
+  });
+
+  it('fences an unseen higher status revision across authoritative complete-list removal', async () => {
+    api.status.mockResolvedValueOnce({ relationship: status(true, 10n) });
+    await useRelationshipsStore.getState().loadRelationshipStatus('ptid:bob');
+    let finishRead!: (value: unknown) => void;
+    api.status.mockReturnValueOnce(new Promise(resolve => { finishRead = resolve; }));
+    const read = useRelationshipsStore.getState().loadRelationshipStatus('ptid:bob');
+    const stale = expect(read).rejects.toThrow('SOCIAL_RELATIONSHIP_READ_SUPERSEDED');
+    api.blocked.mockResolvedValueOnce({ items: [], nextCursor: '', revision: 0n });
+    await useRelationshipsStore.getState().loadBlockedActors();
+    finishRead({ relationship: status(true, 11n) });
+    await stale;
+    expect(useRelationshipsStore.getState().blockedActors).toEqual({});
+    expect(useRelationshipsStore.getState().statuses['ptid:bob']).toBeUndefined();
+    api.status.mockResolvedValueOnce({ relationship: status(false, 12n) });
+    await useRelationshipsStore.getState().loadRelationshipStatus('ptid:bob');
+    expect(useRelationshipsStore.getState().statuses['ptid:bob'].revision).toBe(12n);
+  });
+
+  it('allows a complete list to finish across overlapping unchanged status reconciliation', async () => {
+    await useRelationshipsStore.getState().loadRelationshipStatus('ptid:bob');
+    let finishList!: (value: unknown) => void;
+    api.blocked.mockReturnValueOnce(new Promise(resolve => { finishList = resolve; }));
+    const read = useRelationshipsStore.getState().loadBlockedActors(true);
+    await useRelationshipsStore.getState().reconcileRelationships();
+    finishList({ items: [{ actor: { ptid: 'ptid:carol' }, revision: 1n }], nextCursor: '', revision: 1n });
+    await read;
+    expect(Object.keys(useRelationshipsStore.getState().blockedActors)).toEqual(['ptid:carol']);
+    expect(useRelationshipsStore.getState().blockedActorsError).toBeNull();
+  });
 });

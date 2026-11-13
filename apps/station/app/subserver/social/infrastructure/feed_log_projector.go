@@ -65,6 +65,18 @@ func (p *FeedProjector) Apply(ctx context.Context, tx *gorm.DB, event *model.Fee
 		event.Statement.ActorPtid, event.Statement.ChainId).Take(&chain).Error; err != nil {
 		return err
 	}
+	var err error
+	if ctx.Value(feedProjectionLocksKey{}) == nil {
+		ctx, err = lockFeedProjectionParents(ctx, tx, []*model.FeedEvent{event},
+			chain.HomeStationPeerID, clause.Locking{Strength: "UPDATE"})
+		if err != nil {
+			return err
+		}
+	}
+	ctx, err = p.LockInteractions(ctx, tx, []*model.FeedEvent{event})
+	if err != nil {
+		return err
+	}
 	if mutation := payload.GetPost(); mutation != nil {
 		if err := p.applyPost(ctx, tx, &chain, event, mutation); err != nil {
 			return err
@@ -82,7 +94,7 @@ func (p *FeedProjector) Apply(ctx context.Context, tx *gorm.DB, event *model.Fee
 	if err := signedlog.Decode(chain.WriterGrant, receipt.WriterGrant); err != nil {
 		return err
 	}
-	_, err := p.StoreInteraction(ctx, tx, receipt, chain.HomeStationPeerID, chain.HomeStationPeerID != p.localStation)
+	_, err = p.StoreInteraction(ctx, tx, receipt, chain.HomeStationPeerID, chain.HomeStationPeerID != p.localStation)
 	return err
 }
 
@@ -94,10 +106,26 @@ func (p *FeedProjector) applyPost(ctx context.Context, tx *gorm.DB, chain *FeedC
 	}
 	when := time.UnixMilli(event.Statement.CreatedAtUnixMs).UTC()
 	key := FeedObjectRecord{HomeStation: chain.HomeStationPeerID, ObjectKind: "post", ObjectID: mutation.PostId}
+	locks, err := feedProjectionLocksFromContext(ctx, tx)
+	if err != nil {
+		return err
+	}
+	target := "oss://" + key.HomeStation + "/post/" + key.ObjectID
+	parent, included := locks.parents[target]
+	if !included {
+		return domain.ErrFeedInvalid
+	}
 	var object FeedObjectRecord
-	err = tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("home_station = ? AND object_kind = ? AND object_id = ?",
+	if parent != nil {
+		object = *parent
+	} else if locks.createdPosts[target] {
+		// New objects authored in this batch may be updated by later events,
+		// but they never become interaction parents in the frozen snapshot.
+		err = tx.WithContext(ctx).Where("home_station = ? AND object_kind = ? AND object_id = ?",
 			key.HomeStation, key.ObjectKind, key.ObjectID).Take(&object).Error
+	} else {
+		err = gorm.ErrRecordNotFound
+	}
 	kind := event.Statement.Kind
 	if kind == model.FeedEventKind_FEED_EVENT_KIND_POST_CREATED {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -174,7 +202,11 @@ func (p *FeedProjector) applyPost(ctx context.Context, tx *gorm.DB, chain *FeedC
 		if err := tx.Create(&object).Error; err != nil {
 			return err
 		}
-		return tx.Create(row).Error
+		if err := tx.Create(row).Error; err != nil {
+			return err
+		}
+		locks.createdPosts[target] = true
+		return nil
 	}
 	row.EditedAt = &when
 	result := tx.WithContext(ctx).Model(&db.SocialPublicPost{}).

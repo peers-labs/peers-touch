@@ -86,6 +86,12 @@ login:
   relationship status and blocked-list reads share Actor, Session epoch and Station reset fences.
   Confirmed block commands update the original projection and emit `relationship.changed`;
   periodic status readback emits the same invalidation after a dropped block event.
+  Status, command and complete blocked-list publication share the relationship Store's
+  per-target revision arbitration. Complete-list absence retains the known edge floor
+  and fences status requests begun before that list publication, including unseen
+  higher revisions. The list response revision is a page maximum, not a global
+  mutation clock. Unchanged status reconciliation must not supersede a concurrent
+  complete-list read; real membership changes and newer decisions retain that fence.
 - consume notification-derived social signals such as friend request and friend accepted notifications;
 - periodically reconcile friendship, profiles, presence, and notifications;
 - keep UI components as pure readers of the owning stores whenever possible.
@@ -160,6 +166,13 @@ Social profile invalidation.
   toggles a count optimistically. Unknown outcomes expose an explicit retry
   of the same durable command. Actor, renderer and Native-session replacement
   fence completion and clear these projections.
+  The existing private Moments Store projects per-kind recovery eligibility,
+  exact command ID, absolute backoff deadline and live flight. Its single
+  deadline wake-up refreshes painted availability without a UI policy timer.
+  Pending unknown outcomes and retained retry failures recover the same command;
+  terminal rejection has no retry action. Exact retry callers share their flight,
+  while a direct retry cannot overlap the original submission. Ballots remain
+  separate from post-reaction presentation and admission.
 - merge private Comment content generation and reaction revision independently,
   including replacement pages and Native snapshots; a delayed reaction updates
   only the currently retained target and cannot recreate a deleted row or restore

@@ -29,26 +29,32 @@ type FeedThreadRecord struct {
 
 func (FeedThreadRecord) TableName() string { return "social_feed_thread_entries" }
 
+// LockFeedThreadHead is also used by thread import, after its parent lock set.
+func LockFeedThreadHead(ctx context.Context, tx *gorm.DB, author string) error {
+	head := FeedThreadHead{AuthorPTID: author}
+	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&head).Error; err != nil {
+		return err
+	}
+	return tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("author_ptid = ?", author).Take(&head).Error
+}
+
 // Allocate under the author's thread-head lock. Cursor and receipt commit
 // together; SQL sequence allocation alone could expose an uncommitted hole.
 func indexThread(ctx context.Context, tx *gorm.DB, local, target string, row *FeedInteractionRecord) error {
-	home, id, err := domain.FeedTargetPost(target)
-	if err != nil || home != local {
-		return err
-	}
-	var post FeedObjectRecord
-	err = tx.WithContext(ctx).Where("home_station = ? AND object_kind = 'post' AND object_id = ?", home, id).Take(&post).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
-	} // worker retries when post arrives
+	locks, err := feedProjectionLocksFromContext(ctx, tx)
 	if err != nil {
 		return err
 	}
-	head := FeedThreadHead{AuthorPTID: post.ActorPTID}
-	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&head).Error; err != nil {
-		return err
+	post := locks.parents[target]
+	if post == nil {
+		return nil
 	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("author_ptid = ?", post.ActorPTID).Take(&head).Error; err != nil {
+	if post.HomeStation != local || locks.threadLocal != local {
+		return domain.ErrFeedInvalid
+	}
+	var head FeedThreadHead
+	if err := tx.WithContext(ctx).Where("author_ptid = ?", post.ActorPTID).Take(&head).Error; err != nil {
 		return err
 	}
 	var count int64

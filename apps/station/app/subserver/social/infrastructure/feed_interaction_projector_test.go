@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func interactionFixture(t *testing.T) (*FeedLogStore, *gorm.DB, *model.FeedBundle) {
@@ -250,5 +252,356 @@ func TestFeedInteractionDeferredCommentAndPortableReply(t *testing.T) {
 	var post db.SocialPublicPost
 	if err := database.First(&post, "id = ?", 901).Error; err != nil || post.CommentsCount != 2 {
 		t.Fatal("comment count not derived from projected objects", post, err)
+	}
+}
+
+func interactionBatch(t *testing.T, bundle *model.FeedBundle, targets ...string) *model.FeedBundle {
+	t.Helper()
+	batch := proto.Clone(bundle).(*model.FeedBundle)
+	batch.Events = nil
+	previous, err := signedlog.Hash(domain.FeedGenesisDomain, bundle.Genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, target := range targets {
+		receipt := makeInteraction(t, bundle, uint64(i+1), model.FeedEventKind_FEED_EVENT_KIND_REACTION_SET,
+			&model.FeedPayload{Mutation: &model.FeedPayload_Reaction{
+				Reaction: &model.FeedReactionMutation{TargetPostRef: target, ReactionKind: 1}}})
+		receipt.Event.Statement.PreviousHash = previous
+		signStoreEvent(t, receipt.Event)
+		previous, err = domain.FeedEventHash(receipt.Event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		batch.Events = append(batch.Events, receipt.Event)
+	}
+	return batch
+}
+
+func TestFeedAppendLocksWholeBatchBeforeReceiptAndThread(t *testing.T) {
+	for _, multiAuthor := range []bool{false, true} {
+		t.Run(map[bool]string{false: "same-author", true: "multiple-authors"}[multiAuthor], func(t *testing.T) {
+			store, database, bundle := interactionFixture(t)
+			secondAuthor := "ptid:test:alice"
+			if multiAuthor {
+				secondAuthor = "ptid:test:bob"
+			}
+			if err := database.Create(&FeedObjectRecord{HomeStation: "station-a", ObjectKind: "post",
+				ObjectID: "201", ActorPTID: secondAuthor, LocalID: 902, Sequence: 1}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := database.Create(&db.SocialPublicPost{ID: 902, AuthorID: 1}).Error; err != nil {
+				t.Fatal(err)
+			}
+			// Reverse both target/author order and repeat a parent. The lock
+			// set must still be complete, sorted and deduplicated.
+			batch := interactionBatch(t, bundle, "oss://station-a/post/201",
+				"oss://station-a/post/101", "oss://station-a/post/201")
+			var objects, posts []uint64
+			var authors []string
+			query := "test:feed-batch-locks"
+			if err := database.Callback().Query().After("gorm:query").Register(query, func(tx *gorm.DB) {
+				if _, locked := tx.Statement.Clauses["FOR"]; !locked || tx.Error != nil {
+					return
+				}
+				switch row := tx.Statement.Dest.(type) {
+				case *FeedObjectRecord:
+					objects = append(objects, row.LocalID)
+				case *db.SocialPublicPost:
+					posts = append(posts, row.ID)
+				case *FeedThreadHead:
+					authors = append(authors, row.AuthorPTID)
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = database.Callback().Query().Remove(query) })
+			create := "test:feed-batch-write-boundary"
+			receipts := 0
+			if err := database.Callback().Create().Before("gorm:create").Register(create, func(tx *gorm.DB) {
+				switch tx.Statement.Dest.(type) {
+				case *FeedThreadHead:
+					if !reflect.DeepEqual(objects, []uint64{901, 902}) || !reflect.DeepEqual(posts, []uint64{901, 902}) {
+						t.Errorf("thread lock before complete parent set: objects=%v posts=%v", objects, posts)
+					}
+				case *FeedInteractionRecord:
+					wantAuthors := []string{"ptid:test:alice"}
+					if multiAuthor {
+						wantAuthors = append(wantAuthors, "ptid:test:bob")
+					}
+					if !reflect.DeepEqual(authors, wantAuthors) {
+						t.Errorf("receipt before sorted thread-head set: got=%v want=%v", authors, wantAuthors)
+					}
+					receipts++
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = database.Callback().Create().Remove(create) })
+			projector := NewFeedProjector("station-a")
+			if err := store.Transaction(context.Background(), func(tx *gorm.DB) error {
+				_, _, err := store.AppendTx(context.Background(), tx, batch, "ptid:test:alice", "station-b",
+					bundle.Genesis.Statement.ActorIdentityPublicKey, projector.Apply, false)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if receipts != 3 {
+				t.Fatalf("regression did not exercise the append batch: %d receipts", receipts)
+			}
+		})
+	}
+}
+
+func TestFeedInteractionBatchKeepsAbsentParentSnapshot(t *testing.T) {
+	store, database, bundle := interactionFixture(t)
+	projector := NewFeedProjector("station-a")
+	batch := interactionBatch(t, bundle, "oss://station-a/post/101", "oss://station-a/post/201")
+	ctx := context.Background()
+	if err := store.Transaction(ctx, func(tx *gorm.DB) error {
+		bound, err := projector.LockInteractions(ctx, tx, batch.Events)
+		if err != nil {
+			return err
+		}
+		// Simulate the parent arriving after the transaction's lock snapshot.
+		if err := tx.Create(&FeedObjectRecord{HomeStation: "station-a", ObjectKind: "post",
+			ObjectID: "201", ActorPTID: "ptid:test:alice", LocalID: 902, Sequence: 1}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&db.SocialPublicPost{ID: 902, AuthorID: 1}).Error; err != nil {
+			return err
+		}
+		for _, event := range batch.Events {
+			if _, err := projector.StoreInteraction(bound, tx, &model.FeedInteraction{
+				Genesis: bundle.Genesis, WriterGrant: bundle.WriterGrant, Event: event}, "station-b", true); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var receipt FeedInteractionRecord
+	if err := database.Where("sequence = 2").Take(&receipt).Error; err != nil || receipt.Projected {
+		t.Fatalf("late parent was not deferred: %+v %v", receipt, err)
+	}
+	var head FeedThreadHead
+	if err := database.Take(&head).Error; err != nil || head.Cursor != 1 {
+		t.Fatalf("late parent advanced the thread: %+v %v", head, err)
+	}
+	event := batch.Events[1]
+	if err := store.Transaction(ctx, func(tx *gorm.DB) error {
+		_, err := projector.StoreInteraction(ctx, tx, &model.FeedInteraction{
+			Genesis: bundle.Genesis, WriterGrant: bundle.WriterGrant, Event: event}, "station-b", true)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Where("sequence = 2").Take(&receipt).Error; err != nil || !receipt.Projected {
+		t.Fatalf("next transaction did not project deferred receipt: %+v %v", receipt, err)
+	}
+}
+
+func TestFeedInteractionLockSnapshotRejectsDifferentTransaction(t *testing.T) {
+	store, database, bundle := interactionFixture(t)
+	projector := NewFeedProjector("station-a")
+	batch := interactionBatch(t, bundle, "oss://station-a/post/101")
+	if err := store.Transaction(context.Background(), func(tx *gorm.DB) error {
+		bound, err := projector.LockInteractions(context.Background(), tx, batch.Events)
+		if err != nil {
+			return err
+		}
+		_, err = feedProjectionLocksFromContext(bound, database)
+		if !errors.Is(err, domain.ErrFeedInvalid) {
+			t.Fatalf("lock snapshot escaped its SQL transaction: %v", err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFeedAppendNewParentStaysDeferredThroughRepeatedAuthoredUpdates(t *testing.T) {
+	store, database, bundle, root := feedStoreFixture(t)
+	if err := database.AutoMigrate(&db.Actor{}, &db.SocialPublicPost{}, &db.SocialReaction{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&db.Actor{ID: 1, PTID: "ptid:test:alice",
+		PreferredUsername: "alice", Email: "alice@example.test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	batch := proto.Clone(bundle).(*model.FeedBundle)
+	request, err := signedlog.Canonical(&model.CreatePostRequest{
+		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
+		Content:  &model.CreatePostRequest_Text{Text: &model.CreateTextPostRequest{Text: "signed text"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch.Events[0].Statement.Kind = model.FeedEventKind_FEED_EVENT_KIND_POST_CREATED
+	batch.Events[0].Payload, err = signedlog.Canonical(&model.FeedPayload{Mutation: &model.FeedPayload_Post{
+		Post: &model.FeedPostMutation{PostId: "101", CreateRequest: request},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(batch.Events[0].Payload)
+	batch.Events[0].Statement.PayloadHash = digest[:]
+	signStoreEvent(t, batch.Events[0])
+	target := "oss://station-a/post/101"
+	for sequence := uint64(2); sequence <= 3; sequence++ {
+		update := proto.Clone(batch.Events[0]).(*model.FeedEvent)
+		update.Statement.Sequence, update.Statement.Kind = sequence, model.FeedEventKind_FEED_EVENT_KIND_POST_UPDATED
+		update.Statement.CreatedAtUnixMs += int64(sequence)
+		var err error
+		update.Statement.PreviousHash, err = domain.FeedEventHash(batch.Events[len(batch.Events)-1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		signStoreEvent(t, update)
+		batch.Events = append(batch.Events, update)
+	}
+	reaction := makeInteraction(t, bundle, 4, model.FeedEventKind_FEED_EVENT_KIND_REACTION_SET,
+		&model.FeedPayload{Mutation: &model.FeedPayload_Reaction{
+			Reaction: &model.FeedReactionMutation{TargetPostRef: target, ReactionKind: 1}}})
+	reaction.Event.Statement.PreviousHash, _ = domain.FeedEventHash(batch.Events[2])
+	signStoreEvent(t, reaction.Event)
+	batch.Events = append(batch.Events, reaction.Event)
+	projector := NewFeedProjector("station-a")
+	ctx := context.Background()
+	if err := store.Transaction(ctx, func(tx *gorm.DB) error {
+		_, _, err := store.AppendTx(ctx, tx, batch, "ptid:test:alice", "station-a", root, projector.Apply, false)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var post db.SocialPublicPost
+	if err := database.Take(&post).Error; err != nil ||
+		post.UpdatedAt.UnixMilli() != batch.Events[2].Statement.CreatedAtUnixMs {
+		t.Fatalf("repeated authored updates were lost: %+v %v", post, err)
+	}
+	var row FeedInteractionRecord
+	if err := database.Take(&row).Error; err != nil || row.Projected {
+		t.Fatalf("same-batch parent joined the frozen interaction snapshot: %+v %v", row, err)
+	}
+	var heads int64
+	if err := database.Model(&FeedThreadHead{}).Count(&heads).Error; err != nil || heads != 0 {
+		t.Fatalf("deferred same-batch parent acquired a thread head: %d %v", heads, err)
+	}
+	if err := store.Transaction(ctx, func(tx *gorm.DB) error {
+		_, err := projector.StoreInteraction(ctx, tx, reaction, "station-a", true)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Take(&row).Error; err != nil || !row.Projected {
+		t.Fatalf("later transaction did not project the new parent receipt: %+v %v", row, err)
+	}
+}
+
+// SQLite tests above verify the production lock boundary, not SQL deadlocks.
+// This isolated PostgreSQL case checks an overlapping singleton transaction.
+func TestFeedInteractionBatchConcurrentSinglePostgres(t *testing.T) {
+	database, _ := openPrivateContentStorePostgres(t)
+	_, _, bundle, _ := feedStoreFixture(t)
+	store, err := NewFeedLogStore(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(&db.Actor{}, &db.SocialPublicPost{}, &db.SocialReaction{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&db.Actor{ID: 1, PTID: "ptid:test:alice",
+		PreferredUsername: "alice", Email: "alice@example.test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, object := range []FeedObjectRecord{
+		{HomeStation: "station-a", ObjectKind: "post", ObjectID: "101", ActorPTID: "ptid:test:alice", LocalID: 901, Sequence: 1},
+		{HomeStation: "station-a", ObjectKind: "post", ObjectID: "201", ActorPTID: "ptid:test:alice", LocalID: 902, Sequence: 1},
+	} {
+		if err := database.Create(&object).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := database.Create(&db.SocialPublicPost{ID: object.LocalID, AuthorID: 1}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	batch := interactionBatch(t, bundle, "oss://station-a/post/101", "oss://station-a/post/201")
+	single := makeInteraction(t, bundle, 9, model.FeedEventKind_FEED_EVENT_KIND_REACTION_SET,
+		&model.FeedPayload{Mutation: &model.FeedPayload_Reaction{
+			Reaction: &model.FeedReactionMutation{TargetPostRef: "oss://station-a/post/201", ReactionKind: 1}}})
+	firstProjected, resume := make(chan struct{}), make(chan struct{})
+	projector := NewFeedProjector("station-a")
+	projector.SetObserver(func(ctx context.Context, _ *gorm.DB, event *model.FeedEvent, _ uint64, _ string) error {
+		if event.Statement.Sequence != 1 {
+			return nil
+		}
+		close(firstProjected)
+		select {
+		case <-resume:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	batchDone := make(chan error, 1)
+	go func() {
+		batchDone <- store.Transaction(ctx, func(tx *gorm.DB) error {
+			_, _, err := store.AppendTx(ctx, tx, batch, "ptid:test:alice", "station-b",
+				bundle.Genesis.Statement.ActorIdentityPublicKey, projector.Apply, false)
+			return err
+		})
+	}()
+	select {
+	case <-firstProjected:
+	case err := <-batchDone:
+		t.Fatalf("batch did not reach first projection: %v", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	// NOWAIT proves the second parent is held at the first projection boundary.
+	// Without batch locking this succeeds, enabling the confirmed wait cycle.
+	probeErr := store.Transaction(ctx, func(tx *gorm.DB) error {
+		var post db.SocialPublicPost
+		return tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "NOWAIT"}).
+			Where("id = ?", 902).Take(&post).Error
+	})
+	singleDone := make(chan error, 1)
+	singleStarted := make(chan struct{})
+	go func() {
+		singleDone <- store.Transaction(ctx, func(tx *gorm.DB) error {
+			close(singleStarted)
+			_, err := NewFeedProjector("station-a").StoreInteraction(ctx, tx, single, "station-b", true)
+			return err
+		})
+	}()
+	select {
+	case <-singleStarted:
+	case <-ctx.Done():
+		cancel()
+		close(resume)
+		<-batchDone
+		<-singleDone
+		t.Fatal(ctx.Err())
+	}
+	close(resume)
+	if err := <-batchDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-singleDone; err != nil {
+		t.Fatal(err)
+	}
+	var lockError interface{ SQLState() string }
+	if !errors.As(probeErr, &lockError) || lockError.SQLState() != "55P03" {
+		t.Fatalf("second batch parent was not proven locked before first thread/receipt: %v", probeErr)
+	}
+	var receipts int64
+	if err := database.Model(&FeedInteractionRecord{}).Where("projected = ?", true).Count(&receipts).Error; err != nil || receipts != 3 {
+		t.Fatalf("concurrent receipts did not commit: %d %v", receipts, err)
 	}
 }

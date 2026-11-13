@@ -3,14 +3,14 @@ import { Button, MomentReactionBar } from '@peers-touch/ui';
 import { useTranslation } from 'react-i18next';
 import { ReactionKind, type ReactionSummary } from '../../../gen/proto/domain/social/post_pb';
 import { REACTION_PRESENTATIONS } from '../reactionCatalog';
-import type { PrivateReactionStatusProjection } from '../../../store/privateMoments';
+import type { PrivateReactionStatusProjection, PrivateReactionRecoveryProjection } from '../../../store/privateMoments';
 
 export interface SocialActionBarProps {
   postId: string; reactions?: ReactionSummary[]; commentCount?: number; commentsOpen: boolean;
-  reactionCommands?: readonly PrivateReactionStatusProjection[];
+  reactionCommands?: readonly (PrivateReactionStatusProjection & { recovery?: PrivateReactionRecoveryProjection })[];
   onReact?: (kind: ReactionKind, operationId: string) => void | Promise<void>;
   onUnreact?: (kind: ReactionKind | undefined, operationId: string) => void | Promise<void>;
-  onRetryReaction?: (kind: ReactionKind) => void | Promise<void>; onOpenComments: () => void;
+  onRetryReaction?: (kind: ReactionKind, commandId: string) => void | Promise<void>; onOpenComments: () => void;
 }
 /** Per-kind command execution adapter; the authoritative summary is never shadowed in UI. */
 export function SocialActionBar({ postId, reactions = [], commentCount = 0, commentsOpen,
@@ -51,9 +51,12 @@ export function SocialActionBar({ postId, reactions = [], commentCount = 0, comm
       const meta = REACTION_PRESENTATIONS.find(item => item.kind === command.kind);
       return <span role="status" key={command.kind}>
         {meta && `${meta.emoji} ${t(meta.label)} · `}{t(`moments.reaction.status.${command.state}`)}
-        {command.state === 'REACTION_REJECTED' && onRetryReaction && <Button
+        {command.recovery?.eligible && command.recovery.commandId && onRetryReaction && <Button
           actionId={`moment.reaction.retry.${postId}.${command.kind}`} emphasis="quiet" density="compact"
-          label={t('moments.reaction.retry')} onActivate={() => void onRetryReaction(command.kind)} />}
+          label={t('moments.reaction.retry')}
+          availability={command.recovery.ready ? undefined
+            : { kind: 'disabled', reason: t('moments.reaction.pending') }}
+          onActivate={() => void onRetryReaction(command.kind, command.recovery!.commandId!)} />}
       </span>;
     })} />;
 }

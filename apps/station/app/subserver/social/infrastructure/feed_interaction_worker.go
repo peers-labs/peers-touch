@@ -40,10 +40,25 @@ func (s *FeedLogStore) ProcessInteractions(ctx context.Context, projector *FeedP
 			if err != nil {
 				return err
 			}
-			// Match delivery's post -> receipt -> thread order. A busy or
+			// Match delivery's parents -> thread heads -> receipt order. A busy or
 			// absent parent leaves the receipt for the next bounded pass.
-			locked, err := lockFeedInteractionPost(ctx, tx.DB(), target, true)
-			if err != nil || !locked {
+			bound, err := lockFeedProjectionParents(FeedTransactionContext(ctx, tx), tx.DB(),
+				[]*model.FeedEvent{candidate.Event}, "", clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+			if errors.Is(err, domain.ErrFeedGap) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			locks, err := feedProjectionLocksFromContext(bound, tx.DB())
+			if err != nil {
+				return err
+			}
+			if locks.parents[target] == nil {
+				return nil
+			}
+			bound, err = projector.LockInteractions(bound, tx.DB(), []*model.FeedEvent{candidate.Event})
+			if err != nil {
 				return err
 			}
 			var row FeedInteractionRecord
@@ -57,20 +72,24 @@ func (s *FeedLogStore) ProcessInteractions(ctx context.Context, projector *FeedP
 			if err != nil {
 				return err
 			}
+			if !bytes.Equal(row.EventHash, selected.EventHash) || !bytes.Equal(row.Interaction, selected.Interaction) ||
+				row.TargetStation != selected.TargetStation || row.HomeStation != selected.HomeStation {
+				return domain.ErrFeedInvalid
+			}
 			receipt, err := verifiedReceiptRow(&row)
 			if err != nil {
 				return err
 			}
-			if err := verify(ctx, tx, receipt, row.HomeStation); err != nil {
+			if err := verify(bound, tx, receipt, row.HomeStation); err != nil {
 				return err
 			}
 			if !row.Forwarded {
-				if err := send(ctx, tx, row.TargetStation, receipt); err != nil {
+				if err := send(bound, tx, row.TargetStation, receipt); err != nil {
 					return err
 				}
 			}
 			if !row.Projected {
-				if _, err := projector.StoreInteraction(FeedTransactionContext(ctx, tx), tx.DB(), receipt, row.HomeStation, true); err != nil {
+				if _, err := projector.StoreInteraction(bound, tx.DB(), receipt, row.HomeStation, true); err != nil {
 					return err
 				}
 				if err := tx.DB().Where("actor_ptid = ? AND chain_id = ? AND sequence = ?",
@@ -86,10 +105,10 @@ func (s *FeedLogStore) ProcessInteractions(ctx context.Context, projector *FeedP
 				if err != nil {
 					return err
 				}
-				if err := verify(FeedTransactionContext(ctx, tx), tx, receipt, row.HomeStation); err != nil {
+				if err := verify(bound, tx, receipt, row.HomeStation); err != nil {
 					return err
 				}
-				if err := returnAdmission(ctx, tx, row.HomeStation, receipt); err != nil {
+				if err := returnAdmission(bound, tx, row.HomeStation, receipt); err != nil {
 					return err
 				}
 			}

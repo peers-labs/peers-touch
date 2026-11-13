@@ -326,6 +326,10 @@ func (s *FeedLogStore) AppendTx(
 		pending = append(pending, event)
 		head, duplicate = next, false
 	}
+	ctx, err = lockFeedProjectionParents(ctx, tx, pending, homeStation, clause.Locking{Strength: "UPDATE"})
+	if err != nil {
+		return nil, false, err
+	}
 	callbackOwner, _ := FeedTransactionFromContext(ctx).(*feedTransaction)
 	callbackCount := 0
 	if callbackOwner != nil {

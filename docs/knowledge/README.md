@@ -193,6 +193,7 @@ Pick one based on intent:
 
 - [`pitfalls/private-endpoint-account-hint-equality.md`](pitfalls/private-endpoint-account-hint-equality.md) — verified private endpoints compare actor/device identity without treating account routing hints as authorization.
 - [`pitfalls/feed-derived-counts-must-preserve-authored-time.md`](pitfalls/feed-derived-counts-must-preserve-authored-time.md) — derived counts and authored edits must preserve signed post timestamps.
+- [`pitfalls/social-publication-and-retry-ownership.md`](pitfalls/social-publication-and-retry-ownership.md) — relationship readback and exact reaction retry share their original revision and command owners.
 - [`pitfalls/agent-user-message-identity-placeholder.md`](pitfalls/agent-user-message-identity-placeholder.md) — Agent user messages project the authenticated session actor through the shared avatar path.
 - [`pitfalls/c1-tombstone-only-broadcast.md`](pitfalls/c1-tombstone-only-broadcast.md) — first cut of Tier C1 fired invalidation only on tombstone, leaving BY_HANDLE/INDEXED transitions and profile updates on the slow path.
 - [`pitfalls/republisher-broadcast-spam.md`](pitfalls/republisher-broadcast-spam.md) — naive "broadcast on every PublishVisibility success" turns periodic republisher into a relay traffic generator.

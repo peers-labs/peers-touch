@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strconv"
 	"time"
 
@@ -84,12 +85,17 @@ func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
 	if knownErr != nil && !errors.Is(knownErr, gorm.ErrRecordNotFound) {
 		return false, knownErr
 	}
-	// Admission, thread indexing and projection share this parent lock order.
-	// Locking only during ballot admission would invert the ordinary receipt's
-	// thread-head -> post order and deadlock concurrent interactions.
-	parentLocked, err := lockFeedInteractionPost(ctx, tx, target, false)
+	ctx, err = p.LockInteractions(ctx, tx, []*model.FeedEvent{event})
 	if err != nil {
 		return false, err
+	}
+	locks, err := feedProjectionLocksFromContext(ctx, tx)
+	if err != nil {
+		return false, err
+	}
+	parent, included := locks.parents[target]
+	if !included {
+		return false, domain.ErrFeedInvalid
 	}
 	row := FeedInteractionRecord{ActorPTID: s.ActorPtid, ChainID: s.ChainId,
 		Sequence: s.Sequence, EventHash: hash, Interaction: wire,
@@ -108,7 +114,7 @@ func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
 			return false, domain.ErrFeedFork
 		}
 	}
-	if !parentLocked {
+	if parent == nil {
 		// The parent may arrive after the initial lookup. Defer this whole
 		// projection instead of acquiring it after receipt/thread locks.
 		return duplicate, nil
@@ -188,32 +194,135 @@ func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
 	return duplicate, tx.Model(&row).Update("projected", true).Error
 }
 
-func lockFeedInteractionPost(ctx context.Context, tx *gorm.DB, target string, skipLocked bool) (bool, error) {
-	station, objectID, err := domain.FeedTargetPost(target)
+type feedProjectionLocksKey struct{}
+
+// This snapshot belongs to one SQL transaction, not to the shared projector.
+// Missing parents cannot join the lock set after receipt/thread locks are held.
+type feedProjectionLocks struct {
+	connection   gorm.ConnPool
+	parents      map[string]*FeedObjectRecord
+	interactions map[string]bool
+	createdPosts map[string]bool
+	threadLocal  string
+}
+
+func feedProjectionLocksFromContext(ctx context.Context, tx *gorm.DB) (*feedProjectionLocks, error) {
+	locks, _ := ctx.Value(feedProjectionLocksKey{}).(*feedProjectionLocks)
+	if tx == nil || locks == nil || locks.connection != tx.Statement.ConnPool {
+		return nil, domain.ErrFeedInvalid
+	}
+	return locks, nil
+}
+
+// LockInteractions freezes the entire receipt batch before its first write.
+// AppendTx supplies the larger parent set, including authored post mutations.
+func (p *FeedProjector) LockInteractions(ctx context.Context, tx *gorm.DB, events []*model.FeedEvent) (context.Context, error) {
+	if ctx.Value(feedProjectionLocksKey{}) == nil {
+		var err error
+		ctx, err = lockFeedProjectionParents(ctx, tx, events, "", clause.Locking{Strength: "UPDATE"})
+		if err != nil {
+			return nil, err
+		}
+	}
+	locks, err := feedProjectionLocksFromContext(ctx, tx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	var object FeedObjectRecord
-	err = tx.WithContext(ctx).Where("home_station = ? AND object_kind = 'post' AND object_id = ?",
-		station, objectID).Take(&object).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Preserve the durable deferred receipt until its parent arrives.
-		return false, nil
+	if locks.threadLocal != "" {
+		if locks.threadLocal != p.localStation {
+			return nil, domain.ErrFeedInvalid
+		}
+		return ctx, nil
 	}
-	if err != nil {
-		return false, err
+	authors := make(map[string]bool)
+	for target := range locks.interactions {
+		if parent := locks.parents[target]; parent != nil && parent.HomeStation == p.localStation {
+			authors[parent.ActorPTID] = true
+		}
 	}
-	lock := clause.Locking{Strength: "UPDATE"}
-	if skipLocked {
-		lock.Options = "SKIP LOCKED"
+	ordered := make([]string, 0, len(authors))
+	for author := range authors {
+		ordered = append(ordered, author)
 	}
-	var post db.SocialPublicPost
-	err = tx.WithContext(ctx).Clauses(lock).
-		Where("id = ?", object.LocalID).Take(&post).Error
-	if skipLocked && errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, nil
+	sort.Strings(ordered)
+	for _, author := range ordered {
+		if err := LockFeedThreadHead(ctx, tx, author); err != nil {
+			return nil, err
+		}
 	}
-	return err == nil, err
+	locks.threadLocal = p.localStation
+	return ctx, nil
+}
+
+func lockFeedProjectionParents(ctx context.Context, tx *gorm.DB, events []*model.FeedEvent,
+	home string, lock clause.Locking) (context.Context, error) {
+	if tx == nil || ctx.Value(feedProjectionLocksKey{}) != nil {
+		return nil, domain.ErrFeedInvalid
+	}
+	locks := &feedProjectionLocks{connection: tx.Statement.ConnPool,
+		parents: make(map[string]*FeedObjectRecord), interactions: make(map[string]bool),
+		createdPosts: make(map[string]bool)}
+	for _, event := range events {
+		if event == nil || event.Statement == nil {
+			return nil, domain.ErrFeedInvalid
+		}
+		payload := &model.FeedPayload{}
+		if err := signedlog.Decode(event.Payload, payload); err != nil {
+			return nil, err
+		}
+		var target string
+		if mutation := payload.GetPost(); mutation != nil {
+			if home == "" {
+				return nil, domain.ErrFeedInvalid
+			}
+			target = "oss://" + home + "/post/" + mutation.PostId
+		} else {
+			var err error
+			target, err = domain.FeedInteractionTarget(payload)
+			if err != nil {
+				return nil, err
+			}
+			locks.interactions[target] = true
+		}
+		locks.parents[target] = nil
+	}
+	targets := make([]string, 0, len(locks.parents))
+	for target := range locks.parents {
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	// Object locks precede post locks, including in the authored-post path.
+	// Otherwise a post edit could hold the object while waiting for its post.
+	posts := make([]*FeedObjectRecord, 0, len(targets))
+	for _, target := range targets {
+		station, objectID, err := domain.FeedTargetPost(target)
+		if err != nil {
+			return nil, err
+		}
+		var object FeedObjectRecord
+		err = tx.WithContext(ctx).Clauses(lock).Where(
+			"home_station = ? AND object_kind = 'post' AND object_id = ?", station, objectID).Take(&object).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		locks.parents[target] = &object
+		posts = append(posts, &object)
+	}
+	sort.Slice(posts, func(i, j int) bool { return posts[i].LocalID < posts[j].LocalID })
+	for _, object := range posts {
+		var post db.SocialPublicPost
+		err := tx.WithContext(ctx).Clauses(lock).Where("id = ?", object.LocalID).Take(&post).Error
+		if lock.Options == "SKIP LOCKED" && errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrFeedGap
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return context.WithValue(ctx, feedProjectionLocksKey{}, locks), nil
 }
 
 func (p *FeedProjector) projectInteraction(ctx context.Context, tx *gorm.DB,
@@ -223,22 +332,16 @@ func (p *FeedProjector) projectInteraction(ctx context.Context, tx *gorm.DB,
 	if err != nil {
 		return err
 	}
-	station, objectID, err := domain.FeedTargetPost(target)
+	locks, err := feedProjectionLocksFromContext(ctx, tx)
 	if err != nil {
 		return err
 	}
-	var object FeedObjectRecord
-	err = tx.WithContext(ctx).Where("home_station = ? AND object_kind = 'post' AND object_id = ?",
-		station, objectID).Take(&object).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	object := locks.parents[target]
+	if object == nil {
 		return domain.ErrFeedGap
 	}
-	if err != nil {
-		return err
-	}
 	var post db.SocialPublicPost
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ?", object.LocalID).Take(&post).Error; err != nil {
+	if err := tx.Where("id = ?", object.LocalID).Take(&post).Error; err != nil {
 		return err
 	}
 	if payload.GetPollBallot() != nil {

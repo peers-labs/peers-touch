@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -356,5 +357,84 @@ func TestFeedExplicitReadRetainsBoundedPrefixAndRechecksExposure(t *testing.T) {
 				t.Fatalf("offline foreground read downgraded to cached success: %v %v", response, err)
 			}
 		})
+	}
+}
+
+func TestFeedThreadImportLocksAllParentsBeforeReceipt(t *testing.T) {
+	s, database, identity, request := feedServiceFixture(t)
+	ctx := context.Background()
+	s.localStation = "station-b"
+	s.SetProjector(infrastructure.NewFeedProjector("station-b"))
+	if err := database.AutoMigrate(&db.Actor{}, &db.SocialPublicPost{}, &db.SocialReaction{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create(&db.Actor{ID: 1, PTID: identity.key.ActorPtid,
+		PreferredUsername: "alice", Email: "alice@example.test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := &model.ReadFeedResponse{ThreadCursor: 2}
+	for index, objectID := range []string{"201", "101"} {
+		postID := uint64(902 - index)
+		if err := database.Create(&infrastructure.FeedObjectRecord{HomeStation: "station-a",
+			ObjectKind: "post", ObjectID: objectID, ActorPTID: identity.key.ActorPtid, LocalID: postID, Sequence: 1}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := database.Create(&db.SocialPublicPost{ID: postID, AuthorID: 1}).Error; err != nil {
+			t.Fatal(err)
+		}
+		event := proto.Clone(request.Bundle.Events[0]).(*model.FeedEvent)
+		event.Statement.Sequence, event.Statement.Kind = uint64(index+1), model.FeedEventKind_FEED_EVENT_KIND_REACTION_SET
+		var err error
+		event.Payload, err = signedlog.Canonical(&model.FeedPayload{Mutation: &model.FeedPayload_Reaction{
+			Reaction: &model.FeedReactionMutation{TargetPostRef: "oss://station-a/post/" + objectID, ReactionKind: 1}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hash := sha256.Sum256(event.Payload)
+		event.Statement.PayloadHash = hash[:]
+		wire, err := signedlog.SigningBytes(domain.FeedEventDomain, event.Statement)
+		if err != nil {
+			t.Fatal(err)
+		}
+		event.DeviceSignature = ed25519.Sign(ed25519.NewKeyFromSeed(bytes.Repeat([]byte{2}, 32)), wire)
+		response.ThreadEntries = append(response.ThreadEntries, &model.FeedThreadEntry{
+			Cursor: uint64(index + 1), InteractionHomeStation: "station-a",
+			Receipt: &model.FeedInteraction{Genesis: request.Bundle.Genesis, WriterGrant: request.Bundle.WriterGrant, Event: event},
+		})
+	}
+	var posts []uint64
+	headLocked, receipts := false, 0
+	query := "test:feed-import-locks"
+	if err := database.Callback().Query().After("gorm:query").Register(query, func(tx *gorm.DB) {
+		if _, locked := tx.Statement.Clauses["FOR"]; !locked || tx.Error != nil {
+			return
+		}
+		switch row := tx.Statement.Dest.(type) {
+		case *db.SocialPublicPost:
+			posts = append(posts, row.ID)
+		case *infrastructure.FeedThreadHead:
+			headLocked = true
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Callback().Query().Remove(query) })
+	create := "test:feed-import-write-boundary"
+	if err := database.Callback().Create().Before("gorm:create").Register(create, func(tx *gorm.DB) {
+		if _, receipt := tx.Statement.Dest.(*infrastructure.FeedInteractionRecord); receipt {
+			if len(posts) != 2 || posts[0] != 901 || posts[1] != 902 || !headLocked {
+				t.Errorf("import receipt preceded complete parent/head locks: posts=%v head=%v", posts, headLocked)
+			}
+			receipts++
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Callback().Create().Remove(create) })
+	if err := s.importThread(ctx, identity.key.ActorPtid, "station-a", 0, response, nil); err != nil {
+		t.Fatal(err)
+	}
+	if receipts != 2 {
+		t.Fatalf("regression did not exercise the full import: %d receipts", receipts)
 	}
 }

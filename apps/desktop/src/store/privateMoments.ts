@@ -44,11 +44,21 @@ export interface PrivateReactionStatusProjection
   commandId?: string;
 }
 
+export interface PrivateReactionRecoveryProjection {
+  commandId?: string;
+  eligible: boolean;
+  ready: boolean;
+  live: boolean;
+  retryNotBeforeUnixMs?: number;
+}
+
 interface PrivateMomentsState {
   platform: PrivateMomentsPlatform;
   scope: PrivateMomentScope;
   postsById: Record<string, PrivateMomentProjection>;
   reactionCommands: Record<string, PrivateReactionStatusProjection>;
+  reactionLiveFlights: Record<string, boolean>;
+  reactionRecoveryEpoch: number;
   publish: PrivatePublishProjection;
   reconciling: boolean;
 
@@ -84,7 +94,7 @@ interface PrivateMomentsState {
     commentId?: string,
   ) => Promise<PrivateReactionMutationResult>;
   votePoll: (postId: string, options: readonly number[]) => Promise<PrivateReactionMutationResult>;
-  retryReaction: (postId: string, commentId?: string, kind?: ReactionKind) => Promise<PrivateReactionMutationResult>;
+  retryReaction: (postId: string, commentId?: string, kind?: ReactionKind, commandId?: string) => Promise<PrivateReactionMutationResult>;
   revokeMoment: (
     postId: string,
     reason: PrivateResourceRevocationReason,
@@ -106,11 +116,28 @@ const initialData = () => ({
   scope: emptyScope(),
   postsById: {} as Record<string, PrivateMomentProjection>,
   reactionCommands: {} as Record<string, PrivateReactionStatusProjection>,
+  reactionLiveFlights: {} as Record<string, boolean>,
+  reactionRecoveryEpoch: 0,
   publish: { state: 'IDLE' } as PrivatePublishProjection,
   reconciling: false,
 });
 
 let publishOperationSequence = 0;
+
+export function projectPrivateReactionRecovery(
+  state: Pick<PrivateMomentsState, 'scope' | 'platform' | 'postsById' | 'reactionLiveFlights'>,
+  command: PrivateReactionStatusProjection,
+): PrivateReactionRecoveryProjection {
+  const live = Boolean(state.reactionLiveFlights[privateReactionTargetKey(command.postId, command.commentId, command.kind)]);
+  const eligible = Boolean(state.scope.actorPtid && state.platform === 'native' && command.commandId
+    && (command.state === 'REACTION_PENDING' || command.state === 'REACTION_RETRYING')
+    && state.postsById[command.postId]?.state === 'CONTENT_READY');
+  return {
+    commandId: command.commandId, eligible, live,
+    retryNotBeforeUnixMs: command.retryNotBeforeUnixMs,
+    ready: eligible && !live && (command.retryNotBeforeUnixMs ?? 0) <= Date.now(),
+  };
+}
 
 function compareGeneration(left: string, right: string): number {
   try {
@@ -429,14 +456,37 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
     const reactionMutationVersionByTarget = new Map<string, number>();
     const reactionFlights = new Map<string, {
       operation: PrivateReactionCommandProjection['operation'];
+      commandId?: string;
       options?: readonly number[];
       completion: Promise<PrivateReactionMutationResult>;
     }>();
     const revocationReasonByPost =
       new Map<string, PrivateResourceRevocationReason>();
+    let reactionRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleReactionRecovery = (): void => {
+      clearTimeout(reactionRecoveryTimer);
+      reactionRecoveryTimer = undefined;
+      const state = get();
+      const now = Date.now();
+      const deadlines = Object.values(state.reactionCommands).flatMap(command => {
+        const recovery = projectPrivateReactionRecovery(state, command);
+        return recovery.eligible && !recovery.live && recovery.retryNotBeforeUnixMs !== undefined
+          && recovery.retryNotBeforeUnixMs > now ? [recovery.retryNotBeforeUnixMs] : [];
+      });
+      if (!deadlines.length) return;
+      const scope = state.scope;
+      // One store-owned wake-up updates all due kinds; UI never guesses policy.
+      reactionRecoveryTimer = setTimeout(() => {
+        reactionRecoveryTimer = undefined;
+        if (get().scope !== scope) return;
+        set(current => ({ reactionRecoveryEpoch: current.reactionRecoveryEpoch + 1 }));
+        scheduleReactionRecovery();
+      }, Math.min(Math.min(...deadlines) - now, 2_147_483_647));
+    };
     const markReactionMutation = (key: string): void => {
       reactionMutationVersion += 1;
       reactionMutationVersionByTarget.set(key, reactionMutationVersion);
+      scheduleReactionRecovery();
     };
     const applySnapshot = (
       snapshot: PrivateMomentsNativeSnapshot,
@@ -499,8 +549,10 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           },
           postsById,
           reactionCommands,
+          ...(advancedGeneration ? { reactionLiveFlights: {} } : {}),
         };
       });
+      scheduleReactionRecovery();
       return true;
     };
 
@@ -523,6 +575,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           },
         };
       });
+      scheduleReactionRecovery();
       return true;
     };
 
@@ -575,10 +628,11 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       ));
     };
 
-    const retryReaction = async (
+    const runRetryReaction = async (
       postId: string,
       commentId = '',
       kind: ReactionKind = ReactionKind.REACTION_LIKE,
+      commandId?: string,
     ): Promise<PrivateReactionMutationResult> => {
       const scope = get().scope;
       const actorPtid = scope.actorPtid;
@@ -588,7 +642,8 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         !actorPtid
         || get().platform !== 'native'
         || !pending?.commandId
-        || pending.state === 'REACTION_REJECTED'
+        || (commandId !== undefined && pending.commandId !== commandId)
+        || (pending.state !== 'REACTION_PENDING' && pending.state !== 'REACTION_RETRYING')
       ) {
         throw new PrivateMomentsNativeError({
           code: 'REACTION_RETRY_UNAVAILABLE',
@@ -629,7 +684,10 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         }
         if (result.command.postId !== postId || result.command.commentId !== commentId
           || result.command.kind !== kind || result.command.operation !== pending.operation
-          || result.command.commandId !== pending.commandId) {
+          || result.command.commandId !== pending.commandId
+          || (pending.operation === 'VOTE_POLL'
+            && (JSON.stringify(result.command.selectedOpaqueOptionIds) !== JSON.stringify(pending.selectedOpaqueOptionIds)
+              || (result.command.state === 'REACTION_COMMITTED' && !result.poll)))) {
           throw new PrivateMomentsNativeError({
             code: 'PRIVATE_PROJECTION_INVALID', state: 'REACTION_PENDING',
           });
@@ -639,19 +697,22 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       } catch (error) {
         if (isCurrentScope(get().scope, actorPtid, scope.rendererGeneration)
           && get().scope.nativeSessionGeneration === scope.nativeSessionGeneration) {
+          const retryAfterSeconds = error instanceof PrivateMomentsNativeError
+            ? error.retryAfterSeconds : undefined;
           set((state) => ({
             reactionCommands: {
               ...state.reactionCommands,
               [key]: {
                 ...pending,
-                state: error instanceof PrivateMomentsNativeError
-                  && (error.state === 'REACTION_PENDING'
-                    || error.state === 'REACTION_RETRYING')
-                  ? error.state
-                  : 'REACTION_REJECTED',
+                state: !(error instanceof PrivateMomentsNativeError) ? 'REACTION_PENDING'
+                  : error.state === 'REACTION_PENDING' || error.state === 'REACTION_RETRYING'
+                  ? error.state : error.retryable ? 'REACTION_RETRYING' : 'REACTION_REJECTED',
                 errorCode: error instanceof PrivateMomentsNativeError
                   ? error.code
                   : 'REACTION_NATIVE_COMMAND_FAILED',
+                retryAfterSeconds: retryAfterSeconds ?? pending.retryAfterSeconds,
+                retryNotBeforeUnixMs: retryAfterSeconds === undefined ? pending.retryNotBeforeUnixMs
+                  : Math.max(pending.retryNotBeforeUnixMs ?? 0, Date.now() + retryAfterSeconds * 1_000),
               },
             },
           }));
@@ -706,7 +767,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
             retryAfterSeconds: existing.retryAfterSeconds,
           });
         }
-        return retryReaction(postId, commentId, kind);
+        return runRetryReaction(postId, commentId, kind);
       }
       const pending: PrivateReactionStatusProjection = {
         postId,
@@ -782,7 +843,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
             && durable.operation === operation
             && (operation !== 'VOTE_POLL' || JSON.stringify(durable.selectedOpaqueOptionIds) === JSON.stringify(selectedOpaqueOptionIds))
           ) {
-            return retryReaction(postId, commentId, kind);
+            return runRetryReaction(postId, commentId, kind);
           }
         }
         if (isCurrentScope(get().scope, actorPtid, scope.rendererGeneration)
@@ -806,33 +867,62 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       }
     };
 
-    const setReaction = (
-      postId: string, kind: ReactionKind, operation: PrivateReactionCommandProjection['operation'], commentId = '',
-      options?: readonly number[],
+    const startReactionFlight = (
+      key: string, operation: PrivateReactionCommandProjection['operation'],
+      run: () => Promise<PrivateReactionMutationResult>, options?: readonly number[], commandId?: string,
     ): Promise<PrivateReactionMutationResult> => {
       const scope = get().scope;
-      const key = privateReactionTargetKey(postId, commentId, kind);
-      const existing = reactionFlights.get(key);
-      if (existing) {
-        return existing.operation === operation && JSON.stringify(existing.options) === JSON.stringify(options)
-          ? existing.completion : Promise.reject(
-          new PrivateMomentsNativeError({ code: 'REACTION_COMMAND_PENDING', state: 'REACTION_PENDING' }),
-        );
-      }
       // Defer execution so subscribers cannot re-enter before the flight is fenced.
       const completion = Promise.resolve().then(() => {
         if (!scope.actorPtid || !isCurrentScope(get().scope, scope.actorPtid, scope.rendererGeneration)
           || get().scope.nativeSessionGeneration !== scope.nativeSessionGeneration) {
           throw new PrivateMomentsNativeError({ code: 'AUTHENTICATION_REQUIRED', state: 'REACTION_REJECTED' });
         }
-        return runReaction(postId, kind, operation, commentId, options);
+        return run();
       });
-      const flight = { operation, completion, options: options ? [...options] : undefined };
+      const flight = { operation, completion, options: options ? [...options] : undefined, commandId };
       reactionFlights.set(key, flight);
+      set(state => ({ reactionLiveFlights: { ...state.reactionLiveFlights, [key]: true } }));
       void completion.finally(() => {
-        if (reactionFlights.get(key) === flight) reactionFlights.delete(key);
+        if (reactionFlights.get(key) === flight) {
+          reactionFlights.delete(key);
+          set(state => ({ reactionLiveFlights: Object.fromEntries(
+            Object.entries(state.reactionLiveFlights).filter(([target]) => target !== key),
+          ) }));
+          scheduleReactionRecovery();
+        }
       }).catch(() => {});
       return completion;
+    };
+
+    const retryReaction = (
+      postId: string, commentId = '', kind: ReactionKind = ReactionKind.REACTION_LIKE, commandId?: string,
+    ): Promise<PrivateReactionMutationResult> => {
+      const key = privateReactionTargetKey(postId, commentId, kind);
+      const pending = get().reactionCommands[key];
+      const id = commandId ?? pending?.commandId;
+      if (!pending || !id || pending.commandId !== id
+        || !projectPrivateReactionRecovery(get(), pending).eligible) {
+        return Promise.reject(new PrivateMomentsNativeError({ code: 'REACTION_RETRY_UNAVAILABLE', state: 'REACTION_REJECTED' }));
+      }
+      const existing = reactionFlights.get(key);
+      if (existing) return existing.commandId === id ? existing.completion : Promise.reject(
+        new PrivateMomentsNativeError({ code: 'REACTION_COMMAND_PENDING', state: pending.state }),
+      );
+      return startReactionFlight(key, pending.operation, () => runRetryReaction(postId, commentId, kind, id), undefined, id);
+    };
+
+    const setReaction = (
+      postId: string, kind: ReactionKind, operation: PrivateReactionCommandProjection['operation'], commentId = '',
+      options?: readonly number[],
+    ): Promise<PrivateReactionMutationResult> => {
+      const key = privateReactionTargetKey(postId, commentId, kind);
+      const existing = reactionFlights.get(key);
+      if (existing) return existing.operation === operation && JSON.stringify(existing.options) === JSON.stringify(options)
+        ? existing.completion : Promise.reject(
+          new PrivateMomentsNativeError({ code: 'REACTION_COMMAND_PENDING', state: 'REACTION_PENDING' }),
+        );
+      return startReactionFlight(key, operation, () => runReaction(postId, kind, operation, commentId, options), options);
     };
 
     return {
@@ -853,6 +943,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
             nativeSessionGeneration: null,
           },
         });
+        scheduleReactionRecovery();
       },
 
       // Projection-only reset. It MUST NOT tear down the native Secure Content
@@ -872,6 +963,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           platform: resolvePrivateMomentsPlatform(),
           scope: emptyScope(rendererGeneration),
         });
+        scheduleReactionRecovery();
       },
 
       teardownNativeActor: async (actorPtid, rendererGeneration) => {
@@ -1371,6 +1463,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           );
           return { postsById, reactionCommands };
         });
+        scheduleReactionRecovery();
       },
 
       clearPublishState: () => {
@@ -1385,6 +1478,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         reactionFlights.clear();
         revocationReasonByPost.clear();
         set(initialData());
+        scheduleReactionRecovery();
       },
     };
   },

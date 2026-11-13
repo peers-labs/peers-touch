@@ -19,6 +19,7 @@ import { useActiveMomentsFederationSlice, useActivePrivateMomentsSlice } from '.
 import { isReadablePrivateMomentProjection, privateDeliveryNoticeState } from '../../services/privateMomentsNative';
 import { SocialActionBar, SocialPrivateState, SocialTrustMeta } from './surfaces';
 import { formatMomentTime } from './momentTime';
+import { projectPrivateReactionRecovery } from '../../store/privateMoments';
 
 interface MomentCardProps {
   post: Post; reactions?: ReactionSummary[]; explanation?: FeedObjectExplanation;
@@ -62,12 +63,16 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
     : Number(post.createdAt.seconds) * 1000 + post.createdAt.nanos / 1_000_000;
   const feedback = useScopedFeedback();
   const selfStation = useActiveMomentsFederationSlice(state => state.self);
-  const { projection, platform, readMoment, recoverMoment, openMedia, reactionCommands, retryReaction } =
+  const { projection, platform, readMoment, recoverMoment, openMedia, reactionCommands, retryReaction,
+    scope, postsById, reactionLiveFlights } =
     useActivePrivateMomentsSlice(state => ({
       projection: state.postsById[post.id], platform: state.platform, readMoment: state.readMoment,
       recoverMoment: state.recoverMoment, openMedia: state.openMedia,
       reactionCommands: state.reactionCommands, retryReaction: state.retryReaction,
+      scope: state.scope, postsById: state.postsById, reactionLiveFlights: state.reactionLiveFlights,
+      reactionRecoveryEpoch: state.reactionRecoveryEpoch,
     }));
+  const recoveryState = { scope, platform, postsById, reactionLiveFlights };
   const [commentsOpen, setCommentsOpen] = useState(defaultCommentsOpen);
   const [deleteOpen, setDeleteOpen] = useState(false), [deleting, setDeleting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -174,9 +179,10 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
     </>}
     actions={<SocialActionBar postId={post.id} reactions={shownReactions} commentCount={Number(post.stats?.commentsCount ?? 0n)}
       commentsOpen={commentsOpen} reactionCommands={isPrivate ? Object.values(reactionCommands).filter(command =>
-        command.postId === post.id && !command.commentId && command.operation !== 'VOTE_POLL') : undefined}
-      onRetryReaction={isPrivate && !unavailable ? async kind => {
-        try { await retryReaction(post.id, '', kind); } catch { feedback.error(t('moments.reaction.retryUnavailable')); }
+        command.postId === post.id && !command.commentId && command.operation !== 'VOTE_POLL')
+        .map(command => ({ ...command, recovery: projectPrivateReactionRecovery(recoveryState, command) })) : undefined}
+      onRetryReaction={isPrivate && !unavailable ? async (kind, commandId) => {
+        try { await retryReaction(post.id, '', kind, commandId); } catch { feedback.error(t('moments.reaction.retryUnavailable')); }
       } : undefined}
       onReact={!unavailable && onReact ? react : undefined} onUnreact={!unavailable && onUnreact ? unreact : undefined}
       onOpenComments={() => setCommentsOpen(value => !value)} />}

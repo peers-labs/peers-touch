@@ -31,6 +31,7 @@ func (s *FeedLogService) importThread(ctx context.Context, author, authorStation
 	var conflictingActor, conflictingChain string
 	err := s.store.Execute(ctx, func(tx delivery.Transaction) error {
 		cursor := after
+		events := make([]*model.FeedEvent, 0, len(response.ThreadEntries))
 		for _, entry := range response.ThreadEntries {
 			if entry == nil || entry.Cursor != cursor+1 || entry.Receipt == nil {
 				return domain.ErrFeedGap
@@ -54,7 +55,21 @@ func (s *FeedLogService) importThread(ctx context.Context, author, authorStation
 			if err := tx.DB().Where("home_station = ? AND object_kind = 'post' AND object_id = ? AND actor_ptid = ?", home, id, author).Take(&post).Error; err != nil {
 				return domain.ErrFeedGap
 			}
-			if _, err := s.projector.StoreInteraction(infrastructure.FeedTransactionContext(ctx, tx), tx.DB(), entry.Receipt, entry.InteractionHomeStation, true); err != nil {
+			events = append(events, entry.Receipt.Event)
+			cursor = entry.Cursor
+		}
+		if response.ThreadCursor != cursor {
+			return domain.ErrFeedGap
+		}
+		bound, err := s.projector.LockInteractions(infrastructure.FeedTransactionContext(ctx, tx), tx.DB(), events)
+		if err != nil {
+			return err
+		}
+		if err := infrastructure.LockFeedThreadHead(bound, tx.DB(), author); err != nil {
+			return err
+		}
+		for _, entry := range response.ThreadEntries {
+			if _, err := s.projector.StoreInteraction(bound, tx.DB(), entry.Receipt, entry.InteractionHomeStation, true); err != nil {
 				if errors.Is(err, domain.ErrFeedFork) {
 					conflictingActor = entry.Receipt.Event.Statement.ActorPtid
 					conflictingChain = entry.Receipt.Event.Statement.ChainId
@@ -74,10 +89,6 @@ func (s *FeedLogService) importThread(ctx context.Context, author, authorStation
 			if existing.ActorPTID != index.ActorPTID || existing.ChainID != index.ChainID || existing.Sequence != index.Sequence {
 				return domain.ErrFeedInvalid
 			}
-			cursor = entry.Cursor
-		}
-		if response.ThreadCursor != cursor {
-			return domain.ErrFeedGap
 		}
 		head := infrastructure.FeedThreadHead{AuthorPTID: author, Cursor: cursor}
 		if err := tx.DB().Clauses(clause.OnConflict{DoNothing: true}).Create(&head).Error; err != nil {
