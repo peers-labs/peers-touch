@@ -1,9 +1,9 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-10-17
+updated: 2026-11-14
 review-cadence: quarterly
-next-review: 2027-01-27
+next-review: 2027-02-14
 ---
 
 # UI Identity Components
@@ -157,6 +157,11 @@ Rules:
 - Popovers must not cover the content the user is acting on unless no safe position exists.
 - A menu/select panel hugs its content: its width is exactly `max(anchor width, widest item)` plus the panel's own padding. Arbitrary fixed min-widths (e.g. a hardcoded 220px under four short options) that paint dead space are prohibited; text-to-container proportion is owned by this rule, not per-call-site guesses.
 - Reaction pickers must remain compact and reversible.
+- Reaction cells use the shared control and spacing scale. Selection stays inside
+  each cell's border; keyboard focus remains distinct. Floating panels stay inside
+  the anchor's clipped content box, excluding its border, scrollbar and padding.
+  Positioning measures layout dimensions independently of entrance transforms,
+  and narrow panels wrap their cells rather than compressing or clipping them.
 - Menus need keyboard access and focus restoration.
 - Expanding a compact preview into a complete viewer replaces the preview
   with one dialog and retains the same data and row components. Search and

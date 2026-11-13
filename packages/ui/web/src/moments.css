@@ -157,13 +157,27 @@
   background: color-mix(in srgb, var(--sk-accent, var(--pt-accent)) 12%, transparent); border-color: transparent;
 }
 .sk-react-emoji { display: inline-flex; font-size: 15px; line-height: 1; }
-.sk-react-popover { padding: 6px; border-radius: var(--sk-radius-soft, var(--pt-radius-lg)); }
-.sk-react-picker { display: grid; grid-template-columns: repeat(8, 30px); gap: 2px; }
-.sk-react-picker .pt-button { width: 30px; min-width: 30px; height: 30px; padding: 0; font-size: 16px; border-radius: 8px; }
+.sk-react-popover {
+  --sk-reaction-cell: var(--pt-control-normal);
+  box-sizing: border-box; min-width: 0; padding: var(--pt-space-xs);
+  width: calc(8 * var(--sk-reaction-cell) + 9 * var(--pt-space-xs) + 2px);
+  border-radius: var(--sk-radius-soft, var(--pt-radius-lg));
+}
+.sk-react-picker {
+  display: grid; grid-template-columns: repeat(auto-fit, var(--sk-reaction-cell));
+  gap: var(--pt-space-xs);
+}
+.sk-react-picker .pt-button {
+  width: var(--sk-reaction-cell); min-width: var(--sk-reaction-cell); height: var(--sk-reaction-cell);
+  padding: 0; font-size: 16px; border-radius: var(--pt-radius-sm);
+}
 .sk-react-picker .pt-button.is-liked {
   background: color-mix(in srgb, var(--sk-accent, var(--pt-accent)) 14%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--sk-accent, var(--pt-accent)) 45%, transparent);
+  border-color: transparent;
+  box-shadow: none;
 }
+.sk-react-picker .pt-button.is-liked:not(:focus-visible) { outline: none; }
+.sk-react-picker .pt-button:hover:not([aria-disabled='true']) { box-shadow: none; }
 .sk-feed-sort-float {
   position: sticky; top: 8px; z-index: 6; align-self: stretch; min-width: 0; padding-right: 14px;
   align-items: flex-start; display: flex; justify-content: flex-end; height: 0; overflow: visible;
@@ -214,10 +228,6 @@
 .sk-stat-cell strong { font-size: 18px; font-weight: 650; color: var(--sk-text, var(--pt-text)); font-variant-numeric: tabular-nums; }
 .sk-stat-cell em { font-style: normal; font-size: 11.5px; color: var(--sk-text-3, var(--pt-muted)); }
 @container moment-statistics (max-width: 720px) { .sk-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 760px) {
-  .sk-react-picker { grid-template-columns: repeat(8, 28px); }
-  .sk-react-picker .pt-button { width: 28px; min-width: 28px; height: 28px; }
-}
 @media (prefers-reduced-motion: reduce) {
   .sk-feed-sort-pill { transition: width .01s; }
   .sk-feed-sort-pill[data-mode] .sk-feed-sort-options, .sk-feed-sort-pill[data-mode] .sk-feed-sort-top { transition: opacity .01s; }
