@@ -20,6 +20,8 @@ import { isReadablePrivateMomentProjection, privateDeliveryNoticeState } from '.
 import { SocialActionBar, SocialPrivateState, SocialTrustMeta } from './surfaces';
 import { formatMomentTime } from './momentTime';
 import { projectPrivateReactionRecovery } from '../../store/privateMoments';
+import { useMomentsNavigationStore } from '../../store/momentsNavigation';
+import { momentResourceKey } from '../../store/momentsTimeline';
 
 interface MomentCardProps {
   post: Post; reactions?: ReactionSummary[]; explanation?: FeedObjectExplanation;
@@ -73,7 +75,13 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
       reactionRecoveryEpoch: state.reactionRecoveryEpoch,
     }));
   const recoveryState = { scope, platform, postsById, reactionLiveFlights };
-  const [commentsOpen, setCommentsOpen] = useState(defaultCommentsOpen);
+  const resourceKey = momentResourceKey(post);
+  const commentsKey = embedded ? `embedded:${resourceKey}` : resourceKey;
+  const commentsOpen = useMomentsNavigationStore(state => state.commentsOpen[commentsKey] ?? defaultCommentsOpen);
+  const setCommentsOpen = useMomentsNavigationStore(state => state.setCommentsOpen);
+  const commentFocusIntent = useMomentsNavigationStore(state => state.commentFocusIntent);
+  const [commentsMounted, setCommentsMounted] = useState(commentsOpen);
+  if (commentsOpen && !commentsMounted) setCommentsMounted(true);
   const [deleteOpen, setDeleteOpen] = useState(false), [deleting, setDeleting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const authorPtid = post.authorPtid || post.author?.id || '';
@@ -185,8 +193,10 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
         try { await retryReaction(post.id, '', kind, commandId); } catch { feedback.error(t('moments.reaction.retryUnavailable')); }
       } : undefined}
       onReact={!unavailable && onReact ? react : undefined} onUnreact={!unavailable && onUnreact ? unreact : undefined}
-      onOpenComments={() => setCommentsOpen(value => !value)} />}
-    comments={commentsOpen && !unavailable ? <MomentCommentsSection postId={post.id} isPrivate={isPrivate}
+      onOpenComments={() => setCommentsOpen(commentsKey, !commentsOpen)} />}
+    commentsOpen={commentsOpen}
+    comments={commentsMounted && !unavailable ? <MomentCommentsSection postId={post.id} isPrivate={isPrivate}
+      active={commentsOpen} draftPostId={resourceKey} targetIntent={commentFocusIntent}
       viewerActorPtid={viewerActorPtid} targetCommentId={targetCommentId} onAuthorClick={onAuthorClick} /> : undefined}
     dialogs={<>
       {editOpen && <MomentTextEditor postId={post.id} text={text} onClose={() => setEditOpen(false)} />}

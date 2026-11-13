@@ -1,9 +1,9 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-11-13
+updated: 2026-11-14
 review-cadence: semiannual
-next-review: 2027-05-13
+next-review: 2027-05-14
 ---
 
 # Desktop Social UI Identity
@@ -116,6 +116,23 @@ Rules:
   result. Zero comments render the empty-thread state. Background refresh of
   an acquired healthy thread preserves its content and does not restart its
   initial loading presentation.
+- Apply [Silent Data Updates](../../interaction.md#9-silent-data-updates--禁止显式刷新).
+  The Moments navigation UI Store retains comment expansion by canonical
+  logical post identity in the current Runtime scope. Only an explicit
+  addressed navigation may reopen a collapsed thread; defaults and background
+  reads cannot. Scope reset clears these choices.
+- Collapse hides the acquired thread and releases its viewport read interest;
+  it preserves its editor instance. Public comment drafts use the same logical
+  post identity across feed aliases. Initial acquisition is separate from
+  revalidation, including acquired-empty snapshots.
+- Repeated public reads reuse unchanged rows and arrays. A head page replaces
+  its acquired range while retaining paginated rows and their cursor outside
+  that range; a complete authoritative page removes absent rows. Confirmed
+  create/delete/reaction commands fence reads already in flight.
+- New comments enter through shared comment-row arrival motion only.
+  The shared row retires its marker, including while hidden; reduced motion
+  shows the same result without animation. Deep-link focus runs once per
+  explicit navigation intent within the active thread.
 - Root comments and nested replies display their reaction as an emoji with
   the confirmed nonzero count. Do not display a separate `Like` / `赞` text
   button. The shared comment row retains an accessible action name, selected

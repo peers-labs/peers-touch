@@ -4,7 +4,7 @@ import { Alert, Button, Empty, FeedSortFloat, Spin } from '@peers-touch/ui';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { useActiveMomentsFederationSlice, useActiveMomentsSlice, useActivePrivateMomentsSlice,
   useActiveRelationshipsSlice, useActiveSocialChatSlice } from '../../components/moments/useActiveMomentsStore';
-import { momentSearchText, selectMomentsTimeline } from '../../store/momentsTimeline';
+import { momentResourceKey, momentSearchText, selectMomentsTimeline } from '../../store/momentsTimeline';
 import { actorDisplayName } from '../../store/socialProfileProjection';
 import { resolveFederationStationName } from '../../store/federation';
 
@@ -80,7 +80,7 @@ export function MomentsFeedView({ viewerActorPtid, onOpenPost, onAuthorClick, qu
         hot: t('moments.tab.hot'), top: t('moments.action.backToTop') }} />}
     {posts.length === 0 && (loading ? <Spin label={t('moments.follow.loading')} />
       : <Empty description={q ? t('moments.search.noMatch', { query }) : t('moments.placeholder.feedEmpty')} />)}
-    {posts.map(post => <MomentCard key={post.id} post={post}
+    {posts.map(post => <MomentCard key={momentResourceKey(post)} post={post}
       reactions={reactions[post.id]} explanation={explanations[post.id]} viewerActorPtid={viewerActorPtid}
       surface={home.postIds.includes(post.id) ? 'home' : 'federated'}
       onOpen={onOpenPost} onAuthorClick={onAuthorClick} onReact={reactToPost}

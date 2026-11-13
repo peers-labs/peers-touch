@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+import { useEffect, useState, type HTMLAttributes, type ReactNode } from 'react';
 import { Button } from './actions';
 import './moments.css';
 
@@ -14,6 +14,8 @@ export interface MomentCommentRowProps extends Omit<HTMLAttributes<HTMLLIElement
   own?: boolean;
   depth?: number;
   highlighted?: boolean;
+  /** Set only when this row first arrives in an already acquired visible thread. */
+  arrival?: boolean;
   reaction?: {
     count: bigint | number;
     liked: boolean;
@@ -28,8 +30,22 @@ export interface MomentCommentRowProps extends Omit<HTMLAttributes<HTMLLIElement
 
 /** The owner supplies canonical identity, time, nesting and commands. */
 export function MomentCommentRow({ commentId, avatar, author, content, time, actions, replies,
-  composer, own, depth = 0, highlighted, reaction, className = '', ...props }: MomentCommentRowProps) {
+  composer, own, depth = 0, highlighted, arrival = false, reaction, className = '', onAnimationEnd,
+  ...props }: MomentCommentRowProps) {
+  const [arriving, setArriving] = useState(arrival);
+  useEffect(() => {
+    if (!arriving) return;
+    // Retire even when hidden or motion is disabled, so alive-page restoration
+    // cannot replay an old arrival animation.
+    const timer = setTimeout(() => setArriving(false), 400);
+    return () => clearTimeout(timer);
+  }, [arriving]);
   return <li {...props} className={`sk-comment-item ${className}`} data-comment-id={commentId}
+    data-arriving={arrival && arriving || undefined}
+    onAnimationEnd={event => {
+      if (event.target === event.currentTarget) setArriving(false);
+      onAnimationEnd?.(event);
+    }}
     data-moments-comment={commentId} data-own-comment={own ? 'true' : 'false'} data-depth={depth}
     data-highlighted={highlighted || undefined} tabIndex={highlighted ? 0 : -1}>
     {avatar}

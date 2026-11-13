@@ -19,7 +19,7 @@ import type {
   ReactionSummary,
   GetMyMomentsStatsResponse,
 } from '../gen/proto/domain/social/post_pb';
-import type { Comment } from '../gen/proto/domain/social/comment_pb';
+import { CommentSchema, type Comment } from '../gen/proto/domain/social/comment_pb';
 import type { Circle, CircleMember } from '../gen/proto/domain/social/circle_pb';
 import {
   socialCreateMoment,
@@ -85,6 +85,9 @@ interface PublicCommentRead {
   completion: Promise<void>;
 }
 const commentReads = new Map<string, PublicCommentRead>();
+// The head read is authoritative only for its acquired range. Keep paginated
+// rows outside that range and their cursor when a periodic head read arrives.
+const commentHeadIds = new Map<string, Set<string>>();
 let activeCommentTarget: { postId: string; commentId?: string } | null = null;
 
 // Per-post/per-kind reaction flights. A second click on the same kind
@@ -1134,6 +1137,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     postId = postId.trim();
     if (!postId) return;
     commentReads.delete(postId);
+    commentHeadIds.delete(postId);
     if (activeCommentTarget?.postId === postId) activeCommentTarget = null;
     set((s) => {
       const { [postId]: _dropPost, ...postsById } = s.postsById;
@@ -1204,13 +1208,31 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         if (!current(read)) return;
         const page = resp.comments.map(publicCommentFromResource);
         set((s) => {
-          const prev = replace ? [] : (s.comments[postId] ?? []);
-          const seen = new Set(prev.map((c) => c.id));
-          const merged = [...prev, ...page.filter((c) => !seen.has(c.id))];
+          const retained = s.comments[postId] ?? [];
+          const byId = new Map(retained.map(comment => [comment.id, comment]));
+          const previousHead = commentHeadIds.get(postId);
+          const tail = replace && !anchor && resp.hasMore && previousHead
+            ? retained.filter(comment => !previousHead.has(comment.id)) : [];
+          const merged = replace ? [] : [...retained];
+          const indices = new Map(merged.map((comment, index) => [comment.id, index]));
+          for (const next of [...page, ...tail]) {
+            const existing = byId.get(next.id);
+            const comment = existing && equals(CommentSchema, existing, next) ? existing : next;
+            const index = indices.get(next.id);
+            if (index === undefined) {
+              indices.set(next.id, merged.length);
+              merged.push(comment);
+            } else if (page.includes(next)) merged[index] = comment;
+          }
+          if (replace || !previousHead) commentHeadIds.set(postId, new Set(page.map(comment => comment.id)));
+          const unchanged = retained.length === merged.length
+            && merged.every((comment, index) => comment === retained[index]);
+          const retainsTail = tail.some(comment => !page.some(next => next.id === comment.id));
           return {
-            comments: { ...s.comments, [postId]: merged },
-            commentsCursor: { ...s.commentsCursor, [postId]: resp.nextCursor },
-            commentsHasMore: { ...s.commentsHasMore, [postId]: resp.hasMore },
+            comments: unchanged && s.comments[postId] ? s.comments
+              : { ...s.comments, [postId]: unchanged ? retained : merged },
+            commentsCursor: retainsTail ? s.commentsCursor : { ...s.commentsCursor, [postId]: resp.nextCursor },
+            commentsHasMore: retainsTail ? s.commentsHasMore : { ...s.commentsHasMore, [postId]: resp.hasMore },
             commentsLoading: { ...s.commentsLoading, [postId]: false },
           };
         });
@@ -1240,7 +1262,8 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const generation = storeGeneration;
     const session = useSessionStore.getState();
     const retained = useSocialCommentDraftsStore.getState().drafts[
-      commentDraftKey(session.currentUser?.actorPtid, session.sessionEpoch, postId)
+      commentDraftKey(session.currentUser?.actorPtid, session.sessionEpoch,
+        get().postsById[postId]?.publicFeedRef || postId)
     ];
     const operationId = retained?.draftId ? `comment:${retained.draftId}:${retained.revision ?? 0}` : undefined;
     const comment = await socialCreateComment(
@@ -1252,23 +1275,19 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     );
     if (generation !== storeGeneration) return;
     if (!comment) return;
-    if ((get().comments[postId] ?? []).some(existing => existing.id === comment.id)) return;
-    set((s) => ({
-      comments: {
-        ...s.comments,
-        [postId]: [...(s.comments[postId] ?? []), comment],
-      },
-    }));
-    // Optimistically bump the on-card count so the user sees feedback
-    // before the next timeline refresh. The authoritative count is
-    // overwritten on the next `loadFeed` / `loadPost`.
+    // A read begun before this confirmed command cannot undo its result.
+    commentReads.delete(postId);
     set((s) => {
+      const duplicate = (s.comments[postId] ?? []).some(existing => existing.id === comment.id);
       const post = s.postsById[postId];
-      if (!post || !post.stats) return s;
-      const stats = { ...post.stats };
-      stats.commentsCount = (stats.commentsCount ?? 0n) + 1n;
       return {
-        postsById: { ...s.postsById, [postId]: { ...post, stats } as Post },
+        comments: duplicate ? s.comments : {
+          ...s.comments, [postId]: [...(s.comments[postId] ?? []), comment],
+        },
+        commentsLoading: { ...s.commentsLoading, [postId]: false },
+        postsById: !duplicate && post?.stats ? { ...s.postsById, [postId]: {
+          ...post, stats: { ...post.stats, commentsCount: post.stats.commentsCount + 1n },
+        } } : s.postsById,
       };
     });
     refreshProjectionBestEffort(get(), 'action:createComment');
@@ -1278,11 +1297,13 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     const generation = storeGeneration;
     await socialDeleteComment(commentId);
     if (generation !== storeGeneration) return;
+    commentReads.delete(postId);
     set((s) => ({
       comments: {
         ...s.comments,
         [postId]: (s.comments[postId] ?? []).filter((c) => c.id !== commentId),
       },
+      commentsLoading: { ...s.commentsLoading, [postId]: false },
     }));
   },
 
@@ -1296,10 +1317,12 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       try {
         const confirmed = await socialSetCommentLike(postId, commentId, liked, operationId);
         if (generation !== storeGeneration) return;
+        commentReads.delete(postId);
         set(state => ({
           comments: { ...state.comments, [postId]: (state.comments[postId] ?? [])
             .map(comment => comment.id === commentId ? { ...comment, ...confirmed } : comment) },
           commentReactionCommands: { ...state.commentReactionCommands, [commentId]: { pending: false } },
+          commentsLoading: { ...state.commentsLoading, [postId]: false },
         }));
       } catch (error) {
         if (generation !== storeGeneration) return;
@@ -1672,6 +1695,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     circleMembershipVersions.clear();
     resetPublicFeed();
     commentReads.clear();
+    commentHeadIds.clear();
     activeCommentTarget = null;
     set({ ...initialState });
   },

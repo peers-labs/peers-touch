@@ -19,6 +19,8 @@ export interface MomentCardProps extends Omit<HTMLAttributes<HTMLElement>, 'cont
   content?: ReactNode;
   actions?: ReactNode;
   comments?: ReactNode;
+  /** Retain a painted thread when collapsed; its original owner pauses reads. */
+  commentsOpen?: boolean;
   dialogs?: ReactNode;
   menuActions?: readonly MenuEntry[];
   embedded?: boolean;
@@ -26,7 +28,7 @@ export interface MomentCardProps extends Omit<HTMLAttributes<HTMLElement>, 'cont
 
 /** Presentation only. Signed writes, media, comments and private state stay with their owners. */
 export function MomentCard({ postId, copy, author, text, trust, notice, attachments, content,
-  actions, comments, dialogs, menuActions = [], embedded, className = '', ...props }: MomentCardProps) {
+  actions, comments, commentsOpen = true, dialogs, menuActions = [], embedded, className = '', ...props }: MomentCardProps) {
   const [expanded, setExpanded] = useState(false);
   const long = text.length > 320;
   return <article {...props} className={`sk-post ${className}`} data-post-id={postId}
@@ -49,7 +51,8 @@ export function MomentCard({ postId, copy, author, text, trust, notice, attachme
       {attachments}{content}
     </div>
     {actions}
-    {comments && <div className="sk-comments" data-comments-open="true">{comments}</div>}
+    {comments && <div className="sk-comments" hidden={!commentsOpen}
+      data-comments-open={commentsOpen ? 'true' : 'false'}>{comments}</div>}
     {dialogs}
   </article>;
 }

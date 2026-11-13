@@ -65,6 +65,10 @@ interface CommentListProps {
   targetCommentId?: string;
   comments: MomentCommentItem[];
   loading?: boolean;
+  /** Initial acquisition is distinct from revalidation of an acquired empty page. */
+  loaded?: boolean;
+  draftPostId?: string;
+  animateArrivals?: boolean;
   hasMore?: boolean;
   composerState?: PrivateCommentState;
   composerErrorCode?: string;
@@ -108,6 +112,9 @@ export function CommentList({
   targetCommentId,
   comments,
   loading,
+  loaded = comments.length > 0 || !loading,
+  draftPostId = postId,
+  animateArrivals = true,
   hasMore,
   composerState,
   composerErrorCode,
@@ -135,14 +142,27 @@ export function CommentList({
   ));
   const sessionEpoch = useSessionStore((s) => s.sessionEpoch);
   const draftKey = useMemo(
-    () => commentDraftKey(viewerActorPtid ?? authenticatedPtid, sessionEpoch, postId),
-    [viewerActorPtid, authenticatedPtid, sessionEpoch, postId],
+    () => commentDraftKey(viewerActorPtid ?? authenticatedPtid, sessionEpoch, draftPostId),
+    [viewerActorPtid, authenticatedPtid, sessionEpoch, draftPostId],
   );
   const storedDraft = useSocialCommentDraftsStore((s) => s.drafts[draftKey]);
   const setStoredDraft = useSocialCommentDraftsStore((s) => s.setDraft);
   const clearStoredDraft = useSocialCommentDraftsStore((s) => s.clearDraft);
 
   const [submitting, setSubmitting] = useState(false);
+  const [snapshot, setSnapshot] = useState(() => ({
+    draftKey, comments, loaded, seen: new Set(comments.map(comment => comment.id)), arrivals: new Set<string>(),
+  }));
+  if (snapshot.comments !== comments || snapshot.loaded !== loaded || snapshot.draftKey !== draftKey) {
+    const sameScope = snapshot.draftKey === draftKey;
+    const ids = comments.map(comment => comment.id);
+    setSnapshot({
+      draftKey, comments, loaded,
+      seen: new Set(sameScope ? [...snapshot.seen, ...ids] : ids),
+      arrivals: new Set(sameScope && snapshot.loaded && animateArrivals
+        ? ids.filter(id => !snapshot.seen.has(id)) : []),
+    });
+  }
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [publicSubmitError, setPublicSubmitError] = useState(false);
   const [replyTargetId, setReplyTargetId] = useState(
@@ -373,6 +393,7 @@ export function CommentList({
 
   const row = (comment: MomentCommentItem, depth = 0, replies?: React.ReactNode) => (
     <MomentCommentRow key={comment.id} comment={comment} depth={depth} replies={replies}
+      arrival={animateArrivals && snapshot.arrivals.has(comment.id)}
       highlighted={comment.id === targetCommentId}
       canModerate={!!viewerActorPtid && comment.authorPtid === viewerActorPtid}
       onAuthorClick={onAuthorClick}
@@ -395,13 +416,14 @@ export function CommentList({
     {retryDeadlinePending && withinRetryDeadline && <span>{t('moments.comment.retryIn', { count: retrySeconds })}</span>}
   </>;
   return <div data-moments-comment-thread={postId} className="pt-mom-comment-list">
-      {comments.length === 0 && !loading && <span className="pt-mom-comment-status">{t('moments.comment.empty')}</span>}
-      {loading && <Spin label={t('moments.follow.loading')} />}
+      {comments.length === 0 && loaded && <span className="pt-mom-comment-status">{t('moments.comment.empty')}</span>}
+      {loading && !loaded && <Spin label={t('moments.follow.loading')} />}
       <ul className="pt-mom-comment-list">
         {threads.map(thread => row(thread.comment, 0,
           thread.replies.length > 0 ? thread.replies.map(reply => row(reply, 1)) : undefined))}
       </ul>
-      {hasMore && !loading && <Button actionId={`comments.more.${postId}`} emphasis="quiet"
+      {hasMore && <Button actionId={`comments.more.${postId}`} emphasis="quiet"
+        execution={loading ? 'pending' : 'idle'}
         className="pt-mom-comment-pager" label={t('moments.action.loadMore')} onActivate={onLoadMore} />}
       {replyTarget && <div className="pt-mom-comment-meta">
         <span>{t('moments.comment.replyingTo')}</span><MomentCommentAuthorName actorPtid={replyTarget.authorPtid} />
@@ -469,6 +491,7 @@ function MomentCommentRow({
   onAuthorClick,
   depth,
   replies,
+  arrival,
 }: {
   comment: MomentCommentItem;
   highlighted: boolean;
@@ -480,6 +503,7 @@ function MomentCommentRow({
   onAuthorClick?: (actorPtid: string) => void;
   depth: number;
   replies?: React.ReactNode;
+  arrival?: boolean;
 }) {
   const { t } = useTranslation('moments');
   const identity = useActorIdentity(comment.authorPtid, { requireCanonicalProfile: true });
@@ -495,7 +519,7 @@ function MomentCommentRow({
     catch { feedback.error(t('moments.comment.deleteFailed')); }
     finally { setDeleting(false); }
   };
-  return <PeerCommentRow commentId={comment.id} content={comment.content} own={canModerate}
+  return <PeerCommentRow commentId={comment.id} content={comment.content} own={canModerate} arrival={arrival}
     reaction={onLike ? { count: comment.likesCount ?? 0n, liked: comment.isLiked ?? false,
       label: BigInt(comment.likesCount ?? 0) > 0n
         ? t('moments.comment.likeCount', { value: String(comment.likesCount) }) : t('moments.reaction.like'),

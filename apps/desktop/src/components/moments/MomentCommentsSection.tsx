@@ -29,6 +29,9 @@ export interface MomentCommentsSectionProps {
   /** Deep-linked comment that should be focused once loaded. */
   targetCommentId?: string;
   onAuthorClick?: (actorPtid: string) => void;
+  active?: boolean;
+  draftPostId?: string;
+  targetIntent?: number;
 }
 
 export function MomentCommentsSection({
@@ -37,8 +40,13 @@ export function MomentCommentsSection({
   viewerActorPtid,
   targetCommentId,
   onAuthorClick,
+  active: threadOpen = true,
+  draftPostId = postId,
+  targetIntent = 0,
 }: MomentCommentsSectionProps) {
   const active = useIsPageActive();
+  const threadActive = active && threadOpen;
+  const focusedIntent = useRef<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const sessionActor = useSessionStore(state => state.currentUser?.actorPtid);
   const sessionEpoch = useSessionStore(state => state.sessionEpoch);
@@ -46,6 +54,7 @@ export function MomentCommentsSection({
     comments,
     commentsHasMore,
     commentsLoading,
+    commentsLoaded,
     loadComments,
     createComment,
     deleteComment,
@@ -55,6 +64,7 @@ export function MomentCommentsSection({
     comments: selectMomentComments(s, postId),
     commentsHasMore: s.commentsHasMore[postId],
     commentsLoading: s.commentsLoading[postId],
+    commentsLoaded: s.comments[postId] !== undefined,
     loadComments: s.loadComments,
     createComment: s.createComment,
     deleteComment: s.deleteComment,
@@ -81,7 +91,7 @@ export function MomentCommentsSection({
   const privateReactionCommands = useActivePrivateMomentsSlice(state => state.reactionCommands);
 
   useEffect(() => {
-    if (!active || !rootRef.current) return;
+    if (!threadActive || !rootRef.current) return;
     let release: (() => void) | undefined;
     const observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) release ??= acquireMomentComments(postId);
@@ -89,7 +99,7 @@ export function MomentCommentsSection({
     });
     observer.observe(rootRef.current);
     return () => { observer.disconnect(); release?.(); };
-  }, [active, postId]);
+  }, [threadActive, postId]);
 
   const privateComments: MomentCommentItem[] = useMemo(() => (
     privateThread.comments.map((comment) => ({
@@ -111,6 +121,7 @@ export function MomentCommentsSection({
 
   const visibleComments = isPrivate ? privateComments : comments;
   const visibleCommentsLoading = isPrivate ? privateThread.loading : commentsLoading;
+  const visibleCommentsLoaded = isPrivate ? privateThread.loaded : commentsLoaded;
   const visibleCommentsHasMore = isPrivate ? privateThread.hasMore : commentsHasMore;
   const privateParentUnavailable = privateThread.state === 'COMMENT_PARENT_UNAVAILABLE';
   const privateComposerState = privateParentUnavailable
@@ -121,15 +132,19 @@ export function MomentCommentsSection({
     : privateDraft?.errorCode;
 
   useEffect(() => {
-    if (!targetCommentId) return;
+    if (!threadActive || !targetCommentId) return;
+    const intent = `${draftPostId}:${targetCommentId}:${targetIntent}`;
+    if (focusedIntent.current === intent) return;
     const frame = requestAnimationFrame(() => {
-      const node = document.querySelector<HTMLElement>(
-        `[data-moments-comment="${targetCommentId}"]`,
-      );
-      node?.focus();
+      const node = Array.from(rootRef.current?.querySelectorAll<HTMLElement>('[data-moments-comment]') ?? [])
+        .find(item => item.dataset.momentsComment === targetCommentId);
+      if (node) {
+        focusedIntent.current = intent;
+        node.focus();
+      }
     });
     return () => cancelAnimationFrame(frame);
-  }, [targetCommentId, visibleComments.length]);
+  }, [draftPostId, targetCommentId, targetIntent, threadActive, visibleComments]);
 
   const handleSubmit = async (
     content: string,
@@ -145,11 +160,14 @@ export function MomentCommentsSection({
 
   return (
     <div ref={rootRef} data-moment-thread-interest={postId}><CommentList
-      key={commentDraftKey(viewerActorPtid ?? sessionActor, sessionEpoch, postId)}
+      key={commentDraftKey(viewerActorPtid ?? sessionActor, sessionEpoch, draftPostId)}
       postId={postId}
+      draftPostId={draftPostId}
       targetCommentId={targetCommentId}
       comments={visibleComments}
       loading={visibleCommentsLoading}
+      loaded={visibleCommentsLoaded}
+      animateArrivals={threadActive}
       hasMore={visibleCommentsHasMore}
       composerState={isPrivate ? privateComposerState : undefined}
       composerErrorCode={isPrivate ? privateComposerErrorCode : undefined}

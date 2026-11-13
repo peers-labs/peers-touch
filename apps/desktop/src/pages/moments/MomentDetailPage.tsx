@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { SocialEmptyState } from '../../components/moments/surfaces/SocialEmptyState';
 import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
+import { momentResourceKey } from '../../store/momentsTimeline';
 
 export interface MomentDetailViewProps {
   postId: string;
@@ -68,6 +69,7 @@ export function MomentDetailView({
       )}
       {post && (
         <MomentCard
+          key={momentResourceKey(post)}
           post={post}
           reactions={reactions}
           explanation={explanation}

@@ -192,3 +192,46 @@ it('binds mention offsets to the trimmed submitted text', async () => {
   expect(submit).toHaveBeenCalledWith('@Alice hello', undefined,
     [{ actorPtid: 'ptid:alice', offset: 0, length: 6, display: '@Alice' }]);
 });
+
+it('keeps the acquired empty state and editor while background data is pending', async () => {
+  const input = await render({ loaded: true, composerState: undefined });
+  const empty = host.querySelector('.pt-mom-comment-status');
+  await type(input, 'my retained reply');
+  await act(async () => { input.focus(); input.setSelectionRange(3, 3); });
+  await render({ loaded: true, loading: true, composerState: undefined });
+  expect(host.querySelector('.pt-mom-comment-status')).toBe(empty);
+  expect(host.textContent).not.toContain('moments.follow.loading');
+  expect(host.querySelector('textarea')).toBe(input);
+  expect(input.value).toBe('my retained reply');
+  expect(document.activeElement).toBe(input);
+  expect(input.selectionStart).toBe(3);
+});
+
+it('shows initial acquisition once and keeps pagination in place while pending', async () => {
+  await render({ loaded: false, loading: true });
+  expect(host.textContent).toContain('moments.follow.loading');
+  expect(host.textContent).not.toContain('moments.comment.empty');
+  await render({ loaded: true, loading: false, hasMore: true });
+  const more = host.querySelector('[data-action-id="comments.more.post"]');
+  expect(more).not.toBeNull();
+  await render({ loaded: true, loading: true, hasMore: true });
+  expect(host.querySelector('[data-action-id="comments.more.post"]')).toBe(more);
+  expect(host.textContent).not.toContain('moments.follow.loading');
+});
+
+it('animates only new arrivals without replacing rows or replaying their motion', async () => {
+  const comment = (id: string) => ({
+    id, postId: 'post', authorPtid: 'ptid:alice', replyToCommentId: '', content: id,
+  });
+  await render({ loaded: true, comments: [comment('old')] });
+  const old = host.querySelector('[data-moments-comment="old"]');
+  expect(old?.hasAttribute('data-arriving')).toBe(false);
+  await render({ loaded: true, comments: [comment('old'), comment('new')] });
+  expect(host.querySelector('[data-moments-comment="old"]')).toBe(old);
+  const arrived = host.querySelector('[data-moments-comment="new"]')!;
+  expect(arrived.getAttribute('data-arriving')).toBe('true');
+  await act(async () => { arrived.dispatchEvent(new Event('animationend', { bubbles: true })); });
+  await render({ loaded: true, loading: true, comments: [comment('old'), comment('new')] });
+  expect(host.querySelector('[data-moments-comment="new"]')).toBe(arrived);
+  expect(arrived.hasAttribute('data-arriving')).toBe(false);
+});

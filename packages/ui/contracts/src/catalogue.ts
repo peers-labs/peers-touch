@@ -34,12 +34,12 @@ export const capabilityCatalogue: readonly CapabilityRecord[] = [
     anatomy: 'Author/menu/trust/notice/body/media/action/inline-thread/dialog slots; actions precede comments. Inline rows provide canonical avatar/author, text/time/actions, one nested reply block and owner composer slots.',
     statePolicy: 'Body expand and unsubmitted poll choices are local; verified poll counts/confirmed choices/closed/pending/unresolved/error/retry, comments and per-kind reactions are consumer-controlled. Cancel only resets unsubmitted choices. UI never toggles business truth.',
     invalidCombinations: 'Fixture data or Native IO in UI; copied card anatomy; unknown/private plaintext rendered as verified public text.',
-    lifecycleAndCleanup: 'Menus and reaction popovers release focus/listeners on dismiss/unmount; author forwards the original trigger ref.',
+    lifecycleAndCleanup: 'Menus and reaction popovers release focus/listeners on dismiss/unmount; author forwards the original trigger ref. commentsOpen hides the retained owner slot; owner pauses reads. Row arrival retires after animation or a bounded fallback even while hidden.',
     accessibility: 'Named keyboard author/menu/reaction/comment actions, aria-pressed and expanded, localized copy, preserved origin focus.',
     variantAxes: ['embedded=true/false', 'comments=owner slot', 'execution=per-kind', 'resource=owner slot', 'scope=value/query/disabled'],
-    geometryAndMotion: 'Confirmed glass 16×18 card inset, 48px author, 320-character expansion; wrapping reaction chips and one stable action row.',
+    geometryAndMotion: 'Confirmed glass 16×18 card inset, 48px author, 320-character expansion; wrapping reaction chips and one stable action row. Only explicitly new comment rows fade and move 4px within their own slot; reduced motion disables arrival.',
     extremeData: 'Long name/text/source, nine images, zero comments/reactions, pending and unavailable kind, narrow card.',
-    publicContractFields: 'postId/copy/author/text/trust/notice/attachments/content/actions/comments/dialogs/menuActions/embedded; commentId/avatar/author/content/time/actions/replies/composer/own/depth/highlighted/reaction(count,liked,label,pending,error,onActivate,retry(label,onActivate)); composer children/status/invalid; scope value/options/onChange/query/onQueryChange/copy/actionId/onAction/disabled'
+    publicContractFields: 'postId/copy/author/text/trust/notice/attachments/content/actions/comments/commentsOpen/dialogs/menuActions/embedded; commentId/avatar/author/content/time/actions/replies/composer/own/depth/highlighted/arrival/reaction(count,liked,label,pending,error,onActivate,retry(label,onActivate)); composer children/status/invalid; scope value/options/onChange/query/onQueryChange/copy/actionId/onAction/disabled'
   },
   {
     id: 'ui.spec.socialprofile', title: 'UserProfileHeader / StatGrid',

@@ -2044,6 +2044,76 @@ describe('moments store: comments', () => {
     }],
   });
 
+  it('retains unchanged public rows and the acquired array during revalidation', async () => {
+    vi.spyOn(socialApi, 'socialGetComments').mockImplementation(async () => publicPage('stable'));
+    await useMomentsStore.getState().loadComments('p1', true);
+    const before = useMomentsStore.getState().comments.p1;
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(useMomentsStore.getState().comments.p1).toBe(before);
+    expect(useMomentsStore.getState().comments.p1[0]).toBe(before[0]);
+  });
+
+  it.each(['create', 'delete', 'like'] as const)(
+    'keeps a confirmed %s when an earlier background read completes',
+    async operation => {
+      const oldComment = create(CommentSchema, {
+        id: 'existing', postId: 'p1', content: 'existing', likesCount: 0n, isLiked: false,
+      });
+      useMomentsStore.setState({ comments: { p1: [oldComment] } });
+      let release!: (page: ReturnType<typeof publicPage>) => void;
+      vi.spyOn(socialApi, 'socialGetComments').mockImplementation(
+        () => new Promise(resolve => { release = resolve; }),
+      );
+      vi.spyOn(socialApi, 'socialCreateComment').mockResolvedValue(create(CommentSchema, {
+        id: 'new', postId: 'p1', content: 'new',
+      }));
+      vi.spyOn(socialApi, 'socialDeleteComment').mockResolvedValue(true);
+      vi.spyOn(socialApi, 'socialSetCommentLike').mockResolvedValue({ isLiked: true, likesCount: 1n });
+      const pendingRead = useMomentsStore.getState().loadComments('p1', true);
+      await Promise.resolve();
+      if (operation === 'create') await useMomentsStore.getState().createComment('p1', 'new');
+      if (operation === 'delete') await useMomentsStore.getState().deleteComment('p1', 'existing');
+      if (operation === 'like') await useMomentsStore.getState().setCommentLike('p1', 'existing', true);
+      const confirmed = useMomentsStore.getState().comments.p1;
+      release(publicPage('existing'));
+      await pendingRead;
+      expect(useMomentsStore.getState().comments.p1).toBe(confirmed);
+      expect(useMomentsStore.getState().commentsLoading.p1).toBe(false);
+    },
+  );
+
+  it('accepts authoritative removal from a read started after a confirmed mutation', async () => {
+    vi.spyOn(socialApi, 'socialCreateComment').mockResolvedValue(create(CommentSchema, {
+      id: 'new', postId: 'p1', content: 'new',
+    }));
+    await useMomentsStore.getState().createComment('p1', 'new');
+    vi.spyOn(socialApi, 'socialGetComments').mockResolvedValue(create(ListMomentCommentsResponseSchema));
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(useMomentsStore.getState().comments.p1).toEqual([]);
+  });
+
+  it('retains acquired pagination outside a refreshed head and accepts head removals', async () => {
+    const page = (ids: string[], nextCursor: string, hasMore: boolean) => create(
+      ListMomentCommentsResponseSchema, {
+        comments: ids.flatMap(id => publicPage(id).comments), nextCursor, hasMore,
+      },
+    );
+    const list = vi.spyOn(socialApi, 'socialGetComments')
+      .mockResolvedValueOnce(page(['head', 'removed'], 'tail-page', true))
+      .mockResolvedValueOnce(page(['tail'], 'next-tail', true))
+      .mockResolvedValueOnce(page(['new', 'head'], 'new-head-cursor', true));
+    await useMomentsStore.getState().loadComments('p1', true);
+    await useMomentsStore.getState().loadComments('p1');
+    const tail = useMomentsStore.getState().comments.p1[2];
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(useMomentsStore.getState().comments.p1.map(comment => comment.id)).toEqual(['new', 'head', 'tail']);
+    expect(useMomentsStore.getState().comments.p1[2]).toBe(tail);
+    expect(useMomentsStore.getState().commentsCursor.p1).toBe('next-tail');
+    list.mockResolvedValueOnce(page([], '', false));
+    await useMomentsStore.getState().loadComments('p1', true);
+    expect(useMomentsStore.getState().comments.p1).toEqual([]);
+  });
+
   it('shares equivalent public read completion with reentrant subscribers', async () => {
     let release!: (value: ReturnType<typeof publicPage>) => void;
     const native = new Promise<ReturnType<typeof publicPage>>(resolve => { release = resolve; });

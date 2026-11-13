@@ -1,9 +1,9 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-10-27
+updated: 2026-11-14
 review-cadence: quarterly
-next-review: 2027-01-27
+next-review: 2027-02-14
 related:
   - docs/client/common/ui-identity/patterns/optimistic-commit.md
   - docs/client/common/ui-identity/accessibility.md
@@ -120,7 +120,40 @@ Out of scope:
 - Concrete runtime event ownership.
 - Module-specific mutation rules, unless defined by module contracts.
 
-## 9. AI Agent Checklist
+## 9. Silent Data Updates — 禁止显式刷新
+
+**全应用禁止以显式刷新呈现后台数据更新。** Follow the continuity of native
+applications such as WeChat: new data joins the current instance quietly and
+smoothly; the user keeps control of the surface.
+
+- Do not blank, clear, remount, hide/reveal or replace a painted page, card,
+  thread or list with a spinner/skeleton/empty state during revalidation.
+  Initial acquisition and an acquired empty result are distinct states.
+- Reconcile data by stable logical resource identity. Reuse unchanged entities,
+  rows and component instances; update changed fields and insert only new rows.
+  Preserve acquired pagination outside the refreshed range.
+- Preserve scroll anchor, selection, focused input, IME composition, drafts,
+  search results and explicit expansion/collapse choices. Background updates
+  must never reopen a thread the user collapsed or reapply default UI state.
+- Animate only newly arrived data in an already acquired visible instance.
+  Use short component-local arrival motion; never animate the whole page or
+  replay mount motion on returning to an alive surface. Retire arrival markers
+  and honor `prefers-reduced-motion`.
+- A late read started before a confirmed command must not erase a new item,
+  resurrect a deletion or roll back a confirmed reaction. Later authoritative
+  reads still apply real removals; silent updates are not indefinite caching.
+- Focus/scroll to an addressed item once per explicit navigation intent,
+  within its active surface. A timer or changed result count is not new intent.
+- Keep the existing Actor, Station, session and authorization boundaries.
+  Revocation or identity changes remove unavailable data immediately; retained
+  UI state must not cross those boundaries.
+
+Verify with repeated unchanged reads, acquired-empty reads, new arrivals,
+confirmed writes racing an older read, collapse plus revalidation, and return
+to an alive page. Observe node identity, focus/selection, draft, scroll anchor
+and the absence of blank/loading frames.
+
+## 10. AI Agent Checklist
 
 - [ ] Does each action have a named state owner?
 - [ ] Is loading local to the affected intent?
@@ -128,3 +161,6 @@ Out of scope:
 - [ ] Are sensitive trust/policy actions server-authoritative?
 - [ ] Does optimistic UI have rollback?
 - [ ] Can keyboard users complete the action path?
+- [ ] Are background updates silent, incremental and instance-preserving?
+- [ ] Do collapse, draft, focus and scroll survive revalidation?
+- [ ] Is motion limited to new arrivals and disabled for reduced motion?

@@ -463,7 +463,8 @@ function MomentCardStage({ c }: { c: Ctx }) {
       copy={{ picker: '选择反应', add: '添加反应', selected: '，点击取消', comments: count => `${count} 条评论` }}
       onToggleComments={() => setComments(value => !value)}
       onToggleReaction={() => setSelected(value => !value)} />}
-    comments={comments ? <>
+    commentsOpen={comments}
+    comments={<>
       <ul className="sk-comment-list"><MomentCommentRow commentId="element-comment"
         avatar={<Avatar name="周禾" size={30} />} author={<button type="button" className="sk-comment-author">周禾</button>}
         content={c.L('新叶真好。', '这是用于验证评论换行与极长文字的内容。'.repeat(10))} time="刚刚"
@@ -482,7 +483,7 @@ function MomentCardStage({ c }: { c: Ctx }) {
       <MomentCommentComposer><TextField aria-label="写评论" placeholder="写评论……" disabled={c.disabled} />
         <IconButton actionId="element.comment.send" iconId="send" label="发送评论"
           emphasis="primary" availability={c.unavailable} /></MomentCommentComposer>
-    </> : undefined} />;
+    </>} />;
 }
 function MomentPollStage({ c }: { c: Ctx }) {
   const [choices, setChoices] = useState<number[]>([]);

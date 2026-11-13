@@ -12,6 +12,7 @@ import {
 } from '../../components/moments/useActiveMomentsStore';
 import type { DiscoveryUser } from '../../store/discovery';
 import type { PostAuthor, ReactionKind } from '../../gen/proto/domain/social/post_pb';
+import { momentResourceKey } from '../../store/momentsTimeline';
 
 // MomentsUserView — actor profile + their authored posts.
 //
@@ -143,7 +144,7 @@ export function MomentsUserView({
 
         {posts.map((p) => (
           <MomentCard
-            key={p.id}
+            key={momentResourceKey(p)}
             post={p}
             reactions={reactions[p.id]}
             explanation={feedExplanations[p.id]}

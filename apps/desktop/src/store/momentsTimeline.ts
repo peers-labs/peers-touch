@@ -2,6 +2,10 @@ import { Audience_Kind, type Post, type ReactionSummary } from '../gen/proto/dom
 import { isReadablePrivateMomentProjection, type PrivateMomentProjection } from '../services/privateMomentsNative';
 import type { TimelineSort } from '../services/social_api';
 
+export function momentResourceKey(post: Pick<Post, 'id' | 'publicFeedRef'>): string {
+  return post.publicFeedRef || post.id;
+}
+
 /** Compose the two acquired feed windows without changing either source's cursor. */
 export function selectMomentsTimeline(homeIds: readonly string[], publicIds: readonly string[],
   postsById: Readonly<Record<string, Post>>, sort: TimelineSort,
@@ -11,7 +15,7 @@ export function selectMomentsTimeline(homeIds: readonly string[], publicIds: rea
   for (const id of [...homeIds, ...publicIds]) {
     const post = postsById[id];
     if (!post || post.isDeleted) continue;
-    const identity = post.publicFeedRef || post.id;
+    const identity = momentResourceKey(post);
     if (seen.has(identity)) continue;
     seen.add(identity); posts.push(post);
   }

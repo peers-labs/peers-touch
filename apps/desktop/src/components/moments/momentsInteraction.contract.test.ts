@@ -87,7 +87,10 @@ describe('Desktop Moments interaction contract', () => {
     // Comments expand inline in the card; the section anchor stays on the
     // card root so deep-link captures find the thread from its card.
     expect(momentCardSource).toContain('data-moments-comments-region={post.id}');
-    expect(momentCardSource).toContain('commentsOpen && !unavailable');
+    expect(momentCardSource).toContain('commentsMounted && !unavailable');
+    expect(momentCardSource).toContain('commentsOpen={commentsOpen}');
+    expect(momentCardSource).toContain('active={commentsOpen}');
+    expect(sharedCardSource).toContain('hidden={!commentsOpen}');
     expect(momentCardSource).toContain('<MomentCommentsSection');
     expect(commentsSectionSource).toContain('<CommentList');
     expect(appSource).toContain('key={view.postId}');

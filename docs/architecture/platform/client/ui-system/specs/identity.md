@@ -44,6 +44,11 @@ Domain/Identity/Resource Owner 提供 canonical identity、可信正文、受众
 评论行的 `reaction` 输入包含已确认 count/liked、本地化 label、pending/error 和意图回调。
 同一 quiet 动作展示点赞、取消、进行中与错误；计数和选择不在组件内乐观修改。
 `data-comment-like`、`data-comment-like-count`、`aria-pressed` 是共享可观察合同。
+`MomentCard.commentsOpen` 只隐藏已有评论槽位，保留其子树；消费者暂停非活跃读取。
+`MomentCommentRow.arrival` 仅标记已读可见实例中新加入的行，执行短时局部入场，
+动画完成或 400ms 后移除标记，隐藏后返回不得重播。减少动态效果时禁用入场动画。
+后台重新读取不得切换已有空态、加载态或默认展开状态，遵循
+`docs/client/common/ui-identity/interaction.md` 的「禁止显式刷新」约束。
 `MomentScopeBar` 在 `moment-scope-bar.tsx` 提供受控两范围、就近搜索和固定 38px 动作槽，
 窄布局由同一组件折叠搜索；消费者不复制该几何或焦点行为。
 

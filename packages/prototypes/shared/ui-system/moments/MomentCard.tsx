@@ -273,7 +273,8 @@ export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onTo
       actions={<ReactionBar post={post} commentsOpen={commentsOpen}
         onToggleComments={() => setCommentsOpen(value => !value)}
         onToggleReaction={onToggleReaction} />}
-      comments={commentsOpen ? <>
+      commentsOpen={commentsOpen}
+      comments={<>
           {post.comments.length > 0 && (
             <>
               <ul className="sk-comment-list">
@@ -304,7 +305,7 @@ export function MomentCard({ post, onAuthor, resolvePerson, onToggleFollow, onTo
               availability={draft.trim() ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入评论' }}
               onActivate={submitComment} />
           </MomentCommentComposer>
-      </> : undefined}
+      </>}
       dialogs={<>{editDraft !== null && (
         <Dialog open title="编辑动态" onDismiss={() => setEditDraft(null)} closeLabel="取消"
           description="仅修改公开正文，保留原动态、附件和受众。编辑后追加签名更新，已取得的副本可能保留旧版本。"
