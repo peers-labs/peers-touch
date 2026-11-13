@@ -261,6 +261,7 @@ export interface PrivateMomentProjection {
   reactions?: ReactionSummary[];
   reactionRevision?: string;
   reactionsHydrated?: boolean;
+  commentsCount?: string;
   content?: PrivateMomentContentProjection;
   errorCode?: string;
   retryAfterSeconds?: number;
@@ -423,6 +424,8 @@ interface NativeProjectionWire {
   reactionRevision?: unknown;
   reactions_hydrated?: unknown;
   reactionsHydrated?: unknown;
+  comments_count?: unknown;
+  commentsCount?: unknown;
   content?: unknown;
   error_code?: unknown;
   errorCode?: unknown;
@@ -957,6 +960,9 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
   const reactionsHydrated = wire.reactions_hydrated
     ?? wire.reactionsHydrated
     ?? false;
+  const commentsCountValue = wire.comments_count ?? wire.commentsCount;
+  const commentsCount = commentsCountValue === undefined
+    ? undefined : generationField(commentsCountValue);
   const mentions = Array.isArray(wire.mentions)
     ? wire.mentions.map((value) => {
         if (!isRecord(value)) {
@@ -993,6 +999,7 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     || (remoteDeliveryState !== undefined && !REMOTE_DELIVERY_STATES.has(remoteDeliveryState))
     || !reactionRevision
     || typeof reactionsHydrated !== 'boolean'
+    || (commentsCount !== undefined && !/^\d+$/.test(commentsCount))
   ) {
     throw privateProjectionContractError('private Moment projection identity or state is invalid');
   }
@@ -1037,6 +1044,7 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     reactions,
     reactionRevision,
     reactionsHydrated,
+    commentsCount,
     content,
     errorCode: stringField(wire.error_code ?? wire.errorCode) || undefined,
     retryAfterSeconds: optionalNumber(wire.retry_after_seconds ?? wire.retryAfterSeconds),

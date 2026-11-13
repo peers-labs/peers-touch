@@ -6,6 +6,7 @@ import {
   Audience_Kind,
   PostAuthorSchema,
   PostSchema,
+  PostStatsSchema,
   PostType,
   ReactionKind,
 } from '../gen/proto/domain/social/post_pb';
@@ -382,6 +383,9 @@ function privateMomentPostShell(
       kind: PRIVATE_AUDIENCE_KINDS[projection.audienceKind],
     }),
     reactions: projection.reactions ?? [],
+    stats: projection.commentsCount === undefined ? undefined : create(PostStatsSchema, {
+      commentsCount: BigInt(projection.commentsCount),
+    }),
   });
 }
 
@@ -411,16 +415,27 @@ function projectPrivateMoments(
   ));
   if (visible.length === 0) return {};
 
-  const postsById = { ...state.postsById };
-  const reactions = { ...state.reactions };
+  let postsById = state.postsById;
+  let reactions = state.reactions;
   for (const projection of visible) {
     const post = privateMomentPostShell(projection);
     if (!projection.reactionsHydrated) {
       post.reactions = reactions[post.id] ?? postsById[post.id]?.reactions ?? [];
+    } else {
+      const previous = reactions[post.id];
+      if (previous && sameReactionSummaries(previous, post.reactions)) {
+        post.reactions = previous;
+      } else {
+        if (reactions === state.reactions) reactions = { ...reactions };
+        reactions[post.id] = post.reactions;
+      }
     }
-    postsById[post.id] = post;
-    if (projection.reactionsHydrated) {
-      reactions[post.id] = post.reactions;
+    const previous = postsById[post.id];
+    // The private shell includes mutable authorized stats as well as the
+    // authored revision. Compare the complete shell so real updates repaint.
+    if (!previous || !equals(PostSchema, previous, post)) {
+      if (postsById === state.postsById) postsById = { ...postsById };
+      postsById[post.id] = post;
     }
   }
   const postIds = [
@@ -435,10 +450,15 @@ function projectPrivateMoments(
       - postCreatedAtMillis(postsById[left])
     ),
   );
+  const sameOrder = postIds.length === state.feeds.home.postIds.length
+    && postIds.every((id, index) => id === state.feeds.home.postIds[index]);
+  if (postsById === state.postsById && reactions === state.reactions && sameOrder) {
+    return state;
+  }
   return {
     postsById,
     reactions,
-    feeds: {
+    feeds: sameOrder ? state.feeds : {
       ...state.feeds,
       home: {
         ...state.feeds.home,

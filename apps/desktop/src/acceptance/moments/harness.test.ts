@@ -22,6 +22,11 @@ declare const __PT_SOURCE_COMMIT__: string;
 
 const registered: Record<string, Record<string, (...args: unknown[]) => Promise<unknown>>> = {};
 
+vi.mock('./feedObservation', () => ({
+  feedSearchIdentities: vi.fn(),
+  reconcileFeedProjection: vi.fn(),
+}));
+
 const momentsState = {
   composerDraft: null as Record<string, unknown> | null,
   feeds: {

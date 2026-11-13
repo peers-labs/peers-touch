@@ -18,6 +18,7 @@ import { useActorIdentity } from '../common/useActorIdentity';
 import { useActiveMomentsFederationSlice, useActivePrivateMomentsSlice } from './useActiveMomentsStore';
 import { isReadablePrivateMomentProjection, privateDeliveryNoticeState } from '../../services/privateMomentsNative';
 import { SocialActionBar, SocialPrivateState, SocialTrustMeta } from './surfaces';
+import { formatMomentTime } from './momentTime';
 
 interface MomentCardProps {
   post: Post; reactions?: ReactionSummary[]; explanation?: FeedObjectExplanation;
@@ -51,21 +52,14 @@ function bodyText(post: Post): string {
   if (!content.case) return '';
   return content.case === 'repostPost' ? content.value.comment : content.value.text;
 }
-function relativeTime(seconds: bigint | undefined, t: (key: string, options?: { count: number }) => string) {
-  if (!seconds) return '';
-  const age = Math.max(0, Math.floor((Date.now() - Number(seconds) * 1000) / 1000));
-  if (age < 60) return t('moments.time.seconds', { count: age });
-  if (age < 3600) return t('moments.time.minutes', { count: Math.floor(age / 60) });
-  if (age < 86400) return t('moments.time.hours', { count: Math.floor(age / 3600) });
-  if (age < 2592000) return t('moments.time.days', { count: Math.floor(age / 86400) });
-  return new Date(Number(seconds) * 1000).toLocaleDateString();
-}
 
 /** Native/Proto adapter. The shared MomentCard owns the complete visible card anatomy. */
 export const MomentCard = memo(function MomentCard({ post, reactions, explanation, viewerActorPtid,
   surface = 'home', onOpen, defaultCommentsOpen = true, targetCommentId, onReact, onUnreact,
   onAuthorClick, onDelete, embedded }: MomentCardProps) {
   const { t } = useTranslation('moments');
+  const createdAtMillis = post.createdAt === undefined ? undefined
+    : Number(post.createdAt.seconds) * 1000 + post.createdAt.nanos / 1_000_000;
   const feedback = useScopedFeedback();
   const selfStation = useActiveMomentsFederationSlice(state => state.self);
   const { projection, platform, readMoment, recoverMoment, openMedia, reaction, retryReaction } =
@@ -130,7 +124,7 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
     data-can-edit={canEdit ? 'true' : 'false'}
     copy={{ more: t('moments.action.more'), expand: t('moments.action.showMore'), collapse: t('moments.action.showLess') }}
     author={<MomentAuthorTrigger actorPtid={authorPtid} onOpenProfile={onAuthorClick} onOpenMoment={onOpen}>
-      <MomentAuthor name={name} time={relativeTime(post.createdAt?.seconds, t)}
+      <MomentAuthor name={name} time={formatMomentTime(createdAtMillis, t)}
         label={t('moments.identity.cardLabel', { name })}
         avatar={<UserSquareAvatar remoteUrl={identity.avatarUrl || undefined} actorPtid={authorPtid || null}
           name={name} size={48} radius={13} />} />

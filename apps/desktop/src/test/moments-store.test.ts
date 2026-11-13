@@ -3178,6 +3178,115 @@ describe('moments store: reactions', () => {
     });
   });
 
+  it('retains private cards and timeline references across unchanged reconciliation', () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 34);
+    const wire = {
+      post_id: 'private-stable',
+      content_id: 'private-stable',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      created_at_millis: 1_700_000_000_000,
+      updated_at_millis: 1_700_000_000_000,
+      comments_count: '2',
+      mentions: [],
+      reactions: [{ kind: ReactionKind.REACTION_LOVE, count: '1', reacted_by_viewer: true }],
+      reaction_revision: '1',
+      reactions_hydrated: true,
+      content: { kind: 'TEXT', text: 'private plaintext remains at its owner' },
+    };
+    useMomentsStore.getState().hydratePrivateMoments([normalizePrivateMomentProjection(wire)]);
+    const before = useMomentsStore.getState();
+    const changed = vi.fn();
+    const unsubscribe = useMomentsStore.subscribe(changed);
+    try {
+      useMomentsStore.getState().hydratePrivateMoments([normalizePrivateMomentProjection(wire)]);
+      const after = useMomentsStore.getState();
+      expect(after.postsById['private-stable']).toBe(before.postsById['private-stable']);
+      expect(after.postsById).toBe(before.postsById);
+      expect(after.reactions).toBe(before.reactions);
+      expect(after.reactions['private-stable']).toBe(before.reactions['private-stable']);
+      expect(after.feeds).toBe(before.feeds);
+      expect(after.feeds.home).toBe(before.feeds.home);
+      expect(after.feeds.home.postIds).toBe(before.feeds.home.postIds);
+      expect(after).toBe(before);
+      expect(changed).not.toHaveBeenCalled();
+      expect(after.postsById['private-stable'].content.case).toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('updates private comment totals and reactions without replacing unchanged neighbors', () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 34);
+    const wire = {
+      post_id: 'private-changing',
+      content_id: 'private-changing',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      created_at_millis: 1_700_000_000_000,
+      updated_at_millis: 1_700_000_000_000,
+      comments_count: '0',
+      mentions: [],
+      reactions: [{ kind: ReactionKind.REACTION_LOVE, count: '1', reacted_by_viewer: false }],
+      reaction_revision: '1',
+      reactions_hydrated: true,
+      content: { kind: 'TEXT', text: 'private text' },
+    };
+    const neighbor = { ...wire, post_id: 'private-neighbor', content_id: 'private-neighbor' };
+    useMomentsStore.getState().hydratePrivateMoments([
+      normalizePrivateMomentProjection(wire), normalizePrivateMomentProjection(neighbor),
+    ]);
+    const before = useMomentsStore.getState();
+
+    useMomentsStore.getState().hydratePrivateMoments([
+      normalizePrivateMomentProjection({ ...wire, comments_count: '2' }),
+      normalizePrivateMomentProjection(neighbor),
+    ]);
+    const counted = useMomentsStore.getState();
+    expect(counted.postsById['private-changing']).not.toBe(before.postsById['private-changing']);
+    expect(counted.postsById['private-changing'].stats?.commentsCount).toBe(2n);
+    expect(counted.postsById['private-changing'].updatedAt)
+      .toEqual(before.postsById['private-changing'].updatedAt);
+    expect(counted.postsById['private-neighbor']).toBe(before.postsById['private-neighbor']);
+    expect(counted.reactions).toBe(before.reactions);
+    expect(counted.feeds).toBe(before.feeds);
+
+    useMomentsStore.getState().hydratePrivateMoments([
+      normalizePrivateMomentProjection({
+        ...wire, comments_count: '2', reaction_revision: '2',
+        reactions: [{ kind: ReactionKind.REACTION_LOVE, count: '2', reacted_by_viewer: true }],
+      }),
+    ]);
+    const reacted = useMomentsStore.getState();
+    expect(reacted.postsById['private-changing']).not.toBe(counted.postsById['private-changing']);
+    expect(reacted.reactions['private-changing'][0]).toMatchObject({
+      count: 2n, reactedByViewer: true,
+    });
+    expect(reacted.postsById['private-changing'].reactions)
+      .toBe(reacted.reactions['private-changing']);
+    expect(reacted.postsById['private-neighbor']).toBe(before.postsById['private-neighbor']);
+    expect(reacted.reactions['private-neighbor']).toBe(before.reactions['private-neighbor']);
+    expect(reacted.feeds).toBe(before.feeds);
+
+    useMomentsStore.getState().hydratePrivateMoments([
+      normalizePrivateMomentProjection({
+        ...wire, post_id: 'private-newer', content_id: 'private-newer',
+        created_at_millis: 1_700_000_001_000,
+      }),
+    ]);
+    const inserted = useMomentsStore.getState();
+    expect(inserted.feeds.home.postIds).toEqual([
+      'private-newer', 'private-changing', 'private-neighbor',
+    ]);
+    expect(inserted.postsById['private-changing']).toBe(reacted.postsById['private-changing']);
+    expect(inserted.postsById['private-neighbor']).toBe(before.postsById['private-neighbor']);
+    expect(inserted.postsById['private-newer'].content.case).toBeUndefined();
+  });
+
   it('retries an unknown private Reaction with its durable command ID', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });

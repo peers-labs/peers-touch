@@ -139,6 +139,80 @@ describe('private Comment read completion and projection isolation', () => {
     expect(thread().comments[0].commentId).toBe('reentrant-comment');
   });
 
+  it('completes the first authorized empty page instead of retaining its loading state', async () => {
+    const native = deferred<PrivateCommentPage>();
+    vi.spyOn(privateCommentsNative, 'list').mockReturnValue(native.promise);
+    const read = store().loadComments('post-1');
+    expect(thread()).toMatchObject({ loading: true, loaded: false, comments: [] });
+
+    native.resolve({ ...page('unused'), comments: [] });
+    await read;
+
+    expect(thread()).toMatchObject({
+      loading: false, loaded: true, comments: [], nextCursor: '', hasMore: false,
+    });
+  });
+
+  it('retains an acquired empty thread during an unchanged background refresh', async () => {
+    const native = deferred<PrivateCommentPage>();
+    const emptyPage = { ...page('unused'), comments: [] };
+    vi.spyOn(privateCommentsNative, 'list')
+      .mockResolvedValueOnce(emptyPage).mockReturnValueOnce(native.promise);
+    await store().loadComments('post-1');
+    const acquired = thread();
+    expect(acquired).toMatchObject({ loading: false, loaded: true });
+
+    const refresh = store().loadComments('post-1', true);
+    expect(thread()).toBe(acquired);
+    native.resolve(emptyPage);
+    await refresh;
+
+    expect(thread()).toBe(acquired);
+    expect(thread().comments).toBe(acquired.comments);
+  });
+
+  it('clears a list failure when its retry returns an authorized empty page', async () => {
+    const error = new PrivateCommentsNativeError({
+      code: 'SOCIAL_PRIVATE_DEPENDENCY_FAILURE', state: 'COMMENT_FAILED',
+    });
+    vi.spyOn(privateCommentsNative, 'list')
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({ ...page('unused'), comments: [] });
+    await expect(store().loadComments('post-1')).rejects.toBe(error);
+    expect(thread()).toMatchObject({ loading: false, state: 'COMMENT_FAILED' });
+
+    await store().loadComments('post-1', true);
+
+    expect(thread()).toMatchObject({ loading: false, loaded: true, comments: [] });
+    expect(thread().state).toBeUndefined();
+    expect(thread().errorCode).toBeUndefined();
+  });
+
+  it('completes unchanged viewport reacquisition while retaining the acquired comment rows', async () => {
+    vi.spyOn(privateCommentsNative, 'list').mockResolvedValue(page('original-comment'));
+    await store().loadComments('post-1');
+    const acquired = thread();
+
+    const read = store().loadComments('post-1');
+    expect(thread().loading).toBe(true);
+    await read;
+
+    expect(thread()).toMatchObject({ loading: false, loaded: true });
+    expect(thread().comments).toBe(acquired.comments);
+    expect(thread().comments[0]).toBe(acquired.comments[0]);
+  });
+
+  it('keeps a healthy unchanged background thread and its rows on the same references', async () => {
+    vi.spyOn(privateCommentsNative, 'list').mockResolvedValue(page('original-comment'));
+    await store().loadComments('post-1');
+    const acquired = thread();
+
+    await store().loadComments('post-1', true);
+
+    expect(thread()).toBe(acquired);
+    expect(thread().comments).toBe(acquired.comments);
+  });
+
   it('rejects both readers with the original error and permits an independent retry', async () => {
     const native = deferred<PrivateCommentPage>();
     const error = new PrivateCommentsNativeError({

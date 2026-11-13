@@ -231,6 +231,8 @@ pub struct PrivateMomentProjection {
     pub reaction_revision: String,
     #[serde(default)]
     pub reactions_hydrated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments_count: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<PrivateMomentContentProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -510,6 +512,10 @@ fn decrypt_projection_from_response_at(
         reactions,
         reaction_revision,
         reactions_hydrated,
+        comments_count: metadata
+            .stats
+            .as_ref()
+            .map(|stats| stats.comments_count.to_string()),
         content: Some(content),
         error_code: None,
         retry_after_seconds: None,
@@ -2436,6 +2442,7 @@ mod tests {
             reactions: Vec::new(),
             reaction_revision: "0".to_string(),
             reactions_hydrated: false,
+            comments_count: None,
             content: None,
             error_code: Some("RECOVERY_REQUIRED".to_string()),
             retry_after_seconds: None,

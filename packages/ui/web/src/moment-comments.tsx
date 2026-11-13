@@ -17,6 +17,7 @@ export interface MomentCommentRowProps extends Omit<HTMLAttributes<HTMLLIElement
   reaction?: {
     count: bigint | number;
     liked: boolean;
+    /** Accessible action label; the visible control is an emoji and count. */
     label: string;
     pending?: boolean;
     error?: ReactNode;
@@ -38,8 +39,13 @@ export function MomentCommentRow({ commentId, avatar, author, content, time, act
         {reaction && <Button actionId={`comment.like.${commentId}`} emphasis="quiet" density="compact"
           className={`sk-comment-action${reaction.liked ? ' is-liked' : ''}`}
           data-comment-like={reaction.liked ? 'on' : 'off'} data-comment-like-count={String(reaction.count)}
-          aria-pressed={reaction.liked} label={reaction.label}
-          execution={reaction.pending ? 'pending' : 'idle'} onActivate={reaction.onActivate} />}
+          aria-pressed={reaction.liked} aria-label={reaction.label}
+          execution={reaction.pending ? 'pending' : 'idle'} onActivate={reaction.onActivate}>
+          <span className="sk-comment-reaction-emoji" aria-hidden="true">👍</span>
+          {BigInt(reaction.count) > 0n && <span className="sk-comment-reaction-count" aria-hidden="true">
+            {String(reaction.count)}
+          </span>}
+        </Button>}
         {actions}
         {reaction?.retry && <Button actionId={`comment.like.retry.${commentId}`} emphasis="quiet"
           density="compact" className="sk-comment-action" label={reaction.retry.label}

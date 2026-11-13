@@ -378,18 +378,18 @@ export const usePrivateCommentsStore = createDesktopStore<PrivateCommentsState>(
             comments[index] = newerComment(comments[index]!, comment);
           }
         }
-        // If every row kept its identity and the paging metadata is unchanged,
-        // reuse the whole thread (including its comments array) so selector
-        // references stay stable and memoized comment rows do not repaint on a
-        // no-op periodic refresh.
+        // Reuse an unchanged thread only after acquisition has completed.
+        // An empty or identical page must still settle loading and clear errors.
         const commentsUnchanged = comments.length === current.comments.length
           && comments.every((comment, index) => comment === current.comments[index]);
         const thread = commentsUnchanged
           && page.nextCursor === current.nextCursor
           && page.hasMore === current.hasMore
+          && current.loaded && !current.loading
+          && current.state === undefined && current.errorCode === undefined
           ? current
           : {
-            comments,
+            comments: commentsUnchanged ? current.comments : comments,
             nextCursor: page.nextCursor,
             hasMore: page.hasMore,
             loading: false,

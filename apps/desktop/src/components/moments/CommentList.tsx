@@ -28,6 +28,7 @@ import { MomentCommentAuthorName } from './MomentCommentAuthorName';
 import { MomentAuthorTrigger } from './MomentAuthorTrigger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { useActorIdentity } from '../common/useActorIdentity';
+import { formatMomentTime } from './momentTime';
 
 // CommentList — thread for a single post.
 //
@@ -507,7 +508,9 @@ function MomentCommentRow({
       } : undefined,
     } : undefined}
     highlighted={highlighted} depth={depth} replies={replies}
-    time={date === undefined ? undefined : <time dateTime={new Date(date).toISOString()}>{new Date(date).toLocaleString()}</time>}
+    time={date === undefined ? undefined : <time dateTime={new Date(date).toISOString()} title={new Date(date).toLocaleString()}>
+      {formatMomentTime(date, t)}
+    </time>}
     avatar={<MomentAuthorTrigger actorPtid={comment.authorPtid} onOpenProfile={onAuthorClick}>
       <Button actionId={`comment.avatar.${comment.id}`} emphasis="quiet" density="compact"
         className="pt-mom-comment-avatar" aria-label={t('moments.identity.cardLabel', { name })}>

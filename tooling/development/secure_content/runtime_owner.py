@@ -7716,6 +7716,7 @@ class W7RuntimeOwner:
                 bob_comment_ui,
                 alice_comment_ui,
                 post_id=as20_post,
+                parent_text=as20_text,
                 root_text=as20_comment,
                 reply_text=as20_reply,
             )
@@ -7792,6 +7793,9 @@ class W7RuntimeOwner:
                     "commentReactionActions": bob_comment_ui.actions + alice_comment_ui.actions,
                     "commentReactionAssertions": bob_comment_ui.assertions + alice_comment_ui.assertions,
                     "commentReactionReplays": replay_evidence,
+                    "feedSearch": comment_interactions["feedSearch"],
+                    "identitySearch": comment_interactions["identitySearch"],
+                    "feedReconcile": comment_interactions["feedReconcile"],
                     "pollActions": bob_poll_ui.actions + alice_poll_ui.actions,
                     "pollAssertions": bob_poll_ui.assertions + alice_poll_ui.assertions,
                     "pollResults": ballot_results,
@@ -7948,6 +7952,20 @@ class W7RuntimeOwner:
                     resource=f"client:{bob2_id}",
                 )
             _prepare_private_content_keys(bob2)
+            recovered_interaction_parents = []
+            for post_id in (as20_post, *(result["postId"] for result in ballot_results)):
+                parent_recovery = _moments_harness(
+                    bob2,
+                    "recoverPrivateMoment",
+                    {"postId": post_id},
+                )
+                if parent_recovery.get("state") != "CONTENT_READY":
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE",
+                        "AS23 replacement device did not recover its interaction parent",
+                        resource=f"client:{bob2_id}",
+                    )
+                recovered_interaction_parents.append(post_id)
             _wait_for_private_moment_state(
                 bob2, post_id=as20_post, expected_state="CONTENT_READY", actor_label="Bob2",
             )
@@ -8001,6 +8019,7 @@ class W7RuntimeOwner:
                         "deviceIdSha256"
                     ],
                     "commentReactionActions": bob2_comment_ui.actions,
+                    "recoveredInteractionParents": recovered_interaction_parents,
                     "commentReactionAssertions": bob2_comment_ui.assertions,
                     "pollActions": bob2_poll_ui.actions,
                     "pollAssertions": bob2_poll_ui.assertions,

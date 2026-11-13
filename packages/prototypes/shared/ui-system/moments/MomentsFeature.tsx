@@ -732,6 +732,16 @@ export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationR
     setPosts(list => list.filter(post => post.id !== postId));
   };
 
+  const editPost = (postId: string, text: string) => {
+    setPosts(list => list.map(post => post.id === postId ? { ...post, text } : post));
+  };
+
+  const votePoll = (postId: string, choices: number[]) => {
+    setPosts(list => list.map(post => post.id === postId && post.poll
+      ? { ...post, poll: { ...post.poll, choices: [...choices] } }
+      : post));
+  };
+
   const publish = (draft: ComposerDraft) => {
     const reason: TrustReason = draft.audience === 'self'
       ? 'self'
@@ -848,6 +858,8 @@ export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationR
     onReplyComment: replyComment,
     onDeleteComment: deleteComment,
     onDeletePost: deletePost,
+    onEditPost: editPost,
+    onVotePoll: votePoll,
   };
 
   const profileName = nav.kind === 'profile' ? nav.name : '';

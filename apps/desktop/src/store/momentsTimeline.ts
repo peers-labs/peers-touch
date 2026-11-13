@@ -1,4 +1,5 @@
-import type { Post, ReactionSummary } from '../gen/proto/domain/social/post_pb';
+import { Audience_Kind, type Post, type ReactionSummary } from '../gen/proto/domain/social/post_pb';
+import { isReadablePrivateMomentProjection, type PrivateMomentProjection } from '../services/privateMomentsNative';
 import type { TimelineSort } from '../services/social_api';
 
 /** Compose the two acquired feed windows without changing either source's cursor. */
@@ -21,8 +22,28 @@ export function selectMomentsTimeline(homeIds: readonly string[], publicIds: rea
     || time(b) - time(a) || a.id.localeCompare(b.id));
 }
 
-export function momentSearchText(post: Post): string {
+export interface MomentSearchIdentity {
+  actorPtid: string;
+  displayName?: string;
+  username?: string;
+  homeStationName?: string;
+  homeStationDomain?: string;
+}
+
+export function momentSearchText(post: Post, projection?: PrivateMomentProjection,
+  identity?: MomentSearchIdentity): string {
   const content = post.content;
-  const text = content.case === 'repostPost' ? content.value.comment : content.case ? content.value.text : '';
-  return [text, post.author?.displayName, post.author?.username, post.author?.homeStationDomain].filter(Boolean).join('\n').toLocaleLowerCase();
+  const audience = post.audience?.kind;
+  const isPrivate = audience !== undefined && audience !== Audience_Kind.PUBLIC
+    && audience !== Audience_Kind.KIND_UNSPECIFIED;
+  const privateContent = projection?.postId === post.id && projection.authorPtid === post.authorPtid
+    && projection.audienceKind !== 'UNKNOWN' && isReadablePrivateMomentProjection(projection)
+    ? projection.content : undefined;
+  const text = isPrivate
+    ? privateContent?.kind === 'REPOST' ? privateContent.comment : privateContent?.text
+    : content.case === 'repostPost' ? content.value.comment : content.case ? content.value.text : '';
+  const authorPtid = post.authorPtid || post.author?.id || '';
+  const author = identity?.actorPtid === authorPtid ? identity : undefined;
+  return [text, author?.displayName, author?.username, author?.homeStationName,
+    author?.homeStationDomain].filter(Boolean).join('\n').toLocaleLowerCase();
 }

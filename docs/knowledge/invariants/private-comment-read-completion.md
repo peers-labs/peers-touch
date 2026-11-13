@@ -29,6 +29,13 @@ and unavailable-parent transitions invalidate the corresponding in-flight
 read. Late callbacks MUST NOT recreate cleared private content. An unchanged
 or older Native bootstrap generation MUST NOT cancel the current read.
 
+Desktop thread acquisition MUST complete even when an authorized page is empty
+or identical to retained data. Row and cursor equality cannot retain a pending
+`loading` flag, an unacquired `loaded` flag or an earlier error. Whole-thread
+reuse requires an already acquired, settled, healthy thread. A completion that
+changes only lifecycle state retains the existing unchanged comment array and
+rows; an unchanged healthy background refresh retains the whole thread.
+
 Content generation and reaction revision are independent lanes. Replacement
 pages and snapshots retain the newer lane of each current comment. A reaction
 completion updates only the currently retained target; it cannot overwrite a
@@ -65,6 +72,9 @@ The controlled pending-Native cases must prove shared completion and errors,
 independent retry, refresh during pagination, historical anchor replacement,
 subscriber reentrancy, scope and post invalidation, terminal parent state, and
 unchanged versus replaced Native session generations.
+Desktop cases also require first-read empty completion, empty retry after failure,
+unchanged viewport reacquisition and stable references during healthy empty and
+nonempty background refreshes.
 
 The reaction cases must also prove refresh/bootstrap lane merging, delayed
 reaction versus body edit, target removal, and same-value scope reactivation.

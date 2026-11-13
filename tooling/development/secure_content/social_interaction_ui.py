@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import time
 from pathlib import Path
 from typing import Any
 
 from selenium.common.exceptions import StaleElementReferenceException
 
 from tooling.acceptance import search_capture
+from tooling.acceptance.core.evidence_store import (
+    current_run_directory,
+    write_current_artifact,
+)
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
+    FoundationClientError,
     FoundationRuntimeClient,
     wait_until,
 )
+from .social_feed_ui import assert_identity_search, assert_stable_reconcile
 
 
 def _digest(value: str) -> str:
@@ -56,6 +64,16 @@ class SocialCommentUI:
         self.evidence_root = evidence_root / actor
         self.evidence_root.mkdir(parents=True, exist_ok=True)
         self.artifacts: list[Path] = []
+
+    def save_dom(self, path: Path) -> None:
+        """Redact the Native snapshot before its single immutable write."""
+        repo_root = self.client.spec.worktree
+        run_root = current_run_directory(repo_root=repo_root)
+        write_current_artifact(
+            path.relative_to(run_root).as_posix(),
+            self.driver.page_source.encode("utf-8"),
+            repo_root=repo_root,
+        )
 
     def visible(self, selector: str) -> Any:
         for element in self.driver.find_elements("css selector", selector):
@@ -195,6 +213,106 @@ class SocialCommentUI:
         )
         return post
 
+    def assert_feed_search(self, post_id: str, text: str) -> dict[str, Any]:
+        """Search the original acquired private parent through its real field."""
+        post = self.open_thread(post_id)
+        search = '.moments-app input[data-scope-search="feed"]'
+        cards = '.moments-app [data-acceptance-id="social-moment-card"][data-post-id]'
+
+        def card_ids() -> list[str]:
+            return self.driver.execute_script(
+                "return Array.from(document.querySelectorAll(arguments[0]), "
+                "element => element.dataset.postId).sort();", cards,
+            )
+
+        before = card_ids()
+        field = self.click(search, "search-private-parent")
+        if field.get_attribute("value"):
+            raise RuntimeError("AS20 private search must start with an empty query")
+
+        def query(value: str) -> None:
+            current = wait_until(
+                lambda: self.visible(search), f"{self.actor} feed search field", timeout=30,
+            )
+            current.clear()
+            if value:
+                current.send_keys(value)
+
+        try:
+            query(text)
+            wait_until(
+                lambda: card_ids() == [post_id],
+                f"{self.actor} private body search result", timeout=30,
+            )
+            target = wait_until(
+                lambda: self.visible(post), f"{self.actor} searched private parent", timeout=30,
+            )
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center',inline:'nearest'});", target,
+            )
+
+            def painted() -> bool:
+                return card_ids() == [post_id] and self.driver.execute_script(
+                    search_capture.TARGET_VISIBILITY_JS + """
+                    const target = document.querySelector(arguments[0]);
+                    const field = document.querySelector(arguments[1]);
+                    const thread = target?.querySelector('[data-moments-comment-thread]');
+                    return field?.value === arguments[2]
+                      && target?.querySelector(':scope > .sk-post-body > p')?.textContent.includes(arguments[2])
+                      && thread && !thread.querySelector('.pt-spinner')
+                      && thread.querySelectorAll('[data-moments-comment]').length === 0
+                      && Boolean(thread.querySelector('.pt-mom-comment-status')?.textContent.trim())
+                      && targetVisibility(target, true).visible;
+                    """, post, search, text,
+                )
+
+            capture_deadline = time.monotonic() + 30
+            wait_until(painted, f"{self.actor} painted private search result", timeout=30)
+            remaining_ms = max(1, int((capture_deadline - time.monotonic()) * 1000))
+            if not self.driver.execute_async_script(
+                search_capture.CAPTURE_PAINT_JS, remaining_ms,
+            ) or time.monotonic() >= capture_deadline:
+                try:
+                    state = self.driver.execute_script("""
+                      return {visibility: document.visibilityState,
+                        hidden: document.hidden, width: innerWidth, height: innerHeight,
+                        readyState: document.readyState};
+                    """)
+                    self.save_dom(self.evidence_root / "private-search-paint-timeout.html")
+                except Exception as error:
+                    state = {"diagnosticError": type(error).__name__}
+                raise RuntimeError(f"Private search Native paint frames timed out: {state}")
+            screenshot = self.evidence_root / "private-feed-search.png"
+            dom = screenshot.with_suffix(".html")
+            if not self.driver.save_screenshot(str(screenshot)):
+                raise RuntimeError("Private search Native screenshot failed")
+            self.save_dom(dom)
+            if time.monotonic() >= capture_deadline:
+                raise RuntimeError("Private search Native capture timed out")
+            if not painted():
+                raise RuntimeError("Private search changed during Native capture")
+            self.artifacts.extend((screenshot, dom))
+            query(text + "-no-matching-parent")
+            wait_until(
+                lambda: card_ids() == [], f"{self.actor} private search no match", timeout=30,
+            )
+        finally:
+            query("")
+        wait_until(
+            lambda: card_ids() == before, f"{self.actor} cleared search restores feed", timeout=30,
+        )
+        return {
+            "actor": self.actor,
+            "querySha256": _digest(text),
+            "postIdSha256": _digest(post_id),
+            "matchedPrivateBody": True,
+            "emptyThreadSettled": True,
+            "noMatch": True,
+            "clearedFeedRestored": True,
+            "screenshot": str(screenshot),
+            "dom": str(dom),
+        }
+
     def row(self, post_id: str, text: str, depth: int) -> str:
         post = self.post_selector(post_id)
 
@@ -255,7 +373,8 @@ class SocialCommentUI:
         return self.attribute(row, "data-comment-id", "submitted comment identity")
 
     def assert_like(
-        self, post_id: str, text: str, depth: int, count: int, liked: bool, phase: str
+        self, post_id: str, text: str, depth: int, count: int, liked: bool, phase: str,
+        *, post_comment_count: int | None = None,
     ) -> str:
         row = self.row(post_id, text, depth)
         selector = f"{row} > .sk-comment-body > .sk-comment-meta [data-comment-like]"
@@ -266,11 +385,138 @@ class SocialCommentUI:
                 action_enabled(control)
                 and control.get_attribute("data-comment-like-count") == str(count)
                 and control.get_attribute("aria-pressed") == str(liked).lower()
+                and self.driver.execute_script(
+                    """
+                    const button = arguments[0], count = arguments[1];
+                    const content = button.querySelector('.pt-button-content');
+                    const emoji = content?.querySelector('.sk-comment-reaction-emoji');
+                    const counter = content?.querySelector('.sk-comment-reaction-count');
+                    const style = getComputedStyle(button);
+                    const row = button.closest('[data-comment-id]');
+                    const time = row?.querySelector(':scope > .sk-comment-body > .sk-comment-meta time');
+                    const timestamp = time ? new Date(time.dateTime) : null;
+                    const comments = button.closest('[data-post-id]')?.querySelector(
+                      '[data-acceptance-id="social-open-comments"] .pt-button-content');
+                    return emoji?.textContent === '👍'
+                      && (count > 0 ? counter?.textContent.trim() === String(count) : !counter)
+                      && !/Like|赞/.test(content?.textContent || '')
+                      && button.getBoundingClientRect().height === 22
+                      && style.padding === '0px' && style.borderWidth === '0px'
+                      && ['transparent', 'rgba(0, 0, 0, 0)'].includes(style.backgroundColor)
+                      && timestamp && Number.isFinite(timestamp.getTime())
+                      && time.title === timestamp.toLocaleString()
+                      && time.textContent.trim().length > 0
+                      && time.textContent.trim() !== time.title
+                      && (arguments[2] === null
+                        || comments?.textContent.trim() === String(arguments[2]));
+                    """,
+                    control, count, post_comment_count,
+                )
             ):
                 return control
             return None
 
-        control = wait_until(settled, f"{self.actor} {phase} LIKE {count}/{liked}", timeout=120)
+        try:
+            control = wait_until(
+                settled, f"{self.actor} {phase} LIKE {count}/{liked}", timeout=120,
+            )
+        except FoundationClientError as error:
+            # Failure snapshots are diagnostics, never painted PASS evidence.
+            # Preserve the original predicate and its deadline while recording
+            # which combined condition failed before the Suite releases Native.
+            diagnostic: dict[str, Any] = {
+                "actor": self.actor, "phase": phase, "depth": depth,
+                "postIdSha256": _digest(post_id),
+                "commentTextSha256": _digest(text),
+                "expected": {
+                    "count": count, "liked": liked,
+                    "postCommentCount": post_comment_count,
+                },
+            }
+            stem = self.evidence_root / f"{len(self.assertions):02d}-{phase}-{depth}-failure"
+            capture_errors: list[str] = []
+            try:
+                diagnostic["observed"] = self.driver.execute_script(
+                    """
+                    const button = document.querySelector(arguments[0]);
+                    const count = arguments[1], liked = arguments[2], postCount = arguments[3];
+                    if (!button) return {checks: {controlPresent: false}};
+                    const content = button.querySelector('.pt-button-content');
+                    const emoji = content?.querySelector('.sk-comment-reaction-emoji');
+                    const counter = content?.querySelector('.sk-comment-reaction-count');
+                    const style = getComputedStyle(button), rect = button.getBoundingClientRect();
+                    const row = button.closest('[data-comment-id]');
+                    const time = row?.querySelector(':scope > .sk-comment-body > .sk-comment-meta time');
+                    const timestamp = time ? new Date(time.dateTime) : null;
+                    const comments = button.closest('[data-post-id]')?.querySelector(
+                      '[data-acceptance-id="social-open-comments"] .pt-button-content');
+                    const numeric = value => /^\\d+$/.test(value || '') ? value : null;
+                    return {
+                      checks: {
+                        controlPresent: true,
+                        enabled: !button.hasAttribute('disabled') && button.getAttribute('aria-disabled') !== 'true',
+                        count: button.getAttribute('data-comment-like-count') === String(count),
+                        pressed: button.getAttribute('aria-pressed') === String(liked),
+                        emoji: emoji?.textContent === '👍',
+                        counter: count > 0 ? counter?.textContent.trim() === String(count) : !counter,
+                        emojiOnly: !/Like|赞/.test(content?.textContent || ''),
+                        height: rect.height === 22,
+                        padding: style.padding === '0px',
+                        border: style.borderWidth === '0px',
+                        background: ['transparent', 'rgba(0, 0, 0, 0)'].includes(style.backgroundColor),
+                        timestamp: Boolean(timestamp && Number.isFinite(timestamp.getTime())),
+                        timeTooltip: Boolean(timestamp && time.title === timestamp.toLocaleString()),
+                        relativeTime: Boolean(time && time.textContent.trim().length > 0
+                          && time.textContent.trim() !== time.title),
+                        postCommentCount: postCount === null
+                          || comments?.textContent.trim() === String(postCount),
+                      },
+                      count: numeric(button.getAttribute('data-comment-like-count')),
+                      pressed: button.getAttribute('aria-pressed'),
+                      postCommentCount: numeric(comments?.textContent.trim()),
+                      rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+                      style: {padding: style.padding, borderWidth: style.borderWidth,
+                        backgroundColor: style.backgroundColor, display: style.display,
+                        visibility: style.visibility, opacity: style.opacity},
+                      viewport: {width: innerWidth, height: innerHeight},
+                      visibilityState: document.visibilityState,
+                    };
+                    """,
+                    selector, count, liked, post_comment_count,
+                )
+                elements = self.driver.find_elements("css selector", selector)
+                diagnostic["observed"]["checks"]["nativeDisplayed"] = bool(
+                    elements and elements[0].is_displayed()
+                )
+                diagnostic["observed"]["checks"]["visible"] = self.visible(selector) is not None
+            except Exception as capture_error:
+                capture_errors.append(f"observation:{type(capture_error).__name__}")
+            for suffix in (".png", ".html"):
+                path = stem.with_suffix(suffix)
+                try:
+                    if suffix == ".png":
+                        if not self.driver.save_screenshot(str(path)):
+                            raise RuntimeError("Native failure screenshot failed")
+                    else:
+                        self.save_dom(path)
+                    self.artifacts.append(path)
+                except Exception as capture_error:
+                    capture_errors.append(f"{suffix}:{type(capture_error).__name__}")
+            diagnostic["captureErrors"] = capture_errors
+            checks = diagnostic.get("observed", {}).get("checks", {})
+            failed = [name for name, passed in checks.items() if not passed]
+            diagnostic["failedChecks"] = failed
+            path = stem.with_suffix(".json")
+            write_current_artifact(
+                path.relative_to(current_run_directory(repo_root=self.client.spec.worktree)).as_posix(),
+                json.dumps(diagnostic, ensure_ascii=False, indent=2).encode("utf-8"),
+                repo_root=self.client.spec.worktree,
+            )
+            self.artifacts.append(path)
+            raise FoundationClientError(
+                f"{error}; failed checks: {', '.join(failed) or 'observation unavailable'}; "
+                f"diagnostic: {path}"
+            ) from error
         if phase.startswith("before-"):
             return selector
         self.driver.execute_script(
@@ -294,7 +540,7 @@ class SocialCommentUI:
         dom = screenshot.with_suffix(".html")
         if not self.driver.save_screenshot(str(screenshot)):
             raise RuntimeError("Private comment Native screenshot failed")
-        dom.write_text(self.driver.page_source, encoding="utf-8")
+        self.save_dom(dom)
         if painted() is None:
             raise RuntimeError("Private comment changed during Native painted capture")
         live_control = self.attributes(
@@ -315,6 +561,10 @@ class SocialCommentUI:
             "commentIdSha256": _digest(comment_id),
             "count": int(live_control["data-comment-like-count"]),
             "liked": live_control["aria-pressed"] == "true",
+            "reactionPresentation": "emoji-only",
+            "metadataCompact": True,
+            "relativeTime": True,
+            "postCommentCount": post_comment_count,
             "tag": live_control["tag"],
             "automationSessionId": str(self.driver.session_id),
             "paintFrames": 2,
@@ -373,7 +623,23 @@ class SocialPollUI:
             "moments-navigation",
         )
         selector = f'{self.post_selector(post_id)} [data-acceptance-id="social-poll"]'
-        wait_until(lambda: self.visible(selector), f"{self.actor} private poll", timeout=120)
+        revealed: set[str] = set()
+
+        def reveal_poll() -> Any:
+            # Later posts and expanded comments push older polls outside the
+            # clipped feed viewport. Scroll the actual Native element before
+            # Selenium's visibility atom; waiting for visibility first can
+            # never reveal that otherwise fully rendered poll.
+            for element in self.driver.find_elements("css selector", selector):
+                if element.id not in revealed:
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
+                        element,
+                    )
+                    revealed.add(element.id)
+            return self.visible(selector)
+
+        wait_until(reveal_poll, f"{self.actor} private poll", timeout=120)
         return selector
 
     def select(self, post_id: str, choices: list[int]) -> None:
@@ -469,7 +735,7 @@ class SocialPollUI:
         dom = screenshot.with_suffix(".html")
         if not self.driver.save_screenshot(str(screenshot)):
             raise RuntimeError("Private poll Native screenshot failed")
-        dom.write_text(self.driver.page_source, encoding="utf-8")
+        self.controls.save_dom(dom)
         if painted() is None:
             raise RuntimeError("Private poll changed during Native painted capture")
         self.artifacts.extend((screenshot, dom))
@@ -505,7 +771,7 @@ class SocialPollUI:
         dom = screenshot.with_suffix(".html")
         if not self.driver.save_screenshot(str(screenshot)):
             raise RuntimeError("Private poll denial screenshot failed")
-        dom.write_text(self.driver.page_source, encoding="utf-8")
+        self.controls.save_dom(dom)
         if not concealed():
             raise RuntimeError("Private poll resurrected during painted denial capture")
         self.artifacts.extend((screenshot, dom))
@@ -546,17 +812,28 @@ def exercise_comment_likes(
     receiver: SocialCommentUI,
     *,
     post_id: str,
+    parent_text: str,
     root_text: str,
     reply_text: str,
 ) -> dict[str, Any]:
     """Real root/reply toggles on both clients in the original AS20 runtime."""
     if (sender.actor, receiver.actor) != ("bob", "alice"):
         raise ValueError("AS20 must consume the Suite's existing Bob and Alice bindings")
+    searches = [
+        client.assert_feed_search(post_id, parent_text) for client in (sender, receiver)
+    ]
+    identity_searches = [
+        assert_identity_search(client, post_id) for client in (sender, receiver)
+    ]
     root_id = sender.submit(post_id, root_text)
     receiver.open_thread(post_id)
-    receiver.assert_like(post_id, root_text, 0, 0, False, "root-created")
+    receiver.assert_like(
+        post_id, root_text, 0, 0, False, "root-created", post_comment_count=1,
+    )
     reply_id = receiver.submit(post_id, reply_text, reply_to=root_text)
-    sender.assert_like(post_id, reply_text, 1, 0, False, "reply-created")
+    sender.assert_like(
+        post_id, reply_text, 1, 0, False, "reply-created", post_comment_count=2,
+    )
     for text, depth, label in ((root_text, 0, "root"), (reply_text, 1, "reply")):
         for actor, peer, prefix in (
             (sender, receiver, "bob"), (receiver, sender, "alice"),
@@ -572,10 +849,16 @@ def exercise_comment_likes(
         receiver.toggle_like(post_id, text, depth, 0, False, f"alice-{label}-retain")
         receiver.assert_like(post_id, text, depth, 1, True, f"alice-{label}-retain")
         sender.assert_like(post_id, text, depth, 1, False, f"alice-{label}-retain")
+    reconciles = [
+        assert_stable_reconcile(client, post_id) for client in (sender, receiver)
+    ]
     return {
         "postId": post_id,
         "rootId": root_id,
         "replyId": reply_id,
+        "feedSearch": searches,
+        "identitySearch": identity_searches,
+        "feedReconcile": reconciles,
         "actions": sender.actions + receiver.actions,
         "assertions": sender.assertions + receiver.assertions,
     }

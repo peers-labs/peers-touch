@@ -2,8 +2,11 @@ import { useMemo, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Button, Empty, FeedSortFloat, Spin } from '@peers-touch/ui';
 import { MomentCard } from '../../components/moments/MomentCard';
-import { useActiveMomentsSlice, useActiveRelationshipsSlice } from '../../components/moments/useActiveMomentsStore';
+import { useActiveMomentsFederationSlice, useActiveMomentsSlice, useActivePrivateMomentsSlice,
+  useActiveRelationshipsSlice, useActiveSocialChatSlice } from '../../components/moments/useActiveMomentsStore';
 import { momentSearchText, selectMomentsTimeline } from '../../store/momentsTimeline';
+import { actorDisplayName } from '../../store/socialProfileProjection';
+import { resolveFederationStationName } from '../../store/federation';
 
 interface MomentsFeedViewProps {
   viewerActorPtid?: string;
@@ -28,11 +31,36 @@ export function MomentsFeedView({ viewerActorPtid, onOpenPost, onAuthorClick, qu
     blockedActors: state.blockedActors, blockedActorsLoadedAt: state.blockedActorsLoadedAt,
     blockedActorsError: state.blockedActorsError,
   }));
+  const { postsById: privatePostsById } = useActivePrivateMomentsSlice(state => ({
+    postsById: state.postsById,
+  }));
+  const { currentUserPtid, currentUserProfile, peerProfiles } = useActiveSocialChatSlice(state => ({
+    currentUserPtid: state.currentUserPtid, currentUserProfile: state.currentUserProfile,
+    peerProfiles: state.peerProfiles,
+  }));
+  const { self, actorStationEntries } = useActiveMomentsFederationSlice(state => ({
+    self: state.self, actorStationEntries: state.actorStationEntries,
+  }));
   const q = query.trim().toLocaleLowerCase();
   const posts = useMemo(() => {
     const timeline = selectMomentsTimeline(home.postIds, publicFeed.postIds, postsById, sort, reactions);
-    return timeline.filter(post => !blockedActors[post.authorPtid] && (!q || momentSearchText(post).includes(q)));
-  }, [home.postIds, publicFeed.postIds, postsById, reactions, blockedActors, sort, q]);
+    return timeline.filter(post => {
+      if (blockedActors[post.authorPtid]) return false;
+      if (!q) return true;
+      const actorPtid = post.authorPtid || post.author?.id || '';
+      const isSelf = actorPtid === (currentUserPtid || viewerActorPtid);
+      const profile = peerProfiles[actorPtid];
+      const stationPeerId = isSelf ? self?.home_station_peer_id : profile?.home_station_peer_id;
+      return momentSearchText(post, privatePostsById[post.id], {
+        actorPtid,
+        displayName: actorDisplayName(isSelf ? currentUserProfile?.displayName : profile?.display_name),
+        username: isSelf ? currentUserProfile?.username : profile?.username,
+        homeStationName: resolveFederationStationName({ actorPtid, stationPeerId, actorStationEntries }),
+        homeStationDomain: isSelf ? self?.home_station_domain : profile?.home_station_domain,
+      }).includes(q);
+    });
+  }, [home.postIds, publicFeed.postIds, postsById, privatePostsById, reactions, blockedActors, sort, q,
+    currentUserPtid, currentUserProfile, peerProfiles, self, actorStationEntries, viewerActorPtid]);
   const loading = home.loading || publicFeed.loading;
   const more = home.hasMore || publicFeed.hasMore;
   const loadMore = async () => {

@@ -1,9 +1,9 @@
 ---
 status: active
 owner: Client Platform Team
-updated: 2026-06-18
+updated: 2026-11-13
 review-cadence: semiannual
-next-review: 2027-04-27
+next-review: 2027-05-13
 ---
 
 # Desktop Social UI Identity
@@ -59,6 +59,19 @@ Rules:
 - Action row must be compact, aligned, and low-noise.
 - Reaction count and comment count must not look like unrelated buttons.
 - The `more` menu must be visually secondary and bounded to the feed item.
+- Scope-local search filters the acquired timeline by body, author and Station.
+  Author names and handles come from the current actor profile projection;
+  Station names come from the matching Federation catalog entry, and domains
+  from the actor's current home Station profile. Embedded transport snapshots
+  cannot supply stale author or Station matches.
+  A private body comes only from the matching readable Native projection in
+  the current actor scope, using the same readability rule as the card.
+  Denied or revoked content cannot match a body query; private plaintext is
+  never copied into the public Post shell or a separate search index.
+- Repeating an unchanged private projection retains its card, reaction,
+  feed-order and Store references. A changed authorized count, reaction or
+  shell field updates its original projection even when the authored timestamp
+  is unchanged. Private plaintext stays in the private Store.
 
 ## 5. Detail And Comment Thread
 
@@ -99,6 +112,23 @@ Rules:
 - A failed reaction restores the previous selected state/count.
 - Comment submit pending state belongs to the reply composer.
 - Comment failures preserve typed text and show inline recovery.
+- A successful comment read ends Loading, including an empty or unchanged
+  result. Zero comments render the empty-thread state. Background refresh of
+  an acquired healthy thread preserves its content and does not restart its
+  initial loading presentation.
+- Root comments and nested replies display their reaction as an emoji with
+  the confirmed nonzero count. Do not display a separate `Like` / `赞` text
+  button. The shared comment row retains an accessible action name, selected
+  state and command recovery. Comment metadata actions stay compact and
+  transparent, including hover and selected states.
+- Post, comment and reply metadata use the same relative-time presentation;
+  comments and replies retain their exact timestamp through the semantic time
+  element and its title. Private post comment counts come from authorized
+  `PostMetadata.stats.comments_count`, refreshed by the existing Moments
+  Runtime parent-read path; a loaded comment page is not an aggregate count.
+  Recipient Station derives that count from all current authorized durable
+  root comments and replies during the parent read, preserving the immutable
+  delivery and authored timestamps.
 - Polls use the shared `MomentPoll` inside the original card. The question,
   option rows, confirmed counts, selection rule and submit action form one
   continuous surface. Only unsubmitted choices are local. Submit replaces the

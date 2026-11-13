@@ -40,6 +40,7 @@ import { useSessionStore } from '../../store/session';
 import { useFederationStore } from '../../store/federation';
 import { federationRuntime } from '../../runtimes/federationRuntime';
 import { registerAcceptanceHarness } from '../registry';
+import { feedSearchIdentities, reconcileFeedProjection } from './feedObservation';
 
 declare const __PT_SOURCE_COMMIT__: string;
 
@@ -828,6 +829,8 @@ async function publishTypedPrivateMoment(input: StagePrivateDraftInput) {
 export function installAcceptanceHarness(): void {
   rendererArtifactSha256Promise = null;
   registerAcceptanceHarness('moments', {
+    feedSearchIdentities,
+    reconcileFeedProjection,
     async snapshot() {
       const privateState = usePrivateMomentsStore.getState();
       const sessionIdentity = await activeSessionIdentity();
