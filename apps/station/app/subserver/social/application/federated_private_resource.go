@@ -2301,6 +2301,10 @@ func (s *PrivateContentService) projectRemotePrivateMoment(
 	metadata.Author = proto.Clone(
 		proofAuthor.GetActor(),
 	).(*actormodel.ActorRef)
+	if metadata.Stats == nil {
+		metadata.Stats = &actormodel.PostStats{}
+	}
+	metadata.Stats.CommentsCount = read.CommentsCount
 	postProjection, reactionProjectionRevision, err := s.privateMomentPostProjection(
 		ctx,
 		transaction,

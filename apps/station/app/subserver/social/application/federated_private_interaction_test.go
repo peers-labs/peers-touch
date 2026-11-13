@@ -439,6 +439,56 @@ func TestFederatedPrivateCommentPrepareRevalidatesRateLimit(t *testing.T) {
 	}
 }
 
+func TestFederatedPrivateCommentParentReadCountsRootAndReply(t *testing.T) {
+	fixture := newFederatedPrivateReactionFixture(t)
+	initial, err := fixture.receiver.service.GetPrivateMoment(
+		fixture.ctx, fixture.receiver.bob, fixture.postID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCount := func(want int64) {
+		t.Helper()
+		for _, reader := range []struct {
+			service *PrivateContentService
+			viewer  *actormodel.ActorDeviceRef
+		}{
+			{fixture.source.service, fixture.source.author.Endpoint},
+			{fixture.receiver.service, fixture.receiver.bob},
+		} {
+			response, err := reader.service.GetPrivateMoment(fixture.ctx, reader.viewer, fixture.postID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			metadata := response.GetResource().GetMetadata()
+			if metadata.GetStats().GetCommentsCount() != want {
+				t.Fatalf("%s parent comments = %d, want %d",
+					reader.viewer.GetActor().GetPtid(), metadata.GetStats().GetCommentsCount(), want)
+			}
+			if response.GetPost() != nil && response.GetPost().GetStats().GetCommentsCount() != want {
+				t.Fatalf("reaction parent projection comments = %d, want %d",
+					response.GetPost().GetStats().GetCommentsCount(), want)
+			}
+			if !proto.Equal(metadata.GetAuthor(), initial.GetResource().GetMetadata().GetAuthor()) ||
+				!proto.Equal(metadata.GetCreatedAt(), initial.GetResource().GetMetadata().GetCreatedAt()) {
+				t.Fatal("comment count changed the parent's author or authored time")
+			}
+		}
+	}
+	assertCount(0)
+	rootID := fixture.completeComment(t, "parent-count-root", "")
+	assertCount(1)
+	fixture.completeComment(t, "parent-count-reply", rootID)
+	assertCount(2)
+	page, err := fixture.receiver.service.ListPrivateComments(fixture.ctx, fixture.receiver.bob,
+		&privatecontentpb.ListMomentCommentsRequest{PostId: fixture.postID, Limit: 1})
+	if err != nil || len(page.GetComments()) != 1 || !page.GetHasMore() {
+		t.Fatalf("single-row comment page = %+v, %v", page, err)
+	}
+	fixture.completeReact(t, fixture.reactRequest(t, "parent-count-like", actormodel.ReactionKind_REACTION_LIKE))
+	assertCount(2)
+}
+
 func TestFederatedPrivateCommentSubmit(t *testing.T) {
 	fixture := newFederatedPrivateCommentFixture(t)
 	prepared := fixture.completePrepare(

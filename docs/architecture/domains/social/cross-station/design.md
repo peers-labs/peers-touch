@@ -268,6 +268,16 @@ a cached result cannot reopen a locally deleted, blocked or revoked target.
 Committed wake events include the parent Post and optional Comment ID so the
 existing Moments Runtime can reconcile the affected thread.
 
+The recipient's authorized parent read derives `PostMetadata.stats.comments_count`
+from its active durable Comment projections in the same read transaction.
+The aggregate includes roots and replies across all pages, deduplicates content
+IDs, and binds the parent's source Station, Federation, target Station, and
+viewer. Comments require that viewer's current endpoint envelope and the
+existing either-direction block policy. Revoked projections are excluded.
+The read overlays only cloned response metadata; immutable delivery metadata,
+proofs, and authored timestamps remain unchanged. The existing Moments Runtime
+parent read consumes this aggregate without adding a client count authority.
+
 Unknown outcomes remain pending and retry with the same command ID. Comment
 draft text stays on Bob's Native Desktop.
 
