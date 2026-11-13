@@ -163,8 +163,22 @@ class SocialCommentUI:
         )
         post = self.post_selector(post_id)
         toggle = f'{post} [data-acceptance-id="social-open-comments"]'
+        revealed: set[str] = set()
+
+        def reveal_parent() -> bool:
+            # A newly published head can be outside the retained feed viewport.
+            # Reveal its actual control before Selenium rejects clipped nodes.
+            for element in self.driver.find_elements("css selector", toggle):
+                if element.id not in revealed:
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
+                        element,
+                    )
+                    revealed.add(element.id)
+            return self.visible(toggle) is not None
+
         wait_until(
-            lambda: self.visible(toggle) is not None,
+            reveal_parent,
             f"{self.actor} private parent card",
             timeout=120,
         )
