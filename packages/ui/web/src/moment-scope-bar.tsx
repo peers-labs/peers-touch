@@ -35,7 +35,7 @@ export function MomentScopeBar<T extends string>({ value, options, onChange, que
         density="compact" disabled={disabled} />
     </div>
     <IconButton actionId={actionId} iconId="plus" iconSize={18} label={copy.action}
-      emphasis="primary" className={`sk-subbar-add ${actionClassName}`}
+      emphasis="secondary" className={`sk-subbar-add ${actionClassName}`}
       data-acceptance-id={actionAcceptanceId} onActivate={onAction}
       availability={disabled ? { kind: 'disabled', reason: copy.action } : undefined} />
   </div>;

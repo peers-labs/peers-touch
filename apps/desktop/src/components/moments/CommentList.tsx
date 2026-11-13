@@ -442,14 +442,14 @@ export function CommentList({
           placeholder={t('moments.comment.placeholder')}
         />
           {composerAction !== 'submit' && onRetry ? (
-            <Button actionId={`comments.retry.${postId}`} emphasis="primary" density="compact"
+            <Button actionId={`comments.retry.${postId}`} emphasis="secondary" density="compact"
               execution={submitting || nativePending ? 'pending' : 'idle'}
               availability={composerActionDisabled ? { kind: 'disabled', reason: t('moments.comment.retryIn', { count: retrySeconds }) } : undefined}
               label={t('moments.comment.confirmResult')}
               onActivate={() => void activateComposer()} />
           ) : (
             <IconButton actionId={`comments.send.${postId}`} iconId="send"
-              emphasis="primary" density="compact" label={t('moments.comment.publish')}
+              emphasis="secondary" density="compact" label={t('moments.comment.publish')}
               data-acceptance-id="social-comment-send"
               availability={composerDisabled || !text.trim() ? { kind: 'disabled', reason: t('moments.comment.placeholder') } : undefined}
               execution={submitting || nativePending ? 'pending' : 'idle'} onActivate={() => void activateComposer()} />
