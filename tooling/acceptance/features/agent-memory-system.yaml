@@ -5,7 +5,9 @@
   "owners": [
     "apps/station/app/subserver/agent/handler/memory_handler.go",
     "apps/station/app/subserver/agent/service/memory_service.go",
-    "apps/desktop/src/store/agent.ts",
+    "apps/desktop/src/modules/memory.ts",
+    "apps/desktop/src/components/settings/MemorySettingsSection.tsx",
+    "apps/desktop/src/components/settings/MemorySettingsTab.tsx",
     "apps/desktop/src/services/desktop_api.ts"
   ],
   "truth_sources": [

@@ -335,7 +335,7 @@
       "description": "Render the confirmed X Config console hierarchy at desktop and narrow widths with typed forms, source revision strip, immediate publication boundary, history, and stable no-overflow layout."
     },
     "x-config-desktop-adapter-contract": {
-      "command": "sh -c 'pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && pnpm --dir apps/desktop exec vitest run src/components/common/StationPicker.test.tsx src/services/xConfig.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml x_config --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_discovery --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_registry --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_binding --locked'",
+      "command": "sh -c 'pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json && pnpm --dir apps/desktop exec vitest run src/pages/login/authSurfaceAlignment.test.ts src/services/xConfig.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml x_config --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_discovery --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_registry --locked && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml station_binding --locked'",
       "timeout_seconds": 1800,
       "environment": "local",
       "tier": "ci-cheap",
