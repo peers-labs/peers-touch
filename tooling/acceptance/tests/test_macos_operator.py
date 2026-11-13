@@ -290,7 +290,7 @@ class OperatorProtocolTests(unittest.TestCase):
         self.assertTrue(second.file_chooser.present)
         scope.close()
         self.assertEqual(child.poll(), 0)
-        self.assertTrue(child.stdin.closed and child.stdout.closed)
+        self.assertTrue(child.stdin.closed and child.stdout.closed and child.stderr.closed)
         self.assertEqual(scope._sequence, 3)
         with self.assertRaises(DriverError):
             scope.observe("operator", 0)
@@ -340,6 +340,40 @@ input()
         self.assertNotIn("private child text", str(caught.exception.diagnostic.to_dict()))
         scope.close()
         self.assertIsNotNone(scope._process.poll())
+
+    def test_parent_timeout_retains_only_current_child_phase_and_reaps_it(self):
+        for stage in ("support-loading", "frontmost-before"):
+            support = (
+                "import time, sys\n"
+                "sys.stderr.write('private AX title/value must not escape\\n')\n"
+                "sys.stderr.flush()\n"
+                "time.sleep(0.8)\n"
+                + _SYNTHETIC_SUPPORT
+                if stage == "support-loading"
+                else _SYNTHETIC_SUPPORT + """
+import time
+def frontmost_pid():
+    time.sleep(0.8)
+    return 41
+"""
+            )
+            scope = self.scope(support, lifetime=0.5)
+            frozen = scope.deadline
+            with self.subTest(stage=stage), self.assertRaises(BlockedError) as caught:
+                scope.observe("operator", 0)
+            observed = caught.exception.diagnostic.to_dict()["resourceChecks"][0]["observed"]
+            self.assertEqual(observed["errorType"], "TimeoutError")
+            self.assertEqual(observed["observerPhase"], stage)
+            self.assertTrue(observed["observerChildAlive"])
+            self.assertNotIn("private AX", json.dumps(observed))
+            self.assertEqual(scope.deadline, frozen)
+            child = scope._process
+            scope.close()
+            self.assertIsNotNone(child.poll())
+            self.assertTrue(child.stdin.closed and child.stdout.closed and child.stderr.closed)
+            with self.assertRaises(BlockedError) as repeated:
+                scope.observe("operator", 0)
+            self.assertIs(caught.exception, repeated.exception)
 
     def test_scope_deadline_includes_startup_and_cannot_refresh(self):
         scope = self.scope(lifetime=0.001)

@@ -39,6 +39,16 @@ _IDENTITY_FIELDS = (
     "actualFrontmostPid", "focusedWindow", "frontmost", "kind", "mainWindow",
     "platformRole", "platformSubrole",
 )
+_PHASE_PREFIX = b"pt-native-observer-phase:"
+_PHASES = frozenset((
+    "support-loading", "support-ready", "bootstrap-ready", "ax-session-setup",
+    "frontmost-before", "focus-control", "pointer-location", "panel-presence",
+    "frontmost-after", "response-write", "cleanup",
+))
+
+
+def _emit_phase(phase: str) -> None:
+    os.write(2, _PHASE_PREFIX + phase.encode("ascii") + b"\n")
 
 
 class NativeFocusUnavailable(ValueError):
@@ -171,16 +181,39 @@ class OperatorScope:
 
     def _start(self) -> None:
         self._process = subprocess.Popen(
-            (sys.executable, "-c", self._support + "\n"
+            (sys.executable, "-c",
+             "import os\nos.write(2, b'pt-native-observer-phase:support-loading\\n')\n"
+             + self._support + "\n"
              "from tooling.acceptance.drivers.native.macos_operator import serve\n"
              "serve(globals())\n", "observation-scope"),
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             bufsize=0,
         )
+        os.set_blocking(self._process.stderr.fileno(), False)
         self._process.stdin.write(_encode({
             "scopeId": self.scope_id, "parentProcessId": os.getpid(),
             "scopeDeadlineMonotonicSeconds": self.deadline,
         }))
+
+    def _phase_observation(self) -> dict:
+        """Drain once without waiting; retain only fixed, content-free labels."""
+        process = self._process
+        if process is None:
+            return {}
+        try:
+            content = os.read(process.stderr.fileno(), _MAX_MESSAGE_BYTES)
+        except (OSError, ValueError):
+            return {}
+        phases = [
+            line[len(_PHASE_PREFIX):].decode("ascii")
+            for line in content.split(b"\n")
+            if line.startswith(_PHASE_PREFIX)
+            and line[len(_PHASE_PREFIX):] in {phase.encode("ascii") for phase in _PHASES}
+        ]
+        return {
+            "observerPhase": phases[-1],
+            "observerChildAlive": process.poll() is None,
+        } if phases else {}
 
     def _exchange(
         self, mode: str, pid: int, end: float, *, focus_end: float | None = None,
@@ -248,10 +281,14 @@ class OperatorScope:
                 ):
                     raise ValueError("invalid scoped exact-PID panel")
                 panel = NativeFileChooserSnapshot(pid, value["present"])
+            self._phase_observation()
             return NativeDesktopObservation(state, panel)
         except BaseException as error:
             # Cancellation must unwind unchanged; the owner still closes in finally.
-            self._failure = error if isinstance(error, BlockedError) else _blocked(mode, pid, error)
+            phases = self._phase_observation()
+            self._failure = error if isinstance(error, BlockedError) else _blocked(
+                mode, pid, error, {"observed": phases},
+            )
             if isinstance(error, BlockedError) or not isinstance(error, Exception):
                 raise
             raise self._failure from error
@@ -302,6 +339,7 @@ class OperatorScope:
                 cleanup_error = cleanup_error or TimeoutError("native observation child required kill")
             finally:
                 process.stdout.close()
+                process.stderr.close()
         if not graceful and self._failure is None:
             cleanup_error = cleanup_error or ChildProcessError("native scope exited before close")
         if cleanup_error is not None or (graceful and process.returncode != 0):
@@ -313,6 +351,7 @@ class FocusObjects:
 
     def __init__(self, scope_id: str, native: dict) -> None:
         self.scope_id, self.native = scope_id, native
+        self._phase = native.get("_observation_phase", lambda _: None)
         self.baseline: list = []
         self.previous: list = []
         self.previous_identity: dict | None = None
@@ -338,9 +377,11 @@ class FocusObjects:
         from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 
         native = self.native
+        self._phase("ax-session-setup")
         native["reads"] = AXReadSession(
             native["application_services"], native["core_foundation"], deadline=end,
         )
+        self._phase("frontmost-before")
         operator_pid = native["frontmost_pid"]()
         if type(operator_pid) is not int or operator_pid <= 0:
             raise ValueError("native operator PID is unavailable")
@@ -350,6 +391,7 @@ class FocusObjects:
                 raise TimeoutError("native keyboard focus did not stabilize")
             current: list = []
             try:
+                self._phase("focus-control")
                 control = native["read_control"](
                     operator_pid, deadline=focus_end, focus_refs=current,
                 )
@@ -388,6 +430,7 @@ class FocusObjects:
                         **identity, "scopeId": self.scope_id,
                         "controlEqualsBaseline": matches[0], "windowEqualsBaseline": matches[1],
                     }
+                    self._phase("pointer-location")
                     pointer = native["pointer_location"]()
                     result = {"operatorState": {
                         "frontmostPid": operator_pid,
@@ -399,7 +442,9 @@ class FocusObjects:
                         # Panel observation has its own original read cap
                         # inside the unchanged enclosing request deadline.
                         native["reads"].begin_observation()
+                        self._phase("panel-presence")
                         result["panel"] = native["panel_presence"](pid)
+                    self._phase("frontmost-after")
                     if native["frontmost_pid"]() != operator_pid:
                         raise ValueError("native operator frontmost process changed")
                     if time.monotonic() >= end:
@@ -419,6 +464,8 @@ def serve(native: dict) -> None:
         raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, cancelled)
+    _emit_phase("support-ready")
+    native["_observation_phase"] = _emit_phase
     objects = None
     try:
         bootstrap = _read_line(0, time.monotonic() + _FOCUS_SECONDS)
@@ -435,6 +482,7 @@ def serve(native: dict) -> None:
         cf = native["core_foundation"]
         cf.CFEqual.argtypes = [native["CFRef"], native["CFRef"]]
         cf.CFEqual.restype = native["ctypes"].c_bool
+        _emit_phase("bootstrap-ready")
         objects = FocusObjects(scope_id, native)
         sequence, failed = 0, False
         while True:
@@ -460,6 +508,7 @@ def serve(native: dict) -> None:
                 "scopeId", "sequence", "mode", "targetProcessId",
             )}
             if mode == "close":
+                _emit_phase("cleanup")
                 objects.close()
                 os.write(1, _encode({**binding, "closed": True}))
                 return
@@ -476,6 +525,7 @@ def serve(native: dict) -> None:
                 failed = True
                 objects.close()
                 response = {"error": _failure(error)}
+            _emit_phase("response-write")
             os.write(1, _encode({**binding, **response}))
     except (EOFError, TimeoutError, ValueError, OSError):
         return

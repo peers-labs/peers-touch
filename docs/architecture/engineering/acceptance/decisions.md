@@ -1838,6 +1838,13 @@ focus or HID delivery.
   function and line identify the failure without exporting Accessibility
   values, exception messages or private window titles. A passing replay
   cannot establish the cause of an earlier observation failure.
+  When the parent expires before receiving a child reply, the same private
+  child emits fixed, content-free phase labels through its stderr pipe.
+  The parent reads at most 4096 bytes without waiting and retains only known
+  labels plus observed child liveness. Raw stderr is discarded. These labels
+  identify the last entered stage, not a native result or successful sample.
+  Both success and failure drain the pipe, and scope cleanup closes it.
+  No observation, focus, scope or cleanup deadline is extended for diagnostics.
   Failed AXWindows reads retain their measured attribute-read duration.
   Shared AX attribute reads preserve their status, attribute name, returned-value
   presence and duration. Only explicit NoValue or AttributeUnsupported may

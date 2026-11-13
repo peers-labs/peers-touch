@@ -86,6 +86,17 @@ on the current native chooser. Unsupported or differently identified buttons
 still use the depth walk, and refusal/late replies retain status and release
 all copied values. No historical failure is reclassified as product proof.
 
+A later prelaunch observation produced only a parent `TimeoutError` because
+the original child did not return within the enclosing deadline. No child AX
+status or raising line was observed, so that report cannot identify whether
+support initialization or a native read stalled. Under D-22, the same child
+now emits fixed phase labels, and the parent retains its last entered phase
+and current liveness through one bounded nonblocking stderr read. Private
+stderr text never enters diagnostics. Synthetic slow-support and slow-native
+cases must retain their distinct phases, the same sticky timeout and complete
+pipe/process cleanup. The original Cell Journey must reproduce any remaining
+stall; a phase label alone does not establish its cause or grant qualification.
+
 AXReadSession remains the shared read/status/deadline owner. Only explicit
 NoValue/Unsupported represents optional absence; required windows reject null,
 empty or failed reads as appropriate. Preserve OS status, returned-value
