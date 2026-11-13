@@ -18,6 +18,8 @@ pub struct AuthSessionPayload {
     pub command: String,
     pub status: String,
     pub actor_ptid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_activation_id: Option<String>,
     #[serde(skip)]
     pub session_token: Option<String>,
     pub name: Option<String>,

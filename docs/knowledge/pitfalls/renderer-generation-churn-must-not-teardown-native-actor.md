@@ -64,11 +64,14 @@ Two different lifetimes were collapsed onto one signal.
   (deauthentication). Same-actor churn and cross-actor re-activation never
   reach that branch.
 - `apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs`: `auth_logout`
-  accepts `Option<ScopedLogoutInput>{ expected_actor_ptid }`. When the window
-  has since moved to another actor it returns
+  accepts `Option<ScopedLogoutInput>{ expected_actor_ptid,
+  expected_session_activation_id }`. Authentication returns the original Native
+  `ActiveSession.activation_id`, captured under the identity-transition lock.
+  When the window has since moved to any newer activation, including the same
+  Actor with the same token, it returns
   `status: "session_superseded"` without tearing the current session down.
   `apps/desktop/src/store/session.ts` passes the login response's
-  `actor_ptid` on the three binding-rollback paths; the explicit user logout
+  Actor and activation on the three binding-rollback paths; the explicit user logout
   stays unscoped.
 - `apps/desktop/src-tauri/src/secure_content/mod.rs`: `teardown_actor` is
   `teardown_actor_with_source(&'static str)`; every production caller (account
@@ -84,7 +87,7 @@ Two different lifetimes were collapsed onto one signal.
 
 - `vitest run src/runtimes/momentsRuntime.test.ts src/store/session.test.ts
   src/acceptance/secureContentFixture/harness.test.ts` — projection deactivate
-  must not invoke native teardown; rollback logout must be actor scoped; the
+  must not invoke native teardown; rollback logout must match the exact native activation; the
   fixed native refusal still fails the first capture immediately.
 - `rg "teardown_actor\\(" apps/desktop/src-tauri/src` — the unlabelled call
   must not return; all teardowns go through `teardown_actor_with_source`.

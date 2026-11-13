@@ -12,7 +12,7 @@ class MomentsCutoverTests(unittest.TestCase):
         self.gate = Mock()
         self.session = Mock()
         self.session.call_action.side_effect = lambda action, *_: {
-            "moments.publish": {"rejected": True, "code": "FEED_SIGNED_WRITE_REQUIRED"},
+            "moments.publish": {"rejected": True, "code": "FEED_SIGNED_WRITE_REQUIRED", "text": "retained text"},
             "reliability.draft.read": [{"payloadSha256": "draft-digest"}],
         }.get(action)
         self.session.social_ui.return_value = {"attributes": {"value": "retained text"}}
@@ -32,6 +32,16 @@ class MomentsCutoverTests(unittest.TestCase):
         with self.assertRaisesRegex(GateError, "unsigned public write"):
             assert_public_composer_denial(self.gate, self.session, "retained text")
         self.gate._click_ui.assert_not_called()
+
+    def test_invalid_required_denial_fields_fail_before_ui(self) -> None:
+        for value in [None, [], {"rejected": 1, "code": "FEED_SIGNED_WRITE_REQUIRED"},
+                      {"rejected": True, "code": "OTHER"}, {"rejected": True}]:
+            with self.subTest(value=value):
+                self.session.call_action.side_effect = None
+                self.session.call_action.return_value = value
+                with self.assertRaisesRegex(GateError, "unsigned public write"):
+                    assert_public_composer_denial(self.gate, self.session, "retained text")
+                self.gate._click_ui.assert_not_called()
 
     def test_changed_input_fails_before_clearing_the_evidence(self) -> None:
         self.session.social_ui.return_value = {"attributes": {"value": "changed"}}

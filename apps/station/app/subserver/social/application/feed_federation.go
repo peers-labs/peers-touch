@@ -265,12 +265,11 @@ func (s *FeedLogService) ReadFederated(ctx context.Context, claims *authfed.Veri
 	}
 	var response *model.ReadFeedResponse
 	err = s.store.Execute(ctx, func(tx delivery.Transaction) error {
-		if request.ExplicitPublicRead {
-			if err := NewPublicReadPort(infrastructure.NewRepos(tx.DB())).
-				AuthorizeFeed(ctx, claims.Subject, request.ActorPtid); err != nil {
-				return err
-			}
-		} else {
+		if err := NewPublicReadPort(infrastructure.NewRepos(tx.DB())).
+			AuthorizeFeed(ctx, claims.Subject, request.ActorPtid); err != nil {
+			return err
+		}
+		if !request.ExplicitPublicRead {
 			if err := s.store.AuthorizeSubscription(ctx, tx.DB(), request.ActorPtid, claims.Subject, claims.Issuer); err != nil {
 				return err
 			}

@@ -7,7 +7,7 @@ from tooling.acceptance.core import GateError
 
 def assert_public_composer_denial(gate: Any, session: Any, text: str) -> dict[str, Any]:
     rejected = session.call_action("moments.publish", {"text": text, "audienceKind": 1})
-    if rejected != {"rejected": True, "code": "FEED_SIGNED_WRITE_REQUIRED"}:
+    if not isinstance(rejected, dict) or rejected.get("rejected") is not True or rejected.get("code") != "FEED_SIGNED_WRITE_REQUIRED":
         raise GateError("Mobile accepted an unsigned public write")
     session.call_action("navigation.apply", {"kind": "primary", "routeId": "tab:moments"})
     gate._click_ui(session, '[data-acceptance-id="social-composer-open"]', "Public composer")

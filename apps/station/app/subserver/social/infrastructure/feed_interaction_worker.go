@@ -28,8 +28,27 @@ func (s *FeedLogStore) ProcessInteractions(ctx context.Context, projector *FeedP
 	var firstError error
 	for _, selected := range rows {
 		err := s.Execute(ctx, func(tx delivery.Transaction) error {
+			candidate, err := verifiedReceiptRow(&selected)
+			if err != nil {
+				return err
+			}
+			payload := &model.FeedPayload{}
+			if err := signedlog.Decode(candidate.Event.Payload, payload); err != nil {
+				return err
+			}
+			target, err := domain.FeedInteractionTarget(payload)
+			if err != nil {
+				return err
+			}
+			// Match delivery's post -> receipt -> thread order. A busy or
+			// absent parent leaves the receipt for the next bounded pass.
+			locked, err := lockFeedInteractionPost(ctx, tx.DB(), target, true)
+			if err != nil || !locked {
+				return err
+			}
 			var row FeedInteractionRecord
-			err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			err = tx.DB().Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+				Where(pending, false, false, true, false).
 				Where("actor_ptid = ? AND chain_id = ? AND sequence = ? AND next_attempt_at <= ?",
 					selected.ActorPTID, selected.ChainID, selected.Sequence, time.Now().UTC()).Take(&row).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {

@@ -180,6 +180,37 @@ async function loadAllFollowing(actorPtid: string): Promise<Following[]> {
   return following;
 }
 
+// Status reads and commands publish through the same revision owner. A late
+// read must return the retained status rather than revive a superseded policy.
+function applyRelationshipProjection(
+  targetActorPtid: string,
+  status: SocialRelationshipProjection,
+  committedBlockedActor?: BlockedActorProjection,
+): SocialRelationshipProjection {
+  const previous = useRelationshipsStore.getState().statuses[targetActorPtid];
+  if (previous && status.revision < previous.revision) return previous;
+  const blockChanged = previous?.blockedByViewer !== status.blockedByViewer;
+  if (blockChanged) blockProjectionVersion += 1;
+  useRelationshipsStore.setState(s => ({
+    statuses: { ...s.statuses, [targetActorPtid]: status },
+    statusErrors: Object.fromEntries(Object.entries(s.statusErrors).filter(([id]) => id !== targetActorPtid)),
+    blockedActors: status.blockedByViewer ? {
+      ...s.blockedActors,
+      [targetActorPtid]: committedBlockedActor ?? create(BlockedActorProjectionSchema, {
+        actor: status.targetActor, revision: status.revision,
+        homeStationPeerId: status.targetHomeStationPeerId,
+        blockedAt: s.blockedActors[targetActorPtid]?.blockedAt,
+      }),
+    } : Object.fromEntries(Object.entries(s.blockedActors).filter(([id]) => id !== targetActorPtid)),
+  }));
+  if (previous && blockChanged) {
+    eventBus.publish(EVENT.RELATIONSHIP_CHANGED, {
+      targetActorPtid, action: status.blockedByViewer ? 'block' : 'unblock',
+    });
+  }
+  return status;
+}
+
 export const useRelationshipsStore = createDesktopStore<RelationshipsState>('relationships', (set, get) => ({
   ...initialState,
 
@@ -221,17 +252,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
       if (!status || status.targetActor?.ptid !== targetActorPtid || status.revision < 0n) {
         throw new Error('SOCIAL_RELATIONSHIP_PROJECTION_INVALID');
       }
-      const previous = get().statuses[targetActorPtid];
-      set(s => ({
-        statuses: { ...s.statuses, [targetActorPtid]: status },
-        statusErrors: Object.fromEntries(Object.entries(s.statusErrors).filter(([id]) => id !== targetActorPtid)),
-      }));
-      if (previous && previous.blockedByViewer !== status.blockedByViewer) {
-        eventBus.publish(EVENT.RELATIONSHIP_CHANGED, {
-          targetActorPtid, action: status.blockedByViewer ? 'block' : 'unblock',
-        });
-      }
-      return status;
+      return applyRelationshipProjection(targetActorPtid, status);
     }).catch(error => {
       if (generation === relationshipsGeneration) set(s => ({
         statusErrors: { ...s.statusErrors, [targetActorPtid]: String(error) },
@@ -278,15 +299,11 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         || event.revision !== status.revision || status.revision <= observed.revision) {
         throw new Error('SOCIAL_RELATIONSHIP_NOT_CONFIRMED');
       }
-      blockProjectionVersion += 1;
-      set(s => ({
-        statuses: { ...s.statuses, [targetActorPtid]: status },
-        blockedActors: blocked ? { ...s.blockedActors, [targetActorPtid]: create(BlockedActorProjectionSchema, {
+      applyRelationshipProjection(targetActorPtid, status, blocked
+        ? create(BlockedActorProjectionSchema, {
           actor: event.targetActor, revision: event.revision, blockedAt: event.committedAt,
           homeStationPeerId: status.targetHomeStationPeerId,
-        }) } : Object.fromEntries(Object.entries(s.blockedActors).filter(([id]) => id !== targetActorPtid)),
-      }));
-      eventBus.publish(EVENT.RELATIONSHIP_CHANGED, { targetActorPtid, action: blocked ? 'block' : 'unblock' });
+        }) : undefined);
     })().catch(async error => {
       if (generation === relationshipsGeneration) {
         await get().loadRelationshipStatus(targetActorPtid).catch(() => {});

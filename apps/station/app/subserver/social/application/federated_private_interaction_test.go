@@ -583,6 +583,34 @@ func TestFederatedPrivateCommentReplacementReadsRootAndReply(t *testing.T) {
 			t.Fatal("original recovery history lost the parent, root or reply")
 		}
 	})
+	t.Run("replacement-reactions", func(t *testing.T) {
+		author := fixture.bobAuthor
+		author.Endpoint = replacement
+		for _, commentID := range []string{rootID, replyID} {
+			like := fixture.reactRequest(t, "replacement-like-"+commentID, actormodel.ReactionKind_REACTION_LIKE)
+			like.CommentId = commentID
+			fixture.signReaction(t, like)
+			if _, err := fixture.receiver.service.ReactPrivateMoment(fixture.ctx, author, like); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+				t.Fatalf("readable recovered Comment rejected LIKE admission: %v", err)
+			}
+			unlike := fixture.unreactRequest(t, "replacement-unlike-"+commentID, actormodel.ReactionKind_REACTION_LIKE)
+			unlike.CommentId = commentID
+			fixture.signReaction(t, unlike)
+			if _, err := fixture.receiver.service.UnreactPrivateMoment(fixture.ctx, author, unlike); !socialdomain.IsPrivateContentCode(err, socialdomain.PrivateContentDependency) {
+				t.Fatalf("readable recovered Comment rejected UNLIKE admission: %v", err)
+			}
+			for _, commandID := range []string{like.GetCommandId(), unlike.GetCommandId()} {
+				frame := federatedPrivateOutboxFrame(t, fixture.receiver.database,
+					federationdelivery.PayloadKindSocialPrivateInteraction,
+					func(frame *federationdelivery.Frame) bool { return frame.GetPayloadId() == commandID })
+				command := &privatecontentpb.FederatedPrivateInteractionCommand{}
+				if err := proto.Unmarshal(frame.GetOpaquePayload(), command); err != nil ||
+					!proto.Equal(command.GetActor(), replacement) {
+					t.Fatalf("replacement command lost its original device binding: %+v, %v", command, err)
+				}
+			}
+		}
+	})
 }
 
 func TestFederatedPrivateCommentResultAndResourceDeliveryOrder(t *testing.T) {

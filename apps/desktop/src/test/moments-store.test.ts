@@ -55,7 +55,7 @@ import {
   selectPrivateCommentThread,
   usePrivateCommentsStore,
 } from '../store/privateComments';
-import { normalizePrivateMomentProjection } from '../services/privateMomentsNative';
+import { normalizePrivateMomentProjection, privateMomentsNative } from '../services/privateMomentsNative';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
 import { EVENT, eventBus } from '../kernel/events';
@@ -266,6 +266,25 @@ describe('Desktop Search no-store page continuity', () => {
   async function settle() {
     await vi.waitFor(() => expect(useSearchStore.getState().status).toBe('ready'));
   }
+
+  it('installs a fresh payload and issued cursor when unchanged row keys are refreshed', async () => {
+    const { submit } = searchFixture();
+    await runSearchQuery('en');
+    await settle();
+    const previous = useSearchStore.getState().response!;
+    const key = selectResult(0);
+    await runSearchQuery('en');
+    await settle();
+    const current = useSearchStore.getState();
+    expect(current.response!.items[0].resource!.id).toBe(previous.items[0].resource!.id);
+    expect(current.response!.items[0].resource!.contentRevision).toBe('2');
+    expect(current.response!.nextCursor).toBe('2:1');
+    expect(current.response).not.toBe(previous);
+    expect(current.traversal!.ordinal).toBe(0);
+    expect(current.selectedKey).toBe(key);
+    expect(current.scrollTop).toBe(93);
+    expect(submit).toHaveBeenCalledTimes(2);
+  });
 
   it('does not replay a fresh no-store frame when lease and revisions are current', async () => {
     const { submit } = searchFixture();
@@ -1613,6 +1632,53 @@ describe('moments store: createPost / deletePost', () => {
 });
 
 describe('private Moments Native projection', () => {
+  it.each(['bootstrap', 'reconcile'] as const)('preserves a committed ballot across a delayed same-session %s', async action => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const wire = {
+      post_id: 'poll', content_id: 'poll', generation: '8', author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS', state: 'CONTENT_READY',
+      content: {
+        kind: 'POLL', text: '', question: 'Choose', options: ['First', 'Second'],
+        opaque_option_ids: ['1'.repeat(64), '2'.repeat(64)], option_set_sha256: '3'.repeat(64),
+        min_choices: 1, max_choices: 1, expires_at_seconds: 4_000_000_000,
+        result: { vote_counts: ['0', '0'], selected_options: [], voter_count: '0',
+          projection_revision: '10', command_id: '', vote_actor_ptid: '' },
+      },
+    };
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+    usePrivateMomentsStore.setState({
+      scope: { actorPtid: 'ptid:viewer', rendererGeneration: 5, nativeSessionGeneration: '9' },
+      postsById: { poll: normalizePrivateMomentProjection(wire) },
+    });
+    let complete!: (value: ReturnType<typeof statusOk>) => void;
+    enqueue(action === 'bootstrap' ? 'social_private_moments_bootstrap' : 'social_private_moments_reconcile',
+      new Promise(resolve => { complete = resolve; }));
+    const pending = action === 'bootstrap' ? usePrivateMomentsStore.getState().bootstrap(5)
+      : usePrivateMomentsStore.getState().reconcile(['poll'], 'late-read', 5);
+    const committed = {
+      voteCounts: ['0', '1'], selectedOptions: [1], voterCount: '1',
+      projectionRevision: '11', commandId: 'ballot', voteActorPtid: 'ptid:viewer',
+    };
+    vi.spyOn(privateMomentsNative, 'votePoll').mockResolvedValueOnce({
+      command: { commandId: 'ballot', postId: 'poll', commentId: '', kind: ReactionKind.REACTION_UNSPECIFIED,
+        operation: 'VOTE_POLL', selectedOpaqueOptionIds: ['2'.repeat(64)],
+        state: 'REACTION_COMMITTED', attemptCount: 1, projectionRevision: '11' },
+      reactions: [], projectionRevision: '11', exactReplay: false, poll: committed,
+    });
+    await usePrivateMomentsStore.getState().votePoll('poll', [1]);
+    complete(statusOk({ actor_ptid: 'ptid:viewer', device_id: 'device', session_generation: '9',
+      projections: [wire], reaction_commands: [] }));
+    await pending;
+    expect(usePrivateMomentsStore.getState().postsById.poll.content).toMatchObject({ result: committed });
+    expect(usePrivateMomentsStore.getState().reactionCommands).toEqual({});
+    enqueue('social_private_moment_read', statusOk({
+      ...wire, state: 'NOT_FOUND_OR_NOT_AUTHORIZED', content: undefined,
+    }));
+    await usePrivateMomentsStore.getState().readMoment('poll');
+    expect(usePrivateMomentsStore.getState().postsById.poll.content).toBeUndefined();
+  });
+
   it('accepts only an opaque window-authorized private media URL', () => {
     const projection = normalizePrivateMomentProjection({
       post_id: 'post-private-media',

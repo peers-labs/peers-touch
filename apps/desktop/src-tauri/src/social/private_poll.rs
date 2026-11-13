@@ -521,10 +521,11 @@ mod tests {
             .mark_reaction_committed(&retry, &bytes, &hash, 1, &[], Some(&result))
             .unwrap());
         let retained = store.projection("poll").unwrap().unwrap();
-        store
+        let returned = store
             .commit_content_root("poll", 1, "poll", &[7; 32], None, &parent_bytes)
             .unwrap();
         assert_eq!(store.projection("poll").unwrap().unwrap(), retained);
+        assert_eq!(returned, retained, "native read completion returned the stale candidate");
         store.save_projection("poll", &parent_bytes).unwrap();
         assert_eq!(store.projection("poll").unwrap().unwrap(), retained);
         let mut conflict = result.clone();

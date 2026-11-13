@@ -44,7 +44,6 @@ from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 from tooling.acceptance.provisioners.native_desktop_macos import (
     NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
     NATIVE_WINDOW_READY_TIMEOUT_SECONDS,
-    SEMANTIC_QUALIFICATION_MAX_ATTEMPTS,
     NativeDesktopMacOSProvisioner,
     _WINDOW_BOUNDS_PROBE,
 )
@@ -748,7 +747,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             return NativeDesktopMacOSProvisioner(state_root=Path(directory))
 
-    def test_semantic_qualification_retries_environment_boundary_then_succeeds(
+    def test_semantic_qualification_preserves_first_operator_failure(
         self,
     ) -> None:
         lifecycle = self._qualification_lifecycle()
@@ -768,11 +767,12 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "_probe_native_adapter",
             side_effect=(boundary, (adapter, 45123)),
         ) as probe:
-            result, port = lifecycle._qualified_native_adapter(Mock(), "run-1")
+            with self.assertRaises(BlockedError) as raised:
+                lifecycle._qualified_native_adapter(Mock(), "run-1")
 
-        self.assertEqual((result, port), (adapter, 45123))
-        self.assertEqual(probe.call_count, 2)
-        sleep.assert_called_once()
+        self.assertIs(raised.exception, boundary)
+        probe.assert_called_once()
+        sleep.assert_not_called()
 
     def test_semantic_qualification_does_not_retry_other_blocked_resources(
         self,
@@ -799,12 +799,12 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         probe.assert_called_once()
         sleep.assert_not_called()
 
-    def test_semantic_qualification_raises_last_after_exhausting_attempts(
+    def test_semantic_qualification_preserves_cleanup_failure(
         self,
     ) -> None:
         lifecycle = self._qualification_lifecycle()
         boundary = BlockedError(
-            "macOS scoped native observation failed",
+            "macOS scoped native observation cleanup failed",
             resource="runtime-cell-semantic-adapter",
         )
         with patch(
@@ -818,13 +818,11 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "_probe_native_adapter",
             side_effect=boundary,
         ) as probe:
-            with self.assertRaisesRegex(BlockedError, "observation failed"):
+            with self.assertRaisesRegex(BlockedError, "cleanup failed") as raised:
                 lifecycle._qualified_native_adapter(Mock(), "run-1")
 
-        self.assertEqual(
-            probe.call_count,
-            SEMANTIC_QUALIFICATION_MAX_ATTEMPTS,
-        )
+        self.assertIs(raised.exception, boundary)
+        probe.assert_called_once()
 
     def test_exclusive_qualification_never_retries_environment_boundary(
         self,

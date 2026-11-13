@@ -2181,6 +2181,7 @@ export interface TauriStubPayload {
 
 export interface AuthSessionResponse extends TauriStubPayload {
   actor_ptid: string | null;
+  session_activation_id?: string;
   name?: string;
   email?: string;
   avatar_url?: string;
@@ -4900,10 +4901,10 @@ export const api = {
   accessCancel: (attemptId: string) =>
     invokeAccessCommand<AccessDecisionInput>('access_cancel', { attempt_id: attemptId }),
 
-  authLogout: (expectedActorPtid?: string) =>
-    invokeAuthCommand<{ expected_actor_ptid: string }>(
+  authLogout: (scope?: { expected_actor_ptid: string; expected_session_activation_id: string }) =>
+    invokeAuthCommand<{ expected_actor_ptid: string; expected_session_activation_id: string }>(
       'auth_logout',
-      expectedActorPtid ? { expected_actor_ptid: expectedActorPtid } : undefined,
+      scope,
     ),
 
   acceptanceLogoutWindowSession: (expectedActorPtid: string) =>

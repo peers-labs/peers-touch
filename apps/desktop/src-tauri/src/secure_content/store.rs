@@ -1873,7 +1873,7 @@ impl SecureContentStore {
         root_key: &[u8; 32],
         endpoint_prekey_id: Option<&str>,
         projection_bytes: &[u8],
-    ) -> Result<(), String> {
+    ) -> Result<Vec<u8>, String> {
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1964,7 +1964,8 @@ impl SecureContentStore {
             generation,
             projection_bytes,
         )?;
-        transaction.commit().map_err(|error| error.to_string())
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(merged)
     }
 
     pub fn content_root(

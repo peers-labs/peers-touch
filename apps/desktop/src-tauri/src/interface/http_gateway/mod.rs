@@ -6246,6 +6246,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     command: "account_unlock".to_string(),
                     status: "authenticated".to_string(),
                     actor_ptid: Some(session.actor_ptid),
+                    session_activation_id: None,
                     session_token: Some(token),
                     name: p_name,
                     email: p_email,

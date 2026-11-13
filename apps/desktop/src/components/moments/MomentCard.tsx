@@ -62,12 +62,11 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
     : Number(post.createdAt.seconds) * 1000 + post.createdAt.nanos / 1_000_000;
   const feedback = useScopedFeedback();
   const selfStation = useActiveMomentsFederationSlice(state => state.self);
-  const { projection, platform, readMoment, recoverMoment, openMedia, reaction, retryReaction } =
+  const { projection, platform, readMoment, recoverMoment, openMedia, reactionCommands, retryReaction } =
     useActivePrivateMomentsSlice(state => ({
       projection: state.postsById[post.id], platform: state.platform, readMoment: state.readMoment,
       recoverMoment: state.recoverMoment, openMedia: state.openMedia,
-      reaction: Object.values(state.reactionCommands).find(command =>
-        command.postId === post.id && !command.commentId), retryReaction: state.retryReaction,
+      reactionCommands: state.reactionCommands, retryReaction: state.retryReaction,
     }));
   const [commentsOpen, setCommentsOpen] = useState(defaultCommentsOpen);
   const [deleteOpen, setDeleteOpen] = useState(false), [deleting, setDeleting] = useState(false);
@@ -174,9 +173,10 @@ export const MomentCard = memo(function MomentCard({ post, reactions, explanatio
         viewerActorPtid={viewerActorPtid} onAuthorClick={onAuthorClick} /></blockquote>}
     </>}
     actions={<SocialActionBar postId={post.id} reactions={shownReactions} commentCount={Number(post.stats?.commentsCount ?? 0n)}
-      commentsOpen={commentsOpen} reactionState={isPrivate ? reaction?.state : undefined}
-      onRetryReaction={isPrivate && !unavailable ? async () => {
-        try { await retryReaction(post.id, '', reaction?.kind); } catch { feedback.error(t('moments.reaction.retryUnavailable')); }
+      commentsOpen={commentsOpen} reactionCommands={isPrivate ? Object.values(reactionCommands).filter(command =>
+        command.postId === post.id && !command.commentId && command.operation !== 'VOTE_POLL') : undefined}
+      onRetryReaction={isPrivate && !unavailable ? async kind => {
+        try { await retryReaction(post.id, '', kind); } catch { feedback.error(t('moments.reaction.retryUnavailable')); }
       } : undefined}
       onReact={!unavailable && onReact ? react : undefined} onUnreact={!unavailable && onUnreact ? unreact : undefined}
       onOpenComments={() => setCommentsOpen(value => !value)} />}

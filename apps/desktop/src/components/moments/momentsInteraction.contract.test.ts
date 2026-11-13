@@ -173,11 +173,11 @@ describe('Desktop Moments interaction contract', () => {
   });
 
   it('renders private Reaction status and explicit retry through SocialActionBar', () => {
-    expect(momentCardSource).toContain('Object.values(state.reactionCommands)');
+    expect(momentCardSource).toContain('Object.values(reactionCommands)');
     expect(momentCardSource).toContain('command.postId === post.id && !command.commentId');
-    expect(momentCardSource).toContain("retryReaction(post.id, '', reaction?.kind)");
+    expect(momentCardSource).toContain("retryReaction(post.id, '', kind)");
     expect(momentCardSource).not.toContain('message.error(String(err))');
-    expect(actionBarSource).toContain("reactionState === 'REACTION_PENDING'");
+    expect(actionBarSource).toContain("command.state === 'REACTION_PENDING'");
     expect(actionBarSource).toContain("t('moments.reaction.retry')");
     expect(enMoments['moments.reaction.status.REACTION_PENDING']).toBe(
       'Reaction pending',

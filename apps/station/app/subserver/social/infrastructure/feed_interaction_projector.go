@@ -84,6 +84,13 @@ func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
 	if knownErr != nil && !errors.Is(knownErr, gorm.ErrRecordNotFound) {
 		return false, knownErr
 	}
+	// Admission, thread indexing and projection share this parent lock order.
+	// Locking only during ballot admission would invert the ordinary receipt's
+	// thread-head -> post order and deadlock concurrent interactions.
+	parentLocked, err := lockFeedInteractionPost(ctx, tx, target, false)
+	if err != nil {
+		return false, err
+	}
 	row := FeedInteractionRecord{ActorPTID: s.ActorPtid, ChainID: s.ChainId,
 		Sequence: s.Sequence, EventHash: hash, Interaction: wire,
 		TargetStation: station, HomeStation: home, Forwarded: forwarded || station == p.localStation}
@@ -100,6 +107,11 @@ func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
 		if !bytes.Equal(row.EventHash, hash) || !bytes.Equal(row.Interaction, wire) {
 			return false, domain.ErrFeedFork
 		}
+	}
+	if !parentLocked {
+		// The parent may arrive after the initial lookup. Defer this whole
+		// projection instead of acquiring it after receipt/thread locks.
+		return duplicate, nil
 	}
 	if payload.GetPollBallot() != nil && p.pollAuthority == nil {
 		return false, domain.ErrFeedInvalid
@@ -174,6 +186,34 @@ func (p *FeedProjector) StoreInteraction(ctx context.Context, tx *gorm.DB,
 		return false, err
 	}
 	return duplicate, tx.Model(&row).Update("projected", true).Error
+}
+
+func lockFeedInteractionPost(ctx context.Context, tx *gorm.DB, target string, skipLocked bool) (bool, error) {
+	station, objectID, err := domain.FeedTargetPost(target)
+	if err != nil {
+		return false, err
+	}
+	var object FeedObjectRecord
+	err = tx.WithContext(ctx).Where("home_station = ? AND object_kind = 'post' AND object_id = ?",
+		station, objectID).Take(&object).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Preserve the durable deferred receipt until its parent arrives.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	lock := clause.Locking{Strength: "UPDATE"}
+	if skipLocked {
+		lock.Options = "SKIP LOCKED"
+	}
+	var post db.SocialPublicPost
+	err = tx.WithContext(ctx).Clauses(lock).
+		Where("id = ?", object.LocalID).Take(&post).Error
+	if skipLocked && errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (p *FeedProjector) projectInteraction(ctx context.Context, tx *gorm.DB,

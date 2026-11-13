@@ -45,6 +45,10 @@ the frozen baseline. Missing objects or role cannot become a stable empty
 identity. Title, value, counts and CFHash never substitute for object equality.
 All consumers explicitly close the scope, including construction, launch,
 staging, selection and cancellation failures. Cleanup failure stays failed.
+Cell qualification performs one probe against one frozen prelaunch baseline.
+Focus resource names also describe actual interference and cleanup failure;
+retrying by resource name must never replace a failed baseline with a later
+successful one.
 
 Startup still resolves the official Wry 0.57.1 fix through Cargo and requires
 the supported Tauri launch API. Configure focus before construction, use

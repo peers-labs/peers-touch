@@ -10,6 +10,7 @@ import { useSearchStore, type SearchContentFilter, type SearchMode, type SearchT
 import {
   isSameProgressiveItem, mergeProgressiveFrame, retainTransientlyUnavailableSources,
 } from './searchFrames';
+import { structuralEqual } from '../utils/structuralEqual';
 
 const MAX_FRAMES = 32;
 const MAX_ITEMS = 640;
@@ -304,28 +305,19 @@ function publish(frame: Frame): void {
     )
     : frame.response;
   const rowKeys = retained.items.map(item => searchRowKey(item.resource));
-  // Silent background refresh: a lease-driven replay that returns the same
-  // rows and source states extends the internal lease but must not repaint.
-  // Repainting identical content made the painted-evidence capture observe
-  // endless DOM revisions while the viewer saw nothing change.
-  if (!changed && previous.response) {
-    const coverageKey = (response: SearchResponse) =>
-      response.coverage.map(source => `${source.sourceId}:${source.state}:${source.extent}`).join('|');
-    const previousKeys = context.rowKeys;
-    if (rowKeys.length === previousKeys.length
-      && rowKeys.every((key, index) => key === previousKeys[index])
-      && coverageKey(retained) === coverageKey(previous.response)) {
-      if (expiryTimer !== null) clearTimeout(expiryTimer);
-      expiryTimer = null;
-      if (hasExpiringLease(retained)) {
-        expiryTimer = setTimeout(() => {
-          if (useSearchStore.getState().open) void reconcileSearchQuery(activeLocale);
-        }, Math.max(0, deadline(retained) - Date.now()));
-      }
-      return;
-    }
-  }
-  const response = retained;
+  // Keys preserve selection; only complete render equality permits retaining
+  // row references. Every qualified response still installs its issued scope,
+  // cursor and lease so result activation uses the current owner metadata.
+  const previousItems = new Map(previous.response?.items.map(item => [
+    searchRowKey(item.resource), item,
+  ]));
+  const response = changed ? retained : {
+    ...retained,
+    items: retained.items.map(item => {
+      const existing = previousItems.get(searchRowKey(item.resource));
+      return existing && structuralEqual(existing, item) ? existing : item;
+    }),
+  };
   useSearchStore.setState({
     response, displayedQuery: frame.query, displayedMode: frame.mode,
     displayedFilter: frame.filter,

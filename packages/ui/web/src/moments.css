@@ -107,7 +107,7 @@
 .sk-comment-item .sk-comment-avatar { width: 30px; height: 30px; min-height: 0; flex-shrink: 0; padding: 0; border: 0; border-radius: 9px; line-height: 0; background: transparent; box-shadow: none; }
 .sk-comment-item .sk-comment-avatar:hover { background: transparent; }
 .sk-comment-meta .pt-button[data-density='compact'] {
-  border: 0; background: transparent; padding: 0; min-height: 22px;
+  border: 0; background: transparent; padding: 0; min-height: var(--pt-control-compact, 28px);
   border-radius: 0; font-family: inherit; font-size: 11px;
   color: var(--sk-text-3, var(--pt-muted));
 }

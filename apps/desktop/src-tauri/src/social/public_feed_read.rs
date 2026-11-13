@@ -48,17 +48,21 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     if input.limit == 0 || input.limit > 64 || input.actor_ptid.trim().is_empty() {
         return Err("FEED_INVALID".into());
     }
-    let active = state.sessions.get(window.label()).ok_or("FEED_AUTHENTICATION_REQUIRED")?;
-    if active.jwt.is_empty() { return Err("FEED_AUTHENTICATION_REQUIRED".into()); }
-    let engine = state.messaging_engines.get(&active.account_id)?.ok_or("FEED_DEVICE_REQUIRED")?;
-    let scope = state.station.client().active_scope().ok_or("FEED_STATION_REQUIRED")?;
+    let (active, engine, scope) = {
+        let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
+        let active = state.sessions.get(window.label()).ok_or("FEED_AUTHENTICATION_REQUIRED")?;
+        if active.jwt.is_empty() { return Err("FEED_AUTHENTICATION_REQUIRED".into()); }
+        let engine = state.messaging_engines.get(&active.account_id)?.ok_or("FEED_DEVICE_REQUIRED")?;
+        let scope = state.station.client().active_scope().ok_or("FEED_STATION_REQUIRED")?;
+        (active, engine, scope)
+    };
     #[cfg(feature = "acceptance-webdriver")]
     let fault_scope = super::public_feed_faults::FeedFaultScope {
         actor: active.actor.ptid.clone(), account: active.account_id.clone(),
         device: engine.endpoint().device_id.clone(), station: scope.station_peer_id.clone(),
         generation: scope.lifecycle_generation.to_string(),
     };
-    let client = state.station.client();
+    let client = state.station.client().bound_to_scope(&scope);
     let validate = || -> Result<(), String> {
         let current = state.sessions.get(window.label()).ok_or("FEED_SESSION_CHANGED")?;
         let current_engine = state.messaging_engines.get(&active.account_id)?.ok_or("FEED_SESSION_CHANGED")?;
@@ -79,7 +83,7 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
     validate()?;
     let manifest = manifest.manifest.ok_or("FEED_INVALID_RESPONSE")?;
     let home = &manifest.home_station_peer_id;
-    let key = resolve_station_signing_key_for_actor(client, state.station.registry(), home,
+    let key = resolve_station_signing_key_for_actor(&client, state.station.registry(), home,
         &input.federated_handle, &active.jwt, &engine.endpoint().device_id, Some(&input.actor_ptid))?;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| "FEED_INVALID")?.as_millis().try_into().map_err(|_| "FEED_INVALID")?;
@@ -124,7 +128,7 @@ pub fn social_public_feed_read(state: State<'_, Arc<AppState>>, window: Window,
         let identity = identity.manifest.ok_or("FEED_INVALID_RESPONSE")?;
         if identity.home_station_peer_id != entry.interaction_home_station { return Err("FEED_WRITER_NOT_AUTHORIZED".into()); }
         let handle = &identity.actor.as_ref().ok_or("FEED_INVALID_RESPONSE")?.acct;
-        let key = resolve_station_signing_key_for_actor(client,state.station.registry(),
+        let key = resolve_station_signing_key_for_actor(&client,state.station.registry(),
             &identity.home_station_peer_id,handle,&active.jwt,&engine.endpoint().device_id,Some(actor))?;
         let root = verify_actor_identity_manifest(&identity,&key,actor,now)?;
         roots.insert(actor.clone(),root.clone());

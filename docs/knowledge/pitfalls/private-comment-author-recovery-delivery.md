@@ -8,6 +8,7 @@ owns:
   - apps/station/app/subserver/social/application/private_comment_service.go
   - apps/station/app/subserver/social/infrastructure/federated_private_resource_store.go
   - apps/station/app/subserver/social/infrastructure/private_read_policy.go
+  - apps/station/app/subserver/social/infrastructure/federated_private_interaction_store.go
 referenced-by: []
 related:
   - ../../architecture/domains/social/cross-station/design.md
@@ -37,7 +38,7 @@ bound command and proof-key trust; they do not persist a second resource
 projection or emit its committed wake. Resource delivery owns those operations,
 regardless of result ordering or duplicate transport.
 
-Comment point reads, pages, parent counts and policy prefer exactly one current
+Comment point reads, pages, parent counts, reaction admission and policy prefer exactly one current
 endpoint envelope and otherwise require exactly one actor recovery envelope.
 Ambiguous endpoint envelopes cannot fall through to recovery. The application
 verifies the retained signing envelope, exact proof author and payload binding
@@ -59,6 +60,8 @@ go test ./subserver/social/application ./subserver/social/infrastructure
 
 `TestFederatedPrivateCommentReplacementReadsRootAndReply` must retain root/reply
 metadata, ciphertext, exact proof author, count two and recovery-history entries.
+Its replacement-device LIKE and UNLIKE commands must enter the original outbox
+and retain that replacement device as the command/result binding.
 `TestFederatedPrivateCommentResultAndResourceDeliveryOrder` must admit both
 transport orderings and duplicate delivery without constructing a partial
 projection from a result alone.

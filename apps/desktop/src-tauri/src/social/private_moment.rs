@@ -1050,8 +1050,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                                 None,
                             )
                         } else {
-                            self.persist_decrypted_projection(&decrypted)?;
-                            return Ok(decrypted.projection);
+                            return self.persist_decrypted_projection(&decrypted);
                         }
                     }
                     Err(error) => {
@@ -1180,8 +1179,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 )
                 .map_err(|error| error.message)?;
                 self.verify_repost_source_current(&point, &decrypted)?;
-                self.persist_decrypted_projection(&decrypted)?;
-                return Ok(decrypted.projection);
+                return Ok(self.persist_decrypted_projection(&decrypted)?);
             }
             if !response.has_more {
                 let point = self.transport.get_private_moment(post_id);
@@ -1281,7 +1279,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             }
         };
         self.verify_repost_source_current(&response, &decrypted)?;
-        self.persist_decrypted_projection(&decrypted)?;
+        decrypted.projection = self.persist_decrypted_projection(&decrypted)?;
         let attachment = match decrypted.plaintext.body.as_ref() {
             Some(social::private_moment_content::Body::Image(image)) => image
                 .images
@@ -1690,8 +1688,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     )
                     .map_err(|error| error.message)?;
                     self.verify_repost_source_current(&response, &decrypted)?;
-                    self.persist_decrypted_projection(&decrypted)?;
-                    Ok(decrypted.projection)
+                    self.persist_decrypted_projection(&decrypted)
                 })();
                 match verified {
                     Ok(projection) => {
@@ -1871,7 +1868,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
     fn persist_decrypted_projection(
         &self,
         decrypted: &DecryptedPrivateMoment,
-    ) -> Result<(), String> {
+    ) -> Result<PrivateMomentProjection, String> {
         let mut projection = decrypted.projection.clone();
         if let Some(existing) = self.lease.store.projection(&projection.post_id)? {
             let existing = PrivateMomentProjection::decode_local(&existing)?;
@@ -1901,7 +1898,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .parse::<u64>()
             .map_err(|_| "private Moment projection generation is invalid".to_string())?;
         let projection_bytes = projection.encode_local()?;
-        self.supervisor.with_current(&self.lease.session.key, |_| {
+        let committed = self.supervisor.with_current(&self.lease.session.key, |_| {
             self.lease.store.commit_content_root(
                 &decrypted.projection.content_id,
                 generation,
@@ -1910,7 +1907,8 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 decrypted.consumed_prekey.as_deref(),
                 &projection_bytes,
             )
-        })
+        })?;
+        PrivateMomentProjection::decode_local(&committed)
     }
 
     fn save_projection_if_current(

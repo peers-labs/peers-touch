@@ -166,6 +166,20 @@ func TestFeedFederatedReadBindsRequesterHomeAndCanonicalIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	identity.homes = map[string]string{"viewer": "station-b"}
+	if err := database.AutoMigrate(&db.Actor{}, &db.SocialStationModerationPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := infrastructure.MigrateIdentitySchema(database); err != nil {
+		t.Fatal(err)
+	}
+	for index, actor := range []string{identity.key.ActorPtid, "viewer"} {
+		name := []string{"author", "viewer"}[index]
+		if err := database.Create(&db.Actor{ID: uint64(index + 1), PTID: actor,
+			PreferredUsername: name, Email: name + "@example.test",
+			FederatedHandle: name + "@example.test", HomeStationPeerID: []string{"station-a", "station-b"}[index]}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := database.Create(&infrastructure.FeedSubscriptionRecord{
 		AuthorPTID: identity.key.ActorPtid, ChainID: domain.PublicFeedChainID,
 		SubscriberPTID: "viewer", SubscriberStation: "station-b",
@@ -193,6 +207,40 @@ func TestFeedFederatedReadBindsRequesterHomeAndCanonicalIntent(t *testing.T) {
 	}
 	if _, err := s.ReadFederated(ctx, claims, read, wire); err != nil {
 		t.Fatalf("valid retained subscriber rejected: %v", err)
+	}
+	for _, scenario := range []string{"author-block", "viewer-block", "source-moderation", "requester-moderation"} {
+		t.Run(scenario, func(t *testing.T) {
+			if scenario == "author-block" || scenario == "viewer-block" {
+				actor, target := identity.key.ActorPtid, "viewer"
+				if scenario == "viewer-block" {
+					actor, target = target, actor
+				}
+				if err := database.Exec(`INSERT INTO social_directional_relationships
+					(actor_ptid, target_actor_ptid, actor_home_station_peer_id, target_home_station_peer_id, blocked, revision, updated_at)
+					VALUES (?, ?, '', '', ?, 1, CURRENT_TIMESTAMP)`, actor, target, true).Error; err != nil {
+					t.Fatal(err)
+				}
+				defer database.Exec("DELETE FROM social_directional_relationships")
+			} else {
+				peer := "station-a"
+				if scenario == "requester-moderation" {
+					peer = "station-b"
+				}
+				if err := database.Create(&db.SocialStationModerationPolicy{
+					ID: 9001, Kind: "BLOCK", StationPeerID: peer,
+				}).Error; err != nil {
+					t.Fatal(err)
+				}
+				defer database.Unscoped().Delete(&db.SocialStationModerationPolicy{}, "id = ?", 9001)
+			}
+			if _, err := s.ReadFederated(ctx, claims, read, wire); !errors.Is(err, domain.ErrFeedWriter) {
+				t.Fatalf("enabled subscription bypassed current %s: %v", scenario, err)
+			}
+			var subscription infrastructure.FeedSubscriptionRecord
+			if err := database.Where("subscriber_ptid = ?", "viewer").Take(&subscription).Error; err != nil || !subscription.Enabled {
+				t.Fatalf("test must retain enabled subscription: %+v, %v", subscription, err)
+			}
+		})
 	}
 	identity.homes["viewer"] = "station-c"
 	if _, err := s.ReadFederated(ctx, claims, read, wire); !errors.Is(err, domain.ErrFeedWriter) {

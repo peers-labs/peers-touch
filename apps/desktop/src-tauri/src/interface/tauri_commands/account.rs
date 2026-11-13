@@ -524,6 +524,7 @@ pub fn account_unlock(
         command: "account_unlock".to_string(),
         status: "authenticated".to_string(),
         actor_ptid: Some(session.actor_ptid.clone()),
+        session_activation_id: state.sessions.get(window.label()).map(|session| session.activation_id),
         session_token: Some(session.token.clone()),
         name: p_name,
         email: p_email,

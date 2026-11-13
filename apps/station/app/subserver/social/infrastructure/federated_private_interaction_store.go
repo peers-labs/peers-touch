@@ -481,7 +481,7 @@ func (s *GORMPrivateContentStore) validateRemotePrivateReactionTarget(
 			return ErrPrivateContentStaleRevision
 		}
 		if targetDeviceID != "" {
-			if _, _, err := loadRemotePrivateDelivery(ctx, transaction.DB(), comment, targetDeviceID, false); err != nil {
+			if _, _, err := loadRemotePrivateDelivery(ctx, transaction.DB(), comment, targetDeviceID, true); err != nil {
 				return err
 			}
 		}

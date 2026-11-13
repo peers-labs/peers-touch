@@ -180,6 +180,26 @@ function mergeProjection(
   }
   if (
     generationOrder === 0
+    && current.postId === next.postId
+    && current.contentId === next.contentId
+    && current.content?.kind === 'POLL'
+    && next.content?.kind === 'POLL'
+    && Boolean(current.content.optionSetSha256)
+    && current.content.optionSetSha256 === next.content.optionSetSha256
+    && structuralEqual(current.content.opaqueOptionIds, next.content.opaqueOptionIds)
+    && current.content.result
+    && (!next.content.result || compareGeneration(
+      next.content.result.projectionRevision,
+      current.content.result.projectionRevision,
+    ) < 0)
+  ) {
+    next = {
+      ...next,
+      content: { ...next.content, result: current.content.result },
+    };
+  }
+  if (
+    generationOrder === 0
     && (next.content?.kind === 'IMAGE' || next.content?.kind === 'VIDEO')
     && next.content.kind === current.content?.kind
   ) {

@@ -238,4 +238,29 @@ describe('authoritative relationship commands', () => {
       expect(seen).toHaveBeenCalledWith({ targetActorPtid: 'ptid:bob', action: 'block' });
     } finally { release(); }
   });
+
+  it.each([true, false])('retains revision N+1 after a status read during pending blocked=%s', async blocked => {
+    const before = status(!blocked, 10n);
+    api.status.mockResolvedValueOnce({ relationship: before });
+    let commit!: (value: ReturnType<typeof result>) => void;
+    const command = blocked ? api.block : api.unblock;
+    command.mockReturnValueOnce(new Promise(resolve => { commit = resolve; }));
+    const mutation = useRelationshipsStore.getState().setBlocked('ptid:bob', blocked);
+    await vi.waitFor(() => expect(command).toHaveBeenCalledTimes(1));
+    let finishRead!: (value: unknown) => void;
+    api.status.mockReturnValueOnce(new Promise(resolve => { finishRead = resolve; }));
+    const read = useRelationshipsStore.getState().loadRelationshipStatus('ptid:bob');
+    const seen = vi.fn();
+    const release = eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, seen);
+    try {
+      commit(result(blocked, 11n));
+      await mutation;
+      const retained = useRelationshipsStore.getState().statuses['ptid:bob'];
+      finishRead({ relationship: before });
+      expect(await read).toBe(retained);
+      expect(useRelationshipsStore.getState().statuses['ptid:bob']).toBe(retained);
+      expect(Boolean(useRelationshipsStore.getState().blockedActors['ptid:bob'])).toBe(blocked);
+      expect(seen.mock.calls).toEqual([[{ targetActorPtid: 'ptid:bob', action: blocked ? 'block' : 'unblock' }]]);
+    } finally { release(); }
+  });
 });

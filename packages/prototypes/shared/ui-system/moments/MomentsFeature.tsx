@@ -5,13 +5,15 @@
  * recent/hot sort, composer, profile) with peers-ui components and local
  * state only.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Check, ChevronLeft, ChevronRight, Search, UserPlus,
+  Check, ChevronLeft, UserPlus,
 } from 'lucide-react';
 import {
-  Avatar, AvatarGroup, Button, Dialog, Empty, FilePicker, Icon, IconButton, Segmented, Select,
-  TextArea, TextField, Toggle,
+  Avatar, Button, Dialog, Empty, FeedSortFloat, FilePicker, MomentAudiencePicker,
+  MomentCircleCard, MomentCircleEditor, MomentComposerSurface, MomentScopeBar, StatGrid,
+  TextArea, Toggle, UserProfileHeader, type FeedSort, type MomentCircleDraft,
+  type MomentCircleEditorCopy, type MomentCirclePerson,
 } from '@peers-touch/ui';
 import { MomentCard } from './MomentCard';
 import {
@@ -25,7 +27,6 @@ type MomentsTab = 'feed' | 'circles';
 // Feed order is an explicit user view (default: time). `hot` only applies when
 // the reader chooses it — the platform never defaults to engagement ranking.
 // Comment ordering is separate and time-only (communicative equality).
-type FeedSort = 'recent' | 'hot';
 
 // Feed/profile stay in one surface; cards carry their own comments inline.
 type MomentsNav =
@@ -58,113 +59,6 @@ const AUDIENCE_OPTIONS: { value: AudienceKind; label: string }[] = [
 
 const MAX_IMAGES = 9;
 const PAGE_SIZE = 3;
-
-/** Scroll distance (px) within which the stream counts as "at the top". */
-const FEED_TOP_THRESHOLD = 4;
-/** Capsule vertical insets — the pill owns them; layers are 28px tall. */
-const FEED_PILL_PAD = 4;
-
-/**
- * Floating feed chip with two roles, decided by live scroll position:
- *  - at the very top: the 最新/热门 order Segmented;
- *  - scrolled down: the SAME right-anchored capsule shrinks to a compact
- *    icon-only 回顶 tile; choosing it smooth-scrolls back and the capsule
- *    grows back into the sorter.
- *
- * Smoothness contract: both layers share ONE intrinsic-width grid stage
- * (`width: max-content`, never shrinkable) right-anchored inside the
- * width-animated pill. Because the stage width never depends on the pill's
- * animated width, measuring it can never feed back into a crushed layout, the
- * right edge is the fixed anchor through the whole morph, and both layers
- * occupy the exact same box — no slide, no snap, no flash. The stage is
- * clipped by the pill's own overflow while the layers cross-fade by opacity.
- */
-function FeedSortFloat({ value, onChange }: {
-  value: FeedSort;
-  onChange: (value: FeedSort) => void;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const pillRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [atTop, setAtTop] = useState(true);
-  const mountedRef = useRef(false);
-
-  useEffect(() => {
-    const scroller = rootRef.current?.closest('.sk-moments-scroll');
-    if (!scroller) return;
-    let frame = 0;
-    const sync = () => {
-      frame = 0;
-      setAtTop(scroller.scrollTop <= FEED_TOP_THRESHOLD);
-    };
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(sync);
-    };
-    sync();
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      cancelAnimationFrame(frame);
-      scroller.removeEventListener('scroll', onScroll);
-    };
-  }, []);
-
-  // The sorter width is the STAGE's intrinsic width (plus the 2× inset),
-  // written once through a CSS custom property — never a direct style.width
-  // write (primitive-layer guard). The stage is max-content and
-  // non-shrinkable, so its measure stays constant while the pill's width
-  // animates: measuring inside an already-shrunk pill can never feed back as
-  // a crushed sorter. ResizeObserver keeps the measure honest across font /
-  // density changes. The width transition is enabled only after the first
-  // measurement (data-morph-ready) so mount never animates from the fallback
-  // width.
-  useLayoutEffect(() => {
-    const pill = pillRef.current;
-    const stage = stageRef.current;
-    if (!pill || !stage) return;
-    const measure = () => {
-      pill.style.setProperty('--sk-feed-pill-w', `${stage.offsetWidth + FEED_PILL_PAD * 2}px`);
-    };
-    measure();
-    const resize = new ResizeObserver(measure);
-    resize.observe(stage);
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      // Next frame: keep the measured start width, then allow transitions.
-      requestAnimationFrame(() => { pill.dataset.morphReady = 'true'; });
-    }
-    return () => resize.disconnect();
-  }, []);
-
-  const scrollToTop = () => {
-    rootRef.current
-      ?.closest('.sk-moments-scroll')
-      ?.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  return (
-    <div className="sk-feed-sort-float" data-feed-sort data-feed-mode={atTop ? 'sort' : 'top'}
-      ref={rootRef}>
-      <div className="sk-feed-sort-pill" ref={pillRef} data-mode={atTop ? 'sort' : 'top'}
-        data-morph-ready="false">
-        <div className="sk-feed-sort-stage" ref={stageRef}>
-          <Segmented<FeedSort> className="sk-feed-sort-options" label="动态排序" density="compact"
-            value={value}
-            options={[
-              { value: 'recent', label: '最新' },
-              { value: 'hot', label: '热门' },
-            ]}
-            onValueChange={next => onChange(next ?? 'recent')} />
-          <Button actionId="feed.back-to-top" emphasis="quiet" density="compact"
-            className="sk-feed-sort-top"
-            aria-label="回到最顶"
-            onActivate={scrollToTop}>
-            <Icon iconId="arrow-up" size={15} />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export interface ComposerDraft {
   text: string;
@@ -253,78 +147,38 @@ function ComposeDialog({ open, circles, people, groups, onDismiss, onPublish }: 
             onActivate={publish} />
         </>
       }>
-      <div className="sk-compose">
-        <TextArea framing="embedded" minimumRows={4} maximumRows={8}
+      <MomentComposerSurface
+        editor={<TextArea framing="embedded" minimumRows={4} maximumRows={8}
           className="sk-compose-input" value={text} aria-label="动态内容"
           data-compose-value={text} placeholder="分享你身边正在发生的连接……"
-          onValueChange={setText} onEnter={event => event.preventDefault()} />
-
-        {images.length > 0 && (
-          <div className="sk-compose-thumbs" data-compose-image-count={images.length}>
-            {images.map((src, index) => (
-              <span className="sk-compose-thumb" key={`${src.slice(0, 24)}-${index}`}>
-                <img src={src} alt={`待发布图片 ${index + 1}`} />
-                <IconButton actionId={`compose.image.remove.${index}`} iconId="close" iconSize={12}
-                  density="compact" emphasis="quiet" label="移除图片"
-                  className="sk-compose-thumb-remove"
-                  onActivate={() => setImages(list => list.filter((_, i) => i !== index))} />
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="sk-compose-toolbar" data-compose-file-input>
-          <FilePicker
+          onValueChange={setText} onEnter={event => event.preventDefault()} />}
+        images={images.map((src, index) => ({ id: String(index), src, alt: `待发布图片 ${index + 1}` }))}
+        onRemoveImage={id => setImages(list => list.filter((_, index) => index !== Number(id)))}
+        copy={{ removeImage: '移除图片', retryImage: '重试图片' }}
+        toolbar={<FilePicker
             iconId="image-plus"
             label={images.length > 0 ? `图片 ${images.length}/${MAX_IMAGES}` : '添加图片'}
             accept="image/*" multiple disabled={images.length >= MAX_IMAGES}
-            onFiles={pickFilesFileList} />
-        </div>
-
-        <div className="sk-compose-audience">
-          <Select<AudienceKind> label="可见范围" aria-label="可见范围"
-            options={AUDIENCE_OPTIONS} value={audience}
-            onValueChange={value => setAudience((Array.isArray(value) ? value[0] : value) ?? 'public')} />
-          {audience === 'circle' && (
-            circles.length > 0 ? (
-              <Select<string> label="圈子" aria-label="选择圈子" className="sk-circle-select"
-                options={circles.map(entry => ({ value: entry.id, label: entry.name }))}
-                value={circle?.id ?? ''} onValueChange={value => setCircleId(String(value))} />
-            ) : (
-              <span className="sk-circle-missing">还没有圈子，先去「圈友」新建分组</span>
-            )
-          )}
-          {audience === 'group' && (
-            groups.length > 0 ? (
-              <Select<string> label="群聊" aria-label="选择群聊"
-                options={groups.map(entry => ({ value: entry.id, label: entry.name }))}
-                value={group?.id ?? ''} onValueChange={value => setGroupId(String(value))} />
-            ) : (
-              <span className="sk-circle-missing">还没有可发布的群聊</span>
-            )
-          )}
-          {(audience === 'allow' || audience === 'deny') && (
-            <fieldset className="sk-audience-actors" data-audience-actors={audience}>
-              <legend>{audience === 'allow' ? '仅这些人可见' : '关注者中排除这些人'}</legend>
-              {people.map(person => {
-                const chosen = actorIds.includes(person.id);
-                return (
-                  <Button key={person.id} actionId={`compose.actor.${person.id}`}
-                    emphasis={chosen ? 'secondary' : 'quiet'} density="compact"
-                    className={`sk-audience-actor${chosen ? ' is-chosen' : ''}`}
-                    aria-pressed={chosen} data-actor-id={person.id}
-                    leading={<Avatar name={person.name} background={person.tone} size={24}
-                      style={{ borderRadius: 7 }} aria-hidden="true" />}
-                    trailing={chosen ? <Check size={13} aria-hidden="true" /> : undefined}
-                    onActivate={() => toggleActor(person.id)}>
-                    {person.name}
-                  </Button>
-                );
-              })}
-            </fieldset>
-          )}
-        </div>
-      </div>
+            onFiles={pickFilesFileList} />}
+        audience={<MomentAudiencePicker value={audience} options={AUDIENCE_OPTIONS}
+          onChange={value => setAudience(value as AudienceKind)}
+          target={audience === 'circle' ? {
+            label: '圈子', value: circle?.id,
+            options: circles.map(entry => ({ value: entry.id, label: entry.name })),
+            missing: '还没有圈子，先去「圈友」新建分组', onChange: setCircleId,
+          } : audience === 'group' ? {
+            label: '群聊', value: group?.id,
+            options: groups.map(entry => ({ value: entry.id, label: entry.name })),
+            missing: '还没有可发布的群聊', onChange: setGroupId,
+          } : undefined}
+          people={people.map(person => ({ id: person.id, label: person.name,
+            avatar: <Avatar name={person.name} background={person.tone} size={24}
+              style={{ borderRadius: 7 }} aria-hidden="true" /> }))}
+          actorIds={actorIds}
+          onToggleActor={audience === 'allow' || audience === 'deny' ? toggleActor : undefined}
+          copy={{ audience: '可见范围', people: audience === 'allow' ? '仅这些人可见' : '关注者中排除这些人',
+            noPeople: '还没有可选择的人' }} />}
+        footer={null} />
     </Dialog>
   );
 }
@@ -340,30 +194,20 @@ export interface MyMomentsStats {
   circles: number;
 }
 
-function StatGrid({ stats }: { stats: MyMomentsStats }) {
-  const cells: { label: string; value: number; key: string }[] = [
-    { key: 'posts', label: '动态', value: stats.posts },
-    { key: 'comments', label: '发出评论', value: stats.comments },
-    { key: 'reactionsGiven', label: '送出反应', value: stats.reactionsGiven },
-    { key: 'commentsReceived', label: '收到评论', value: stats.commentsReceived },
-    { key: 'reactionsReceived', label: '收到反应', value: stats.reactionsReceived },
-    { key: 'following', label: '关注', value: stats.following },
-    { key: 'followers', label: '粉丝', value: stats.followers },
-    { key: 'circles', label: '圈子', value: stats.circles },
+function statisticsFor(stats: MyMomentsStats) {
+  return [
+    { id: 'posts', label: '动态', value: stats.posts },
+    { id: 'comments', label: '发出评论', value: stats.comments },
+    { id: 'reactionsGiven', label: '送出反应', value: stats.reactionsGiven },
+    { id: 'commentsReceived', label: '收到评论', value: stats.commentsReceived },
+    { id: 'reactionsReceived', label: '收到反应', value: stats.reactionsReceived },
+    { id: 'following', label: '关注', value: stats.following },
+    { id: 'followers', label: '粉丝', value: stats.followers },
+    { id: 'circles', label: '圈子', value: stats.circles },
   ];
-  return (
-    <div className="sk-stats-grid" data-moments-stats>
-      {cells.map(cell => (
-        <span className="sk-stat-cell" key={cell.key} data-stat={cell.key}>
-          <strong>{cell.value}</strong>
-          <em>{cell.label}</em>
-        </span>
-      ))}
-    </div>
-  );
 }
 
-function ProfileView({ name, people, postCount, onBack, onAuthor, onToggleReaction,
+function ProfileView({ name, people, postCount, onBack,
   followed, blocked, followers, following, stats, onToggleFollow, onToggleBlock }: {
   name: string;
   people: Person[];
@@ -376,8 +220,6 @@ function ProfileView({ name, people, postCount, onBack, onAuthor, onToggleReacti
   onToggleFollow: (id: string) => void;
   onToggleBlock: (id: string) => void;
   onBack: () => void;
-  onAuthor: (name: string) => void;
-  onToggleReaction: (id: string, kind: ReactionKind) => void;
 }) {
   const person = people.find(entry => entry.name === name);
   const tone = person?.tone ?? '#5d6b62';
@@ -388,20 +230,11 @@ function ProfileView({ name, people, postCount, onBack, onAuthor, onToggleReacti
     <div className="sk-profile-view">
       <Button actionId="profile.back" emphasis="quiet" leading={<ChevronLeft size={15} />}
         label="返回" onActivate={onBack} className="sk-detail-back" />
-      <section className="sk-post sk-profile" data-profile-self={isSelf ? 'true' : 'false'}>
-        <Avatar name={name} background={tone} size={72} style={{ borderRadius: 20 }} />
-        <div className="sk-profile-id">
-          <h2>{name}</h2>
-          <span className="sk-post-time">{station}</span>
-          {bio && <p>{bio}</p>}
-          <div className="sk-profile-stats">
-            <span><strong>{postCount}</strong> 动态</span>
-            <span><strong>{followers}</strong> 粉丝</span>
-            {!isSelf && <span><strong>{following}</strong> 关注</span>}
-          </div>
-        </div>
-        {person && !isSelf && (
-          <span className="sk-profile-actions">
+      <UserProfileHeader name={name} tone={tone} station={station} bio={bio} isSelf={isSelf}
+        statistics={[{ id: 'posts', label: '动态', value: postCount },
+          { id: 'followers', label: '粉丝', value: followers },
+          ...(!isSelf ? [{ id: 'following', label: '关注', value: following }] : [])]}
+        actions={person && !isSelf ? <>
             <Toggle actionId={`profile.follow.${person.id}`} className="sk-profile-follow"
               emphasis={followed ? 'secondary' : 'primary'}
               selected={followed}
@@ -413,10 +246,8 @@ function ProfileView({ name, people, postCount, onBack, onAuthor, onToggleReacti
               data-profile-block={blocked ? 'on' : 'off'}
               label={blocked ? '取消拉黑' : '拉黑'}
               onActivate={() => onToggleBlock(person.id)} />
-          </span>
-        )}
-      </section>
-      {isSelf && stats && <StatGrid stats={stats} />}
+          </> : undefined} />
+      {isSelf && stats && <StatGrid statistics={statisticsFor(stats)} />}
     </div>
   );
 }
@@ -426,25 +257,26 @@ function CircleCreateDialog({ open, onDismiss, onCreate }: {
   onDismiss: () => void;
   onCreate: (name: string) => void;
 }) {
-  const [name, setName] = useState('');
-  const trimmed = name.trim();
-  return (
-    <Dialog open={open} onDismiss={onDismiss} title="新建圈子" width={400}
-      description="圈子创建后会出现在列表里（本地示例）" closeLabel="关闭"
-      footer={
-        <>
-          <Button actionId="circle.cancel" emphasis="quiet" label="取消" onActivate={onDismiss} />
-          <Button actionId="circle.create" emphasis="primary" label="创建"
-            availability={trimmed ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入圈子名称' }}
-            onActivate={() => { onCreate(trimmed); setName(''); }} />
-        </>
-      }>
-      <TextField className="sk-circle-name-input" aria-label="圈子名称" placeholder="例如：夜跑小队"
-        value={name} onValueChange={setName} onEnter={event => { event.preventDefault(); if (trimmed) { onCreate(trimmed); setName(''); } }} />
-    </Dialog>
-  );
+  const [draft, setDraft] = useState<MomentCircleDraft>({ name: '', description: '', memberIds: [] });
+  return open ? <MomentCircleEditor draft={draft} onChange={setDraft} people={[]}
+    onDismiss={onDismiss} onSave={() => onCreate(draft.name.trim())}
+    copy={{ ...CIRCLE_EDITOR_COPY, title: '新建圈子', save: '创建', namePlaceholder: '例如：夜跑小队',
+      description: '圈子创建后会出现在列表里（本地示例）' }} /> : null;
 }
 
+const CIRCLE_EDITOR_COPY: MomentCircleEditorCopy = {
+  title: '管理圈子', description: '圈子是你的发布受众分组，成员不会收到通知（本地示例）',
+  close: '关闭', cancel: '取消', save: '保存', name: '圈子名称', namePlaceholder: '圈子名称',
+  descriptionLabel: '圈子描述', descriptionPlaceholder: '描述（可选）', nameRequired: '请输入圈子名称',
+  members: count => `成员 · ${count}`, candidates: '添加已知人', noCandidates: '已知人都已在分组里',
+  self: '我', add: name => `添加 ${name}`, remove: name => `移除 ${name}`, delete: '删除分组',
+};
+
+function circlePerson(person: Circle['members'][number]): MomentCirclePerson {
+  return { id: person.id, name: person.name, self: person.id === 'viewer',
+    avatar: <Avatar name={person.name} background={person.tone} size={30}
+      style={{ borderRadius: 8 }} aria-hidden="true" /> };
+}
 // Circles are the publisher's own audience lists (protocol Circle: a named,
 // owner-private PTID list — not a bidirectional group, so there is no "leave";
 // group leave/dissolve belongs to chat.Group). Each card opens its management
@@ -466,24 +298,12 @@ function CirclesView({ circles, onOpenManage, emptyLabel }: {
       <ul className="sk-circle-list">
         {circles.map(circle => (
           <li key={circle.id}>
-            <Button actionId={`circle.manage.${circle.id}`} emphasis="quiet" density="normal"
-              fullWidth className="sk-post sk-circle-card" aria-label={`管理 ${circle.name}`}
-              onActivate={() => onOpenManage(circle.id)}>
-              <span className="sk-circle-id">
-                <strong className="sk-circle-name">{circle.name}</strong>
-                {circle.desc && <span className="sk-circle-desc">{circle.desc}</span>}
-                <span className="sk-post-time">{circle.members.length} 位成员</span>
-              </span>
-              <span className="sk-circle-tail">
-                <AvatarGroup className="sk-circle-avatars" aria-label={`${circle.name} 成员`}>
-                  {circle.members.slice(0, 5).map(member => (
-                    <Avatar key={member.id} name={member.name} background={member.tone}
-                      size={28} style={{ borderRadius: 8 }} />
-                  ))}
-                </AvatarGroup>
-                <ChevronRight size={15} className="sk-circle-chevron" aria-hidden="true" />
-              </span>
-            </Button>
+            <MomentCircleCard id={circle.id} name={circle.name} description={circle.desc}
+              members={circle.members.map(member => ({ ...circlePerson(member),
+                avatar: <Avatar name={member.name} background={member.tone} size={28}
+                  style={{ borderRadius: 8 }} /> }))}
+              copy={{ manage: `管理 ${circle.name}`, members: `${circle.members.length} 位成员` }}
+              onOpen={() => onOpenManage(circle.id)} />
           </li>
         ))}
       </ul>
@@ -491,105 +311,32 @@ function CirclesView({ circles, onOpenManage, emptyLabel }: {
   );
 }
 
-interface CircleDraft {
-  name: string;
-  desc: string;
-  memberIds: string[];
-}
-
 function CircleManageDialog({ circle, people, onDismiss, onSave, onRequestDelete }: {
   circle: Circle;
   people: Person[];
   onDismiss: () => void;
-  onSave: (id: string, draft: CircleDraft) => void;
+  onSave: (id: string, draft: MomentCircleDraft) => void;
   onRequestDelete: (circle: Circle) => void;
 }) {
-  const [draft, setDraft] = useState<CircleDraft>({
+  const [draft, setDraft] = useState<MomentCircleDraft>({
     name: circle.name,
-    desc: circle.desc === '新建圈子' ? '' : circle.desc,
+    description: circle.desc === '新建圈子' ? '' : circle.desc,
     memberIds: circle.members.map(member => member.id),
   });
-  const trimmedName = draft.name.trim();
-  const memberOf = (id: string) => circle.members.find(member => member.id === id);
-  const memberName = (id: string) => memberOf(id)?.name ?? people.find(person => person.id === id)?.name ?? id;
-  const memberTone = (id: string) => memberOf(id)?.tone ?? people.find(person => person.id === id)?.tone ?? IDENTITY_INK;
-  const candidates = people.filter(person => !draft.memberIds.includes(person.id));
-
-  return (
-    <Dialog open onDismiss={onDismiss} title="管理圈子" width={460}
-      description="圈子是你的发布受众分组，成员不会收到通知（本地示例）" closeLabel="关闭"
-      footer={
-        <div className="sk-circle-manage-footer">
-          <Button actionId={`circle.delete.${circle.id}`} emphasis="quiet" tone="danger"
-            label="删除分组" onActivate={() => onRequestDelete(circle)} />
-          <span className="sk-circle-footer-spacer" />
-          <Button actionId="circle.save-cancel" emphasis="quiet" label="取消" onActivate={onDismiss} />
-          <Button actionId="circle.save" emphasis="primary" label="保存"
-            availability={trimmedName ? { kind: 'enabled' } : { kind: 'disabled', reason: '请输入圈子名称' }}
-            onActivate={() => onSave(circle.id, { ...draft, name: trimmedName })} />
-        </div>
-      }>
-      <div className="sk-circle-manage">
-        <TextField className="sk-circle-name-edit" aria-label="圈子名称"
-          data-circle-name={trimmedName} placeholder="圈子名称"
-          value={draft.name} onValueChange={name => setDraft(d => ({ ...d, name }))} autoFocus />
-        <TextField className="sk-circle-desc-edit" aria-label="圈子描述"
-          data-circle-desc={draft.desc} placeholder="描述（可选）"
-          value={draft.desc} onValueChange={desc => setDraft(d => ({ ...d, desc }))} />
-
-        <div className="sk-circle-manage-members" data-circle-member-count={draft.memberIds.filter(id => id !== 'viewer').length}>
-          <span className="sk-circle-manage-label">成员 · {draft.memberIds.length}</span>
-          <ul className="sk-circle-member-list">
-            {draft.memberIds.map(id => (
-              <li key={id} className="sk-circle-member-row" data-circle-member={id}>
-                <Avatar name={memberName(id)} background={memberTone(id)} size={30}
-                  style={{ borderRadius: 8 }} aria-hidden="true" />
-                <strong className="sk-circle-member-name">{memberName(id)}</strong>
-                {id === 'viewer'
-                  ? <span className="sk-circle-member-self">我</span>
-                  : (
-                    <IconButton actionId={`circle.member.remove.${circle.id}.${id}`}
-                      iconId="user-minus" iconSize={14} density="compact" emphasis="quiet"
-                      label={`移除 ${memberName(id)}`} className="is-danger"
-                      onActivate={() => setDraft(d => ({ ...d, memberIds: d.memberIds.filter(m => m !== id) }))} />
-                  )}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="sk-circle-candidates">
-          <span className="sk-circle-manage-label">添加已知人</span>
-          {candidates.length === 0
-            ? <span className="sk-circle-candidates-empty">已知人都已在分组里</span>
-            : (
-              <ul className="sk-circle-member-list">
-                {candidates.map(person => (
-                  <li key={person.id} className="sk-circle-member-row" data-circle-candidate={person.id}>
-                    <Avatar name={person.name} background={person.tone} size={30}
-                      style={{ borderRadius: 8 }} aria-hidden="true" />
-                    <span className="sk-circle-member-meta">
-                      <strong className="sk-circle-member-name">{person.name}</strong>
-                      <span className="sk-post-time">{person.station} · {person.bio}</span>
-                    </span>
-                    <IconButton actionId={`circle.member.add.${circle.id}.${person.id}`}
-                      iconId="user-plus" iconSize={14} density="compact" emphasis="quiet"
-                      label={`添加 ${person.name}`}
-                      onActivate={() => setDraft(d => ({ ...d, memberIds: [...d.memberIds, person.id] }))} />
-                  </li>
-                ))}
-              </ul>
-            )}
-        </div>
-      </div>
-    </Dialog>
-  );
+  const members = circle.members.map(circlePerson);
+  const candidates = people.filter(person => !members.some(member => member.id === person.id))
+    .map(person => ({ ...circlePerson(person), detail: `${person.station} · ${person.bio}` }));
+  return <MomentCircleEditor id={circle.id} draft={draft} onChange={setDraft}
+    people={[...members, ...candidates]} copy={CIRCLE_EDITOR_COPY} onDismiss={onDismiss}
+    onSave={() => onSave(circle.id, { ...draft, name: draft.name.trim() })}
+    onDelete={() => onRequestDelete(circle)} />;
 }
 
 export type MomentsNavigationRequest =
   | { nonce: number; kind: 'profile'; name: string };
 
 export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationRequest | null }) {
+  const feedScrollRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<MomentsTab>('feed');
   const [nav, setNav] = useState<MomentsNav>({ kind: 'tab' });
   const [posts, setPosts] = useState<Moment[]>(MOMENT_SEEDS);
@@ -820,7 +567,7 @@ export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationR
 
   // Circle lifecycle: circles are the publisher's own audience lists, so the
   // closure is rename/describe + member add/remove + delete (no "leave").
-  const saveCircle = (id: string, draft: CircleDraft) => {
+  const saveCircle = (id: string, draft: MomentCircleDraft) => {
     setCircles(list => list.map(circle => {
       if (circle.id !== id) return circle;
       const memberById = (memberId: string) => {
@@ -834,7 +581,7 @@ export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationR
       return {
         ...circle,
         name: draft.name,
-        desc: draft.desc.trim(),
+        desc: draft.description.trim(),
         members: draft.memberIds.map(memberById),
       };
     }));
@@ -879,50 +626,23 @@ export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationR
     <div className="sk-moments">
       {nav.kind === 'tab' ? (
         <>
-          <div className="sk-moments-subbar">
-            {/* Spatial-rotation contract: the scope group is a single-line
-                scrollable island; under squeeze the search and compose
-                controls collapse in place to icons, peers never rewrap. */}
-            <Segmented<MomentsTab> label="动态范围" density="compact" options={TAB_OPTIONS} scrollable className="sk-scope-island"
-              value={tab} onValueChange={value => switchTab(value ?? 'feed')} />
-            <div className="sk-scope-wrap"
-              onClick={event => {
-                // When collapsed to an icon tile, the whole tile is the focus
-                // affordance: a click anywhere on it opens the field in place.
-                if (event.target === event.currentTarget
-                  || !(event.target as HTMLElement).closest('input,button,a')) {
-                  event.currentTarget.querySelector('input')?.focus();
-                }
-              }}>
-              <TextField className="sk-scope-search" aria-label={TAB_SEARCH_PLACEHOLDER}
-                data-scope-search={tab} placeholder={TAB_SEARCH_PLACEHOLDER}
-                value={query} onValueChange={setQuery} clearable onClear={() => setQuery('')}
-                leading={<Search size={15} />} density="compact" />
-            </div>
-            {/* One icon-only add tile in a fixed slot for every tab: identical
-                geometry, only the action (and accessible name) changes, so the
-                right chrome never shifts when the scope switches. */}
-            {tab === 'feed' && (
-              <IconButton actionId="moments.compose" iconId="plus" iconSize={18} label="发动态"
-                emphasis="primary" className="sk-subbar-add sk-compose-open"
-                onActivate={() => setComposerOpen(true)} />
-            )}
-            {tab === 'circles' && (
-              <IconButton actionId="circle.open-create" iconId="plus" iconSize={18} label="新建圈子"
-                emphasis="primary" className="sk-subbar-add sk-circle-open"
-                onActivate={() => setCircleComposerOpen(true)} />
-            )}
-          </div>
+          <MomentScopeBar value={tab} options={TAB_OPTIONS} onChange={switchTab}
+            query={query} onQueryChange={setQuery}
+            copy={{ scope: '动态范围', search: TAB_SEARCH_PLACEHOLDER, action: tab === 'feed' ? '发动态' : '新建圈子' }}
+            actionId={tab === 'feed' ? 'moments.compose' : 'circle.open-create'}
+            actionClassName={tab === 'feed' ? 'sk-compose-open' : 'sk-circle-open'}
+            onAction={() => tab === 'feed' ? setComposerOpen(true) : setCircleComposerOpen(true)} />
 
           {tab === 'feed' && (
-            <div className="sk-moments-scroll">
+            <div className="sk-moments-scroll" ref={feedScrollRef}>
               {/* Global order view — a floating chip pinned to the scroll
                   viewport's top right. It owns no row (cards start at the top)
                   and its halo/shadow keeps it visually detached from the
                   first card it overlaps. It dissolves while scrolling and
                   softly returns at rest; hidden while searching. */}
               {!q && (
-                <FeedSortFloat value={feedSort} onChange={setFeedSort} />
+                <FeedSortFloat value={feedSort} onChange={setFeedSort} scrollRef={feedScrollRef}
+                  copy={{ label: '动态排序', recent: '最新', hot: '热门', top: '回到最顶' }} />
               )}
               {(searchedTimeline ?? timeline.slice(0, visibleCount)).map(post => (
                 <MomentCard key={post.id} post={post} {...sharedCardProps} />
@@ -955,9 +675,7 @@ export function MomentsFeature({ navigation }: { navigation?: MomentsNavigationR
             followers={profileFollowers}
             following={people.filter(person => person.followed).length}
             stats={profileIsSelf ? myStats : null}
-            onToggleFollow={toggleFollow} onToggleBlock={toggleBlock} onBack={backToTab}
-            onAuthor={openProfile}
-            onToggleReaction={sharedCardProps.onToggleReaction} />
+            onToggleFollow={toggleFollow} onToggleBlock={toggleBlock} onBack={backToTab} />
           {profilePerson?.blocked && (
             <p className="sk-profile-blocked-note" data-profile-blocked-note>
               已拉黑 {profileName}：其动态不会再出现在你的时间线与列表中；当前主页内容保留显示，离开后按黑名单生效。

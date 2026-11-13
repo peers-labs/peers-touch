@@ -49,6 +49,7 @@ const authenticatedResponse = {
   command: 'access_submit_login',
   status: 'authenticated',
   actor_ptid: 'ptid:person:new',
+  session_activation_id: 'native-activation-1',
   name: 'New',
   email: '',
   login_method: 'password',
@@ -204,8 +205,23 @@ describe('session authentication convergence', () => {
     expect(mocks.authLogout).toHaveBeenCalledOnce();
     // The rollback logout is scoped to the identity this login produced, so a
     // late failure after a newer unlock cannot tear the superseding session.
-    expect(mocks.authLogout).toHaveBeenCalledWith('ptid:person:new');
+    expect(mocks.authLogout).toHaveBeenCalledWith({
+      expected_actor_ptid: 'ptid:person:new',
+      expected_session_activation_id: 'native-activation-1',
+    });
     expect(useSessionStore.getState().authenticated).toBe(false);
+  });
+
+  it('does not fall back to unscoped rollback without a native activation', async () => {
+    mocks.accessSubmitLogin.mockResolvedValueOnce({
+      ...authenticatedResponse,
+      session_activation_id: undefined,
+    });
+    mocks.stationBindingComplete.mockRejectedValueOnce(new Error('station binding failed'));
+    await expect(useSessionStore.getState().accessSubmitLogin(
+      'attempt-1', loginGate, 'alice@p.t', TEST_PASSWORD,
+    )).rejects.toThrow('station binding failed');
+    expect(mocks.authLogout).not.toHaveBeenCalled();
   });
 
   it('runs the identity pipeline before propagating native cleanup failure', async () => {

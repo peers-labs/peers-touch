@@ -175,7 +175,7 @@ pub fn social_public_feed_submit(state: State<'_, Arc<AppState>>, window: Window
         super::public_feed_faults::observe_submission_rejection(&fault_scope, &error);
         error
     })?;
-    let client = state.station.client();
+    let client = state.station.client().bound_to_scope(&p.scope);
     {
         let _identity = state.identity_transition.lock().map_err(|_| "FEED_SESSION_CHANGED")?;
         validate_prepared(&state, &window, &p)?;
