@@ -596,11 +596,23 @@ def open_panel(application):
         windows = array_items(windows_value)
         if not windows:
             raise NativeAXWindowsUnavailable(0, True, 0, elapsed)
+        for window in windows:
+            if copied_text(window, "AXIdentifier") in ("open-panel", "OKButton"):
+                return core_foundation.CFRetain(window)
+        # AppKit can expose the same OKButton directly on its owner window.
+        # Verify that native object before walking a wide XPC file-list tree.
+        for window in windows:
+            button = copy_attribute(window, "AXDefaultButton")
+            try:
+                if button and copied_text(button, "AXIdentifier") == "OKButton":
+                    return core_foundation.CFRetain(window)
+            finally:
+                if button:
+                    core_foundation.CFRelease(button)
         target = find_path(
             None,
             lambda element, path: (
-                copied_text(element, "AXIdentifier")
-                in (("open-panel", "OKButton") if len(path) == 1 else ("OKButton",))
+                len(path) > 1 and copied_text(element, "AXIdentifier") == "OKButton"
             ),
             roots=windows,
         )

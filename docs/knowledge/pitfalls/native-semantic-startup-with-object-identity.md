@@ -75,6 +75,17 @@ control. The first verified panel path ends the observation; later unrelated
 windows cannot invalidate that presence. If no earlier target exists, read
 failures still propagate and cannot supply absent-panel evidence.
 
+A real `chooser-open` attempt exhausted its AX observation budget while reading
+`AXIdentifier`; the reported `focusDeadlineExceeded` is also used for AX read-cap
+expiry and does not identify the focus phase. A synthetic wide tree reproduces
+that timeout with the actual AX reader despite an available native default
+button. The same finder now checks the owner's `AXDefaultButton` as specified
+by D-22 before its original depth walk. This regression establishes the
+traversal defect; the same real Cell Journey must verify that direct reference
+on the current native chooser. Unsupported or differently identified buttons
+still use the depth walk, and refusal/late replies retain status and release
+all copied values. No historical failure is reclassified as product proof.
+
 AXReadSession remains the shared read/status/deadline owner. Only explicit
 NoValue/Unsupported represents optional absence; required windows reject null,
 empty or failed reads as appropriate. Preserve OS status, returned-value

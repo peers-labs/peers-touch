@@ -117,6 +117,107 @@ def control_probe(replies=None, *, started=0.0):
 
 
 class NativeObservationDiagnosticTests(unittest.TestCase):
+    def test_panel_default_button_uses_actual_reader_with_original_budget(self) -> None:
+        names = {"find_path", "release_path", "open_panel", "NativeAXWindowsUnavailable"}
+        support = ast.Module(body=[
+            node for node in ast.parse(_NATIVE_AX_SUPPORT).body
+            if getattr(node, "name", "") in names
+        ], type_ignores=[])
+        for scenario in ("wide-tree", "unsupported", "wrong-button", "refusal", "late"):
+            with self.subTest(scenario=scenario):
+                clock = SimpleNamespace(now=0.1)
+                clock.monotonic = lambda: clock.now
+                clock.sleep = lambda seconds: setattr(clock, "now", clock.now + seconds)
+                arrays = {101: [1], 102: list(range(2, 42)), 103: [42]}
+                values = {201: "", 202: "OKButton", 203: "OtherButton"}
+                children = {1: 102, 2: 103} if scenario == "wide-tree" else {1: 103}
+                calls, releases, retained = [], [], []
+
+                def reference(value):
+                    return value.value if isinstance(value, ctypes.c_void_p) else value
+
+                def copy(element, name, output):
+                    element = reference(element)
+                    calls.append((element, name))
+                    clock.now += 0.05
+                    status, value = -25205, 0
+                    if name == "AXWindows":
+                        self.assertEqual(element, 50)
+                        status, value = 0, 101
+                    elif name == "AXDefaultButton":
+                        self.assertEqual(element, 1)
+                        status, value = {
+                            "wide-tree": (0, 42), "unsupported": (-25212, 0),
+                            "wrong-button": (0, 43), "refusal": (-25202, 43),
+                            "late": (0, 42),
+                        }[scenario]
+                        if scenario == "late":
+                            clock.now = 1.6
+                    elif name == "AXIdentifier":
+                        status, value = 0, 202 if element == 42 else 203 if element == 43 else 201
+                    elif name == "AXChildren" and element in children:
+                        status, value = 0, children[element]
+                    output._obj.value = value
+                    return status
+
+                cf = SimpleNamespace(CFRelease=lambda value: releases.append(reference(value)))
+                ax = SimpleNamespace(
+                    AXUIElementSetMessagingTimeout=lambda *_: 0,
+                    AXUIElementCopyAttributeValue=copy,
+                )
+                session = object.__new__(AXReadSession)
+                session.ax, session.cf = ax, cf
+                session.deadline, session.read_budget_seconds = 3.0, 1.5
+                session.read_deadline = 1.6
+                session.string = lambda name: name
+
+                def text(element, name):
+                    value = session.copy_attribute(element, name)
+                    try:
+                        return values[reference(value)] if value else ""
+                    finally:
+                        if value:
+                            cf.CFRelease(value)
+
+                def retain(value):
+                    value = reference(value)
+                    retained.append(value)
+                    return value
+
+                cf.CFRetain = retain
+                namespace = {
+                    "time": clock, "reads": session, "copy_attribute": session.copy_attribute,
+                    "copied_text": text, "NativeAXReadUnavailable": NativeAXReadUnavailable,
+                    "array_items": lambda value: arrays[reference(value)] if value else [],
+                    "core_foundation": cf,
+                }
+                exec(compile(support, "<native-panel-default-button>", "exec"), namespace)
+                with patch("tooling.acceptance.drivers.native.macos_ax.time", clock):
+                    if scenario in ("refusal", "late"):
+                        with self.assertRaises(NativeAXReadUnavailable) as caught:
+                            namespace["open_panel"](50)
+                        observed = caught.exception.observed
+                        self.assertEqual(observed["axAttribute"], "AXDefaultButton")
+                        self.assertEqual(observed["axStatus"], -25202 if scenario == "refusal" else 0)
+                        self.assertEqual(observed["focusDeadlineExceeded"], scenario == "late")
+                        self.assertEqual(releases.count(43 if scenario == "refusal" else 42), 1)
+                    else:
+                        panel = namespace["open_panel"](50)
+                        self.assertEqual(panel, 1)
+                        cf.CFRelease(panel)
+                        self.assertLess(clock.now, session.read_deadline)
+                        if scenario == "wide-tree":
+                            self.assertFalse(any(name == "AXChildren" for _, name in calls))
+                            self.assertEqual(releases.count(42), 1)
+                        else:
+                            self.assertIn((1, "AXChildren"), calls)
+                            if scenario == "wrong-button":
+                                self.assertEqual(releases.count(43), 1)
+                self.assertEqual(session.deadline, 3.0)
+                self.assertEqual(session.read_deadline, 1.6)
+                self.assertEqual(releases.count(101), 1)
+                self.assertEqual(releases.count(1), retained.count(1))
+
     def test_panel_lookup_finds_shallow_controls_before_file_list_descendants(self) -> None:
         names = {"find_path", "release_path", "open_panel"}
         support = ast.Module(body=[
@@ -138,6 +239,8 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
                 def children(element, name, **kwargs):
                     if name == "AXWindows":
                         return windows
+                    if name == "AXDefaultButton":
+                        return None
                     self.assertEqual(name, "AXChildren")
                     reads.append(element)
                     if element == 8 and scenario in ("shallow-button", "unreadable"):
@@ -212,6 +315,8 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
         def attribute(element, name, **kwargs):
             if name == "AXWindows":
                 return windows
+            if name == "AXDefaultButton":
+                return None
             self.assertEqual(name, "AXChildren")
             if element == 3:
                 raise failure
@@ -599,6 +704,7 @@ class NativeObservationDiagnosticTests(unittest.TestCase):
             with self.subTest(status=status, value=value, expected=expected):
                 namespace, _, released = control_probe({
                     "AXWindows": (status, value, 0.1),
+                    "AXDefaultButton": (-25212, 0, 0.0),
                 })
                 namespace.update({
                     "array_items": lambda item: windows,

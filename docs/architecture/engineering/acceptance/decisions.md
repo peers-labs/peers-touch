@@ -1879,6 +1879,13 @@ focus or HID delivery.
   must transition absent/present/absent; macOS can expose a panel inside the
   existing AX window without changing window or sheet counts. Unavailable
   native observation fails closed rather than reporting an absent panel.
+  After checking every owner-window identifier, the finder inspects each
+  window's actual `AXDefaultButton` and requires the same `OKButton` identifier.
+  That direct native reference can establish panel presence without scanning
+  a wide XPC file-list tree. Explicit optional absence or a different identifier
+  continues the original depth walk; failed or late reads remain failures.
+  The same AX read cap, exact-PID windows and returned panel root are retained,
+  and the copied button reference is released on every exit.
   The shared path finder checks all controls at a depth across every exact-PID
   owner window before descending into file-list contents. The first verified
   panel path ends that lookup; unrelated later windows cannot invalidate its
